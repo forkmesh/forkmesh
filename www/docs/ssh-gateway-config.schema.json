@@ -8,13 +8,61 @@
     "schemaVersion",
     "authorizationSocket",
     "authorizationBrokerUser",
-    "gatewayExecutable",
-    "refreshNotifier",
-    "repositoryRoot",
-    "repositories"
+    "gatewayExecutable"
+  ],
+  "oneOf": [
+    {
+      "required": ["refreshNotifier", "repositoryRoot", "repositories"],
+      "not": {"required": ["httpGit"]}
+    },
+    {
+      "description": "Relay mode: no local repositories, notifier or hooks.",
+      "required": ["httpGit"],
+      "not": {
+        "anyOf": [
+          {"required": ["refreshNotifier"]},
+          {"required": ["repositoryRoot"]},
+          {"required": ["repositories"]},
+          {"required": ["dynamicRepositoriesFile"]},
+          {"required": ["pullSubmissionSpool"]},
+          {"required": ["pullSubmissionMaxBytes"]},
+          {"required": ["operatorPolicy"]}
+        ]
+      }
+    }
   ],
   "properties": {
     "schemaVersion": {"const": 1},
+    "httpGit": {
+      "description": "Relay every authorized session to the control plane's HTTPS Git routes (www/docs/operations/git-ssh-gateway.md, Relay mode).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin"],
+      "properties": {
+        "origin": {
+          "description": "https:// origin of the HTTPS Git routes; http:// only for a loopback address.",
+          "type": "string",
+          "pattern": "^https?://[^/?#@\\s]+/?$"
+        },
+        "connectAddress": {
+          "description": "Loopback ip:port of the same TLS front end, e.g. 127.0.0.1:443. The certificate is still verified for the origin's host name. Leave it out on a separate front host: the origin's name is then resolved through DNS.",
+          "type": "string",
+          "pattern": "^(127\\.[0-9.]+|\\[::1\\]):[0-9]{1,5}$"
+        },
+        "maxRequestBytes": {
+          "description": "Largest request body the path to the origin accepts, e.g. a CDN proxy's 100 MB upload cap. A larger push stops at the gateway with an explanation.",
+          "type": "integer",
+          "minimum": 2097152,
+          "maximum": 68719476736
+        },
+        "maxSessionsPerClient": {
+          "description": "Concurrent sessions allowed from one client address (IPv6 by /64), read from SSH_CLIENT_ADDRESS that the entrypoint copies from SSH_CONNECTION. Set on a public front host.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      }
+    },
     "authorizationSocket": {
       "type": "string",
       "pattern": "^/[^\\r\\n\\u0000]+$"

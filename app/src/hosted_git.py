@@ -60,6 +60,17 @@ HOSTED_PUSH_SCHEME = "fmp1"
 HOSTED_PUSH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 HOSTED_PUSH_PASSWORD_RE = re.compile(
     r"^fmp1\.([A-Za-z0-9_-]{24,64})\.([0-9]{10,16})\.([0-9a-f]{64})$")
+# A credential the SSH gateway relays a key-authenticated session with
+# (ssh_gateway_routes.py): the same Basic shape, bound to the SSH key instead
+# of a browser session, to one operation, and to minutes instead of days. The
+# relayed HTTPS request then runs the ordinary permission, branch-protection,
+# contributor-namespace and bookkeeping path, exactly like a stock git push.
+SSH_GIT_PREFIX = "forkmesh-ssh-git-v1"
+SSH_GIT_SCHEME = "fms1"
+SSH_GIT_TTL_MS = 30 * 60 * 1000
+SSH_GIT_PASSWORD_RE = re.compile(
+    r"^fms1\.(sk_[A-Za-z0-9_-]{16,80})\.([0-9]{10,16})\.([0-9a-f]{64})$")
+SSH_GIT_ACCESS = ("read", "push")
 # The same character set the create modal validates client-side.
 HOSTED_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 HOSTED_BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
@@ -107,6 +118,44 @@ def hosted_push_password(env, account, owner, repo, session_id, expires_at):
         HOSTED_PUSH_SCHEME, session_id, str(int(expires_at)),
         hosted_push_mac(env, account, owner, repo, session_id, expires_at),
     ))
+
+
+def ssh_git_mac(env, account, owner, repo, key_id, access, expires_at):
+    """Keyed MAC binding an SSH relay credential to key, repo and access."""
+    message = "\n".join((
+        SSH_GIT_PREFIX, str(account or "").lower(), str(owner or "").lower(),
+        str(repo or "").lower(), key_id, access, str(int(expires_at)),
+    ))
+    return hmac.new(
+        _account_session_secret(env), message.encode(), "sha256",
+    ).hexdigest()
+
+
+def ssh_git_password(env, account, owner, repo, key_id, access, expires_at):
+    """The Basic password the SSH gateway relays one session with."""
+    if access not in SSH_GIT_ACCESS:
+        raise ValueError("invalid access")
+    return ".".join((
+        SSH_GIT_SCHEME, key_id, str(int(expires_at)),
+        ssh_git_mac(env, account, owner, repo, key_id, access, expires_at),
+    ))
+
+
+async def _ssh_key_account_matches(env, key_id, account):
+    """True while `key_id` is an active SSH key belonging to `account`.
+
+    Read from the primary, like the session check: a revoked key stops a
+    relayed session at its next request.
+    """
+    row = await d1_first_primary(
+        env,
+        "SELECT account_bi FROM account_ssh_keys "
+        "WHERE key_id=? AND revoked_at=0",
+        key_id,
+    )
+    if not row:
+        return False
+    return str(row.get("account_bi") or "") == await blind_index(env, account)
 
 
 def _basic_credentials(header):
@@ -220,23 +269,44 @@ async def _verify_hosted_credential(env, owner, repo, header, method, access,
     if not owner or not repo or not account or not valid_node_name(account):
         return await denied()
     match = HOSTED_PUSH_PASSWORD_RE.match(password)
-    if not match:
+    ssh_match = None if match else SSH_GIT_PASSWORD_RE.match(password)
+    if not match and not ssh_match:
         return await denied()
-    session_id, expires_raw, mac = match.groups()
+    session_id, expires_raw, mac = (match or ssh_match).groups()
     try:
         expires_at = int(expires_raw)
     except (TypeError, ValueError):
         return await denied()
-    expected = hosted_push_mac(
-        env, account, owner, repo, session_id, expires_at)
-    if not hmac.compare_digest(expected, mac):
-        return await denied()
+    if ssh_match:
+        # Minted by the SSH authorization endpoint for the route the gateway
+        # relays to, which may be an organization alias of the node.
+        audit_details["credential"] = "ssh-key"
+        ssh_access = "read" if access == "read" else "push"
+        owners = [owner] + (
+            [alias] if alias and alias.lower() != owner.lower() else [])
+        if not any(
+                hmac.compare_digest(ssh_git_mac(
+                    env, account, route_owner, repo, session_id, ssh_access,
+                    expires_at), mac)
+                for route_owner in owners):
+            return await denied()
+        if expires_at > int(Date.now()) + SSH_GIT_TTL_MS + 60 * 1000:
+            return await denied()
+    else:
+        expected = hosted_push_mac(
+            env, account, owner, repo, session_id, expires_at)
+        if not hmac.compare_digest(expected, mac):
+            return await denied()
     if expires_at <= int(Date.now()):
         return await denied(audit=True)
     prefix = ""
     try:
         await ensure_schema(env)
-        if not await _session_account_matches(env, session_id, account):
+        live = (
+            await _ssh_key_account_matches(env, session_id, account)
+            if ssh_match
+            else await _session_account_matches(env, session_id, account))
+        if not live:
             return await denied(audit=True)
         if access == "read":
             allowed = await _hosted_read_allowed(env, owner, repo, account)

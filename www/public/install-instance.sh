@@ -1079,7 +1079,7 @@ print(encode(seed), encode(public))
     echo "MIRROR_ROUTER_SIGNING_SEED=$seed"
     echo "MIRROR_ROUTER_PUBLIC_KEY=$public_key"
     if [ -r "$APP_ENV" ]; then
-      grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY|HOSTED_GIT_CONTRIBUTOR_PUSH)=' "$APP_ENV" || true
+      grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY|HOSTED_GIT_CONTRIBUTOR_PUSH|SSH_GATEWAY_HOST|SSH_GATEWAY_PORT|SSH_GATEWAY_TOKEN|SSH_GATEWAY_REPOSITORIES|SSH_GATEWAY_NODE_HOSTS|SSH_GATEWAY_TOKEN_NEXT|SSH_GATEWAY_ALLOWED_ADDRESSES)=' "$APP_ENV" || true
     fi
     if [ -r "$APP_ENV" ] && grep -qE '^TURNSTILE_HOSTNAMES=.' "$APP_ENV"; then
       grep -E '^TURNSTILE_HOSTNAMES=' "$APP_ENV"
@@ -1562,6 +1562,19 @@ daemon_digest() {
   files_digest "$DAEMON" "$DAEMON_CONFIG" "$DAEMON_UNIT" ${gateway:+"$gateway"}
 }
 
+# An SSH relay added by tools/install_ssh_relay.sh keeps its gateway and
+# broker in step with the app it relays to: an update installs the same
+# release's copies and restarts the broker. Nothing here creates a relay.
+refresh_ssh_relay() {
+  [ -s /etc/forkmesh-ssh/ssh-gateway.json ] || return 0
+  [ -d /opt/forkmesh-ssh ] || return 0
+  local tool
+  for tool in ssh_gateway.py ssh_authorization_broker.py; do
+    [ -s "$SRC/tools/$tool" ] && install -m 0755 -o root -g root "$SRC/tools/$tool" "/opt/forkmesh-ssh/$tool"
+  done
+  systemctl try-restart forkmesh-ssh-auth.service >/dev/null 2>&1 || warn "the SSH relay broker did not restart (journalctl -u forkmesh-ssh-auth)"
+}
+
 setup_git_node() {
   DAEMON_BEFORE="$(daemon_digest)"
   install_daemon_binary
@@ -1678,6 +1691,7 @@ PY
     mv "$DAEMON_CONFIG.norole" "$DAEMON_CONFIG"
   fi
   rm -f "$DAEMON_CONFIG.new" "$DAEMON_CONFIG.nomirror" "$DAEMON_CONFIG.norole"
+  refresh_ssh_relay
   NODE_PUBLIC_KEY="$(runuser -u "$NODE_USER" -- "$DAEMON" --config "$DAEMON_CONFIG" --public-key | tr -d '[:space:]')"
   [[ "$NODE_PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || die "The git node has no identity key."
   chmod -R go-rwx /etc/forkmesh /var/lib/forkmesh

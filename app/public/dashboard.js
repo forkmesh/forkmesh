@@ -6426,6 +6426,36 @@
     loadGitPushSettings();
   }
 
+  // How to use a key, shown once the server has an SSH gateway. The HTTPS
+  // push credential above stays the fallback for networks that block SSH.
+  function renderSshUsePanel(data) {
+    const panel = $("[data-ssh-use-panel]");
+    const steps = $("[data-ssh-use-steps]");
+    if (!panel || !steps) return;
+    const host = String(data?.gatewayHost || "");
+    if (!data?.gatewayConfigured || !host) {
+      panel.classList.add("hidden");
+      return;
+    }
+    const port = Number(data.gatewayPort) || 22;
+    const example = String(data.gatewayExampleUrl || "");
+    const login = port === 22 ? `ssh -T git@${host}` : `ssh -T -p ${port} git@${host}`;
+    const account = String(data.account || "<you>");
+    const code = (value) => `<code class="mt-1 block overflow-x-auto rounded-md border border-border bg-secondary px-2 py-1 font-mono text-xs text-foreground">${escapeHtml(value)}</code>`;
+    const items = [
+      ["Create a key if you do not have one, on your own computer:", code('ssh-keygen -t ed25519 -C "you@example.com"')],
+      ["Paste the public half (the .pub file) below and select <strong>Add SSH key</strong>:", code("cat ~/.ssh/id_ed25519.pub")],
+      ["Check the connection. It prints a greeting; there is no shell:", code(login)],
+      ["Clone with the SSH address from a repository's <strong>Code</strong> button, or switch an existing clone:", code(`git clone ${example}`) + code(`git remote set-url origin ${example}`)],
+    ];
+    if (data.gatewayAllRepositories) {
+      items.push(["Contributing without write access: fork the repository and push to your fork, or, where the repository accepts contributor branches, push one named pr/" + escapeHtml(account) + "/&lt;topic&gt; and open a pull request:", code(`git push origin HEAD:pr/${account}/my-fix`)]);
+    }
+    steps.innerHTML = items.map(([text, body], index) => `
+      <li class="grid gap-1"><span><span class="font-semibold text-foreground">${index + 1}.</span> ${text}</span>${body}</li>`).join("");
+    panel.classList.remove("hidden");
+  }
+
   function renderSshKeys(data) {
     const list = $("[data-ssh-key-list]");
     if (!list) return;
@@ -6436,6 +6466,7 @@
         ? `SSH gateway: ${data.gatewayHost}${Number(data.gatewayPort) === 22 ? "" : `:${data.gatewayPort}`}`
         : "SSH pushes are not available on this server. Push over HTTPS with a push credential instead.";
     }
+    renderSshUsePanel(data);
     if (!keys.length) {
       list.innerHTML = accountBlankslate("key-round", "No SSH keys registered.", "Add a public key above to clone and push over SSH.");
       window.lucide?.createIcons();
@@ -39500,7 +39531,11 @@
   function renderRepoCodeButton(repo, compact = false) {
     const url = cloneUrl(repo);
     const gitCmd = `git clone ${url}`;
-    const sshUrl = String(repo?.sshUrl || "").trim();
+    const sshFullUrl = String(repo?.sshUrl || "").trim();
+    // ssh://git@host/owner/repo.git on the standard port reads as the
+    // familiar git@host:owner/repo.git; both address the same repository.
+    const scpMatch = /^ssh:\/\/git@([^/:\[\]]+)\/(.+)$/.exec(sshFullUrl);
+    const sshUrl = scpMatch ? `git@${scpMatch[1]}:${scpMatch[2]}` : sshFullUrl;
     const sshCloneCmd = sshUrl ? `git clone ${sshUrl}` : "";
     const sshPushCmd = sshUrl ? `git remote set-url --push origin ${sshUrl}` : "";
     const btnHeight = compact ? "h-8" : "h-9";
@@ -39539,6 +39574,7 @@
                 <input data-repo-ssh-url type="text" readonly value="${escapeHtml(sshUrl)}" aria-label="SSH clone and push URL" class="min-w-0 flex-1 rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground outline-none focus:border-accent" />
                 ${copyBtn(sshUrl, "Copy SSH URL")}
               </div>
+              ${sshFullUrl !== sshUrl ? `<p class="mt-1 truncate text-[11px] leading-4 text-muted-foreground" title="${escapeHtml(sshFullUrl)}">Also: <span class="font-mono">${escapeHtml(sshFullUrl)}</span></p>` : ""}
               <div class="mt-2 flex items-center gap-2">
                 <code class="min-w-0 flex-1 truncate rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground">${escapeHtml(sshCloneCmd)}</code>
                 ${copyBtn(sshCloneCmd, "Copy SSH clone command")}

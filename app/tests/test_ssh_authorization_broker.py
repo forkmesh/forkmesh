@@ -244,3 +244,77 @@ def test_packaging_separates_token_git_lookup_and_mirror_accounts():
         assert forbidden not in entrypoint
     assert "$@" not in notifier
     assert "SSH_ORIGINAL_COMMAND" not in notifier
+
+
+def _relay_response(request, **credential):
+    password = "fms1.%s.1783000000000.%s" % (request["keyId"], "a" * 64)
+    return {
+        "ok": True,
+        "authorized": True,
+        "keyId": request["keyId"],
+        "requestId": "r" * 24,
+        "operation": request["operation"],
+        "owner": "acme",
+        "repository": "widget",
+        "repositoryRelativePath": "acme/widget.git",
+        "httpCredential": {
+            "username": "alice",
+            "password": password,
+            "expiresAt": 1783000000000,
+            **credential,
+        },
+    }
+
+
+def test_broker_passes_a_relay_credential_only_for_the_asking_key():
+    config = _config()
+    request = broker._validate_request({
+        "action": "authorize",
+        "keyId": "sk_" + "a" * 24,
+        # A short address: the control plane resolves the owner.
+        "owner": "",
+        "repository": "widget",
+        "operation": "git-receive-pack",
+    }, config.git_uid, config)
+    assert request["owner"] == ""
+    result = broker._validated_upstream_response(
+        request, _relay_response(request), "r" * 24)
+    assert result["httpCredential"]["username"] == "alice"
+    assert result["owner"] == "acme"
+    for credential in (
+        {"password": "fms1.%s.1783000000000.%s" % ("sk_" + "b" * 24, "a" * 64)},
+        {"password": "fmp1.x"},
+        {"username": "Alice Smith"},
+        {"expiresAt": "soon"},
+        {"extra": True},
+    ):
+        with pytest.raises(broker.BrokerError):
+            broker._validated_upstream_response(
+                request, _relay_response(request, **credential), "r" * 24)
+    with pytest.raises(broker.BrokerError):
+        broker._validate_request(
+            {**request, "owner": "Bad Owner"}, config.git_uid, config)
+
+
+def test_broker_connect_address_is_loopback_only(monkeypatch):
+    assert broker.loopback_address("127.0.0.1:443") == ("127.0.0.1", 443)
+    assert broker.loopback_address("[::1]:8443") == ("::1", 8443)
+    for bad in ("10.0.0.1:443", "localhost:443", "127.0.0.1", "127.0.0.1:0"):
+        assert broker.loopback_address(bad) is None
+    config = broker.BrokerConfig(
+        api_origin="https://forkmesh.example", token="t" * 48,
+        socket_path=Path("/run/x/authorize.sock"), socket_gid=1,
+        lookup_uid=1001, git_uid=1002,
+        api_connect_address=("127.0.0.1", 443))
+    captured = {}
+
+    def build(*handlers):
+        captured["handlers"] = handlers
+        raise OSError("no network in tests")
+
+    monkeypatch.setattr(broker, "build_opener", build)
+    with pytest.raises((broker.BrokerError, OSError)):
+        broker._authorize_upstream(
+            config, {"action": "lookup", "publicKey": _key_line()})
+    assert any(isinstance(handler, broker.HTTPSHandler)
+               for handler in captured["handlers"])

@@ -22,6 +22,8 @@ import base64
 from collections import deque
 from dataclasses import dataclass
 import grp
+import http.client
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -29,6 +31,7 @@ import pwd
 import re
 import socket
 import socketserver
+import ssl
 import stat
 import struct
 import sys
@@ -37,7 +40,13 @@ import time
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from urllib.request import (
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
 
 
 SCHEMA_VERSION = 1
@@ -64,6 +73,10 @@ REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 KEY_ID_RE = re.compile(r"^sk_[A-Za-z0-9_-]{16,80}$")
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{24}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+HTTP_USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+HTTP_PASSWORD_RE = re.compile(
+    r"^fms1\.(sk_[A-Za-z0-9_-]{16,80})\.[0-9]{10,16}\.[0-9a-f]{64}$"
+)
 PUBLIC_KEY_RE = re.compile(
     r"^(?:ssh-ed25519|sk-ssh-ed25519@openssh\.com|"
     r"ecdsa-sha2-nistp(?:256|384|521)|"
@@ -91,6 +104,12 @@ class BrokerConfig:
     local_mode: str = "off"
     grants_file: Path | None = None
     dynamic_repositories_file: Path | None = None
+    # Optional "127.0.0.1:443": reach apiOrigin's own TLS front end on this
+    # host instead of through a CDN, still verifying its certificate for the
+    # apiOrigin host name. Absent (a gateway on a separate front host), the
+    # broker resolves apiOrigin through DNS and verifies TLS as usual, so
+    # its configuration never names the origin's address.
+    api_connect_address: tuple[str, int] | None = None
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -215,7 +234,8 @@ def load_config(path: Path) -> BrokerConfig:
     )
     if (
         not isinstance(source, dict)
-        or set(source) not in allowed_shapes
+        or (set(source) - {"apiConnectAddress"}) not in allowed_shapes
+        or ("apiConnectAddress" in source and "apiOrigin" not in source)
         or source.get("schemaVersion") != SCHEMA_VERSION
         or source.get("type") != CONFIG_TYPE
     ):
@@ -279,6 +299,11 @@ def load_config(path: Path) -> BrokerConfig:
         if not TOKEN_RE.fullmatch(token):
             raise BrokerError("authorization token is unavailable")
         api_origin = _https_origin(source.get("apiOrigin"))
+    api_connect_address = None
+    if "apiConnectAddress" in source:
+        api_connect_address = loopback_address(source.get("apiConnectAddress"))
+        if api_connect_address is None:
+            raise BrokerError("authorization connect address is invalid")
     return BrokerConfig(
         api_origin=api_origin,
         token=token,
@@ -289,7 +314,52 @@ def load_config(path: Path) -> BrokerConfig:
         local_mode=local_mode,
         grants_file=grants_file,
         dynamic_repositories_file=dynamic_file,
+        api_connect_address=api_connect_address,
     )
+
+
+def loopback_address(value: Any) -> tuple[str, int] | None:
+    """Parse ``127.0.0.1:443`` / ``[::1]:443``; only loopback is accepted."""
+
+    raw = str(value or "").strip()
+    host, separator, port_text = raw.rpartition(":")
+    if not separator or not port_text.isdigit():
+        return None
+    host = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    port = int(port_text)
+    if not address.is_loopback or not 1 <= port <= 65535:
+        return None
+    return str(address), port
+
+
+class _LoopbackHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS to a fixed loopback socket, verified for the URL's host name."""
+
+    connect_address: tuple[str, int] = ("127.0.0.1", 443)
+
+    def connect(self) -> None:
+        sock = socket.create_connection(self.connect_address, self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def _loopback_https_handler(address: tuple[str, int]) -> HTTPSHandler:
+    connection_class = type(
+        "_BoundLoopbackHTTPSConnection",
+        (_LoopbackHTTPSConnection,),
+        {"connect_address": address},
+    )
+
+    class _Handler(HTTPSHandler):
+        def https_open(self, req: Request) -> Any:
+            return self.do_open(
+                connection_class, req, context=ssl.create_default_context()
+            )
+
+    return _Handler()
 
 
 def _local_authorization_settings(
@@ -419,7 +489,9 @@ def _validate_request(
         operation = str(value.get("operation") or "")
         if (
             not KEY_ID_RE.fullmatch(key_id)
-            or not OWNER_RE.fullmatch(owner)
+            # An empty owner is a short address (git@host:Repository.git);
+            # the control plane resolves it or denies.
+            or (owner and not OWNER_RE.fullmatch(owner))
             or not REPO_RE.fullmatch(repository)
             or operation not in {"git-upload-pack", "git-receive-pack"}
         ):
@@ -476,6 +548,27 @@ def _validated_upstream_response(
     repository = str(response_value.get("repository") or "")
     operation = str(response_value.get("operation") or "")
     relative = str(response_value.get("repositoryRelativePath") or "")
+    credential = response_value.get("httpCredential")
+    if credential is not None:
+        password = (
+            str(credential.get("password") or "")
+            if isinstance(credential, dict) else ""
+        )
+        match = HTTP_PASSWORD_RE.fullmatch(password)
+        expires_at = (
+            credential.get("expiresAt") if isinstance(credential, dict) else None
+        )
+        if (
+            not isinstance(credential, dict)
+            or set(credential) != {"username", "password", "expiresAt"}
+            or not HTTP_USERNAME_RE.fullmatch(str(credential.get("username") or ""))
+            or not match
+            or match.group(1) != request_value["keyId"]
+            or isinstance(expires_at, bool)
+            or not isinstance(expires_at, int)
+        ):
+            raise BrokerError("authorization service response is invalid")
+        expected = expected | {"httpCredential"}
     if (
         set(response_value) != expected
         or response_value.get("ok") is not True
@@ -488,7 +581,7 @@ def _validated_upstream_response(
         or relative != owner + "/" + repository + ".git"
     ):
         raise BrokerError("authorization service response is invalid")
-    return {
+    result = {
         "authorized": True,
         "keyId": key_id,
         "operation": operation,
@@ -496,6 +589,13 @@ def _validated_upstream_response(
         "repository": repository,
         "repositoryRelativePath": relative,
     }
+    if credential is not None:
+        result["httpCredential"] = {
+            "username": str(credential["username"]),
+            "password": str(credential["password"]),
+            "expiresAt": int(credential["expiresAt"]),
+        }
+    return result
 
 
 def _authorize_upstream(
@@ -521,7 +621,12 @@ def _authorize_upstream(
             "user-agent": "ForkMesh-ssh-authorization-broker/1.0",
         },
     )
-    direct = opener or build_opener(_NoRedirect(), ProxyHandler({}))
+    if opener is None:
+        handlers: list[Any] = [_NoRedirect(), ProxyHandler({})]
+        if config.api_connect_address is not None:
+            handlers.append(_loopback_https_handler(config.api_connect_address))
+        opener = build_opener(*handlers)
+    direct = opener
     try:
         with direct.open(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             if int(response.status) != 200:
