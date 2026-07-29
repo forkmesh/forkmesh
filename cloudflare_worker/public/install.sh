@@ -67,6 +67,7 @@ FORKMESH_LOCAL_ARCH="${FORKMESH_LOCAL_ARCH:-}"
 FORKMESH_NAME="${FORKMESH_NAME:-forkmesh}"
 FORKMESH_INSTALL_SOURCE_URL="${FORKMESH_INSTALL_SOURCE_URL:-${FORKMESH_HOST%/}/api/install-source}"
 FORKMESH_DIAG_URL="${FORKMESH_DIAG_URL:-${FORKMESH_HOST%/}/api/install-diag}"
+FORKMESH_FALLBACK_REPO="${FORKMESH_FALLBACK_REPO-https://github.com/forkmesh/forkmesh.git}"
 REPO="${FORKMESH_REPO:-}"
 # Space-separated list of online mirror nodes resolved from the mainnode, best
 # first, and the matching list of clone URLs to try in order. A mirror can report
@@ -217,7 +218,15 @@ resolve_install_node() {
     case " $valid " in *" $n "*) continue ;; esac
     valid="${valid:+$valid }$n"
   done
-  [ -n "$valid" ] || die "No online ForkMesh node is currently mirroring '$FORKMESH_NAME'. Start a node that publishes this repository, then try the installer again."
+  if [ -z "$valid" ]; then
+    if [ -n "${FORKMESH_FALLBACK_REPO:-}" ]; then
+      warn "No online ForkMesh node is currently mirroring '$FORKMESH_NAME'. Using fallback repository: $FORKMESH_FALLBACK_REPO"
+      FORKMESH_NODES="fallback"
+      FORKMESH_NODE="fallback"
+      return 0
+    fi
+    die "No online ForkMesh node is currently mirroring '$FORKMESH_NAME'. Start a node that publishes this repository, then try the installer again."
+  fi
   FORKMESH_NODES="$valid"
   FORKMESH_NODE="${valid%% *}"
 }
@@ -233,9 +242,13 @@ ensure_mirror_candidates() {
   say "Resolving an online ForkMesh mirror to clone from…"
   resolve_install_node
   local _node
-  for _node in $FORKMESH_NODES; do
-    REPO_CANDIDATES+=("${FORKMESH_HOST%/}/${_node}/${FORKMESH_NAME}")
-  done
+  if [ "$FORKMESH_NODE" = "fallback" ] && [ -n "${FORKMESH_FALLBACK_REPO:-}" ]; then
+    REPO_CANDIDATES+=("$FORKMESH_FALLBACK_REPO")
+  else
+    for _node in $FORKMESH_NODES; do
+      REPO_CANDIDATES+=("${FORKMESH_HOST%/}/${_node}/${FORKMESH_NAME}")
+    done
+  fi
   REPO="${REPO_CANDIDATES[0]}"
   say "Using mirror node: $FORKMESH_NODE"
   if [ "${#REPO_CANDIDATES[@]}" -gt 1 ]; then
