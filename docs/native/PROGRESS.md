@@ -448,6 +448,7 @@ rows of DESKTOP_PARITY.md are left out, since the phone will never have them.
 **11. Marketplace and packages**
 
 - [ ] 11.1 Market: All, Installed and Not installed; install and remove; package settings;… (WS19)
+  - 2026-10-13 (`1990-mobile-market-redesign-ios`, iOS): search above the bar, every sort and filter, usage stats, flat hairline cards, one-tap Install, installed-state fixes ([NAVIGATION.md](NAVIGATION.md) §2.0.93). Core tests green on Linux; not built on the Mac.
 - [ ] 11.2 Package extensions: native package pages, log tabs, search contributions (WS19)
 - [x] 11.3 CRM: pipeline stage strip, contacts, organizations, activity, outreach, tracked… (WS19; iOS and Android 2026-10-02)
 - [ ] 11.4 Marketing: content plan and ads across 100 channels (WS19)
