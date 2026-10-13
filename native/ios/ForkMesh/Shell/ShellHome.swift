@@ -15,6 +15,16 @@ struct ShellHomeTile: Identifiable {
     var id: String { "\(group)/\(item.id)" }
 }
 
+struct ShellHomeLayout {
+    let shown: [ShellMenuGroup]
+    let barItems: [ShellBarItem]
+    let docked: Set<String>
+    let heat: [String: Double]
+    let frequent: Set<String>
+    let tileHeight: CGFloat
+    let tileScale: CGFloat
+}
+
 struct ShellHome: View {
     static let homeId: String = "home"
 
@@ -74,22 +84,36 @@ struct ShellHome: View {
         searchShown || voiceOver || !query.isEmpty
     }
 
-    private var rowCount: Int {
+    private func fittedTileHeight(_ shown: [ShellMenuGroup]) -> CGFloat {
         let across: Int = style.across
-        return shownGroups.reduce(0) { $0 + ($1.items.count + across - 1) / across }
-    }
-
-    private var fittedTileHeight: CGFloat {
+        let rows: Int = shown.reduce(0) { $0 + ($1.items.count + across - 1) / across }
         let fixed: CGFloat =
-            (searchVisible ? searchBlockHeight : 0) + CGFloat(shownGroups.count) * sectionLead + FmSpace.x3
+            (searchVisible ? searchBlockHeight : 0) + CGFloat(shown.count) * sectionLead + FmSpace.x3
         return CGFloat(
             ShellBarOrder.fittedTile(
-                height: Double(viewHeight), fixed: Double(fixed), rows: rowCount, tile: Double(gridTileHeight),
+                height: Double(viewHeight), fixed: Double(fixed), rows: rows, tile: Double(gridTileHeight),
                 minimum: Double(minimumTileHeight)))
     }
 
-    private var tileScale: CGFloat {
-        gridTileHeight > 0 ? fittedTileHeight / gridTileHeight : 1
+    private func makeLayout() -> ShellHomeLayout {
+        let shown: [ShellMenuGroup] = shownGroups
+        let items: [ShellBarItem] = barItems
+        let ids: [String] = homeIds
+        let uses: [String: Int] = prefs.uses
+        var heat: [String: Double] = [:]
+        var frequent: Set<String> = []
+        for id in Set(ids) {
+            if style.highlightFrequent {
+                heat[id] = ShellBarOrder.heat(id, uses: uses, among: ids)
+            }
+            if ShellBarOrder.frequentMark(id, uses: uses, among: ids) != nil {
+                frequent.insert(id)
+            }
+        }
+        let height: CGFloat = fittedTileHeight(shown)
+        return ShellHomeLayout(
+            shown: shown, barItems: items, docked: prefs.barIds(items), heat: heat, frequent: frequent,
+            tileHeight: height, tileScale: gridTileHeight > 0 ? height / gridTileHeight : 1)
     }
 
     private var trimmedQuery: String {
@@ -97,23 +121,24 @@ struct ShellHome: View {
     }
 
     var body: some View {
-        ScrollView {
+        let layout: ShellHomeLayout = makeLayout()
+        return ScrollView {
             if searchVisible {
                 searchField
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
             LazyVGrid(columns: columns, alignment: .leading, spacing: FmSpace.x0) {
-                ForEach(shownGroups) { (group: ShellMenuGroup) in
+                ForEach(layout.shown) { (group: ShellMenuGroup) in
                     if style.headed {
                         Section {
-                            tiles(group)
+                            tiles(group, layout: layout)
                         } header: {
                             sectionHeader(group)
                                 .onDrop(of: [.text], delegate: drop(group.id, near: nil))
                         }
                     } else if style.grouped {
                         Section {
-                            tiles(group)
+                            tiles(group, layout: layout)
                         } header: {
                             Color.clear
                                 .frame(height: FmSpace.x2)
@@ -122,7 +147,7 @@ struct ShellHome: View {
                         }
                     } else {
                         Section {
-                            tiles(group)
+                            tiles(group, layout: layout)
                         }
                     }
                 }
@@ -131,7 +156,7 @@ struct ShellHome: View {
             .padding(.top, style.headed ? 0 : FmSpace.x2)
             .padding(.bottom, FmSpace.x3)
             .background(alignment: .top) { pullSensor }
-            if shownGroups.isEmpty && trimmedQuery.isEmpty {
+            if layout.shown.isEmpty && trimmedQuery.isEmpty {
                 allHidden
             }
             if !trimmedQuery.isEmpty {
@@ -176,9 +201,9 @@ struct ShellHome: View {
         .shellBarNaming($naming, prefs: prefs)
     }
 
-    private func tiles(_ group: ShellMenuGroup) -> some View {
+    private func tiles(_ group: ShellMenuGroup, layout: ShellHomeLayout) -> some View {
         ForEach(ShellHome.tiles(group.items, in: group.id)) { (entry: ShellHomeTile) in
-            tile(entry.item, group: entry.group)
+            tile(entry.item, group: entry.group, layout: layout)
         }
     }
 
@@ -484,14 +509,14 @@ struct ShellHome: View {
         }
     }
 
-    private func tile(_ item: ShellBarItem, group: String) -> some View {
+    private func tile(_ item: ShellBarItem, group: String, layout: ShellHomeLayout) -> some View {
         var shown: ShellBarItem = item
         shown.flightTarget = false
-        let docked: Bool = prefs.inBar(item.id, items: barItems)
+        let docked: Bool = layout.docked.contains(item.id)
         let uses: Int = prefs.uses[item.id] ?? 0
-        let heat: Double = style.highlightFrequent ? ShellBarOrder.heat(item.id, uses: prefs.uses, among: homeIds) : 0
-        let frequent: Double? = ShellBarOrder.frequentMark(item.id, uses: prefs.uses, among: homeIds)
-        let icon: CGFloat = iconSize * min(1, tileScale)
+        let heat: Double = layout.heat[item.id] ?? 0
+        let frequent: Bool = layout.frequent.contains(item.id)
+        let icon: CGFloat = iconSize * min(1, layout.tileScale)
         return Button {
             FmHaptics.selection()
             prefs.drag = nil
@@ -503,14 +528,14 @@ struct ShellHome: View {
             )
             .padding(.horizontal, 2)
             .frame(maxWidth: .infinity)
-            .frame(height: fittedTileHeight)
+            .frame(height: layout.tileHeight)
             .contentShape(RoundedRectangle(cornerRadius: FmRadius.md))
         }
         .buttonStyle(ShellHomeButtonStyle())
         .opacity(prefs.drag == ShellBarDrag(id: item.id, fromBar: false) ? 0.35 : 1)
         .contextMenu {
             ShellBarItemMenu(
-                item: item, items: barItems, prefs: prefs, inBar: false,
+                item: item, items: layout.barItems, prefs: prefs, inBar: false,
                 onName: { (next: ShellBarNaming) in naming = next }, onPackage: onPackage)
             Section {
                 homeMenuItems(hiding: origin(item.id))
@@ -527,7 +552,7 @@ struct ShellHome: View {
         }
         .onDrop(of: [.text], delegate: drop(group, near: item.id))
         .accessibilityLabel(Text(item.title))
-        .accessibilityValue(Text(ShellHome.value(item, docked: docked, uses: uses, frequent: frequent != nil)))
+        .accessibilityValue(Text(ShellHome.value(item, docked: docked, uses: uses, frequent: frequent)))
         .accessibilityAddTraits(item.selected ? [.isSelected, .isButton] : [.isButton])
         .accessibilityIdentifier("shell-home-\(group)-\(item.id)")
         .genieKeepsClear()

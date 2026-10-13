@@ -253,6 +253,17 @@ final class ShellBarPrefs {
         layout.inBar(itemId, items: items, ranking: ranking, keep: ShellBarPrefs.keep, id: \.id)
     }
 
+    func barIds(_ items: [ShellBarItem]) -> Set<String> {
+        var ids: Set<String> = []
+        for slot in layout.barSlots(items, ranking: ranking, keep: ShellBarPrefs.keep, id: \.id) {
+            switch slot {
+            case let .item(item): ids.insert(item.id)
+            case let .folder(_, members): ids.formUnion(members.map(\.id))
+            }
+        }
+        return ids
+    }
+
     func barIsFull(_ items: [ShellBarItem]) -> Bool {
         layout.barIsFull(items, ranking: ranking, keep: ShellBarPrefs.keep, id: \.id)
     }
