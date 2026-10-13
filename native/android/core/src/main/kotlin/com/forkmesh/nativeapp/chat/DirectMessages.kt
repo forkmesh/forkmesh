@@ -117,9 +117,10 @@ object DirectMessageFrames {
         if (jsonText(plain["channel"]) != record.conversation) return null
         val id = jsonText(plain["id"])
         if (id.isEmpty() || id.length > 64) return null
-        val text = jsonText(plain["text"])
+        val viewOnce = ViewOnceCodec.parse(plain[ViewOnceCodec.FIELD])
+        val text = viewOnce?.kind?.text ?: jsonText(plain["text"])
         if (text.length > ChatLimits.MAX_TEXT_CHARS) return null
-        val fileName = jsonText(plain["fileName"]).take(ChatLimits.MAX_FILE_NAME_CHARS)
+        val fileName = if (viewOnce != null) "" else jsonText(plain["fileName"]).take(ChatLimits.MAX_FILE_NAME_CHARS)
         if (text.isEmpty() && fileName.isEmpty()) return null
         val senderId = jsonText(plain["senderId"]).take(64)
         val sender = jsonText(plain["sender"]).take(ChatLimits.MAX_DISPLAY_NAME_CHARS).ifEmpty { record.otherUser }
@@ -218,6 +219,9 @@ class DirectMessageService(
     private val sequence = AtomicInteger()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val serverCopies = HashMap<String, Int>()
+    private val media = ViewOnceClient(api)
+
+    val viewOnce = ViewOnceStore()
 
     @Volatile
     private var focused = ""
@@ -321,6 +325,7 @@ class DirectMessageService(
             }
             for (old in gone) {
                 history.remove(old.conversation)
+                viewOnce.forgetConversation(old.conversation)
             }
             records = merged
             gone.mapNotNull { sockets.remove(it.id) }
@@ -516,6 +521,11 @@ class DirectMessageService(
             }
             sendReceived(holder, refs)
             reseal(holder)
+            records.firstOrNull { it.id == holder.conversationId }?.let { done -> loop.io { refreshViewOnce(done.conversation) } }
+            return
+        }
+        ViewOnceFrames.relayState(envelope)?.let { (mediaId, state) ->
+            applyViewOnceState(holder, mediaId, state)
             return
         }
         DirectMessageFrames.serverCopies(envelope)?.let { stored ->
@@ -581,6 +591,7 @@ class DirectMessageService(
         }
         onFrame?.invoke(plain, record.conversation)
         val message = DirectMessageFrames.chatMessage(plain, record, selfId()) ?: return
+        trackViewOnce(plain, message)
         val added = append(message, record.id)
         notifyListeners()
         if (added && live != null && !message.self) onMessage?.invoke(message)
@@ -692,6 +703,7 @@ class DirectMessageService(
         val frame = LinkedHashMap(plain)
         frame["type"] = "chat"
         val message = DirectMessageFrames.chatMessage(frame, record, selfId()) ?: return false
+        trackViewOnce(frame, message)
         if (!append(message, record.id)) return false
         notifyListeners()
         if (!message.self) onMessage?.invoke(message)
@@ -707,7 +719,10 @@ class DirectMessageService(
 
     private fun keepMeshOnly(record: DirectConversation, plain: Map<String, Any?>, reached: Int): Boolean {
         if (reached <= 0) return false
-        DirectMessageFrames.chatMessage(plain, record, selfId())?.let { append(it, record.id) }
+        DirectMessageFrames.chatMessage(plain, record, selfId())?.let {
+            trackViewOnce(plain, it)
+            append(it, record.id)
+        }
         notifyListeners()
         return true
     }
@@ -749,13 +764,145 @@ class DirectMessageService(
             if (!socket.sendText(frameText)) return keepMeshOnly(record, plain, reached)
             remember(holder, OutboxEntry(OfficeFrames.sentRef(frameText), plain, RoomSeal.wrappedKeyIds(sealed), true, now()))
             onFrame?.invoke(plain, record.conversation)
-            DirectMessageFrames.chatMessage(plain, record, selfId())?.let { append(it, record.id) }
+            DirectMessageFrames.chatMessage(plain, record, selfId())?.let {
+                trackViewOnce(plain, it)
+                append(it, record.id)
+            }
             notifyListeners()
             true
         } catch (error: Exception) {
             lastError = error.message ?: error.toString()
             notifyListeners()
             keepMeshOnly(record, plain, reached)
+        }
+    }
+
+    private fun trackViewOnce(plain: Map<String, Any?>, message: ChatMessage) {
+        val parsed = ViewOnceCodec.parse(plain[ViewOnceCodec.FIELD]) ?: return
+        viewOnce.accept(message.id, message.conversation, parsed, message.self, message.timestamp)
+    }
+
+    private fun applyViewOnceState(holder: RoomSocket?, mediaId: String, state: String) {
+        val updated = viewOnce.update(mediaId, state) ?: return
+        if (updated.state.terminal) forgetViewOnceFrame(holder, mediaId)
+        notifyListeners()
+    }
+
+    private fun forgetViewOnceFrame(holder: RoomSocket?, mediaId: String) {
+        synchronized(lock) {
+            val holders = if (holder != null) listOf(holder) else sockets.values.toList()
+            for (each in holders) {
+                each.outbox.removeAll { ViewOnceCodec.parse(it.plain[ViewOnceCodec.FIELD])?.media == mediaId }
+            }
+        }
+    }
+
+    fun sendViewOnce(
+        conversation: String,
+        kind: ViewOnceKind,
+        mime: String,
+        durationMs: Long,
+        data: ByteArray,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+    ): Boolean {
+        val record = record(conversation) ?: throw ViewOnceException("Open the conversation first.")
+        val type = ViewOnceCodec.normalizeMime(mime)
+        if (type !in kind.mimes) throw ViewOnceException("This recording format cannot be sent.")
+        if (data.isEmpty()) throw ViewOnceException("The recording is empty.")
+        if (data.size.toLong() + ViewOnceCodec.TAG_BYTES > kind.maxBytes) throw ViewOnceException(ViewOnceFrames.errorMessage("media_too_large"))
+        val duration = durationMs.coerceIn(0, kind.maxDurationMs)
+        val key = ViewOnceCrypto.newKey()
+        val iv = ViewOnceCrypto.newIv()
+        val sealed = ViewOnceCrypto.encrypt(data, key, iv)
+        val mediaId = try {
+            media.upload(record.id, kind, sealed, duration, onProgress)
+        } catch (error: OrgApiException) {
+            throw ViewOnceException(ViewOnceFrames.errorMessage(error.code))
+        }
+        val field = ViewOnceCodec.field(
+            ViewOnceMedia(kind, mediaId, key, iv, type, duration, sealed.size.toLong(), ViewOnceCodec.partsFor(sealed.size.toLong())),
+        )
+        key.fill(0)
+        val plain = frame(record, "chat", linkedMapOf("text" to kind.text, ViewOnceCodec.FIELD to field))
+        val sent = sendSealed(record, plain, 0)
+        if (!sent) {
+            runCatching { media.withdraw(record.id, mediaId) }
+            viewOnce.byMedia(mediaId)?.let { viewOnce.mark(it.messageId, ViewOnceState.WITHDRAWN) }
+            forgetViewOnceFrame(null, mediaId)
+            notifyListeners()
+        }
+        return sent
+    }
+
+    fun downloadViewOnce(messageId: String): ByteArray {
+        val entry = viewOnce.entry(messageId) ?: throw ViewOnceException("This message is no longer available.")
+        val conversationId = DirectMessageFrames.conversationId(entry.conversation)
+        if (!entry.playable || conversationId.isEmpty()) throw ViewOnceGone(entry.state.wire)
+        val (key, iv) = viewOnce.keyFor(messageId) ?: throw ViewOnceGone(entry.state.wire)
+        try {
+            val sealed = media.download(conversationId, entry.mediaId, entry.parts, entry.size)
+            return ViewOnceCrypto.decrypt(sealed, key, iv) ?: throw ViewOnceException("The message could not be decrypted.")
+        } catch (gone: ViewOnceGone) {
+            applyViewOnceState(null, entry.mediaId, gone.state)
+            throw gone
+        } catch (error: OrgApiException) {
+            throw ViewOnceException(ViewOnceFrames.errorMessage(error.code))
+        } finally {
+            key.fill(0)
+            iv.fill(0)
+        }
+    }
+
+    fun consumeViewOnce(messageId: String): Boolean {
+        val entry = viewOnce.entry(messageId) ?: return false
+        val conversationId = DirectMessageFrames.conversationId(entry.conversation)
+        if (entry.self || entry.state != ViewOnceState.READY || conversationId.isEmpty()) return false
+        viewOnce.mark(messageId, ViewOnceState.OPENED)
+        viewOnce.needsConsume(entry.mediaId, true)
+        notifyListeners()
+        val done = try {
+            media.consume(conversationId, entry.mediaId)
+            true
+        } catch (gone: ViewOnceGone) {
+            true
+        } catch (_: Exception) {
+            false
+        }
+        if (done) viewOnce.needsConsume(entry.mediaId, false)
+        return done
+    }
+
+    fun withdrawViewOnce(messageId: String): Boolean {
+        val entry = viewOnce.entry(messageId) ?: return false
+        val conversationId = DirectMessageFrames.conversationId(entry.conversation)
+        if (!entry.self || entry.state.terminal || conversationId.isEmpty()) return false
+        val state = try {
+            media.withdraw(conversationId, entry.mediaId)
+        } catch (error: OrgApiException) {
+            throw ViewOnceException(ViewOnceFrames.errorMessage(error.code))
+        }
+        applyViewOnceState(null, entry.mediaId, state)
+        return true
+    }
+
+    fun refreshViewOnce(conversation: String) {
+        val conversationId = DirectMessageFrames.conversationId(conversation)
+        if (conversationId.isEmpty()) return
+        val ids = viewOnce.pending(conversation)
+        if (ids.isEmpty()) return
+        val states = runCatching { media.status(conversationId, ids) }.getOrNull() ?: return
+        for ((mediaId, state) in states) {
+            if (viewOnce.consumeDue(mediaId)) {
+                if (state == "ready") {
+                    viewOnce.byMedia(mediaId)?.let { entry ->
+                        if (runCatching { media.consume(conversationId, mediaId) }.isSuccess) viewOnce.needsConsume(mediaId, false)
+                        if (entry.state != ViewOnceState.OPENED) viewOnce.mark(entry.messageId, ViewOnceState.OPENED)
+                    }
+                    continue
+                }
+                viewOnce.needsConsume(mediaId, false)
+            }
+            applyViewOnceState(null, mediaId, state)
         }
     }
 
