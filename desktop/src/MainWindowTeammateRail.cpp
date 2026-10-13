@@ -1183,6 +1183,11 @@ void MainWindow::refreshTeammateRail()
         delete item;
     }
 
+    auto *title = new QLabel(QStringLiteral("Specials"));
+    title->setObjectName(QStringLiteral("teammateRailTitle"));
+    title->setAlignment(Qt::AlignHCenter);
+    m_teammateRailLayout->addWidget(title, 0, Qt::AlignHCenter);
+
     for (const RailRow &row : std::as_const(rows)) {
         const AgentSession *session =
             row.sessionId > 0 ? findAgentSession(row.sessionId) : nullptr;

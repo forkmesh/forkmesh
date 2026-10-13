@@ -19,7 +19,7 @@ QString packageRailReminderBody(const NativePackageRailTile &tile);
 class PackageRailTileButton final : public QAbstractButton
 {
 public:
-    static constexpr int kSize = 52;
+    static constexpr int kSize = 54;
 
     PackageRailTileButton(const NativePackageRailTile &tile, bool dark,
                           QWidget *parent = nullptr);

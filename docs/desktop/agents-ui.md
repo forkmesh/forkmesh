@@ -1199,7 +1199,7 @@ steps for each one.
   package that answers today; another package can add its own group, headed by
   its `railTitle`.
 - **The square.** `PackageRailTileButton` (`src/PackageRailTile.*`) is a
-  52 px rounded square tinted and bordered by its tone (dashed when paused),
+  54 px rounded square tinted and bordered by its tone (dashed when paused),
   with the count in bold in the middle, the name in 8 px along the bottom and a
   round badge with the number of failing checks in the top right corner. The
   hover lists the state, the count, the details and the next steps.
@@ -1256,6 +1256,13 @@ steps for each one.
   closed deals; its steps refresh from CRM or point at CRM to connect Zoho
   Mail, since a package page cannot open another package from the rail
   ([Marketing README](../../marketplace/packages/marketing/README.md#email-outbound-and-closed-deals-from-crm-and-zoho-1130)).
+- **Lined up with the special agents (2026-10-13).** The operator asked for a
+  heading over the special agents that lines up with **Channels**, and for
+  the channel squares to be the same size as the agents. The special agents
+  rail now opens with a **Specials** label (`#teammateRailTitle`, styled with
+  `#packageRailTitle`), the channel square grew from 52 to 54 px (the
+  special agent item's size) and the channel rail's spacing went from 6 to
+  8 px like the agents rail, so the two columns' squares sit level row by row.
 
 ### Channel reminder (2026-10-07)
 
