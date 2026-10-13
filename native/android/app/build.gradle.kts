@@ -10,6 +10,7 @@ val appIdOverride = (findProperty("forkmesh.appId") as String?)?.trim().orEmpty(
 val resolvedApplicationId = appIdOverride.ifEmpty { "com.forkmesh.nativeapp" }
 val versionCodeOverride = (findProperty("forkmesh.versionCode") as String?)?.trim()?.toIntOrNull()
 val versionNameOverride = (findProperty("forkmesh.versionName") as String?)?.trim().orEmpty()
+val changelogOverride = (findProperty("forkmesh.changelog") as String?)?.trim().orEmpty()
 val releaseSigningEnvironment = mapOf(
     "storeFile" to System.getenv("FORKMESH_ANDROID_KEYSTORE"),
     "storePassword" to System.getenv("FORKMESH_ANDROID_KEYSTORE_PASSWORD"),
@@ -64,6 +65,31 @@ android {
 
     buildFeatures {
         compose = true
+    }
+}
+
+abstract class BundleChangelog : DefaultTask() {
+    @get:InputFile
+    abstract val source: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val target = outputDir.get().asFile
+        target.mkdirs()
+        source.get().asFile.copyTo(target.resolve("changelog.json"), overwrite = true)
+    }
+}
+
+val bundleChangelog = tasks.register<BundleChangelog>("bundleChangelog") {
+    source.set(if (changelogOverride.isEmpty()) file("src/changelog/changelog.json") else file(changelogOverride))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(bundleChangelog, BundleChangelog::outputDir)
     }
 }
 
