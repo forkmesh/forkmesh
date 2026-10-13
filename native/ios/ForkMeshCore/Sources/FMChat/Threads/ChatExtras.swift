@@ -395,7 +395,6 @@ public final class ChatExtras {
             return
         }
         typingState[target] = peers.isEmpty ? nil : peers
-        changed()
     }
 
     private func applyInvite(_ frame: JSONObject) {
