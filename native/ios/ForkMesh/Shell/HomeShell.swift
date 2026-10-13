@@ -73,6 +73,7 @@ struct HomeShell: View {
     @State var genie: GenieHub = GenieHub.shared
     @State var genieLater: [PaletteCommand] = []
     @State var genieDevice: AgentDeviceRun?
+    @State var live: ThrottledSnapshot<ShellLiveCounts>?
 
     private let navigator: AppNavigator
     private let auth: AuthService?
@@ -120,7 +121,7 @@ struct HomeShell: View {
         let signedIn: Bool = userStatus?.signedIn ?? false
         return ShellTopBarState(
             relayState: model.relayState,
-            onlineCount: model.onlineCount,
+            onlineCount: liveCounts.onlineCount,
             name: shellAccountLabel(session, displayName: settings?.displayName ?? "", identityShortKey: identityKey),
             avatarPng: session?.avatarPng ?? "",
             notificationUnread: notifications?.unreadCount ?? 0,
@@ -149,10 +150,15 @@ struct HomeShell: View {
     }
 
     private var badges: [AppTab: Int] {
-        [.chat: model.chatUnread, .inbox: notifications?.unreadCount ?? 0]
+        [.chat: liveCounts.chatUnread, .inbox: notifications?.unreadCount ?? 0]
+    }
+
+    private var liveCounts: ShellLiveCounts {
+        live?.value ?? ShellLiveCounts()
     }
 
     private var primaryBarItems: [ShellBarItem] {
+        let live: ShellLiveCounts = liveCounts
         let order: [Int] = HomeShellCatalog.bottomBarOrder
         let selectedIndex: Int = HomeShellCatalog.index(of: router.selectedTab)
         let counts: ShellCounts = ShellCounts.shared
@@ -172,10 +178,10 @@ struct HomeShell: View {
                 count = notifications?.inboxTotal
             case .code:
                 badge = 0
-                count = ShellNavigatorCounts.shared.count(.repos)
+                count = live.repos
             case .chat:
-                badge = model.chatUnread
-                count = model.onlineCount
+                badge = live.chatUnread
+                count = live.onlineCount
             }
             return ShellBarItem(
                 id: label, title: label, symbol: HomeShell.tabSymbol(tab, selected: selected), badge: badge,
@@ -211,41 +217,21 @@ struct HomeShell: View {
         return items
     }
 
-    private func hubBadge(_ action: HubItem.Action) -> (count: Int, running: Bool) {
-        guard case let .route(route) = action else { return (0, false) }
-        switch route.kind {
-        case .timers: return (ShellCounts.shared.timers, true)
-        case .hosts: return (runnerAttention?.items.count ?? 0, false)
-        case .status: return (fleet?.watchedLights.filter { !$0.healthy }.count ?? 0, false)
-        default: return (0, false)
-        }
-    }
-
-    private func hubActive(_ action: HubItem.Action) -> Bool {
+    nonisolated static func runsBadge(_ action: HubItem.Action) -> Bool {
         guard case let .route(route) = action else { return false }
-        return ShellNavigatorCounts.shared.active(route.kind)
-    }
-
-    private func hubCount(_ action: HubItem.Action) -> Int? {
-        guard case let .route(route) = action else { return nil }
-        switch route.kind {
-        case .network: return model.onlineCount
-        case .hosts: return fleet?.runners.count
-        case .status: return fleet?.watchedLights.count
-        default: return ShellNavigatorCounts.shared.count(route.kind)
-        }
+        return route.kind == .timers
     }
 
     private var hubBarGroups: [ShellMenuGroup] {
-        HubGroups.current(guest: auth?.isGuest ?? false).map { (group: HubGroup) -> ShellMenuGroup in
+        let live: ShellLiveCounts = liveCounts
+        return HubGroups.current(guest: auth?.isGuest ?? false).map { (group: HubGroup) -> ShellMenuGroup in
             let items: [ShellBarItem] = group.items
                 .filter { HomeShell.movesToBar($0.action) }
                 .map { (item: HubItem) -> ShellBarItem in
-                    let badge: (count: Int, running: Bool) = hubBadge(item.action)
-                    return ShellBarItem(
-                        id: item.id, title: item.title, symbol: item.symbol, badge: badge.count,
-                        selected: false, kind: .action, running: badge.running, active: hubActive(item.action),
-                        count: hubCount(item.action),
+                    ShellBarItem(
+                        id: item.id, title: item.title, symbol: item.symbol, badge: live.hubBadges[item.id] ?? 0,
+                        selected: false, kind: .action, running: HomeShell.runsBadge(item.action),
+                        active: live.hubActive.contains(item.id), count: live.hubCounts[item.id],
                         action: { hubAction(item.action) })
                 }
             return ShellMenuGroup(id: group.id, title: group.title, items: items)
@@ -976,6 +962,11 @@ struct HomeShell: View {
             return
         }
         started = true
+        if live == nil {
+            let auth: AuthService? = self.auth
+            live = ShellLiveCounts.snapshot(
+                chat: model.chat, fleet: fleet, attention: runnerAttention, guest: { auth?.isGuest ?? false })
+        }
         attachGenie()
         if !router.restored {
             router.load(savedNavigation)
