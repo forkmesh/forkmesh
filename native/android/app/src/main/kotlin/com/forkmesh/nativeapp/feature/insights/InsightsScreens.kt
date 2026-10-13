@@ -274,14 +274,18 @@ internal class StatusScreen : Screen() {
                                         current.onlineNodes?.let { "$it nodes online" },
                                         current.catalogRepos?.let { "$it repositories" },
                                         current.errors24h?.let { "$it errors in 24 h" },
-                                        current.mainnodeOnline?.let { if (it) "main node online" else "main node offline" },
+                                        current.mainnodeOnline?.let { if (it) "verified mirror online" else "verified mirror offline" },
                                     )
                                     if (facts.isNotEmpty()) Text(facts.joinToString(" · "), style = Fm.text.bodySmall.copy(color = c.textSecondary))
                                 }
                             }
                         }
-                        item { FmSectionHeader("Systems", count = value.coreSystems.size) }
-                        items(value.coreSystems, key = { it.id }) { SystemRow(it) }
+                        item { FmSectionHeader("Systems", count = value.serviceSystems.size) }
+                        items(value.serviceSystems, key = { it.id }) { SystemRow(it) }
+                        if (value.nodeSystems.isNotEmpty()) {
+                            item { FmSectionHeader("Nodes", count = value.nodeSystems.size) }
+                            items(value.nodeSystems, key = { it.id }) { SystemRow(it) }
+                        }
                         if (value.mirrorSystems.isNotEmpty()) {
                             item { FmSectionHeader("Mirrors", count = value.mirrorSystems.size) }
                             items(value.mirrorSystems, key = { it.id }) { SystemRow(it) }

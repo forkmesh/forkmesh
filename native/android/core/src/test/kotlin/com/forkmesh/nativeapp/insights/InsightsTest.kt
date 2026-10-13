@@ -142,6 +142,14 @@ class InsightsTest {
         assertEq("1 system is down", report.headline)
         assertEq(listOf("relay"), report.down.map { it.id })
         assertEq(1, report.mirrorSystems.size)
+        val withNodes = StatusReport.fromJson(statusJson + ("systems" to listOf(
+            mapOf("id" to "website", "status" to "operational"),
+            mapOf("id" to "core:n2", "status" to "operational"),
+            mapOf("id" to "runner:fmnext-r1", "status" to "operational"),
+            mapOf("id" to "mirror:m1", "status" to "down"),
+        )))
+        assertEq(listOf("website"), withNodes.serviceSystems.map { it.id })
+        assertEq(listOf("core:n2", "runner:fmnext-r1"), withNodes.nodeSystems.map { it.id })
         near(99.9, report.websiteUptime24h)
         assertEq("timeout", report.systems[1].reason)
         assertEq("", report.current.monitoringState)
