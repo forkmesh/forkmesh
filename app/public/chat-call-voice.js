@@ -5,6 +5,9 @@ export const CALL_VOICE_OFF = "off";
 export const CALL_VOICE_PROCESSOR = "fm-call-voice";
 export const CALL_VOICE_WORKLET_URL = "/chat-call-voice-worklet.js";
 const RESUME_TIMEOUT_MS = 2000;
+const MONITOR_RAMP_S = 0.015;
+const HEADPHONE_LABEL = /head(phone|set)|ear(bud|phone)|airpod|buds|bluetooth|hands-?free|\bbt\b|wireless/i;
+const SPEAKER_LABEL = /speaker|built-?in output|display audio|hdmi/i;
 
 export const CALL_VOICES = Object.freeze([
   Object.freeze({ id: "maya", label: "Maya", pitchHz: 196, tract: 1.14, brightness: 0, breath: 0.04 }),
@@ -86,6 +89,21 @@ export function rememberCallerPitch(hz, storage = globalThis.localStorage) {
   } catch (_) {}
 }
 
+export function headphonesInLabels(labels) {
+  return (labels || []).some((label) => HEADPHONE_LABEL.test(label) && !SPEAKER_LABEL.test(label));
+}
+
+export async function headphonesLikely(globalRef = globalThis) {
+  try {
+    const devices = await globalRef.navigator.mediaDevices.enumerateDevices();
+    const outputs = devices.filter((device) => device.kind === "audiooutput");
+    const chosen = outputs.filter((device) => device.deviceId === "default");
+    return headphonesInLabels((chosen.length ? chosen : outputs).map((device) => device.label || ""));
+  } catch (_) {
+    return false;
+  }
+}
+
 export async function createVoiceStage({
   sourceTrack,
   voiceId = "",
@@ -114,8 +132,12 @@ export async function createVoiceStage({
     });
     const destination = context.createMediaStreamDestination();
     destination.channelCount = 1;
+    const monitorGain = context.createGain();
+    monitorGain.gain.value = 0;
     source.connect(node);
     node.connect(destination);
+    node.connect(monitorGain);
+    let monitoring = false;
     if (context.state !== "running") {
       await Promise.race([
         Promise.resolve(context.resume()).catch(() => {}),
@@ -140,6 +162,30 @@ export async function createVoiceStage({
       voice: () => current,
       stats: () => latest,
       latencyMs: () => Math.round(((context.baseLatency || 0) * 1000)) + (latest?.latencyMs || 0),
+      monitorLatencyMs: () => Math.round(((context.baseLatency || 0) + (context.outputLatency || 0)) * 1000) +
+        (latest?.latencyMs || 0),
+      monitoring: () => monitoring,
+      monitor(on) {
+        if (stopped) return false;
+        const next = Boolean(on);
+        if (next === monitoring) return monitoring;
+        monitoring = next;
+        const now = context.currentTime;
+        if (next) monitorGain.connect(context.destination);
+        monitorGain.gain.cancelScheduledValues(now);
+        monitorGain.gain.setValueAtTime(monitorGain.gain.value, now);
+        monitorGain.gain.linearRampToValueAtTime(next ? 1 : 0, now + MONITOR_RAMP_S);
+        if (!next) {
+          globalRef.setTimeout(() => {
+            if (!monitoring && !stopped) {
+              try {
+                monitorGain.disconnect();
+              } catch (_) {}
+            }
+          }, MONITOR_RAMP_S * 1000 + 50);
+        }
+        return monitoring;
+      },
       setVoice(id) {
         if (stopped) return current;
         current = callVoiceById(id)?.id || "";
@@ -153,6 +199,7 @@ export async function createVoiceStage({
           node.port.postMessage({ type: "stop" });
           source.disconnect();
           node.disconnect();
+          monitorGain.disconnect();
         } catch (_) {}
         try {
           track.stop();
@@ -165,4 +212,117 @@ export async function createVoiceStage({
     Promise.resolve(context.close()).catch(() => {});
     throw error;
   }
+}
+
+export async function createVoicePreview({
+  micStream = null,
+  choice = null,
+  faceId = "",
+  storage = globalThis.localStorage,
+  moduleUrl = CALL_VOICE_WORKLET_URL,
+  getUserMediaImpl = (constraints) => globalThis.navigator.mediaDevices.getUserMedia(constraints),
+  createVoiceStageImpl = createVoiceStage,
+  headphonesImpl = () => headphonesLikely(),
+  globalRef = globalThis,
+} = {}) {
+  const ownStream = !micStream;
+  const stream = micStream || await getUserMediaImpl({
+    audio: { echoCancellation: true, noiseSuppression: true },
+  });
+  const mic = stream.getAudioTracks()[0];
+  let currentChoice = normalizeVoiceChoice(choice ?? savedVoiceChoice(storage));
+  let currentFace = String(faceId || "");
+  let stage = null;
+  try {
+    stage = await createVoiceStageImpl({
+      sourceTrack: mic,
+      voiceId: resolveCallVoice(currentChoice, currentFace),
+      userPitchHz: savedCallerPitch(storage),
+      moduleUrl,
+      onStats: (stats) => rememberCallerPitch(stats?.userPitchHz, storage),
+      globalRef,
+    });
+  } catch (_) {
+    stage = null;
+  }
+  const headphones = await Promise.resolve(headphonesImpl()).catch(() => false);
+  if (stage && headphones) stage.monitor(true);
+  const apply = () => stage?.setVoice(resolveCallVoice(currentChoice, currentFace));
+  return {
+    stream,
+    supported: Boolean(stage),
+    headphones,
+    track: () => stage?.track || mic || null,
+    voice: () => stage?.voice() || "",
+    choice: () => currentChoice,
+    setChoice(next) {
+      currentChoice = normalizeVoiceChoice(next);
+      rememberVoiceChoice(currentChoice, storage);
+      apply();
+      return currentChoice;
+    },
+    setFace(id) {
+      currentFace = String(id || "");
+      apply();
+    },
+    monitor: (on) => (stage ? stage.monitor(on) : false),
+    monitoring: () => Boolean(stage?.monitoring()),
+    monitorLatencyMs: () => stage?.monitorLatencyMs() || 0,
+    stop({ keepStream = !ownStream } = {}) {
+      stage?.stop();
+      stage = null;
+      if (!keepStream) for (const track of stream.getTracks()) track.stop();
+    },
+  };
+}
+
+export function mountVoicePreviewControls(container, preview, { documentRef = globalThis.document } = {}) {
+  if (!container || !preview) return () => {};
+  const row = documentRef.createElement("div");
+  row.className = "chat-call-voice-preview";
+  const label = documentRef.createElement("label");
+  label.className = "chat-call-face chat-call-voice";
+  const caption = documentRef.createElement("span");
+  caption.textContent = "Voice";
+  const select = documentRef.createElement("select");
+  select.setAttribute("data-voice-preview", "choice");
+  for (const [value, text] of callVoiceChoices()) {
+    const option = documentRef.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    select.append(option);
+  }
+  select.value = preview.choice();
+  const state = documentRef.createElement("span");
+  state.setAttribute("aria-live", "polite");
+  label.append(caption, select, state);
+  const hear = documentRef.createElement("button");
+  hear.type = "button";
+  hear.setAttribute("data-voice-preview", "monitor");
+  const hint = documentRef.createElement("p");
+  hint.className = "chat-call-meta";
+  const render = () => {
+    state.textContent = "Voice: " + callVoiceLabel(preview.voice());
+    const on = preview.monitoring();
+    hear.textContent = on ? "Stop hearing myself" : "Hear myself";
+    hear.setAttribute("aria-pressed", on ? "true" : "false");
+    hear.disabled = !preview.supported;
+    hint.textContent = !preview.supported
+      ? "Voice changing is not available in this browser."
+      : preview.headphones
+        ? "Headphones detected: you hear your changed voice as the other person will."
+        : "Use headphones to hear yourself; on a speaker your voice will echo and may howl.";
+  };
+  select.addEventListener("change", () => {
+    preview.setChoice(select.value);
+    render();
+  });
+  hear.addEventListener("click", () => {
+    preview.monitor(!preview.monitoring());
+    render();
+  });
+  row.append(label, hear, hint);
+  container.append(row);
+  render();
+  return () => row.remove();
 }

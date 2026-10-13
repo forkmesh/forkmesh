@@ -75,6 +75,8 @@ private data class DirectCallView(
     val cameraOff: Boolean,
     val face: String,
     val available: Boolean,
+    val voiceChoice: String = DirectCallEngine.VOICE_MATCH_FACE,
+    val voice: String = "",
 )
 
 private fun DirectCallEngine.view(): DirectCallView = DirectCallView(
@@ -87,6 +89,8 @@ private fun DirectCallEngine.view(): DirectCallView = DirectCallView(
     cameraOff = cameraOff,
     face = face,
     available = available,
+    voiceChoice = voiceChoice,
+    voice = voice,
 )
 
 private fun callPermissions(kind: DirectCallKind): Array<String> =
@@ -245,6 +249,13 @@ private fun DirectCallScreen(state: DirectCallView) {
             )
             Spacer(Modifier.height(FmSpace.x1))
             Text(state.status, color = Color.White.copy(alpha = .75f), style = Fm.text.bodyMedium)
+            if (state.voice.isNotEmpty()) {
+                Text(
+                    "Voice: ${DirectCallEngine.voiceLabel(state.voice)}",
+                    color = Color.White.copy(alpha = .75f),
+                    style = Fm.text.bodySmall,
+                )
+            }
         }
         Row(
             Modifier
@@ -281,6 +292,16 @@ private fun DirectCallScreen(state: DirectCallView) {
                     }
                 }
             }
+            CallRoundButton(
+                icon = "graphic_eq",
+                label = "Voice: ${DirectCallEngine.voiceLabel(state.voice)}",
+                background = if (state.voice.isEmpty()) Color.White.copy(alpha = .18f) else colors.accent,
+            ) {
+                scope.launch {
+                    val choice = pickCallVoice(messenger, state.voiceChoice) ?: return@launch
+                    DirectCallFeature.run { it.setVoiceChoice(choice) }
+                }
+            }
             CallRoundButton(icon = "call_end", label = "Hang up", background = colors.danger) {
                 DirectCallFeature.run { it.hangUp() }
             }
@@ -302,6 +323,31 @@ private suspend fun pickCallFace(messenger: FmMessenger, current: String): Strin
                 FmListRow(
                     title = label,
                     leading = { FmIconTile(icon = if (id.isEmpty()) "face" else "theater_comedy") },
+                    trailing = if (id == current) ({ FmIcon("check", size = 20.dp, tint = Fm.colors.accent) }) else null,
+                    showChevron = false,
+                    onTap = { close(id) },
+                )
+            }
+        }
+    }
+
+private suspend fun pickCallVoice(messenger: FmMessenger, current: String): String? =
+    messenger.showModalBottomSheet<String> { close ->
+        Column(Modifier.padding(bottom = FmSpace.x4)) {
+            Text(
+                "Voice",
+                modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2),
+                style = Fm.text.titleMedium.copy(color = Fm.colors.textPrimary),
+            )
+            val options = listOf(
+                DirectCallEngine.VOICE_MATCH_FACE to "Match face",
+                DirectCallEngine.VOICE_OFF to "Your own voice",
+            ) + DirectCallEngine.VOICES.map { it.id to it.label }
+            options.forEachIndexed { index, (id, label) ->
+                if (index > 0) FmRowDivider()
+                FmListRow(
+                    title = label,
+                    leading = { FmIconTile(icon = if (id == DirectCallEngine.VOICE_OFF) "mic" else "graphic_eq") },
                     trailing = if (id == current) ({ FmIcon("check", size = 20.dp, tint = Fm.colors.accent) }) else null,
                     showChevron = false,
                     onTap = { close(id) },

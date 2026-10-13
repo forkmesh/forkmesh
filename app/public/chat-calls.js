@@ -654,8 +654,8 @@ export function createChatCalls({
   faceSelect?.addEventListener("change", () => {
     rememberFace(callFaceById(faceSelect.value)?.id || "");
     useFace(faceSelect.value);
+    void applyVoice();
   });
-  faceSelect?.addEventListener("change", () => void applyVoice());
   if (voiceSelect && !voiceSelect.options.length) {
     for (const [value, label] of callVoiceChoices()) {
       const option = documentRef.createElement("option");
@@ -690,5 +690,6 @@ export function createChatCalls({
     voiceChoice: () => call?.voiceChoice || savedVoiceChoice(storage),
     voice: () => call?.voiceStage?.voice() || "",
     voiceReady: () => call?.voiceStarting || Promise.resolve(),
+    monitorVoice: (on) => Boolean(call?.voiceStage?.monitor(on)),
   };
 }
