@@ -105,7 +105,7 @@ class MarketTest {
             mapOf(
                 "packages" to listOf(
                     mapOf("id" to "crm", "name" to "CRM", "category" to "Business", "dataScope" to "organization", "surfaces" to mapOf("desktop" to true)),
-                    mapOf("id" to "notes", "name" to "", "bundled" to true, "dataScope" to "account"),
+                    mapOf("id" to "notes", "name" to "", "bundled" to true, "default" to true, "accountSync" to true, "dataScope" to "account"),
                     mapOf("id" to "Bad", "name" to "x"),
                     mapOf("id" to "skins", "name" to "Skins", "category" to "Look", "surfaces" to mapOf("web" to "/skins"), "permissions" to listOf(mapOf("id" to "p", "label" to "l"))),
                     mapOf("id" to "orb", "name" to "Orb", "surfaces" to mapOf("world" to true)),
@@ -144,6 +144,90 @@ class MarketTest {
         assertEq("That organization was not found, or you are not a member.", model.errorText)
         assertEq(MarketFilter.NOT_INSTALLED, MarketFilter.of("not-installed"))
         assertEq("5.0 (2)", RatingSummary.fromJson(mapOf("average" to 7.0, "count" to 2)).label)
+    }
+
+    fun testInstallStateFollowsWhatThePhoneCanKnow() {
+        val transport = FakeTransport()
+        transport.answer(
+            "GET", "/api/market/packages",
+            mapOf(
+                "packages" to listOf(
+                    mapOf("id" to "winamp", "name" to "Winamp Classic", "category" to "Themes", "type" to "theme", "bundled" to true, "surfaces" to mapOf("desktop" to true)),
+                    mapOf("id" to "capture", "name" to "Capture", "category" to "Utilities", "type" to "extension.native", "bundled" to true, "default" to true, "surfaces" to mapOf("desktop" to true)),
+                    mapOf("id" to "crm", "name" to "CRM", "category" to "Business", "dataScope" to "organization", "bundled" to true, "surfaces" to mapOf("desktop" to true, "web" to "/crm")),
+                    mapOf("id" to "agents", "name" to "Agents", "category" to "Agents", "bundled" to true, "accountSync" to true, "installedBefore" to "2026-10-11"),
+                    mapOf("id" to "sign-in", "name" to "Sign in", "category" to "Account", "bundled" to true),
+                    mapOf("id" to "orb", "name" to "Orb", "category" to "3D", "type" to "virtual.object", "free" to false, "surfaces" to mapOf("world" to true)),
+                ),
+            ),
+        )
+        transport.answer("GET", "/api/market/installs", mapOf("packages" to mapOf("winamp" to mapOf("installs" to 1500, "downloads" to 4000), "crm" to mapOf("installs" to 12, "downloads" to 30))))
+        transport.answer(
+            "GET", "/api/market/reviews/summary",
+            mapOf(
+                "packages" to mapOf("orb" to mapOf("average" to 4.5, "count" to 2), "crm" to mapOf("average" to 3.0, "count" to 9)),
+                "usage" to mapOf("agents" to mapOf("people" to 40, "opens" to 300), "crm" to mapOf("people" to 5, "opens" to 9)),
+            ),
+        )
+        transport.answer("GET", "/api/plugins/acme", mapOf("organization" to "acme", "role" to "owner", "canManage" to true, "plugins" to listOf(mapOf("id" to "crm", "installed" to true))))
+        var legacy = true
+        val model = MarketModel(PackagesClient(transport)) { if (it == "sign-in") false else if (it == "crm") true else null }
+        model.legacy = { legacy }
+        model.refresh(listOf("acme"))
+        val pkg = { id: String -> model.pkg(id)!! }
+
+        expect(!model.isInstalled(pkg("winamp")), "a bundled desktop package is not installed just because it ships with the desktop")
+        expect(model.isInstalled(pkg("capture")), "a default desktop package is on")
+        assertEq(MarketCardAction.DESKTOP, model.cardAction(pkg("winamp"), opens = false))
+        assertEq(PackageInstallMode.DESKTOP, model.installMode(pkg("winamp")))
+        assertEq(PackageInstallMode.PHONE, model.installMode(pkg("sign-in")))
+        assertEq(MarketCardAction.INSTALL_ON_PHONE, model.cardAction(pkg("sign-in"), opens = true))
+
+        expect(model.isInstalled(pkg("agents")), "an account package the store does not know yet follows the legacy fallback")
+        legacy = false
+        expect(!model.isInstalled(pkg("agents")))
+        assertEq(MarketCardAction.INSTALL, model.cardAction(pkg("agents"), opens = true))
+
+        expect(model.isInstalled(pkg("crm")))
+        assertEq(MarketCardAction.OPEN, model.cardAction(pkg("crm"), opens = true))
+        transport.answer("GET", "/api/plugins/acme", mapOf("error" to "unavailable"), 503)
+        model.refresh(listOf("acme"))
+        expect(model.isInstalled(pkg("crm")), "a failed organization fetch keeps the last known install")
+        expect(!model.organizationsComplete)
+        val fresh = MarketModel(PackagesClient(transport)) { null }
+        fresh.organizationCache = { it == "crm" }
+        fresh.refresh(null)
+        expect(fresh.isInstalled(fresh.pkg("crm")!!), "unknown organizations fall back to the Home gate's cached answer")
+        fresh.organizationCache = { null }
+        expect(!fresh.isInstalled(fresh.pkg("crm")!!))
+        assertEq(MarketCardAction.NEEDS_ORGANIZATION, fresh.cardAction(fresh.pkg("crm")!!, opens = true))
+
+        assertEq(PackageUsage(40, 300), model.usage["agents"])
+        assertEq(listOf("★ 3.0 (9)", "12 installs", "5 users"), MarketText.stats(model.counts["crm"], model.usage["crm"], model.ratings["crm"]))
+        assertEq(listOf("1.5k installs"), MarketText.stats(model.counts["winamp"], null, null))
+        assertEq("12k", MarketText.compact(12_345))
+        assertEq("World object", MarketText.typeLabel("virtual.object"))
+
+        model.options = MarketOptions(sort = MarketSort.INSTALLS)
+        assertEq(listOf("winamp", "crm"), model.shelves.single().packages.take(2).map { it.id })
+        model.options = MarketOptions(sort = MarketSort.USED)
+        assertEq(listOf("agents", "crm"), model.shelves.single().packages.take(2).map { it.id })
+        model.options = MarketOptions(sort = MarketSort.RATING)
+        assertEq(listOf("orb", "crm"), model.shelves.single().packages.take(2).map { it.id })
+        model.options = MarketOptions(sort = MarketSort.NAME, price = MarketPrice.PAID)
+        assertEq(listOf("orb"), model.visible.map { it.id })
+        model.options = MarketOptions(platform = MarketPlatform.WEB)
+        assertEq(listOf("crm"), model.visible.map { it.id })
+        model.options = MarketOptions(platform = MarketPlatform.PHONE)
+        assertEq(listOf("agents", "crm", "sign-in"), model.visible.map { it.id }.sorted())
+        model.options = MarketOptions(mode = PackageInstallMode.DESKTOP, type = "theme")
+        assertEq(listOf("winamp"), model.visible.map { it.id })
+        assertEq(2, model.options.activeFilters)
+        model.options = MarketOptions(category = "Business")
+        assertEq(listOf("crm"), model.visible.map { it.id })
+        assertEq(MarketOptions(), model.options.cleared())
+        assertEq(listOf("3D", "Account", "Agents", "Business", "Themes", "Utilities"), model.categories)
+        assertEq(MarketSort.USED, MarketSort.of("used"))
     }
 
     fun testDependentPackagesAreNestedUnderTheirParent() {

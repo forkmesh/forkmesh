@@ -198,6 +198,8 @@ class PackagesClient(val transport: PackagesTransport) {
     fun ratingSummaries(): Map<String, RatingSummary> =
         call("GET", "/api/market/reviews/summary").obj("packages").mapValues { (_, value) -> RatingSummary.fromJson(value.asMap()) }
 
+    fun marketSummary(): MarketSummary = MarketSummary.fromJson(call("GET", "/api/market/reviews/summary"))
+
     fun organizationPackages(organization: String): OrgPackageState =
         OrgPackageState.fromJson(call("GET", "/api/plugins/" + segment(organization)))
 

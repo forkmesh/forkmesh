@@ -128,6 +128,106 @@ data class MarketPackage(
 
 data class PackageCounts(val installs: Int = 0, val downloads: Int = 0)
 
+data class PackageUsage(val people: Int = 0, val opens: Int = 0) {
+    companion object {
+        fun fromJson(json: JsonMap) = PackageUsage(maxOf(0, json.int("people")), maxOf(0, json.int("opens")))
+    }
+}
+
+data class MarketSummary(val ratings: Map<String, RatingSummary> = emptyMap(), val usage: Map<String, PackageUsage> = emptyMap()) {
+    companion object {
+        @Suppress("UNCHECKED_CAST")
+        fun fromJson(json: JsonMap) = MarketSummary(
+            json.obj("packages").mapValues { (_, value) -> RatingSummary.fromJson(value as? JsonMap ?: emptyMap()) },
+            json.obj("usage").mapValues { (_, value) -> PackageUsage.fromJson(value as? JsonMap ?: emptyMap()) },
+        )
+    }
+}
+
+enum class PackageInstallMode(val title: String) {
+    ACCOUNT("Your account"), ORGANIZATION("Organizations"), PHONE("This phone"), DESKTOP("Desktop app")
+}
+
+enum class MarketSort(val wire: String, val title: String) {
+    FEATURED("featured", "Featured"),
+    INSTALLS("installs", "Most installed"),
+    DOWNLOADS("downloads", "Most downloaded"),
+    USED("used", "Most used"),
+    RATING("rating", "Top rated"),
+    NAME("name", "Name A–Z");
+
+    companion object {
+        fun of(wire: String?): MarketSort = entries.firstOrNull { it.wire == wire?.lowercase() } ?: FEATURED
+    }
+}
+
+enum class MarketPrice(val title: String) {
+    ANY("Any price"), FREE("Free"), PAID("Paid");
+
+    fun matches(pkg: MarketPackage): Boolean = when (this) {
+        ANY -> true
+        FREE -> pkg.free
+        PAID -> !pkg.free
+    }
+}
+
+enum class MarketPlatform(val title: String) {
+    ANY("Any platform"), PHONE("Phone"), DESKTOP("Desktop"), WEB("Web"), WORLD("World");
+
+    fun matches(pkg: MarketPackage): Boolean = when (this) {
+        ANY -> true
+        PHONE -> PackagePlaces.MOBILE in pkg.places && (pkg.phoneSurface is PackagePhoneSurface.Native || pkg.phoneSurface is PackagePhoneSurface.Web)
+        DESKTOP -> pkg.desktop
+        WEB -> pkg.webRoute.isNotEmpty()
+        WORLD -> pkg.world
+    }
+}
+
+data class MarketOptions(
+    val sort: MarketSort = MarketSort.FEATURED,
+    val category: String = "",
+    val type: String = "",
+    val price: MarketPrice = MarketPrice.ANY,
+    val platform: MarketPlatform = MarketPlatform.ANY,
+    val mode: PackageInstallMode? = null,
+) {
+    val activeFilters: Int
+        get() = listOf(category.isNotEmpty(), type.isNotEmpty(), price != MarketPrice.ANY, platform != MarketPlatform.ANY, mode != null).count { it }
+
+    fun cleared(): MarketOptions = MarketOptions(sort = sort)
+}
+
+enum class MarketCardAction { OPEN, INSTALLED, INSTALL, INSTALL_ON_PHONE, PICK_ORGANIZATION, NEEDS_ORGANIZATION, DESKTOP }
+
+object MarketText {
+    fun typeLabel(type: String): String = when (type) {
+        "" -> "Other"
+        "extension.native" -> "Extension"
+        "extension.vscode" -> "VS Code extension"
+        "agent" -> "Agent"
+        "theme" -> "Theme"
+        "virtual.object" -> "World object"
+        "virtual.world" -> "World"
+        else -> type.substringAfterLast('.').replace('-', ' ').replaceFirstChar { it.uppercase() }
+    }
+
+    fun compact(value: Int): String = when {
+        value < 1000 -> value.toString()
+        value < 10_000 -> trimmed(value / 1000.0) + "k"
+        value < 1_000_000 -> (value / 1000).toString() + "k"
+        else -> trimmed(value / 1_000_000.0) + "M"
+    }
+
+    private fun trimmed(value: Double): String = String.format(Locale.US, "%.1f", Math.floor(value * 10) / 10).removeSuffix(".0")
+
+    fun stats(counts: PackageCounts?, usage: PackageUsage?, rating: RatingSummary?): List<String> = listOfNotNull(
+        rating?.takeIf { it.count > 0 }?.let { String.format(Locale.US, "★ %.1f (%s)", it.average, compact(it.count)) },
+        counts?.installs?.takeIf { it > 0 }?.let { "${compact(it)} ${if (it == 1) "install" else "installs"}" },
+        usage?.people?.takeIf { it > 0 }?.let { "${compact(it)} ${if (it == 1) "user" else "users"}" },
+        counts?.downloads?.takeIf { it > 0 && (counts.installs <= 0) }?.let { "${compact(it)} ${if (it == 1) "download" else "downloads"}" },
+    )
+}
+
 data class RatingSummary(val average: Double = 0.0, val count: Int = 0, val histogram: List<Int> = listOf(0, 0, 0, 0, 0)) {
     val label: String get() = if (count == 0) "No ratings yet" else String.format(Locale.US, "%.1f (%d)", average, count)
 
@@ -401,7 +501,11 @@ class MarketModel(
         private set
     var ratings: Map<String, RatingSummary> = emptyMap()
         private set
+    var usage: Map<String, PackageUsage> = emptyMap()
+        private set
     var organizations: List<OrgPackageState> = emptyList()
+        private set
+    var organizationsComplete: Boolean = false
         private set
     var errorText: String = ""
         private set
@@ -410,8 +514,11 @@ class MarketModel(
     var removed: PackageRemoval? = null
         private set
     var query: String = ""
+    var options: MarketOptions = MarketOptions()
+    var organizationCache: (String) -> Boolean? = { null }
+    var legacy: () -> Boolean = { true }
 
-    fun refresh(organizationNames: List<String>) {
+    fun refresh(organizationNames: List<String>?) {
         try {
             packages = client.packages()
             errorText = ""
@@ -421,17 +528,59 @@ class MarketModel(
         }
         val problems = ArrayList<String>()
         runCatching { client.installCounts() }.onSuccess { counts = it }.onFailure { problems.add("install counts") }
-        runCatching { client.ratingSummaries() }.onSuccess { ratings = it }.onFailure { problems.add("ratings") }
-        organizations = organizationNames.filter(PackagesText::isOrgName).take(20).mapNotNull { runCatching { client.organizationPackages(it) }.getOrNull() }
+        runCatching { client.marketSummary() }.onSuccess {
+            ratings = it.ratings
+            usage = it.usage
+        }.onFailure { problems.add("ratings") }
+        refreshOrganizations(organizationNames)
         partialError = if (problems.isEmpty()) "" else "Couldn't load " + problems.joinToString(" and ") + "."
     }
 
-    fun isInstalled(pkg: MarketPackage): Boolean = when {
-        pkg.accountSync -> accountSwitch(pkg.id) ?: pkg.isDefault
-        deviceSwitch(pkg.id) == false -> false
-        else -> when (pkg.dataScope) {
-            PackageDataScope.ORGANIZATION -> organizations.any { it.isInstalled(pkg.id) }
-            else -> deviceSwitch(pkg.id) ?: pkg.bundled
+    private fun refreshOrganizations(names: List<String>?) {
+        if (names == null) {
+            organizationsComplete = false
+            return
+        }
+        val previous = organizations.associateBy { it.organization }
+        var complete = true
+        organizations = names.filter(PackagesText::isOrgName).take(20).mapNotNull { name ->
+            runCatching { client.organizationPackages(name) }.getOrNull() ?: previous[name].also { complete = false }
+        }
+        organizationsComplete = complete
+    }
+
+    fun installMode(pkg: MarketPackage): PackageInstallMode = when {
+        pkg.accountSync -> PackageInstallMode.ACCOUNT
+        pkg.dataScope == PackageDataScope.ORGANIZATION -> PackageInstallMode.ORGANIZATION
+        deviceSwitch(pkg.id) != null -> PackageInstallMode.PHONE
+        else -> PackageInstallMode.DESKTOP
+    }
+
+    fun isInstalled(pkg: MarketPackage): Boolean = when (installMode(pkg)) {
+        PackageInstallMode.ACCOUNT -> accountSwitch(pkg.id) ?: PackageGate.fallback(AccountCatalogEntry.of(pkg), legacy())
+        PackageInstallMode.ORGANIZATION -> deviceSwitch(pkg.id) != false && organizationInstalled(pkg)
+        PackageInstallMode.PHONE -> deviceSwitch(pkg.id) ?: false
+        PackageInstallMode.DESKTOP -> pkg.isDefault
+    }
+
+    fun organizationInstalled(pkg: MarketPackage): Boolean =
+        organizations.any { it.isInstalled(pkg.id) } || (!organizationsComplete && organizationCache(pkg.id) == true)
+
+    fun cardAction(pkg: MarketPackage, opens: Boolean): MarketCardAction {
+        val mode = installMode(pkg)
+        if (mode == PackageInstallMode.DESKTOP) return MarketCardAction.DESKTOP
+        if (isInstalled(pkg)) return if (opens) MarketCardAction.OPEN else MarketCardAction.INSTALLED
+        return when (mode) {
+            PackageInstallMode.ACCOUNT -> MarketCardAction.INSTALL
+            PackageInstallMode.PHONE -> MarketCardAction.INSTALL_ON_PHONE
+            else -> {
+                if (organizationInstalled(pkg)) return MarketCardAction.INSTALL_ON_PHONE
+                when (installTargets(pkg).count { !it.isInstalled(pkg.id) }) {
+                    0 -> MarketCardAction.NEEDS_ORGANIZATION
+                    1 -> MarketCardAction.INSTALL
+                    else -> MarketCardAction.PICK_ORGANIZATION
+                }
+            }
         }
     }
 
@@ -442,22 +591,49 @@ class MarketModel(
 
     fun nested(pkg: MarketPackage): List<MarketPackage> = packages.filter { marketParent(it) == pkg.id }
 
+    private val roots: List<MarketPackage> get() = packages.filter { marketParent(it) == null }
+
+    val categories: List<String> get() = roots.map { it.category.ifEmpty { "Other" } }.distinct().sorted()
+
+    val types: List<String> get() = roots.map { it.type }.distinct().sortedBy { MarketText.typeLabel(it) }
+
+    fun matchesOptions(pkg: MarketPackage): Boolean {
+        val o = options
+        return (o.category.isEmpty() || pkg.category.ifEmpty { "Other" } == o.category) &&
+            (o.type.isEmpty() || pkg.type == o.type) &&
+            o.price.matches(pkg) &&
+            o.platform.matches(pkg) &&
+            (o.mode == null || installMode(pkg) == o.mode)
+    }
+
     val visible: List<MarketPackage>
-        get() = packages.filter { pkg ->
-            if (marketParent(pkg) != null) return@filter false
+        get() = roots.filter { pkg ->
             val installed = isInstalled(pkg)
             when (filter) {
                 MarketFilter.ALL -> true
                 MarketFilter.INSTALLED -> installed
                 MarketFilter.NOT_INSTALLED -> !installed
-            } && (listOf(pkg) + nested(pkg)).any { PackagesText.matches(query, it.name, it.summary, it.category) }
+            } && matchesOptions(pkg) && (listOf(pkg) + nested(pkg)).any { PackagesText.matches(query, it.name, it.summary, it.category, MarketText.typeLabel(it.type)) }
         }
+
+    fun sorted(rows: List<MarketPackage>): List<MarketPackage> {
+        val byName = compareBy<MarketPackage> { it.name.lowercase() }
+        val order: Comparator<MarketPackage> = when (options.sort) {
+            MarketSort.FEATURED, MarketSort.NAME -> byName
+            MarketSort.INSTALLS -> compareByDescending<MarketPackage> { counts[it.id]?.installs ?: 0 }.thenByDescending { counts[it.id]?.downloads ?: 0 }.then(byName)
+            MarketSort.DOWNLOADS -> compareByDescending<MarketPackage> { counts[it.id]?.downloads ?: 0 }.thenByDescending { counts[it.id]?.installs ?: 0 }.then(byName)
+            MarketSort.USED -> compareByDescending<MarketPackage> { usage[it.id]?.people ?: 0 }.thenByDescending { usage[it.id]?.opens ?: 0 }.then(byName)
+            MarketSort.RATING -> compareByDescending<MarketPackage> { ratings[it.id]?.takeIf { r -> r.count > 0 }?.average ?: -1.0 }.thenByDescending { ratings[it.id]?.count ?: 0 }.then(byName)
+        }
+        return rows.sortedWith(order)
+    }
 
     val shelves: List<MarketShelf>
         get() {
             val rows = visible
+            if (options.sort != MarketSort.FEATURED) return if (rows.isEmpty()) emptyList() else listOf(MarketShelf("", sorted(rows)))
             return rows.map { it.category.ifEmpty { "Other" } }.toSortedSet().map { category ->
-                MarketShelf(category, rows.filter { it.category.ifEmpty { "Other" } == category })
+                MarketShelf(category, sorted(rows.filter { it.category.ifEmpty { "Other" } == category }))
             }
         }
 
