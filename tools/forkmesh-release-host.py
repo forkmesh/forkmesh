@@ -304,6 +304,26 @@ def parse_hosts(text: str) -> list[tuple[str, str]]:
     return hosts
 
 
+def fleet_core_hosts() -> list[tuple[str, str]]:
+    try:
+        import next_common
+        fleet = next_common.load_fleet()
+    except (ImportError, OSError, RuntimeError, ValueError, KeyError):
+        return []
+    return [("fmnext-%s" % node["name"], str(node["public_ipv4"]))
+            for node in fleet.get("nodes") or []
+            if node.get("role", "core") == "core" and node.get("public_ipv4")]
+
+
+def seed_hosts(text: str, cores: list[tuple[str, str]] | None = None) -> list[tuple[str, str]]:
+    listed = parse_hosts(text)
+    cores = fleet_core_hosts() if cores is None else cores
+    if not cores:
+        return listed
+    return list(cores) + [(name, ip) for name, ip in listed
+                          if not name.startswith("fmnext-")]
+
+
 def failure_backoff_active(marker: Path, now: float,
                            backoff: float = FAILURE_BACKOFF_SECONDS) -> bool:
     """True while a recent failed attempt (recorded in `marker`) is fresh."""
@@ -1911,7 +1931,7 @@ def complete_release(args: argparse.Namespace) -> int:
         parse_hosts(hosts_file.read_text()) if hosts_file.is_file() else [],
         Path(args.ssh_key).expanduser())
     hosts += seed_targets(
-        parse_hosts(seed_file.read_text()) if seed_file.is_file() else [],
+        seed_hosts(seed_file.read_text() if seed_file.is_file() else ""),
         Path(args.seed_ssh_key).expanduser(),
         Path(args.seed_known_hosts).expanduser())
     if not hosts:
