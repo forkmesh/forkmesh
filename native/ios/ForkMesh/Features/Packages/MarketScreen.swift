@@ -513,12 +513,14 @@ struct MarketActionButton: View {
                 .buttonBorderShape(.capsule)
                 .accessibilityLabel(action == .askAdmin ? "Ask an admin to install \(package.name)" : "Get \(package.name)")
         case .desktop:
-            Label("Desktop", systemImage: "desktopcomputer")
+            let world: Bool = package.phoneSurface == .worldOnly
+            Label(world ? "World" : "Desktop", systemImage: world ? "globe.europe.africa" : "desktopcomputer")
                 .labelStyle(MarketTightLabel())
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.top, 6)
-                .accessibilityLabel("Install \(package.name) from your desktop's Market")
+                .accessibilityLabel(
+                    world ? "\(package.name) runs in World" : "Install \(package.name) from your desktop's Market")
         case .busy:
             ProgressView()
                 .frame(height: 28)

@@ -3004,7 +3004,8 @@ flat cards split by hairlines, and an installed state that matches reality.
   along), a per-device package, a package hidden on this phone, or the one
   organization you manage; a menu when you manage several; Get (to the
   package page) when you must sign in, create an organization or ask an
-  admin; Desktop for packages only a desktop installs. A spinner replaces
+  admin; Desktop (or World for World-only packages) for packages only a
+  desktop installs, as on Android. A spinner replaces
   the button while it works, and a failure shows in red under the card
   (`MarketModel.installErrors`).
 - **Installed state.** Three causes, fixed in `MarketModel`:
