@@ -134,12 +134,15 @@ struct ChatInstaller: AppServicesInstaller {
                 await direct.sendCallFrame(conversation, type: type, extra: extra)
             })
         calls.peerFactory = WebCallPeerFactory()
+        (calls.peerFactory as? WebCallPeerFactory)?.voice = { [weak calls] in calls?.effectiveVoice ?? "" }
         calls.onMissed = { (conversation: String, media: DirectCallKind) in
             Task { _ = await direct.send(conversation, text: "📞 Missed \(media.rawValue) call") }
         }
         let prefs: KeyValueStore? = Services.get(KeyValueStore.self)
         calls.setFace(prefs?.string(forKey: DirectCallEngine.faceKey) ?? "")
         calls.onFaceChanged = { (face: String) in prefs?.set(face, forKey: DirectCallEngine.faceKey) }
+        calls.setVoiceChoice(prefs?.string(forKey: DirectCallEngine.voiceKey) ?? DirectCallEngine.voiceMatchFace)
+        calls.onVoiceChanged = { (choice: String) in prefs?.set(choice, forKey: DirectCallEngine.voiceKey) }
         direct.onCallFrame = { (plain: JSONObject, conversation: String) in
             Task { await calls.handleFrame(plain, conversation: conversation) }
         }
