@@ -1,6 +1,7 @@
 import FMAccount
 import FMApi
 import FMBase
+import FMTools
 import SwiftUI
 
 struct YouHubSheet: View {
@@ -8,6 +9,9 @@ struct YouHubSheet: View {
     @State private var confirmSignOut: Bool = false
     @State private var showStatus: Bool = false
     @State private var reportingBug: Bool = false
+    @State private var showWhatsNew: Bool = false
+    @State private var sendingDiagnostics: Bool = false
+    @State private var diagnostics: PerformanceDiagnostics = PerformanceDiagnostics.shared
     @State private var settings: SettingsService? = Services.get(SettingsService.self)
     @State private var suggestions: ShellSuggestions = ShellSuggestions.shared
     private var walk: WalkActivityController { WalkActivityController.shared }
@@ -18,6 +22,7 @@ struct YouHubSheet: View {
     let onOpen: (Route) -> Void
     let onAction: (HubItem.Action) -> Void
     let onClose: () -> Void
+    var onSendDiagnostics: ((String) async -> String?)? = nil
 
     private var groups: [HubGroup] {
         let all: [HubGroup] = HubGroups.current(guest: state.guest)
@@ -66,6 +71,9 @@ struct YouHubSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .navigationDestination(isPresented: $showWhatsNew) {
+                WhatsNewScreen()
+            }
             .navigationTitle("You")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -102,7 +110,18 @@ struct YouHubSheet: View {
         .sheet(isPresented: $reportingBug) {
             ReportBugSheet(screen: "hub")
         }
+        .sheet(isPresented: $sendingDiagnostics) {
+            if let send = onSendDiagnostics {
+                DiagnosticsSendSheet(router: router, send: send, onSent: { onClose() })
+            }
+        }
         .task { await HubPackageState.shared.refresh() }
+        .task {
+            while !Task.isCancelled {
+                await diagnostics.refresh()
+                try? await Task.sleep(for: .seconds(PerformanceDiagnostics.refreshSeconds))
+            }
+        }
         .fmFeedback(.destructiveConfirmation, trigger: confirmSignOut)
         .accessibilityIdentifier("you-hub")
     }
@@ -146,20 +165,30 @@ struct YouHubSheet: View {
     }
 
     private var versionRow: some View {
-        NavigationLink {
-            WhatsNewScreen()
-        } label: {
-            HStack(spacing: FmSpace.x2) {
-                Text(verbatim: AppChangelog.label(infoDictionary: Bundle.main.infoDictionary))
-                    .fmText(.bodySmall, color: fm.textSecondary)
-                    .monospacedDigit()
-                Spacer(minLength: FmSpace.x2)
-                Text("What's new")
-                    .fmText(.bodySmall, color: fm.accent)
+        HStack(spacing: FmSpace.x2) {
+            Button {
+                FmHaptics.selection()
+                showWhatsNew = true
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: AppChangelog.label(infoDictionary: Bundle.main.infoDictionary))
+                        .fmText(.bodySmall, color: fm.textSecondary)
+                        .monospacedDigit()
+                    Text("What's new")
+                        .fmText(.bodySmall, color: fm.accent)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("hub-version")
+            if onSendDiagnostics != nil {
+                DiagnosticsSendButton(alert: diagnostics.alert) {
+                    FmHaptics.selection()
+                    sendingDiagnostics = true
+                }
+            }
         }
-        .accessibilityIdentifier("hub-version")
     }
 
     private var pocketRow: some View {
