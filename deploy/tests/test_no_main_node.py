@@ -107,3 +107,10 @@ def test_every_core_renders_the_same_shape(fleets):
         assert all(("%s.%s" % (o, fleet["domain"])) in text or
                    ("10.77.0.%s" % o[1:]) in text for o in others), name
     assert shapes["n2"] == shapes["n3"] == shapes["n4"]
+
+
+def test_hosting_off_in_the_fleet_empties_the_hosted_core_list(fleets):
+    fleet = dict(fleets["shrunk"], hosted={"enabled": False})
+    env = render.core_role_settings(fleet)
+    assert "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=\n" in env + "\n"
+    assert "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=fmnext-n2,fmnext-n3,fmnext-n4" in env

@@ -143,7 +143,8 @@ holds plaintext columns (such as `users.is_admin`), and with
 it and remove it as a voter, but the IDS never takes the cluster down:
 
 - The locked-down node stops its own rqlite only when its `/nodes` shows
-  **at least two other reachable voters and a leader**, and no other node
+  **other reachable voters that are a majority of all the voters (at least
+  two) and a leader**, and no other node
   is already quarantined. Otherwise rqlite keeps running, and the lockdown
   firewall admits only Raft from the cores. A second simultaneous lockdown
   (for example a bad deploy on every node) therefore never costs quorum.
@@ -151,6 +152,10 @@ it and remove it as a voter, but the IDS never takes the cluster down:
   peer does it (the rendezvous-first healthy node). It waits until the node
   has been unreachable for 2 minutes and two reachable voters with a leader
   remain, and it never shrinks the cluster below two voters.
+- The majority rule replaced a fixed "two others" on 2026-10-13: with four
+  voters (a promoted spare during a core replacement) two reachable others
+  are not a quorum without the node, so stopping it would have taken the
+  cluster down ([deploy/README.md](deploy/README.md#no-fixed-main-node)).
 - With three voters, removing a dead one leaves the same fault tolerance as
   keeping it (zero further failures). Removal adds that the node cannot
   rejoin, vote, or serve reads if the attacker restarts it.

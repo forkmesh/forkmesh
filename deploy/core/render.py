@@ -509,8 +509,9 @@ def core_daemon_names(fleet):
 
 def core_role_settings(fleet):
     names = ",".join(core_daemon_names(fleet))
+    hosted = names if (fleet.get("hosted") or {}).get("enabled", True) else ""
     return "\n".join(["", "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=%s" % names,
-                      "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=%s" % names])
+                      "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=%s" % hosted])
 
 
 def public_hosts(fleet):
