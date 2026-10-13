@@ -175,3 +175,18 @@ def test_checked_in_registry_stays_empty():
     exec((SRC / "plugin_registry.py").read_text(encoding="utf-8"), namespace)
     assert namespace["MARKET_PACKAGES"] == ()
     assert namespace["PLUGIN_WWW_SITE_ROUTES"] == frozenset()
+
+
+def test_rows_name_the_publisher_and_whether_it_is_verified():
+    rows = market_packages.catalog_packages()
+    crm = next(row for row in rows if row["id"] == "crm")
+    assert crm["publisher"] == "ForkMesh"
+    assert crm["verified"] is True
+    assert crm["free"] is True
+    bare = market_packages.package_row({"id": "bare", "creator": "nobody"})
+    assert bare["publisher"] == ""
+    assert bare["verified"] is False
+    handle = market_packages.package_row(
+        {"id": "handle", "creator": {"handle": "acme", "verified": "yes"}})
+    assert handle["publisher"] == "acme"
+    assert handle["verified"] is False

@@ -23,9 +23,10 @@ APP_RUNTIME_SOURCE = ENTRY.with_name("app_runtime.py").read_text(encoding="utf-8
 SCHEMA_SOURCE = SCHEMA.read_text(encoding="utf-8")
 
 _WANT_FUNCS = (
-    "_sanitize_diag_field", "_marketplace_identifier", "_package_install_events"
+    "_sanitize_diag_field", "_marketplace_identifier", "_package_install_events",
+    "_merge_member_installs",
 )
-_WANT_CONSTS = ("MAX_PACKAGE_INSTALL_EVENTS",)
+_WANT_CONSTS = ("MAX_PACKAGE_INSTALL_EVENTS", "PACKAGE_MEMBER_INSTALL_SQL")
 
 # The aggregation the GET handler runs, kept in one place so the behavioural
 # tests below and the routing contract agree on it.
@@ -54,6 +55,8 @@ def _load():
 
 _NS = _load()
 _events = _NS["_package_install_events"]
+_merge = _NS["_merge_member_installs"]
+MEMBER_SQL = dict(_NS["PACKAGE_MEMBER_INSTALL_SQL"])
 MAX_EVENTS = _NS["MAX_PACKAGE_INSTALL_EVENTS"]
 
 
@@ -281,3 +284,48 @@ def test_the_handler_stores_no_identifying_client_data():
     for identifying in ("cf-connecting-ip", "CF-Ray", "headers.get", "user-agent"):
         assert identifying not in handler
     assert "No accounts, IP addresses, or hostnames" in handler
+
+
+def test_account_and_organization_installs_join_the_counts():
+    counts = {"forkmesh": {"capture": {"installs": 2, "downloads": 5}}}
+    merged = _merge(counts, {
+        "accounts": [{"pkg": "tasks", "n": 7}, {"pkg": "<bad>", "n": 9},
+                     {"pkg": "capture", "n": -3}],
+        "organizations": [{"pkg": "crm", "n": 2}],
+    })
+    assert merged["forkmesh"] == {
+        "capture": {"installs": 2, "downloads": 5, "accounts": 0,
+                    "organizations": 0},
+        "tasks": {"installs": 0, "downloads": 0, "accounts": 7,
+                  "organizations": 0},
+        "crm": {"installs": 0, "downloads": 0, "accounts": 0,
+                "organizations": 2},
+    }
+    assert _merge({}, {"accounts": [], "organizations": []}) == {"forkmesh": {}}
+
+
+def test_member_install_queries_count_installed_rows_per_package():
+    database = sqlite3.connect(":memory:")
+    database.execute(
+        "CREATE TABLE account_package_installs (account_bi TEXT, package TEXT, "
+        "installed INTEGER, PRIMARY KEY (account_bi, package))")
+    database.execute(
+        "CREATE TABLE org_plugin_installs (org_bi TEXT, plugin TEXT, "
+        "PRIMARY KEY (org_bi, plugin))")
+    database.executemany(
+        "INSERT INTO account_package_installs VALUES (?,?,?)",
+        [("a", "tasks", 1), ("b", "tasks", 1), ("c", "tasks", 0), ("a", "notes", 1)])
+    database.executemany(
+        "INSERT INTO org_plugin_installs VALUES (?,?)",
+        [("o1", "crm"), ("o2", "crm"), ("o1", "marketing")])
+    accounts = dict(database.execute(MEMBER_SQL["accounts"]).fetchall())
+    organizations = dict(database.execute(MEMBER_SQL["organizations"]).fetchall())
+    assert accounts == {"tasks": 2, "notes": 1}
+    assert organizations == {"crm": 2, "marketing": 1}
+
+
+def test_the_read_handler_merges_member_installs():
+    start = ENTRY_SOURCE.index("async def package_installs_handler")
+    handler = ENTRY_SOURCE[start:ENTRY_SOURCE.index("if method != \"POST\"", start)]
+    assert "_merge_member_installs(" in handler
+    assert "await package_member_installs(env)" in handler
