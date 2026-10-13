@@ -35,13 +35,7 @@ struct FmAvatar: View {
     }
 
     private static func decode(_ base64: String) -> UIImage? {
-        if base64.isEmpty {
-            return nil
-        }
-        guard let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters) else {
-            return nil
-        }
-        return UIImage(data: data)
+        FmImageCache.image(base64: base64)
     }
 
     @ViewBuilder private var photo: some View {

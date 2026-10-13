@@ -376,7 +376,7 @@ struct MessagesConversationAvatar: View {
     }
 
     @ViewBuilder private var groupAvatar: some View {
-        if let data = hub.conversationLook.photo, let picture = UIImage(data: data) {
+        if let data = hub.conversationLook.photo, let picture = FmImageCache.image(data) {
             Image(uiImage: picture)
                 .resizable()
                 .scaledToFill()

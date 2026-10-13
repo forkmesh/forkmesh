@@ -191,7 +191,7 @@ struct MessagesBubbleRow: View {
     }
 
     @ViewBuilder private func photo(_ attachment: ChatAttachment) -> some View {
-        if let picture = UIImage(data: attachment.data) {
+        if let picture = FmImageCache.image(attachment.data) {
             Button(action: { onPhoto(attachment) }) {
                 Image(uiImage: picture)
                     .resizable()
