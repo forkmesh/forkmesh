@@ -423,14 +423,14 @@ struct MarketStatsLine: View {
                     .accessibilityLabel(String(format: "Rated %.1f from %d ratings", rating.average, rating.count))
             }
             if let counts, counts.total > 0 {
-                Label(PackagesFeature.count(Int64(counts.total)), systemImage: "arrow.down.app")
+                Label(PackagesFormat.count(Int64(counts.total)), systemImage: "arrow.down.app")
                     .accessibilityLabel("\(counts.total) installs")
             } else if let counts, counts.downloads > 0 {
-                Label(PackagesFeature.count(Int64(counts.downloads)), systemImage: "arrow.down.circle")
+                Label(PackagesFormat.count(Int64(counts.downloads)), systemImage: "arrow.down.circle")
                     .accessibilityLabel("\(counts.downloads) downloads")
             }
             if let usage, usage.people > 0 {
-                Label(PackagesFeature.count(Int64(usage.people)), systemImage: "person.2")
+                Label(PackagesFormat.count(Int64(usage.people)), systemImage: "person.2")
                     .accessibilityLabel("\(usage.people) people use it")
             }
             if full {
