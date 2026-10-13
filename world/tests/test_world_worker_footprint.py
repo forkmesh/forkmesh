@@ -233,6 +233,7 @@ def test_optional_python_route_modules_are_deferred_from_global_scope():
         "catalog",
         "chat_channels_api",
         "chat_direct_messages_api",
+        "chat_direct_media_api",
         "chat_reads_api",
         "community_ads_api",
         "contributions",
