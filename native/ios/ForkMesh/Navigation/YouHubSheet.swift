@@ -61,6 +61,9 @@ struct YouHubSheet: View {
                         }
                     }
                 }
+                Section {
+                    versionRow
+                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("You")
@@ -140,6 +143,23 @@ struct YouHubSheet: View {
             }
         }
         .padding(.vertical, FmSpace.x1)
+    }
+
+    private var versionRow: some View {
+        NavigationLink {
+            WhatsNewScreen()
+        } label: {
+            HStack(spacing: FmSpace.x2) {
+                Text(verbatim: AppChangelog.label(infoDictionary: Bundle.main.infoDictionary))
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .monospacedDigit()
+                Spacer(minLength: FmSpace.x2)
+                Text("What's new")
+                    .fmText(.bodySmall, color: fm.accent)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        }
+        .accessibilityIdentifier("hub-version")
     }
 
     private var pocketRow: some View {
