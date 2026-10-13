@@ -1,12 +1,20 @@
-import { extendLandmarks, faceFrame } from "./chat-call-face-geometry.js";
+import { faceFrame, liveHead, projectPose } from "./chat-call-face-geometry.js";
+import { createFaceMesh } from "./chat-call-face-mesh.js";
+import { createMatte, floatTargets, MATTE_SAMPLE } from "./chat-call-segment.js";
 
 const LOW_WIDTH = 160;
+const FILL_WIDTH = 192;
+const FILL_LEVELS = 5;
 const TONE_SIGMA = 0.22;
 const WIDE_SIGMA = 0.35;
 const WIDE_PASSES = 3;
 const HIDE_SIGMA = 4;
 const HIDE_PASSES = 4;
 const GAUSS = [0.2270, 0.1945, 0.1216, 0.0540, 0.0162];
+const MIN_UNITS = 12;
+const HALO_STRENGTH = 0.25;
+
+export const BACKGROUND_MODES = Object.freeze({ off: 0, blur: 1, image: 2 });
 
 const QUAD_VERTEX = `
 attribute vec2 aPos;
@@ -20,36 +28,50 @@ void main() {
 const WARP_VERTEX = `
 attribute vec2 aPos;
 attribute vec2 aUv;
-attribute float aAlpha;
+attribute float aHole;
+attribute float aRegion;
 uniform vec2 uSize;
 varying vec2 vUv;
-varying float vAlpha;
+varying float vHole;
+varying float vRegion;
 void main() {
   vUv = aUv;
-  vAlpha = aAlpha;
+  vHole = aHole;
+  vRegion = aRegion;
   gl_Position = vec4(aPos / uSize * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
 const WARP_FRAGMENT = `
 precision mediump float;
 uniform sampler2D uPhoto;
+uniform sampler2D uAux;
+uniform float uAuxPass;
 varying vec2 vUv;
-varying float vAlpha;
+varying float vHole;
+varying float vRegion;
 void main() {
-  gl_FragColor = vec4(texture2D(uPhoto, vUv).rgb, vAlpha);
+  vec3 aux = texture2D(uAux, vUv).rgb;
+  float open = 1.0 - step(0.5, vHole);
+  if (uAuxPass > 0.5) {
+    float skin = texture2D(uAux, vUv, 2.5).g;
+    gl_FragColor = vec4(skin * aux.r * open, aux.b, 1.0 - open, vRegion);
+  } else {
+    gl_FragColor = vec4(texture2D(uPhoto, vUv).rgb, aux.r * open);
+  }
 }`;
 
 const REDUCE_FRAGMENT = `
 precision mediump float;
 uniform sampler2D uCam;
 uniform sampler2D uWarp;
+uniform sampler2D uAux;
 uniform vec2 uStep;
 uniform float uMode;
 varying vec2 vUv;
 vec4 tap(vec2 uv) {
-  vec4 w = texture2D(uWarp, uv);
-  vec3 color = (uMode < 0.5 || uMode > 1.5) ? texture2D(uCam, uv).rgb : w.rgb;
-  float a = uMode > 1.5 ? 1.0 : w.a;
+  vec4 aux = texture2D(uAux, uv);
+  float a = uMode > 1.5 ? 1.0 : aux.r * aux.a;
+  vec3 color = (uMode < 0.5 || uMode > 1.5) ? texture2D(uCam, uv).rgb : texture2D(uWarp, uv).rgb;
   return vec4(color * a, a);
 }
 void main() {
@@ -68,34 +90,181 @@ void main() {
   gl_FragColor = sum;
 }`;
 
-const COMPOSITE_FRAGMENT = `
-precision mediump float;
+const ZONE = `
+uniform vec2 uZoneCenter;
+uniform vec2 uZoneX;
+uniform vec2 uZoneY;
+uniform vec2 uPixels;
+vec2 zoneAt(vec2 uv) {
+  vec2 d = uv * uPixels - uZoneCenter;
+  return vec2(dot(d, uZoneX), dot(d, uZoneY));
+}
+float zoneRadius(vec2 q) {
+  return length((q - vec2(0.0, -0.35)) / vec2(2.55, 2.9));
+}
+float headZone(vec2 uv) {
+  vec2 q = zoneAt(uv);
+  float head = 1.0 - smoothstep(0.82, 1.0, zoneRadius(q));
+  float side = abs(q.x);
+  float neck = smoothstep(0.8, 1.4, q.y) * (1.0 - smoothstep(0.55, 0.85, side));
+  float hang = smoothstep(0.7, 1.2, q.y) * (1.0 - smoothstep(2.3, 2.9, q.y)) * smoothstep(0.7, 1.05, side) * (1.0 - smoothstep(2.2, 2.7, side));
+  return max(head * (1.0 - neck), hang);
+}
+float headHalo(vec2 uv) {
+  vec2 q = zoneAt(uv);
+  return 1.0 - smoothstep(0.9, 1.45, zoneRadius(q - vec2(0.0, 0.3)));
+}`;
+
+const WEIGH_FRAGMENT = `
+precision highp float;
 uniform sampler2D uCam;
-uniform sampler2D uWarp;
-uniform sampler2D uLowCam;
-uniform sampler2D uLowFace;
-uniform sampler2D uLowPlain;
-uniform sampler2D uWideCam;
-uniform sampler2D uWideFace;
-uniform float uPresence;
-uniform float uHide;
+uniform sampler2D uCoef;
+uniform float uHasMatte;
+uniform float uZoneOn;
+uniform vec2 uStep;
+varying vec2 vUv;
+${MATTE_SAMPLE}
+${ZONE}
+vec4 tap(vec2 uv) {
+  vec3 c = texture2D(uCam, uv).rgb;
+  float a = uHasMatte > 0.5 ? callMatte(uCoef, c, uv) : 0.0;
+  float w = (1.0 - a) * (1.0 - a);
+  w *= 1.0 - uZoneOn * headZone(uv) * smoothstep(0.0, 0.3, a);
+  return vec4(c * w, w);
+}
+void main() {
+  gl_FragColor = 0.25 * (tap(vUv + vec2(-uStep.x, -uStep.y)) + tap(vUv + vec2(uStep.x, -uStep.y)) +
+    tap(vUv + vec2(-uStep.x, uStep.y)) + tap(vUv + vec2(uStep.x, uStep.y)));
+}`;
+
+const PUSH_FRAGMENT = `
+precision highp float;
+uniform sampler2D uSource;
+uniform vec2 uStep;
 varying vec2 vUv;
 void main() {
+  gl_FragColor = 0.25 * (texture2D(uSource, vUv + vec2(-uStep.x, -uStep.y)) + texture2D(uSource, vUv + vec2(uStep.x, -uStep.y)) +
+    texture2D(uSource, vUv + vec2(-uStep.x, uStep.y)) + texture2D(uSource, vUv + vec2(uStep.x, uStep.y)));
+}`;
+
+const PULL_FRAGMENT = `
+precision highp float;
+uniform sampler2D uOwn;
+uniform sampler2D uCoarse;
+uniform float uTop;
+varying vec2 vUv;
+void main() {
+  vec4 own = texture2D(uOwn, vUv);
+  vec3 mine = own.rgb / max(own.a, 1e-4);
+  if (uTop > 0.5) {
+    gl_FragColor = vec4(own.a > 1e-4 ? mine : vec3(0.5), 1.0);
+    return;
+  }
+  vec3 coarse = texture2D(uCoarse, vUv).rgb;
+  float trust = clamp(own.a * 3.0, 0.0, 1.0);
+  gl_FragColor = vec4(mix(coarse, mine, trust), 1.0);
+}`;
+
+const BACKDROP_FRAGMENT = `
+precision highp float;
+uniform sampler2D uBlurred;
+uniform sampler2D uFill;
+varying vec2 vUv;
+void main() {
+  vec4 b = texture2D(uBlurred, vUv);
+  vec3 fill = texture2D(uFill, vUv).rgb;
+  vec3 mine = b.rgb / max(b.a, 1e-4);
+  gl_FragColor = vec4(mix(fill, mine, smoothstep(0.02, 0.3, b.a)), 1.0);
+}`;
+
+const COMPOSITE_FRAGMENT = `
+precision highp float;
+uniform sampler2D uCam;
+uniform sampler2D uCoef;
+uniform sampler2D uWarp;
+uniform sampler2D uAux;
+uniform sampler2D uLowCam;
+uniform sampler2D uLowFace;
+uniform sampler2D uWideCam;
+uniform sampler2D uWideFace;
+uniform sampler2D uFill;
+uniform sampler2D uBackdrop;
+uniform sampler2D uLowPlain;
+uniform float uHasMatte;
+uniform float uMode;
+uniform float uFace;
+uniform float uPresence;
+uniform float uHide;
+uniform vec2 uFaceUv;
+uniform vec4 uImageRect;
+varying vec2 vUv;
+${MATTE_SAMPLE}
+${ZONE}
+const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+vec3 ratio(vec4 cam, vec4 face) {
+  return (cam.rgb + 0.004 * cam.a) / (face.rgb + 0.004 * face.a);
+}
+void main() {
   vec3 cam = texture2D(uCam, vUv).rgb;
-  vec4 warp = texture2D(uWarp, vUv);
-  vec4 lowCam = texture2D(uLowCam, vUv);
-  vec4 lowFace = texture2D(uLowFace, vUv);
-  vec4 wideCam = texture2D(uWideCam, vUv);
-  vec4 wideFace = texture2D(uWideFace, vUv);
-  const vec3 luma = vec3(0.299, 0.587, 0.114);
-  vec3 tint = wideFace.a > 0.01 ? (wideCam.rgb + 0.004) / (wideFace.rgb + 0.004) : vec3(1.0);
-  float near = (dot(lowCam.rgb, luma) + 0.004) / (dot(lowFace.rgb, luma) + 0.004);
-  float far = (dot(wideCam.rgb, luma) + 0.004) / (dot(wideFace.rgb, luma) + 0.004);
-  float shade = lowFace.a > 0.01 ? clamp(near / far, 0.65, 1.5) : 1.0;
-  vec3 face = clamp(warp.rgb * clamp(tint, 0.35, 2.8) * shade, 0.0, 1.0);
-  vec3 color = mix(cam, face, warp.a * uPresence);
-  vec3 hidden = texture2D(uLowPlain, vUv).rgb;
-  gl_FragColor = vec4(mix(color, hidden, uHide), 1.0);
+  float alpha = uHasMatte > 0.5 ? callMatte(uCoef, cam, vUv) : 1.0;
+  vec3 fill = texture2D(uFill, vUv).rgb;
+  vec4 warp = vec4(0.0);
+  vec4 aux = vec4(0.0);
+  float zone = 0.0;
+  if (uFace > 0.5) {
+    warp = texture2D(uWarp, vUv);
+    aux = texture2D(uAux, vUv);
+    zone = headZone(vUv) * uPresence * (1.0 - aux.b) * uHasMatte;
+  }
+  vec3 color;
+  vec3 backdrop = cam;
+  if (uMode > 1.5) {
+    vec2 at = uImageRect.xy + vUv * uImageRect.zw;
+    backdrop = texture2D(uBackdrop, at).rgb;
+  } else if (uMode > 0.5) {
+    backdrop = texture2D(uBackdrop, vUv).rgb;
+  }
+  if (uMode < 0.5) {
+    vec3 soft = uFace > 0.5 ? texture2D(uBackdrop, vUv).rgb : fill;
+    float halo = uFace > 0.5 ? headHalo(vUv) * uPresence * uHasMatte : 0.0;
+    vec3 front = clamp(cam - (1.0 - alpha) * fill, vec3(0.0), vec3(alpha));
+    vec3 room = mix(cam, soft * (1.0 - alpha) + front, halo);
+    color = mix(room, soft, alpha * zone);
+  } else {
+    float keep = alpha * (1.0 - zone);
+    vec3 front = clamp(cam - (1.0 - alpha) * fill, vec3(0.0), vec3(alpha));
+    color = backdrop * (1.0 - keep) + front * (1.0 - zone);
+  }
+  if (uFace > 0.5 && warp.a > 0.002) {
+    vec4 lowCam = texture2D(uLowCam, vUv);
+    vec4 lowFace = texture2D(uLowFace, vUv);
+    vec4 wideCam = texture2D(uWideCam, vUv);
+    vec4 wideFace = texture2D(uWideFace, vUv);
+    vec4 centerCam = texture2D(uWideCam, uFaceUv);
+    vec4 centerFace = texture2D(uWideFace, uFaceUv);
+    vec3 meanCam = centerCam.rgb / max(centerCam.a, 1e-4);
+    vec3 meanFace = centerFace.rgb / max(centerFace.a, 1e-4);
+    bool known = centerFace.a > 0.01 && centerCam.a > 0.01;
+    vec3 global = known ? clamp((meanCam + 0.004) / (meanFace + 0.004), 0.3, 3.0) : vec3(1.0);
+    vec3 local = known ? clamp((wideCam.rgb + 0.12 * meanCam) / (wideFace.rgb + 0.12 * meanFace), 0.3, 3.0) : vec3(1.0);
+    float near = (dot(lowCam.rgb, LUMA) + 0.004 * lowCam.a) / (dot(lowFace.rgb, LUMA) + 0.004 * lowFace.a);
+    float far = (dot(wideCam.rgb, LUMA) + 0.004 * wideCam.a) / (dot(wideFace.rgb, LUMA) + 0.004 * wideFace.a);
+    float shade = lowFace.a > 0.01 && wideFace.a > 0.01 ? clamp(near / far, 0.7, 1.4) : 1.0;
+    shade = mix(1.0, shade, smoothstep(0.3, 0.7, lowFace.a));
+    float level = max(dot(global, LUMA), 0.05);
+    vec3 hue = global / level;
+    vec3 hair = clamp(pow(hue, vec3(0.5)) * pow(level, 0.5), 0.45, 1.8);
+    float skin = clamp(aux.r / max(warp.a, 0.002), 0.0, 1.0);
+    skin = smoothstep(0.15, 0.85, skin);
+    vec3 face = clamp(warp.rgb * mix(hair, local * shade, skin), 0.0, 1.0);
+    color = mix(color, face, warp.a * uPresence);
+  }
+  if (uHide > 0.001) {
+    vec3 plain = texture2D(uLowPlain, vUv).rgb;
+    vec3 hidden = uMode < 0.5 ? plain : mix(backdrop, plain, smoothstep(0.1, 0.6, alpha));
+    color = mix(color, hidden, uHide);
+  }
+  gl_FragColor = vec4(color, 1.0);
 }`;
 
 function compile(gl, vertex, fragment) {
@@ -157,31 +326,65 @@ export function faceWebGL(canvas) {
   }
 }
 
-export function warpVertices(mesh, sourcePoints, livePoints, photoSize, look = {}) {
-  const forehead = look.forehead;
-  const brows = look.brows ?? 1;
-  const source = extendLandmarks(sourcePoints, forehead).points;
-  const live = extendLandmarks(livePoints, forehead).points;
-  const out = new Float32Array(mesh.triangles.length * 15);
+export function backgroundCapable(gl) {
+  return Boolean(gl && gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) >= MIN_UNITS && floatTargets(gl));
+}
+
+export const VERTEX_FLOATS = 6;
+
+export function vertexRegion(v) {
+  if (v >= 68) return 0;
+  return v <= 26 ? 0.25 : 1;
+}
+
+export function warpVertices(mesh, layout, livePoints, photoSize) {
+  const out = new Float32Array(mesh.triangles.length * 3 * VERTEX_FLOATS);
   let at = 0;
   for (const triangle of mesh.triangles) {
     for (const v of triangle.v) {
-      out[at++] = live[v][0];
-      out[at++] = live[v][1];
-      out[at++] = source[v][0] / photoSize;
-      out[at++] = source[v][1] / photoSize;
-      out[at++] = triangle.mouth ? 0 : v >= 17 && v <= 26 ? brows : mesh.alpha[v];
+      out[at++] = livePoints[v][0];
+      out[at++] = livePoints[v][1];
+      out[at++] = layout[v][0] / photoSize;
+      out[at++] = layout[v][1] / photoSize;
+      out[at++] = triangle.mouth ? 1 : 0;
+      out[at++] = vertexRegion(v);
     }
   }
   return out;
 }
 
-export function createFaceRenderer(canvas) {
+export function coverRect(imageWidth, imageHeight, width, height) {
+  const image = imageWidth / Math.max(1, imageHeight);
+  const frame = width / Math.max(1, height);
+  if (image > frame) {
+    const span = frame / image;
+    return [(1 - span) / 2, 0, span, 1];
+  }
+  const span = image / frame;
+  return [0, (1 - span) / 2, 1, span];
+}
+
+export function zoneFrame(head, pose) {
+  const center = projectPose(pose, [0, 0, -0.35]);
+  const frame = faceFrame(head);
+  const scale = pose.scale || frame.span;
+  const ux = [Math.cos(pose.roll), Math.sin(pose.roll)];
+  const uy = [-ux[1], ux[0]];
+  return {
+    center,
+    x: [ux[0] / scale, ux[1] / scale],
+    y: [uy[0] / scale, uy[1] / scale],
+  };
+}
+
+export function createFaceRenderer(canvas, { models = null } = {}) {
   const gl = faceWebGL(canvas);
   if (!gl) throw new Error("WebGL is unavailable");
+  const format = floatTargets(gl);
   const half = gl.getExtension("OES_texture_half_float");
   const halfFloat = half && gl.getExtension("OES_texture_half_float_linear") &&
     gl.getExtension("EXT_color_buffer_half_float") ? half.HALF_FLOAT_OES : null;
+  const units = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS);
   const quad = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -190,13 +393,49 @@ export function createFaceRenderer(canvas) {
   const reduce = compile(gl, QUAD_VERTEX, REDUCE_FRAGMENT);
   const blur = compile(gl, QUAD_VERTEX, BLUR_FRAGMENT);
   const composite = compile(gl, QUAD_VERTEX, COMPOSITE_FRAGMENT);
+  const weigh = compile(gl, QUAD_VERTEX, WEIGH_FRAGMENT);
+  const push = compile(gl, QUAD_VERTEX, PUSH_FRAGMENT);
+  const pull = compile(gl, QUAD_VERTEX, PULL_FRAGMENT);
+  const backdropProgram = compile(gl, QUAD_VERTEX, BACKDROP_FRAGMENT);
   const camera = texture(gl);
   const photo = texture(gl, gl.LINEAR_MIPMAP_LINEAR);
+  const auxPhoto = texture(gl, gl.LINEAR_MIPMAP_LINEAR);
+  const imageTexture = texture(gl);
+  let matte = null;
+  let faceMesh = null;
   let width = 0;
   let height = 0;
   let targets = null;
   let face = null;
   let lost = false;
+  let background = { mode: "off", strength: 0.5, image: null, imageWidth: 0, imageHeight: 0 };
+  let lastHead = null;
+
+  function useModels(next) {
+    if (!next || !format) return;
+    if (!matte && units >= MIN_UNITS && (next.landscape || next.square)) {
+      try {
+        matte = createMatte(gl, next, { format });
+      } catch (_) {
+        matte = null;
+      }
+    }
+    if (!faceMesh && next.detector && next.mesh) {
+      try {
+        faceMesh = createFaceMesh(gl, next, format);
+      } catch (_) {
+        faceMesh = null;
+      }
+    }
+  }
+
+  function upload(frame) {
+    gl.bindTexture(gl.TEXTURE_2D, camera);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+  }
+  useModels(models);
 
   function resize(w, h) {
     if (w === width && h === height && targets) return;
@@ -208,14 +447,34 @@ export function createFaceRenderer(canvas) {
     const lowHeight = Math.max(1, Math.round((lowWidth * h) / w));
     const make = (tw, th) => target(gl, tw, th, halfFloat || gl.UNSIGNED_BYTE) ||
       target(gl, tw, th, gl.UNSIGNED_BYTE);
+    const fillWidth = Math.min(FILL_WIDTH, w);
+    const fillHeight = Math.max(1, Math.round((fillWidth * h) / w));
+    const pyramid = [];
+    const pulled = [];
+    let pw = fillWidth;
+    let ph = fillHeight;
+    for (let level = 0; level <= FILL_LEVELS; level += 1) {
+      pyramid.push(make(pw, ph));
+      pulled.push(make(pw, ph));
+      pw = Math.max(1, Math.ceil(pw / 2));
+      ph = Math.max(1, Math.ceil(ph / 2));
+    }
+    const blurWidth = Math.max(1, Math.ceil(fillWidth / 2));
+    const blurHeight = Math.max(1, Math.ceil(fillHeight / 2));
     targets = {
       warp: target(gl, w, h, gl.UNSIGNED_BYTE),
+      aux: target(gl, w, h, gl.UNSIGNED_BYTE),
       cam: make(lowWidth, lowHeight),
       face: make(lowWidth, lowHeight),
       plain: make(lowWidth, lowHeight),
       wideCam: make(lowWidth, lowHeight),
       wideFace: make(lowWidth, lowHeight),
       spare: make(lowWidth, lowHeight),
+      pyramid,
+      pulled,
+      blurA: make(blurWidth, blurHeight),
+      blurB: make(blurWidth, blurHeight),
+      backdrop: make(blurWidth, blurHeight),
     };
   }
 
@@ -233,7 +492,7 @@ export function createFaceRenderer(canvas) {
     entries.forEach(([name, handle], unit) => {
       gl.activeTexture(gl.TEXTURE0 + unit);
       gl.bindTexture(gl.TEXTURE_2D, handle);
-      gl.uniform1i(program.uniforms[name], unit);
+      if (program.uniforms[name]) gl.uniform1i(program.uniforms[name], unit);
     });
   }
 
@@ -245,7 +504,7 @@ export function createFaceRenderer(canvas) {
   function reduceInto(out, mode) {
     into(out);
     gl.useProgram(reduce.program);
-    bindTextures(reduce, [["uCam", camera], ["uWarp", targets.warp.texture]]);
+    bindTextures(reduce, [["uCam", camera], ["uWarp", targets.warp.texture], ["uAux", targets.aux.texture]]);
     gl.uniform2f(reduce.uniforms.uStep, 0.25 * (width / out.width) / width, 0.25 * (height / out.height) / height);
     gl.uniform1f(reduce.uniforms.uMode, mode);
     drawQuad(reduce);
@@ -259,25 +518,119 @@ export function createFaceRenderer(canvas) {
     drawQuad(blur);
   }
 
-  function blurInto(out, sigma) {
+  function blurInto(out, sigma, spare = targets.spare) {
     const step = Math.max(0.5, sigma / 2);
-    blurPass(out, targets.spare, step / out.width, 0);
-    blurPass(targets.spare, out, 0, step / out.height);
+    blurPass(out, spare, step / out.width, 0);
+    blurPass(spare, out, 0, step / out.height);
+  }
+
+  function setZone(program, zone) {
+    const u = program.uniforms;
+    if (!u.uZoneCenter) return;
+    const z = zone || { center: [-1e5, -1e5], x: [0, 0], y: [0, 0] };
+    gl.uniform2f(u.uZoneCenter, z.center[0], z.center[1]);
+    gl.uniform2f(u.uZoneX, z.x[0], z.x[1]);
+    gl.uniform2f(u.uZoneY, z.y[0], z.y[1]);
+    gl.uniform2f(u.uPixels, width, height);
+  }
+
+  function buildFill(hasMatte, zone) {
+    const levels = targets.pyramid;
+    const first = levels[0];
+    into(first);
+    gl.useProgram(weigh.program);
+    bindTextures(weigh, [["uCam", camera], ["uCoef", matte?.coefficients || camera]]);
+    gl.uniform1f(weigh.uniforms.uHasMatte, hasMatte ? 1 : 0);
+    gl.uniform1f(weigh.uniforms.uZoneOn, zone ? 1 : 0);
+    gl.uniform2f(weigh.uniforms.uStep, 0.25 * (width / first.width) / width, 0.25 * (height / first.height) / height);
+    setZone(weigh, zone);
+    drawQuad(weigh);
+    for (let level = 1; level < levels.length; level += 1) {
+      const from = levels[level - 1];
+      into(levels[level]);
+      gl.useProgram(push.program);
+      bindTextures(push, [["uSource", from.texture]]);
+      gl.uniform2f(push.uniforms.uStep, 0.5 / from.width, 0.5 / from.height);
+      drawQuad(push);
+    }
+    for (let level = levels.length - 1; level >= 0; level -= 1) {
+      into(targets.pulled[level]);
+      gl.useProgram(pull.program);
+      const top = level === levels.length - 1;
+      const coarse = top ? levels[level].texture : targets.pulled[level + 1].texture;
+      bindTextures(pull, [["uOwn", levels[level].texture], ["uCoarse", coarse]]);
+      gl.uniform1f(pull.uniforms.uTop, top ? 1 : 0);
+      drawQuad(pull);
+    }
+    return targets.pulled[0].texture;
+  }
+
+  function buildBlurBackdrop(strength) {
+    const source = targets.pyramid[1];
+    into(targets.blurA);
+    gl.useProgram(push.program);
+    bindTextures(push, [["uSource", source.texture]]);
+    gl.uniform2f(push.uniforms.uStep, 0, 0);
+    drawQuad(push);
+    const sigma = 1.5 + 5 * Math.max(0, Math.min(1, strength));
+    const passes = strength > 0.6 ? 3 : 2;
+    for (let pass = 0; pass < passes; pass += 1) blurInto(targets.blurA, sigma, targets.blurB);
+    into(targets.backdrop);
+    gl.useProgram(backdropProgram.program);
+    bindTextures(backdropProgram, [["uBlurred", targets.blurA.texture], ["uFill", targets.pulled[1].texture]]);
+    drawQuad(backdropProgram);
+    return targets.backdrop.texture;
   }
 
   return {
     gl,
-    setPhoto(image, mesh, points, size, look) {
-      gl.bindTexture(gl.TEXTURE_2D, photo);
+    useModels,
+    get segmentation() {
+      return Boolean(matte);
+    },
+    get matte() {
+      return matte;
+    },
+    get faceMesh() {
+      return faceMesh;
+    },
+    trackFace(frame, w, h) {
+      if (!faceMesh || gl.isContextLost()) return null;
+      upload(frame);
+      return faceMesh.track(camera, w, h);
+    },
+    setPhoto(image, auxImage, mesh, layout, model, size) {
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.bindTexture(gl.TEXTURE_2D, photo);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
       gl.generateMipmap(gl.TEXTURE_2D);
-      face = { mesh, points, size, look };
+      gl.bindTexture(gl.TEXTURE_2D, auxPhoto);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, auxImage);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      face = { mesh, layout, model, size };
     },
     clearPhoto() {
       face = null;
     },
-    draw(frame, w, h, live, { presence = 1, hide = 0 } = {}) {
+    setBackground(next) {
+      background = { ...background, ...next };
+      if (next.image) {
+        gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, next.image);
+        background.imageWidth = next.image.naturalWidth || next.image.width;
+        background.imageHeight = next.image.naturalHeight || next.image.height;
+        background.image = true;
+      }
+    },
+    get hasBackgroundImage() {
+      return Boolean(background.image);
+    },
+    get lastHead() {
+      return lastHead;
+    },
+    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, needMatte = false, uploaded = false } = {}) {
       if (gl.isContextLost()) {
         lost = true;
         return false;
@@ -285,27 +638,42 @@ export function createFaceRenderer(canvas) {
       resize(w, h);
       gl.disable(gl.BLEND);
       gl.disable(gl.DEPTH_TEST);
-      gl.bindTexture(gl.TEXTURE_2D, camera);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
-      into(targets.warp);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      const showFace = face && live && presence > 0.001;
+      if (!uploaded) upload(frame);
+      const mode = BACKGROUND_MODES[background.mode] ?? 0;
+      const activeMode = mode === 2 && !background.image ? 0 : mode;
+      const showFace = Boolean(face && live && presence > 0.001);
+      const wantMatte = Boolean(matte) && (activeMode > 0 || showFace || needMatte);
+      const hasMatte = wantMatte && matte.update(camera, w, h, { runNetwork }) && matte.ready;
+      let zone = null;
+      let faceUv = [0.5, 0.5];
+      lastHead = null;
       if (showFace) {
-        const vertices = warpVertices(face.mesh, face.points, live, face.size, face.look);
+        const head = liveHead(face.model, live);
+        lastHead = head;
+        zone = zoneFrame(live, head.pose);
+        const center = faceFrame(live).mid;
+        faceUv = [center[0] / w, center[1] / h];
+        const vertices = warpVertices(face.mesh, face.layout, head.points, face.size);
         gl.useProgram(warp.program);
         gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-        const attrs = [["aPos", 2, 0], ["aUv", 2, 8], ["aAlpha", 1, 16]].map(([name, size, offset]) => {
+        const attrs = [["aPos", 2, 0], ["aUv", 2, 8], ["aHole", 1, 16], ["aRegion", 1, 20]].map(([name, size, offset]) => {
           const at = gl.getAttribLocation(warp.program, name);
           gl.enableVertexAttribArray(at);
-          gl.vertexAttribPointer(at, size, gl.FLOAT, false, 20, offset);
+          gl.vertexAttribPointer(at, size, gl.FLOAT, false, VERTEX_FLOATS * 4, offset);
           return at;
-        });
-        bindTextures(warp, [["uPhoto", photo]]);
+        }).filter((at) => at >= 0);
+        bindTextures(warp, [["uPhoto", photo], ["uAux", auxPhoto]]);
         gl.uniform2f(warp.uniforms.uSize, w, h);
-        gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 5);
+        for (const [out, pass] of [[targets.warp, 0], [targets.aux, 1]]) {
+          into(out);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.uniform1f(warp.uniforms.uAuxPass, pass);
+          gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffer);
+          for (const at of attrs) gl.enableVertexAttribArray(at);
+          gl.drawArrays(gl.TRIANGLES, 0, vertices.length / VERTEX_FLOATS);
+        }
         for (const at of attrs) gl.disableVertexAttribArray(at);
         const span = faceFrame(live).span;
         const sigma = (TONE_SIGMA * span * targets.cam.width) / w;
@@ -321,6 +689,16 @@ export function createFaceRenderer(canvas) {
           blurInto(targets.wideFace, wide);
         }
       }
+      let fill = camera;
+      let backdrop = camera;
+      let imageRect = [0, 0, 1, 1];
+      if (hasMatte && (activeMode > 0 || showFace)) fill = buildFill(true, showFace ? zone : null);
+      if (activeMode === 1 && hasMatte) backdrop = buildBlurBackdrop(background.strength);
+      else if (activeMode === 0 && hasMatte && showFace) backdrop = buildBlurBackdrop(HALO_STRENGTH);
+      if (activeMode === 2) {
+        backdrop = imageTexture;
+        imageRect = coverRect(background.imageWidth, background.imageHeight, w, h);
+      }
       if (hide > 0.001) {
         reduceInto(targets.plain, 2);
         for (let pass = 0; pass < HIDE_PASSES; pass += 1) blurInto(targets.plain, HIDE_SIGMA);
@@ -329,15 +707,25 @@ export function createFaceRenderer(canvas) {
       gl.useProgram(composite.program);
       bindTextures(composite, [
         ["uCam", camera],
+        ["uCoef", matte?.coefficients || camera],
         ["uWarp", targets.warp.texture],
+        ["uAux", targets.aux.texture],
         ["uLowCam", targets.cam.texture],
         ["uLowFace", targets.face.texture],
-        ["uLowPlain", targets.plain.texture],
         ["uWideCam", targets.wideCam.texture],
         ["uWideFace", targets.wideFace.texture],
+        ["uFill", fill],
+        ["uBackdrop", backdrop],
+        ["uLowPlain", targets.plain.texture],
       ]);
+      gl.uniform1f(composite.uniforms.uHasMatte, hasMatte ? 1 : 0);
+      gl.uniform1f(composite.uniforms.uMode, hasMatte || activeMode === 0 ? activeMode : 0);
+      gl.uniform1f(composite.uniforms.uFace, showFace ? 1 : 0);
       gl.uniform1f(composite.uniforms.uPresence, showFace ? presence : 0);
       gl.uniform1f(composite.uniforms.uHide, hide);
+      gl.uniform2f(composite.uniforms.uFaceUv, faceUv[0], faceUv[1]);
+      gl.uniform4f(composite.uniforms.uImageRect, imageRect[0], imageRect[1], imageRect[2], imageRect[3]);
+      setZone(composite, zone);
       drawQuad(composite, 1);
       return true;
     },
@@ -345,6 +733,8 @@ export function createFaceRenderer(canvas) {
       return lost || gl.isContextLost();
     },
     dispose() {
+      matte?.dispose();
+      faceMesh?.dispose();
       gl.getExtension("WEBGL_lose_context")?.loseContext();
     },
   };

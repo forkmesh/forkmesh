@@ -265,6 +265,29 @@ def head_ring(matte, mid, span):
     return out
 
 
+def chroma(image):
+    total = image.sum(-1, keepdims=True) + 0.03
+    return (image / total)[..., :2]
+
+
+def skin_likeness(image, p, span):
+    samples = []
+    radius = int(span * 0.12)
+    for a, b in ((2, 31), (14, 35), (3, 48), (13, 54)):
+        cx, cy = (p[a] + p[b]) / 2
+        y0, y1 = int(cy - radius), int(cy + radius)
+        x0, x1 = int(cx - radius), int(cx + radius)
+        samples.append(image[y0:y1, x0:x1].reshape(-1, 3))
+    data = chroma(np.concatenate(samples)[None])[0]
+    mean = data.mean(0)
+    cov = np.cov(data.T) + np.eye(2) * 2e-5
+    inverse = np.linalg.inv(cov)
+    d = chroma(image) - mean
+    distance = np.einsum("...i,ij,...j->...", d, inverse, d)
+    dark = smoothstep(0.03, 0.12, image.mean(-1))
+    return np.exp(-0.5 * distance / 9.0) * dark
+
+
 def fit_ellipse(points):
     x = points[:, 0]
     y = points[:, 1]
@@ -373,6 +396,10 @@ def build_face(name, original: Path, offset: int, points, selfie: Path, hair: Pa
     matte = np.maximum(matte, smoothstep(0.9, 1.0, -box(-coarse, 6)) * coarse)
     interior = smoothstep(0.92, 1.0, box(coarse, 10))
     matte = np.maximum(matte, interior)
+    likeness = skin_likeness(image, p, span)
+    below = smoothstep(chin[1] - span * 0.1, chin[1] + span * 0.2, yy)
+    keep_neck = np.maximum(smoothstep(0.08, 0.35, box(likeness, 4)), hair_keep)
+    matte = matte * (1 - below + below * keep_neck)
     hair_soft = np.clip(guided_filter(image, smoothstep(0.3, 0.7, hair_prob) * matte, 6, 4e-4), 0, 1)
     skin = np.clip(matte - hair_soft, 0, 1) * np.maximum(box(face, 12), neck)
     skin = np.clip(box(skin, 3), 0, 1)

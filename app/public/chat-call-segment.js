@@ -1,5 +1,11 @@
 export const SEGMENT_MODEL_BASE = "/assets/call-segmentation/";
-export const SEGMENT_MODELS = Object.freeze({ landscape: "selfie-landscape.fmnn", square: "selfie-square.fmnn" });
+export const SEGMENT_MODELS = Object.freeze({
+  landscape: "selfie-landscape.fmnn",
+  square: "selfie-square.fmnn",
+  detector: "face-detector.fmnn",
+  mesh: "face-mesh.fmnn",
+});
+export const MODEL_GROUPS = Object.freeze({ segment: ["landscape", "square"], face: ["detector", "mesh"] });
 
 const MAGIC = 0x4e4e4d46;
 
@@ -14,9 +20,7 @@ export function parseSegmentModel(buffer) {
   const aligned = new Uint8Array(count * 2);
   aligned.set(bytes.subarray(start, start + count * 2));
   const weights = new Uint16Array(aligned.buffer);
-  const shapes = {};
-  for (const [key, value] of Object.entries(header.shapes)) shapes[key] = value;
-  return { ...header, shapes, weights };
+  return { ...header, outputs: header.outputs || [[header.output]], weights };
 }
 
 export function decodeBase64(text) {
@@ -26,27 +30,27 @@ export function decodeBase64(text) {
   return out;
 }
 
-export async function loadSegmentModels({ fetchImpl = globalThis.fetch?.bind(globalThis), base = SEGMENT_MODEL_BASE } = {}) {
+export async function loadSegmentModels({ fetchImpl = globalThis.fetch?.bind(globalThis), base = SEGMENT_MODEL_BASE, names = Object.keys(SEGMENT_MODELS) } = {}) {
   const inline = globalThis.FmCallSegmentModels;
   const out = {};
-  for (const [name, file] of Object.entries(SEGMENT_MODELS)) {
+  await Promise.all(names.map(async (name) => {
     try {
       if (inline?.[name]) {
         out[name] = parseSegmentModel(decodeBase64(inline[name]));
       } else if (fetchImpl) {
-        const response = await fetchImpl(base + file);
+        const response = await fetchImpl(base + SEGMENT_MODELS[name]);
         if (response.ok) out[name] = parseSegmentModel(await response.arrayBuffer());
       }
     } catch (_) {}
-  }
+  }));
   return out;
 }
 
-let modelPromise = null;
+const modelPromises = new Map();
 
-export function sharedSegmentModels(options) {
-  if (!modelPromise) modelPromise = loadSegmentModels(options);
-  return modelPromise;
+export function sharedSegmentModels(group = "segment", options = {}) {
+  if (!modelPromises.has(group)) modelPromises.set(group, loadSegmentModels({ ...options, names: MODEL_GROUPS[group] || [] }));
+  return modelPromises.get(group);
 }
 
 export function halfToFloat(h) {
@@ -82,7 +86,8 @@ export function floatToHalf(value) {
 
 const slices = (channels) => Math.ceil(channels / 4);
 
-function activation(name) {
+function activation(name, alphaRow = 0) {
+  if (name === "prelu") return `v = max(v, 0.0) + wAt(s, ${alphaRow.toFixed(1)}) * min(v, 0.0);`;
   if (name === "relu") return "v = max(v, 0.0);";
   if (name === "hswish") return "v = v * clamp(v + 3.0, 0.0, 6.0) / 6.0;";
   if (name === "sigmoid") return "v = 1.0 / (1.0 + exp(-clamp(v, -30.0, 30.0)));";
@@ -123,13 +128,15 @@ vec4 wAt(float x, float y) {
 }`;
 }
 
-export function layerShader(op, inShape, outShape, secondShape = null) {
+export function layerShader(op, inShape, outShape, secondShape = null, alphaRow = 0) {
   const [inH, inW, inC] = inShape;
   const [outH, outW, outC] = outShape;
   const si = slices(inC);
   const so = slices(outC);
   let body = "";
   const parts = [HEAD, fetchIn("a", "uInSize", inW, inH)];
+  const weighted = op.op === "conv" || op.op === "tconv" || op.op === "dw";
+  if (op.act === "prelu" && !weighted) parts.push(weightAt());
   if (op.op === "conv" || op.op === "tconv") {
     parts.push(weightAt());
     const [kh, kw] = op.kernel;
@@ -202,11 +209,28 @@ export function layerShader(op, inShape, outShape, secondShape = null) {
   } else if (op.op === "act") {
     body = `
   vec4 v = aAt(x, y, s);`;
+  } else if (op.op === "pad") {
+    body = `
+  vec4 v = s < ${si.toFixed(1)} - 0.5 ? aAt(x, y, s) : vec4(0.0);`;
+  } else if (op.op === "maxpool") {
+    const [kh, kw] = op.kernel;
+    const [sh, sw] = op.stride;
+    const [pt, pl] = op.pad || [0, 0];
+    body = `
+  vec4 v = vec4(-65000.0);
+  for (int ky = 0; ky < ${kh}; ky++) {
+    for (int kx = 0; kx < ${kw}; kx++) {
+      float ix = x * ${sw.toFixed(1)} + float(kx) - ${pl.toFixed(1)};
+      float iy = y * ${sh.toFixed(1)} + float(ky) - ${pt.toFixed(1)};
+      if (ix < 0.0 || iy < 0.0 || ix > ${(inW - 0.5).toFixed(1)} || iy > ${(inH - 0.5).toFixed(1)}) continue;
+      v = max(v, aAt(ix, iy, s));
+    }
+  }`;
   } else {
     throw new Error(`unsupported layer ${op.op}`);
   }
   parts.push(prelude(outW), body, `
-  ${activation(op.act)}
+  ${activation(op.act, alphaRow)}
   gl_FragColor = v;
 }`);
   return parts.join("\n");
@@ -220,7 +244,27 @@ function ky(stride, pad) {
   return `float(ky) - ${pad.toFixed(1)}`;
 }
 
+export function packAlpha(op, weights) {
+  const so = slices(op.cout ?? op.channels);
+  const data = new Uint16Array(so * 4);
+  for (let c = 0; c < op.alpha[1]; c += 1) data[c] = weights[op.alpha[0] + c];
+  return { data, width: so, height: 1, alphaRow: 0 };
+}
+
+function withAlpha(packed, op, weights) {
+  if (!op.alpha) return { ...packed, alphaRow: 0 };
+  const rows = packed.height + 1;
+  const data = new Uint16Array(packed.width * rows * 4);
+  data.set(packed.data);
+  for (let c = 0; c < op.alpha[1]; c += 1) data[(packed.height * packed.width + (c >> 2)) * 4 + (c & 3)] = weights[op.alpha[0] + c];
+  return { data, width: packed.width, height: rows, alphaRow: packed.height };
+}
+
 export function packWeights(op, weights) {
+  return withAlpha(packLayer(op, weights), op, weights);
+}
+
+function packLayer(op, weights) {
   const read = (offset) => weights[op.w[0] + offset];
   const bias = (c) => (c < op.cout ? weights[op.b[0] + c] : 0);
   const so = slices(op.cout);
@@ -374,11 +418,13 @@ export function createNetwork(gl, model, format = floatTargets(gl)) {
   };
   const steps = layers.map((layer) => {
     const second = layer.in[1] !== undefined ? shapes[layer.in[1]] : null;
-    const source = layerShader(layer, shapes[layer.in[0]], shapes[layer.out], second);
+    let packed = null;
+    if (layer.w) packed = packWeights(layer, model.weights);
+    else if (layer.alpha) packed = packAlpha({ ...layer, channels: shapes[layer.out][2] }, model.weights);
+    const source = layerShader(layer, shapes[layer.in[0]], shapes[layer.out], second, packed?.alphaRow || 0);
     if (!programs.has(source)) programs.set(source, compileProgram(gl, QUAD, source));
     let weights = null;
-    if (layer.w) {
-      const packed = packWeights(layer, model.weights);
+    if (packed) {
       weights = { texture: makeTexture(packed.width, packed.height, toWeightData(packed.data)), width: packed.width, height: packed.height };
     }
     return { layer, program: programs.get(source), weights, input: tensor(layer.in[0]), second: layer.in[1] !== undefined ? tensor(layer.in[1]) : null, output: tensor(layer.out) };
@@ -386,11 +432,14 @@ export function createNetwork(gl, model, format = floatTargets(gl)) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   const input = tensor(model.input);
   const output = tensor(model.output);
+  const outputs = (model.outputs || [[model.output]]).map((group) => group.map((index) => tensor(index)));
   const [inH, inW] = shapes[model.input];
 
   return {
     input,
     output,
+    outputs,
+    shapes,
     inputWidth: inW,
     inputHeight: inH,
     programCount: programs.size,
@@ -441,6 +490,260 @@ export function createNetwork(gl, model, format = floatTargets(gl)) {
       }
       for (const step of steps) if (step.weights) gl.deleteTexture(step.weights.texture);
       for (const program of programs.values()) gl.deleteProgram(program.program);
+      gl.deleteBuffer(quad);
+    },
+  };
+}
+
+const MATTE_QUAD = `
+attribute vec2 aPos;
+varying vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const INPUT_FRAGMENT = `
+precision highp float;
+uniform sampler2D uCam;
+uniform vec2 uStep;
+varying vec2 vUv;
+void main() {
+  vec3 c = texture2D(uCam, vUv + vec2(-uStep.x, -uStep.y)).rgb + texture2D(uCam, vUv + vec2(uStep.x, -uStep.y)).rgb +
+    texture2D(uCam, vUv + vec2(-uStep.x, uStep.y)).rgb + texture2D(uCam, vUv + vec2(uStep.x, uStep.y)).rgb;
+  gl_FragColor = vec4(c * 0.25, 0.0);
+}`;
+
+const TEMPORAL_FRAGMENT = `
+precision highp float;
+uniform sampler2D uRaw;
+uniform sampler2D uPrev;
+uniform float uFirst;
+uniform float uHold;
+varying vec2 vUv;
+void main() {
+  float raw = texture2D(uRaw, vUv).r;
+  float prev = texture2D(uPrev, vUv).r;
+  float change = abs(raw - prev);
+  float rate = mix(uHold, 1.0, smoothstep(0.06, 0.4, change));
+  float v = mix(prev, raw, uFirst > 0.5 ? 1.0 : rate);
+  gl_FragColor = vec4(v, 0.0, 0.0, 1.0);
+}`;
+
+const MOMENTS_FRAGMENT = `
+precision highp float;
+uniform sampler2D uCam;
+uniform sampler2D uMask;
+uniform vec2 uStep;
+varying vec2 vUv;
+float luma(vec2 uv) { return dot(texture2D(uCam, uv).rgb, vec3(0.299, 0.587, 0.114)); }
+void main() {
+  float i = 0.25 * (luma(vUv + vec2(-uStep.x, -uStep.y)) + luma(vUv + vec2(uStep.x, -uStep.y)) +
+    luma(vUv + vec2(-uStep.x, uStep.y)) + luma(vUv + vec2(uStep.x, uStep.y)));
+  float p = texture2D(uMask, vUv).r;
+  p = smoothstep(0.1, 0.9, p);
+  gl_FragColor = vec4(i, p, i * p, i * i);
+}`;
+
+const BOX_FRAGMENT = `
+precision highp float;
+uniform sampler2D uSource;
+uniform vec2 uStep;
+varying vec2 vUv;
+void main() {
+  vec4 sum = vec4(0.0);
+  for (int k = -RADIUS; k <= RADIUS; k++) sum += texture2D(uSource, vUv + uStep * float(k));
+  gl_FragColor = sum / float(2 * RADIUS + 1);
+}`;
+
+const COEFFICIENT_FRAGMENT = `
+precision highp float;
+uniform sampler2D uMeans;
+uniform float uEps;
+varying vec2 vUv;
+void main() {
+  vec4 m = texture2D(uMeans, vUv);
+  float variance = max(m.w - m.x * m.x, 0.0);
+  float a = (m.z - m.x * m.y) / (variance + uEps);
+  float b = m.y - a * m.x;
+  gl_FragColor = vec4(a, b, 0.0, 1.0);
+}`;
+
+export const MATTE_SAMPLE = `
+float callMatte(sampler2D coefficients, vec3 color, vec2 uv) {
+  vec2 ab = texture2D(coefficients, uv).rg;
+  float i = dot(color, vec3(0.299, 0.587, 0.114));
+  return clamp(ab.x * i + ab.y, 0.0, 1.0);
+}`;
+
+export function chooseModel(models, width, height) {
+  const landscape = width / Math.max(1, height) > 1.2;
+  return (landscape ? models.landscape || models.square : models.square || models.landscape) || null;
+}
+
+export function createMatte(gl, models, { format = floatTargets(gl), guideWidth = 320, radius = 4, eps = 0.0012, hold = 0.55 } = {}) {
+  if (!format || !(models.landscape || models.square)) return null;
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const programs = {
+    input: compileProgram(gl, MATTE_QUAD, INPUT_FRAGMENT),
+    temporal: compileProgram(gl, MATTE_QUAD, TEMPORAL_FRAGMENT),
+    moments: compileProgram(gl, MATTE_QUAD, MOMENTS_FRAGMENT),
+    box: compileProgram(gl, MATTE_QUAD, BOX_FRAGMENT.replace(/RADIUS/g, String(radius))),
+    coefficients: compileProgram(gl, MATTE_QUAD, COEFFICIENT_FRAGMENT),
+  };
+  const networks = new Map();
+  const target = (width, height, filter = gl.LINEAR) => {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, format.type, null);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { texture, framebuffer, width, height };
+  };
+  const host = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, host);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  let hostMask = null;
+  let state = null;
+  let guide = null;
+  let first = true;
+  let lastModel = null;
+  let ran = 0;
+
+  function network(model) {
+    if (!networks.has(model)) networks.set(model, createNetwork(gl, model, format));
+    return networks.get(model);
+  }
+
+  function draw(program, out, textures, uniforms = {}) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, out.framebuffer);
+    gl.viewport(0, 0, out.width, out.height);
+    gl.useProgram(program.program);
+    textures.forEach(([name, texture], unit) => {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.uniform1i(program.uniforms[name], unit);
+    });
+    for (const [name, value] of Object.entries(uniforms)) {
+      if (!program.uniforms[name]) continue;
+      if (Array.isArray(value)) gl.uniform2f(program.uniforms[name], value[0], value[1]);
+      else gl.uniform1f(program.uniforms[name], value);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disableVertexAttribArray(0);
+  }
+
+  function ensureState(width, height) {
+    if (state && state.width === width && state.height === height) return;
+    state = { width, height, ping: target(width, height), pong: target(width, height) };
+    first = true;
+  }
+
+  function ensureGuide(width, height) {
+    const gw = Math.min(guideWidth, width);
+    const gh = Math.max(2, Math.round((gw * height) / width));
+    if (guide && guide.width === gw && guide.height === gh) return;
+    guide = { width: gw, height: gh, a: target(gw, gh), b: target(gw, gh), coefficients: target(gw, gh) };
+  }
+
+  return {
+    get ran() {
+      return ran;
+    },
+    get coefficients() {
+      return guide?.coefficients.texture || null;
+    },
+    get mask() {
+      return state?.ping.texture || null;
+    },
+    get ready() {
+      return Boolean(guide && state && !first);
+    },
+    setHostMask(bytes, width, height) {
+      gl.bindTexture(gl.TEXTURE_2D, host);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, bytes);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      hostMask = { width, height, fresh: true };
+    },
+    clearHostMask() {
+      hostMask = null;
+    },
+    reset() {
+      first = true;
+    },
+    update(camera, width, height, { runNetwork = true } = {}) {
+      gl.disable(gl.BLEND);
+      let raw = null;
+      let rawWidth = 0;
+      let rawHeight = 0;
+      if (hostMask) {
+        if (hostMask.fresh || first) {
+          raw = host;
+          rawWidth = hostMask.width;
+          rawHeight = hostMask.height;
+          hostMask.fresh = false;
+        }
+      } else {
+        const model = chooseModel(models, width, height);
+        if (model !== lastModel) {
+          lastModel = model;
+          first = true;
+        }
+        if (runNetwork || first) {
+          const net = network(model);
+          draw(programs.input, net.input, [["uCam", camera]], {
+            uStep: [0.25 * (width / net.inputWidth) / width, 0.25 * (height / net.inputHeight) / height],
+          });
+          net.run();
+          raw = net.output.texture;
+          rawWidth = net.inputWidth;
+          rawHeight = net.inputHeight;
+          ran += 1;
+        }
+      }
+      if (raw) {
+        ensureState(rawWidth, rawHeight);
+        draw(programs.temporal, state.pong, [["uRaw", raw], ["uPrev", state.ping.texture]], { uFirst: first ? 1 : 0, uHold: hold });
+        [state.ping, state.pong] = [state.pong, state.ping];
+        first = false;
+      }
+      if (!state) return false;
+      ensureGuide(width, height);
+      draw(programs.moments, guide.a, [["uCam", camera], ["uMask", state.ping.texture]], {
+        uStep: [0.25 * (width / guide.width) / width, 0.25 * (height / guide.height) / height],
+      });
+      draw(programs.box, guide.b, [["uSource", guide.a.texture]], { uStep: [1 / guide.width, 0] });
+      draw(programs.box, guide.a, [["uSource", guide.b.texture]], { uStep: [0, 1 / guide.height] });
+      draw(programs.coefficients, guide.b, [["uMeans", guide.a.texture]], { uEps: eps });
+      draw(programs.box, guide.a, [["uSource", guide.b.texture]], { uStep: [1 / guide.width, 0] });
+      draw(programs.box, guide.coefficients, [["uSource", guide.a.texture]], { uStep: [0, 1 / guide.height] });
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return true;
+    },
+    dispose() {
+      for (const net of networks.values()) net.dispose();
+      gl.deleteTexture(host);
+      for (const entry of [state?.ping, state?.pong, guide?.a, guide?.b, guide?.coefficients]) {
+        if (!entry) continue;
+        gl.deleteTexture(entry.texture);
+        gl.deleteFramebuffer(entry.framebuffer);
+      }
+      for (const program of Object.values(programs)) gl.deleteProgram(program.program);
       gl.deleteBuffer(quad);
     },
   };

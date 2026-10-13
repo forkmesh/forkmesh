@@ -8,13 +8,14 @@ import sys
 from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-OUTPUT = REPOSITORY / "app" / "public" / "assets" / "call-segmentation" / "selfie-landscape.fmnn"
+OUTPUT_DIR = REPOSITORY / "app" / "public" / "assets" / "call-segmentation"
 MAGIC = b"FMNN"
 VERSION = 1
 
 BUILTIN = {
     0: "ADD", 1: "AVERAGE_POOL_2D", 2: "CONCATENATION", 3: "CONV_2D", 4: "DEPTHWISE_CONV_2D", 6: "DEQUANTIZE", 14: "LOGISTIC",
-    18: "MUL", 19: "RELU", 23: "RESIZE_BILINEAR", 32: "CUSTOM", 40: "MEAN", 54: "PRELU", 117: "HARD_SWISH",
+    17: "MAX_POOL_2D", 18: "MUL", 19: "RELU", 22: "RESHAPE", 23: "RESIZE_BILINEAR", 32: "CUSTOM", 34: "PAD", 40: "MEAN",
+    54: "PRELU", 117: "HARD_SWISH",
 }
 ACTIVATIONS = {"RELU": "relu", "HARD_SWISH": "hswish", "LOGISTIC": "sigmoid"}
 FUSED = {0: "none", 1: "relu"}
@@ -112,12 +113,12 @@ def same_padding(size: int, kernel: int, stride: int) -> int:
 
 def convert(path: Path) -> bytes:
     tensors, operators, inputs, outputs = load(path)
-    constants: dict[int, tuple[int, list[int]]] = {}
+    constants: dict[int, list[int]] = {}
     blob = bytearray()
 
     def store(index: int) -> list[int]:
         if index in constants:
-            return [constants[index][0], len(constants[index][1])]
+            return constants[index]
         tensor = tensors[index]
         data = tensor["data"]
         if tensor["type"] == FLOAT16:
@@ -127,10 +128,9 @@ def convert(path: Path) -> bytes:
             raw = struct.pack(f"<{len(values)}e", *values)
         else:
             raise ValueError(f"tensor {index} has type {tensor['type']}")
-        offset = len(blob) // 2
+        constants[index] = [len(blob) // 2, len(raw) // 2]
         blob.extend(raw)
-        constants[index] = (offset, list(range(len(raw) // 2)))
-        return [offset, len(raw) // 2]
+        return constants[index]
 
     alias = {}
     for op in operators:
@@ -144,6 +144,8 @@ def convert(path: Path) -> bytes:
         for index in op["inputs"]:
             consumers.setdefault(resolve(index), []).append(op)
 
+    reshaped: dict[int, int] = {}
+    joined: dict[int, list[int]] = {}
     graph = []
     fused_away: dict[int, int] = {}
     produced: dict[int, dict] = {}
@@ -153,15 +155,27 @@ def convert(path: Path) -> bytes:
             continue
         ins = [fused_away.get(resolve(i), resolve(i)) for i in op["inputs"]]
         out = op["outputs"][0]
-        if name in ACTIVATIONS:
+        if name == "RESHAPE":
+            reshaped[out] = reshaped.get(ins[0], ins[0])
+            continue
+        if name == "CONCATENATION" and all(i in reshaped for i in ins):
+            joined[out] = [reshaped[i] for i in ins]
+            continue
+        if name in ACTIVATIONS or name == "PRELU":
+            act = ACTIVATIONS.get(name, "prelu")
             source = produced.get(ins[0])
+            alpha = store(ins[1]) if name == "PRELU" else None
             if source and source.get("act") == "none" and len(consumers.get(ins[0], [])) == 1:
-                source["act"] = ACTIVATIONS[name]
+                source["act"] = act
+                if alpha:
+                    source["alpha"] = alpha
                 source["out"] = out
                 produced[out] = source
                 fused_away[ins[0]] = out
                 continue
-            node = {"op": "act", "act": ACTIVATIONS[name], "in": [ins[0]], "out": out}
+            node = {"op": "act", "act": act, "in": [ins[0]], "out": out}
+            if alpha:
+                node["alpha"] = alpha
         elif name in ("CONV_2D", "DEPTHWISE_CONV_2D"):
             options = op["options"]
             shape = tensors[ins[0]]["shape"]
@@ -170,6 +184,9 @@ def convert(path: Path) -> bytes:
             padding = options.scalar(0, "b")
             stride = [options.scalar(2, "i"), options.scalar(1, "i")]
             fused = options.scalar(4 if depthwise else 3, "b")
+            dilation = [options.scalar(6 if depthwise else 5, "i", 1), options.scalar(5 if depthwise else 4, "i", 1)]
+            if dilation != [1, 1]:
+                raise ValueError("dilated convolutions are not supported")
             kh, kw = weights[1], weights[2]
             pad = [0, 0]
             if padding == 0:
@@ -188,8 +205,7 @@ def convert(path: Path) -> bytes:
                 "cout": weights[3] if depthwise else weights[0],
             }
         elif name in ("ADD", "MUL"):
-            consts = [i for i in ins if tensors[i]["data"]]
-            if consts:
+            if any(tensors[i]["data"] for i in ins):
                 raise ValueError(f"{name} with a constant operand is not supported")
             fused = op["options"].scalar(0, "b") if op["options"] else 0
             node = {"op": name.lower(), "in": ins, "out": out, "act": FUSED[fused]}
@@ -204,6 +220,21 @@ def convert(path: Path) -> bytes:
             if [options.scalar(4, "i"), options.scalar(3, "i")] != shape[1:3] or tensors[out]["shape"][1:3] != [1, 1]:
                 raise ValueError("AVERAGE_POOL_2D must pool the whole image")
             node = {"op": "mean", "in": [ins[0]], "out": out, "act": FUSED[options.scalar(5, "b")]}
+        elif name == "MAX_POOL_2D":
+            options = op["options"]
+            shape = tensors[ins[0]]["shape"]
+            kernel = [options.scalar(4, "i"), options.scalar(3, "i")]
+            stride = [options.scalar(2, "i"), options.scalar(1, "i")]
+            pad = [0, 0]
+            if options.scalar(0, "b") == 0:
+                pad = [same_padding(shape[1], kernel[0], stride[0]), same_padding(shape[2], kernel[1], stride[1])]
+            node = {"op": "maxpool", "in": [ins[0]], "out": out, "kernel": kernel, "stride": stride, "pad": pad,
+                    "act": FUSED[options.scalar(5, "b")]}
+        elif name == "PAD":
+            pads = struct.unpack("<8i", tensors[ins[1]]["data"])
+            if any(pads[:7]):
+                raise ValueError("only trailing channel padding is supported")
+            node = {"op": "pad", "in": [ins[0]], "out": out, "act": "none"}
         elif name == "RESIZE_BILINEAR":
             options = op["options"]
             node = {
@@ -215,8 +246,7 @@ def convert(path: Path) -> bytes:
                 "act": "none",
             }
         elif name == "Convolution2DTransposeBias":
-            custom = op["custom"]
-            padding, stride_w, stride_h = struct.unpack_from("<iii", custom, 0)
+            padding, stride_w, stride_h = struct.unpack_from("<iii", op["custom"], 0)
             weights = tensors[ins[1]]["shape"]
             shape = tensors[ins[0]]["shape"]
             result = tensors[out]["shape"]
@@ -244,6 +274,13 @@ def convert(path: Path) -> bytes:
         graph.append(node)
         produced[out] = node
 
+    final = []
+    for index in outputs:
+        index = resolve(index)
+        if index in joined:
+            final.append(joined[index])
+        else:
+            final.append([fused_away.get(index, index)])
     used = {inputs[0]}
     for node in graph:
         used.add(node["out"])
@@ -251,14 +288,17 @@ def convert(path: Path) -> bytes:
     shapes = {}
     for index in used:
         shape = tensors[index]["shape"]
+        shape = [1] * (4 - len(shape)) + shape
         shapes[numbering[index]] = [shape[1], shape[2], shape[3]]
     for node in graph:
         node["in"] = [numbering[i] for i in node["in"]]
         node["out"] = numbering[node["out"]]
+    output_ids = [[numbering[i] for i in group] for group in final]
     header = {
         "version": VERSION,
         "input": numbering[inputs[0]],
-        "output": numbering[resolve(outputs[0])],
+        "output": output_ids[0][0],
+        "outputs": output_ids,
         "shapes": {str(k): v for k, v in sorted(shapes.items())},
         "ops": graph,
     }
@@ -271,7 +311,7 @@ def main(argv: list[str]) -> int:
     if not argv:
         print("usage: build_call_segmentation_model.py selfie_segmentation_landscape.tflite [output]")
         return 2
-    output = Path(argv[1]) if len(argv) > 1 else OUTPUT
+    output = Path(argv[1]) if len(argv) > 1 else OUTPUT_DIR / (Path(argv[0]).stem + ".fmnn")
     data = convert(Path(argv[0]))
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(data)

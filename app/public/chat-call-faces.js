@@ -1,17 +1,21 @@
 import {
-  buildFaceMesh,
+  buildHeadMesh,
   buildTemplate,
   canonicalShape,
   clampValue,
   createPointSmoother,
   faceFrame,
   fitTemplate,
+  headLayout,
+  headModel,
   landmarksFromRegions,
   OneEuroFilter,
   pointsFromFlat,
 } from "./chat-call-face-geometry.js";
 import { createFaceTracker } from "./chat-call-face-tracker.js";
-import { createFaceRenderer, faceWebGL } from "./chat-call-face-render.js";
+import { backgroundCapable, createFaceRenderer, faceWebGL } from "./chat-call-face-render.js";
+import { sharedSegmentModels, decodeBase64 } from "./chat-call-segment.js";
+import { callBackgroundById, callBackgroundImageUrl } from "./chat-call-backgrounds.js";
 
 const FRAME_RATE = 24;
 const FRAME_MS = Math.round(1000 / FRAME_RATE);
@@ -19,10 +23,12 @@ const MAX_SIDE = 960;
 const HOST_SIDE = 480;
 const HOST_IN_FLIGHT = 2;
 const HOST_FAILURES = 3;
+const HOST_MASK_MISSES = 12;
 const HOLD_MS = 500;
 const FADE_IN = 0.3;
 const FADE_OUT = 0.2;
 const PHOTO_SIZE = 512;
+const BUDGET_MS = [22, 32, 40];
 
 export const CALL_FACE_STORAGE_KEY = "forkmesh.chat.callFace";
 export const CALL_FACE_PHOTO_BASE = "/assets/call-faces/";
@@ -60,7 +66,7 @@ export const CALL_FACES = Object.freeze([
     ]),
     head: Object.freeze([
       256.4, 43, 300.6, 52.9, 339.7, 73.6, 370.5, 103.5, 393.1, 137.6, 406.9, 174.1, 416.7, 210, 422.2, 246.6, 424.9, 285, 424, 327.3,
-      422.6, 379.1, 404.2, 431.9, 368.8, 479.9, 321, 512, 256.4, 512, 190, 512, 124.7, 512, 87, 458.9, 59.8, 403.3, 49.9, 346,
+      422.6, 379.1, 404.2, 431.9, 368.8, 479.9, 321, 512, 256.4, 512, 191.8, 512, 136.5, 495.6, 93.8, 450.5, 66.2, 398.2, 54.9, 343.6,
       54.4, 292.7, 56.4, 246.6, 63.3, 202.5, 77.6, 160.5, 99.1, 121.1, 129.3, 87.2, 167.3, 61.7, 210.5, 45.3,
     ]),
   }),
@@ -77,8 +83,8 @@ export const CALL_FACES = Object.freeze([
       206.8, 391.6, 229.9, 393.9, 256, 395.7, 282.6, 393.9, 306.4, 389.9, 282.6, 395.1, 256, 396.8, 229.9, 395.1,
     ]),
     head: Object.freeze([
-      256.1, 48.2, 298.6, 59, 336.5, 78.4, 367.1, 106.2, 388.6, 139.8, 403.7, 174.3, 411.9, 209.9, 416.3, 245.4, 419.1, 282.6, 430, 329.2,
-      428.7, 383.1, 410.4, 438.9, 378.6, 499.9, 321.5, 512, 256.1, 512, 188.3, 512, 120.1, 512, 82, 463.7, 53.4, 407, 43.5, 347.8,
+      256.1, 48.2, 298.6, 59, 336.5, 78.4, 367.1, 106.2, 388.6, 139.8, 403.7, 174.3, 411.9, 209.9, 416.3, 245.4, 419.1, 282.6, 428.9, 328.6,
+      427.8, 382.3, 409.6, 437.9, 376, 494.5, 321.3, 512, 256.1, 512, 188.3, 512, 120.1, 512, 82, 463.7, 53.4, 407, 43.5, 347.8,
       48.4, 292.8, 48.9, 245.4, 56, 199.8, 72.1, 156.8, 93.1, 115.5, 126.2, 82.5, 167.1, 60.5, 211, 47.7,
     ]),
   }),
@@ -95,8 +101,8 @@ export const CALL_FACES = Object.freeze([
       209.1, 390.5, 228.8, 393.4, 256, 395.1, 283.2, 393.4, 304.6, 389.3, 283.2, 393.9, 256, 395.7, 228.8, 393.9,
     ]),
     head: Object.freeze([
-      256, 48.1, 300.5, 51.1, 342, 67.4, 378.1, 92.8, 406.4, 126, 427.9, 163.1, 443.3, 203.1, 452.2, 245.9, 461.1, 292.7, 463.6, 345.9,
-      451.6, 401.9, 422.9, 455.2, 378.7, 500.7, 320.7, 512, 256, 512, 191.3, 512, 142.1, 482.5, 103.4, 437.3, 80.7, 385.7, 76.7, 332.2,
+      256, 48.1, 300.5, 51.1, 342, 67.4, 378.1, 92.8, 406.4, 126, 427.9, 163.1, 443.3, 203.1, 452.2, 245.9, 461.1, 292.7, 461.9, 345.1,
+      447.5, 398.6, 419, 450.2, 375.9, 494.9, 318.9, 512, 256, 512, 191.3, 512, 142.1, 482.5, 103.4, 437.3, 80.7, 385.7, 76.7, 332.2,
       76.5, 286.9, 78.8, 245.9, 89.1, 207.8, 103.4, 172.4, 119.4, 136.9, 142.9, 104.1, 174.4, 76.5, 212.9, 57.2,
     ]),
   }),
@@ -114,27 +120,36 @@ export const CALL_FACES = Object.freeze([
     ]),
     head: Object.freeze([
       254.3, 33.2, 298.7, 52, 334.5, 79.9, 359.6, 114.4, 375.4, 149.9, 387.2, 182.5, 397.2, 213.9, 406.2, 246.5, 418.8, 284.1, 432.1, 332.2,
-      431.7, 388, 412.2, 444.6, 376.4, 500.2, 318.9, 512, 254.3, 512, 187.6, 512, 122.2, 512, 58.8, 491.7, 23.2, 430.8, 2.7, 367.7,
+      430.8, 387.3, 410.7, 442.7, 376.4, 500.2, 318, 512, 254.3, 512, 187.8, 512, 122.2, 512, 58.8, 491.7, 23.2, 430.8, 2.7, 367.7,
       0, 304.6, 9.3, 246.5, 25.4, 194.3, 46.2, 146.3, 71.7, 100.9, 109.3, 64.7, 154.8, 40.1, 204.4, 28,
     ]),
   }),
 ]);
 
+const meshes = new Map();
 let template = null;
-let mesh = null;
 
 export function faceTemplate() {
   if (!template) template = buildTemplate(CALL_FACES.map(facePoints));
   return template;
 }
 
-export function faceMesh() {
-  if (!mesh) mesh = buildFaceMesh(faceTemplate());
-  return mesh;
-}
-
 export function facePoints(face) {
   return canonicalShape(pointsFromFlat(face.points));
+}
+
+export function faceHead(face) {
+  if (meshes.has(face.id)) return meshes.get(face.id);
+  const points = facePoints(face);
+  const ring = pointsFromFlat(face.head);
+  const model = headModel(points, ring);
+  const entry = {
+    layout: headLayout(points, ring),
+    model,
+    mesh: buildHeadMesh(model, faceTemplate()),
+  };
+  meshes.set(face.id, entry);
+  return entry;
 }
 
 export function callFaceById(id) {
@@ -145,20 +160,35 @@ export function callFacePhotoUrl(face) {
   return globalThis.FmCallFacePhotos?.[face.id] || `${CALL_FACE_PHOTO_BASE}${face.id}.jpg`;
 }
 
+export function callFaceMatteUrl(face) {
+  return globalThis.FmCallFacePhotos?.[`${face.id}-matte`] || `${CALL_FACE_PHOTO_BASE}${face.id}-matte.png`;
+}
+
 const supportCache = new WeakMap();
 
-export function callFacesSupported(documentRef = globalThis.document) {
-  if (!documentRef) return false;
+function probe(documentRef) {
+  if (!documentRef) return { faces: false, backgrounds: false };
   if (supportCache.has(documentRef)) return supportCache.get(documentRef);
   const canvas = documentRef.createElement?.("canvas");
-  let ok = Boolean(canvas && typeof canvas.captureStream === "function");
-  if (ok) {
+  let faces = Boolean(canvas && typeof canvas.captureStream === "function");
+  let backgrounds = false;
+  if (faces) {
     const gl = faceWebGL(canvas);
-    ok = Boolean(gl);
+    faces = Boolean(gl);
+    backgrounds = faces && backgroundCapable(gl);
     gl?.getExtension?.("WEBGL_lose_context")?.loseContext();
   }
-  supportCache.set(documentRef, ok);
-  return ok;
+  const result = { faces, backgrounds };
+  supportCache.set(documentRef, result);
+  return result;
+}
+
+export function callFacesSupported(documentRef = globalThis.document) {
+  return probe(documentRef).faces;
+}
+
+export function callBackgroundsSupported(documentRef = globalThis.document) {
+  return probe(documentRef).backgrounds;
 }
 
 export function outputSize(width, height, limit = MAX_SIDE) {
@@ -225,39 +255,64 @@ export function canvasGrabber(documentRef) {
   };
 }
 
+export function hostReply(reply) {
+  if (!reply || typeof reply !== "object") return { regions: null, mask: null };
+  if (!("regions" in reply) && !("mask" in reply)) return { regions: reply, mask: null };
+  let mask = null;
+  const raw = reply.mask;
+  if (raw && raw.width > 0 && raw.height > 0 && typeof raw.data === "string") {
+    const bytes = decodeBase64(raw.data);
+    if (bytes.length === raw.width * raw.height) mask = { bytes, width: raw.width, height: raw.height };
+  }
+  return { regions: reply.regions || null, mask };
+}
+
 export function createHostLocator(host, documentRef) {
   const canvas = documentRef.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  return async (frame, width, height) => {
+  return async (frame, width, height, want = { landmarks: true, mask: false }) => {
     const scale = Math.min(1, HOST_SIDE / Math.max(width, height));
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);
     ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-    const regions = await host.landmarks(canvas.toDataURL("image/jpeg", 0.8), canvas.width, canvas.height);
-    const points = landmarksFromRegions(regions);
-    return points ? points.map(([x, y]) => [x / scale, y / scale]) : null;
+    const reply = hostReply(await host.landmarks(canvas.toDataURL("image/jpeg", 0.8), canvas.width, canvas.height, want));
+    const points = want.landmarks ? landmarksFromRegions(reply.regions) : null;
+    return { points: points ? points.map(([x, y]) => [x / scale, y / scale]) : null, mask: reply.mask };
   };
 }
 
+function loadImage(ImageImpl, url) {
+  return new Promise((resolve, reject) => {
+    const image = new ImageImpl();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("image failed"));
+    image.src = url;
+  });
+}
+
 export function createFaceStage({
-  cameraStream,
+  cameraStream = null,
+  manual = false,
   faceId = "",
+  backgroundId = "",
+  backgroundImage = "",
   documentRef = globalThis.document,
   MediaStreamImpl = globalThis.MediaStream,
   ImageImpl = globalThis.Image,
   landmarkHost = globalThis.FmCallFaceHost,
+  segmentModels = (group) => sharedSegmentModels(group),
   setIntervalImpl = globalThis.setInterval.bind(globalThis),
   clearIntervalImpl = globalThis.clearInterval.bind(globalThis),
   now = () => globalThis.performance.now(),
 } = {}) {
-  const cameraTrack = cameraStream.getVideoTracks()[0];
+  const cameraTrack = cameraStream?.getVideoTracks?.()[0] || null;
   const settings = cameraTrack?.getSettings?.() || {};
   let [width, height] = outputSize(settings.width, settings.height);
   const canvas = documentRef.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const renderer = createFaceRenderer(canvas);
-  const track = canvas.captureStream(FRAME_RATE).getVideoTracks()[0];
+  const track = canvas.captureStream ? canvas.captureStream(FRAME_RATE).getVideoTracks()[0] : null;
   const frames = Array.from({ length: HOST_IN_FLIGHT + 1 }, () => {
     const frame = documentRef.createElement("canvas");
     return { canvas: frame, ctx: frame.getContext("2d"), busy: false };
@@ -266,16 +321,22 @@ export function createFaceStage({
   const video = documentRef.createElement("video");
   video.muted = true;
   video.playsInline = true;
-  video.srcObject = new MediaStreamImpl(cameraTrack ? [cameraTrack] : []);
-  video.play?.()?.catch?.(() => {});
+  if (cameraTrack) {
+    video.srcObject = new MediaStreamImpl([cameraTrack]);
+    video.play?.()?.catch?.(() => {});
+  }
 
   const tracker = createFaceTracker({ grab: canvasGrabber(documentRef) });
   const anchorSmoother = createAnchorSmoother();
   const pointSmoother = createPointSmoother(68, 1.5, 1.5);
   let hostLocate = landmarkHost?.landmarks ? createHostLocator(landmarkHost, documentRef) : null;
   let hostFailures = 0;
+  let hostMasks = Boolean(hostLocate);
+  let hostMaskMisses = 0;
   let face = null;
   let loading = 0;
+  let backgroundLoading = 0;
+  let background = callBackgroundById(backgroundId) || callBackgroundById("");
   let live = null;
   let seenAt = -Infinity;
   let presence = 0;
@@ -284,27 +345,64 @@ export function createFaceStage({
   let shown = 0;
   let inFlight = 0;
   let stopped = false;
+  const modelsRequested = new Set();
+  let cost = 0;
+  let skip = 0;
+  let netEvery = 1;
+  const stats = { frames: 0, network: 0, drawMs: 0, maxDrawMs: 0 };
 
-  async function locate(frame, w, h, time) {
-    if (hostLocate) {
-      try {
-        const points = await hostLocate(frame, w, h);
-        hostFailures = 0;
-        if (!points) return null;
-        return pointSmoother.smooth(points, time, faceFrame(points).span);
-      } catch (_) {
-        hostFailures += 1;
-        if (hostFailures >= HOST_FAILURES) hostLocate = null;
-        return null;
-      }
-    }
-    const anchors = tracker.track(frame, w, h);
-    if (!anchors) return null;
-    const smooth = anchorSmoother.smooth(anchors, time);
-    return fitTemplate(faceTemplate(), smooth);
+  function wantsMatte() {
+    return Boolean(face) || background.mode !== "off";
   }
 
-  function render(frame, points, time) {
+  function requestModels() {
+    const groups = [];
+    if (wantsMatte()) groups.push("segment");
+    if (face && !hostLocate) groups.push("face");
+    for (const group of groups) {
+      if (modelsRequested.has(group)) continue;
+      modelsRequested.add(group);
+      Promise.resolve(segmentModels(group)).then((models) => {
+        if (!stopped && models) renderer.useModels(models);
+      }).catch(() => {});
+    }
+  }
+
+  async function locate(frame, w, h, time) {
+    const wantMask = hostMasks && wantsMatte();
+    if (hostLocate && (face || wantMask)) {
+      try {
+        const reply = await hostLocate(frame, w, h, { landmarks: Boolean(face), mask: wantMask });
+        hostFailures = 0;
+        if (wantMask) {
+          if (reply.mask) hostMaskMisses = 0;
+          else if (++hostMaskMisses >= HOST_MASK_MISSES) hostMasks = false;
+        }
+        const points = reply.points ? pointSmoother.smooth(reply.points, time, faceFrame(reply.points).span) : null;
+        return { points, mask: reply.mask };
+      } catch (_) {
+        hostFailures += 1;
+        if (hostFailures >= HOST_FAILURES) {
+          hostLocate = null;
+          hostMasks = false;
+        }
+        return { points: null, mask: null };
+      }
+    }
+    if (!face) return { points: null, mask: null };
+    if (renderer.faceMesh) {
+      const found = renderer.trackFace(frame, w, h);
+      if (!found) return { points: null, mask: null, uploaded: true };
+      return { points: pointSmoother.smooth(found.points, time, faceFrame(found.points).span), mask: null, uploaded: true };
+    }
+    const anchors = tracker.track(frame, w, h);
+    if (!anchors) return { points: null, mask: null };
+    const smooth = anchorSmoother.smooth(anchors, time);
+    return { points: fitTemplate(faceTemplate(), smooth), mask: null };
+  }
+
+  function render(frame, result, time) {
+    const points = result?.points || null;
     if (points) {
       live = points;
       seenAt = time;
@@ -319,16 +417,38 @@ export function createFaceStage({
     const seen = Boolean(points) && ready;
     presence += ((held && ready ? 1 : 0) - presence) * (held ? FADE_IN : FADE_OUT);
     hide += ((seen ? 0 : 1) - hide) * (seen ? FADE_IN : FADE_OUT);
-    renderer.draw(frame.canvas, width, height, live, { presence, hide: face ? hide : 0 });
+    const matte = renderer.matte;
+    if (matte) {
+      if (result?.mask) matte.setHostMask(result.mask.bytes, result.mask.width, result.mask.height);
+      else if (!hostMasks) matte.clearHostMask();
+    }
+    let runNetwork = true;
+    if (!hostMasks && netEvery > 1) {
+      skip = (skip + 1) % netEvery;
+      runNetwork = skip === 0;
+    }
+    const started = now();
+    renderer.draw(frame.canvas, width, height, face ? live : null, {
+      presence,
+      hide: face ? hide : 0,
+      runNetwork,
+      uploaded: Boolean(result?.uploaded),
+    });
+    const spent = now() - started;
+    cost = cost ? cost * 0.9 + spent * 0.1 : spent;
+    netEvery = cost > BUDGET_MS[2] ? 3 : cost > BUDGET_MS[1] ? 2 : cost < BUDGET_MS[0] ? 1 : netEvery;
+    stats.frames += 1;
+    stats.network += runNetwork && !hostMasks && renderer.segmentation && wantsMatte() ? 1 : 0;
+    stats.drawMs += spent;
+    stats.maxDrawMs = Math.max(stats.maxDrawMs, spent);
   }
 
-  function tick() {
-    if (stopped || !video.videoWidth || (video.readyState ?? 4) < 2) return;
+  function process(source, sourceWidth, sourceHeight, time) {
     const limit = hostLocate ? HOST_IN_FLIGHT : 1;
-    if (inFlight >= limit) return;
+    if (inFlight >= limit) return null;
     const frame = frames.find((entry) => !entry.busy);
-    if (!frame) return;
-    const [w, h] = outputSize(video.videoWidth, video.videoHeight);
+    if (!frame) return null;
+    const [w, h] = outputSize(sourceWidth, sourceHeight);
     if (w !== width || h !== height) {
       width = w;
       height = h;
@@ -338,20 +458,24 @@ export function createFaceStage({
       frame.canvas.width = w;
       frame.canvas.height = h;
     }
-    frame.ctx.drawImage(video, 0, 0, w, h);
+    frame.ctx.drawImage(source, 0, 0, w, h);
     frame.busy = true;
     inFlight += 1;
     const id = ++sequence;
-    const time = now();
-    const work = face ? locate(frame.canvas, w, h, time) : Promise.resolve(null);
-    Promise.resolve(work).catch(() => null).then((points) => {
+    return Promise.resolve(locate(frame.canvas, w, h, time)).catch(() => null).then((result) => {
       inFlight -= 1;
       if (!stopped && id > shown) {
         shown = id;
-        render(frame, points, time);
+        render(frame, result, time);
       }
       frame.busy = false;
+      return true;
     });
+  }
+
+  function tick() {
+    if (stopped || !video.videoWidth || (video.readyState ?? 4) < 2) return;
+    process(video, video.videoWidth, video.videoHeight, now());
   }
 
   function loadFace(id) {
@@ -362,31 +486,67 @@ export function createFaceStage({
       renderer.clearPhoto();
       return;
     }
-    const points = facePoints(next);
+    const head = faceHead(next);
     face = { id: next.id, ready: false };
     presence = 0;
-    const image = new ImageImpl();
-    image.onload = () => {
-      if (token !== loading || stopped) return;
-      renderer.setPhoto(image, faceMesh(), points, PHOTO_SIZE, next.look);
-      face.ready = true;
-    };
-    image.src = callFacePhotoUrl(next);
+    requestModels();
+    Promise.all([loadImage(ImageImpl, callFacePhotoUrl(next)), loadImage(ImageImpl, callFaceMatteUrl(next))])
+      .then(([image, matte]) => {
+        if (token !== loading || stopped) return;
+        renderer.setPhoto(image, matte, head.mesh, head.layout, head.model, PHOTO_SIZE);
+        face.ready = true;
+      })
+      .catch(() => {});
+  }
+
+  function loadBackground(id, image = "") {
+    const next = callBackgroundById(id) || callBackgroundById("");
+    const token = ++backgroundLoading;
+    background = next;
+    requestModels();
+    if (next.mode !== "image") {
+      renderer.setBackground({ mode: next.mode, strength: next.strength ?? 0.5 });
+      return;
+    }
+    renderer.setBackground({ mode: "off" });
+    const url = next.custom ? image : callBackgroundImageUrl(next);
+    if (!url) {
+      background = callBackgroundById("");
+      return;
+    }
+    loadImage(ImageImpl, url).then((loaded) => {
+      if (token !== backgroundLoading || stopped) return;
+      renderer.setBackground({ mode: "image", image: loaded });
+    }).catch(() => {});
   }
 
   loadFace(faceId);
-  const timer = setIntervalImpl(tick, FRAME_MS);
+  loadBackground(backgroundId, backgroundImage);
+  const timer = manual ? null : setIntervalImpl(tick, FRAME_MS);
 
   return {
     track,
+    canvas,
+    stats,
     face: () => face?.id || "",
+    background: () => background.id,
+    landmarks: () => ({ live, head: renderer.lastHead, presence, hide }),
+    ready: () => Boolean((!face || face.ready) && (background.mode !== "image" || renderer.hasBackgroundImage) && (!wantsMatte() || renderer.segmentation) && (!face || hostLocate || renderer.faceMesh)),
+    processFrame(source, time = now()) {
+      const w = source.videoWidth || source.naturalWidth || source.width;
+      const h = source.videoHeight || source.naturalHeight || source.height;
+      return process(source, w, h, time) || Promise.resolve(false);
+    },
     setFace(id) {
       loadFace(id);
+    },
+    setBackground(id, image = "") {
+      loadBackground(id, image);
     },
     stop() {
       if (stopped) return;
       stopped = true;
-      clearIntervalImpl(timer);
+      if (timer !== null) clearIntervalImpl(timer);
       try {
         track?.stop();
       } catch (_) {}
