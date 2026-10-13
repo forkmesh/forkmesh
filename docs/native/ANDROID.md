@@ -952,6 +952,53 @@ by default in new projects; the rule and the package list are in
   which still works. Android has no Steps, Water, Sleep, Sugar Break, Stretch
   or Speech screens, so those packages only appear in the Market.
 
+## 14. Market list redesign (2026-10-13)
+
+`A/feature/market/MarketScreens.kt` (`MarketScreen`), `MarketCards.kt`;
+model in `C/market/MarketModels.kt` (`MarketModel`, `MarketOptions`,
+`MarketSort`, `MarketText`).
+
+- **Nothing behind the bars.** The status tabs, search field and list were
+  three fixed bands; in landscape (rail layout, nothing consumes the
+  navigation bar) the list ran under the system navigation bar and the last
+  rows could not be reached, and the floating bug button sat on the last row's
+  button. Search and the chip row are now the first items of the list, the
+  list pads the horizontal safe area, and its tail is the unconsumed
+  navigation bar plus IME inset and 72 dp, so the last row scrolls clear of
+  the bottom bar, the gesture bar, the keyboard and the bug button.
+- **Sorts and filters** match the web Market (`www/templates/pages/market.html`):
+  Featured (category shelves), Most installed, Most downloaded, Most used
+  (people, then opens), Top rated, Name. Filters are what
+  `/api/market/packages` carries: installed or not, category, price (`free`),
+  platform (phone surface, `desktop`, `web`, `world`), who installs it
+  (`PackageInstallMode`: account, organizations, this phone, desktop app) and
+  type. Newest, recently updated and publisher/official are not offered:
+  the package rows have no dates and no `creator`.
+- **Usage.** `/api/market/installs` gives installs and downloads;
+  `/api/market/reviews/summary` already returns `usage` (people, opens) next
+  to the ratings, now parsed (`PackagesClient.marketSummary`). Each row shows
+  the parts that are non-zero.
+- **Install state.** Every catalog row is `bundled: true`, which only means it
+  ships with the desktop, yet the model read it as installed for every package
+  that is neither account-synced nor organization-scoped (Winamp, VSCodium,
+  the model packages, the World boards), so the Market said Installed for
+  packages nobody installed. Those are now `PackageInstallMode.DESKTOP`:
+  installed means `install.default`, the row says Desktop or World, and the
+  phone offers no install. Organization packages kept a stale or empty
+  answer when `myOrgs` or one `/api/plugins/<org>` failed: a failed org fetch
+  now keeps its last state, an unknown org list (`organizationNamesOrNull`)
+  falls back to the Home gate's cached answer
+  (`PackageGateFeature.organizationCached`). Account packages the store does
+  not know yet follow `PackageGate.fallback` (installedBefore plus the legacy
+  marker), like the Home gate. Test: `MarketTest.testInstallStateFollowsWhatThePhoneCanKnow`.
+- **One-tap install** (`MarketModel.cardAction`): account packages call
+  `AccountPackagesStore.install` (dependencies follow), organization packages
+  install for the only manageable organization or offer a menu when there are
+  several, and open the package page when there is none; phone switches turn
+  on. Installed packages with a native route show Open. Errors stay on the row.
+- Items read `version` so a sort, filter or install recomposes the chip row
+  and rows; LazyColumn item lambdas that only capture the model are skipped.
+
 ## Appendix: port map
 
 The Flutter (or Flutter Android) source each Kotlin file was ported from, as

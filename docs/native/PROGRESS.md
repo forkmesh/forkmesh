@@ -698,6 +698,19 @@ really Partial until AWp. Desktop-parity items (DESKTOP_PARITY.md) are all
 Missing on Android except those that come with a row above; AW10+ tracks
 them.
 
+### Market redesign (2026-10-13, branch `1991-mobile-market-redesign-android`)
+
+Android Market list: search and a chip row (sort, Installed / Not installed,
+category, price, platform, installs for, type, clear) scroll with the list;
+compact rows without a card background, hairline full-width dividers, 16:9
+thumbnails that fit instead of crop, usage line (rating, installs, users) and
+a one-tap Install / Open / Installed button with progress and inline errors.
+Install state no longer treats `bundled` as installed and keeps organization
+installs when a fetch fails. Reasons in [ANDROID.md section 14](ANDROID.md).
+Verified: `:core:coreTest` (2142 passed), `:app:assembleDebug`, emulator
+screenshots (Android 36). Server fields still missing: package publish and
+update dates, publisher (`creator`) on `/api/market/packages`.
+
 ## How to update this file
 
 - **When a workstream starts**, set its status to **In progress** and fill in
