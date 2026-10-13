@@ -1,0 +1,257 @@
+package com.forkmesh.nativeapp.feature.market
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.market.MarketCardAction
+import com.forkmesh.nativeapp.market.MarketFilter
+import com.forkmesh.nativeapp.market.MarketModel
+import com.forkmesh.nativeapp.market.MarketPackage
+import com.forkmesh.nativeapp.market.MarketPlatform
+import com.forkmesh.nativeapp.market.MarketPrice
+import com.forkmesh.nativeapp.market.MarketSort
+import com.forkmesh.nativeapp.market.MarketText
+import com.forkmesh.nativeapp.market.PackageInstallMode
+import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmTone
+import com.forkmesh.nativeapp.ui.kit.FmToneButton
+import com.forkmesh.nativeapp.ui.theme.Fm
+import com.forkmesh.nativeapp.ui.theme.FmIcon
+import com.forkmesh.nativeapp.ui.theme.FmRadius
+
+internal val MARKET_LIST_TAIL = 72.dp
+private val THUMB_WIDTH = 96.dp
+private val ACTION_WIDTH = 84.dp
+
+@Composable
+internal fun MarketControls(model: MarketModel, version: Int, onChanged: () -> Unit) {
+    @Suppress("UNUSED_EXPRESSION") version
+    val options = model.options
+    fun set(next: com.forkmesh.nativeapp.market.MarketOptions) {
+        model.options = next
+        onChanged()
+    }
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MarketChoiceChip(
+            label = if (options.sort == MarketSort.FEATURED) "Sort" else options.sort.title,
+            icon = "sort",
+            selected = options.sort != MarketSort.FEATURED,
+            choices = MarketSort.entries.map { it.title to (it == options.sort) },
+            onPick = { set(options.copy(sort = MarketSort.entries[it])) },
+        )
+        listOf(MarketFilter.INSTALLED, MarketFilter.NOT_INSTALLED).forEach { status ->
+            MarketChip(status.title, selected = model.filter == status, onClick = {
+                model.filter = if (model.filter == status) MarketFilter.ALL else status
+                onChanged()
+            })
+        }
+        val categories = model.categories
+        MarketChoiceChip(
+            label = options.category.ifEmpty { "Category" },
+            selected = options.category.isNotEmpty(),
+            choices = listOf("Any category" to options.category.isEmpty()) + categories.map { it to (it == options.category) },
+            onPick = { set(options.copy(category = if (it == 0) "" else categories[it - 1])) },
+        )
+        MarketChoiceChip(
+            label = if (options.price == MarketPrice.ANY) "Price" else options.price.title,
+            selected = options.price != MarketPrice.ANY,
+            choices = MarketPrice.entries.map { it.title to (it == options.price) },
+            onPick = { set(options.copy(price = MarketPrice.entries[it])) },
+        )
+        MarketChoiceChip(
+            label = if (options.platform == MarketPlatform.ANY) "Platform" else options.platform.title,
+            selected = options.platform != MarketPlatform.ANY,
+            choices = MarketPlatform.entries.map { it.title to (it == options.platform) },
+            onPick = { set(options.copy(platform = MarketPlatform.entries[it])) },
+        )
+        val modes = PackageInstallMode.entries
+        MarketChoiceChip(
+            label = options.mode?.title ?: "Installs for",
+            selected = options.mode != null,
+            choices = listOf("Anyone" to (options.mode == null)) + modes.map { it.title to (it == options.mode) },
+            onPick = { set(options.copy(mode = if (it == 0) null else modes[it - 1])) },
+        )
+        val types = model.types
+        MarketChoiceChip(
+            label = if (options.type.isEmpty()) "Type" else MarketText.typeLabel(options.type),
+            selected = options.type.isNotEmpty(),
+            choices = listOf("Any type" to options.type.isEmpty()) + types.map { MarketText.typeLabel(it) to (it == options.type) },
+            onPick = { set(options.copy(type = if (it == 0) "" else types[it - 1])) },
+        )
+        if (options.activeFilters > 0 || model.filter != MarketFilter.ALL) {
+            MarketChip("Clear", icon = "close", selected = false, onClick = {
+                model.filter = MarketFilter.ALL
+                set(options.cleared())
+            })
+        }
+    }
+}
+
+@Composable
+private fun MarketChip(label: String, selected: Boolean, icon: String? = null, dropdown: Boolean = false, onClick: () -> Unit) {
+    val c = Fm.colors
+    val shape = RoundedCornerShape(FmRadius.full)
+    val tint = if (selected) c.accent else c.textSecondary
+    Row(
+        Modifier
+            .height(32.dp)
+            .clip(shape)
+            .background(if (selected) c.accent.copy(alpha = .14f) else c.bgBase)
+            .border(1.dp, if (selected) c.accent else c.border, shape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(start = if (icon != null) 8.dp else 12.dp, end = if (dropdown) 6.dp else 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (icon != null) FmIcon(icon, size = 18.dp, tint = tint)
+        Text(label, style = Fm.text.labelMedium, color = if (selected) c.accent else c.textPrimary, maxLines = 1)
+        if (dropdown) FmIcon("arrow_drop_down", size = 18.dp, tint = tint)
+    }
+}
+
+@Composable
+private fun MarketChoiceChip(label: String, selected: Boolean, choices: List<Pair<String, Boolean>>, onPick: (Int) -> Unit, icon: String? = null) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        MarketChip(label, selected, icon = icon, dropdown = true, onClick = { open = true })
+        FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            choices.forEachIndexed { index, (title, chosen) ->
+                FmDropdownMenuItem(title, onClick = { open = false; onPick(index) }, icon = if (chosen) "check" else null)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun MarketCard(
+    pkg: MarketPackage,
+    model: MarketModel,
+    action: MarketCardAction,
+    busy: Boolean,
+    failure: String?,
+    onOpenPackage: () -> Unit,
+    onOpen: () -> Unit,
+    onInstall: (String?) -> Unit,
+    version: Int,
+) {
+    @Suppress("UNUSED_EXPRESSION") version
+    val c = Fm.colors
+    val nested = model.nested(pkg).size
+    val stats = MarketText.stats(model.counts[pkg.id], model.usage[pkg.id], model.ratings[pkg.id])
+    val facts = stats + listOfNotNull(
+        if (pkg.free) "Free" else "Paid",
+        nested.takeIf { it > 0 }?.let { "+$it included" },
+    )
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpenPackage).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val screenshot = pkg.screenshots.firstOrNull()
+        if (screenshot != null) {
+            MarketScreenshotImage(
+                screenshot,
+                Modifier.width(THUMB_WIDTH),
+                maxWidth = MarketImages.THUMBNAIL_WIDTH,
+                radius = FmRadius.md,
+                describe = false,
+                contentScale = ContentScale.Fit,
+            )
+        } else {
+            Box(
+                Modifier.width(THUMB_WIDTH).aspectRatio(16f / 9f).clip(RoundedCornerShape(FmRadius.md)).background(c.bgOverlay),
+                contentAlignment = Alignment.Center,
+            ) { FmIcon("extension", size = 22.dp, tint = c.textTertiary) }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(pkg.name, style = Fm.text.titleSmall, color = c.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (pkg.summary.isNotEmpty()) {
+                Text(pkg.summary, style = Fm.text.bodySmall, color = c.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text(facts.joinToString(" · "), style = Fm.text.labelSmall, color = c.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (failure != null) Text(failure, style = Fm.text.labelSmall, color = c.danger, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Box(Modifier.widthIn(min = ACTION_WIDTH).heightIn(min = 34.dp), contentAlignment = Alignment.CenterEnd) {
+            MarketCardButton(pkg, model, action, busy, onOpen, onInstall)
+        }
+    }
+}
+
+@Composable
+private fun MarketCardButton(
+    pkg: MarketPackage,
+    model: MarketModel,
+    action: MarketCardAction,
+    busy: Boolean,
+    onOpen: () -> Unit,
+    onInstall: (String?) -> Unit,
+) {
+    val c = Fm.colors
+    if (busy) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FmCircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Text("Installing", style = Fm.text.labelSmall, color = c.textSecondary)
+        }
+        return
+    }
+    when (action) {
+        MarketCardAction.OPEN -> FmToneButton("Open", onPressed = onOpen, tone = FmTone.Accent)
+        MarketCardAction.INSTALLED -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            FmIcon("check", size = 16.dp, tint = c.success)
+            Text("Installed", style = Fm.text.labelMedium, color = c.success)
+        }
+        MarketCardAction.INSTALL, MarketCardAction.INSTALL_ON_PHONE ->
+            FmToneButton("Install", onPressed = { onInstall(null) }, tone = FmTone.Accent, filled = true)
+        MarketCardAction.NEEDS_ORGANIZATION -> FmToneButton("Get", onPressed = { onInstall(null) }, tone = FmTone.Accent)
+        MarketCardAction.PICK_ORGANIZATION -> {
+            var open by remember { mutableStateOf(false) }
+            Box {
+                FmToneButton("Install", onPressed = { open = true }, tone = FmTone.Accent, filled = true)
+                FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    model.installTargets(pkg).filter { !it.isInstalled(pkg.id) }.forEach { org ->
+                        FmDropdownMenuItem("Install for ${org.organization}", onClick = { open = false; onInstall(org.organization) })
+                    }
+                }
+            }
+        }
+        MarketCardAction.DESKTOP -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            val world = pkg.world && !pkg.desktop
+            FmIcon(if (world) "public" else "desktop_windows", size = 16.dp, tint = c.textTertiary)
+            Text(if (world) "World" else "Desktop", style = Fm.text.labelMedium, color = c.textTertiary)
+        }
+    }
+}

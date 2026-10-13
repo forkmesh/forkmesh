@@ -72,6 +72,7 @@ internal fun MarketScreenshotImage(
     maxWidth: Int = MarketImages.FULL_WIDTH,
     radius: Dp = FmRadius.lg,
     describe: Boolean = true,
+    contentScale: ContentScale = ContentScale.Crop,
 ) {
     var image by remember(screenshot.url, maxWidth) { mutableStateOf(MarketImages.cached(screenshot.url, maxWidth)) }
     var failed by remember(screenshot.url, maxWidth) { mutableStateOf(false) }
@@ -94,7 +95,7 @@ internal fun MarketScreenshotImage(
                 bitmap = bitmap,
                 contentDescription = if (describe) screenshot.alt.ifEmpty { "Screenshot" } else null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
             )
             failed -> FmIcon("broken_image", tint = Fm.colors.textTertiary)
             else -> FmCircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)

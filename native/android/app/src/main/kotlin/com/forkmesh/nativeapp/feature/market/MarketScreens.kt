@@ -16,6 +16,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.unit.Dp
+import com.forkmesh.nativeapp.market.MarketCardAction
+import com.forkmesh.nativeapp.market.PackageInstallMode
+import com.forkmesh.nativeapp.market.PackagesException
+import com.forkmesh.nativeapp.ui.kit.FmLinearProgressIndicator
+import com.forkmesh.nativeapp.ui.kit.fmSafeAreaInsets
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -88,7 +103,10 @@ internal fun forgetSharedMarket() {
 
 private fun marketModel(filter: MarketFilter): MarketModel? =
     (sharedMarket ?: MarketFeature.client()?.let { client ->
-        MarketModel(client, filter, StatusPageFeature::installedOrNull, PackageGateFeature::deviceSwitch)
+        MarketModel(client, filter, StatusPageFeature::installedOrNull, PackageGateFeature::deviceSwitch).apply {
+            organizationCache = PackageGateFeature::organizationCached
+            legacy = { PackageGateFeature.legacy }
+        }
     }?.also { sharedMarket = it })?.also { it.filter = filter }
 
 internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? PackagePhoneSurface.Native)?.destination) {
@@ -129,60 +147,141 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
     private var loading by mutableStateOf(true)
     private var version by mutableIntStateOf(0)
     private var reload by mutableIntStateOf(1)
+    private val installing = mutableStateMapOf<String, Boolean>()
+    private val failures = mutableStateMapOf<String, String>()
 
     @Composable
     override fun Content(navigator: Navigator) {
         val model = model ?: return
         val accountVersion by StatusPageFeature.version.collectAsState()
+        val surfaces by PackageGateFeature.surfaces.collectAsState()
+        val scope = rememberCoroutineScope()
         LaunchedEffect(reload) {
             loading = true
-            val names = MarketFeature.organizationNames()
+            val names = MarketFeature.organizationNamesOrNull()
             withContext(Dispatchers.IO) { model.refresh(names) }
             StatusPageFeature.rememberCatalog(model.packages)
-            if (names.isNotEmpty() && model.organizations.size == names.size) PackageGateFeature.adoptOrganizations(model.organizations)
+            if (names != null && names.isNotEmpty() && model.organizationsComplete) PackageGateFeature.adoptOrganizations(model.organizations)
             StatusPageFeature.refreshAccount()
             loading = false
             version++
         }
         @Suppress("UNUSED_EXPRESSION") version
         @Suppress("UNUSED_EXPRESSION") accountVersion
+        @Suppress("UNUSED_EXPRESSION") surfaces
+
+        fun install(pkg: MarketPackage, organization: String?) {
+            if (installing[pkg.id] == true) return
+            failures.remove(pkg.id)
+            when (model.cardAction(pkg, routeFor(pkg) != null)) {
+                MarketCardAction.INSTALL_ON_PHONE -> {
+                    PackageGateFeature.setDeviceSwitch(pkg.id, true)
+                    version++
+                    return
+                }
+                MarketCardAction.NEEDS_ORGANIZATION, MarketCardAction.DESKTOP -> {
+                    navigator.push(PackageScreen(pkg.id))
+                    return
+                }
+                else -> Unit
+            }
+            installing[pkg.id] = true
+            scope.launch {
+                val problem: String? = if (model.installMode(pkg) == PackageInstallMode.ACCOUNT) {
+                    val store = StatusPageFeature.store
+                    if (store == null) {
+                        PackagesException.sentence("sign_in_required")
+                    } else {
+                        withContext(Dispatchers.IO) { runCatching { store.install(pkg.id) } }
+                            .fold({ StatusPageFeature.adopt(it); null }, { PackagesException.describe(it) })
+                    }
+                } else {
+                    val target = organization ?: model.installTargets(pkg).firstOrNull { !it.isInstalled(pkg.id) }?.organization
+                    when {
+                        target == null -> PackagesException.sentence("organization_admin_required")
+                        withContext(Dispatchers.IO) { model.install(pkg, target) } -> {
+                            PackageGateFeature.adoptOrganizations(model.organizations)
+                            null
+                        }
+                        else -> model.errorText.ifEmpty { "Could not install ${pkg.name}." }
+                    }
+                }
+                installing.remove(pkg.id)
+                if (problem != null) failures[pkg.id] = problem
+                version++
+            }
+        }
+
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
             ToolsAppBar("Market", navigator) {
                 FmIconButton("refresh", "Refresh", onPressed = { reload++ }, color = Fm.colors.textPrimary)
             }
-            val filters = MarketFilter.entries
-            FmSegmentTabBar(filters.map { FmSegmentTab(it.title) }, filters.indexOf(model.filter), onChanged = { model.filter = filters[it]; version++ })
-            FmTextField(model.query, { model.query = it; version++ }, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), hint = "Search packages")
-            ErrorLine(model.errorText)
-            ErrorLine(model.partialError)
+            if (loading && model.packages.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
+                return@Column
+            }
             val shelves = model.shelves
-            when {
-                loading && model.packages.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
-                shelves.isEmpty() -> FmEmptyState("shopping_bag", "No packages", message = if (model.query.isNotBlank()) "Nothing matches “${model.query.trim()}”." else null)
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    shelves.forEach { shelf ->
-                        item(key = "shelf-${shelf.category}") { FmSectionHeader(shelf.category, Modifier.padding(horizontal = 16.dp, vertical = 8.dp), count = shelf.packages.size) }
-                        items(shelf.packages, key = { it.id }) { pkg ->
-                            val installed = model.isInstalled(pkg)
-                            FmListRow(
-                                pkg.name,
-                                subtitle = listOfNotNull(
-                                    pkg.summary.take(120).ifEmpty { null },
-                                    model.nested(pkg).size.takeIf { it > 0 }?.let { "Includes $it packages" },
-                                    model.ratings[pkg.id]?.takeIf { it.count > 0 }?.label?.let { "★ $it" },
-                                ).joinToString(" · "),
-                                leading = {
-                                    val screenshot = pkg.screenshots.firstOrNull()
-                                    if (screenshot != null) {
-                                        MarketScreenshotImage(screenshot, Modifier.width(72.dp), maxWidth = MarketImages.THUMBNAIL_WIDTH, radius = FmRadius.md, describe = false)
-                                    } else {
-                                        FmIconTile("extension", tint = if (installed) Fm.colors.success else Fm.colors.accent)
-                                    }
-                                },
-                                trailing = if (installed) ({ FmStatusBadge("Installed", Fm.colors.success) }) else null,
-                                onTap = { navigator.push(PackageScreen(pkg.id)) },
-                            )
+            LazyColumn(
+                Modifier.fillMaxSize().windowInsetsPadding(fmSafeAreaInsets(top = false, bottom = false)),
+            ) {
+                item(key = "search") {
+                    FmTextField(
+                        model.query,
+                        { model.query = it; version++ },
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                        hint = "Search packages",
+                    )
+                }
+                item(key = "controls") {
+                    MarketControls(model, version, onChanged = { version++ })
+                }
+                item(key = "errors") {
+                    @Suppress("UNUSED_EXPRESSION") version
+                    Column {
+                        ErrorLine(model.errorText)
+                        ErrorLine(model.partialError)
+                        if (loading) FmLinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+                    }
+                }
+                if (shelves.isEmpty()) {
+                    item(key = "empty") {
+                        FmEmptyState(
+                            "shopping_bag",
+                            "No packages",
+                            message = when {
+                                model.query.isNotBlank() -> "Nothing matches “${model.query.trim()}”."
+                                model.options.activeFilters > 0 || model.filter != MarketFilter.ALL -> "No package matches these filters."
+                                else -> null
+                            },
+                        )
+                    }
+                }
+                shelves.forEach { shelf ->
+                    if (shelf.category.isNotEmpty()) {
+                        item(key = "shelf-${shelf.category}") {
+                            FmSectionHeader(shelf.category, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp), count = shelf.packages.size)
                         }
+                    }
+                    itemsIndexed(shelf.packages, key = { _, pkg -> "${shelf.category}/${pkg.id}" }) { index, pkg ->
+                        if (index > 0) HorizontalDivider(thickness = Dp.Hairline, color = Fm.colors.border)
+                        val route = routeFor(pkg)
+                        MarketCard(
+                            pkg = pkg,
+                            model = model,
+                            action = model.cardAction(pkg, route != null && PackageGateFeature.deviceSwitch(pkg.id) != false),
+                            busy = installing[pkg.id] == true,
+                            failure = failures[pkg.id],
+                            onOpenPackage = { navigator.push(PackageScreen(pkg.id)) },
+                            onOpen = { route?.let { navigator.push(NavigationFeature.screen(it)) } },
+                            onInstall = { organization -> install(pkg, organization) },
+                            version = version,
+                        )
+                    }
+                }
+                item(key = "end") {
+                    Column {
+                        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars.union(WindowInsets.ime)))
+                        Spacer(Modifier.height(MARKET_LIST_TAIL))
                     }
                 }
             }
@@ -254,7 +353,7 @@ class PackageScreen(private val packageId: String) : Screen() {
                 MarketFeature.reportViewed(packageId)
             }
             if (market.pkg(packageId) == null) {
-                val names = MarketFeature.organizationNames()
+                val names = MarketFeature.organizationNamesOrNull()
                 withContext(Dispatchers.IO) { market.refresh(names) }
                 StatusPageFeature.rememberCatalog(market.packages)
             }
