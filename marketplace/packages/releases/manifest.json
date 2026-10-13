@@ -1,0 +1,65 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "releases",
+  "name": "Releases",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Repositories",
+  "version": "1.0.0",
+  "summary": "The Releases tab of every repository: tags, release notes and downloads.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Releases plugin card"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:releases",
+    "ios": "builtin:releases",
+    "android": "builtin:releases",
+    "web": "builtin:releases",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "repository.releases",
+      "label": "Read and publish releases on repositories you can access",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

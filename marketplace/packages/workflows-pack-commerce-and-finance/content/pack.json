@@ -1,0 +1,13 @@
+{
+  "category": "Commerce and finance",
+  "integrations": [
+    "stripe",
+    "paypal",
+    "shopify",
+    "woocommerce",
+    "square",
+    "paddle",
+    "lemonsqueezy",
+    "quickbooks"
+  ]
+}

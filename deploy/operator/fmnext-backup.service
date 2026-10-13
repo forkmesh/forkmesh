@@ -1,0 +1,22 @@
+# systemd --user unit for the operator box (NOT installed automatically).
+# Pulls a compressed rqlite backup from the Raft leader over an SSH tunnel,
+# verifies it (gunzip, PRAGMA integrity_check, table counts) in a 0700 work
+# dir, age-encrypts it to config/backup-age.pub into
+# ~/projects/forkmesh/data/fleet/backups/rqlite-*.sqlite3.gz.age and applies
+# retention (7 daily + 4 weekly; only rqlite-*.sqlite3.gz[.age] files it
+# wrote are ever deleted). Refuses without the recipient: run
+# `next_backup.py keygen --execute` once and move the private key offline.
+[Unit]
+Description=ForkMesh Next nightly rqlite backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/forkmesh/src
+ExecStart=%h/projects/forkmesh/src/.venv/bin/python %h/projects/forkmesh/src/tools/next_backup.py run --execute
+TimeoutStartSec=30min
+Nice=10
+NoNewPrivileges=true
+# No PrivateTmp: in a --user unit it needs a user namespace, where root-owned
+# /etc/ssh/ssh_config.d files look foreign and ssh refuses to run.

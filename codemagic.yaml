@@ -1,0 +1,707 @@
+# Codemagic builds of the iOS app and the macOS desktop app: the Swift
+# SwiftUI app in native/ios (ios-native-build, ios-native-release,
+# ios-native-adhoc; native/ios/README.md describes what they build) and the Qt
+# desktop app (macos-desktop, last). Codemagic picks this file up from the root
+# of the branch being built; choose the workflow when starting the build.
+#
+# The native workflows start in native/ios (`working_directory`); macos-desktop
+# sets none, so its steps start in the clone root.
+
+definitions:
+  scripts:
+    - &asc_key
+      # Credentials first, so a misconfigured group fails in seconds rather
+      # than after a ten-minute archive.
+      name: Check the App Store Connect credentials
+      script: |
+        set -e
+        if [ -z "${ASC_KEY_ID:-}" ] || [ -z "${ASC_ISSUER_ID:-}" ] || [ -z "${ASC_API_KEY_P8:-}" ]; then
+          echo "ERROR: set ASC_KEY_ID, ASC_ISSUER_ID and ASC_API_KEY_P8 in the app_store_connect variable group." >&2
+          exit 1
+        fi
+        keydir="$HOME/.appstoreconnect/private_keys"
+        mkdir -p "$keydir"
+        (umask 077; printf '%b\n' "$ASC_API_KEY_P8" > "$keydir/AuthKey_${ASC_KEY_ID}.p8")
+        if ! openssl pkey -in "$keydir/AuthKey_${ASC_KEY_ID}.p8" -noout 2>/dev/null; then
+          echo "ERROR: ASC_API_KEY_P8 is not a readable private key (truncated paste or mangled newlines?)." >&2
+          exit 1
+        fi
+    - &push_check
+      name: Refuse a build that cannot receive push
+      script: |
+        set -e
+        ipa="$(find "$CM_BUILD_DIR/ipa" -maxdepth 1 -name '*.ipa' | head -n1)"
+        [ -f "$ipa" ] || { echo "ERROR: export produced no .ipa" >&2; exit 1; }
+        check="$CM_BUILD_DIR/ipa-check"
+        rm -rf "$check"; mkdir -p "$check"
+        unzip -q "$ipa" -d "$check"
+        signed_app="$(find "$check/Payload" -maxdepth 1 -name '*.app' | head -n1)"
+        if ! codesign -d --entitlements :- "$signed_app" 2>/dev/null | grep -q "aps-environment"; then
+          echo "ERROR: the exported IPA has no aps-environment entitlement; push would be dead on this build." >&2
+          exit 1
+        fi
+        signed_appex="$signed_app/PlugIns/NotificationService.appex"
+        if [ ! -d "$signed_appex" ]; then
+          echo "ERROR: the exported IPA embeds no notification service extension." >&2
+          exit 1
+        fi
+        for bundle in "$signed_app" "$signed_appex"; do
+          if ! codesign -d --entitlements :- "$bundle" 2>/dev/null | grep -q "keychain-access-groups"; then
+            echo "ERROR: $bundle has no shared keychain group; push banners could not be expanded." >&2
+            exit 1
+          fi
+        done
+        share_appex="$signed_app/PlugIns/ForkMeshShare.appex"
+        if [ -d "$share_appex" ] && ! codesign -d --entitlements :- "$share_appex" 2>/dev/null | grep -q "keychain-access-groups"; then
+          echo "ERROR: $share_appex has no shared keychain group; a shared image could not reach the composer." >&2
+          exit 1
+        fi
+        short="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$signed_app/Info.plist")"
+        build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$signed_app/Info.plist")"
+        echo "Signed $short ($build)"
+        rm -rf "$check"
+
+    # --- native/ios (Swift + SwiftUI) ---------------------------------------
+    # Its workflows run in native/ios. Codemagic is the
+    # only place the app target is ever compiled (the fleet has no Mac; on
+    # Linux only ForkMeshCore builds), so these steps keep the whole compiler
+    # output rather than running xcodebuild with -quiet.
+    - &native_project
+      # The checked-in project is this script's output; generating it again
+      # means a build can never use a project that drifted from the script.
+      name: Generate the Xcode project
+      script: |
+        set -e
+        ruby -e 'require "xcodeproj"' 2>/dev/null || gem install --user-install --no-document xcodeproj
+        ruby tools/generate_project.rb
+        commit="$(git rev-parse HEAD 2>/dev/null || echo "${CM_COMMIT:-}")"
+        perl -pi -e "s/^FORKMESH_BUILD_COMMIT *=.*\$/FORKMESH_BUILD_COMMIT = ${commit}/" Config/Version.xcconfig
+        xcodebuild -version
+    - &native_packages
+      # The app's one third-party dependency, MLX for on-device Gemma 4 (see
+      # native/ios/README.md), compiles .metal shaders, and Xcode 26 ships the
+      # Metal toolchain as a separate download. Resolving the packages up front
+      # keeps a network or version failure apart from a compile failure, with
+      # the whole resolver output kept as an artifact.
+      name: Metal toolchain and Swift packages
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        major="$(xcodebuild -version | sed -n 's/^Xcode \([0-9]*\).*/\1/p')"
+        if [ "${major:-0}" -ge 26 ]; then
+          if xcodebuild -downloadComponent MetalToolchain > "$CM_BUILD_DIR/metal-toolchain.log" 2>&1; then
+            echo "Metal toolchain installed."
+          elif grep -qi "already" "$CM_BUILD_DIR/metal-toolchain.log"; then
+            echo "Metal toolchain already installed."
+          else
+            # Not fatal here: the image may carry it already. If it does not,
+            # the build fails on the first .metal file and this log says why.
+            echo "WARNING: xcodebuild -downloadComponent MetalToolchain failed:" >&2
+            tail -n 20 "$CM_BUILD_DIR/metal-toolchain.log" >&2
+          fi
+        fi
+        status=0
+        xcodebuild -resolvePackageDependencies \
+          -project ForkMesh.xcodeproj -scheme ForkMesh \
+          -skipPackagePluginValidation -skipMacroValidation \
+          > "$CM_BUILD_DIR/xcodebuild-resolve.log" 2>&1 || status=$?
+        grep -E "^[[:space:]]*[A-Za-z0-9_.-]+: https?://.* @ " "$CM_BUILD_DIR/xcodebuild-resolve.log" || true
+        if [ "$status" != "0" ]; then
+          echo "ERROR: Swift package resolution failed (full output in xcodebuild-resolve.log):" >&2
+          tail -n 40 "$CM_BUILD_DIR/xcodebuild-resolve.log" >&2
+          exit "$status"
+        fi
+    - &native_core_tests
+      # The same tests Linux runs, here against the CryptoKit and URLSession
+      # paths that only exist on Apple platforms.
+      name: Test ForkMeshCore
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        if [ "${FORKMESH_NATIVE_CORE_TESTS:-1}" = "0" ]; then
+          echo "WARNING: ForkMeshCore tests skipped (FORKMESH_NATIVE_CORE_TESTS=0)." >&2
+          exit 0
+        fi
+        cd ForkMeshCore
+        status=0
+        NSUnbufferedIO=YES bash ../tools/run_with_deadline.sh 3600 swift test -c release -Xswiftc -enable-testing --scratch-path .build-release > "$CM_BUILD_DIR/core-tests.log" 2>&1 || status=$?
+        grep -E "error:|: error|with [0-9]+ failures|Executed [0-9]+ tests" "$CM_BUILD_DIR/core-tests.log" | tail -n 60 || true
+        if [ "$status" != "0" ]; then
+          grep -E "^Test Case .* started" "$CM_BUILD_DIR/core-tests.log" | tail -n 1 >&2 || true
+          echo "ERROR: ForkMeshCore tests failed (full output in core-tests.log)." >&2
+          exit "$status"
+        fi
+    - &native_watch_platform
+      # The watch app (ForkMeshWatch, docs/native/PARITY.md section 4) builds
+      # against the watchOS SDK, and Xcode refuses to build for a platform
+      # whose simulator runtime is not installed ("watchOS N is not
+      # installed"), even for a generic destination. The images ship the iOS
+      # runtime only, so fetch the watchOS one when it is missing.
+      name: watchOS platform
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        sdk="$(xcrun --sdk watchsimulator --show-sdk-version 2>/dev/null || true)"
+        echo "watchOS simulator SDK: ${sdk:-none}"
+        if [ -n "$sdk" ] && xcrun simctl list runtimes 2>/dev/null | grep -q "watchOS ${sdk}"; then
+          xcrun simctl list runtimes | grep "watchOS" || true
+          exit 0
+        fi
+        if xcodebuild -downloadPlatform watchOS > "$CM_BUILD_DIR/watchos-platform.log" 2>&1; then
+          echo "watchOS platform installed."
+          xcrun simctl list runtimes | grep "watchOS" || true
+        else
+          # Not fatal here: the build step says exactly what is missing.
+          echo "WARNING: xcodebuild -downloadPlatform watchOS failed:" >&2
+          tail -n 20 "$CM_BUILD_DIR/watchos-platform.log" >&2
+        fi
+    - &native_archive_unsigned
+      name: Archive unsigned
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        # Unsigned: automatic signing at
+        # archive time wants a Development profile, which needs a registered
+        # device. The export signs.
+        status=0
+        xcodebuild archive \
+          -project ForkMesh.xcodeproj -scheme ForkMesh -configuration Release \
+          -archivePath "$CM_BUILD_DIR/forkmesh-native.xcarchive" -destination "generic/platform=iOS" \
+          -skipPackagePluginValidation -skipMacroValidation \
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+          > "$CM_BUILD_DIR/xcodebuild-archive.log" 2>&1 || status=$?
+        if [ "$status" != "0" ] || [ ! -d "$CM_BUILD_DIR/forkmesh-native.xcarchive/Products/Applications/ForkMesh.app" ]; then
+          echo "ERROR: the archive failed. Every compiler error:" >&2
+          grep -E "error:" "$CM_BUILD_DIR/xcodebuild-archive.log" | sort -u >&2 || true
+          tail -n 40 "$CM_BUILD_DIR/xcodebuild-archive.log" >&2
+          exit 1
+        fi
+    - &native_embed_entitlements
+      # Nothing embedded the entitlements because
+      # signing was off, and the export re-signs from what the archived app
+      # carries. Nested code first.
+      name: Embed the release entitlements
+      script: |
+        set -e
+        app="$CM_BUILD_DIR/forkmesh-native.xcarchive/Products/Applications/ForkMesh.app"
+        appex="$app/PlugIns/NotificationService.appex"
+        watch="$app/Watch/ForkMeshWatch.app"
+        widgets="$watch/PlugIns/ForkMeshWatchWidgets.appex"
+        if [ ! -d "$appex" ]; then
+          echo "ERROR: the archive embeds no notification service extension; every banner would read \"New activity\"." >&2
+          exit 1
+        fi
+        if [ "${FORKMESH_NATIVE_WATCH:-1}" != "0" ]; then
+          if [ ! -d "$watch" ] || [ ! -d "$widgets" ]; then
+            echo "ERROR: the archive embeds no watch app (Watch/ForkMeshWatch.app with PlugIns/ForkMeshWatchWidgets.appex)." >&2
+            exit 1
+          fi
+          # Innermost first: the watch's widgets, the watch app, then the phone's.
+          codesign --force --sign - --entitlements Config/ForkMeshWatchWidgets.entitlements "$widgets"
+          codesign --force --sign - --entitlements Config/ForkMeshWatch.entitlements "$watch"
+        fi
+        codesign --force --sign - --entitlements Config/NotificationService.entitlements "$appex"
+        # Gate 2 extensions the project has: widgets, share and AutoFill unless switched off.
+        for ext in ForkMeshWidgets ForkMeshShare ForkMeshAutoFill; do
+          if [ -d "$app/PlugIns/$ext.appex" ]; then
+            codesign --force --sign - --entitlements "Config/$ext.entitlements" "$app/PlugIns/$ext.appex"
+          fi
+        done
+        codesign --force --sign - --entitlements Config/ForkMesh-Release.entitlements "$app"
+    - &native_bundle_ids
+      # Cloud signing mints certificates and profiles, but only for App IDs
+      # that exist, and Push Notifications must be on for the app's.
+      name: Register the bundle ids
+      script: python3 tools/asc_bundle_ids.py ensure
+    - &native_watch_check
+      # After *push_check: the signed IPA carries the Home Screen widgets and
+      # the watch app, each signed with the keychain group it shares its data
+      # through (without it the widgets and complications stay empty).
+      name: Refuse a build whose widgets or watch app cannot share their data
+      script: |
+        set -e
+        ipa="$(find "$CM_BUILD_DIR/ipa" -maxdepth 1 -name '*.ipa' | head -n1)"
+        check="$CM_BUILD_DIR/ipa-watch-check"
+        rm -rf "$check"; mkdir -p "$check"
+        unzip -q "$ipa" -d "$check"
+        signed_app="$(find "$check/Payload" -maxdepth 1 -name '*.app' | head -n1)"
+        bundles=()
+        if [ "${FORKMESH_NATIVE_WIDGETS:-1}" != "0" ]; then
+          bundles+=("$signed_app/PlugIns/ForkMeshWidgets.appex=742ZANCB57.com.forkmesh.forkmesh")
+        fi
+        if [ "${FORKMESH_NATIVE_WATCH:-1}" != "0" ]; then
+          watch="$signed_app/Watch/ForkMeshWatch.app"
+          bundles+=("$watch=742ZANCB57.com.forkmesh.forkmesh.watchkitapp"
+                    "$watch/PlugIns/ForkMeshWatchWidgets.appex=742ZANCB57.com.forkmesh.forkmesh.watchkitapp")
+        else
+          echo "Watch app disabled for this build (FORKMESH_NATIVE_WATCH=0)."
+        fi
+        for entry in "${bundles[@]}"; do
+          bundle="${entry%%=*}"; group="${entry#*=}"
+          if [ ! -d "$bundle" ]; then
+            echo "ERROR: the exported IPA has no ${bundle#$check/Payload/}." >&2
+            exit 1
+          fi
+          if ! codesign -d --entitlements :- "$bundle" 2>/dev/null | grep -q ">$group<"; then
+            echo "ERROR: ${bundle#$check/Payload/} is not signed with the keychain group $group." >&2
+            exit 1
+          fi
+        done
+        echo "Widgets and watch app signed with the keychain groups they share."
+        rm -rf "$check"
+
+    - &native_archive_signed
+      name: Archive (signing per FORKMESH_NATIVE_SIGNING)
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        cache=()
+        if [ "${FORKMESH_NATIVE_COMPILE_CACHE:-0}" = "1" ]; then
+          cache=(COMPILATION_CACHE_ENABLE_CACHING=YES)
+          echo "Compilation cache on: unchanged modules come from $HOME/Library/Developer/Xcode/DerivedData/CompilationCache.noindex."
+        fi
+        if [ "${FORKMESH_NATIVE_SIGNING:-xcode}" = "manual" ]; then
+          echo "Manual signing: unsigned archive, entitlements embedded next."
+          status=0
+          xcodebuild archive \
+            -project ForkMesh.xcodeproj -scheme ForkMesh -configuration Release \
+            -archivePath "$CM_BUILD_DIR/forkmesh-native.xcarchive" -destination "generic/platform=iOS" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" "${cache[@]}" \
+            > "$CM_BUILD_DIR/xcodebuild-archive.log" 2>&1 || status=$?
+        else
+          # The key lives only for this command: a 0600 temp file, removed
+          # on exit whatever happens.
+          key="$(mktemp "${TMPDIR:-/tmp}/asc-XXXXXX")"
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%b\n' "$ASC_API_KEY_P8" > "$key"
+          status=0
+          xcodebuild archive \
+            -project ForkMesh.xcodeproj -scheme ForkMesh -configuration Release \
+            -archivePath "$CM_BUILD_DIR/forkmesh-native.xcarchive" -destination "generic/platform=iOS" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=742ZANCB57 FORKMESH_APP_ENTITLEMENTS=Debug "${cache[@]}" \
+            > "$CM_BUILD_DIR/xcodebuild-archive.log" 2>&1 || status=$?
+          # What automatic signing did about identifiers, groups and profiles.
+          grep -iE "provisioning|app group|application-groups|registered|certificate" \
+            "$CM_BUILD_DIR/xcodebuild-archive.log" | grep -v "^ *export " | sort -u | head -n 40 || true
+        fi
+        if [ "$status" != "0" ] || [ ! -d "$CM_BUILD_DIR/forkmesh-native.xcarchive/Products/Applications/ForkMesh.app" ]; then
+          echo "ERROR: the archive failed. Every error:" >&2
+          grep -E "error:|error: " "$CM_BUILD_DIR/xcodebuild-archive.log" | sort -u >&2 || true
+          tail -n 40 "$CM_BUILD_DIR/xcodebuild-archive.log" >&2
+          exit 1
+        fi
+    - &native_embed_entitlements_manual
+      name: Embed the release entitlements (manual signing only)
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        if [ "${FORKMESH_NATIVE_SIGNING:-xcode}" != "manual" ]; then
+          echo "Xcode signed the archive; its entitlements are already in place."
+          exit 0
+        fi
+        app="$CM_BUILD_DIR/forkmesh-native.xcarchive/Products/Applications/ForkMesh.app"
+        appex="$app/PlugIns/NotificationService.appex"
+        watch="$app/Watch/ForkMeshWatch.app"
+        widgets="$watch/PlugIns/ForkMeshWatchWidgets.appex"
+        [ -d "$appex" ] || { echo "ERROR: the archive embeds no notification service extension." >&2; exit 1; }
+        if [ "${FORKMESH_NATIVE_WATCH:-1}" != "0" ]; then
+          if [ ! -d "$watch" ] || [ ! -d "$widgets" ]; then
+            echo "ERROR: the archive embeds no watch app (Watch/ForkMeshWatch.app with PlugIns/ForkMeshWatchWidgets.appex)." >&2
+            exit 1
+          fi
+          codesign --force --sign - --entitlements Config/ForkMeshWatchWidgets.entitlements "$widgets"
+          codesign --force --sign - --entitlements Config/ForkMeshWatch.entitlements "$watch"
+        fi
+        codesign --force --sign - --entitlements Config/NotificationService.entitlements "$appex"
+        # Gate 2 extensions the project has: widgets, share and AutoFill unless switched off.
+        for ext in ForkMeshWidgets ForkMeshShare ForkMeshAutoFill; do
+          if [ -d "$app/PlugIns/$ext.appex" ]; then
+            codesign --force --sign - --entitlements "Config/$ext.entitlements" "$app/PlugIns/$ext.appex"
+          fi
+        done
+        codesign --force --sign - --entitlements Config/ForkMesh-Release.entitlements "$app"
+    - &native_show_profiles
+      name: Show each bundle's profile and entitlements
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        ipa="$(find "$CM_BUILD_DIR/ipa" -maxdepth 1 -name '*.ipa' | head -n1)"
+        check="$CM_BUILD_DIR/ipa-profiles"
+        rm -rf "$check"; mkdir -p "$check"
+        unzip -q "$ipa" -d "$check"
+        app="$(find "$check/Payload" -maxdepth 1 -name '*.app' | head -n1)"
+        for bundle in "$app" "$app/PlugIns/NotificationService.appex" "$app/Watch/ForkMeshWatch.app" \
+                      "$app/Watch/ForkMeshWatch.app/PlugIns/ForkMeshWatchWidgets.appex" \
+                      "$app/PlugIns/ForkMeshWidgets.appex" "$app/PlugIns/ForkMeshShare.appex" \
+                      "$app/PlugIns/ForkMeshAutoFill.appex"; do
+          [ -d "$bundle" ] || continue
+          echo "=== ${bundle#$check/Payload/}"
+          if [ -f "$bundle/embedded.mobileprovision" ]; then
+            security cms -D -i "$bundle/embedded.mobileprovision" > "$check/profile.plist" 2>/dev/null
+            echo "profile: $(/usr/libexec/PlistBuddy -c 'Print :Name' "$check/profile.plist" 2>/dev/null)" \
+              "($(/usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$check/profile.plist" 2>/dev/null | grep -c -E '^ +[0-9A-Fa-f-]{20,}') devices)"
+            /usr/libexec/PlistBuddy -c 'Print :Entitlements' "$check/profile.plist" 2>/dev/null | head -n 30
+          fi
+          echo "signed entitlements:"
+          codesign -d --entitlements :- "$bundle" 2>/dev/null | plutil -p - 2>/dev/null | head -n 30 || true
+        done
+        rm -rf "$check"
+
+workflows:
+  # --- native/ios (Swift + SwiftUI) -----------------------------------------
+  # The compile check for the native app, and the only one there is: run it
+  # on a branch before merging anything that touches native/ios/ForkMesh,
+  # NotificationService or Shared. Needs no credentials. The Debug simulator
+  # build comes first because it compiles file by file and so reports every
+  # file's errors in one run; the Release archive is what the artifact is.
+  ios-native-build:
+    name: Native iOS build (unsigned)
+    working_directory: native/ios
+    instance_type: mac_mini_m2
+    # Compiles MLX (C++ and Metal) twice, Debug and Release.
+    max_build_duration: 90
+    environment:
+      xcode: latest
+      vars:
+        CM_CLONE_UNSHALLOW: "true"
+        FORKMESH_NATIVE_EXTENSIONS: "1"
+    scripts:
+      - name: Cancel probes
+        script: |
+          #!/usr/bin/env bash
+          cd ForkMeshCore
+          D="$CM_BUILD_DIR"
+          sw_vers > "$D/diag.log" 2>&1
+          swift --version >> "$D/diag.log" 2>&1
+          probes="P1SleepLoopCancelled P2StreamIterationCancelled P3AwaitingInnerValueCancelled P4GenericSleepingPollCancelled P5GenericBlockingPollCancelled P6TransportHeadOuterCancel P7TransportBodyOuterCancel P8TransportHeadTokenCancel P9SilentClientSendCancelled"
+          binary() { find "$1" -path '*ForkMeshCorePackageTests.xctest/Contents/MacOS/ForkMeshCorePackageTests' | head -1; }
+          run_set() {
+            name="$1"; shift
+            echo "== $name build" >> "$D/diag.log"
+            swift build --build-tests -v "$@" > "$D/diag-build-$name.log" 2>&1
+            echo "build rc=$?" >> "$D/diag.log"
+            grep -o -- '-target [a-z0-9_.-]*' "$D/diag-build-$name.log" | sort | uniq -c >> "$D/diag.log"
+            grep -ohE -- '"-target","[^"]*"' .build-$name/*.yaml 2>/dev/null | sort | uniq -c >> "$D/diag.log"
+            bin="$(binary .build-$name)"
+            echo "binary: $bin" >> "$D/diag.log"
+            if [ -n "$bin" ]; then
+              echo "back-deploy thunks (Tb):" >> "$D/diag.log"
+              nm "$bin" 2>/dev/null | awk '{print $NF}' | grep 'Tb$' | sort -u | xcrun swift-demangle | head -40 >> "$D/diag.log"
+            fi
+            for p in $probes; do
+              NSUnbufferedIO=YES perl -e 'alarm 180; exec @ARGV' swift test --skip-build "$@" --filter "DiagCancelProbes/test$p" > "$D/diag-$name-$p.log" 2>&1
+              rc=$?
+              freed=$(grep -c "freed pointer" "$D/diag-$name-$p.log")
+              echo "$name $p rc=$rc freed=$freed" >> "$D/diag.log"
+            done
+          }
+          echo "== full suite (debug, 25 min cap)" >> "$D/diag.log"
+          NSUnbufferedIO=YES perl -e 'alarm 1500; exec @ARGV' swift test --scratch-path .build-debug > "$D/core-tests.log" 2>&1
+          echo "full rc=$?" >> "$D/diag.log"
+          grep -E "' failed|: error:|freed pointer|signal" "$D/core-tests.log" | head -20 >> "$D/diag.log"
+          grep "' started" "$D/core-tests.log" | tail -2 >> "$D/diag.log"
+          run_set debug --scratch-path .build-debug
+          run_set target15 --scratch-path .build-target15 -Xswiftc -target -Xswiftc arm64-apple-macos15.0
+          run_set release --scratch-path .build-release -c release -Xswiftc -enable-testing
+          cat "$D/diag.log"
+          exit 0
+    artifacts:
+      - $CM_BUILD_DIR/ForkMesh-native.app.zip
+      - $CM_BUILD_DIR/*.log
+
+  ios-native-release:
+    name: Native iOS release (App Store Connect, TestFlight internal)
+    working_directory: native/ios
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    environment:
+      xcode: latest
+      groups:
+        - app_store_connect
+      vars:
+        CM_CLONE_UNSHALLOW: "true"
+        FORKMESH_NATIVE_SIGNING: manual
+        FORKMESH_IOS_TESTFLIGHT_EXTERNAL: "0"
+        FORKMESH_IOS_APP_STORE: "0"
+    scripts:
+      - *asc_key
+      - *native_bundle_ids
+      - name: Pick the next build number
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          app_id="$(python3 tools/asc_bundle_ids.py app-id)"
+          if [ -z "$app_id" ]; then
+            echo "ERROR: App Store Connect has no app for com.forkmesh.forkmesh (expected 6803060735)." >&2
+            exit 1
+          fi
+          latest="$(python3 tools/asc_bundle_ids.py latest-build)"
+          if ! [[ "$latest" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: App Store Connect reported a non-numeric latest build number: $latest" >&2
+            exit 1
+          fi
+          name="$(sed -n 's/^MARKETING_VERSION *= *\([0-9.]*\) *$/\1/p' Config/Version.xcconfig)"
+          pinned="$(sed -n 's/^CURRENT_PROJECT_VERSION *= *\([0-9]*\) *$/\1/p' Config/Version.xcconfig)"
+          if [ -z "$name" ] || [ -z "$pinned" ]; then
+            echo "ERROR: Config/Version.xcconfig needs MARKETING_VERSION and CURRENT_PROJECT_VERSION lines." >&2
+            exit 1
+          fi
+          next=$((latest + 1))
+          [ "$pinned" -gt "$next" ] && next="$pinned"
+          # Written into this clone only, never committed; both targets read it.
+          perl -pi -e "s/^CURRENT_PROJECT_VERSION *=.*\$/CURRENT_PROJECT_VERSION = ${next}/" Config/Version.xcconfig
+          grep -q "^CURRENT_PROJECT_VERSION = ${next}\$" Config/Version.xcconfig
+          if [ "${FORKMESH_IOS_APP_STORE:-0}" = "1" ]; then
+            store="$(python3 tools/asc_appstore.py version "$name")"
+            if [ "$store" != "$name" ]; then
+              echo "App Store Connect already released ${name} or later; this build ships as ${store}."
+              perl -pi -e "s/^MARKETING_VERSION *=.*\$/MARKETING_VERSION = ${store}/" Config/Version.xcconfig
+              grep -q "^MARKETING_VERSION = ${store}\$" Config/Version.xcconfig
+              name="$store"
+            fi
+          fi
+          echo "FORKMESH_IOS_VERSION=${name}" >> "$CM_ENV"
+          echo "FORKMESH_IOS_BUILD=${next}" >> "$CM_ENV"
+          echo "Building ${name} (${next}) (App Store Connect's highest build is ${latest}; the xcconfig says ${pinned})."
+      - *native_project
+      - *native_watch_platform
+      - *native_packages
+      - *native_core_tests
+      - *native_archive_signed
+      - *native_embed_entitlements_manual
+      - name: Export for the App Store
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          status=0
+          xcodebuild -exportArchive \
+            -archivePath "$CM_BUILD_DIR/forkmesh-native.xcarchive" -exportPath "$CM_BUILD_DIR/ipa" \
+            -exportOptionsPlist Config/ExportOptions.plist -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            > "$CM_BUILD_DIR/xcodebuild-export.log" 2>&1 || status=$?
+          if [ "$status" != "0" ]; then
+            echo "ERROR: the App Store export failed:" >&2
+            grep -iE "error|provision|profile" "$CM_BUILD_DIR/xcodebuild-export.log" | sort -u | head -n 40 >&2 || true
+            tail -n 30 "$CM_BUILD_DIR/xcodebuild-export.log" >&2
+            exit "$status"
+          fi
+      - *push_check
+      - *native_watch_check
+      - *native_show_profiles
+      - name: Upload to App Store Connect
+        script: |
+          set -e
+          ipa="$(find "$CM_BUILD_DIR/ipa" -maxdepth 1 -name '*.ipa' | head -n1)"
+          if [ "${FORKMESH_IOS_UPLOAD_DRY_RUN:-0}" = "1" ]; then
+            xcrun altool --validate-app -f "$ipa" -t ios \
+              --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+            echo "Dry run: validated only, nothing uploaded."
+            exit 0
+          fi
+          xcrun altool --upload-app -f "$ipa" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" \
+            2>&1 | tee "$CM_BUILD_DIR/upload.log"
+          if ! grep -q "UPLOAD SUCCEEDED" "$CM_BUILD_DIR/upload.log"; then
+            echo "ERROR: App Store Connect did not accept the build (see the altool output above)." >&2
+            exit 1
+          fi
+          delivery="$(grep -o 'Delivery UUID: [0-9a-f-]*' "$CM_BUILD_DIR/upload.log" | head -n1 | cut -d' ' -f3)"
+          echo "Uploaded ${FORKMESH_IOS_VERSION} (${FORKMESH_IOS_BUILD}); delivery ${delivery:-unknown}."
+      - name: TestFlight internal testing
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          if [ "${FORKMESH_IOS_UPLOAD_DRY_RUN:-0}" = "1" ]; then echo "Dry run: nothing uploaded."; exit 0; fi
+          whats_new="${TESTFLIGHT_WHATS_NEW:-}"
+          if [ -z "$whats_new" ]; then
+            whats_new="$(git log -1 --format=%B | grep -v -i -E '^(co-authored-by|signed-off-by|claude-session):' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
+          fi
+          [ -n "$whats_new" ] || whats_new="ForkMesh ${FORKMESH_IOS_VERSION} (native), built from ${CM_COMMIT:0:12}."
+          python3 tools/asc_testflight.py internal "$FORKMESH_IOS_VERSION" "$FORKMESH_IOS_BUILD" "$whats_new"
+      - name: Submit to external TestFlight (opt-in)
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          if [ "${FORKMESH_IOS_UPLOAD_DRY_RUN:-0}" = "1" ] || [ "${FORKMESH_IOS_TESTFLIGHT_EXTERNAL:-0}" != "1" ]; then
+            echo "Internal testing only; no Beta App Review submission (FORKMESH_IOS_TESTFLIGHT_EXTERNAL=1 adds it)."
+            exit 0
+          fi
+          ipa="$(find "$CM_BUILD_DIR/ipa" -maxdepth 1 -name '*.ipa' | head -n1)"
+          command -v app-store-connect >/dev/null || pip3 install --quiet codemagic-cli-tools
+          app-store-connect publish \
+            --issuer-id "$ASC_ISSUER_ID" --key-id "$ASC_KEY_ID" \
+            --path "$ipa" --skip-package-upload \
+            --testflight --beta-group "${TESTFLIGHT_BETA_GROUPS:-forkmesh-external-team}" \
+            --max-find-build-wait 20 --max-build-processing-wait 60
+      - name: Submit to the App Store
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          if [ "${FORKMESH_IOS_UPLOAD_DRY_RUN:-0}" = "1" ] || [ "${FORKMESH_IOS_APP_STORE:-0}" != "1" ]; then
+            echo "TestFlight only; no App Store submission (FORKMESH_IOS_APP_STORE=1 adds it)."
+            exit 0
+          fi
+          whats_new="${FORKMESH_IOS_WHATS_NEW:-${TESTFLIGHT_WHATS_NEW:-}}"
+          [ -n "$whats_new" ] || whats_new="ForkMesh ${FORKMESH_IOS_VERSION}."
+          python3 tools/asc_appstore.py submit "$FORKMESH_IOS_VERSION" "$FORKMESH_IOS_BUILD" "$whats_new"
+    artifacts:
+      - $CM_BUILD_DIR/ipa/*.ipa
+      - $CM_BUILD_DIR/forkmesh-native.xcarchive
+      - $CM_BUILD_DIR/*.log
+    publishing:
+      email:
+        recipients:
+          - founders@forkmesh.com
+        notify:
+          success: true
+          failure: false
+
+  ios-native-adhoc:
+    name: Native iOS ad hoc (registered devices)
+    working_directory: native/ios
+    instance_type: mac_mini_m2
+    max_build_duration: 75
+    environment:
+      xcode: latest
+      groups:
+        - app_store_connect
+      vars:
+        CM_CLONE_UNSHALLOW: "true"
+        FORKMESH_NATIVE_SIGNING: manual
+    scripts:
+      - *asc_key
+      - *native_bundle_ids
+      - name: Registered devices
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          python3 tools/asc_bundle_ids.py devices
+          if ! python3 tools/asc_bundle_ids.py has-watch >/dev/null; then
+            echo "No Apple Watch registered: the watch app is in the IPA but installs on no watch yet."
+          fi
+      - name: Pick the ad hoc build number
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          latest="$(python3 tools/asc_bundle_ids.py latest-build)"
+          last=0
+          counter="${FORKMESH_ADHOC_BUILD_FILE:-}"
+          if [ -n "$counter" ] && [ -s "$counter" ]; then
+            last="$(tr -d '[:space:]' < "$counter")"
+          fi
+          name="$(sed -n 's/^MARKETING_VERSION *= *\([0-9.]*\) *$/\1/p' Config/Version.xcconfig)"
+          pinned="$(sed -n 's/^CURRENT_PROJECT_VERSION *= *\([0-9]*\) *$/\1/p' Config/Version.xcconfig)"
+          if [ -z "$name" ] || [ -z "$pinned" ]; then
+            echo "ERROR: Config/Version.xcconfig needs MARKETING_VERSION and CURRENT_PROJECT_VERSION lines." >&2
+            exit 1
+          fi
+          if ! [[ "$latest" =~ ^[0-9]+$ ]] || ! [[ "$last" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: non-numeric build number (App Store Connect: $latest, $counter: $last)." >&2
+            exit 1
+          fi
+          next=$((latest + 1))
+          [ $((last + 1)) -gt "$next" ] && next=$((last + 1))
+          [ "$pinned" -gt "$next" ] && next="$pinned"
+          perl -pi -e "s/^CURRENT_PROJECT_VERSION *=.*\$/CURRENT_PROJECT_VERSION = ${next}/" Config/Version.xcconfig
+          grep -q "^CURRENT_PROJECT_VERSION = ${next}\$" Config/Version.xcconfig
+          if [ -n "$counter" ]; then
+            echo "$next" > "$counter"
+          fi
+          echo "Building ${name} (${next}): App Store Connect's highest build is ${latest}, the last ad hoc build here was ${last}, the xcconfig says ${pinned}."
+      - *native_project
+      - *native_watch_platform
+      - *native_packages
+      - *native_archive_signed
+      - *native_embed_entitlements_manual
+      - name: Export for ad hoc distribution
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          key="$(mktemp "${TMPDIR:-/tmp}/asc-XXXXXX")"
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%b\n' "$ASC_API_KEY_P8" > "$key"
+          options="$CM_BUILD_DIR/ExportOptions-adhoc.plist"
+          cp Config/ExportOptions.plist "$options"
+          /usr/libexec/PlistBuddy -c "Set :method release-testing" "$options"
+          /usr/libexec/PlistBuddy -c "Delete :uploadSymbols" "$options" 2>/dev/null || true
+          status=0
+          xcodebuild -exportArchive \
+            -archivePath "$CM_BUILD_DIR/forkmesh-native.xcarchive" -exportPath "$CM_BUILD_DIR/ipa" \
+            -exportOptionsPlist "$options" -allowProvisioningUpdates \
+            -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            > "$CM_BUILD_DIR/xcodebuild-export.log" 2>&1 || status=$?
+          if [ "$status" != "0" ]; then
+            echo "ERROR: the ad hoc export failed:" >&2
+            grep -iE "error|provision|profile" "$CM_BUILD_DIR/xcodebuild-export.log" | sort -u | head -n 40 >&2 || true
+            tail -n 30 "$CM_BUILD_DIR/xcodebuild-export.log" >&2
+            exit "$status"
+          fi
+      - *push_check
+      - *native_watch_check
+      - *native_show_profiles
+      - name: Name the ad hoc IPA
+        script: |
+          set -e
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          ipa="$(find "$CM_BUILD_DIR/ipa" -maxdepth 1 -name '*.ipa' | head -n1)"
+          name="$(sed -n 's/^MARKETING_VERSION *= *\([0-9.]*\) *$/\1/p' Config/Version.xcconfig)"
+          build="$(sed -n 's/^CURRENT_PROJECT_VERSION *= *\([0-9]*\) *$/\1/p' Config/Version.xcconfig)"
+          mv "$ipa" "$CM_BUILD_DIR/ipa/ForkMesh-native-${name}-${build}-adhoc.ipa"
+          echo "Ad hoc IPA: ForkMesh-native-${name}-${build}-adhoc.ipa (installs on the team's registered devices only)"
+    artifacts:
+      - $CM_BUILD_DIR/ipa/*.ipa
+      - $CM_BUILD_DIR/*.log
+    publishing:
+      email:
+        recipients:
+          - founders@forkmesh.com
+        notify:
+          success: true
+          failure: false
+
+  # The Qt desktop app (desktop/) for Apple Silicon Macs: an ad-hoc signed
+  # .dmg built with Homebrew's Qt, the same way a Mac contributor builds with
+  # desktop/run.sh. Start by hand (or through Codemagic's API): desktop/ changes land
+  # dozens of times a day, far too often to build each one here. Needs no
+  # variable group. The .dmg is not Developer ID signed or notarized, so
+  # Gatekeeper warns on first launch (right-click -> Open, or
+  # `xattr -dr com.apple.quarantine /Applications/ForkMesh.app`).
+  # tools/package/macos.sh signs and notarizes when FORKMESH_APPLE_DEV_ID and
+  # the notarytool variables are set, which needs a Developer ID Application
+  # certificate in the build keychain first.
+  macos-desktop:
+    name: macOS desktop build (universal, ad-hoc signed .dmg)
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    environment:
+      xcode: latest
+    cache:
+      cache_paths:
+        - $HOME/desktop-release/dl
+        - $HOME/desktop-release/deps
+        - $HOME/desktop-release/venv
+    scripts:
+      - name: Build the universal .dmg
+        script: |
+          set -e
+          echo "Machine: $(sysctl -n hw.ncpu) cores, $(( $(sysctl -n hw.memsize) / 1073741824 )) GB RAM"
+          FORKMESH_BUILD_COMMIT="$CM_COMMIT" \
+            bash tools/package/macos_universal_on_mac.sh "$CM_BUILD_DIR" "$HOME/desktop-release"
+          mkdir -p "$CM_BUILD_DIR/dist"
+          mv "$HOME"/desktop-release/dist/ForkMesh-*-macos-universal.dmg "$CM_BUILD_DIR/dist/"
+    artifacts:
+      - $CM_BUILD_DIR/dist/*.dmg
+    publishing:
+      email:
+        recipients:
+          - founders@forkmesh.com
+        notify:
+          success: true
+          failure: true

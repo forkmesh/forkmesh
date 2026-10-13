@@ -1,0 +1,1077 @@
+{
+  "adapter": {
+    "command": [
+      "{python}",
+      "conformance/certification/v1/adapters/clean_room_python.py"
+    ],
+    "handshake": "compatible",
+    "protocol": "forkmesh-conformance-adapter-v1"
+  },
+  "cases": [
+    {
+      "case": "canonical-json:parse-minimal-object",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:parse-sorted-nested-values",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:parse-short-and-control-escapes",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:parse-literal-non-ascii",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:parse-safe-integer-bounds",
+      "classes": [
+        "data-loss"
+      ],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:parse-depth-32",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-insignificant-whitespace",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-unsorted-keys",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-trailing-newline",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-escaped-non-ascii",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-escaped-solidus",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-uppercase-unicode-escape",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-non-nfc-string",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-duplicate-key",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-fraction",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-integral-fraction",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-exponent",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-negative-zero",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-leading-zero",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-unsafe-integer",
+      "classes": [
+        "data-loss"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-nan",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-lone-surrogate",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-invalid-key-character",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-byte-order-mark",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-invalid-utf8",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-overlong-utf8",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-top-level-array",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-empty",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:reject-depth-33",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.parse"
+    },
+    {
+      "case": "canonical-json:encode-sorts-keys",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.encode"
+    },
+    {
+      "case": "canonical-json:encode-normalizes-nfc",
+      "classes": [
+        "divergence"
+      ],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.encode"
+    },
+    {
+      "case": "canonical-json:encode-escapes",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.encode"
+    },
+    {
+      "case": "canonical-json:encode-negative-integer",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "canonical.encode"
+    },
+    {
+      "case": "canonical-json:encode-rejects-unsafe-integer",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.encode"
+    },
+    {
+      "case": "canonical-json:encode-rejects-fraction",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.encode"
+    },
+    {
+      "case": "canonical-json:encode-rejects-empty-key",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.encode"
+    },
+    {
+      "case": "canonical-json:encode-rejects-lone-surrogate",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "canonical.encode"
+    },
+    {
+      "case": "identifiers:repository-ascii-root",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.repository"
+    },
+    {
+      "case": "identifiers:repository-precomposed-root",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.repository"
+    },
+    {
+      "case": "identifiers:repository-decomposed-root-normalizes",
+      "classes": [
+        "divergence"
+      ],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.repository"
+    },
+    {
+      "case": "identifiers:repository-empty-root",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.repository"
+    },
+    {
+      "case": "identifiers:policy-single-role-members",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.policy"
+    },
+    {
+      "case": "identifiers:policy-sorted-members",
+      "classes": [
+        "divergence"
+      ],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.policy"
+    },
+    {
+      "case": "identifiers:policy-unsorted-members",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.policy"
+    },
+    {
+      "case": "identifiers:policy-duplicate-member",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.policy"
+    },
+    {
+      "case": "identifiers:policy-unknown-key",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.policy"
+    },
+    {
+      "case": "identifiers:policy-short-key",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.policy"
+    },
+    {
+      "case": "identifiers:policy-future-schema",
+      "classes": [
+        "incompatible-version"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.policy"
+    },
+    {
+      "case": "identifiers:object-issue",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.object"
+    },
+    {
+      "case": "identifiers:object-comment-with-subject",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.object"
+    },
+    {
+      "case": "identifiers:object-short-object-key",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.object"
+    },
+    {
+      "case": "identifiers:object-padded-object-key",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.object"
+    },
+    {
+      "case": "identifiers:object-comment-without-subject",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.object"
+    },
+    {
+      "case": "identifiers:object-issue-with-subject",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.object"
+    },
+    {
+      "case": "identifiers:object-unknown-family",
+      "classes": [
+        "incompatible-version"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "identifier.object"
+    },
+    {
+      "case": "identifiers:refs-heads-and-tags-sorted-by-refname",
+      "classes": [
+        "data-loss"
+      ],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.refs-state"
+    },
+    {
+      "case": "identifiers:refs-bytewise-refname-order",
+      "classes": [
+        "divergence",
+        "data-loss"
+      ],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.refs-state"
+    },
+    {
+      "case": "identifiers:refs-empty-advertisement",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.refs-state"
+    },
+    {
+      "case": "identifiers:migration-job-id",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.migration"
+    },
+    {
+      "case": "identifiers:migration-object-key",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.migration"
+    },
+    {
+      "case": "identifiers:migration-state-hash",
+      "classes": [
+        "divergence",
+        "data-loss"
+      ],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "identifier.migration"
+    },
+    {
+      "case": "signatures:ed25519-rfc8032-test-1",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:ed25519-rfc8032-test-2",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:ed25519-tampered-message",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 17,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:ed25519-noncanonical-scalar-s-plus-l",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 1,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:ed25519-identity-public-key",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 1,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:ed25519-order-2-public-key",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 4,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:ed25519-order-4-public-key",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 4,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:ed25519-noncanonical-public-key-y",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:ed25519-short-signature",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.ed25519"
+    },
+    {
+      "case": "signatures:catalog-v1",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:catalog-v2",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:repostate-v1",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:private-manifest-v1",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:view-v1",
+      "classes": [],
+      "elapsedMs": 18,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:rotate-v1",
+      "classes": [],
+      "elapsedMs": 18,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:git-push-v1-advertisement",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:cross-version-view-signature",
+      "classes": [
+        "downgrade"
+      ],
+      "elapsedMs": 18,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:git-push-method-substitution",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:catalog-v1-signature-as-repostate",
+      "classes": [
+        "downgrade"
+      ],
+      "elapsedMs": 17,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:repostate-other-signer",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 17,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.canonical-string"
+    },
+    {
+      "case": "signatures:git-push-normalizes-owner-method-digest",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "signature.git-push-message"
+    },
+    {
+      "case": "signatures:git-push-rejects-unsupported-method",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.git-push-message"
+    },
+    {
+      "case": "signatures:git-push-rejects-short-digest",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.git-push-message"
+    },
+    {
+      "case": "signatures:git-push-rejects-overlong-timestamp",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "signature.git-push-message"
+    },
+    {
+      "case": "signatures:fresh-equal",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "request.freshness"
+    },
+    {
+      "case": "signatures:fresh-past-edge",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "request.freshness"
+    },
+    {
+      "case": "signatures:stale-past",
+      "classes": [
+        "replay"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "request.freshness"
+    },
+    {
+      "case": "signatures:fresh-future-edge",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "positive",
+      "ok": true,
+      "operation": "request.freshness"
+    },
+    {
+      "case": "signatures:stale-future",
+      "classes": [
+        "replay"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "request.freshness"
+    },
+    {
+      "case": "signatures:stale-non-numeric",
+      "classes": [
+        "replay"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "request.freshness"
+    },
+    {
+      "case": "events:event-valid-create",
+      "classes": [],
+      "elapsedMs": 18,
+      "kind": "positive",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-valid-update",
+      "classes": [],
+      "elapsedMs": 18,
+      "kind": "positive",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-noncanonical-whitespace",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-future-schema",
+      "classes": [
+        "incompatible-version"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-extra-envelope-key",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-padded-author",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-alternate-signature-spelling",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-id-mismatch",
+      "classes": [
+        "divergence"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-object-id-mismatch",
+      "classes": [
+        "divergence"
+      ],
+      "elapsedMs": 1,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-wrong-repository",
+      "classes": [],
+      "elapsedMs": 1,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-binding-checked-before-signature",
+      "classes": [],
+      "elapsedMs": 1,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-unknown-policy",
+      "classes": [],
+      "elapsedMs": 1,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-tampered-payload",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 18,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "events:event-signed-by-other-key",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 18,
+      "kind": "negative",
+      "ok": true,
+      "operation": "event.verify"
+    },
+    {
+      "case": "sessions:session-valid",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-valid-within-expiry-skew",
+      "classes": [],
+      "elapsedMs": 17,
+      "kind": "positive",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-expired",
+      "classes": [
+        "replay"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-issued-in-future",
+      "classes": [
+        "replay"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-lifetime-over-12h",
+      "classes": [
+        "replay"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-future-token-prefix",
+      "classes": [
+        "incompatible-version"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-future-claim-version",
+      "classes": [
+        "incompatible-version"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-wrong-audience",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-noncanonical-claim",
+      "classes": [],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-other-signer",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 17,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    },
+    {
+      "case": "sessions:session-alternate-signature-spelling",
+      "classes": [
+        "malformed-signature"
+      ],
+      "elapsedMs": 0,
+      "kind": "negative",
+      "ok": true,
+      "operation": "session.parse"
+    }
+  ],
+  "detection": {
+    "data-loss": {
+      "cases": 5,
+      "failed": []
+    },
+    "divergence": {
+      "cases": 7,
+      "failed": []
+    },
+    "downgrade": {
+      "cases": 2,
+      "failed": []
+    },
+    "incompatible-version": {
+      "cases": 5,
+      "failed": []
+    },
+    "malformed-signature": {
+      "cases": 13,
+      "failed": []
+    },
+    "replay": {
+      "cases": 6,
+      "failed": []
+    }
+  },
+  "finishedAt": "2026-09-14T19:03:45Z",
+  "implementation": {
+    "id": "forkmesh-clean-room-python",
+    "name": "forkmesh-clean-room-python",
+    "version": "1.0.0"
+  },
+  "performance": {
+    "maxCaseMilliseconds": 2000,
+    "maxTotalSeconds": 120,
+    "slowestCase": "signatures:view-v1",
+    "slowestMilliseconds": 18,
+    "totalMilliseconds": 378,
+    "withinBudget": true
+  },
+  "program": {
+    "profile": "core",
+    "profileSha256": "0eacdd72f9fc813e08c5b64a58af1d8264440078f0b5142d828e4db4e839028d",
+    "version": "1.0.0"
+  },
+  "runner": {
+    "platform": "linux",
+    "python": "3.13.5"
+  },
+  "schema": "forkmesh-certification-report-v1",
+  "startedAt": "2026-09-14T19:03:45Z",
+  "suite": {
+    "id": "forkmesh-protocol",
+    "vectorsSha256": "335a25a9fb3c80e30d3ca111b35cf67c86974b2a7decd8df636140fa8101eacc",
+    "version": "1.0.0-rc.1"
+  },
+  "summary": {
+    "cases": 116,
+    "codeDeviations": 0,
+    "failed": 0,
+    "passed": 116,
+    "result": "pass"
+  }
+}

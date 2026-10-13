@@ -1,0 +1,286 @@
+# Managed by deploy/core/render.py for node n2. Do not edit on the node.
+
+# No fixed ACME issuer: for app.next.forkmesh.com and world.next.forkmesh.com the
+# node that issues/renews is chosen among the live cores by fmnext-certsync,
+# which writes the tls-*.caddy and acme-http.caddy includes below.
+{
+	admin unix//run/caddy/admin.sock
+	servers :443 {
+		protocols h1 h2 h3
+		# read_body is per listener, so it must fit a large git push
+		# on the per-node name; App bodies are capped at 16MB/32MB below
+		# and by the App host itself. WebSockets are not affected.
+		timeouts {
+			read_header 10s
+			read_body 5m
+			idle 2m
+		}
+		max_header_size 64KB
+	}
+	servers :80 {
+		protocols h1
+		timeouts {
+			read_header 10s
+			read_body 5m
+			idle 2m
+		}
+		max_header_size 64KB
+	}
+}
+
+# Every Cf-* header a client sends is dropped; the App learns the
+# visitor from Cf-Connecting-Ip (this connection's peer) or, for
+# requests relayed by the next.forkmesh.com Worker, from the signed
+# x-forkmesh-edge-client header (deploy/core/edge_client.md).
+(client_headers) {
+	request_header -Cf-*
+	request_header -True-Client-Ip
+	request_header -X-Real-Ip
+	request_header -X-Forwarded-Host
+	request_header -Forwarded
+	request_header -X-Forkmesh-Edge-Where
+}
+
+(app_upstream) {
+	header_up Cf-Connecting-Ip {remote_host}
+	# Idle upstream connections close before uvicorn's 15 s keep-alive
+	# does, so a request never races the App closing the connection.
+	transport http {
+		keepalive 10s
+	}
+	lb_try_duration 10s
+	lb_try_interval 250ms
+	flush_interval -1
+}
+
+(app_proxy) {
+	reverse_proxy 127.0.0.1:8080 {
+		import app_upstream
+	}
+}
+
+(request_policy_check) {
+	forward_auth {args[0]} 127.0.0.1:8080 {
+		uri /_host/request-policy
+		header_up Host app.next.forkmesh.com
+		import app_upstream
+	}
+}
+
+# world.next asks the App for App-owned assets under the App's name,
+# like world/worker.js did through its service binding.
+(app_proxy_app_host) {
+	reverse_proxy 127.0.0.1:8080 {
+		header_up Host app.next.forkmesh.com
+		import app_upstream
+	}
+}
+
+# On every response, proxied, redirected or generated here (defer:
+# applied when the response is written, over any upstream value).
+(security_headers) {
+	header {
+		defer
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+	}
+}
+
+# Body limits (the App host enforces the same ones).
+(app_body_limits) {
+	@large_body {
+		method POST
+		path_regexp ^/api/repo/[^/]+/[^/]+/pulls$
+	}
+	@git_push_body {
+		method POST
+		path_regexp git_push ^/[^/]+/[^/]+/git-receive-pack$
+	}
+	@normal_body {
+		not {
+			method POST
+			path_regexp ^/api/repo/[^/]+/[^/]+/pulls$
+		}
+		not {
+			method POST
+			path_regexp git_push ^/[^/]+/[^/]+/git-receive-pack$
+		}
+	}
+	request_body @large_body {
+		max_size 32MB
+	}
+	request_body @git_push_body {
+		max_size 256MB
+	}
+	request_body @normal_body {
+		max_size 16MB
+	}
+}
+
+(access_log) {
+	@access_log_quiet path /readyz /health
+	log_skip @access_log_quiet
+	log_append user_agent {http.request.header.User-Agent}
+	log_append expected_degraded {http.response.header.X-Forkmesh-Expected-Degraded}
+	# The visitor Cloudflare saw, read before client_headers drops
+	# the Cf-* headers and only when the peer is Cloudflare.
+	@access_log_cloudflare remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+	vars @access_log_cloudflare {
+		cf_ip {http.request.header.Cf-Connecting-Ip}
+		cf_country {http.request.header.Cf-Ipcountry}
+		cf_region {http.request.header.Cf-Region}
+		cf_city {http.request.header.Cf-Ipcity}
+	}
+	# The visitor the forkmesh.com Worker relays for, as its
+	# x-forkmesh-edge-client header names it (the App checks the
+	# signature; this is only for the log).
+	@access_log_relayed {
+		remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		header_regexp edge_client X-Forkmesh-Edge-Client ^v1,([0-9A-Fa-f.:]+),([A-Z]*),
+	}
+	vars @access_log_relayed {
+		edge_ip {re.edge_client.1}
+		edge_country {re.edge_client.2}
+		edge_where {http.request.header.X-Forkmesh-Edge-Where}
+	}
+	log_append cf_ip {vars.cf_ip}
+	log_append cf_country {vars.cf_country}
+	log_append cf_region {vars.cf_region}
+	log_append cf_city {vars.cf_city}
+	log_append edge_ip {vars.edge_ip}
+	log_append edge_country {vars.edge_country}
+	log_append edge_where {vars.edge_where}
+	log {
+		output stderr
+		format filter {
+			request>headers delete
+			request>tls delete
+			request>remote_port delete
+			resp_headers delete
+			user_id delete
+			request>uri query {
+				replace token REDACTED
+				replace access_token REDACTED
+				replace refresh_token REDACTED
+				replace sig REDACTED
+				replace signature REDACTED
+				replace key REDACTED
+				replace api_key REDACTED
+				replace code REDACTED
+				replace password REDACTED
+				replace secret REDACTED
+				replace auth REDACTED
+				replace session REDACTED
+			}
+		}
+	}
+}
+
+(site_common) {
+	import access_log
+	import client_headers
+	import security_headers
+	import app_body_limits
+	encode zstd gzip
+	# Host-internal and mesh paths are never public. A handle (not a
+	# bare respond) so it runs before the route handles that follow.
+	@internal path /_host/* /_do/* /_rpc/*
+	handle @internal {
+		respond 404
+	}
+}
+
+app.next.forkmesh.com {
+	# files | acme | internal, chosen by fmnext-certsync
+	import /etc/forkmesh-next/caddy/tls-app.next.forkmesh.com.caddy
+	import /etc/forkmesh-next/caddy/request-rules*.caddy
+	# Private Git over dumb HTTP, basic auth (tools/next_git_host.py);
+	# first, so /git/* never reaches the App or the gateway.
+	import /etc/forkmesh-next/caddy/git-private*.caddy
+	import site_common
+	import /etc/forkmesh-next/caddy/app-routes.caddy
+}
+
+world.next.forkmesh.com {
+	# files | acme | internal, chosen by fmnext-certsync
+	import /etc/forkmesh-next/caddy/tls-world.next.forkmesh.com.caddy
+	import /etc/forkmesh-next/caddy/request-rules*.caddy
+	import site_common
+	import /etc/forkmesh-next/caddy/world-routes.caddy
+}
+
+# HTTP-01 for the shared names: whichever A record Let's Encrypt picks,
+# fmnext-certsync's forwarder (127.0.0.1:8794) asks the other cores.
+import /etc/forkmesh-next/caddy/acme-http.caddy
+
+n2.next.forkmesh.com {
+	import /etc/forkmesh-next/caddy/request-rules*.caddy
+	# Private Git over dumb HTTP, basic auth (tools/next_git_host.py);
+	# first, so /git/* never reaches the App or the gateway.
+	import /etc/forkmesh-next/caddy/git-private*.caddy
+	import access_log
+	import client_headers
+	import security_headers
+	# The /_app relay carries App requests: the App's limits. Git pushes
+	# to the gateway are streamed to disk, up to 1GB.
+	@app_large_body {
+		method POST
+		path_regexp ^/_app/api/repo/[^/]+/[^/]+/pulls$
+	}
+	@app_body {
+		path /_app/* /readyz
+		not {
+			method POST
+			path_regexp ^/_app/api/repo/[^/]+/[^/]+/pulls$
+		}
+	}
+	@git_body {
+		not path /_app/* /readyz
+	}
+	request_body @app_large_body {
+		max_size 32MB
+	}
+	request_body @app_body {
+		max_size 16MB
+	}
+	request_body @git_body {
+		max_size 1GB
+	}
+	@internal path /_host/* /_do/* /_rpc/*
+	handle @internal {
+		respond 404
+	}
+	handle /readyz {
+		import app_proxy
+	}
+	# next.forkmesh.com's Worker falls back to https://nN.next.forkmesh.com/_app/...
+	# when app.next.forkmesh.com does not answer (www/worker.js appFetch).
+	handle_path /_app/* {
+		@relay_internal path /_host/* /_do/* /_rpc/*
+		handle @relay_internal {
+			respond 404
+		}
+		handle {
+			import app_proxy_app_host
+		}
+	}
+	@git_push_app {
+		path_regexp git_push ^/[^/]+/[^/]+/git-receive-pack$
+	}
+	@git_push_refs {
+		path_regexp git_push_refs ^/[^/]+/[^/]+/info/refs$
+		query service=git-receive-pack
+	}
+	handle @git_push_app {
+		import app_proxy_app_host
+	}
+	handle @git_push_refs {
+		import app_proxy_app_host
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8790 {
+			flush_interval -1
+		}
+	}
+}

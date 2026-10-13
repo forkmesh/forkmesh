@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="composer_camera" path="composer-camera/" />
+    <cache-path name="marketing_share" path="marketing-share/" />
+</paths>

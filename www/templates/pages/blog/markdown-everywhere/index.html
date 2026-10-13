@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Markdown everywhere" %}
+{% set slug = "markdown-everywhere" %}
+{% set image = "/assets/blog/features/markdown-everywhere.webp" %}
+{% set description = "A proper Markdown editor with preview for issues, PRs, discussions, and chat, plus emoji reactions and cross-references that link issues, PRs, and commits together." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>Markdown everywhere</h1>
+            <p class="lede">A proper Markdown editor with preview for issues, PRs, discussions, and chat, plus emoji reactions and cross-references that link issues, PRs, and commits together.</p>
+            <div class="meta"><span class="pill">Feature 56 of 72</span><span>Feature</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/markdown-everywhere.webp" alt="Abstract ForkMesh artwork for Markdown everywhere">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Markdown everywhere gives ForkMesh a concrete mechanism for the same rich writing surface across issues, PRs, discussions, and chat. A proper Markdown editor with preview for issues, PRs, discussions, and chat, plus emoji reactions and cross-references that link issues, PRs, and commits together.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, Markdown everywhere addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles Markdown everywhere through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: A proper Markdown editor with preview for issues, PRs, discussions, and chat, plus emoji reactions and cross-references that link issues, PRs, and commits together. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use Markdown everywhere when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because Markdown everywhere keeps the same rich writing surface across issues, PRs, discussions, and chat connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/screenshot-and-markup/">← Screenshot &amp; markup</a>
+          <a href="/blog/qr-handoffs/">QR handoffs →</a>
+        </nav>
+{% endblock %}

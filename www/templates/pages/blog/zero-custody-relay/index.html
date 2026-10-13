@@ -1,0 +1,39 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Packfile-free routing relay" %}
+{% set slug = "zero-custody-relay" %}
+{% set image = "/assets/blog/features/zero-custody-relay.webp" %}
+{% set description = "The ForkMesh routing service stores discovery and health metadata, not Git packfiles. Repository bytes stream from selected independent origins over ordinary HTTPS." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Packfile-free routing relay</h1>
+            <p class="lede">The ForkMesh routing service stores discovery and health metadata, not Git packfiles. Repository bytes stream from selected independent origins over ordinary HTTPS.</p>
+            <div class="meta"><span class="pill">Feature 02 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/zero-custody-relay.webp" alt="Abstract ForkMesh artwork for a packfile-free routing relay">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Packfile-free routing gives ForkMesh a control plane without turning it into canonical Git storage. The routing service tracks signed endpoint registration, generalized health, integrity state, and selection metadata; repository bytes remain on independent mirror nodes.</p>
+          <p>Code becomes fragile when one hosted account, VM, or storage path is the only way to reach it. This routing boundary keeps repository bytes separate from the coordination layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>Desktop and organization nodes keep real Git mirrors behind operator-managed HTTPS. The routing service verifies the node identity and signed repository proof, prefers a healthy direct Git origin, and keeps a capability-bound tunnel path as a fallback.</p>
+          <p>Git clone, browse, raw files, search, and release downloads use normal HTTPS. Multiplayer sockets are reserved for small presence, chat, movement, and invalidation events. The routing service is service discovery and bounded failover, not repository or wallet custody.</p>
+          <div class="note">Private or unknown repositories produce the same response for unauthorized callers. Private mirror bytes remain in opaque client-encrypted replicas and are never enabled by adding a public gateway path.</div>
+          <h2>Where it fits</h2>
+          <p>Use packfile-free routing when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>The claim is intentionally scoped: the routing service has no packfile or wallet-key custody, but it does store bounded coordination metadata. Chat has bounded message retention; public channels are controller-readable, while private channels and direct messages add automatic recipient encryption.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/desktop-node-mirrors/">← Desktop-node mirrors</a>
+          <a href="/blog/live-clone-routing/">Live clone routing →</a>
+        </nav>
+{% endblock %}

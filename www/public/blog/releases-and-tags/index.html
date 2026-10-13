@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Releases &amp; tags · ForkMesh Blog</title>
+    <meta name="description" content="Browse tags, mark the current release, and cut new releases in seconds; release notes live in the repository like everything else.">
+    <link rel="canonical" href="https://forkmesh.com/blog/releases-and-tags/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/releases-and-tags/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Releases &amp; tags">
+    <meta property="og:description" content="Browse tags, mark the current release, and cut new releases in seconds; release notes live in the repository like everything else.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/releases-and-tags.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/releases-and-tags.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">CI, releases &amp; distribution</p>
+            <h1>Releases &amp; tags</h1>
+            <p class="lede">Browse tags, mark the current release, and cut new releases in seconds; release notes live in the repository like everything else.</p>
+            <div class="meta"><span class="pill">Feature 42 of 72</span><span>Feature</span><span>CI, releases &amp; distribution</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/releases-and-tags.webp" alt="Abstract ForkMesh artwork for Releases &amp; tags">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Releases &amp; tags gives ForkMesh a concrete mechanism for tag and release operations tied to repository history. Browse tags, mark the current release, and cut new releases in seconds; release notes live in the repository like everything else.</p>
+          <p>Delivery metadata is part of a project, not a separate dashboard that should disappear during a migration. In ForkMesh, releases &amp; tags addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles releases &amp; tags through the same split it uses across the product: ForkMesh keeps runs, logs, artifacts, releases, quality signals, installers, and downloads close to the mirrored repository.</p>
+          <p>The behavior is intentionally narrow: Browse tags, mark the current release, and cut new releases in seconds; release notes live in the repository like everything else. Outputs can be linked to commits and served by nodes instead of becoming opaque hosted-only assets.</p>
+          <h2>Where it fits</h2>
+          <p>Use releases &amp; tags when shipping, validation, and release assets need to remain attached to the preserved repository.</p>
+          <p>It pairs with the rest of CI, releases &amp; distribution because Releases &amp; tags keeps tag and release operations tied to repository history connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/artifacts/">← Artifacts</a>
+          <a href="/blog/content-addressed-release-storage/">Content-addressed release storage →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

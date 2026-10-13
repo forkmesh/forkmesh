@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "unit": "milliseconds",
+  "budgets": [
+    {
+      "id": "daily-startup",
+      "localMaximum": 1500,
+      "remoteMaximum": 2500,
+      "measure": "navigation start to keyboard-ready dashboard chrome"
+    },
+    {
+      "id": "daily-repository-browse",
+      "localMaximum": 100,
+      "remoteMaximum": 1000,
+      "measure": "catalog source available to rendered repository list"
+    },
+    {
+      "id": "daily-search",
+      "localMaximum": 100,
+      "remoteMaximum": 100,
+      "measure": "input event to filtered in-memory results"
+    },
+    {
+      "id": "daily-diff-render",
+      "localMaximum": 500,
+      "remoteMaximum": 500,
+      "measure": "parsed patch available to virtualized diff markup"
+    },
+    {
+      "id": "daily-navigation",
+      "localMaximum": 100,
+      "remoteMaximum": 250,
+      "measure": "navigation command to route handoff or updated view"
+    },
+    {
+      "id": "daily-feedback",
+      "localMaximum": 100,
+      "remoteMaximum": 100,
+      "measure": "accepted input to visible and announced acknowledgement"
+    }
+  ],
+  "accessibility": {
+    "criticalViolations": 0,
+    "seriousViolations": 0,
+    "minimumTextContrast": 4.5,
+    "minimumLargeTextContrast": 3.0,
+    "minimumCoarsePointerTargetCssPixels": 44,
+    "supportedZoomPercent": 200,
+    "reducedMotionMaximumAnimationMilliseconds": 0
+  },
+  "supportedJourneys": [
+    "responsive-web-desktop",
+    "responsive-web-mobile",
+    "desktop-shell-web-surface",
+    "mobile-shell-web-surface"
+  ]
+}

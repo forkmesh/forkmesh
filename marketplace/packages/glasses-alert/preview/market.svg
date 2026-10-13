@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">Glasses Alert on a phone, watching for smart glasses, with Ray-Ban Meta glasses found close by and the alarm ringing</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <text x="80" y="128" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="44" font-weight="700" fill="#f4f5f7">Glasses Alert</text>
+  <text x="80" y="176" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="24" fill="#a9b0bd">Know when Meta smart glasses are near you.</text>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" fill="#d8dce3">
+    <circle cx="92" cy="252" r="7" fill="#4f8cff"/>
+    <text x="114" y="260">Scans Bluetooth for Ray-Ban Meta and Oakley Meta</text>
+    <circle cx="92" cy="308" r="7" fill="#4f8cff"/>
+    <text x="114" y="316">Loud alarm, even with the phone on silent</text>
+    <circle cx="92" cy="364" r="7" fill="#4f8cff"/>
+    <text x="114" y="372">Strong vibration you can feel in a pocket</text>
+    <circle cx="92" cy="420" r="7" fill="#4f8cff"/>
+    <text x="114" y="428">Never connects or pairs; nothing leaves the phone</text>
+  </g>
+  <text x="80" y="600" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18" fill="#6f7685">Free for Android and iPhone · Privacy</text>
+  <rect x="820" y="64" width="340" height="592" rx="44" fill="#08090c" stroke="#3a404d" stroke-width="3"/>
+  <rect x="836" y="80" width="308" height="560" rx="32" fill="#12151b"/>
+  <text x="990" y="124" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#f4f5f7">Glasses Alert</text>
+  <rect x="852" y="144" width="276" height="116" rx="14" fill="#1b1f27" stroke="#2a2f3a"/>
+  <circle cx="884" cy="182" r="14" fill="#2fbf71"/>
+  <text x="908" y="178" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#f4f5f7">Watching for smart</text>
+  <text x="908" y="196" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#f4f5f7">glasses</text>
+  <rect x="868" y="216" width="116" height="30" rx="15" fill="none" stroke="#4f8cff"/>
+  <text x="926" y="236" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#4f8cff">Stop watching</text>
+  <rect x="994" y="216" width="116" height="30" rx="15" fill="none" stroke="#4f8cff"/>
+  <text x="1052" y="236" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#4f8cff">Test alarm</text>
+  <text x="852" y="292" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#a9b0bd">RANGE</text>
+  <rect x="852" y="302" width="276" height="30" rx="8" fill="#1b1f27"/>
+  <rect x="944" y="302" width="92" height="30" rx="8" fill="#26324a"/>
+  <text x="898" y="322" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#a9b0bd">Close by</text>
+  <text x="990" y="322" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#f4f5f7">Same room</text>
+  <text x="1082" y="322" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#a9b0bd">Anywhere</text>
+  <text x="852" y="362" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#a9b0bd">NEARBY NOW · 1</text>
+  <rect x="852" y="372" width="276" height="56" rx="10" fill="#1b1f27"/>
+  <circle cx="878" cy="400" r="10" fill="#e5484d"/>
+  <text x="898" y="396" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#f4f5f7">Ray-Ban Meta 0F2A</text>
+  <text x="898" y="414" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#a9b0bd">Very close · -54 dBm · Luxottica</text>
+  <rect x="852" y="452" width="276" height="168" rx="16" fill="#d92d33"/>
+  <text x="990" y="500" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#ffffff">Smart glasses nearby</text>
+  <text x="990" y="528" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#ffe4e4">Ray-Ban Meta 0F2A · very close</text>
+  <rect x="876" y="556" width="228" height="44" rx="22" fill="#ffffff"/>
+  <text x="990" y="584" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#d92d33">Stop alarm</text>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0d1117"/>
+  <rect x="60" y="60" width="520" height="240" rx="24" fill="#161b22" stroke="#30363d"/>
+  <text x="320" y="112" fill="#e6edf3" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="26" text-anchor="middle">Workflows: Productivity</text>
+  <rect x="93" y="146" width="64" height="64" rx="14" fill="#000000"/>
+  <text x="125" y="186" fill="#ffffff" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle">NO</text>
+  <line x1="157" y1="178" x2="171" y2="178" stroke="#8b949e" stroke-width="2"/>
+  <rect x="171" y="146" width="64" height="64" rx="14" fill="#18BFFF"/>
+  <text x="203" y="186" fill="#ffffff" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle">AI</text>
+  <line x1="235" y1="178" x2="249" y2="178" stroke="#8b949e" stroke-width="2"/>
+  <rect x="249" y="146" width="64" height="64" rx="14" fill="#0F9D58"/>
+  <text x="281" y="186" fill="#ffffff" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle">GS</text>
+  <line x1="313" y1="178" x2="327" y2="178" stroke="#8b949e" stroke-width="2"/>
+  <rect x="327" y="146" width="64" height="64" rx="14" fill="#4285F4"/>
+  <text x="359" y="186" fill="#ffffff" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle">GC</text>
+  <line x1="391" y1="178" x2="405" y2="178" stroke="#8b949e" stroke-width="2"/>
+  <rect x="405" y="146" width="64" height="64" rx="14" fill="#1FA463"/>
+  <text x="437" y="186" fill="#ffffff" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle">GD</text>
+  <line x1="469" y1="178" x2="483" y2="178" stroke="#8b949e" stroke-width="2"/>
+  <rect x="483" y="146" width="64" height="64" rx="14" fill="#EA4335"/>
+  <text x="515" y="186" fill="#ffffff" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle">GM</text>
+  <text x="320" y="258" fill="#8b949e" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="16" text-anchor="middle">13 integrations</text>
+</svg>

@@ -1,0 +1,20 @@
+/* Page-scoped Tailwind source for /hackathon.
+ *
+ * The site-wide /tailwind.css is a purged Tailwind v3 bundle shared by every
+ * other marketing page; regenerating it with the v4 CLI available here would
+ * rewrite the stylesheet those pages depend on. So this page gets its own
+ * build, scanned only from hackathon.html.
+ *
+ * Preflight is deliberately not imported: the authored ThreeUI stylesheet in
+ * hackathon.css carries its own reset, and layering a second one on top of it
+ * changes the authored baseline. Only the theme tokens and the utilities that
+ * hackathon.html actually references are emitted.
+ *
+ * Rebuild after editing hackathon.html:
+ *   tailwindcss -i www/public/assets/hackathon/tailwind.input.css \
+ *               -o www/public/assets/hackathon/tailwind.css --minify
+ */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+
+@source "../../hackathon.html";

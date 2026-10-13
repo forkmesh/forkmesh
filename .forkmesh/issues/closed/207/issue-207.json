@@ -1,0 +1,221 @@
+{
+  "schema": "forkmesh-issue-v1",
+  "number": 207,
+  "title": "on the commit page next to delete commit have a button to restore commit that undoes the commit and commits that change",
+  "status": "closed",
+  "labels": [
+    "Incomplete"
+  ],
+  "milestone": "",
+  "priority": 33,
+  "progress": 5,
+  "assignees": [
+    "mdkaifansari04"
+  ],
+  "createdAt": 1782349505941,
+  "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+  "authorName": "newnewnode",
+  "bountyUsd": 2.0,
+  "bountyAddress": "EDxzMf8Phkqs9VkN2MAYgsufjseDNV6dYRmeDotnZxMa",
+  "bountyStatus": "paid",
+  "events": [
+    {
+      "type": "open",
+      "id": "open-207",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782349505941,
+      "title": "on the commit page next to delete commit have a button to restore commit that undoes the commit and commits that change",
+      "body": "",
+      "attachments": [],
+      "sig": "ZdceA0rMwgw2Qho9HPYumPCIOsVRWKypr65e7BnVkKMRdBKGtAwmWR_qVIacONYWCeVr7VvnVGgTmhuXlDFEDQ"
+    },
+    {
+      "type": "agent",
+      "id": "da0833c0-89ad-49f2-b4f2-ea2515bc12cc",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782349506940,
+      "agentProvider": "claude-code",
+      "agentSessionId": 4,
+      "agentStatus": "queued",
+      "agentCreatePr": true,
+      "sig": "LAU0uGw5R149CBhTNRVGBNAcyijZ6uV4LOpgNl22vx6e5FFdC7AmYUhLCxXQb9sBVQQQfk3bTmwoBfNIk7RBCg"
+    },
+    {
+      "type": "agent",
+      "id": "54e6a9dd-f133-41e7-9b6f-debf2d9ec5f3",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782349798466,
+      "agentProvider": "",
+      "agentSessionId": 0,
+      "agentStatus": "cleared",
+      "agentCreatePr": false,
+      "sig": "D-qE3MoSOV6UM6vs25AgrNdPXXaB3di4MFX1hwbj83YRag0BV0CYB1fKsRvig6n3CDLfp9EWbnGGyWQvaYYdAg"
+    },
+    {
+      "type": "priority",
+      "id": "4edb2477-6fb8-4179-b764-feb60344f2af",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782356482628,
+      "priority": 26,
+      "sig": "-Vye9B7lXyBWTRSKKK17pmXJLMw6JCMDI434pj2TM42P2xZT2FCHPmY-LvDY_EDVy2vn6WLFy1lLbZgh9f80Dw"
+    },
+    {
+      "type": "bounty",
+      "id": "f0867222-a24f-4aa2-a2ce-7ff7c57e417e",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782359967364,
+      "bountyUsd": 2.0,
+      "bountyAddress": "",
+      "bountyStatus": "open",
+      "sig": "p_7kbULIFdSWp_HEP7Q6ndMqn1EWai5ncRtbD7EMbzmAvrb05rg2jFc_9IlGYq-Db8X4B81Ey8KqjUI0cTmqCA"
+    },
+    {
+      "type": "priority",
+      "id": "5a810ffa-847d-48f5-9355-8663cce97746",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782522650933,
+      "priority": 89,
+      "sig": "dbiPBN_6ae_JmaKun3DLURD7B99PCcxpK1eD0uJ2V654NgjzPUe3YMn-BOxCRw9JJmJYhaIODDqsR7Wc2SoxCQ"
+    },
+    {
+      "type": "labels",
+      "id": "640b220a-9131-49b5-b880-66d5e06d5b96",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782687283421,
+      "labels": [
+        "Partial"
+      ],
+      "sig": "Mn_kTjmiw1r5k4NXtrlJWdbh_t7EUQ6Nyn5nXnBaOqfCTkxUr34zUxVjQMoPK8ySgDunl_8QvQ5fQsXGep3fDg"
+    },
+    {
+      "type": "progress",
+      "id": "c50afc4f-dea6-4975-a4e7-4792db57a649",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782687283476,
+      "progress": 65,
+      "sig": "Ho8xOipHCn6QFVF6aSD7r3SsDlFxjx5gQiOHhqCwNe6DQTOTYp0E38D5ECnHDLCzmIml8LmQ8pHdNu2z9sHhDg"
+    },
+    {
+      "type": "priority",
+      "id": "ea0fdce3-df60-4520-9523-60efe223bd78",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782710486921,
+      "priority": 22,
+      "sig": "9SX8rzKnvk6A4UpEEtYotAYmYorldoYYyqFJlTiix8exIij8S0R8Y1WBKVsRubQ6yS9pWm7xd9DCr2NwPJY6Cw"
+    },
+    {
+      "type": "labels",
+      "id": "a1b64b2d-150a-46f7-96e8-4dd27e0c44ad",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782711666661,
+      "labels": [
+        "Incomplete"
+      ],
+      "sig": "aaWambw26DTnQjOwt8ytppxdOORteCfOeOdi0Jo2M6AB_H3YrOYq6rTvXWBBq93ZUghjntIrEbnEN74r_gRNBA"
+    },
+    {
+      "type": "progress",
+      "id": "7c7bb931-eaae-4655-932b-59613a1ab65a",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782711666689,
+      "progress": 5,
+      "sig": "XvsEIyD-ZOWCT49gDIR_7l58jDWqm0H8MEWM8EdJ-NeyPacZtep1DASOKzCsd_-BWRjgzsU2h-NnmsW68iHGBA"
+    },
+    {
+      "type": "comment",
+      "id": "c4fd9116-bead-40b2-bac3-00ce82d8797f",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782711666715,
+      "body": "**Completeness analysis:** Incomplete (5%)\n\nno restore-commit button alongside delete-commit visible",
+      "attachments": [],
+      "sig": "ipYmQXfvRlUlOnZglSyCJ1RUSSghbr16UjsSuzLasC0Fz823_tn4fl7kgLv390S1w1iWxJAKMbUcdEuuNPl4CA"
+    },
+    {
+      "type": "priority",
+      "id": "2cb5509f-8ed5-4504-b46c-3f7a5419317f",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782786835273,
+      "priority": 33,
+      "sig": "XqhVWZw9DZM4aze16vsZRal3mrAIr5qoIr1a8vqkSKfUe9tmgW7fRSN2MHk8dR3-YFN5A_StG7f1Qw3JaCsADQ"
+    },
+    {
+      "type": "status",
+      "id": "8ec5b400-c84a-4751-932c-d6b9dd748ab4",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782796332093,
+      "status": "closed",
+      "sig": "Ddwkoi4VKTb2xQpFYyauA6MgpeQkwXYVNyIqAqS-ujGmwygZEJZc1U4x9JA6uh9mi41mCG9foRWb0HufyHcmAg"
+    },
+    {
+      "type": "assignees",
+      "id": "1f32f94b-71b1-4d07-9546-57f1c0de17fc",
+      "author": "F4rlozoS0ls2-Evs6Q7mLsSsZR1TVwMAsan0tdgaJoM",
+      "authorName": "mdkaifansari04",
+      "ts": 1782831965212,
+      "assignees": [
+        "mdkaifansari04"
+      ],
+      "sig": "4LEGaRGmuJ_YkfFZ3jZV5hgERqD6CQeFDDQ_8gUksoiF_-kII9ZAhfgjvxPJ8fieMWpXSBpKpmYoZ3p8U1JMBw"
+    },
+    {
+      "type": "assignees",
+      "id": "d3c1d5bf-3e23-41c5-9b68-9cdc5ad0a289",
+      "author": "F4rlozoS0ls2-Evs6Q7mLsSsZR1TVwMAsan0tdgaJoM",
+      "authorName": "mdkaifansari04",
+      "ts": 1782832183028,
+      "assignees": [
+        "mdkaifansari04"
+      ],
+      "sig": "Nio4ljjN3XIJXLZBgqBZOwvAmNv7RF17gZ6WQg1Obn2fTwrDjh9keHCL-0rvhe3VlzApv02T2zsLuYw98hKLAQ"
+    },
+    {
+      "type": "assignees",
+      "id": "3203a582-5f67-443f-8540-12943ed777c8",
+      "author": "F4rlozoS0ls2-Evs6Q7mLsSsZR1TVwMAsan0tdgaJoM",
+      "authorName": "mdkaifansari04",
+      "ts": 1782832358037,
+      "assignees": [
+        "mdkaifansari04"
+      ],
+      "sig": "iFZEEmalE1T3SCqaUu3bC50PZqY7cyEEdtuoxajAzGmLbdbbH7kg_1YXjgq5vS6IDdK1NH6vX7xAR10HXG3KCA"
+    },
+    {
+      "type": "bounty",
+      "id": "ed38e3b8-c6c8-45dc-87e8-7e92fb5a9328",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782833078959,
+      "bountyUsd": 2.0,
+      "bountyAddress": "CeJEUGuctKMwyUb6QsqYJoPRcqh78Pwg1HXk1yQFDdUo",
+      "bountyStatus": "open",
+      "sig": "Woyx9UBP0_zZY88sh_9aZJd8GBOuyinUmnktL_xJnhM5R28r_sCoEvzDBWJj8yFr06oL3SsraK7Dgfam_c_TDw"
+    },
+    {
+      "type": "bounty",
+      "id": "d9bd95d9-f402-4648-b6f5-576bd9150179",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "newnewnode",
+      "ts": 1782833275731,
+      "bountyUsd": 2.0,
+      "bountyAddress": "EDxzMf8Phkqs9VkN2MAYgsufjseDNV6dYRmeDotnZxMa",
+      "bountyStatus": "paid",
+      "sig": "_e_eJSPeNbtVTxG_si8YpJYoko-95egtmIF8v687l045Wu30rQYzZeGTPp1NVLOgaDD7SNG5BQIgiGSt6LKUDA"
+    }
+  ],
+  "votes": 0,
+  "updatedAt": 1782833275731
+}

@@ -1,0 +1,43 @@
+[Unit]
+Description=ForkMesh SSH authorization broker
+Documentation=https://forkmesh.com/docs/operations/git-ssh-gateway
+Wants=network-online.target
+After=network-online.target
+Before=sshd.service ssh.service
+
+[Service]
+Type=simple
+User=forkmesh-ssh-auth
+Group=forkmesh-ssh-gateway
+UMask=0117
+RuntimeDirectory=forkmesh-ssh-auth
+RuntimeDirectoryMode=0750
+ExecStart=/usr/bin/python3 -I /opt/forkmesh-mirror/ssh_authorization_broker.py --config /etc/forkmesh/ssh-authorization-broker.json
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+TasksMax=32
+LimitNOFILE=256
+
+[Install]
+WantedBy=multi-user.target

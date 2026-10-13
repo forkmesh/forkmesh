@@ -1,0 +1,83 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Shorter loops, stronger proof · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="ForkMesh tightens pull-request review and mirror delivery, and brings agents, calendars, verifiable rewards, and a public ledger into one clearer loop.">
+    <link rel="canonical" href="https://forkmesh.com/blog/shorter-loops-stronger-proof/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/shorter-loops-stronger-proof/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Shorter loops, stronger proof">
+    <meta property="og:description" content="Faster review and mirror delivery meet a modular coding agent, shared calendars, verifiable rewards, and a public ledger.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/shorter-loops-stronger-proof.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit coding robot, glass review gate, three mirror nodes, and a crystalline proof ring joined by one cyan and green circuit">
+    <meta property="article:published_time" content="2026-08-17T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Shorter loops, stronger proof">
+    <meta name="twitter:description" content="Review, mirrors, agents, coordination, and rewards now carry clearer evidence from work to outcome.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/shorter-loops-stronger-proof.webp">
+    <meta name="twitter:image:alt" content="A moonlit coding robot, glass review gate, three mirror nodes, and a crystalline proof ring joined by one cyan and green circuit">
+{% endblock %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Shorter loops, stronger proof</h1>
+            <p class="lede">The path from a report to a reviewed change—and from a commit to an independent mirror—is getting faster, easier to follow, and harder to mistake for finished work before the evidence is there.</p>
+            <div class="meta"><span class="pill">August 17, 2026</span><span>Product update</span><span>9 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/shorter-loops-stronger-proof.webp" alt="A moonlit coding robot, glass review gate, three mirror nodes, and a crystalline proof ring joined by one cyan and green circuit">
+        </section>
+        <article class="body">
+          <p>Nine days ago, <a href="/blog/one-app-one-mesh/">One app, one mesh</a> described a cleaner boundary around the ForkMesh app, public site, World, and independent servers. This round is about what happens inside that boundary: how quickly work moves, how clearly a reviewer can judge it, and what proof remains when a mirror, an agent, or a reward says it is done.</p>
+          <p>The changes span the web app, desktop client, Go mirror service, World, and repository-native project records. They are not one giant feature. Together, though, they shorten several loops that used to require a reload, a five-minute wait, a second tool, or a leap of faith.</p>
+
+          <h2>Review becomes a place to work</h2>
+          <p>The web pull-request page now treats <strong>Files changed</strong> as a working surface. A real file explorer can switch between hierarchy and flat views, collapse single-child directories, filter by path, and follow the file currently in view. The diff pane supports unified and side-by-side layouts, sticky file headers, status marks, per-file change meters, and viewed files that fold away instead of continuing to occupy the page.</p>
+          <p>Readiness is no longer a vague green light. The pull detail loads the branch it actually targets, reports how far it is behind, shows live check states—including failed, rejected, cancelled, skipped, and awaiting approval—and offers an authorized <strong>Update branch</strong> operation. That update is signed and routed through the mirror-side executor rather than asking a browser to improvise a Git mutation.</p>
+          <p>The desktop side received the same attention. The update control is always discoverable on an open pull, conflict navigation crosses file boundaries, and bulk resolution can take either “ours” or “theirs.” Image changes render as bounded before-and-after previews, including WebP when the optional decoder is present, while paged text diffs retain their file heading and scroll position. Underneath, pull-ledger reconciliation adopts non-conflicting foreign additions, recognizes branches merged outside the app, and refreshes an open detail when its repository-native record moves.</p>
+          <div class="note">The review, readiness, image-diff, and pull-ledger work above is present by the v0.7.23 desktop release boundary. Later current-main fixes make cross-node conflict branches safer, recover the file browser after a branch disappears, and keep closed pulls out of the active list; those later desktop changes are not being presented as part of v0.7.23.</div>
+
+          <h2>Mirrors carry the conversation, too</h2>
+          <p>A mirror is most useful when “current” means more than “eventually caught the next timer.” Desktop SSH fan-out now keeps a slot per gateway, retries a cooled-down node when it becomes eligible, and still pushes healthy peers while one host is slow. A repository update that lands during a sync no longer loses its immediate fan-out and waits for the safety pass.</p>
+          <p>The Go service has also taken ownership of native collaboration intake. A signed node event wakes only the changed issue or pull inbox; the daemon leases that row, writes the repository-native record in a temporary worktree, commits it, and acknowledges the exact result with a refs attestation. Reconnects trigger one catch-up sweep, startup checks the collaboration inbox, and a bounded five-minute reconciliation covers a best-effort event that never arrived. No resident desktop or GUI process is required on the server path.</p>
+          <p>Several less glamorous fixes matter just as much. Slow Git transfers now refresh their stream watchdog instead of failing at a fixed 60 seconds, closing <a href="https://app.forkmesh.com/forkmesh/forkmesh/issues/608">a reported clone failure</a>. Deep health probes no longer publish a stale gap while a newer result is running. The latest release also gained a direct fleet probe and pull-ledger fetch so the desktop can ask a saved host for evidence instead of inferring it from an old catalog row.</p>
+          <p>Recovery work continued after v0.7.23: current <code>main</code> can repair divergent flagship state, restore authority after a target was retired, and probe a retired target long enough to recover it. These commits are operational repairs, not a claim that a fleet can never diverge.</p>
+
+          <h2>Agents, chat, and calendars share more context</h2>
+          <p>v0.7.23 embeds a provider-neutral coding-agent runtime whose canonical source remains independently testable Python. Cloudflare Workers AI can run through a signed relay ticket, while an installed Ollama or llama.cpp model can use the same tools locally. File reads and edits, bounded commands, search, tests, lint, Git status, diffs, commits, stash, and restore all stay in the isolated desktop worktree; the model provider never receives filesystem access.</p>
+          <p>The desktop now presents that work more legibly. Agent prose has its own visual weight, shell commands and output share one terminal panel, streamed text batches instead of reshaping the document on every token, and completion notifications identify and reopen the run that produced them. Context follows a continued session, permission-mode changes survive that continuation, and a run stays active while its background work is still alive.</p>
+          <p>Coordination around the code moved closer as well. Private shared calendars reached both web and desktop, with device authorization, invite autocomplete, and an optional AI-assisted event draft. Chat gained commands that can turn a conversation into a topic or issue, plus user-managed channel webhooks. Repository activity appears on the Calendar page in current <code>main</code>, after the v0.7.23 cutoff, alongside all-ref activity in the desktop calendar.</p>
+
+          <h2>Ownership gets a recovery path</h2>
+          <p>The combined app described in the last update now has a more direct front door. The <code>/start</code> flow checks Cloudflare and Vultr credentials, selects a suitable small server, provisions it in visible steps, and can create an operator-owned World joined to the public World by a bridge. Provider keys are used for the step that needs them and are not written into the setup state.</p>
+          <p>The desktop can also export a complete controller bundle and import it into a new deployment. The review pages show the settings, variables, files, sizes, and excluded rebuildable directories before anything moves. This is deliberately a disaster-recovery tool, not a casual backup format: the bundle can contain node identities, SSH keys, account state, and deployment secrets in clear text. It belongs in encrypted storage, and anyone holding it may be able to act as the node.</p>
+          <p>A new <a href="/docs/product-promise/">product-promise guide</a> gives operators a reversible way to test the claim underneath all of this: collaborate, add an independently controlled mirror, take the source host offline, clone from the same repository URL, then restore and verify recovery. Automated checks support that drill; they do not replace signed health, human comprehension, or production observation.</p>
+
+          <h2>From contribution to public receipt</h2>
+          <p>Direct member tips now leave the Worker's custody boundary entirely. The desktop can generate or import a Solana key, lock it in a separate passphrase-encrypted local vault, build and re-check one transfer, sign it locally, and broadcast it to a public RPC endpoint. The server receives only the resulting public signature for an idempotent recipient notice. Export is possible, but it is deliberately gated by the vault passphrase, an explicit warning, owner-only file permissions, and clipboard clearing.</p>
+          <p>The new <a href="https://app.forkmesh.com/microjobs">Microjobs</a> surface ties three small fixed rewards to independently checkable outcomes: 0.005 SOL for a genuinely new issue report, 0.05 SOL for a merged pull opened with the MCP agent tool's signed marker, and 0.01 SOL for a public referral post that still contains the link and has sent counted visitors. A claim can be pending, approved, queued, paid, or rejected. Approval creates a public unsigned transfer plan; it does not move money. A configured repository-owner desktop must revalidate, sign, and broadcast the payout from its local vault.</p>
+          <p>That distinction is intentional. The policy calls these amounts a small thank-you, not employment, an investment, or proof of personhood. Missing AI, reward-pool, signer, or public-evidence configuration fails closed. Issue-reporter credits now have their own leaderboard, while reward comments on closed reports record estimates rather than pretending a payout already happened.</p>
+          <p>Current <code>main</code> adds the other half of the audit trail: a public financial ledger that projects the canonical tables behind tips, rewards, microjobs, World purchases, and recorded revenue. It separates allocations and pending plans from on-chain receipts, links full transaction signatures when they exist, labels USD values as current estimates, and backfills only known public system-wallet history. It does not scan personal member wallets or turn a pending row into a payment.</p>
+
+          <h2>Reports are feeding back into the product</h2>
+          <p>Outside reports in this window covered email verification, session sign-out timing, profile edits that disappeared after reload, malformed signup addresses, an inert profile-picture control, a missing Ubuntu desktop dependency, and the slow-clone timeout. Each report has a corresponding implementation change and closed repository-native issue—not just a reassuring comment.</p>
+          <p>The same scrutiny now applies to growth loops. Referral click evidence is retained in bounded encrypted or indexed form, suspicious signup bursts can be quarantined without receiving historical credit, and administrators can see quarantined accounts separately. These controls raise the cost of abuse; they are not described as identity proof.</p>
+
+          <h2>The release line stays visible</h2>
+          <p>The last signed desktop artifact in this reporting window is <strong>v0.7.23</strong>, built from the August 12 release commit. Web, app, server, and World work merged after that point can ship independently, but Git history alone is not proof of a hosted rollout. This post therefore labels August 13 and August 17 desktop work as current <code>main</code>, and the <a href="/status">status page</a> remains the place to check current service health.</p>
+          <p>Two substantial merged contributions remain deliberately outside the shipped story. Pull request #92 adds mobile secure storage, account deletion, privacy metadata, accessibility work, and an App Store submission checklist; it is launch readiness, not evidence of an App Store release. Pull request #93 refreshes the separate <code>/new-home</code> preview; it has not replaced the default landing page. Useful progress does not need a larger claim than the record supports.</p>
+          <p><a href="/desktop">Get the latest desktop release</a>, <a href="https://app.forkmesh.com/">open the app</a>, <a href="/docs">read the operating guides</a>, or <a href="https://world.forkmesh.com/">visit ForkMesh World</a>.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/a-team-around-the-work/">← A team around the work</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/one-app-one-mesh/">One app, one mesh →</a>
+        </nav>
+{% endblock %}

@@ -1,0 +1,66 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "discord",
+  "name": "Discord",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Extensions",
+  "version": "1.0.0",
+  "summary": "Bring the server channels, threads, and direct messages of a Discord bot into the Chat sidebar, grouped by server.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:discord",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "network.discord",
+      "label": "Connect to the Discord bot API and Gateway as the bot token you provide",
+      "risk": "sensitive"
+    },
+    {
+      "id": "chat.sidebar.channels",
+      "label": "Place the bot channels, threads, and direct messages in the Chat sidebar and transcript",
+      "risk": "low"
+    },
+    {
+      "id": "settings.bottoken",
+      "label": "Keep the bot token and cached Discord history on this device until the package is removed",
+      "risk": "sensitive"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "Chat sidebar with a collapsible Discord · Forkmesh group of bridged channels beside native ForkMesh channels"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

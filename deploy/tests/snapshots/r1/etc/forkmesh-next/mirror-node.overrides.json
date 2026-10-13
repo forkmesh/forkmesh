@@ -1,0 +1,15 @@
+{
+  "disableCloudflared": true,
+  "enableActions": true,
+  "eventDrivenUpstreams": [],
+  "role": "runner",
+  "runner": {
+    "appUrl": "https://app.next.forkmesh.com",
+    "jobCPUQuota": "90%",
+    "jobMemoryMax": "600M",
+    "jobMemorySwapMax": "1G",
+    "maxConcurrentRuns": 1,
+    "workRoot": "/var/lib/forkmesh-runner/work"
+  },
+  "upstreams": {}
+}

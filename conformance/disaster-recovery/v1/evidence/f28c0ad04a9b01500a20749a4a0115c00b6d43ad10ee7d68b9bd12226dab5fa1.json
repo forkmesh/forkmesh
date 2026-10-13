@@ -1,0 +1,94 @@
+{
+  "dataLoss": {
+    "commitsLost": 0,
+    "policy": "none",
+    "refsLost": [],
+    "withinPolicy": true
+  },
+  "fault": null,
+  "missingPrerequisites": [],
+  "mode": "automated-live",
+  "objective": {
+    "automatedBudgetSeconds": 120,
+    "dataLoss": "none",
+    "recoveryMinutes": 1440
+  },
+  "platform": {
+    "git": "2.47",
+    "os": "linux",
+    "python": "3.13.5"
+  },
+  "ranAt": "2026-09-14T21:34:54+00:00",
+  "recoveryMs": 2565,
+  "runbookSha256": "b93908faaa80a062ef68b76c01bb1d452bd93cc0b83b821c483e25f0212229ee",
+  "runbookVersion": "1.0.0",
+  "scenario": "regional-isolation",
+  "schema": "forkmesh-disaster-drill-report-v1",
+  "steps": [
+    {
+      "action": "region A exports to removable media",
+      "ms": 337,
+      "ok": true,
+      "procedure": "reconcile-after-isolation"
+    },
+    {
+      "action": "region B imports region A's media",
+      "ms": 935,
+      "ok": true,
+      "procedure": "reconcile-after-isolation"
+    },
+    {
+      "action": "region B exports to removable media",
+      "ms": 332,
+      "ok": true,
+      "procedure": "reconcile-after-isolation"
+    },
+    {
+      "action": "region A imports region B's media",
+      "ms": 923,
+      "ok": true,
+      "procedure": "reconcile-after-isolation"
+    },
+    {
+      "action": "check that diverged work was kept aside, not overwritten",
+      "ms": 5,
+      "ok": true,
+      "procedure": "reconcile-after-isolation"
+    },
+    {
+      "action": "verify every commit from both regions is in both repositories",
+      "ms": 30,
+      "ok": true,
+      "procedure": "reconcile-after-isolation"
+    }
+  ],
+  "unsafeSteps": {
+    "refused": [
+      {
+        "reason": "diverged refs kept under refs/forkmesh-offline/conflicts/",
+        "step": "overwrite one region's main with the other's"
+      }
+    ],
+    "taken": []
+  },
+  "verdict": "pass",
+  "verification": [
+    {
+      "check": "each region's main is unchanged",
+      "ok": true
+    },
+    {
+      "check": "diverged main was kept aside in both regions",
+      "ok": true
+    },
+    {
+      "check": "connectivity check passes",
+      "ok": true
+    },
+    {
+      "check": "connectivity check passes",
+      "ok": true
+    }
+  ],
+  "withinObjective": true
+}

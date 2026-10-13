@@ -1,0 +1,82 @@
+          <section data-view="bounties" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full">
+              <div data-bounties-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 class="text-base font-semibold text-foreground">Bounties</h1>
+                    <p class="mt-1 text-sm text-muted-foreground">Propose organization work and name the SOL you would want for completing it. Your bid joins the organization task list with your account as the bidder, where owners review it like any other task.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-3 self-start">
+                    <span data-bounties-count class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <button
+                      data-bounties-refresh
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div data-bounties-notice aria-live="polite"></div>
+
+                <div class="px-4 sm:px-5 py-4 border-b border-border">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bid on work</h2>
+                  <div data-bounties-start class="mt-3">
+                    <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Checking your session...</p>
+                  </div>
+                  <form data-bounties-form class="mt-3 grid gap-3 sm:grid-cols-2" hidden novalidate>
+                    <label class="text-xs text-muted-foreground sm:col-span-2">Task
+                      <input name="title" type="text" required minlength="3" maxlength="160" autocomplete="off" placeholder="What would you complete?" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+                    </label>
+                    <label class="text-xs text-muted-foreground sm:col-span-2">Details
+                      <textarea name="details" rows="4" maxlength="4000" placeholder="Scope, deliverables, and anything reviewers should know" class="mt-1 w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"></textarea>
+                    </label>
+                    <label class="text-xs text-muted-foreground">Requested bounty (SOL)
+                      <input name="amountSol" type="text" required inputmode="decimal" autocomplete="off" placeholder="0.10" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+                    </label>
+                    <label class="text-xs text-muted-foreground">Department
+                      <select name="department" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20">
+                        <option value="general">General</option>
+                        <option value="engineering">Engineering</option>
+                        <option value="product-design">Product + design</option>
+                        <option value="marketing">Marketing</option>
+                        <option value="security">Security</option>
+                        <option value="infrastructure">Infrastructure</option>
+                        <option value="community">Community</option>
+                        <option value="partnerships">Partnerships</option>
+                        <option value="operations">Operations</option>
+                        <option value="executive">Executive</option>
+                        <option value="quality-assurance">Quality assurance</option>
+                      </select>
+                    </label>
+                    <div class="sm:col-span-2 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p class="text-xs text-muted-foreground">A compensation request only. ForkMesh does not reserve, custody, or transfer SOL when you submit a bid.</p>
+                      <button data-bounties-submit type="submit" class="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-colors disabled:opacity-60">
+                        <i data-lucide="badge-dollar-sign" class="w-4 h-4"></i>
+                        Submit bid
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bounty bids</h2>
+                  <div role="group" aria-label="Show bids" class="inline-flex rounded-md border border-border p-0.5">
+                    <button data-bounties-filter="open" type="button" aria-pressed="true" class="rounded px-2.5 py-1 text-xs font-semibold text-muted-foreground aria-pressed:bg-secondary aria-pressed:text-foreground">Open</button>
+                    <button data-bounties-filter="done" type="button" aria-pressed="false" class="rounded px-2.5 py-1 text-xs font-semibold text-muted-foreground aria-pressed:bg-secondary aria-pressed:text-foreground">Completed</button>
+                    <button data-bounties-filter="all" type="button" aria-pressed="false" class="rounded px-2.5 py-1 text-xs font-semibold text-muted-foreground aria-pressed:bg-secondary aria-pressed:text-foreground">All</button>
+                  </div>
+                </div>
+
+                <div data-bounties-list class="divide-y divide-border" aria-live="polite">
+                  <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading bids...</div>
+                </div>
+
+                <div class="border-t border-border px-4 sm:px-5 py-3">
+                  <p class="text-xs text-muted-foreground">Bids are organization-private and encrypted at rest, like every task. An amount is what the bidder asks for, not a promise of payment; any payment is made directly between people and recorded in the <a class="text-accent underline" href="/ledger">public ledger</a>. Open a bid in <a class="text-accent underline" href="/dashboard/tasks">Tasks</a> to discuss, start or complete it.</p>
+                </div>
+              </div>
+            </div>
+          </section>

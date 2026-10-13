@@ -1,0 +1,1736 @@
+{
+  "schema": "forkmesh-sync-status-fixture-v1",
+  "model": "conformance/sync-status/v1/model.json",
+  "privateStrings": [
+    "alice-private-laptop",
+    "203.0.113.7",
+    "alice/secret-roadmap",
+    "10.0.0.4",
+    "ECONNRESET"
+  ],
+  "cases": [
+    {
+      "id": "verified-every-copy",
+      "expectState": "verified",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "sourceUpdatedAt": 1799999880000,
+        "copies": [
+          {
+            "node": "alice-private-laptop",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000,
+            "address": "203.0.113.7"
+          },
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799999970000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "verified",
+        "label": "Verified",
+        "severity": "ok",
+        "current": true,
+        "totalCopies": 3,
+        "nodesReached": 3,
+        "verifiedCopies": 3,
+        "trustedMirrors": 2,
+        "lastConfirmedAt": 1799999970000,
+        "lagMs": 0,
+        "error": null,
+        "action": null,
+        "summary": "Every copy is verified and current. 3 of 3 copies verified, 2 trusted mirrors, 3 nodes reached. Last confirmed just now."
+      }
+    },
+    {
+      "id": "verified-single-copy",
+      "expectState": "verified",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "sourceUpdatedAt": 1799999400000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999700000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "verified",
+        "label": "Verified",
+        "severity": "ok",
+        "current": true,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 1,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": 1799999700000,
+        "lagMs": 0,
+        "error": null,
+        "action": null,
+        "summary": "Every copy is verified and current. 1 of 1 copy verified, 1 trusted mirror, 1 node reached. Last confirmed 5 min ago."
+      }
+    },
+    {
+      "id": "degraded-copy-offline",
+      "expectState": "degraded",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "sourceUpdatedAt": 1799999820000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "unreachable",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799827200000,
+            "address": "10.0.0.4"
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "degraded",
+        "label": "Degraded",
+        "severity": "warning",
+        "current": true,
+        "totalCopies": 3,
+        "nodesReached": 2,
+        "verifiedCopies": 2,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": 1799999970000,
+        "lagMs": 180000,
+        "error": "unreachable",
+        "action": "One or more copies could not be reached; check that the mirrors are online.",
+        "summary": "Verified, but some copies are not current. 2 of 3 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed just now. 3 min behind the source. One or more copies could not be reached; check that the mirrors are online."
+      }
+    },
+    {
+      "id": "degraded-copy-behind",
+      "expectState": "degraded",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "sourceUpdatedAt": 1799994600000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799997000000
+          },
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799989200000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "degraded",
+        "label": "Degraded",
+        "severity": "warning",
+        "current": true,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 1,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": 1799997000000,
+        "lagMs": 5400000,
+        "error": "copies_behind",
+        "action": "Some copies have not received the latest state yet; they normally catch up within minutes.",
+        "summary": "Verified, but some copies are not current. 1 of 2 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed 50 min ago. 1 h behind the source. Some copies have not received the latest state yet; they normally catch up within minutes."
+      }
+    },
+    {
+      "id": "degraded-copy-unverified",
+      "expectState": "degraded",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": false,
+            "trusted": false,
+            "confirmedAt": 1799999970000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "degraded",
+        "label": "Degraded",
+        "severity": "warning",
+        "current": true,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 1,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": 1799999970000,
+        "lagMs": null,
+        "error": "unverified",
+        "action": "A copy reports the latest state without a verified signature; wait for it to re-attest.",
+        "summary": "Verified, but some copies are not current. 1 of 2 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed just now. A copy reports the latest state without a verified signature; wait for it to re-attest."
+      }
+    },
+    {
+      "id": "degraded-copy-rejected",
+      "expectState": "degraded",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "sourceUpdatedAt": 1799999940000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "rejected",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799999970000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "degraded",
+        "label": "Degraded",
+        "severity": "warning",
+        "current": true,
+        "totalCopies": 3,
+        "nodesReached": 3,
+        "verifiedCopies": 2,
+        "trustedMirrors": 2,
+        "lastConfirmedAt": 1799999970000,
+        "lagMs": 60000,
+        "error": "rejected",
+        "action": "A copy rejected the update; check the node's signing key and push again.",
+        "summary": "Verified, but some copies are not current. 2 of 3 copies verified, 2 trusted mirrors, 3 nodes reached. Last confirmed just now. 1 min behind the source. A copy rejected the update; check the node's signing key and push again."
+      }
+    },
+    {
+      "id": "queued-no-copies",
+      "expectState": "queued",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "queuedAt": 1799999995000,
+        "sourceUpdatedAt": 1799999995000,
+        "copies": []
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "queued",
+        "label": "Queued",
+        "severity": "info",
+        "current": false,
+        "totalCopies": 0,
+        "nodesReached": 0,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": null,
+        "lagMs": 5000,
+        "error": null,
+        "action": null,
+        "summary": "Waiting to synchronize. 0 of 0 copies verified, 0 trusted mirrors, 0 nodes reached. Never confirmed."
+      }
+    },
+    {
+      "id": "queued-retry-after-error",
+      "expectState": "queued",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "queuedAt": 1799999999000,
+        "lastError": "network",
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799992800000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "queued",
+        "label": "Queued",
+        "severity": "info",
+        "current": false,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": 1799992800000,
+        "lagMs": null,
+        "error": null,
+        "action": null,
+        "summary": "Waiting to synchronize. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Last confirmed 2 h ago."
+      }
+    },
+    {
+      "id": "syncing-in-flight",
+      "expectState": "syncing",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "syncStartedAt": 1799999940000,
+        "sourceUpdatedAt": 1799999880000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799985600000
+          },
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": false,
+            "trusted": false,
+            "confirmedAt": null
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "syncing",
+        "label": "Syncing",
+        "severity": "info",
+        "current": false,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": 1799985600000,
+        "lagMs": 120000,
+        "error": null,
+        "action": null,
+        "summary": "Synchronizing now. 0 of 2 copies verified, 0 trusted mirrors, 2 nodes reached. Last confirmed 4 h ago. 2 min behind the source."
+      }
+    },
+    {
+      "id": "delayed-past-deadline",
+      "expectState": "stale",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "syncStartedAt": 1799998800000,
+        "sourceUpdatedAt": 1799998740000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799978400000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": 1799978400000,
+        "lagMs": 1260000,
+        "error": "sync_delayed",
+        "action": "Synchronization is taking longer than expected; check that the source node is online.",
+        "summary": "The visible state may be out of date. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Last confirmed 6 h ago. 21 min behind the source. Synchronization is taking longer than expected; check that the source node is online."
+      }
+    },
+    {
+      "id": "offline-every-copy",
+      "expectState": "stale",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "sourceUpdatedAt": 1799992800000,
+        "copies": [
+          {
+            "node": "alice-private-laptop",
+            "status": "unreachable",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799740800000
+          },
+          {
+            "node": "mirror",
+            "status": "unreachable",
+            "verified": false,
+            "trusted": false,
+            "confirmedAt": null
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 2,
+        "nodesReached": 0,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": 1799740800000,
+        "lagMs": 7200000,
+        "error": "unreachable",
+        "action": "One or more copies could not be reached; check that the mirrors are online.",
+        "summary": "The visible state may be out of date. 0 of 2 copies verified, 0 trusted mirrors, 0 nodes reached. Last confirmed 3 d ago. 2 h behind the source. One or more copies could not be reached; check that the mirrors are online."
+      }
+    },
+    {
+      "id": "confirmation-expired",
+      "expectState": "stale",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "sourceUpdatedAt": 1799982000000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799992800000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 1,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": 1799992800000,
+        "lagMs": 18000000,
+        "error": "confirmation_expired",
+        "action": "No copy has confirmed the state recently; check that the mirrors are online.",
+        "summary": "The visible state may be out of date. 1 of 1 copy verified, 1 trusted mirror, 1 node reached. Last confirmed 2 h ago. 5 h behind the source. No copy has confirmed the state recently; check that the mirrors are online."
+      }
+    },
+    {
+      "id": "verified-without-confirmation-time",
+      "expectState": "stale",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": null
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 1,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": null,
+        "lagMs": null,
+        "error": "confirmation_expired",
+        "action": "No copy has confirmed the state recently; check that the mirrors are online.",
+        "summary": "The visible state may be out of date. 1 of 1 copy verified, 1 trusted mirror, 1 node reached. Never confirmed. No copy has confirmed the state recently; check that the mirrors are online."
+      }
+    },
+    {
+      "id": "rejected-signature",
+      "expectState": "failed",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "lastError": "signature_invalid",
+        "sourceUpdatedAt": 1799999400000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "rejected",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799913600000
+          },
+          {
+            "node": "mirror",
+            "status": "rejected",
+            "verified": false,
+            "trusted": false,
+            "confirmedAt": 1799999970000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "failed",
+        "label": "Failed",
+        "severity": "error",
+        "current": false,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": null,
+        "lagMs": 600000,
+        "error": "signature_invalid",
+        "action": "The update's signature did not verify; re-sign it from a trusted device.",
+        "summary": "Synchronization failed. 0 of 2 copies verified, 0 trusted mirrors, 2 nodes reached. Never confirmed. 10 min behind the source. The update's signature did not verify; re-sign it from a trusted device."
+      }
+    },
+    {
+      "id": "rejected-without-code",
+      "expectState": "failed",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "rejected",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799820000000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "failed",
+        "label": "Failed",
+        "severity": "error",
+        "current": false,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": 1799820000000,
+        "lagMs": null,
+        "error": "rejected",
+        "action": "A copy rejected the update; check the node's signing key and push again.",
+        "summary": "Synchronization failed. 0 of 2 copies verified, 0 trusted mirrors, 2 nodes reached. Last confirmed 2 d ago. A copy rejected the update; check the node's signing key and push again."
+      }
+    },
+    {
+      "id": "unrecognized-error-is-redacted",
+      "expectState": "failed",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "lastError": "ECONNRESET 10.0.0.4:22 alice/secret-roadmap",
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799992800000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "failed",
+        "label": "Failed",
+        "severity": "error",
+        "current": false,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": 1799992800000,
+        "lagMs": null,
+        "error": "unknown",
+        "action": "An unexpected error stopped synchronization; see the node's log for details.",
+        "summary": "Synchronization failed. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Last confirmed 2 h ago. An unexpected error stopped synchronization; see the node's log for details."
+      }
+    },
+    {
+      "id": "provider-sync-failed",
+      "expectState": "failed",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "externalOnly": true,
+        "lastError": "provider_unavailable",
+        "copies": []
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "failed",
+        "label": "Failed",
+        "severity": "error",
+        "current": false,
+        "totalCopies": 0,
+        "nodesReached": 0,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": null,
+        "lagMs": null,
+        "error": "provider_unavailable",
+        "action": "The external provider did not respond; ForkMesh retries automatically.",
+        "summary": "Synchronization failed. 0 of 0 copies verified, 0 trusted mirrors, 0 nodes reached. Never confirmed. The external provider did not respond; ForkMesh retries automatically."
+      }
+    },
+    {
+      "id": "external-only",
+      "expectState": "external-only",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "externalOnly": true,
+        "sourceUpdatedAt": 1799913600000,
+        "copies": []
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "external-only",
+        "label": "External only",
+        "severity": "info",
+        "current": false,
+        "totalCopies": 0,
+        "nodesReached": 0,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": null,
+        "lagMs": 86400000,
+        "error": null,
+        "action": null,
+        "summary": "Only stored on the external provider so far. 0 of 0 copies verified, 0 trusted mirrors, 0 nodes reached. Never confirmed. 24 h behind the source."
+      }
+    },
+    {
+      "id": "external-with-copies-is-judged-normally",
+      "expectState": "verified",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "externalOnly": true,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "verified",
+        "label": "Verified",
+        "severity": "ok",
+        "current": true,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 1,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": 1799999970000,
+        "lagMs": 0,
+        "error": null,
+        "action": null,
+        "summary": "Every copy is verified and current. 1 of 1 copy verified, 1 trusted mirror, 1 node reached. Last confirmed just now."
+      }
+    },
+    {
+      "id": "paused-overrides-progress",
+      "expectState": "paused",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "paused": true,
+        "syncStartedAt": 1799999940000,
+        "sourceUpdatedAt": 1799989200000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799989200000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "paused",
+        "label": "Paused",
+        "severity": "info",
+        "current": false,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": 1799989200000,
+        "lagMs": 10800000,
+        "error": null,
+        "action": null,
+        "summary": "Synchronization is paused. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Last confirmed 3 h ago. 3 h behind the source."
+      }
+    },
+    {
+      "id": "conflicted-overrides-success",
+      "expectState": "conflicted",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "conflicts": 2,
+        "sourceUpdatedAt": 1799999940000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "conflicted",
+        "label": "Conflicted",
+        "severity": "error",
+        "current": false,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 2,
+        "trustedMirrors": 2,
+        "lastConfirmedAt": 1799999970000,
+        "lagMs": 60000,
+        "error": "conflict",
+        "action": "Review the conflicting changes and choose which state to keep.",
+        "summary": "Copies disagree about the latest state. 2 of 2 copies verified, 2 trusted mirrors, 2 nodes reached. Last confirmed just now. 1 min behind the source. Review the conflicting changes and choose which state to keep."
+      }
+    },
+    {
+      "id": "quorum-not-met",
+      "expectState": "stale",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "requiredCopies": 2,
+        "sourceUpdatedAt": 1799999940000,
+        "copies": [
+          {
+            "node": "mirror",
+            "status": "current",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1799999970000
+          },
+          {
+            "node": "mirror",
+            "status": "behind",
+            "verified": true,
+            "trusted": false,
+            "confirmedAt": 1799992800000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 1,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": 1799999970000,
+        "lagMs": 60000,
+        "error": "unconfirmed",
+        "action": "No copy has confirmed the latest state yet.",
+        "summary": "The visible state may be out of date. 1 of 2 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed just now. 1 min behind the source. No copy has confirmed the latest state yet."
+      }
+    },
+    {
+      "id": "unknown-copy-status-fails-closed",
+      "expectState": "stale",
+      "evidence": {
+        "object": {
+          "kind": "repository",
+          "name": "alice/secret-roadmap",
+          "visibility": "private"
+        },
+        "now": 1800000000000,
+        "copies": [
+          {
+            "status": "synced",
+            "verified": true,
+            "trusted": true,
+            "confirmedAt": 1800000000000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 1,
+        "nodesReached": 0,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": 1800000000000,
+        "lagMs": null,
+        "error": "unreachable",
+        "action": "One or more copies could not be reached; check that the mirrors are online.",
+        "summary": "The visible state may be out of date. 0 of 1 copy verified, 0 trusted mirrors, 0 nodes reached. Last confirmed just now. One or more copies could not be reached; check that the mirrors are online."
+      }
+    },
+    {
+      "id": "empty-evidence",
+      "expectState": "stale",
+      "evidence": {
+        "now": 1800000000000
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 0,
+        "nodesReached": 0,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": null,
+        "lagMs": null,
+        "error": "unconfirmed",
+        "action": "No copy has confirmed the latest state yet.",
+        "summary": "The visible state may be out of date. 0 of 0 copies verified, 0 trusted mirrors, 0 nodes reached. Never confirmed. No copy has confirmed the latest state yet."
+      }
+    }
+  ],
+  "sequences": [
+    {
+      "id": "offline-then-recovered",
+      "steps": [
+        {
+          "expectState": "verified",
+          "evidence": {
+            "now": 1800000000000,
+            "sourceUpdatedAt": 1799996400000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": true,
+                "confirmedAt": 1799999970000
+              },
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799999970000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "verified",
+            "label": "Verified",
+            "severity": "ok",
+            "current": true,
+            "totalCopies": 2,
+            "nodesReached": 2,
+            "verifiedCopies": 2,
+            "trustedMirrors": 1,
+            "lastConfirmedAt": 1799999970000,
+            "lagMs": 0,
+            "error": null,
+            "action": null,
+            "summary": "Every copy is verified and current. 2 of 2 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed just now."
+          }
+        },
+        {
+          "expectState": "stale",
+          "evidence": {
+            "now": 1800007200000,
+            "sourceUpdatedAt": 1800003600000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "unreachable",
+                "verified": true,
+                "trusted": true,
+                "confirmedAt": 1799999970000
+              },
+              {
+                "node": "mirror",
+                "status": "unreachable",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799999970000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "stale",
+            "label": "Stale",
+            "severity": "warning",
+            "current": false,
+            "totalCopies": 2,
+            "nodesReached": 0,
+            "verifiedCopies": 0,
+            "trustedMirrors": 0,
+            "lastConfirmedAt": 1799999970000,
+            "lagMs": 3600000,
+            "error": "unreachable",
+            "action": "One or more copies could not be reached; check that the mirrors are online.",
+            "summary": "The visible state may be out of date. 0 of 2 copies verified, 0 trusted mirrors, 0 nodes reached. Last confirmed 2 h ago. 1 h behind the source. One or more copies could not be reached; check that the mirrors are online."
+          }
+        },
+        {
+          "expectState": "syncing",
+          "evidence": {
+            "now": 1800010800000,
+            "sourceUpdatedAt": 1800003600000,
+            "syncStartedAt": 1800010740000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "behind",
+                "verified": true,
+                "trusted": true,
+                "confirmedAt": 1799999970000
+              },
+              {
+                "node": "mirror",
+                "status": "unreachable",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799999970000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "syncing",
+            "label": "Syncing",
+            "severity": "info",
+            "current": false,
+            "totalCopies": 2,
+            "nodesReached": 1,
+            "verifiedCopies": 0,
+            "trustedMirrors": 0,
+            "lastConfirmedAt": 1799999970000,
+            "lagMs": 7200000,
+            "error": null,
+            "action": null,
+            "summary": "Synchronizing now. 0 of 2 copies verified, 0 trusted mirrors, 1 node reached. Last confirmed 3 h ago. 2 h behind the source."
+          }
+        },
+        {
+          "expectState": "degraded",
+          "evidence": {
+            "now": 1800011100000,
+            "sourceUpdatedAt": 1800003600000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": true,
+                "confirmedAt": 1800011040000
+              },
+              {
+                "node": "mirror",
+                "status": "unreachable",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799999970000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "degraded",
+            "label": "Degraded",
+            "severity": "warning",
+            "current": true,
+            "totalCopies": 2,
+            "nodesReached": 1,
+            "verifiedCopies": 1,
+            "trustedMirrors": 1,
+            "lastConfirmedAt": 1800011040000,
+            "lagMs": 7500000,
+            "error": "unreachable",
+            "action": "One or more copies could not be reached; check that the mirrors are online.",
+            "summary": "Verified, but some copies are not current. 1 of 2 copies verified, 1 trusted mirror, 1 node reached. Last confirmed 1 min ago. 2 h behind the source. One or more copies could not be reached; check that the mirrors are online."
+          }
+        },
+        {
+          "expectState": "verified",
+          "evidence": {
+            "now": 1800011340000,
+            "sourceUpdatedAt": 1800003600000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": true,
+                "confirmedAt": 1800011040000
+              },
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1800011280000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "verified",
+            "label": "Verified",
+            "severity": "ok",
+            "current": true,
+            "totalCopies": 2,
+            "nodesReached": 2,
+            "verifiedCopies": 2,
+            "trustedMirrors": 1,
+            "lastConfirmedAt": 1800011280000,
+            "lagMs": 0,
+            "error": null,
+            "action": null,
+            "summary": "Every copy is verified and current. 2 of 2 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed 1 min ago."
+          }
+        }
+      ]
+    },
+    {
+      "id": "rejected-then-recovered",
+      "steps": [
+        {
+          "expectState": "syncing",
+          "evidence": {
+            "now": 1800000000000,
+            "sourceUpdatedAt": 1799999940000,
+            "syncStartedAt": 1799999970000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "behind",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799913600000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "syncing",
+            "label": "Syncing",
+            "severity": "info",
+            "current": false,
+            "totalCopies": 1,
+            "nodesReached": 1,
+            "verifiedCopies": 0,
+            "trustedMirrors": 0,
+            "lastConfirmedAt": 1799913600000,
+            "lagMs": 60000,
+            "error": null,
+            "action": null,
+            "summary": "Synchronizing now. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Last confirmed 24 h ago. 1 min behind the source."
+          }
+        },
+        {
+          "expectState": "failed",
+          "evidence": {
+            "now": 1800000120000,
+            "sourceUpdatedAt": 1799999940000,
+            "lastError": "unauthorized",
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "rejected",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799913600000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "failed",
+            "label": "Failed",
+            "severity": "error",
+            "current": false,
+            "totalCopies": 1,
+            "nodesReached": 1,
+            "verifiedCopies": 0,
+            "trustedMirrors": 0,
+            "lastConfirmedAt": null,
+            "lagMs": 180000,
+            "error": "unauthorized",
+            "action": "This node is not authorized to publish; reconnect the account and retry.",
+            "summary": "Synchronization failed. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Never confirmed. 3 min behind the source. This node is not authorized to publish; reconnect the account and retry."
+          }
+        },
+        {
+          "expectState": "queued",
+          "evidence": {
+            "now": 1800000600000,
+            "sourceUpdatedAt": 1799999940000,
+            "queuedAt": 1800000540000,
+            "lastError": "unauthorized",
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "rejected",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799913600000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "queued",
+            "label": "Queued",
+            "severity": "info",
+            "current": false,
+            "totalCopies": 1,
+            "nodesReached": 1,
+            "verifiedCopies": 0,
+            "trustedMirrors": 0,
+            "lastConfirmedAt": null,
+            "lagMs": 660000,
+            "error": null,
+            "action": null,
+            "summary": "Waiting to synchronize. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Never confirmed. 11 min behind the source."
+          }
+        },
+        {
+          "expectState": "verified",
+          "evidence": {
+            "now": 1800000720000,
+            "sourceUpdatedAt": 1799999940000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": true,
+                "confirmedAt": 1800000660000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "verified",
+            "label": "Verified",
+            "severity": "ok",
+            "current": true,
+            "totalCopies": 1,
+            "nodesReached": 1,
+            "verifiedCopies": 1,
+            "trustedMirrors": 1,
+            "lastConfirmedAt": 1800000660000,
+            "lagMs": 0,
+            "error": null,
+            "action": null,
+            "summary": "Every copy is verified and current. 1 of 1 copy verified, 1 trusted mirror, 1 node reached. Last confirmed 1 min ago."
+          }
+        }
+      ]
+    },
+    {
+      "id": "delayed-then-recovered",
+      "steps": [
+        {
+          "expectState": "syncing",
+          "evidence": {
+            "now": 1800000000000,
+            "sourceUpdatedAt": 1800000000000,
+            "syncStartedAt": 1800000000000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "behind",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799996400000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "syncing",
+            "label": "Syncing",
+            "severity": "info",
+            "current": false,
+            "totalCopies": 1,
+            "nodesReached": 1,
+            "verifiedCopies": 0,
+            "trustedMirrors": 0,
+            "lastConfirmedAt": 1799996400000,
+            "lagMs": 0,
+            "error": null,
+            "action": null,
+            "summary": "Synchronizing now. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Last confirmed 1 h ago."
+          }
+        },
+        {
+          "expectState": "stale",
+          "evidence": {
+            "now": 1800000960000,
+            "sourceUpdatedAt": 1800000000000,
+            "syncStartedAt": 1800000000000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "behind",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799996400000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "stale",
+            "label": "Stale",
+            "severity": "warning",
+            "current": false,
+            "totalCopies": 1,
+            "nodesReached": 1,
+            "verifiedCopies": 0,
+            "trustedMirrors": 0,
+            "lastConfirmedAt": 1799996400000,
+            "lagMs": 960000,
+            "error": "sync_delayed",
+            "action": "Synchronization is taking longer than expected; check that the source node is online.",
+            "summary": "The visible state may be out of date. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Last confirmed 1 h ago. 16 min behind the source. Synchronization is taking longer than expected; check that the source node is online."
+          }
+        },
+        {
+          "expectState": "verified",
+          "evidence": {
+            "now": 1800001080000,
+            "sourceUpdatedAt": 1800000000000,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1800001020000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "verified",
+            "label": "Verified",
+            "severity": "ok",
+            "current": true,
+            "totalCopies": 1,
+            "nodesReached": 1,
+            "verifiedCopies": 1,
+            "trustedMirrors": 0,
+            "lastConfirmedAt": 1800001020000,
+            "lagMs": 0,
+            "error": null,
+            "action": null,
+            "summary": "Every copy is verified and current. 1 of 1 copy verified, 0 trusted mirrors, 1 node reached. Last confirmed 1 min ago."
+          }
+        }
+      ]
+    },
+    {
+      "id": "conflict-then-resolved",
+      "steps": [
+        {
+          "expectState": "conflicted",
+          "evidence": {
+            "now": 1800000000000,
+            "sourceUpdatedAt": 1799999940000,
+            "conflicts": 1,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": true,
+                "confirmedAt": 1799999970000
+              },
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1799999970000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "conflicted",
+            "label": "Conflicted",
+            "severity": "error",
+            "current": false,
+            "totalCopies": 2,
+            "nodesReached": 2,
+            "verifiedCopies": 2,
+            "trustedMirrors": 1,
+            "lastConfirmedAt": 1799999970000,
+            "lagMs": 60000,
+            "error": "conflict",
+            "action": "Review the conflicting changes and choose which state to keep.",
+            "summary": "Copies disagree about the latest state. 2 of 2 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed just now. 1 min behind the source. Review the conflicting changes and choose which state to keep."
+          }
+        },
+        {
+          "expectState": "verified",
+          "evidence": {
+            "now": 1800000300000,
+            "sourceUpdatedAt": 1800000240000,
+            "conflicts": 0,
+            "copies": [
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": true,
+                "confirmedAt": 1800000240000
+              },
+              {
+                "node": "mirror",
+                "status": "current",
+                "verified": true,
+                "trusted": false,
+                "confirmedAt": 1800000300000
+              }
+            ]
+          },
+          "expect": {
+            "schema": "forkmesh-sync-status-v1",
+            "state": "verified",
+            "label": "Verified",
+            "severity": "ok",
+            "current": true,
+            "totalCopies": 2,
+            "nodesReached": 2,
+            "verifiedCopies": 2,
+            "trustedMirrors": 1,
+            "lastConfirmedAt": 1800000300000,
+            "lagMs": 0,
+            "error": null,
+            "action": null,
+            "summary": "Every copy is verified and current. 2 of 2 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed just now."
+          }
+        }
+      ]
+    }
+  ],
+  "mirrorsPayloadCases": [
+    {
+      "id": "mirrors-all-serving",
+      "expectState": "verified",
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "summary": {
+          "mirrors": 2,
+          "online": 2,
+          "freshestSync": 1799999980000
+        },
+        "mirrors": [
+          {
+            "node": "alice-private-laptop",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999980000
+          },
+          {
+            "node": "mirror2",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": false,
+            "lastSync": 1799999980000,
+            "endpointHealthy": true
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "verified",
+        "label": "Verified",
+        "severity": "ok",
+        "current": true,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 2,
+        "trustedMirrors": 2,
+        "lastConfirmedAt": 1799999980000,
+        "lagMs": 0,
+        "error": null,
+        "action": null,
+        "summary": "Every copy is verified and current. 2 of 2 copies verified, 2 trusted mirrors, 2 nodes reached. Last confirmed just now."
+      }
+    },
+    {
+      "id": "mirrors-one-offline",
+      "expectState": "degraded",
+      "payload": {
+        "ok": true,
+        "generatedAt": 1800000000000,
+        "summary": {
+          "freshestSync": 1799999980000
+        },
+        "mirrors": [
+          {
+            "node": "m1",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999980000
+          },
+          {
+            "node": "m2",
+            "status": "online",
+            "integrity": "ok",
+            "behind": true,
+            "cloneAvailable": true,
+            "lastSync": 1799999400000
+          },
+          {
+            "node": "m3",
+            "status": "offline",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799827200000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "degraded",
+        "label": "Degraded",
+        "severity": "warning",
+        "current": true,
+        "totalCopies": 3,
+        "nodesReached": 2,
+        "verifiedCopies": 1,
+        "trustedMirrors": 1,
+        "lastConfirmedAt": 1799999980000,
+        "lagMs": 20000,
+        "error": "unreachable",
+        "action": "One or more copies could not be reached; check that the mirrors are online.",
+        "summary": "Verified, but some copies are not current. 1 of 3 copies verified, 1 trusted mirror, 2 nodes reached. Last confirmed just now. One or more copies could not be reached; check that the mirrors are online."
+      }
+    },
+    {
+      "id": "mirrors-integrity-blocked",
+      "expectState": "failed",
+      "payload": {
+        "ok": true,
+        "generatedAt": 1800000000000,
+        "summary": {
+          "freshestSync": 1799999700000
+        },
+        "mirrors": [
+          {
+            "node": "m1",
+            "status": "online",
+            "integrity": "rejected",
+            "behind": false,
+            "cloneAvailable": false,
+            "lastSync": 1799999980000
+          },
+          {
+            "node": "m2",
+            "status": "online",
+            "integrity": "healing",
+            "behind": false,
+            "cloneAvailable": false,
+            "lastSync": 1799999980000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "failed",
+        "label": "Failed",
+        "severity": "error",
+        "current": false,
+        "totalCopies": 2,
+        "nodesReached": 2,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": null,
+        "lagMs": 300000,
+        "error": "rejected",
+        "action": "A copy rejected the update; check the node's signing key and push again.",
+        "summary": "Synchronization failed. 0 of 2 copies verified, 0 trusted mirrors, 2 nodes reached. Never confirmed. 5 min behind the source. A copy rejected the update; check the node's signing key and push again."
+      }
+    },
+    {
+      "id": "mirrors-awaiting-verification",
+      "expectState": "stale",
+      "payload": {
+        "ok": true,
+        "generatedAt": 1800000000000,
+        "summary": {
+          "freshestSync": 0
+        },
+        "mirrors": [
+          {
+            "node": "m1",
+            "status": "online",
+            "integrity": "unknown",
+            "behind": false,
+            "cloneAvailable": false,
+            "lastSync": null
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 1,
+        "nodesReached": 1,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": null,
+        "lagMs": null,
+        "error": "unconfirmed",
+        "action": "No copy has confirmed the latest state yet.",
+        "summary": "The visible state may be out of date. 0 of 1 copy verified, 0 trusted mirrors, 1 node reached. Never confirmed. No copy has confirmed the latest state yet."
+      }
+    },
+    {
+      "id": "mirrors-none",
+      "expectState": "stale",
+      "payload": {
+        "ok": true,
+        "generatedAt": 1800000000000,
+        "summary": {
+          "mirrors": 0,
+          "freshestSync": null
+        },
+        "mirrors": []
+      },
+      "expect": {
+        "schema": "forkmesh-sync-status-v1",
+        "state": "stale",
+        "label": "Stale",
+        "severity": "warning",
+        "current": false,
+        "totalCopies": 0,
+        "nodesReached": 0,
+        "verifiedCopies": 0,
+        "trustedMirrors": 0,
+        "lastConfirmedAt": null,
+        "lagMs": null,
+        "error": "unconfirmed",
+        "action": "No copy has confirmed the latest state yet.",
+        "summary": "The visible state may be out of date. 0 of 0 copies verified, 0 trusted mirrors, 0 nodes reached. Never confirmed. No copy has confirmed the latest state yet."
+      }
+    }
+  ]
+}

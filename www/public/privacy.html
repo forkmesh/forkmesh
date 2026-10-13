@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en" class="dark h-full scroll-smooth">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ForkMesh Privacy</title>
+    <meta name="description" content="Simple privacy notes for ForkMesh accounts, public node data, and third-party services." />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/tailwind.css" />
+    <script>window.tailwind = window.tailwind || {};</script>
+    <script>
+      tailwind.config = { darkMode: "class", theme: { extend: { colors: { background: "var(--background)", foreground: "var(--foreground)", border: "var(--border)", "muted-foreground": "var(--muted-foreground)" }, fontFamily: { "favorit-mono": ["ABCFavoritMono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"] } } } };
+    </script>
+    <style>
+      @font-face {
+        font-family: "ForkMesh Favorit";
+        src: url("/assets/fonts/ABCFavorit-Bold.woff2") format("woff2");
+        font-weight: 400 800;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "ABCFavoritMono";
+        src: url("/assets/fonts/DejaVuSansMono.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      :root {
+        --background: #090909;
+        --foreground: #f5f5f5;
+        --muted-foreground: #a3a3a3;
+        --border: #313131;
+        --green: #3fb950;
+        --violet: #9672ee;
+      }
+      * { box-sizing: border-box; }
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: geometricPrecision;
+      }
+      .font-favorit { font-family: "ForkMesh Favorit", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-synthesis: none; }
+      .font-favorit-mono { font-family: ABCFavoritMono, ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .legal-shell { position: relative; min-height: 100svh; isolation: isolate; overflow: hidden; background: #090909; }
+      .mesh-bg {
+        position: absolute; inset: 0; z-index: -3;
+        background:
+          radial-gradient(circle at 18% 10%, rgba(150, 114, 238, 0.20), transparent 28rem),
+          radial-gradient(circle at 84% 8%, rgba(63, 185, 80, 0.14), transparent 30rem),
+          radial-gradient(circle at 50% 56%, rgba(255, 255, 255, 0.055), transparent 36rem),
+          #090909;
+      }
+      .mesh-grid {
+        position: absolute; inset: -1px; z-index: -2; opacity: 0.24;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.065) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.065) 1px, transparent 1px);
+        background-size: 72px 72px;
+        mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 72%);
+      }
+      .mesh-vignette {
+        position: absolute; inset: 0; z-index: -1;
+        background: linear-gradient(to bottom, rgba(9,9,9,.92), rgba(9,9,9,.56) 34%, #090909 78%);
+      }
+      .brand-mark { filter: drop-shadow(0 0 22px rgba(63,185,80,.16)); }
+      .legal-card {
+        border: 1px solid rgba(255,255,255,.09);
+        background: linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.025)), rgba(12,12,12,.78);
+        box-shadow: 0 24px 90px rgba(0,0,0,.42);
+        backdrop-filter: blur(18px);
+      }
+      .legal-content h2 { margin: 2.25rem 0 .65rem; font-size: 1.375rem; line-height: 1.2; color: #fff; }
+      .legal-content p, .legal-content li { color: var(--muted-foreground); line-height: 1.75; }
+      .legal-content ul { padding-left: 1.25rem; }
+      .legal-note { border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.045); border-radius: 1rem; padding: 1rem; margin: 1.5rem 0; }
+      .consent-box-button { border: 1px solid var(--mesh-border, #313131); background: var(--mesh-ghost-bg, rgba(255,255,255,.04)); }
+      .consent-box-button:hover { background: var(--mesh-ghost-hover, rgba(255,255,255,.075)); }
+    </style>
+    <link rel="stylesheet" href="/mesh-page-theme.css" />
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="h-full">
+    <main class="legal-shell flex min-h-screen flex-col">
+      <div class="mesh-bg" aria-hidden="true"></div>
+      <div class="mesh-grid" aria-hidden="true"></div>
+      <div class="mesh-vignette" aria-hidden="true"></div>
+
+      <div data-forkmesh-header="simple"></div>
+
+      <section class="relative z-10 mx-auto w-full max-w-4xl px-5 pb-8 pt-16 lg:px-8 lg:pt-24">
+        <article class="legal-card rounded-[2rem] px-6 py-8 sm:px-10 lg:px-14 lg:py-12">
+          <p class="font-favorit-mono text-sm uppercase tracking-[0.34em] text-muted-foreground">Privacy</p>
+          <h1 class="font-favorit mt-5 text-balance text-4xl leading-[1] tracking-tight text-foreground sm:text-5xl">ForkMesh Privacy</h1>
+          <p class="mt-5 text-sm text-muted-foreground">Last updated October 11, 2026.</p>
+          <div class="legal-content mt-8 text-base">
+            <div class="legal-note">
+              <strong class="text-foreground">Short version:</strong>
+              ForkMesh minimizes public and stored data, never publishes raw IP addresses, and does not store community members’ payout- or contribution-wallet private keys. The World may transiently show a visitor their own edge-observed IP and User-Agent on their local avatar for session awareness; nobody else receives it, and built-in screenshots omit it. The first instance operator’s separate community-pool signer stays encrypted on that operator’s own device. Optional public identity, mirror, and reward metadata remains under user control.
+            </div>
+            <h2>No sale of data</h2>
+            <p>ForkMesh does not sell personal data, repository data, collaboration data, telemetry, or derived profiles, and does not use them to sell advertising. Data is processed only to provide, secure, support, measure, and improve the service you select. Payment never buys access to another user’s data. See the public <a class="text-foreground underline decoration-white/25 underline-offset-4 hover:decoration-white" href="/docs/business-model">free-protocol / paid-services contract</a>.</p>
+            <h2>Sponsored messages</h2>
+            <p>ForkMesh shows short, text-only sponsored messages written by members and read by a person before they run. They are chosen by product surface only — never by who you are, what you host, or what you have done — and the request that fetches one carries no account or cookie. There are no ad images, scripts, or third-party ad code. The only measurement is an aggregate daily click count per ad; views are not counted. Any slot can be hidden, and an ad you publish is public along with the sponsor name you give it. See the <a class="text-foreground underline decoration-white/25 underline-offset-4 hover:decoration-white" href="/docs/operations/ad-network">ForkMesh Ads policy</a>.</p>
+            <h2>What is public</h2>
+            <p>Your node name, public identity key, explicitly public repositories, chosen profile fields, public issue and pull-request records, generalized presence, and any self-custodial payout address you publish may be visible to other users or visitors. Approximate IP-derived country is shown only as a flag or general region. Raw IP addresses, full User-Agent strings, and precise location are never public. The World can transiently reflect the requester’s own edge-observed IP and User-Agent back to that same browser; those details do not enter presence, room messages, local storage, analytics, or shared screenshots.</p>
+            <h2>What is stored</h2>
+            <p>ForkMesh stores bounded account records, encrypted private profile fields, repository catalog and blind-index metadata, generalized presence, pending verification records, and minimized operational/security logs. Room frames marked for persistence are retained for up to 7 days, with at most 500 replayable frames per room. Public chat is intentionally controller-readable for integrations. Private channels and direct messages add automatic recipient encryption beyond the relay-derived room key, although an active controller can still inject a future recipient key because public-key discovery is not independently authenticated. Private repository names reach ForkMesh servers on authenticated control-plane requests and are encrypted at rest under the instance data key. Private repository content and new private-agent payloads use separate client-side owner-sealed boundaries; platform administrators do not automatically receive those recipient private keys.</p>
+            <h2 id="apple-health">Apple Health and HealthKit</h2>
+            <p>The ForkMesh iPhone app uses Apple&rsquo;s HealthKit framework to connect seven optional tools to the Apple Health app: Pedometer, Water Intake, Calorie Counter, Sleep, Sugar Break, Stretch Break and Food Guide. Each tool has its own Apple Health switch, which is off until you turn it on, and iOS asks you before ForkMesh can read or write any type of health data. The <a class="text-foreground underline decoration-white/25 underline-offset-4 hover:decoration-white" href="/docs/mobile/apple-health/">Apple Health guide</a> lists what each tool reads and writes.</p>
+            <ul>
+              <li>Saved to your ForkMesh account, so the tool shows the same numbers on web, desktop and mobile: one daily total of steps, distance, floors and active energy (Pedometer), water that other apps logged (Water Intake), and each night&rsquo;s sleep (Sleep). These readings are encrypted with a key created for your account alone.</li>
+              <li>Never sent to ForkMesh: the dietary sugar Sugar Break shows, the workout minutes Stretch Break shows, the nutrition history Food Guide reads to suggest meals, and a heart rate you tap out in Pedometer. They stay on your iPhone and in Apple Health.</li>
+              <li>Written to Apple Health only when you turn it on: the drinks, meals, stretch sessions, detected sleep and tapped heart rate you log in ForkMesh.</li>
+            </ul>
+            <p>ForkMesh does not use Apple Health data for advertising or marketing, does not sell it, and does not share it with data brokers or any other third party. It is not stored in iCloud. Turning a tool&rsquo;s Apple Health switch off stops the reading and writing; you can also change access in the iPhone Settings app under Health &gt; Data Access &amp; Devices &gt; ForkMesh. Uninstalling a tool, or deleting your account, deletes that tool&rsquo;s data from ForkMesh. Apple Health keeps its own copy.</p>
+            <h2>Install diagnostics</h2>
+            <p>The desktop installer reports anonymous, aggregate diagnostics about each install — which step it reached, whether that step succeeded, and coarse platform facts. Each run uses a fresh random id that is never linked to your account, email, node name, or IP address. Opt out by setting <code>FORKMESH_NO_DIAG=1</code> before running the installer.</p>
+            <h2>Referring websites</h2>
+            <p>When another website links a visitor here, ForkMesh increments a public per-hostname counter that powers the referring-site leaderboard on <a class="text-foreground underline decoration-white/25 underline-offset-4 hover:decoration-white" href="/referral">/referral</a>. The aggregate row stores the hostname, running visit count, and latest referring page URL. Credentials and fragments are removed, common secret-bearing query values are redacted, and the value is bounded before storage. ForkMesh does not store the page you landed on, your IP address, your user agent, or a per-visit record for this leaderboard. If your browser sends no <code>Referer</code> header (links marked <code>rel="noreferrer"</code> do this for you), nothing is counted at all.</p>
+            <p>A referral attribution is accepted only with a signed, expiring, one-use click claim issued by ForkMesh, and referral credit remains pending until the referred account verifies its email, is at least seven days old, and shows sustained use of a cryptographically bound desktop device on separate days. During signup we temporarily record the connecting IP address to detect referral abuse; flagged accounts may be held for manual review. Ordinary directory callers receive only an accepted referrer name.</p>
+            <h2>Documentation feedback</h2>
+            <p>If you use a documentation helpfulness control, ForkMesh stores the like/dislike choice, a generalized <code>/docs/</code> section anchor, an optional message you deliberately submit, a broad client category, and a keyed network token used for abuse control. It does not retain the raw IP, browser user-agent, query string, search value, or a repository path in that record.</p>
+            <h2>Wallets and community rewards</h2>
+            <p>Joining ForkMesh does not require a payment. Solana transactions and public addresses are visible on the configured network. For community members, ForkMesh stores only a payout address you choose to publish; payout- and contribution-wallet private keys, seed phrases, mnemonics, and transaction approval remain on your device. Separately, the first instance operator may keep the community-pool signer encrypted on that operator’s own device. Direct contributions go from the contributor’s wallet to the displayed public community-pool address. Pending reward allocations are ledger reservations, not custodial balances, and expire after 24 hours if the recipient does not provide a self-custodial address.</p>
+            <h2>Third parties</h2>
+            <p>We try our best not to use third parties. Today, these are involved:</p>
+            <ul>
+              <li>Cloudflare hosts the public website at forkmesh.com, passes requests made there on to ForkMesh’s servers, and provides DNS for ForkMesh domains. The app, APIs, account data, and relay infrastructure run on ForkMesh’s own servers.</li>
+              <li>An instance operator may configure Sentry for server-error reporting. ForkMesh then sends a generalized/redacted route, method, status, service host, Cloudflare incident id and coarse edge colo, transport versions, and code stack location. The structured request envelope excludes raw IPs, country, timezone, browser/OS user-agent, cookies, authorization, and query strings; private-repository routes replace both identity and error detail with a fixed redaction.</li>
+              <li>A configured Solana JSON-RPC endpoint is queried for public pool balances and finalized transaction verification.</li>
+              <li>Bundled open-source font files are served locally by ForkMesh; no remote font service is used.</li>
+              <li>All styling and scripts are served from ForkMesh’s own domain; no third-party CDN is loaded at runtime.</li>
+              <li>The Solana network processes payment transactions.</li>
+              <li>Git remotes you choose may receive network requests when you mirror or sync repositories.</li>
+              <li>Webhook endpoints a repository owner registers receive that repository's public activity: the commits a push moved, merged pull request numbers and the account that merged them, and released tags. Only public repositories send them, and the owner can delete the endpoint at any time from the repository&rsquo;s Settings tab.</li>
+            </ul>
+            <h2>Campaign links and attribution</h2>
+            <p>When you open a ForkMesh page, the server sets a cookie named <code>fm_attr</code> containing one random identifier and nothing else. It lasts 90 days. If the link you followed carried <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_term</code> or <code>utm_content</code> values, the server stores a cleaned copy of them against that identifier so we can tell which announcements bring people to ForkMesh and whether they go on to copy a clone URL, create an account, publish a first mirror, contribute, or join the managed waitlist. We keep the referring website's hostname, never its full address, and we store no IP address; the rate-based bot check keeps a salted digest of the address for 24 hours only. Nothing is set or recorded when your browser sends Do Not Track or Global Privacy Control, and nothing is set for visitors in the EU or EEA until we have a consent banner. Git clones are never linked to this cookie, and no identifier is added to clone URLs.</p>
+            <h2>Email we send</h2>
+            <p>Notification email from ForkMesh, such as activity digests and unread-message reminders, contains a 1&times;1 image in its HTML version that tells us when the message was opened. Account and security mail, such as verification, password-reset and alert messages, carries no open image and no link redirect. Its links pass through app.forkmesh.com before they take you to the destination, which tells us that a link was clicked. When a link in the email opens a ForkMesh page, such as a task, while you are signed in, that page view is recorded the same way. We record only the time and a count against that message. We do not store which link you clicked, and the redirect sends no referrer to the destination. For every message we send, we keep a record of its kind and when it was sent. It is found through a keyed hash of your email address, holds the address and subject only in encrypted form, and is deleted after 90 days. You can prevent the open signal by not loading remote images; the plain-text version of each email contains no tracking. Notification emails include a one-click unsubscribe link. Unsubscribing stops those emails but never verification or password-reset mail.</p>
+            <p>Email a ForkMesh member sends you through ForkMesh, for example from an organization's CRM, ends with a small ForkMesh logo. That logo is loaded from app.forkmesh.com, which tells us, and the organization that sent the message, when it was opened. Members can also put a ForkMesh logo footer in the signature of email they send from their own mail app, such as Zoho Mail. Loading that logo records only the time and a count against the member's footer: it does not identify you or the message. Not loading remote images prevents both signals.</p>
+            <p>Product updates and offers, such as new features, release notes, events and promotions, are emailed only if you turn on <strong>Product updates and offers</strong> when you sign up or in your email settings; it is off until you do. We record when and where you turned it on. These emails carry the same open image and link redirect as notification email, an unsubscribe link in the footer and a one-click unsubscribe header. Unsubscribing, or turning the switch off in your settings, stops only these emails, never your notification, verification or password-reset mail. We do not sell or share your email address for anyone else's marketing.</p>
+            <h2>Your choices</h2>
+            <p>You can hide or generalize country, browser, operating system, activity, local time, device, and inactivity status where those controls are available; avoid optional profile fields and payout addresses; restrict private repositories to their owner and explicitly authorized collaborators; stop presence or the desktop node; operate your own mirror; block remote images in email so our messages cannot report that they were opened; disable optional analytics below; or skip install diagnostics with <code>FORKMESH_NO_DIAG=1</code>. Public blockchain transactions cannot be made private by ForkMesh after they are sent.</p>
+            <section class="legal-note mt-6" aria-labelledby="analytics-choice-heading">
+              <h3 id="analytics-choice-heading" class="mt-0 text-lg font-semibold text-foreground">Optional first-party analytics</h3>
+              <p class="mt-2">First-party product analytics is disabled by default. ForkMesh runs its own analytics; no analytics company or other third party receives anything, and no IP address is stored. This device has not opted in unless the status below says enabled. Public pages ask once, in a small box at the bottom of the page, whether to enable it; choosing “No thanks” keeps it off and the question does not come back. Global Privacy Control or Do Not Track always keeps analytics off and the question is never asked.</p>
+              <p class="mt-2">If you explicitly enable it below, this browser keeps a random visitor identifier in its local storage and sends events to this ForkMesh instance only:</p>
+              <ul class="mt-2">
+                <li>On public pages (home, documentation, blog, and other marketing pages): the page path without its query string, the campaign tags of the link you arrived on (<code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_term</code>, <code>utm_content</code>), the referring site, browser, operating system, screen size, approximate country, the buttons and links you click, scroll depth, pointer positions for heatmaps, and fixed action names when you open the product proof, copy a clone command, open the business-model contract, or express managed-service research interest. If the operator has turned on session replay, a reconstruction of the page as you saw it is recorded with everything you type masked.</li>
+                <li>On signed-in, chat, world, and repository pages: only a coarse page category such as “dashboard” or “repository”. No path, page title, element text, heatmap, or session replay is recorded there, so private names, encrypted chat, and notes never enter analytics.</li>
+              </ul>
+              <p class="mt-2">Analytics never records form values, passwords, commands, prices, or interview responses, and is not joined to your ForkMesh account. Events are kept for 90 days and replays for 21 days unless the operator chooses a shorter period. Turning analytics off below stops collection immediately.</p>
+              <p class="mt-3 font-favorit-mono text-sm">Status: <strong id="analytics-consent-status" class="text-foreground">checking…</strong></p>
+              <div class="mt-4 flex flex-wrap gap-3">
+                <button id="analytics-consent-deny" class="consent-box-button rounded-full px-4 py-2 text-sm font-semibold text-foreground" type="button">Keep analytics off</button>
+                <button id="analytics-consent-grant" class="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-4 py-2 text-sm font-semibold text-foreground hover:bg-emerald-300/15" type="button">Enable analytics</button>
+              </div>
+            </section>
+            <section class="legal-note mt-6" aria-labelledby="attribution-delete-heading">
+              <h3 id="attribution-delete-heading" class="mt-0 text-lg font-semibold text-foreground">Campaign attribution cookie</h3>
+              <p class="mt-2">Delete the <code>fm_attr</code> session and everything recorded against it, and clear the cookie from this browser.</p>
+              <p class="mt-3 font-favorit-mono text-sm">Status: <strong id="attribution-delete-status" class="text-foreground">not requested</strong></p>
+              <div class="mt-4 flex flex-wrap gap-3">
+                <button id="attribution-delete" class="consent-box-button rounded-full px-4 py-2 text-sm font-semibold text-foreground" type="button">Delete my attribution session</button>
+              </div>
+            </section>
+            <p class="mt-8"><a class="text-foreground underline decoration-white/25 underline-offset-4 hover:decoration-white" href="/terms">Read the terms</a></p>
+          </div>
+        </article>
+      </section>
+
+      <div data-forkmesh-footer="standard"></div>
+    </main>
+    <script>
+      (() => {
+        const statusElement = document.getElementById("analytics-consent-status");
+        const grant = document.getElementById("analytics-consent-grant");
+        const deny = document.getElementById("analytics-consent-deny");
+        const labels = {
+          granted: "enabled on this device",
+          denied: "disabled on this device",
+          unset: "disabled by default",
+          "blocked-by-privacy-signal": "disabled by browser privacy signal",
+        };
+        function render() {
+          const status = window.ForkMeshAnalytics?.status?.() || "unset";
+          statusElement.textContent = labels[status] || labels.unset;
+          grant.disabled = status === "blocked-by-privacy-signal";
+          grant.setAttribute("aria-disabled", grant.disabled ? "true" : "false");
+        }
+        grant.addEventListener("click", () => {
+          window.ForkMeshAnalytics?.setConsent?.(true);
+          render();
+        });
+        deny.addEventListener("click", () => {
+          window.ForkMeshAnalytics?.setConsent?.(false);
+          render();
+        });
+        window.addEventListener("forkmesh:analytics-consent", render);
+        render();
+      })();
+      (() => {
+        const button = document.getElementById("attribution-delete");
+        const status = document.getElementById("attribution-delete-status");
+        if (!button || !status) return;
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          status.textContent = "deleting…";
+          try {
+            const response = await fetch("/api/attribution/session", {
+              method: "DELETE",
+              credentials: "same-origin",
+              headers: { accept: "application/json" },
+            });
+            const body = await response.json().catch(() => ({}));
+            status.textContent = response.ok
+              ? (body.deleted ? "deleted and cookie cleared" : "nothing was stored for this browser")
+              : "request failed";
+          } catch (_) {
+            status.textContent = "request failed";
+          } finally {
+            button.disabled = false;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

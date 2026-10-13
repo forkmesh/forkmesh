@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/headless-mirror-refresh-v1.json",
+  "title": "ForkMesh headless mirror refresh configuration",
+  "description": "Secret-free local orchestration configuration. Private keys, API tokens, passwords, and wallet credentials are prohibited.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "sourceRepository",
+    "archiveDirectory",
+    "gatewayConfigPath",
+    "identityStateDirectory",
+    "identityHelperPath",
+    "mirrorGatewayPath",
+    "pythonProgram",
+    "gitProgram",
+    "manifestPath",
+    "nodeOwner",
+    "repositoryName",
+    "ownerAliases",
+    "workerOrigin",
+    "publicOrigin",
+    "listen",
+    "operations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "type": {
+      "const": "forkmesh.headless-mirror-refresh"
+    },
+    "sourceRepository": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "archiveDirectory": {
+      "description": "Owner-controlled legacy cleanup directory. New public refreshes create no archives; existing archive-*.age generations are removed after plaintext activation.",
+      "$ref": "#/$defs/absolutePath"
+    },
+    "releaseStore": {
+      "description": "Optional owner-local content-addressed store for explicitly published immutable release assets.",
+      "$ref": "#/$defs/absolutePath"
+    },
+    "gatewayConfigPath": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "identityStateDirectory": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "identityHelperPath": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "mirrorGatewayPath": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "pythonProgram": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "gitProgram": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "manifestPath": {
+      "$ref": "#/$defs/absolutePath"
+    },
+    "nodeOwner": {
+      "$ref": "#/$defs/nodeName"
+    },
+    "repositoryName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "ownerAliases": {
+      "description": "Unique public owner paths served from the same plaintext bare repository. The configured nodeOwner must be present.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/nodeName"
+      }
+    },
+    "workerOrigin": {
+      "$ref": "#/$defs/httpsOrigin"
+    },
+    "publicOrigin": {
+      "$ref": "#/$defs/httpsOrigin"
+    },
+    "mirrorUrl": {
+      "description": "Optional independently reachable public HTTPS Git origin. Omit to retain Tunnel-proxied Git fallback.",
+      "$ref": "#/$defs/httpsOrigin"
+    },
+    "listen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "port"
+      ],
+      "properties": {
+        "host": {
+          "enum": [
+            "127.0.0.1",
+            "::1",
+            "localhost"
+          ]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "operations": {
+      "description": "The runtime additionally requires git-info-refs, git-upload-pack, tree, blob, and raw.",
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 19,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "git-info-refs",
+          "git-upload-pack",
+          "tree",
+          "blobs",
+          "blob",
+          "raw",
+          "history",
+          "commit",
+          "compare",
+          "branches",
+          "search",
+          "stats",
+          "sizes",
+          "release-blob",
+          "merge-pull",
+          "merge-preview",
+          "update-pull-branch",
+          "actions-status",
+          "actions-control"
+        ]
+      },
+      "allOf": [
+        {
+          "contains": {
+            "const": "git-info-refs"
+          }
+        },
+        {
+          "contains": {
+            "const": "git-upload-pack"
+          }
+        },
+        {
+          "contains": {
+            "const": "tree"
+          }
+        },
+        {
+          "contains": {
+            "const": "blob"
+          }
+        },
+        {
+          "contains": {
+            "const": "raw"
+          }
+        },
+        {
+          "if": {
+            "contains": {
+              "const": "actions-control"
+            }
+          },
+          "then": {
+            "contains": {
+              "const": "actions-status"
+            }
+          }
+        }
+      ]
+    },
+    "writableRepositoryRoot": {
+      "description": "Optional owner-controlled mode-0700 directory under which an authorized first push creates <owner>/<name>.git. Rendered verbatim into the gateway configuration; its presence is what allows any repository to be rendered with git-receive-pack. Omit to keep the node read-only.",
+      "$ref": "#/$defs/absolutePath"
+    },
+    "writableOwners": {
+      "description": "Owners whose push-created repositories the refresh cycle renders from the gateway's hosted-pushes.json sidecar. Requires writableRepositoryRoot. An empty or omitted list renders no push-created repository and no git-receive-pack operation.",
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/writableOwner"
+      }
+    },
+    "receiveMaxInputBytes": {
+      "description": "Optional receive.maxInputSize rendered as limits.receiveMaxInputBytes in the gateway configuration. Requires writableRepositoryRoot.",
+      "type": "integer",
+      "minimum": 1048576,
+      "maximum": 4294967296
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "solana": {
+          "description": "Optional public self-custodial payout address; never a private key.",
+          "type": "string",
+          "pattern": "^(?:|[1-9A-HJ-NP-Za-km-z]{32,44})$"
+        },
+        "channel": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "hostedSince": {
+          "type": "string",
+          "pattern": "^(?:|[1-9][0-9]{0,18})$"
+        },
+        "branch": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "platform": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "actionsEnabled": {
+          "description": "Owner-approved upper bound for this node's public Actions capability. Defaults to false; live enabled/running state additionally requires a fresh protected actions-state.json lease (same-account mode 0600 or the fixed root:gateway-group mode-0640 handoff).",
+          "type": "boolean",
+          "default": false
+        },
+        "reportCpu": {
+          "description": "Opt in to publishing a bounded aggregate host CPU percentage. Defaults to false.",
+          "type": "boolean",
+          "default": false
+        },
+        "reportMemory": {
+          "description": "Opt in to publishing bounded host memory used/total bytes. Defaults to false.",
+          "type": "boolean",
+          "default": false
+        },
+        "reportDisk": {
+          "description": "Opt in to publishing bounded used/total bytes for the filesystem containing sourceRepository. Defaults to false.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  },
+  "$defs": {
+    "absolutePath": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 4096,
+      "pattern": "^/"
+    },
+    "nodeName": {
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "writableOwner": {
+      "description": "An owner name, or the single entry \"*\" accepting every owner the control plane authorized (a node holding website-created repositories). The wildcard may not be mixed with named owners.",
+      "type": "string",
+      "pattern": "^(?:\\*|[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)$"
+    },
+    "httpsOrigin": {
+      "type": "string",
+      "maxLength": 261,
+      "pattern": "^https://[A-Za-z0-9.-]+/?$"
+    }
+  }
+}

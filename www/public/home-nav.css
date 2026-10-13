@@ -1,0 +1,465 @@
+/* ForkMesh homepage pill navigation — shared stylesheet.
+ *
+ * These rules are the homepage's own header, lifted verbatim out of the inline
+ * <style> block in index.html so a second page can wear the same chrome. The
+ * homepage still carries its inline copy; pointing it at this file instead is a
+ * follow-up, and until that happens the two must be kept in step.
+ *
+ * The palette comes entirely from custom properties the host page defines
+ * (--home-ink, --home-line, --home-surface, --home-shadow, --background,
+ * --foreground, --accent, --border, --muted ...), so this sheet themes itself
+ * wherever those tokens are declared for both html.light and the dark default.
+ */
+
+/* ------------------------------------------------------------------
+   Floating pill navigation. The wrap is sticky and exactly one nav
+   tall; the hero below pulls itself up under it by the same amount.
+   ------------------------------------------------------------------ */
+.home-nav-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  height: var(--home-nav-h);
+  padding: 0.75rem 1rem 0;
+  pointer-events: none;
+}
+
+.home-nav {
+  position: relative;
+  max-width: 84rem;
+  margin: 0 auto;
+  pointer-events: auto;
+}
+
+.home-nav-shell {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-height: 3.25rem;
+  padding: 0.375rem 0.75rem 0.375rem 1rem;
+  border: 1px solid var(--home-line);
+  border-radius: 0.875rem;
+  background: color-mix(in oklab, var(--home-surface) 86%, transparent);
+  color: var(--home-ink);
+  box-shadow: var(--home-shadow);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  transition:
+    box-shadow 250ms ease,
+    background-color 250ms ease;
+}
+
+.home-nav.is-scrolled .home-nav-shell {
+  background: color-mix(in oklab, var(--home-surface) 92%, transparent);
+  box-shadow: var(--home-shadow-raised);
+}
+
+.home-brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-brand-mark {
+  width: auto;
+  height: 1.75rem;
+  object-fit: contain;
+}
+
+.home-brand-word {
+  font-family: var(--landing-heading-font);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.home-nav-links {
+  display: none;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-nav-item {
+  position: relative;
+}
+
+.home-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.25rem;
+  padding: 0 0.7rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--home-ink);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.home-nav-link:hover,
+.home-nav-item.is-open > .home-nav-link {
+  background: var(--home-surface-2);
+}
+
+.home-nav-chevron {
+  width: 0.7rem;
+  height: 0.7rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.55;
+  transition: transform 150ms ease;
+}
+
+.home-nav-item.is-open .home-nav-chevron {
+  transform: rotate(180deg);
+}
+
+.home-menu {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  left: 50%;
+  display: none;
+  min-width: 17rem;
+  padding: 0.4rem;
+  border: 1px solid var(--home-line);
+  border-radius: 0.875rem;
+  background: var(--home-surface);
+  color: var(--home-ink);
+  box-shadow: var(--home-shadow-raised);
+  transform: translateX(-50%);
+}
+
+/* Invisible bridge so the pointer can travel from the trigger to the
+   panel without leaving the item (which would close it). */
+.home-menu::before {
+  content: "";
+  position: absolute;
+  inset: -0.7rem 0 auto;
+  height: 0.7rem;
+}
+
+.home-nav-item.is-open .home-menu {
+  display: block;
+  animation: home-menu-in 160ms ease both;
+}
+
+.home-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.6rem;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+
+.home-menu-item:hover,
+.home-menu-item:focus-visible {
+  background: var(--home-surface-2);
+}
+
+.home-menu-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.home-menu-desc {
+  color: var(--home-muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.home-nav-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.home-nav-signin,
+.home-nav-signup {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.7rem;
+  border-radius: 0.55rem;
+  color: var(--home-ink);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color 150ms ease;
+}
+
+.home-nav-signin:hover,
+.home-nav-signup:hover {
+  background: var(--home-surface-2);
+}
+
+.home-nav-divider {
+  width: 1px;
+  height: 1.1rem;
+  background: var(--home-line);
+}
+
+.home-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--home-muted);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.home-theme-toggle:hover {
+  background: var(--home-surface-2);
+  color: var(--home-ink);
+}
+
+.home-theme-toggle svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.home-theme-toggle svg[hidden] {
+  display: none;
+}
+
+.home-theme-toggle-wide {
+  width: auto;
+  padding: 0 0.75rem;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.home-nav-burger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--home-ink);
+  cursor: pointer;
+}
+
+.home-nav-burger svg {
+  position: absolute;
+  width: 1.35rem;
+  height: 1.35rem;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.home-nav-burger .menu-close-icon,
+.home-nav[data-open="true"] .home-nav-burger .menu-open-icon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.6);
+}
+
+.home-nav[data-open="true"] .home-nav-burger .menu-close-icon {
+  opacity: 1;
+  transform: none;
+}
+
+.home-mobile-panel {
+  position: absolute;
+  inset: calc(100% + 0.6rem) 0 auto;
+  display: none;
+  max-height: calc(100vh - 7rem);
+  padding: 0.75rem;
+  overflow: auto;
+  border: 1px solid var(--home-line);
+  border-radius: 0.875rem;
+  background: var(--home-surface);
+  color: var(--home-ink);
+  box-shadow: var(--home-shadow-raised);
+}
+
+.home-nav[data-open="true"] .home-mobile-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.home-mobile-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.home-mobile-heading {
+  margin: 0.25rem 0 0.35rem;
+  padding-inline: 0.6rem;
+  color: var(--home-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.home-mobile-group a {
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.5rem;
+  color: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.home-mobile-group a:hover {
+  background: var(--home-surface-2);
+}
+
+.home-mobile-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--home-line);
+}
+
+@media (min-width: 1024px) {
+  .home-nav-links {
+    display: flex;
+  }
+
+  .home-nav-burger,
+  .home-mobile-panel {
+    display: none;
+  }
+
+  .home-nav[data-open="true"] .home-mobile-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .home-nav-actions .home-theme-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .home-nav-signin,
+  .home-nav-divider {
+    display: none;
+  }
+
+  .home-brand-word {
+    font-size: 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-in,
+  .home-nav-item.is-open .home-menu,
+  .laptop {
+    animation: none;
+  }
+}
+
+.home-theme-toggle {
+  gap: 0.35rem;
+  padding-inline: 0.55rem;
+}
+
+.home-theme-toggle svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.home-theme-toggle svg[hidden] {
+  display: none;
+}
+
+/* Logged-in account chip rendered into the hero auth buttons by
+   home-header-auth.js. */
+.home-auth-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.4rem;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--primary-foreground), transparent 82%);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.home-auth-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A long account name truncates rather than widening the chip into the
+   space the link row needs. */
+.home-auth-name {
+  overflow: hidden;
+  max-width: clamp(6rem, 9vw, 8rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* site-header.css styles this badge for every other page, and the
+   homepage does not load that sheet -- so the plan name used to run
+   straight into the account name inside the chip. */
+.home-auth-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: 0.35rem;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in oklab, currentColor, transparent 65%);
+  border-radius: 0.25rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.home-auth-session-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  margin-right: 0.25rem;
+  border-radius: 999px;
+  background: #3bd671;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #3bd671 15%, transparent);
+}

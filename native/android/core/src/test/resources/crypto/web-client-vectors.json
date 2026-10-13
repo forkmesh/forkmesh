@@ -1,0 +1,61 @@
+{
+  "source": "Generated with node v20.19.2 from app/public/portable-identity.js and app/public/chat-crypto.js (WebCrypto).",
+  "portableIdentity": {
+    "passphrase": "correct horse battery staple",
+    "identity": {
+      "v": 1,
+      "kind": "forkmesh.device-identity",
+      "ed25519Seed": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A",
+      "label": "Web kit été 😀"
+    },
+    "container": {
+      "type": "forkmesh.portable-identity",
+      "schemaVersion": 1,
+      "createdAt": 1783000000000,
+      "kdf": {
+        "name": "PBKDF2-HMAC-SHA-256",
+        "iterations": 600000,
+        "salt": "KJDEK6ycwqjft9SSf4yMyA"
+      },
+      "encryption": {
+        "name": "AES-256-GCM",
+        "iv": "-gRUXy-UxjbmMPka",
+        "ciphertext": "NFL8v2i2FNEAi8pny54jweRsoqVItXB5sZA3DyYlChALt9ayBXofRBjMcW6PBEnRUaTjn3BOB6nbabXcx5OueYrHcFKncRNfj_G9cX07pbI7JmjOa5zkuoHV0kKUmK7DkHp34m6ypwba2NGR09z8Y4KcWlhQwuI0zA9qPJiUdIQLbS9Y-ZwRpRxAoygNN4zA8PI"
+      }
+    }
+  },
+  "roomCrypto": [
+    {
+      "room": "world-general",
+      "passphrase": "relay-derived-room-key",
+      "plain": {
+        "type": "chat",
+        "id": "web-vector-1",
+        "text": "hello from the browser é 😀",
+        "n": 42
+      },
+      "envelope": {
+        "kind": "cipher",
+        "v": 1,
+        "nonce": "dN2Ssz7c/SqsT+Hc",
+        "tag": "iP6iKlK2ScuiGvCaGp9gzg==",
+        "body": "GAMO5wBkTEbEYSgTyZ64AnuWLgGpXqm0ScXwDK0czMIEy2z8HAxuprYk0/atfciufUVno43xwHzf9OdX+UASB51o7JLw/LWR3fmr4Kh6X94LAg=="
+      }
+    },
+    {
+      "room": "general",
+      "shared": true,
+      "plain": {
+        "type": "presence",
+        "id": "p1"
+      },
+      "envelope": {
+        "kind": "cipher",
+        "v": 1,
+        "nonce": "GiUaQFRmug1firIE",
+        "tag": "7T+hjIbUxvB+UIoHXCwo7Q==",
+        "body": "sLYBouQdky66oJMyBFMuaS0noJGrd1a4PuJAZVA="
+      }
+    }
+  ]
+}

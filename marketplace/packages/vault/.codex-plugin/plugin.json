@@ -1,0 +1,30 @@
+{
+  "name": "vault",
+  "version": "1.2.0",
+  "description": "An end-to-end encrypted password vault for a ForkMesh account, with logins shared to users and organizations under X25519 and post-quantum ML-KEM-768 keys.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com/market",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["passwords", "vault", "end-to-end-encryption", "post-quantum", "ml-kem", "argon2id", "sharing"],
+  "interface": {
+    "displayName": "Password Vault",
+    "shortDescription": "End-to-end encrypted logins you can share with users and organizations.",
+    "longDescription": "Create a vault for your own account with a master password that never leaves your browser. Logins are encrypted before they are uploaded, so ForkMesh stores only ciphertext. Share one with a ForkMesh user or an organization: its key is sealed to each person's public keys with a hybrid of X25519 and ML-KEM-768 and signed by you. The ForkMesh browser extension fills and saves logins from the same vault.",
+    "developerName": "ForkMesh",
+    "category": "Security",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com/market",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "How do I share a login with my organization?",
+      "What happens if I forget my master password?",
+      "What can ForkMesh see in my vault?"
+    ],
+    "brandColor": "#3987E5"
+  }
+}

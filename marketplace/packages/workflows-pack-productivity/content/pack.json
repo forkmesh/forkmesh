@@ -1,0 +1,18 @@
+{
+  "category": "Productivity",
+  "integrations": [
+    "notion",
+    "airtable",
+    "googleSheets",
+    "googleCalendar",
+    "googleDrive",
+    "gmail",
+    "microsoft365",
+    "todoist",
+    "trello",
+    "asana",
+    "clickup",
+    "monday",
+    "baserow"
+  ]
+}

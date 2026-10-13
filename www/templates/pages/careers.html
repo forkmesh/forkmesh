@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+{% block title %}Careers at ForkMesh{% endblock %}
+{% block meta %}
+    <meta
+      name="description"
+      content="Help us bring independently operated, verifiable code mirrors to developers everywhere."
+    />
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .careers-page {
+        width: min(1120px, calc(100% - 32px));
+        max-width: none;
+        margin: 0 auto;
+        padding: 0 0 96px;
+      }
+      .careers-page .kit-hero {
+        width: auto;
+        margin: 0;
+        padding: clamp(40px, 6vw, 72px) 0 0;
+      }
+      .careers-page .kit-title {
+        max-width: 16ch;
+      }
+      .careers-section {
+        display: grid;
+        grid-template-columns: minmax(0, 0.8fr) minmax(0, 2fr);
+        gap: 40px;
+        margin-top: 80px;
+        padding-top: 40px;
+        border-top: 1px solid var(--kit-line);
+      }
+      .careers-section h2 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(26px, 3vw, 32px);
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        line-height: 1.1;
+      }
+      .careers-section > div > p {
+        max-width: 68ch;
+        margin: 0 0 16px;
+        color: var(--kit-body);
+        font-size: 16.5px;
+        line-height: 1.7;
+      }
+      .careers-section a {
+        color: var(--link);
+      }
+      .role {
+        padding: 28px;
+      }
+      .role-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px 24px;
+      }
+      .role-title {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+      .role-meta {
+        margin: 6px 0 0;
+        color: var(--kit-body);
+        font-size: 14px;
+      }
+      .role-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 18px 0 20px;
+      }
+      .role-tag {
+        display: inline-flex;
+        align-items: center;
+        height: 26px;
+        padding: 0 10px;
+        border: 1px solid var(--kit-line);
+        border-radius: 999px;
+        color: var(--kit-body);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+      .role > p {
+        max-width: 72ch;
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 15.5px;
+        line-height: 1.7;
+      }
+      .role-columns {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 24px;
+      }
+      .role-list {
+        padding: 20px 22px;
+        border-radius: 14px;
+        background: var(--kit-surface-soft);
+        box-shadow: inset 0 0 0 1px var(--kit-line);
+      }
+      .role-list h4 {
+        margin: 0 0 12px;
+        color: var(--kit-ink);
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .role-list ul {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .role-list li {
+        position: relative;
+        padding-left: 24px;
+        color: var(--kit-body);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .role-list li::before {
+        content: "";
+        position: absolute;
+        top: 4px;
+        left: 0;
+        width: 15px;
+        height: 15px;
+        background: var(--kit-faint);
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E") center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E") center / contain no-repeat;
+      }
+      .role-apply {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid var(--kit-line);
+        color: var(--kit-body);
+        font-size: 14.5px;
+        line-height: 1.65;
+      }
+      .role-apply p {
+        max-width: 72ch;
+        margin: 0;
+      }
+      .role-apply strong {
+        color: var(--kit-ink);
+      }
+      .role-apply a {
+        color: var(--link);
+      }
+      .careers-cta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px 24px;
+        margin-top: 16px;
+        padding: 24px 28px;
+      }
+      .careers-cta h3 {
+        margin: 0 0 4px;
+        color: var(--kit-ink);
+        font-size: 17px;
+        font-weight: 600;
+      }
+      .careers-cta p {
+        max-width: 60ch;
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 14.5px;
+        line-height: 1.6;
+      }
+      @media (max-width: 860px) {
+        .careers-section,
+        .role-columns {
+          grid-template-columns: 1fr;
+        }
+        .careers-section {
+          gap: 20px;
+        }
+      }
+      @media (max-width: 560px) {
+        .careers-page {
+          width: calc(100% - 24px);
+        }
+        .role {
+          padding: 20px;
+        }
+      }
+    </style>
+{% endblock %}
+{% block body_attrs %} class="kit-page"{% endblock %}
+{% block body %}
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="careers-page">
+      <section class="kit-hero" aria-labelledby="careers-title">
+        <span class="kit-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path><path d="M3 13h18"></path></svg>
+          Careers
+        </span>
+        <h1 class="kit-title" id="careers-title">Help us put ForkMesh on every developer's machine.</h1>
+        <p class="kit-lede">
+          We're building code hosting without a single required host. Now we need
+          someone to make sure the developers who need it actually hear about it.
+        </p>
+        <div class="kit-actions">
+          <a class="kit-btn is-primary" href="#open-roles">See open roles <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+          <a class="kit-btn" href="/about">Read our story <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+        </div>
+      </section>
+
+      <section class="careers-section" aria-labelledby="careers-why">
+        <h2 id="careers-why">Why join us</h2>
+        <div>
+          <p>
+            ForkMesh is a small, founder-led team building a resilient
+            alternative to centralized code forges on independent hosts. The product works, the network is
+            taking shape, and the story — independently operated, verifiable copies
+            that reduce dependence on one provider — resonates the moment people hear
+            it. What we're missing is reach. That's where you come in.
+          </p>
+        </div>
+      </section>
+
+      <section class="careers-section" id="open-roles" aria-labelledby="careers-roles">
+        <h2 id="careers-roles">Open roles</h2>
+        <div>
+          <article class="role kit-card">
+            <div class="role-head">
+              <div>
+                <h3 class="role-title">Marketing Lead — Launch &amp; Growth</h3>
+                <p class="role-meta">Remote · Full-time or contract</p>
+              </div>
+              <a class="kit-btn is-primary" href="mailto:founders@forkmesh.com?subject=Marketing%20Lead%20application">Apply by email <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+            </div>
+            <div class="role-tags">
+              <span class="role-tag">Developer marketing</span>
+              <span class="role-tag">Growth</span>
+              <span class="role-tag">Community</span>
+              <span class="role-tag">Early-stage</span>
+            </div>
+            <p>
+              We're looking for a marketer who can take ForkMesh from a great product
+              to mass adoption. You'll own how we reach developers, tell our story,
+              and turn first-time visitors into nodes that stay on the network. This
+              is a build-it-from-scratch role with real ownership and a direct line to
+              the founders.
+            </p>
+
+            <div class="role-columns">
+              <div class="role-list">
+                <h4>What you'll do</h4>
+                <ul>
+                  <li>Own and execute the launch plan to drive mass adoption — from Hacker News, Product Hunt and Reddit to dev newsletters, YouTube and conferences.</li>
+                  <li>Build a repeatable growth engine: positioning, messaging, landing pages, and the funnel from visit to signup to active node.</li>
+                  <li>Grow and energize a developer community across X/Twitter, Discord, and open-source channels.</li>
+                  <li>Create content that developers actually want — technical posts, demos, comparisons, and the founding story of resilient code mirrors.</li>
+                  <li>Set up analytics and report on what's working, doubling down on the channels that compound.</li>
+                </ul>
+              </div>
+              <div class="role-list">
+                <h4>What we're looking for</h4>
+                <ul>
+                  <li>A track record of growing a developer-focused or technical product, ideally open source or dev-tools.</li>
+                  <li>Strong writing and an instinct for what makes engineers click, share, and sign up.</li>
+                  <li>Comfort owning a launch end-to-end with little hand-holding — scrappy, fast, and data-aware.</li>
+                  <li>Genuine excitement for decentralization, open source, and giving developers control of their own work.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="role-apply">
+              <p>
+                <strong>How to apply:</strong> email us at
+                <a href="mailto:founders@forkmesh.com?subject=Marketing%20Lead%20application">founders@forkmesh.com</a>
+                with a short note on how you'd launch ForkMesh, plus anything you've
+                grown before (links welcome). No formal cover letter needed — show us
+                how you think.
+              </p>
+            </div>
+          </article>
+
+          <div class="careers-cta kit-card">
+            <div>
+              <h3>Don't see your role?</h3>
+              <p>
+                We're early and growing. If you believe developers should control
+                independently operated copies of their code and can help us get there,
+                tell us how — email the founders at
+                <a href="mailto:founders@forkmesh.com?subject=Joining%20ForkMesh">founders@forkmesh.com</a>.
+              </p>
+            </div>
+            <a class="kit-btn" href="mailto:founders@forkmesh.com?subject=Joining%20ForkMesh">Email the founders <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+{% endblock %}

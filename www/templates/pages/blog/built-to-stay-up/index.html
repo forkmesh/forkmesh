@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Built to stay up" %}
+{% set slug = "built-to-stay-up" %}
+{% set image = "/assets/blog/features/built-to-stay-up.webp" %}
+{% set description = "A crash handler, a UI stall watchdog, network backoff, and a network activity log keep long-running nodes healthy, and tell you exactly what happened when something hiccups." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>Built to stay up</h1>
+            <p class="lede">A crash handler, a UI stall watchdog, network backoff, and a network activity log keep long-running nodes healthy, and tell you exactly what happened when something hiccups.</p>
+            <div class="meta"><span class="pill">Feature 60 of 72</span><span>Feature</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/built-to-stay-up.webp" alt="Abstract ForkMesh artwork for Built to stay up">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Built to stay up gives ForkMesh a concrete mechanism for operational guardrails for a node that may run for days. A crash handler, a UI stall watchdog, network backoff, and a network activity log keep long-running nodes healthy, and tell you exactly what happened when something hiccups.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, built to stay up addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles built to stay up through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: A crash handler, a UI stall watchdog, network backoff, and a network activity log keep long-running nodes healthy, and tell you exactly what happened when something hiccups. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use built to stay up when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because Built to stay up keeps operational guardrails for a node that may run for days connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/fork-with-intent/">← Fork with intent</a>
+          <a href="/blog/anonymous-accounts/">Guest-first access →</a>
+        </nav>
+{% endblock %}

@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/mirror-gateway-manifest-v1.json",
+  "title": "ForkMesh signed Cloudflare Tunnel mirror endpoint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "generatedAt",
+    "node",
+    "endpoint",
+    "dns",
+    "edge",
+    "storage",
+    "signature"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "type": {"const": "forkmesh.mirror-endpoint"},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "publicKey"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        },
+        "publicKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "healthUrl",
+        "manifestUrl",
+        "repositoryUrlTemplate",
+        "transport",
+        "mainProxyMode"
+      ],
+      "properties": {
+        "origin": {"type": "string", "pattern": "^https://[^/]+$"},
+        "healthUrl": {
+          "type": "string",
+          "pattern": "^https://[^/]+/health$"
+        },
+        "manifestUrl": {
+          "type": "string",
+          "pattern": "^https://[^/]+/forkmesh-mirror\\.json$"
+        },
+        "repositoryUrlTemplate": {
+          "type": "string",
+          "pattern": "^https://[^/]+/v1/repositories/\\{owner\\}/\\{repository\\}/\\{operation\\}$"
+        },
+        "transport": {"const": "direct-https"},
+        "mainProxyMode": {"const": "masked"}
+      }
+    },
+    "dns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordName",
+        "recordType",
+        "proxied",
+        "target"
+      ],
+      "properties": {
+        "recordName": {"type": "string"},
+        "recordType": {"const": "CNAME"},
+        "proxied": {"const": true},
+        "target": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+\\.cfargotunnel\\.com$"
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "kind",
+        "tunnelId",
+        "originExposure"
+      ],
+      "properties": {
+        "provider": {"const": "cloudflare"},
+        "kind": {"const": "cloudflare-tunnel"},
+        "tunnelId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+$"
+        },
+        "originExposure": {"const": "loopback-only"}
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryBytesInD1",
+        "repositoryByteOwner",
+        "d1Purpose"
+      ],
+      "properties": {
+        "repositoryBytesInD1": {"const": false},
+        "repositoryByteOwner": {
+          "const": "independent-mirror-host"
+        },
+        "d1Purpose": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "service-discovery",
+              "health-metadata",
+              "routing-metadata",
+              "signed-manifests"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "encoding",
+        "canonicalization",
+        "payloadSha256",
+        "value"
+      ],
+      "properties": {
+        "algorithm": {"const": "Ed25519"},
+        "encoding": {"const": "base64url-no-padding"},
+        "canonicalization": {"const": "forkmesh-json-sort-v1"},
+        "payloadSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{86}$"
+        }
+      }
+    }
+  }
+}

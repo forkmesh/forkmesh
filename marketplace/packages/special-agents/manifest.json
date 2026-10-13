@@ -1,0 +1,69 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "special-agents",
+  "name": "Special Agents",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Agents",
+  "version": "1.0.0",
+  "summary": "Special Agents: named agents with their own instructions and skills, from a repository's .forkmesh folder. Needs Agents.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Special Agents plugin card"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:special-agents",
+    "ios": "builtin:special-agents",
+    "android": "builtin:special-agents",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "agents.special",
+      "label": "Read and edit the special agents defined in your repositories",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "agents",
+      "version": "^1.0.0"
+    }
+  ],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "schema": "forkmesh-disaster-exercise-v1",
+  "id": "DRX-0001",
+  "title": "Automated live drills of runbook 1.0.0 on Linux",
+  "kind": "live",
+  "status": "completed",
+  "date": "2026-09-14",
+  "runbookVersion": "1.0.0",
+  "runbookSha256": "b93908faaa80a062ef68b76c01bb1d452bd93cc0b83b821c483e25f0212229ee",
+  "offlineRunbookOnly": false,
+  "summary": "Every scenario's drill ran once in scratch space with `drill run all` on Linux (Git 2.47, Python 3.13), with strace tracing the dns-loss clone. No people took part, so this record cannot meet the tabletop, live, or unfamiliar-team closure checks.",
+  "participants": [
+    {
+      "name": "forkmesh_disaster_recovery.py drill runner",
+      "roles": ["coordinator", "key-custodian", "mirror-operator", "verifier", "scribe"],
+      "familiarity": "automation"
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario": "origin-loss",
+      "result": "recovered",
+      "recoveryMinutes": 0.0193,
+      "verifiedRepositoryNetwork": true,
+      "dataLoss": {"commitsLost": 0, "summary": "none"},
+      "missingPrerequisites": [],
+      "unsafeSteps": [{"description": "overwrite restored history with a stale copy (refused: non-fast-forward push rejected)", "taken": false}],
+      "drillReport": "evidence/50ac6d4412cd98d70f62d2e9aef059dd99f8ef0202848e934bf88815528dc655.json"
+    },
+    {
+      "scenario": "main-service-loss",
+      "result": "recovered",
+      "recoveryMinutes": 0.0273,
+      "verifiedRepositoryNetwork": true,
+      "dataLoss": {"commitsLost": 0, "summary": "none"},
+      "missingPrerequisites": [],
+      "unsafeSteps": [{"description": "write to an unauthenticated emergency mirror (refused: static HTTP mirrors are read-only)", "taken": false}],
+      "drillReport": "evidence/868ed1351d6f34f092efb1107ba3dc58819fdaed836dc202c8ac80fd57b71f73.json"
+    },
+    {
+      "scenario": "dns-loss",
+      "result": "recovered",
+      "recoveryMinutes": 0.0268,
+      "verifiedRepositoryNetwork": true,
+      "dataLoss": {"commitsLost": 0, "summary": "none"},
+      "missingPrerequisites": [],
+      "unsafeSteps": [],
+      "drillReport": "evidence/1eb175b2a792268989c08b335e1a5c5333e0a0b8c99c3b727d74595e4cc49564.json"
+    },
+    {
+      "scenario": "key-loss",
+      "result": "recovered",
+      "recoveryMinutes": 0.107,
+      "verifiedRepositoryNetwork": true,
+      "dataLoss": {"commitsLost": 0, "summary": "none"},
+      "missingPrerequisites": [],
+      "unsafeSteps": [
+        {"description": "let the lost key sign its replacement (refused: signer_not_recovery_key)", "taken": false},
+        {"description": "apply a rotation below the recovery threshold (refused: below_threshold)", "taken": false},
+        {"description": "import media signed by the revoked key (refused: not a trusted signer)", "taken": false}
+      ],
+      "drillReport": "evidence/c47b9ca4cd3d5dddb4d4453ba5cbb5c5cf39db4f6d52097219a00d699000850e.json"
+    },
+    {
+      "scenario": "regional-isolation",
+      "result": "recovered",
+      "recoveryMinutes": 0.0428,
+      "verifiedRepositoryNetwork": true,
+      "dataLoss": {"commitsLost": 0, "summary": "none"},
+      "missingPrerequisites": [],
+      "unsafeSteps": [{"description": "overwrite one region's main with the other's (refused: diverged refs kept aside)", "taken": false}],
+      "drillReport": "evidence/f28c0ad04a9b01500a20749a4a0115c00b6d43ad10ee7d68b9bd12226dab5fa1.json"
+    },
+    {
+      "scenario": "corrupted-backup",
+      "result": "recovered",
+      "recoveryMinutes": 0.0603,
+      "verifiedRepositoryNetwork": true,
+      "dataLoss": {"commitsLost": 1, "summary": "1 commit newer than the last verified backup; allowed by since-last-good-copy"},
+      "missingPrerequisites": [],
+      "unsafeSteps": [{"description": "import the corrupted newest backup (refused: chunk digest mismatch)", "taken": false}],
+      "drillReport": "evidence/4f913921e60f7b4660e6110fe103b77490c099f5ef29e3698289fe8627e213b9.json"
+    },
+    {
+      "scenario": "offline-bootstrap",
+      "result": "recovered",
+      "recoveryMinutes": 0.0696,
+      "verifiedRepositoryNetwork": true,
+      "dataLoss": {"commitsLost": 0, "summary": "none"},
+      "missingPrerequisites": [],
+      "unsafeSteps": [{"description": "run tools from a kit with a changed runbook (refused: digest mismatch)", "taken": false}],
+      "drillReport": "evidence/3153e47f8ca0807959292667fce2fbaef8a3f7434a095a4e28b3a4d0ecdf4bb8.json"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "kind": "tooling-gap",
+      "summary": "The drills do not build the Go mirror node, so node archive restores and node identity imports are documented but not drilled.",
+      "correctiveOwner": {"kind": "issue", "ref": "#518"},
+      "status": "open"
+    },
+    {
+      "id": "F2",
+      "kind": "tooling-gap",
+      "summary": "The search and organization-service roles are hosted-only, so main-service loss cannot restore search or organizations.",
+      "correctiveOwner": {"kind": "issue", "ref": "#502"},
+      "status": "open"
+    },
+    {
+      "id": "F3",
+      "kind": "tooling-gap",
+      "summary": "Drill evidence covers Linux only; macOS and Windows reports from the disaster-recovery workflow are not attested yet.",
+      "correctiveOwner": {"kind": "issue", "ref": "#518"},
+      "status": "open"
+    },
+    {
+      "id": "F4",
+      "kind": "runbook-defect",
+      "summary": "The first render failed because the printable runbook is itself a kit file that did not exist yet.",
+      "correctiveOwner": {"kind": "issue", "ref": "#518"},
+      "status": "fixed",
+      "fixedBy": "render ignores the missing printable runbook when writing it for the first time"
+    }
+  ]
+}

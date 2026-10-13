@@ -1,0 +1,331 @@
+      <header data-app-header class="relative h-14 flex items-center gap-3 px-4 shrink-0">
+        <button
+          data-mobile-menu-toggle
+          type="button"
+          aria-label="Open dashboard menu"
+          aria-controls="dashboardSidebar"
+          aria-expanded="false"
+          class="items-center justify-center rounded-md border border-border bg-background p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+        >
+          <i data-lucide="menu" class="dashboard-menu-open-icon h-4 w-4"></i>
+          <i data-lucide="x" class="dashboard-menu-close-icon h-4 w-4"></i>
+        </button>
+
+        <a data-dashboard-logo class="brand flex items-center gap-2 shrink-0" href="/dashboard" aria-label="Refresh ForkMesh Dashboard">
+          <img class="brand-mark h-8 w-8 object-contain" src="/assets/logo.svg" alt="" aria-hidden="true" />
+        </a>
+
+        <div class="flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold text-foreground">
+          <h1 class="min-w-0 truncate">
+            <span data-dashboard-header-context class="min-w-0 truncate"></span>
+          </h1>
+          <div data-repo-header-meta class="hidden shrink-0 items-center gap-1.5">
+            <span data-repo-header-visibility class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] font-normal text-muted-foreground"></span>
+            <span data-repo-header-terms></span>
+            <span data-repo-availability-status class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] font-normal text-muted-foreground"></span>
+          </div>
+        </div>
+
+        <div data-global-search-shell class="relative ml-auto hidden h-9 w-full max-w-sm min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-ring focus-within:text-foreground lg:flex">
+          <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
+          <input
+            data-global-search
+            id="globalSearchInput"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Type / to search"
+            aria-label="Search repositories"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="globalSearchResults"
+            aria-expanded="false"
+            aria-keyshortcuts="/"
+            class="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          <!-- Shares the slot with the "/" hint: the shortcut is only worth
+               showing while the box is empty, and the ✕ only once it is not. -->
+          <button
+            data-global-search-clear
+            data-clear-search
+            type="button"
+            aria-label="Clear search"
+            title="Clear search"
+            class="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          >
+            <i data-lucide="x" class="h-3.5 w-3.5"></i>
+          </button>
+          <span data-global-search-shortcut class="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">/</span>
+          <div
+            data-global-search-panel
+            id="globalSearchResults"
+            role="listbox"
+            class="hidden absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl shadow-background/50"
+          >
+            <div data-global-search-results class="max-h-96 overflow-y-auto py-1"></div>
+            <div
+              data-global-search-page-filter
+              class="hidden items-center gap-1.5 border-t border-border bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground"
+            ></div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <a
+            data-runner-attention
+            href="/dashboard/runners"
+            data-state="expired"
+            class="hidden h-9 max-w-[16rem] items-center gap-1.5 rounded-md border border-border bg-red-500/10 px-2.5 text-xs font-semibold text-red-500 hover:opacity-90 transition-opacity"
+          >
+            <i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0"></i>
+            <span data-runner-attention-text class="min-w-0 truncate"></span>
+          </a>
+          <button
+            data-command-palette-open
+            type="button"
+            aria-label="Open command palette"
+            aria-keyshortcuts="Control+K Meta+K"
+            title="Command palette (Ctrl/Command+K)"
+            class="flex h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          >
+            <i data-lucide="command" class="h-4 w-4" aria-hidden="true"></i>
+            <span class="hidden font-mono text-[10px] sm:inline">Ctrl K</span>
+          </button>
+          <a
+            href="https://world.forkmesh.com/"
+            class="hidden h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors sm:inline-flex"
+            title="Open ForkMesh World"
+            aria-label="Open ForkMesh World"
+          >
+            <i data-lucide="globe-2" class="h-4 w-4"></i>
+          </a>
+
+          <a
+            href="/mirror-payouts"
+            class="hidden h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors sm:inline-flex"
+            title="Mirror reward settings"
+            aria-label="Mirror reward settings"
+          >
+            <img src="/assets/sol.png" srcset="/assets/sol-48.png 48w" sizes="16px" alt="" aria-hidden="true" class="h-4 w-4 shrink-0 rounded-full object-contain" />
+          </a>
+
+          <div class="relative">
+            <button
+              id="notificationToggle"
+              type="button"
+              aria-label="Open pings"
+              aria-expanded="false"
+              class="relative flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            >
+              <i data-notification-bell-on data-lucide="bell" class="w-4 h-4"></i>
+              <i data-notification-bell-off data-lucide="bell-off" class="hidden w-4 h-4"></i>
+              <span data-notification-badge class="hidden absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent"></span>
+            </button>
+            <div
+              id="notificationDropdown"
+              class="hidden fixed inset-x-3 top-16 z-50 overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80"
+            >
+              <div class="px-3 py-2 border-b border-border flex items-center justify-between">
+                <span class="text-xs font-medium text-foreground">Pings</span>
+                <span data-notification-count class="text-[10px] text-muted-foreground font-mono">0 new</span>
+              </div>
+              <div data-notification-preview-list class="py-1"></div>
+              <div data-ping-pause-form class="border-t border-border p-2">
+                <div class="flex items-center justify-between gap-2 px-1 pb-1">
+                  <span data-ping-pause-state class="truncate text-xs text-muted-foreground">Notifications are on</span>
+                  <button data-ping-pause-resume type="button" hidden class="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-accent hover:bg-secondary transition-colors">
+                    Resume
+                  </button>
+                </div>
+                <div data-ping-pause-menu hidden class="grid gap-1 pb-1">
+                  <button data-ping-pause-preset="3600000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">For 1 hour</button>
+                  <button data-ping-pause-preset="86400000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">For 1 day</button>
+                  <button data-ping-pause-preset="604800000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">Until next week</button>
+                  <div class="flex items-center gap-1 px-1 pt-1">
+                    <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                    <button data-ping-pause-custom-apply type="button" class="h-8 shrink-0 rounded-md border border-border bg-secondary px-2 text-xs font-semibold text-foreground hover:bg-muted transition-colors">Set</button>
+                  </div>
+                </div>
+                <button data-ping-pause-toggle type="button" class="w-full rounded-md px-3 py-2 text-center text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+                  Pause notifications
+                </button>
+                <div class="flex items-center gap-1">
+                  <button data-show-all-notifications type="button" class="min-w-0 flex-1 rounded-md px-3 py-2 text-center text-xs font-medium text-accent hover:bg-secondary transition-colors">
+                    Show all pings
+                  </button>
+                  <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+                    <i data-lucide="settings" class="h-3.5 w-3.5"></i>
+                    Ping settings
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="relative">
+            <button
+              id="agentModalToggle"
+              type="button"
+              aria-label="Start an agent on an owned node"
+              title="Start an agent on an owned node"
+              class="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            >
+              <i data-lucide="bot" class="w-4 h-4"></i>
+            </button>
+            <div
+              id="agentModal"
+              class="hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain rounded-lg border border-border bg-card shadow-2xl shadow-background/40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]"
+              role="dialog"
+              aria-labelledby="agentModalTitle"
+            >
+              <div class="flex items-center justify-between border-b border-border px-4 py-3">
+                <div class="min-w-0">
+                  <h2 id="agentModalTitle" class="flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="bot" class="h-4 w-4 text-muted-foreground"></i>Start an agent</h2>
+                  <p class="mt-0.5 text-xs text-muted-foreground">Run on an agent-capable node owned by your account.</p>
+                </div>
+                <button data-agent-modal-close type="button" aria-label="Close agent composer" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+                  <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+              </div>
+              <form data-repo-agent-new-form class="grid gap-3 p-4 text-xs">
+                <label class="grid gap-1.5 font-medium text-foreground">Repository
+                  <select data-agent-modal-repo name="repository" required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select>
+                </label>
+                <label class="grid gap-1.5 font-medium text-foreground">Run on
+                  <select data-agent-modal-target name="targetNode" required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"><option value="">Choose an owned node…</option></select>
+                </label>
+                <label class="grid gap-1.5 font-medium text-foreground">Agent and model
+                  <select data-repo-agent-new-agent-model required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select>
+                </label>
+                <input data-repo-agent-new-provider name="provider" type="hidden" value="claude-code" />
+                <input data-repo-agent-new-model name="model" type="hidden" value="" />
+                <div data-agent-modal-login class="hidden flex-col gap-1.5">
+                  <button data-agent-modal-login-start type="button" class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border px-3 font-medium text-foreground hover:bg-secondary">
+                    <i data-lucide="key" class="h-4 w-4"></i>
+                    <span data-agent-modal-login-label>Sign in to agent</span>
+                  </button>
+                  <a data-agent-modal-login-desktop href="#" class="text-[11px] leading-4 text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground">Or hand this off to the ForkMesh desktop app</a>
+                </div>
+                <label class="grid gap-1.5 font-medium text-foreground">Task
+                  <textarea data-repo-agent-new-input name="prompt" required maxlength="8000" rows="5" class="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs leading-5 text-foreground" placeholder="Describe the change you want the agent to make…"></textarea>
+                </label>
+                <input data-repo-agent-new-file-input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="hidden" />
+                <div class="flex flex-wrap items-center gap-2">
+                  <button data-repo-agent-new-attach type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 font-medium text-foreground hover:bg-secondary">
+                    <i data-lucide="image-plus" class="h-3.5 w-3.5"></i>
+                    Attach images
+                  </button>
+                  <span class="text-[11px] text-muted-foreground">or paste a screenshot into the task</span>
+                </div>
+                <div data-repo-agent-new-attachments class="hidden"></div>
+                <label class="flex items-center gap-2 text-foreground">
+                  <input name="createPr" type="checkbox" class="h-4 w-4 rounded border-input" />
+                  Create a pull request when the run finishes
+                </label>
+                <p class="text-[11px] leading-4 text-muted-foreground">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>
+                <p data-repo-agent-new-hint class="text-[11px] leading-4 text-muted-foreground">The request is saved durably and starts when the selected node claims it.</p>
+                <button type="submit" class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 font-semibold text-primary-foreground hover:bg-primary/90">
+                  <i data-lucide="play" class="h-4 w-4"></i>
+                  Start agent
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <a
+            data-guest-auth-link
+            href="/signup"
+            class="hidden ml-0.5 items-center whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+          >Sign Up / Log In</a>
+
+          <a
+            data-admin-button
+            href="#"
+            class="hidden ml-0.5 h-9 w-9 inline-flex items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors"
+            title="Admin panel"
+            aria-label="Admin panel"
+          >
+            <i data-lucide="shield-alert" class="h-4 w-4"></i>
+          </a>
+
+          <a
+            data-node-reconnect
+            href="/dashboard/settings/nodes?from=reconnect"
+            aria-label="Reconnect a node to this account"
+            title="No node is connected to drain this account — link one to sync issues, chats and more"
+            class="hidden ml-0.5 inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-600 hover:bg-amber-500/20 transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500/30 dark:text-amber-400"
+          >
+            <i data-lucide="plug-zap" class="h-3.5 w-3.5"></i>
+            <span>Reconnect node</span>
+          </a>
+
+          <div data-profile-account-controls class="relative ml-0.5 flex items-center gap-0.5">
+            <a
+              data-profile-settings-button
+              href="/dashboard/settings"
+              aria-label="Open account settings"
+              title="Settings"
+              class="flex items-center justify-center rounded-full hover:opacity-90 transition-opacity focus:outline-none focus:ring-1 focus:ring-foreground/20"
+            >
+              <span
+                data-dashboard-profile-avatar
+                class="avatar flex items-center justify-center rounded-full border shrink-0 font-mono font-semibold"
+                style="width: 32px; height: 32px; background: #818cf822; border-color: #818cf850; color: #818cf8; font-size: 11px"
+              >
+                <img data-dashboard-profile-avatar-image class="hidden h-full w-full rounded-full object-cover" alt="" />
+                <span data-avatar-initial>Y</span>
+              </span>
+              <span data-dashboard-profile-name class="sr-only">My Profile</span>
+            </a>
+            <!-- Own away flag + status emoji (user-status.js), worn on the avatar. -->
+            <span data-dashboard-user-status hidden aria-hidden="true" style="position: absolute; left: -4px; bottom: -4px; font-size: 13px; line-height: 1; pointer-events: none;"></span>
+            <span data-dashboard-away-dot hidden aria-hidden="true" style="position: absolute; left: 24px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; background: #d4a72c; border: 2px solid var(--background, #0a0a0a); pointer-events: none;"></span>
+            <button
+              id="accountMenuToggle"
+              type="button"
+              aria-label="Open account menu"
+              aria-haspopup="true"
+              aria-expanded="false"
+              title="Account menu"
+              class="flex h-8 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors focus:outline-none focus:ring-1 focus:ring-foreground/20"
+            >
+              <i data-lucide="chevron-down" class="h-3.5 w-3.5" aria-hidden="true"></i>
+            </button>
+            <div
+              id="accountMenuDropdown"
+              class="hidden absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-2xl shadow-background/40"
+            >
+              <a href="/dashboard/profile" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Your profile</a>
+              <a data-account-menu-public-profile href="/dashboard/profile" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Public profile</a>
+              <a data-forkmesh-membership href="https://forkmesh.com/#membership" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Membership</a>
+              <a href="/dashboard/settings" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Settings</a>
+              <button data-account-menu-status type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Set a status…</button>
+              <button data-account-menu-away type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Set yourself away</button>
+              <button data-feedback-open type="button" class="block w-full border-t border-border px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Send feedback</button>
+              <button data-account-menu-logout type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-red-400 hover:bg-secondary transition-colors">Log out</button>
+              <button data-account-menu-logout-all type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-red-400 hover:bg-secondary transition-colors">Log out all devices</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div
+        data-email-verification-banner
+        role="status"
+        class="hidden shrink-0 flex-col gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div class="flex min-w-0 items-start gap-2 sm:items-center">
+          <i data-lucide="mail-warning" class="mt-0.5 h-4 w-4 shrink-0"></i>
+          <p class="min-w-0">
+            <span data-email-verification-message class="font-medium">Your email is not verified yet.</span>
+            <span data-email-verification-hint class="text-amber-300"></span>
+          </p>
+        </div>
+        <button
+          data-email-verification-resend
+          type="button"
+          class="shrink-0 self-start rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/20 transition-colors"
+        >
+          Resend verification email
+        </button>
+      </div>

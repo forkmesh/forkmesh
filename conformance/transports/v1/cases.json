@@ -1,0 +1,401 @@
+{
+  "schema": "forkmesh-transport-conformance-cases-v1",
+  "description": "Route planning and profile validation vectors for forkmesh-transport-profile-v1 (www/docs/transports.md). Every implementation of the planner must produce these routes, refusals, and codes in this order. Expectations are written by hand; do not regenerate them from an implementation.",
+  "profiles": {
+    "standard-all": {
+      "schema": "forkmesh-transport-profile-v1",
+      "posture": "standard",
+      "adapters": [
+        {"id": "tor", "kind": "proxy", "network": "tor", "socks": "127.0.0.1:9050"},
+        {"id": "direct", "kind": "clearnet"},
+        {"id": "mesh", "kind": "overlay", "authenticatedNetwork": true, "hosts": {"build.mesh": "100.101.2.3"}},
+        {"id": "lan", "kind": "lan"}
+      ]
+    },
+    "private-proxies": {
+      "schema": "forkmesh-transport-profile-v1",
+      "posture": "private",
+      "adapters": [
+        {"id": "tor", "kind": "proxy", "network": "tor", "socks": "127.0.0.1:9050"},
+        {"id": "vpn", "kind": "proxy", "network": "socks", "socks": "10.8.0.1:1080", "allowPlaintext": true},
+        {"id": "direct", "kind": "clearnet"}
+      ]
+    },
+    "anonymous-networks": {
+      "schema": "forkmesh-transport-profile-v1",
+      "posture": "anonymous",
+      "adapters": [
+        {"id": "tor", "kind": "proxy", "network": "tor", "socks": "127.0.0.1:9050", "allowPlaintext": true},
+        {"id": "i2p", "kind": "proxy", "network": "i2p", "socks": "127.0.0.1:4447"},
+        {"id": "vpn", "kind": "proxy", "network": "socks", "socks": "10.8.0.1:1080"}
+      ]
+    },
+    "lan-only": {
+      "schema": "forkmesh-transport-profile-v1",
+      "posture": "lan-only",
+      "adapters": [
+        {"id": "lan", "kind": "lan", "allowPlaintext": true, "hosts": {"nas.home": "192.168.1.9"}},
+        {"id": "direct", "kind": "clearnet"}
+      ]
+    },
+    "overlay-only": {
+      "schema": "forkmesh-transport-profile-v1",
+      "posture": "overlay-only",
+      "adapters": [
+        {"id": "mesh", "kind": "overlay", "cidrs": ["100.64.0.0/10", "200::/7"], "authenticatedNetwork": true},
+        {"id": "wg", "kind": "overlay", "cidrs": ["10.99.0.0/16"]}
+      ]
+    }
+  },
+  "plans": [
+    {
+      "name": "standard prefers local adapters, then clearnet, then the proxy",
+      "profile": "standard-all",
+      "url": "https://git.example.org/team/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "https", "hostClass": "dns-name", "port": 443},
+        "routes": [
+          {"adapter": "direct", "kind": "clearnet", "dns": "system", "peerAuthentication": "tls"},
+          {"adapter": "tor", "kind": "proxy", "dns": "remote", "peerAuthentication": "tls", "network": "tor", "streamIsolation": true}
+        ],
+        "refused": [
+          {"adapter": "lan", "reason": "destination_outside_lan"},
+          {"adapter": "mesh", "reason": "destination_outside_overlay"}
+        ]
+      }
+    },
+    {
+      "name": "plaintext to a LAN address needs an explicit opt-in on every adapter",
+      "profile": "standard-all",
+      "url": "http://192.168.1.20/team/app.git",
+      "expect": {
+        "ok": false, "reason": "no_permitted_route",
+        "destination": {"scheme": "http", "hostClass": "local-address", "port": 80},
+        "routes": [],
+        "refused": [
+          {"adapter": "lan", "reason": "peer_unauthenticated"},
+          {"adapter": "mesh", "reason": "destination_outside_overlay"},
+          {"adapter": "direct", "reason": "peer_unauthenticated"},
+          {"adapter": "tor", "reason": "local_destination_via_proxy"}
+        ]
+      }
+    },
+    {
+      "name": "scp-like SSH to a pinned overlay name dials the pinned address",
+      "profile": "standard-all",
+      "url": "git@build.mesh:team/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "ssh", "hostClass": "dns-name", "port": 22},
+        "routes": [
+          {"adapter": "mesh", "kind": "overlay", "dns": "pinned", "peerAuthentication": "ssh", "dialAddress": "100.101.2.3"},
+          {"adapter": "direct", "kind": "clearnet", "dns": "system", "peerAuthentication": "ssh"},
+          {"adapter": "tor", "kind": "proxy", "dns": "remote", "peerAuthentication": "ssh", "network": "tor", "streamIsolation": true}
+        ],
+        "refused": [
+          {"adapter": "lan", "reason": "destination_outside_lan"}
+        ]
+      }
+    },
+    {
+      "name": "an onion address never falls back to a direct adapter",
+      "profile": "standard-all",
+      "url": "http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "http", "hostClass": "onion", "port": 80},
+        "routes": [
+          {"adapter": "tor", "kind": "proxy", "dns": "remote", "peerAuthentication": "onion", "network": "tor", "streamIsolation": true}
+        ],
+        "refused": [
+          {"adapter": "lan", "reason": "destination_requires_anonymity_network"},
+          {"adapter": "mesh", "reason": "destination_requires_anonymity_network"},
+          {"adapter": "direct", "reason": "destination_requires_anonymity_network"}
+        ]
+      }
+    },
+    {
+      "name": "private keeps the configured proxy order and refuses clearnet",
+      "profile": "private-proxies",
+      "url": "https://git.example.org/team/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "https", "hostClass": "dns-name", "port": 443},
+        "routes": [
+          {"adapter": "tor", "kind": "proxy", "dns": "remote", "peerAuthentication": "tls", "network": "tor", "streamIsolation": true},
+          {"adapter": "vpn", "kind": "proxy", "dns": "remote", "peerAuthentication": "tls", "network": "socks", "streamIsolation": false}
+        ],
+        "refused": [
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "private refuses to send a LAN address to a proxy",
+      "profile": "private-proxies",
+      "url": "https://192.168.1.20/team/app.git",
+      "expect": {
+        "ok": false, "reason": "no_permitted_route",
+        "destination": {"scheme": "https", "hostClass": "local-address", "port": 443},
+        "routes": [],
+        "refused": [
+          {"adapter": "tor", "reason": "local_destination_via_proxy"},
+          {"adapter": "vpn", "reason": "local_destination_via_proxy"},
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "private plaintext only where the adapter opted in",
+      "profile": "private-proxies",
+      "url": "http://git.example.org/team/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "http", "hostClass": "dns-name", "port": 80},
+        "routes": [
+          {"adapter": "vpn", "kind": "proxy", "dns": "remote", "peerAuthentication": "none", "network": "socks", "streamIsolation": false}
+        ],
+        "refused": [
+          {"adapter": "tor", "reason": "peer_unauthenticated"},
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "an I2P name needs an I2P proxy",
+      "profile": "private-proxies",
+      "url": "http://forge.i2p/app.git",
+      "expect": {
+        "ok": false, "reason": "no_permitted_route",
+        "destination": {"scheme": "http", "hostClass": "i2p", "port": 80},
+        "routes": [],
+        "refused": [
+          {"adapter": "tor", "reason": "i2p_requires_i2p"},
+          {"adapter": "vpn", "reason": "i2p_requires_i2p"},
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "anonymous refuses plaintext through an exit even with the opt-in",
+      "profile": "anonymous-networks",
+      "url": "http://git.example.org/team/app.git",
+      "expect": {
+        "ok": false, "reason": "no_permitted_route",
+        "destination": {"scheme": "http", "hostClass": "dns-name", "port": 80},
+        "routes": [],
+        "refused": [
+          {"adapter": "tor", "reason": "plaintext_via_exit"},
+          {"adapter": "i2p", "reason": "plaintext_via_exit"},
+          {"adapter": "vpn", "reason": "proxy_network_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "anonymous carries onion HTTP on Tor only",
+      "profile": "anonymous-networks",
+      "url": "http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "http", "hostClass": "onion", "port": 80},
+        "routes": [
+          {"adapter": "tor", "kind": "proxy", "dns": "remote", "peerAuthentication": "onion", "network": "tor", "streamIsolation": true}
+        ],
+        "refused": [
+          {"adapter": "i2p", "reason": "onion_requires_tor"},
+          {"adapter": "vpn", "reason": "proxy_network_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "anonymous isolates streams on every anonymity network",
+      "profile": "anonymous-networks",
+      "url": "https://git.example.org/team/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "https", "hostClass": "dns-name", "port": 443},
+        "routes": [
+          {"adapter": "tor", "kind": "proxy", "dns": "remote", "peerAuthentication": "tls", "network": "tor", "streamIsolation": true},
+          {"adapter": "i2p", "kind": "proxy", "dns": "remote", "peerAuthentication": "tls", "network": "i2p", "streamIsolation": true}
+        ],
+        "refused": [
+          {"adapter": "vpn", "reason": "proxy_network_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "lan-only dials a literal local address",
+      "profile": "lan-only",
+      "url": "http://192.168.1.20:8080/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "http", "hostClass": "local-address", "port": 8080},
+        "routes": [
+          {"adapter": "lan", "kind": "lan", "dns": "none", "peerAuthentication": "none", "dialAddress": "192.168.1.20"}
+        ],
+        "refused": [
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "lan-only resolves .local names with multicast DNS",
+      "profile": "lan-only",
+      "url": "https://forge.local/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "https", "hostClass": "mdns-name", "port": 443},
+        "routes": [
+          {"adapter": "lan", "kind": "lan", "dns": "mdns", "peerAuthentication": "tls"}
+        ],
+        "refused": [
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "lan-only pins a name to a local address",
+      "profile": "lan-only",
+      "url": "git://nas.home/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "git", "hostClass": "dns-name", "port": 9418},
+        "routes": [
+          {"adapter": "lan", "kind": "lan", "dns": "pinned", "peerAuthentication": "none", "dialAddress": "192.168.1.9"}
+        ],
+        "refused": [
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "carrier-grade NAT space is not the LAN",
+      "profile": "lan-only",
+      "url": "http://100.72.1.1/app.git",
+      "expect": {
+        "ok": false, "reason": "no_permitted_route",
+        "destination": {"scheme": "http", "hostClass": "shared-address", "port": 80},
+        "routes": [],
+        "refused": [
+          {"adapter": "lan", "reason": "destination_outside_lan"},
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "lan-only never resolves a public name",
+      "profile": "lan-only",
+      "url": "https://github.com/team/app.git",
+      "expect": {
+        "ok": false, "reason": "no_permitted_route",
+        "destination": {"scheme": "https", "hostClass": "dns-name", "port": 443},
+        "routes": [],
+        "refused": [
+          {"adapter": "lan", "reason": "destination_outside_lan"},
+          {"adapter": "direct", "reason": "adapter_not_permitted"}
+        ]
+      }
+    },
+    {
+      "name": "an authenticated overlay may carry plaintext inside its range",
+      "profile": "overlay-only",
+      "url": "http://100.72.1.1/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "http", "hostClass": "shared-address", "port": 80},
+        "routes": [
+          {"adapter": "mesh", "kind": "overlay", "dns": "none", "peerAuthentication": "network", "dialAddress": "100.72.1.1"}
+        ],
+        "refused": [
+          {"adapter": "wg", "reason": "destination_outside_overlay"}
+        ]
+      }
+    },
+    {
+      "name": "a Yggdrasil address is an overlay destination",
+      "profile": "overlay-only",
+      "url": "https://[201:abcd::1]/app.git",
+      "expect": {
+        "ok": true, "reason": null,
+        "destination": {"scheme": "https", "hostClass": "public-address", "port": 443},
+        "routes": [
+          {"adapter": "mesh", "kind": "overlay", "dns": "none", "peerAuthentication": "tls", "dialAddress": "201:abcd::1"}
+        ],
+        "refused": [
+          {"adapter": "wg", "reason": "destination_outside_overlay"}
+        ]
+      }
+    },
+    {
+      "name": "an unauthenticated overlay refuses plaintext",
+      "profile": "overlay-only",
+      "url": "http://10.99.3.4/app.git",
+      "expect": {
+        "ok": false, "reason": "no_permitted_route",
+        "destination": {"scheme": "http", "hostClass": "local-address", "port": 80},
+        "routes": [],
+        "refused": [
+          {"adapter": "mesh", "reason": "destination_outside_overlay"},
+          {"adapter": "wg", "reason": "peer_unauthenticated"}
+        ]
+      }
+    },
+    {
+      "name": "an unpinned overlay name would need DNS",
+      "profile": "overlay-only",
+      "url": "https://build.mesh/app.git",
+      "expect": {
+        "ok": false, "reason": "no_permitted_route",
+        "destination": {"scheme": "https", "hostClass": "dns-name", "port": 443},
+        "routes": [],
+        "refused": [
+          {"adapter": "mesh", "reason": "destination_outside_overlay"},
+          {"adapter": "wg", "reason": "destination_outside_overlay"}
+        ]
+      }
+    },
+    {
+      "name": "unsupported schemes are refused before any adapter is considered",
+      "profile": "standard-all",
+      "url": "ftp://git.example.org/app.git",
+      "expect": {"ok": false, "reason": "scheme_unsupported", "routes": [], "refused": []}
+    },
+    {
+      "name": "text that is not a remote is refused",
+      "profile": "standard-all",
+      "url": "not a remote",
+      "expect": {"ok": false, "reason": "invalid_url", "routes": [], "refused": []}
+    }
+  ],
+  "profileErrors": [
+    {"name": "wrong schema", "error": "profile_schema",
+     "profile": {"schema": "forkmesh-transport-profile-v0", "posture": "standard", "adapters": []}},
+    {"name": "unknown posture", "error": "unknown_posture",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "stealth", "adapters": []}},
+    {"name": "no adapters", "error": "adapters_missing",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "standard", "adapters": []}},
+    {"name": "uppercase id", "error": "adapter_id_invalid",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "standard", "adapters": [{"id": "Tor", "kind": "clearnet"}]}},
+    {"name": "duplicate id", "error": "adapter_id_duplicate",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "standard", "adapters": [{"id": "a", "kind": "clearnet"}, {"id": "a", "kind": "lan"}]}},
+    {"name": "unknown kind", "error": "unknown_adapter_kind",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "standard", "adapters": [{"id": "a", "kind": "vpn"}]}},
+    {"name": "proxy named by hostname", "error": "proxy_endpoint_not_literal",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "private", "adapters": [{"id": "tor", "kind": "proxy", "network": "tor", "socks": "localhost:9050"}]}},
+    {"name": "unknown proxy network", "error": "proxy_network_unknown",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "private", "adapters": [{"id": "fn", "kind": "proxy", "network": "freenet", "socks": "127.0.0.1:8888"}]}},
+    {"name": "malformed overlay range", "error": "overlay_cidr_invalid",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "overlay-only", "adapters": [{"id": "mesh", "kind": "overlay", "cidrs": ["nope"]}]}},
+    {"name": "overlay range routable on clearnet", "error": "overlay_cidr_global",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "overlay-only", "adapters": [{"id": "mesh", "kind": "overlay", "cidrs": ["8.8.0.0/16"]}]}},
+    {"name": "pinned host without an address", "error": "pinned_host_invalid",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "lan-only", "adapters": [{"id": "lan", "kind": "lan", "hosts": {"nas.home": "not-an-address"}}]}},
+    {"name": "zero latency budget", "error": "budget_invalid",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "standard", "adapters": [{"id": "direct", "kind": "clearnet"}], "budgets": {"latencyMs": 0}}},
+    {"name": "private posture with only clearnet", "error": "posture_has_no_adapter",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "private", "adapters": [{"id": "direct", "kind": "clearnet"}]}},
+    {"name": "anonymous posture with only a generic proxy", "error": "anonymous_requires_anonymity_network",
+     "profile": {"schema": "forkmesh-transport-profile-v1", "posture": "anonymous", "adapters": [{"id": "vpn", "kind": "proxy", "network": "socks", "socks": "10.8.0.1:1080"}]}}
+  ]
+}

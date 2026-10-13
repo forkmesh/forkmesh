@@ -1,0 +1,198 @@
+          <section data-view="ads" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full">
+              <div data-ads-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 class="text-base font-semibold text-foreground">ForkMesh Ads</h1>
+                    <p data-ads-summary class="mt-1 text-sm text-muted-foreground">Short text ads written by members, read by a person before they run, and shown by product surface only. They are never aimed at anyone and never follow anyone.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-3 self-start">
+                    <span data-ads-level class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <button
+                      data-ads-refresh
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div data-ads-session class="px-4 sm:px-5 py-4 border-b border-border">
+                  <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Checking your session...</p>
+                </div>
+
+                <div data-ads-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
+
+                <div class="px-4 sm:px-5 py-4 border-b border-border">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">How it works</h2>
+                  <ol class="mt-3 grid gap-3 sm:grid-cols-3">
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">1</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">Write a text ad</p>
+                      <p class="mt-1 text-xs text-muted-foreground">A headline, one sentence, a button label and an https link. No images, no scripts, no tracking parameters. Anyone with an account can write and submit one.</p>
+                    </li>
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">2</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">A person reviews it</p>
+                      <p class="mt-1 text-xs text-muted-foreground">Nothing is approved automatically. A reviewer reads every ad and its destination against the policy, and every decision is recorded. Changing the words sends an ad back to review.</p>
+                    </li>
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">3</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">It runs by surface, not by person</p>
+                      <p class="mt-1 text-xs text-muted-foreground">Ads are chosen by where they appear - never by who is looking. No profiles, no cookies, no impressions counted; only a daily click total per ad and surface.</p>
+                    </li>
+                  </ol>
+
+                  <div class="mt-4 rounded-md border border-border bg-background p-3">
+                    <p class="text-sm font-semibold text-foreground">There is no ad billing yet</p>
+                    <p data-ads-payment-note class="mt-1 text-xs text-muted-foreground">A membership level funds a number of live slots and a rotation weight. Anyone can write and submit an ad; an approved ad runs while its owner has an active membership, and pauses by itself when they do not.</p>
+                    <div class="mt-3 flex flex-wrap items-center gap-3">
+                      <button
+                        data-forkmesh-membership
+                        type="button"
+                        class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors"
+                      >
+                        <i data-lucide="heart" class="w-3.5 h-3.5"></i>
+                        See membership levels
+                      </button>
+                      <span data-ads-usage class="text-xs text-muted-foreground"></span>
+                    </div>
+                    <div class="mt-3 overflow-x-auto">
+                      <table class="w-full text-left text-xs">
+                        <thead>
+                          <tr class="border-b border-border text-muted-foreground">
+                            <th class="py-1.5 pr-3 font-semibold">Level</th>
+                            <th class="py-1.5 pr-3 font-semibold">Per month</th>
+                            <th class="py-1.5 pr-3 font-semibold">Live ads</th>
+                            <th class="py-1.5 font-semibold">Rotation weight</th>
+                          </tr>
+                        </thead>
+                        <tbody data-ads-tiers class="divide-y divide-border">
+                          <tr><td colspan="4" class="py-2 text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading levels...</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                    <details class="rounded-md border border-border bg-background p-3">
+                      <summary class="cursor-pointer text-sm font-semibold text-foreground">What is never accepted</summary>
+                      <ul data-ads-prohibited class="mt-2 grid gap-1 text-xs text-muted-foreground"></ul>
+                    </details>
+                    <details class="rounded-md border border-border bg-background p-3">
+                      <summary class="cursor-pointer text-sm font-semibold text-foreground">What an ad may be about</summary>
+                      <ul data-ads-categories class="mt-2 grid gap-1 text-xs text-muted-foreground"></ul>
+                    </details>
+                  </div>
+                  <p class="mt-3 text-xs text-muted-foreground">The full policy, the review process and the privacy rules are in the <a class="text-accent underline" href="https://forkmesh.com/docs/operations/ad-network/">ForkMesh Ads documentation</a>.</p>
+                </div>
+
+                <div data-ads-owner hidden>
+                  <div class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                    <h2 data-ads-form-title class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Write an ad</h2>
+                    <button data-ads-form-reset type="button" hidden class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel editing</button>
+                  </div>
+
+                  <form data-ads-form novalidate class="px-4 sm:px-5 py-4 border-b border-border grid gap-4">
+                    <div data-ads-edit-warning hidden class="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-foreground"></div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                      <label class="grid gap-2 text-sm font-semibold text-foreground">
+                        <span class="flex items-center justify-between gap-2">Headline <span data-ads-count="headline" class="font-mono text-[11px] font-normal text-muted-foreground"></span></span>
+                        <input data-ads-field="headline" type="text" autocomplete="off" maxlength="60" placeholder="What are you promoting?" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                      </label>
+                      <label class="grid gap-2 text-sm font-semibold text-foreground">
+                        <span class="flex items-center justify-between gap-2">Sponsor name <span data-ads-count="sponsor" class="font-mono text-[11px] font-normal text-muted-foreground"></span></span>
+                        <input data-ads-field="sponsor" type="text" autocomplete="off" maxlength="48" placeholder="Who is behind the ad" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                      </label>
+                    </div>
+                    <label class="grid gap-2 text-sm font-semibold text-foreground">
+                      <span class="flex items-center justify-between gap-2">Body <span data-ads-count="body" class="font-mono text-[11px] font-normal text-muted-foreground"></span></span>
+                      <textarea data-ads-field="body" rows="2" maxlength="160" placeholder="One honest sentence about it (optional)" class="min-h-24 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></textarea>
+                    </label>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                      <label class="grid gap-2 text-sm font-semibold text-foreground">
+                        <span class="flex items-center justify-between gap-2">Call to action <span data-ads-count="cta" class="font-mono text-[11px] font-normal text-muted-foreground"></span></span>
+                        <input data-ads-field="cta" type="text" autocomplete="off" maxlength="24" placeholder="Learn more" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                      </label>
+                      <label class="grid gap-2 text-sm font-semibold text-foreground">
+                        Category
+                        <select data-ads-field="category" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></select>
+                      </label>
+                    </div>
+                    <label class="grid gap-2 text-sm font-semibold text-foreground">
+                      Destination URL
+                      <input data-ads-field="url" type="url" inputmode="url" autocomplete="off" maxlength="600" placeholder="https://example.org/project" class="h-10 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                      <span class="text-xs font-normal text-muted-foreground">Must be https, with no link shortener and no click identifiers (fbclid, gclid and the like). Campaign tags such as utm_source are fine.</span>
+                    </label>
+                    <fieldset class="grid gap-2">
+                      <legend class="text-sm font-semibold text-foreground">Where it may run</legend>
+                      <div data-ads-placements class="mt-2 grid gap-2 sm:grid-cols-2"></div>
+                    </fieldset>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                      <label class="grid gap-2 text-sm font-semibold text-foreground">
+                        Start (optional)
+                        <input data-ads-field="startsAt" type="datetime-local" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        <span class="text-xs font-normal text-muted-foreground">Empty starts as soon as it is approved. Your local time.</span>
+                      </label>
+                      <label class="grid gap-2 text-sm font-semibold text-foreground">
+                        End (optional)
+                        <input data-ads-field="endsAt" type="datetime-local" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        <span class="text-xs font-normal text-muted-foreground">Empty keeps it open-ended.</span>
+                      </label>
+                    </div>
+                    <label class="grid gap-2 text-sm font-semibold text-foreground">
+                      <span class="flex items-center justify-between gap-2">Note to the reviewer (optional) <span data-ads-count="note" class="font-mono text-[11px] font-normal text-muted-foreground"></span></span>
+                      <textarea data-ads-field="note" rows="2" maxlength="500" placeholder="Anything that helps the reviewer: who you are, what the destination is" class="min-h-24 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></textarea>
+                    </label>
+
+                    <div>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preview - exactly as the slot shows it</p>
+                      <div data-ads-preview class="mt-2 rounded-md border border-border bg-background px-4 py-2"></div>
+                    </div>
+
+                    <label class="flex items-start gap-2 rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
+                      <input data-ads-attestation type="checkbox" class="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
+                      <span>I confirm this ad follows the ForkMesh Ads policy and is honest about what it promotes. <span class="text-xs">Required to submit for review; not needed to save a draft.</span></span>
+                    </label>
+
+                    <p data-ads-form-error hidden class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-foreground" role="alert"></p>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                      <button data-ads-submit type="submit" class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors">
+                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                        Submit for review
+                      </button>
+                      <button data-ads-save-draft type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary transition-colors">
+                        <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                        Save draft
+                      </button>
+                    </div>
+                  </form>
+
+                  <div class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                    <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Your ads</h2>
+                    <span data-ads-list-summary class="text-xs text-muted-foreground"></span>
+                  </div>
+                  <div data-ads-list class="divide-y divide-border" aria-live="polite">
+                    <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading your ads...</div>
+                  </div>
+                </div>
+
+                <div data-ads-review hidden class="border-t border-border">
+                  <div class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                    <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Review queue</h2>
+                    <span class="text-xs text-muted-foreground">Visible to platform reviewers only. Every decision is recorded.</span>
+                  </div>
+                  <div data-ads-review-tabs class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center gap-2" role="tablist" aria-label="Review queue status"></div>
+                  <div data-ads-review-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm text-foreground" role="status" aria-live="polite"></div>
+                  <div data-ads-review-list class="divide-y divide-border" aria-live="polite"></div>
+                </div>
+
+                <div class="border-t border-border px-4 sm:px-5 py-3">
+                  <p class="text-xs text-muted-foreground">Every ad is labelled Sponsored, opens its destination in a new tab without a referrer, and can be hidden or reported by whoever sees it. Click totals are aggregate daily counts per ad and surface; nothing about a viewer is stored.</p>
+                </div>
+              </div>
+            </div>
+          </section>

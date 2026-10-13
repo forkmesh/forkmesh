@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Safer rooms, steadier mirrors · ForkMesh Blog</title>
+    <meta name="description" content="Two days of ForkMesh progress: opt-in KVM agent isolation, a released Go mirror runtime, clearer desktop diagnostics, a lighter World, and mobile Git groundwork.">
+    <link rel="canonical" href="https://forkmesh.com/blog/safer-rooms-steadier-mirrors/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/safer-rooms-steadier-mirrors/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Safer rooms, steadier mirrors">
+    <meta property="og:description" content="Opt-in KVM agent isolation, a released Go mirror runtime, clearer diagnostics, a lighter World, and carefully bounded mobile Git groundwork.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/safer-rooms-steadier-mirrors.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A coding agent inside a moonlit glass virtual-machine chamber connected to three compact mirror nodes in a cyan and green loop">
+    <meta property="article:published_time" content="2026-08-05T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Safer rooms, steadier mirrors">
+    <meta name="twitter:description" content="A stronger optional agent boundary, a smaller mirror runtime, and progress that keeps its labels honest.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/safer-rooms-steadier-mirrors.webp">
+    <meta name="twitter:image:alt" content="A coding agent inside a moonlit glass virtual-machine chamber connected to three compact mirror nodes in a cyan and green loop">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Safer rooms, steadier mirrors</h1>
+            <p class="lede">Two days of progress moved coding agents behind a stronger optional boundary, mirror work into a smaller runtime, and more of the desktop's hidden work into view.</p>
+            <div class="meta"><span class="pill">August 5, 2026</span><span>Product update</span><span>7 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/safer-rooms-steadier-mirrors.webp" alt="A coding agent inside a moonlit glass virtual-machine chamber connected to three compact mirror nodes in a cyan and green loop">
+        </section>
+        <article class="body">
+          <p>Our last update followed continuity across the desktop, agent branches, mirrors, and ForkMesh World. This round goes one level deeper: give long-running work a narrower boundary, make public mirrors cheaper to keep ready, and expose enough state that recovery is a normal path rather than a mystery.</p>
+
+          <h2>Public mirrors shed a resident desktop</h2>
+          <p>The new <code>forkmesh-mirror-node</code> service moves headless mirror supervision into a small Go daemon. It owns synchronization, catalog publication, signed health helpers, gateway configuration, and gateway and tunnel restarts. Its status reporting separates “the service is alive” from “the gateway is running and a recent sync succeeded,” so automation can tell health from readiness.</p>
+          <p>Collaboration intake is now demand-driven. The daemon starts its desktop companion only when an issue, pull request, or discussion is waiting; after the queue drains, that companion exits. A public mirror can therefore remain clone-ready without paying the idle memory cost of a resident desktop process.</p>
+          <p>This work is released, not just merged. Version 0.7.14 introduced the service, 0.7.15 corrected its telemetry, and 0.7.16 made synchronization monotonic across round-robin peers. If the selected peer is briefly behind, a mirror keeps its newer local head instead of rewinding. Routing eligibility now follows current health evidence for every mirror equally, and the Go service renews signed endpoint leases itself.</p>
+          <div class="note">The rollout is deliberately reversible. The operations guide still calls this a rolling migration and keeps the previous units and binaries as rollback artifacts until each host passes readiness, signed-health, pending-intake, and clone checks.</div>
+
+          <h2>Coding agents get a harder optional boundary</h2>
+          <p>On Linux, ForkMesh can now leave the native desktop on the host while running configured coding agents and their subprocesses in a Lima QEMU/KVM guest. The guest receives one recorded launch directory at the same writable path, plus the linked-worktree metadata and temporary worktree root needed for agent branches. The host home directory, desktop sockets, SSH agent, and unrelated environment variables are not shared.</p>
+          <p>This is an opt-in mode with explicit limits, not a default sandbox claim. It requires Lima 2.0 or newer, QEMU, and read/write access to <code>/dev/kvm</code>; there is no software-emulation fallback. ForkMesh refuses a home-directory-wide workspace, rejects repositories outside the recorded boundary while the mode is active, and requires a relaunch when that boundary changes.</p>
+          <p>Session handling around that boundary is steadier too. Detached Codex sessions can be recovered, a run waits for its subprocesses before reporting Done, and a completed session offers a clear Continue action. Agent lists identify the selected account, expose bounded usage charts and refresh controls, and allow account edits without turning the session list into a settings page.</p>
+
+          <h2>The desktop becomes a better witness</h2>
+          <p>Diffs now describe the work an agent actually owns. Task-linked sessions scope their change view to task-owned files, while the shared renderer shows complete large diffs instead of silently truncating the evidence. Git operations continue moving off the interface thread, pull-request metadata no longer launches a process storm, and a stale <code>HEAD.lock</code> left by an interrupted operation can be recovered before merge.</p>
+          <p>Operational feedback has become more direct. A zoomable activity timeline groups log volume by category, the footer can expand into a live debug surface, and failed-action alerts open the relevant output. Background tasks stay visible while they run; restarts show a progress ring and caution border; stopped actions no longer produce false alarms. These are small controls, but together they make “busy,” “stopped,” and “failed” meaningfully different states.</p>
+
+          <h2>The World opens up without getting heavier</h2>
+          <p>The previous build used enclosure geometry to make districts legible and bound rendering work. This pass replaces several of those covers with distance-based level of detail, opening sightlines around the repository and member areas while reducing scene work farther from the visitor. Grass, textured ground, node-yard objects, and aquarium reef geometry are simpler; avatars remain full-detail, because people are the part worth keeping recognizable.</p>
+          <p>Movement starts faster and ramps more naturally, and an optional performance pill can show live scene cost while the World is being tuned. The result is not a new destination so much as a more open route through the places already there.</p>
+
+          <h2>Mobile Git has an engine, not a green light</h2>
+          <p>A substantial pure-Dart Git package has landed under the Flutter app. It includes owned implementations for object and ref storage, index v2, pack reading and writing, protocol framing, smart-HTTP building blocks, quarantine, cancellation, path confinement, and resource limits. Interoperability fixtures exercise repositories in both directions with system Git as a test oracle, without making system Git a runtime dependency.</p>
+          <p>The repository's own compatibility matrix labels this work <strong>implemented, awaiting review</strong>, and on-device testing for Android and iOS is still ahead. In other words, this is serious mobile-node groundwork, but it is not yet a production mobile clone, commit, or push feature.</p>
+
+          <h2>Labels are part of the product</h2>
+          <p>Optional Supporter and Pro memberships returned to pricing and account settings in this window, and plans remained free during launch. Card checkout has since been retired; memberships now go through Patreon.</p>
+          <p>Two other visible pieces were still in progress. A new homepage design had not replaced the main landing page, and AI model controls reached the clients before the matching server route was live. Neither is counted here as a shipped default experience.</p>
+          <p><a href="/desktop">Get the latest desktop release</a>, <a href="/docs">read the operating guides</a>, or <a href="/world">walk through ForkMesh World</a>.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/one-app-one-mesh/">← One app, one mesh</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/a-week-closer-to-the-mesh/">A week closer to the mesh →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

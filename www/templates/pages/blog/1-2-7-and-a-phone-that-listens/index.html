@@ -1,0 +1,101 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}1.2.7, and a phone that listens · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="Desktop 1.2.7 is out on Linux, Windows, macOS and Android, with the Windows clean-install fix. Plus agents you start from your phone, Siri and hands-free prompts, direct messages that leave the server once delivered, and reminders that always ring. October 2, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/1-2-7-and-a-phone-that-listens/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/1-2-7-and-a-phone-that-listens/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="1.2.7, and a phone that listens">
+    <meta property="og:description" content="Desktop 1.2.7 fixes the Windows clean install and brings the native Android app. Your phone can now start desktop agents, take spoken prompts and hold direct messages the server lets go of.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/1-2-7-and-a-phone-that-listens.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A rainy, moonlit clearing in a pine forest: a glowing green workstation screen on a stone plinth at left, a phone at right sending out cyan sound rings and chat bubbles that dissolve into the sky, four lit crates in the middle, and the official ForkMesh logo with its vertical reflection on the wet ground in front">
+    <meta property="article:published_time" content="2026-10-02T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="1.2.7, and a phone that listens">
+    <meta name="twitter:description" content="Desktop 1.2.7 is out with the Windows install fix and the native Android app, and your phone can now start desktop agents and take spoken prompts.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/1-2-7-and-a-phone-that-listens.webp">
+    <meta name="twitter:image:alt" content="A rainy, moonlit clearing in a pine forest: a glowing green workstation screen on a stone plinth at left, a phone at right sending out cyan sound rings and chat bubbles that dissolve into the sky, four lit crates in the middle, and the official ForkMesh logo with its vertical reflection on the wet ground in front">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>1.2.7, and a phone that listens</h1>
+            <p class="lede">Desktop 1.2.7 is out, and Windows installs work again. Your phone can now start an agent in a terminal on your desktop, take a prompt by voice, and hold direct messages that leave our server once they're delivered. Task reminders also always reach the person you sent them to.</p>
+            <div class="meta"><span class="pill">October 2, 2026</span><span>Product update</span><span>8 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/1-2-7-and-a-phone-that-listens.webp" alt="A rainy, moonlit clearing in a pine forest: a glowing green workstation screen on a stone plinth at left, a phone at right sending out cyan sound rings and chat bubbles that dissolve into the sky, four lit crates in the middle, and the official ForkMesh logo with its vertical reflection on the wet ground in front">
+        </section>
+        <article class="body">
+          <p>This one covers a short stretch: from the evening of September 30, when the last update went out, to this afternoon. That's 295 merges into main and 357 commits. The headline is a desktop release we'd been promising for a week.</p>
+          <p>A note on what "live" means below. Every push to main that touches the website or the app deploys itself, and today's last change reached our servers at 3:20 this afternoon, so anything on the web is live now. Desktop and phone features are in your hands only once they're in a release. 1.2.7 was built from the code as it stood at 3:39 pm on October 1. Anything merged after that says "next release". The new iPhone app still isn't on the App Store, so iPhone features are only on our own test phones for now.</p>
+
+          <h2>Desktop 1.2.7</h2>
+          <p>Last time we said the next release would be 1.2.6. It wasn't, quite. 1.2.6 hit a Windows build error and lost its installer, so the only part of it we published was the mirror node. The desktop app never went out. 1.2.7 carries everything 1.2.6 was meant to, and went out on the latest channel on October 1. If you're on 1.2.5, this is your next update.</p>
+          <p>Here's what you get on each platform:</p>
+          <ul>
+            <li><strong>Windows:</strong> a clean install no longer stops with "Qt6OpenGLWidgets.dll was not found". The packager now reads every library the program imports, bundles all of them, and refuses to build an installer if any is missing. The installer is signed with our own certificate, not one from a commercial authority, so Windows will still say "Unknown publisher".</li>
+            <li><strong>macOS:</strong> one universal .dmg for Apple Silicon and Intel. It's still ad-hoc signed and not notarized, so macOS will complain the first time you open it.</li>
+            <li><strong>Linux:</strong> the binary and the AppImage, built the same way as 1.2.5, for Ubuntu 22.04 or newer and Debian 12 or newer.</li>
+            <li><strong>Android:</strong> the first release of the native app, written in Kotlin and Compose. It replaces the old Flutter APK. The signing key changed in September, so if Android won't install it over the app you have, uninstall the old one first. Uninstalling removes that app's data on that phone.</li>
+            <li><strong>iPhone:</strong> nothing new in this release. More on that below.</li>
+          </ul>
+          <p>There are also changes for every desktop platform. Update, rebuild &amp; restart no longer deletes your checkout when a pull fails: it stops, tells you why, and changes nothing. Quitting the app now ends every process it started. Agents can open, read and screenshot desktop windows and browser pages through ForkMesh's MCP tools.</p>
+          <p>On Windows and macOS there's no in-app updater yet. To update, download the new installer or disk image from the <a href="/#downloads">homepage</a> and install it. The release manifest is signed with an Ed25519 key, and the install script and the homepage download card both check it against a key built into them. Before writing this we checked 1.2.7's signature against that key ourselves, along with the checksum file it vouches for.</p>
+
+          <h2>Start a desktop agent from your phone</h2>
+          <p>Last week your phone learned to watch and type into Claude Code and Codex sessions running in a terminal on your desktop. Now it can start one too. Pick a repository the desktop has open and choose Claude Code or Codex. The desktop starts it in a terminal of its own, and the phone shows that terminal live, with Esc, Tab, the arrow keys and Ctrl-C as well as text. If you leave the screen, the agent keeps running, and it stays in the Agents list until its CLI exits. When you send a follow-up to an agent, you can also switch its model or mode.</p>
+          <p>Removing a phone from your account now also cuts off its control of your desktop through our relay right away. Before, a phone approved through your account kept that control even after you removed it. A phone you approved in person with the six-digit code is different: it stays approved until you remove it under Settings → Phone on the desktop. Away-from-home control also recovers by itself when a relayed connection dies.</p>
+          <p>All of that is in 1.2.7 and its Android app. Merged since, for the next release: managing the desktop's recycle bin from the phone (restore, delete for good, and how long things are kept); sorting the agent list by the desktop's run priority; "Stop all agents"; deleting an agent with a swipe; and image diffs. Images and SVGs show before and after, and the review marks a file as viewed when you scroll past it. On the web and in all the apps you can also pick which Claude or Codex account a cloud runner uses. The web picker is live now.</p>
+
+          <h2>Saying it out loud</h2>
+          <p>On iPhone, "Hey Siri, start a new agent in ForkMesh" opens the prompt, even if the app wasn't running. Siri could already stop, continue, message and merge agents by number ("Agent 754") or by part of their title. The new <a href="/docs/mobile/siri/">Siri guide</a> lists every phrase, explains why each one has to name ForkMesh, and shows how to set up shorter phrases of your own. It's written for the native iPhone app, which isn't on the App Store yet.</p>
+          <p>When you open the prompt, it now starts listening straight away. A setting turns that off. On iOS 26 it uses Apple's newer on-device speech recognition, and nothing it hears is written to disk. On both iPhone and Android, a dictated prompt sends itself once you've been quiet for a moment, so you can talk to an agent without touching the screen. All of this is in iPhone test builds; the Android auto-send ships with the next APK.</p>
+
+          <h2>Direct messages that don't stay</h2>
+          <p>Direct messages now show up in the chat panel on every dashboard page, not just on the full chat page, and there's a button for starting a new one. "Add person" in a direct message creates a new private group with the three of you, and it tells you that before it does. Earlier messages can't come along, because they're encrypted to the two original devices.</p>
+          <p>Our relay now deletes its copy of a direct message as soon as the other person's device has it. The top of the conversation shows which state you're in: "1 message on the server" while a copy is waiting, "Not stored on the server" once it's gone. Some limits: "received" means received by one of their devices, so their other devices won't get that message later. Group channels are unchanged. A client that doesn't send receipts yet, including today's desktop app, leaves copies on the server for the usual seven days, and the count says so. This is live on the web. The desktop side ships next release.</p>
+          <p>On the full chat page, a direct message also has audio and video calls. The call setup is end-to-end encrypted, and the audio and video go straight from one browser to the other, so our relay doesn't keep any of it. It's a first version: the call only rings if the other person has that conversation open, and if you're both behind a strict home or office firewall it may not connect.</p>
+
+          <h2>Pings that get through</h2>
+          <p>When you press Remind on someone's task, it now always reaches them, even if they've muted mentions, paused pings or are in quiet hours. That's because a person asked them directly. The reminder also goes on the task's timeline, saying what happened: "ping sent, pushed to 2 phones", or that it couldn't be delivered. Once they open the task or read the ping, it shows when they saw it. The server side is live now. The desktop showing the reminder even while your pings are paused comes in the next release.</p>
+          <p>Pings that report a problem now come with a one-tap fix. A build that failed because the build Mac was off the network offers "Turn off this action", for example. The desktop learns which fixes you choose, and once a fix has proven itself it applies it on its own, tells you, and lets you undo. That's merged and needs the next desktop release. On the phones you can also clear every ping with one tap.</p>
+
+          <h2>A busier CRM</h2>
+          <p>The CRM package on the web got three new views. My queue is the contacts you own that are waiting on you or have a next step. Waiting on us is everyone whose last email came from them. Possible duplicates is contacts that look like the same person. You can also tag or reassign many contacts at once, connect Zoho Mail in one click, and see "Last contacted" in the default view. A pipeline can now be shared with people outside your organization, and they work it from their own dashboard. All of that is live. The iPhone and Android apps have caught up with the desktop CRM in code, but that isn't released yet.</p>
+
+          <h2>Smaller things</h2>
+          <ul>
+            <li>Office calls now have a fallback for strict firewalls: when a direct connection can't form, the media goes through a relay on our own servers instead of failing.</li>
+            <li>The <a href="https://forkmesh.com/status">status page</a> has one release row per platform (Linux, Windows, macOS and Android), so each platform can be released on its own schedule. Its email row also says why mail is being held back.</li>
+            <li>Sending a prompt to a paused desktop agent now lets it run (next release).</li>
+            <li>Unread badges now count up to 999+ instead of stopping at 99+. That's on the web now and in the apps from the next release.</li>
+            <li>Fewer failed requests while the app restarts during a deploy.</li>
+            <li>forkmesh.com now has an llms.txt that tells AI tools what's on the site.</li>
+          </ul>
+
+          <h2>Coming next</h2>
+          <p>The next desktop release picks up everything marked "next release" above. The iPhone app still has a few steps before we can submit it to the App Store. We'll post here when it's out, not before. There are no dates for either yet.</p>
+          <p>If something here doesn't work the way we've described, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a>. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog">All posts</a>
+          <a href="/blog/office-identity/">Office identity →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

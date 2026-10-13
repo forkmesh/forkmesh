@@ -1,0 +1,25 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=ForkMesh Next self-deploy of phone-approved merges (node @@NODE@@)
+Wants=network-online.target
+After=network-online.target rqlite.service fmnext-ids.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I @@OPT@@/bin/fmnext-self-deploy serve --config @@ETC@@/self-deploy.json
+@@SELF_DEPLOY_CREDENTIALS@@
+Restart=always
+RestartSec=30s
+StateDirectory=fmnext-self-deploy
+StateDirectoryMode=0755
+UMask=0022
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=120M
+MemoryMax=200M
+LimitCORE=0
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

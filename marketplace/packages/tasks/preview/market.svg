@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#090d13"/><rect x="50" y="48" width="1180" height="624" rx="18" fill="#0d1117" stroke="#30363d"/>
+  <text x="88" y="105" fill="#f0f6fc" font-family="system-ui" font-size="30" font-weight="700">Tasks</text><text x="88" y="137" fill="#8b949e" font-family="system-ui" font-size="16">Organization work · people + agents + QA</text>
+  <g font-family="system-ui"><rect x="86" y="172" width="342" height="450" rx="12" fill="#161b22" stroke="#30363d"/><text x="110" y="212" fill="#8b949e" font-size="15" font-weight="700">QUEUED · 3</text>
+  <rect x="108" y="236" width="298" height="105" rx="9" fill="#0d1117" stroke="#30363d"/><text x="128" y="270" fill="#f0f6fc" font-size="17">Direct mirror login handoff</text><text x="128" y="301" fill="#58a6ff" font-size="14">@ohm · priority 1</text><rect x="128" y="315" width="76" height="8" rx="4" fill="#238636"/>
+  <rect x="108" y="359" width="298" height="105" rx="9" fill="#0d1117" stroke="#30363d"/><text x="128" y="393" fill="#f0f6fc" font-size="17">Reduce edge subrequests</text><text x="128" y="424" fill="#bc8cff" font-size="14">agent ready</text></g>
+  <g font-family="system-ui"><rect x="469" y="172" width="342" height="450" rx="12" fill="#161b22" stroke="#30363d"/><text x="493" y="212" fill="#8b949e" font-size="15" font-weight="700">IN PROGRESS · 2</text>
+  <rect x="491" y="236" width="298" height="138" rx="9" fill="#0d1117" stroke="#2da44e"/><text x="511" y="270" fill="#f0f6fc" font-size="17">Package CRM feature</text><text x="511" y="302" fill="#3fb950" font-size="14">agent #66 · running</text><text x="511" y="338" fill="#8b949e" font-size="13">4 / 6 checks complete</text>
+  <rect x="491" y="392" width="298" height="105" rx="9" fill="#0d1117" stroke="#30363d"/><text x="511" y="426" fill="#f0f6fc" font-size="17">Mirror cache verification</text><text x="511" y="457" fill="#58a6ff" font-size="14">@zeno · 18m</text></g>
+  <g font-family="system-ui"><rect x="852" y="172" width="342" height="450" rx="12" fill="#161b22" stroke="#30363d"/><text x="876" y="212" fill="#8b949e" font-size="15" font-weight="700">QA · 4</text>
+  <rect x="874" y="236" width="298" height="105" rx="9" fill="#0d1117" stroke="#30363d"/><text x="894" y="270" fill="#f0f6fc" font-size="17">Portable session tests</text><text x="894" y="301" fill="#3fb950" font-size="14">✓ 70 checks passed</text>
+  <rect x="874" y="359" width="298" height="105" rx="9" fill="#0d1117" stroke="#30363d"/><text x="894" y="393" fill="#f0f6fc" font-size="17">Production smoke test</text><text x="894" y="424" fill="#d29922" font-size="14">awaiting deploy</text></g>
+</svg>

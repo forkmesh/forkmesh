@@ -1,0 +1,6 @@
+[project]
+name = "forkmesh-worker"
+version = "0.1.0"
+description = "Python Cloudflare Worker relay for ForkMesh encrypted rooms"
+requires-python = ">=3.12"
+dependencies = []

@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Docs with search" %}
+{% set slug = "docs-with-search" %}
+{% set image = "/assets/blog/features/docs-with-search.webp" %}
+{% set description = "Searchable documentation covering encrypted mirrors, direct-HTTPS routing, cloning, and the collaboration protocol." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Mobile, web &amp; IDE</p>
+            <h1>Docs with search</h1>
+            <p class="lede">Searchable documentation covering encrypted mirrors, direct-HTTPS routing, cloning, and the collaboration protocol.</p>
+            <div class="meta"><span class="pill">Feature 71 of 72</span><span>Feature</span><span>Mobile, web &amp; IDE</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/docs-with-search.webp" alt="Abstract ForkMesh artwork for Docs with search">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Docs with search gives ForkMesh a concrete mechanism for searchable documentation for the repository, routing, clone, and collaboration model. It covers encrypted mirrors, authenticated direct-HTTPS routing, cloning, and the collaboration protocol.</p>
+          <p>A distributed forge still needs clean entry points for readers, contributors, mobile users, and editor workflows. In ForkMesh, docs with search addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles docs with search through the same split it uses across the product: ForkMesh exposes web, mobile, editor, docs, status, and clean URL surfaces on top of the desktop-node and mainnode model.</p>
+          <p>The behavior is intentionally narrow: searchable documentation covers the repository model, HTTPS mirror routing, cloning, and the collaboration protocol. Those surfaces route to healthy mirrored data; they are access layers, not the canonical Git store.</p>
+          <h2>Where it fits</h2>
+          <p>Use docs with search when people need to browse, contribute, learn, and receive updates outside the main desktop window.</p>
+          <p>It pairs with the rest of Mobile, web &amp; IDE because Docs with search keeps the repository, routing, clone, and collaboration model connected to repository signatures and the healthy nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/vs-code-extension/">← VS Code Marketplace plugin</a>
+          <a href="/blog/status-blog-and-changelog/">Status, blog &amp; changelog →</a>
+        </nav>
+{% endblock %}

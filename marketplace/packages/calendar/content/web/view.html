@@ -1,0 +1,66 @@
+          <section data-view="calendar" class="view active h-full overflow-hidden">
+            <style>
+              .fm-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-left:1px solid rgb(var(--dashboard-border-rgb));border-top:1px solid rgb(var(--dashboard-border-rgb))}
+              .fm-cal-cell{min-height:7.5rem;border-right:1px solid rgb(var(--dashboard-border-rgb));border-bottom:1px solid rgb(var(--dashboard-border-rgb));padding:.4rem;text-align:left;overflow:hidden}
+              .fm-cal-event{display:block;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-left:3px solid var(--event-color,#58a6ff);border-radius:.25rem;background:rgb(var(--dashboard-secondary-rgb));padding:.2rem .35rem;font-size:.72rem;line-height:1.2;color:rgb(var(--dashboard-foreground-rgb));margin-top:.25rem}
+              .fm-cal-week{display:grid;grid-template-columns:repeat(7,minmax(8rem,1fr));gap:.5rem;min-width:56rem}
+              .fm-cal-day{min-height:30rem;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:.5rem;background:rgb(var(--dashboard-card-rgb));padding:.6rem}
+              @media(max-width:700px){.fm-cal-cell{min-height:5.5rem;padding:.25rem}.fm-cal-event{font-size:.64rem}.fm-cal-month-label{display:none}}
+            </style>
+            <div class="flex h-full min-h-0 flex-col p-3 sm:p-5">
+              <header class="mb-3 flex flex-wrap items-center gap-2">
+                <div class="mr-auto min-w-0">
+                  <div class="flex items-center gap-2"><h1 class="text-lg font-semibold text-foreground">Calendar</h1><span data-calendar-zone class="rounded-full border border-border bg-secondary px-2 py-0.5 font-mono text-[10px] text-muted-foreground"></span></div>
+                  <p class="text-xs text-muted-foreground">Personal events stay private. Organization calendars are visible only to current members.</p>
+                </div>
+                <button data-calendar-today type="button" class="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary">Today</button>
+                <div class="flex overflow-hidden rounded-md border border-border">
+                  <button data-calendar-prev type="button" aria-label="Previous period" class="p-2 text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="chevron-left" class="h-4 w-4"></i></button>
+                  <button data-calendar-next type="button" aria-label="Next period" class="border-l border-border p-2 text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="chevron-right" class="h-4 w-4"></i></button>
+                </div>
+                <div data-calendar-modes class="flex overflow-hidden rounded-md border border-border">
+                  <button data-calendar-mode="month" type="button" class="px-3 py-1.5 text-xs text-muted-foreground">Month</button>
+                  <button data-calendar-mode="week" type="button" class="border-l border-border px-3 py-1.5 text-xs text-muted-foreground">Week</button>
+                  <button data-calendar-mode="day" type="button" class="border-l border-border px-3 py-1.5 text-xs text-muted-foreground">Day</button>
+                  <button data-calendar-mode="agenda" type="button" class="border-l border-border px-3 py-1.5 text-xs text-muted-foreground">Agenda</button>
+                </div>
+                <button data-calendar-new type="button" class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"><i data-lucide="calendar-plus" class="h-3.5 w-3.5"></i>New event</button>
+              </header>
+              <div class="flex min-h-0 flex-1 gap-3">
+                <aside class="hidden w-52 shrink-0 overflow-y-auto rounded-lg border border-border bg-card p-3 lg:block">
+                  <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Calendars</h2>
+                  <div data-calendar-list class="grid gap-1 text-sm"></div>
+                  <div class="mt-5 border-t border-border pt-3">
+                    <label class="relative block"><i data-lucide="search" class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground"></i><input data-calendar-search type="search" placeholder="Find events" class="w-full rounded-md border border-border bg-background py-2 pl-8 pr-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"></label>
+                  </div>
+                  <div class="mt-5 rounded-md border border-border bg-background p-2.5 text-[11px] leading-relaxed text-muted-foreground"><i data-lucide="lock-keyhole" class="mb-1 h-4 w-4"></i>Personal event details are encrypted at rest. Repository commits and merges are read-only Git activity.</div>
+                </aside>
+                <main class="min-w-0 flex-1 overflow-auto rounded-lg border border-border bg-background">
+                  <div class="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-3 py-2"><h2 data-calendar-heading class="text-sm font-semibold text-foreground"></h2><span data-calendar-status class="text-xs text-muted-foreground"></span></div>
+                  <div data-calendar-content class="min-h-full"></div>
+                </main>
+              </div>
+            </div>
+
+            <div data-calendar-modal hidden class="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-3" role="dialog" aria-modal="true" aria-labelledby="calendarDialogTitle">
+              <form data-calendar-form class="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card shadow-2xl">
+                <div class="flex items-center border-b border-border px-5 py-4"><i data-lucide="calendar-days" class="mr-3 h-5 w-5 text-muted-foreground"></i><div><h2 id="calendarDialogTitle" data-calendar-dialog-title class="font-semibold text-foreground">New event</h2><p class="text-xs text-muted-foreground">Times are stored and displayed in the selected time zone.</p></div><button data-calendar-close type="button" class="ml-auto rounded-md p-2 text-muted-foreground hover:bg-secondary"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <div class="grid gap-4 p-5 sm:grid-cols-2">
+                  <label class="sm:col-span-2 text-xs font-medium text-foreground">Title<input data-calendar-title required maxlength="200" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring" placeholder="Event title"></label>
+                  <label class="text-xs font-medium text-foreground">Starts<input data-calendar-start required type="datetime-local" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></label>
+                  <label class="text-xs font-medium text-foreground">Ends<input data-calendar-end required type="datetime-local" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></label>
+                  <label class="sm:col-span-2 text-xs font-medium text-foreground">Time zone<select data-calendar-timezone class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select><span data-calendar-timezone-hint class="mt-1 block font-normal text-muted-foreground"></span></label>
+                  <label class="inline-flex items-center gap-2 text-xs text-foreground"><input data-calendar-all-day type="checkbox">All-day event</label>
+                  <label class="text-xs font-medium text-foreground">Calendar<select data-calendar-scope class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="personal">My calendar · private</option></select></label>
+                  <label class="text-xs font-medium text-foreground">Repeats<select data-calendar-recurrence class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
+                  <label class="text-xs font-medium text-foreground">Location<input data-calendar-location maxlength="500" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" placeholder="Room or address"></label>
+                  <label class="relative sm:col-span-2 text-xs font-medium text-foreground">Invite members or guests<input data-calendar-attendees role="combobox" aria-autocomplete="list" aria-controls="calendarInviteeSuggestions" aria-expanded="false" autocomplete="off" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" placeholder="Type a member or ForkMesh user"><div id="calendarInviteeSuggestions" data-calendar-attendee-suggestions hidden role="listbox" class="absolute left-0 right-0 z-20 mt-1 max-h-48 overflow-auto rounded-md border border-border bg-card p-1 shadow-xl"></div><span data-calendar-attendee-hint class="mt-1 block font-normal text-muted-foreground">Start typing to find organization members or any active ForkMesh user.</span></label>
+                  <label class="sm:col-span-2 text-xs font-medium text-foreground">Video meeting link<input data-calendar-meeting type="url" maxlength="1000" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" placeholder="https://..."></label>
+                  <label class="sm:col-span-2 text-xs font-medium text-foreground">Description<textarea data-calendar-description rows="3" maxlength="10000" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <fieldset class="sm:col-span-2"><legend class="text-xs font-medium text-foreground">Notifications</legend><div class="mt-2 flex flex-wrap gap-3 text-xs text-foreground"><label class="inline-flex items-center gap-1.5"><input data-calendar-reminder value="1440" type="checkbox" checked>24 hours before</label><label class="inline-flex items-center gap-1.5"><input data-calendar-reminder value="60" type="checkbox" checked>1 hour before</label><label class="inline-flex items-center gap-1.5"><input data-calendar-reminder value="10" type="checkbox" checked>10 minutes before</label></div></fieldset>
+                  <div data-calendar-rsvp hidden class="sm:col-span-2 rounded-md border border-border bg-background p-3"><p class="mb-2 text-xs font-medium text-foreground">Your response</p><div class="flex gap-2"><button data-calendar-rsvp-value="accepted" type="button" class="rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-secondary">Accept</button><button data-calendar-rsvp-value="tentative" type="button" class="rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-secondary">Tentative</button><button data-calendar-rsvp-value="declined" type="button" class="rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-secondary">Decline</button></div></div>
+                </div>
+                <div class="flex items-center gap-2 border-t border-border px-5 py-4"><button data-calendar-delete hidden type="button" class="rounded-md border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10">Delete</button><span data-calendar-form-status class="text-xs text-muted-foreground"></span><button data-calendar-cancel type="button" class="ml-auto rounded-md border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Cancel</button><button data-calendar-save type="submit" class="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Save event</button></div>
+              </form>
+            </div>
+          </section>

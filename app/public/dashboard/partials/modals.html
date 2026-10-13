@@ -1,0 +1,178 @@
+    <div
+      data-profile-modal
+      class="hidden fixed inset-0 z-[90] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profileModalTitle"
+    >
+      <button data-profile-modal-backdrop type="button" aria-label="Close profile settings" class="absolute inset-0 cursor-default"></button>
+      <div class="relative z-10 w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
+        <div class="flex items-center justify-between border-b border-border px-4 py-3">
+          <div class="min-w-0">
+            <h2 id="profileModalTitle" class="text-sm font-semibold text-foreground">Profile settings</h2>
+            <p class="mt-0.5 text-xs text-muted-foreground">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>
+          </div>
+          <button data-profile-modal-close type="button" aria-label="Close profile settings" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+            <i data-lucide="x" class="h-4 w-4"></i>
+          </button>
+        </div>
+        <div class="grid gap-4 p-4">
+          <div class="rounded-lg border border-border bg-background p-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-xs font-medium text-foreground">Email verification</p>
+                <p data-profile-email-status class="mt-1 text-xs text-muted-foreground">Sign in to view email status.</p>
+              </div>
+              <button data-profile-verify-email type="button" class="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors">
+                Send link
+              </button>
+            </div>
+          </div>
+
+          <label class="grid gap-1.5 text-xs text-muted-foreground">
+            Solana payout address
+            <input data-profile-solana type="text" inputmode="latin" autocomplete="off" placeholder="Your public Solana address" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+            <span class="text-[11px] leading-4 text-muted-foreground">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>
+            <span class="text-[11px] leading-4 text-amber-300">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>
+          </label>
+
+          <form data-credential-scope class="contents">
+          <label class="grid gap-1.5 text-xs text-muted-foreground">
+            Current password
+            <input data-profile-password type="password" autocomplete="current-password" placeholder="Required to save payout changes" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+          </label>
+          </form>
+
+          <p data-profile-hint class="min-h-4 text-xs text-muted-foreground"></p>
+          <button data-profile-save type="button" class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+            Save profile
+          </button>
+	        </div>
+	      </div>
+    </div>
+
+    <div
+      data-profile-about-modal
+      class="hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profileAboutModalTitle"
+    >
+      <button data-profile-about-modal-backdrop type="button" aria-label="Close about editor" class="absolute inset-0 cursor-default"></button>
+      <div class="relative z-10 flex max-h-[min(760px,calc(100vh-3rem))] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
+        <div class="flex items-center justify-between border-b border-border px-4 py-3">
+          <div class="min-w-0">
+            <h2 id="profileAboutModalTitle" class="text-sm font-semibold text-foreground">Edit about yourself</h2>
+            <p class="mt-0.5 text-xs text-muted-foreground">Markdown shown on your ForkMesh profile overview.</p>
+          </div>
+          <button data-profile-about-modal-close type="button" aria-label="Close about editor" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+            <i data-lucide="x" class="h-4 w-4"></i>
+          </button>
+        </div>
+        <div class="grid min-h-0 gap-4 overflow-y-auto p-4">
+          <label class="grid gap-2 text-xs font-medium text-muted-foreground">
+            About yourself
+            <textarea data-profile-about-textarea rows="14" maxlength="32000" spellcheck="true" class="min-h-72 resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-ring" placeholder="# Hi, I'm ..."></textarea>
+          </label>
+          <p data-profile-about-hint class="min-h-4 text-xs text-muted-foreground"></p>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button data-profile-about-cancel type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:bg-secondary">Cancel</button>
+          <button data-profile-about-save type="button" class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90">Save about</button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="notificationModal"
+      class="hidden fixed inset-0 z-[80] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="notificationModalTitle"
+    >
+      <button data-notification-modal-backdrop type="button" aria-label="Close pings" class="absolute inset-0 cursor-default"></button>
+      <div class="relative z-10 flex max-h-[min(760px,calc(100vh-3rem))] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
+        <div class="flex items-center justify-between border-b border-border px-4 py-3">
+          <div class="min-w-0">
+            <h2 id="notificationModalTitle" class="text-sm font-semibold text-foreground">Pings</h2>
+            <p class="mt-0.5 text-xs text-muted-foreground">Read node, repository, and network updates.</p>
+          </div>
+          <div class="flex shrink-0 items-center gap-1">
+            <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+              <i data-lucide="settings" class="h-4 w-4"></i>
+              Ping settings
+            </a>
+            <button data-close-notification-modal type="button" aria-label="Close pings" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+              <i data-lucide="x" class="h-4 w-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid min-h-0 flex-1 md:grid-cols-[19rem_minmax(0,1fr)]">
+          <div data-notification-modal-list class="max-h-80 overflow-y-auto border-b border-border p-2 md:max-h-none md:border-b-0 md:border-r"></div>
+          <article data-notification-modal-detail class="min-h-0 overflow-y-auto p-5"></article>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      Provider sign-in, streamed from the owner's own node (agent-terminal.js).
+      This replaces a `forkmesh://agent-login/<node>` hand-off that a browser
+      could only complete on a machine with the desktop app installed.
+    -->
+    <div
+      data-agent-login-modal
+      class="fm-agent-login-modal hidden fixed inset-0 z-[95] items-center justify-center px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="agentLoginModalTitle"
+    >
+      <button data-agent-login-backdrop type="button" aria-label="Close the sign-in terminal" class="absolute inset-0 cursor-default"></button>
+      <div class="fm-agent-login-box relative z-10 flex w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
+        <div class="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+          <div class="min-w-0">
+            <h2 id="agentLoginModalTitle" data-agent-login-title class="flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="terminal" class="h-4 w-4 text-muted-foreground"></i>Sign in on your node</h2>
+            <p data-agent-login-status class="mt-0.5 text-xs text-muted-foreground">Connecting…</p>
+          </div>
+          <button data-agent-login-close type="button" aria-label="Close the sign-in terminal" class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+            <i data-lucide="x" class="h-4 w-4"></i>
+          </button>
+        </div>
+        <div data-agent-login-surface class="fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2"></div>
+        <p data-agent-login-footer class="border-t border-border px-4 py-2 text-[11px] leading-4 text-muted-foreground">
+          Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command — not a shell — and the credential itself is created on the provider's site, never here.
+        </p>
+      </div>
+    </div>
+
+    <div
+      data-feedback-modal
+      class="hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="feedbackModalTitle"
+    >
+      <button data-feedback-close type="button" aria-label="Close feedback" class="absolute inset-0 cursor-default"></button>
+      <form data-feedback-form class="relative z-10 w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
+        <div class="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+          <div class="min-w-0">
+            <h2 id="feedbackModalTitle" class="text-sm font-semibold text-foreground">Send feedback</h2>
+            <p class="mt-0.5 text-xs text-muted-foreground">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.</p>
+          </div>
+          <button data-feedback-close type="button" aria-label="Close feedback" class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+            <i data-lucide="x" class="h-4 w-4"></i>
+          </button>
+        </div>
+        <div class="grid gap-3 p-4">
+          <label class="grid gap-1.5 text-xs font-medium text-muted-foreground">
+            Your feedback
+            <textarea data-feedback-message name="message" rows="6" minlength="2" maxlength="2000" required placeholder="What should we know?" class="min-h-32 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"></textarea>
+          </label>
+          <p data-feedback-status class="min-h-4 text-xs text-muted-foreground" role="status" aria-live="polite"></p>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <button data-feedback-close type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:bg-secondary">Cancel</button>
+          <button data-feedback-submit type="submit" class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">Send feedback</button>
+        </div>
+      </form>
+    </div>

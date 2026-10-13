@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "AquariumScene.h",
+    "AquariumScene.cpp",
+    "AquariumOverlay.h",
+    "AquariumOverlay.cpp",
+    "AquariumFeature.h",
+    "AquariumFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_aquarium_scene.cpp",
+    "AquariumScene.h",
+    "AquariumScene.cpp",
+    "AquariumOverlay.h",
+    "AquariumOverlay.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Widgets"
+  ],
+  "testHostSources": [
+    "PetHostFeed.cpp"
+  ]
+}

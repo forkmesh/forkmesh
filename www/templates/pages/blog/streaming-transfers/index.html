@@ -1,0 +1,40 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Streaming transfers" %}
+{% set slug = "streaming-transfers" %}
+{% set image = "/assets/blog/features/streaming-transfers.webp" %}
+{% set description = "Git packs stream over ordinary HTTPS from a selected mirror through a lightweight routing proxy; they are never retained as repository storage by the proxy or its database." %}
+{% set share_description = "Git packs stream over ordinary HTTPS from a selected mirror and are never retained as repository storage by the routing proxy or its database." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Streaming transfers</h1>
+            <p class="lede">Git packs stream over ordinary HTTPS from a selected mirror through a lightweight routing proxy; they are never retained as repository storage by the proxy or its database.</p>
+            <div class="meta"><span class="pill">Feature 04 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/streaming-transfers.webp" alt="Abstract ForkMesh artwork for Streaming transfers">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Streaming transfers keep large packfiles out of persistent platform storage. The client speaks Git Smart HTTP, the routing service verifies and selects an origin, and the selected read-only gateway streams the response through the unchanged public URL.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, streaming transfers addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh separates repository traffic from its multiplayer transport. Clone, fetch, raw files, standard page content, and releases use HTTPS; sockets carry only small presence, chat, movement, shared-event, and update-signal messages.</p>
+          <p>The routing service bounds request sizes, methods, operations, and timeouts, and fails over between mirrors. Its database holds discovery and health metadata only. The gateway runs Git in a locked-down mode.</p>
+          <div class="note">Streaming is not permanent storage: the selected independent mirror remains the repository-byte origin, and the client-visible URL does not disclose that origin.</div>
+          <h2>Where it fits</h2>
+          <p>Use streaming transfers when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Streaming transfers keeps large packfiles streamed through the relay instead of buffered in cloud storage connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/live-clone-routing/">← Live clone routing</a>
+          <a href="/blog/mirror-failover/">Mirror failover →</a>
+        </nav>
+{% endblock %}

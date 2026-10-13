@@ -1,0 +1,1425 @@
+{% extends "base.html" %}
+{% block title %}Blog · ForkMesh{% endblock %}
+{% block chrome %}
+{% endblock %}
+{% block meta %}
+    <meta name="description" content="ForkMesh feature explainers and product updates from the distributed Git mesh: mirrors, signed collaboration, AI agents, CI, chat, rewards, and apps.">
+    <link rel="canonical" href="https://forkmesh.com/blog">
+    <link rel="alternate" type="application/rss+xml" title="ForkMesh Blog" href="/blog/rss.xml">
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://forkmesh.com/blog">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="ForkMesh Blog">
+    <meta property="og:description" content="ForkMesh feature explainers and product updates from the distributed Git mesh.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/forkmesh-forever.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/forkmesh-forever.webp">
+    <style>
+      :root, html.dark { --blog1-bg:#000; --blog1-paper:#080808; --blog1-line:#252525; --blog1-soft-line:#151515; --blog1-text:#f6f6f2; --blog1-muted:#9a9a94; --blog1-dim:#666; --blog1-green:#3fb950; --blog1-cyan:#76d8f6; --blog1-hover-line:rgba(246,246,242,.24); --blog1-hover-fill:rgba(255,255,255,.045); --blog1-hover-ring:rgba(255,255,255,.08); --blog1-popup-sheen:rgba(255,255,255,.11); --blog1-popup-glow:rgba(255,255,255,.07); --blog1-stripe:rgba(255,255,255,.075); --blog1-placeholder:#0a0a0a; --blog1-chip-bg:#f4f4f1; --blog1-chip-text:#151515; --blog1-panel-bg-1:rgba(18,18,18,.98); --blog1-panel-bg-2:rgba(3,3,3,.98); --blog1-panel-border:rgba(246,246,242,.14); --blog1-close-bg:#111; --blog1-field-bg:rgba(0,0,0,.44); --blog1-field-focus-bg:rgba(255,255,255,.03); --blog1-result-bg:rgba(255,255,255,.025); --blog1-search-icon-color:rgba(246,246,242,.68); --blog1-search-trigger-bg:rgba(255,255,255,.01); --blog1-serif:"ForkMesh Favorit",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; --blog1-sans:"ForkMesh Lato",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; --blog1-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; --blog1-btn-fill:linear-gradient(180deg,#ffffff 0%,#e8e8ea 100%); --blog1-btn-fill-hover:linear-gradient(180deg,#ffffff 0%,#f1f1f2 100%); --blog1-btn-border:#f4f4f5; --blog1-btn-shadow:inset 0 -1px 0 rgba(0,0,0,.14),0 1px 2px rgba(0,0,0,.5); --blog1-btn-text:#111113; }
+      html.light { --blog1-bg:#fff; --blog1-paper:#fff; --blog1-line:#d9d9de; --blog1-soft-line:#e7e7ea; --blog1-text:#111113; --blog1-muted:#5c5c66; --blog1-dim:#74747e; --blog1-hover-line:rgba(17,17,19,.24); --blog1-hover-fill:rgba(17,17,19,.045); --blog1-hover-ring:rgba(17,17,19,.08); --blog1-popup-sheen:rgba(17,17,19,.11); --blog1-popup-glow:rgba(17,17,19,.07); --blog1-stripe:rgba(17,17,19,.05); --blog1-placeholder:#ececef; --blog1-chip-bg:#111113; --blog1-chip-text:#fff; --blog1-panel-bg-1:rgba(255,255,255,.98); --blog1-panel-bg-2:rgba(246,246,247,.98); --blog1-panel-border:rgba(17,17,19,.12); --blog1-close-bg:#ececef; --blog1-field-bg:rgba(17,17,19,.05); --blog1-field-focus-bg:rgba(17,17,19,.03); --blog1-result-bg:rgba(17,17,19,.03); --blog1-search-icon-color:rgba(17,17,19,.55); --blog1-search-trigger-bg:rgba(17,17,19,.015); --blog1-btn-fill:linear-gradient(180deg,#2c2c2c 0%,#222222 100%); --blog1-btn-fill-hover:linear-gradient(180deg,#363636 0%,#2a2a2a 100%); --blog1-btn-border:#161616; --blog1-btn-shadow:inset 0 1px 0 rgba(255,255,255,.17),0 1px 2px rgba(0,0,0,.16); --blog1-btn-text:#fff; }
+      * { box-sizing:border-box; } html { background:var(--blog1-bg); } body { min-height:100vh; margin:0; background:repeating-linear-gradient(135deg,transparent 0 17px,var(--blog1-stripe) 18px 20px) left top/96px 96px repeat-y,repeating-linear-gradient(135deg,transparent 0 17px,var(--blog1-stripe) 18px 20px) right top/96px 96px repeat-y,var(--blog1-bg); color:var(--blog1-text); font-family:var(--blog1-sans); -webkit-font-smoothing:antialiased; }
+      a { color:inherit; text-decoration:none; } .blog1-shell { width:min(100%,1510px); min-height:100vh; margin:0 auto; border-right:1px solid var(--blog1-line); border-left:1px solid var(--blog1-line); background:var(--blog1-paper); }
+      .blog1-nav { display:flex; align-items:center; } .blog1-login,.blog1-button { display:inline-flex; min-height:44px; align-items:center; justify-content:center; border:1px solid var(--blog1-btn-border); border-radius:10px; background:var(--blog1-btn-fill); box-shadow:var(--blog1-btn-shadow); color:var(--blog1-btn-text); padding:0 17px; font-size:15px; font-weight:900; } a.blog1-button:hover { background:var(--blog1-btn-fill-hover); color:var(--blog1-btn-text); }
+      .blog1-hero { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:52px; min-height:430px; align-items:end; padding:112px 56px 46px; border-bottom:1px solid var(--blog1-line); } .blog1-eyebrow { margin:0 0 24px; color:var(--blog1-dim); font-family:var(--blog1-mono); font-size:15px; font-weight:700; letter-spacing:0; text-transform:uppercase; } .blog1-hero h1 { max-width:980px; margin:0; color:var(--blog1-text); font-family:var(--blog1-serif); font-size:84px; font-weight:700; line-height:1.02; letter-spacing:-0.035em; } .blog1-mono { font-family:var(--blog1-mono); font-size:.88em; font-weight:400; letter-spacing:0; } .blog1-subhead { max-width:680px; margin:28px 0 0; color:var(--blog1-muted); font-size:20px; line-height:1.5; } .blog1-feed-link { display:inline-flex; align-items:center; gap:8px; margin:22px 0 0; color:var(--link); font-family:var(--blog1-mono); font-size:14px; font-weight:700; letter-spacing:0; text-transform:uppercase; } .blog1-feed-link:hover { text-decoration:underline; }
+      .blog1-search-trigger { appearance:none; width:100%; display:flex; align-items:center; gap:12px; height:60px; margin-bottom:4px; border:1px solid var(--blog1-line); border-radius:10px; background:var(--blog1-search-trigger-bg); color:var(--blog1-dim); padding:0 20px; font-family:var(--blog1-sans); font-size:16px; text-align:left; cursor:pointer; transition:border-color 180ms ease,color 180ms ease,background 180ms ease,box-shadow 180ms ease; } .blog1-search-trigger:hover,.blog1-search-trigger:focus-visible { border-color:var(--blog1-hover-line); background:var(--blog1-hover-fill); color:var(--blog1-text); box-shadow:0 0 0 1px var(--blog1-hover-ring),0 22px 60px rgba(0,0,0,.28); outline:0; } .blog1-search-icon { color:var(--blog1-search-icon-color); font-size:20px; line-height:1; } .blog1-search-key { display:inline-flex; width:28px; height:28px; align-items:center; justify-content:center; margin-left:auto; border:1px solid var(--blog1-line); border-radius:6px; color:var(--blog1-muted); font-family:var(--blog1-mono); font-size:12px; }
+      .blog1-main { max-width:none; padding:48px 56px 0; } .blog1-featured-image { position:relative; height:clamp(360px,43vw,650px); overflow:hidden; border:1px solid var(--blog1-soft-line); background:var(--blog1-placeholder); } .blog1-cover-img,.blog1-post-image { display:block; width:100%; height:100%; object-fit:cover; } .blog1-has-art { background:var(--blog1-placeholder); } .blog1-featured-copy { padding:32px 0 54px; } .blog1-meta { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:var(--blog1-muted); font-size:15px; } .blog1-tag { display:inline-flex; border:1px solid var(--blog1-line); color:var(--blog1-muted); padding:7px 9px; font-family:var(--blog1-mono); font-size:12px; letter-spacing:0; text-transform:uppercase; } .blog1-dot { width:4px; height:4px; border-radius:50%; background:var(--blog1-line); } .blog1-featured-copy h2 { max-width:980px; margin:28px 0 14px; color:var(--blog1-text); font-size:52px; line-height:1.08; letter-spacing:0; } .blog1-featured-copy p { max-width:920px; margin:0 0 28px; color:var(--blog1-muted); font-size:18px; line-height:1.6; } .blog1-divider { height:1px; background:var(--blog1-line); margin:0 -56px; }
+      .blog1-filter { display:flex; flex-wrap:wrap; gap:8px; padding:26px 0 8px; } .blog1-filter a { border:1px solid var(--blog1-line); border-radius:999px; padding:8px 12px; color:var(--blog1-muted); font-size:13px; } .blog1-filter a:hover { color:var(--blog1-text); border-color:var(--blog1-hover-line); } .blog1-section { scroll-margin-top:24px; padding:72px 0 8px; } .blog1-section-head { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:22px; } .blog1-section h2 { margin:0; font-size:42px; letter-spacing:0; }
+      .blog1-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:28px; } .blog1-card { display:block; color:var(--blog1-text); } .blog1-post-image { height:auto; aspect-ratio:16/9; border:1px solid var(--blog1-soft-line); overflow:hidden; background:var(--blog1-placeholder); } .blog1-card-copy { padding:18px 0 0; } .blog1-card-meta { margin:0 0 10px; color:var(--blog1-dim); font-family:var(--blog1-mono); font-size:12px; letter-spacing:0; text-transform:uppercase; } .blog1-card h3 { margin:0; color:var(--blog1-text); font-size:24px; line-height:1.05; letter-spacing:0; } .blog1-card p:last-child { margin:11px 0 0; color:var(--blog1-muted); font-size:14px; line-height:1.5; }
+      .blog1-detail { display:none; } .blog1-next { margin-top:70px; border:1px solid var(--blog1-line); border-radius:18px; padding:30px; display:flex; justify-content:space-between; gap:24px; align-items:center; } .blog1-next h2 { margin:0; font-family:var(--blog1-serif); font-weight:700; font-size:34px; letter-spacing:-0.02em; }
+      .blog1-search-modal[hidden] { display:none; } .blog1-search-modal { position:fixed; z-index:50; inset:0; display:grid; place-items:start center; padding:8vh 22px 22px; } .blog1-search-backdrop { position:fixed; inset:0; background:radial-gradient(circle at 50% 24%,var(--blog1-popup-glow),transparent 34%),rgba(0,0,0,.78); backdrop-filter:blur(18px); } .blog1-search-panel { position:relative; width:min(760px,100%); max-height:min(720px,86vh); overflow:hidden; border:1px solid var(--blog1-panel-border); border-radius:18px; background:linear-gradient(180deg,var(--blog1-panel-bg-1),var(--blog1-panel-bg-2)),var(--blog1-paper); box-shadow:0 48px 140px rgba(0,0,0,.72),0 0 0 1px var(--blog1-popup-glow); } .blog1-search-panel::before { content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(90deg,transparent,var(--blog1-popup-sheen),transparent) 0 0/100% 1px no-repeat,radial-gradient(circle at 50% 0,var(--blog1-popup-glow),transparent 42%); } .blog1-search-panel-head { position:relative; display:flex; align-items:flex-start; justify-content:space-between; gap:24px; padding:30px 30px 22px; } .blog1-search-panel h2 { margin:0; color:var(--blog1-text); font-family:var(--blog1-serif); font-size:42px; font-weight:700; line-height:1.02; letter-spacing:-0.025em; } .blog1-search-close { appearance:none; display:inline-flex; min-width:72px; height:40px; align-items:center; justify-content:center; border:1px solid var(--blog1-line); border-radius:999px; background:var(--blog1-close-bg); color:var(--blog1-text); font-family:var(--blog1-sans); font-size:13px; font-weight:900; cursor:pointer; } .blog1-search-field { position:relative; display:flex; align-items:center; gap:14px; margin:0 30px; border:1px solid var(--blog1-panel-border); border-radius:14px; background:var(--blog1-field-bg); padding:0 18px; } .blog1-search-field:focus-within { border-color:var(--blog1-hover-line); background:var(--blog1-field-focus-bg); box-shadow:0 0 0 1px var(--blog1-hover-ring); } .blog1-search-field input { width:100%; min-width:0; height:66px; border:0; background:transparent; color:var(--blog1-text); font:500 20px/1.2 var(--blog1-sans); outline:0; } .blog1-search-field input::placeholder { color:var(--blog1-dim); } .blog1-search-hint { flex-shrink:0; color:var(--blog1-dim); font-family:var(--blog1-mono); font-size:12px; letter-spacing:0; text-transform:uppercase; } .blog1-search-results { position:relative; max-height:390px; overflow-y:auto; padding:18px 30px 30px; } .blog1-search-result { display:block; width:100%; border:1px solid transparent; border-radius:12px; background:var(--blog1-result-bg); color:var(--blog1-text); padding:18px; } .blog1-search-result + .blog1-search-result { margin-top:10px; } .blog1-search-result:hover,.blog1-search-result:focus-visible { border-color:var(--blog1-hover-line); background:var(--blog1-hover-fill); outline:0; } .blog1-search-result[hidden],.blog1-search-empty[hidden] { display:none; } .blog1-search-result-meta { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; color:var(--blog1-muted); font-family:var(--blog1-mono); font-size:11px; letter-spacing:0; text-transform:uppercase; } .blog1-search-result-title { display:block; color:var(--blog1-text); font-size:18px; font-weight:900; line-height:1.18; letter-spacing:0; } .blog1-search-result-copy { display:block; margin-top:9px; color:var(--blog1-muted); font-size:13px; line-height:1.5; } .blog1-search-empty { margin:18px 0 0; border:1px solid var(--blog1-line); border-radius:12px; color:var(--blog1-muted); padding:22px; text-align:center; } body.blog1-search-open { overflow:hidden; }
+      @media (max-width:1100px) { .blog1-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .blog1-hero { grid-template-columns:1fr; } .blog1-hero h1 { font-size:76px; } .blog1-featured-copy h2 { font-size:48px; } .blog1-section h2 { font-size:40px; } .blog1-search-panel h2 { font-size:42px; } } @media (max-width:760px) { body { background:var(--blog1-bg); } .blog1-shell { border:0; } .blog1-hero { padding:70px 20px 34px; } .blog1-hero h1 { font-size:48px; } .blog1-main { padding:32px 20px 0; } .blog1-divider { margin:0 -20px; } .blog1-featured-copy h2 { font-size:34px; } .blog1-section h2 { font-size:30px; } .blog1-search-panel h2 { font-size:34px; } .blog1-grid { grid-template-columns:1fr; gap:22px; } .blog1-section-head { display:block; } }
+    </style>
+    {% include "partials/site-header.html" %}
+    {% include "partials/site-footer.html" %}
+{% endblock %}
+{% block body %}
+    <div data-forkmesh-header="simple"></div>
+    <div class="blog1-shell">
+      <section class="blog1-hero">
+        <div>
+          <p class="blog1-eyebrow">Blog</p>
+          <h1>Our latest <span class="blog1-mono">articles</span></h1>
+          <p class="blog1-subhead">Every ForkMesh feature now has a short technical post, and product updates from the live project appear alongside them.</p>
+          <a class="blog1-feed-link" href="/blog/rss.xml">RSS feed<span aria-hidden="true">→</span></a>
+        </div>
+        <button class="blog1-search-trigger" type="button" aria-haspopup="dialog" aria-controls="blog-search-modal" data-blog-search-open><span class="blog1-search-icon" aria-hidden="true">⌕</span><span>Search every article</span><span class="blog1-search-key" aria-hidden="true">/</span></button>
+      </section>
+      <main class="blog1-main">
+        <a class="blog1-featured" href="/blog/forkmesh-forever/">
+          <div class="blog1-featured-image blog1-has-art"><img class="blog1-cover-img" src="/assets/blog/features/forkmesh-forever.webp" alt=""></div>
+          <div class="blog1-featured-copy">
+            <div class="blog1-meta"><span class="blog1-tag">Featured</span><span>July 28, 2026</span><span class="blog1-dot"></span><span>Product update · 2:27 video</span></div>
+            <h2>ForkMesh Forever: a full-song tour through the mesh</h2>
+            <p>A 2:27 trip through ForkMesh World: mirror a repository, bring a node online, route a clone, carry signed collaboration, and turn agent work into a reviewed change.</p>
+            <span class="blog1-button">Watch the film</span>
+          </div>
+        </a>
+        <div class="blog1-divider"></div>
+        <nav class="blog1-filter" aria-label="Feature post categories"><a href="#product-updates">Product updates</a><a href="#feature-mesh">Distributed hosting</a><a href="#feature-signed">Signed collaboration</a><a href="#feature-issues">Issues &amp; planning</a><a href="#feature-pulls">Pull requests &amp; review</a><a href="#feature-agents">AI agents</a><a href="#feature-ci">CI, releases &amp; distribution</a><a href="#feature-chat">Chat &amp; private sharing</a><a href="#feature-desktop">Desktop app</a><a href="#feature-money">Accounts &amp; rewards</a><a href="#feature-everywhere">Mobile, web &amp; IDE</a></nav>
+        <section class="blog1-section" id="product-updates">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Product updates</p>
+            <h2>What we're building now</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/start-your-own-forkmesh/" data-published="2026-10-07" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/start-your-own-forkmesh.webp" alt="The Start your own instance page: a line saying it sets up Git hosting, repositories, chat and agents under your own name on your own server in about fifteen minutes, then step 1, Name your project, with an Acme Code preview marked Powered by ForkMesh, and step 2, Your server, asking for an IP address, SSH user and port">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Announcement · October 7, 2026</p>
+              <h3>Start your own ForkMesh</h3>
+              <p>Your name, your server, your domain: forkmesh.com/start sets up Git hosting, repositories, chat and agents of your own on a VPS and shows every step live.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/forkmesh-coaster/" data-published="2026-10-07" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/forkmesh-coaster.webp" alt="A rider's avatar in the front car of a ForkMesh World roller coaster climbing the lift hill into a golden sunset, its rails glowing cyan and light streaking past, with two vertical loops, drone rings and the rest of the track running off across sand and grass behind, and the ForkMesh logo in the corner">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Announcement · October 7, 2026</p>
+              <h3>Ride the ForkMesh coaster</h3>
+              <p>A roller coaster now circles the town in the ForkMesh World: a double loop, a ramp jump into free fall, airtime hills, a corkscrew and a tunnel, about 75 seconds a lap.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/runs-that-listen-branches-that-let-go/" data-published="2026-10-07" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/runs-that-listen-branches-that-let-go.webp" alt="A rain-wet stone clearing at night where a glowing green runner tower sends a thread of cyan light to a phone resting on a rock, while faint branch paths fade into the forest behind them; the official ForkMesh logo and its vertical reflection stand in the foreground">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · October 7, 2026</p>
+              <h3>Runs that listen, branches that let go</h3>
+              <p>Follow-ups reach cloud runs and phones watch them live. Merged pull requests stop leaving branches behind, and the phones pick up more of the desktop.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/the-work-keeps-its-place/" data-published="2026-10-04" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/the-work-keeps-its-place.webp" alt="A moonlit wet-stone clearing connects a glowing repository prism to a browser workstation, a phone, and a glass office pavilion, with the official ForkMesh logo and its vertical reflection in the foreground">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · October 4, 2026</p>
+              <h3>The work keeps its place</h3>
+              <p>Hosted repositories can finish web merges on their cores. Runner work is easier to follow, phones carry more Git, and the Office remembers where people work.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/brief-reports-clear-signals/" data-published="2026-10-02" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/brief-reports-clear-signals.webp" alt="A moonlit tech scene showing a glowing green desktop workstation on the left, a phone on the right with antenna signals and Reddit indicator, four illuminated data nodes in the center, and the official ForkMesh logo with vertical reflection on wet stone">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · October 2, 2026</p>
+              <h3>Brief reports, clear signals</h3>
+              <p>A Reddit scout teammate joins. Your phone's pings get icons and states. iOS accelerometer powers fitness tracking with HealthKit. Relay connections light up on your desktop indicator.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/1-2-7-and-a-phone-that-listens/" data-published="2026-10-02" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/1-2-7-and-a-phone-that-listens.webp" alt="A rainy, moonlit clearing in a pine forest: a glowing green workstation screen on a stone plinth at left, a phone at right sending out cyan sound rings and chat bubbles that dissolve into the sky, four lit crates in the middle, and the official ForkMesh logo with its vertical reflection on the wet ground in front">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · October 2, 2026</p>
+              <h3>1.2.7, and a phone that listens</h3>
+              <p>Desktop 1.2.7 fixes the Windows clean install and brings the native Android app. Your phone can start desktop agents and take spoken prompts, and direct messages leave the server once delivered.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/office-identity/" data-published="2026-10-01" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/office-identity.webp" alt="A moonlit office desk with a glowing green terminal, a developer's workspace with signed identity token visible, a mirror reflection on wet stone, and the official ForkMesh logo in the foreground">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · October 1, 2026</p>
+              <h3>Office identity</h3>
+              <p>Developers now stay signed in across Office reloads and team switches. The desktop cleans up agent cloud runs on merge.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/the-week-after-the-move/" data-published="2026-09-30" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/the-week-after-the-move.webp" alt="Three glowing green server monoliths stand on wet stone in a moonlit forest beside a lit glass office pavilion, a small robot at a workbench and an overgrown, unlit cloud-shaped frame; the official ForkMesh logo and its vertical reflection stand in the foreground">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · September 30, 2026</p>
+              <h3>The week after the move</h3>
+              <p>The last of Cloudflare switched off, cloud agents that finish their own work, an office you can walk around in, a much faster World, the Flutter app deleted, and safer updates.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/open-collective/" data-published="2026-09-28" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/open-collective.webp" alt="The Forkmesh page on Open Collective: a gray F avatar, an Organization badge, the one-line description, a Submit expense button and two admins">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Announcement · September 28, 2026</p>
+              <h3>ForkMesh is on Open Collective</h3>
+              <p>ForkMesh has a page on Open Collective now. It went up today and it's still mostly empty; here is what it's for and what's on it so far.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/three-small-servers/" data-published="2026-09-24" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/three-small-servers.webp" alt="The forkmesh/forkmesh repository page on ForkMesh Next, with the file list on the left and the About rail on the right">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · September 24, 2026</p>
+              <h3>Three small servers and a long September</h3>
+              <p>ForkMesh Next on three servers of our own, a much faster repository page, agents on separate runners, phone updates, ten desktop releases, and a Windows startup bug.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/signals-that-lead-somewhere/" data-published="2026-09-01" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/signals-that-lead-somewhere.webp" alt="A moonlit glass signal prism connects a monitoring beacon, coding teammate workbench, and three channel capsules on wet stone; the official ForkMesh logo and its vertical reflection stand in the foreground">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · September 1, 2026</p>
+              <h3>Signals that lead somewhere</h3>
+              <p>Durable usage pings, contextual teammate follow-ups, responsive diagnostics, and lower-noise status checks land on current main.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/proof-before-promises/" data-published="2026-09-01" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/proof-before-promises.webp" alt="A moonlit glass repository prism connects an evidence ledger, guarded teammate workbench, and release beacon on wet stone; the official ForkMesh logo and its vertical reflection stand in the foreground">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · September 1, 2026</p>
+              <h3>Proof before promises</h3>
+              <p>A clearer product contract, human-gated agent work, honest routing language, and release evidence land on current main.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/the-mirror-becomes-a-front-door/" data-published="2026-08-31" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/the-mirror-becomes-a-front-door.webp" alt="A moonlit glass gateway links an independent green mirror capsule to a repository workbench, phone, and modular tools, while the official ForkMesh logo and its full vertical reflection stand on wet stone">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 31, 2026</p>
+              <h3>The mirror becomes a front door</h3>
+              <p>Independent mirror pages, a focused mobile coding agent, modular work tools, and faster task loops land on current main.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/the-mesh-keeps-moving/" data-published="2026-08-28" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/the-mesh-keeps-moving.webp" alt="A moonlit ForkMesh workbench with four coding robots around a glass repository node, independent mirror capsules, a portable identity token, and the official ForkMesh logo reflected on wet stone">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 28, 2026</p>
+              <h3>The mesh keeps moving</h3>
+              <p>Shared teammate runs, portable identity and mobile-node groundwork, sealed private chat, and more honest mirror recovery land on current main.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/the-teammate-who-asks-what-should-leave/" data-published="2026-08-25" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/the-teammate-who-asks-what-should-leave.webp" alt="A hooded Reaper robot studies a transparent evidence ledger beside one intact amber feature capsule, while the official ForkMesh logo and its mirror reflection stand among cyan and green capsules in a moonlit forest">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 25, 2026</p>
+              <h3>The teammate who asks what should leave</h3>
+              <p>Reaper makes one evidence-backed retirement case at a time—without deleting code—while current main strengthens team feedback, mirror recovery, and verified payments.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/a-wider-door-a-clearer-trail/" data-published="2026-08-22" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/a-wider-door-a-clearer-trail.webp" alt="The official ForkMesh FM cube stands in a glass mirror portal, reflected on wet stone as Git branches enter and package capsules, workflow checks, mirror nodes, and a signed release continue through a moonlit forest">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 22, 2026</p>
+              <h3>A wider door, a clearer trail</h3>
+              <p>v0.7.29 brings resumable migrations, a signed package lifecycle, clearer live workflows, and sturdier receipts across mirrors and payments.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/a-team-around-the-work/" data-published="2026-08-18" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/a-team-around-the-work.webp" alt="Three coding-assistant robots work around a luminous repository crystal as a glass review arc, violet chat signal, and three mirror pods connect through a moonlit forest">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 18, 2026</p>
+              <h3>A team around the work</h3>
+              <p>Repository-backed AI teammates, embedded Discord, clearer review progress, and stricter mirror authority bring more of the work into one place.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/shorter-loops-stronger-proof/" data-published="2026-08-17" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/shorter-loops-stronger-proof.webp" alt="A moonlit coding robot, glass review gate, three mirror nodes, and a crystalline proof ring joined by one cyan and green circuit">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 17, 2026</p>
+              <h3>Shorter loops, stronger proof</h3>
+              <p>Faster review, native mirror intake, shared calendars, and verifiable rewards shorten the path from a report to public proof.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/one-app-one-mesh/" data-published="2026-08-08" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/one-app-one-mesh.webp" alt="One luminous ForkMesh core connected to a public website, an optional World, and five healthy mirror nodes">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 8, 2026</p>
+              <h3>One app, one mesh</h3>
+              <p>One complete app and API deployment for every ForkMesh operator, with an optional World, selective deploys, and cleaner mirrors.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/safer-rooms-steadier-mirrors/" data-published="2026-08-05" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/safer-rooms-steadier-mirrors.webp" alt="A coding agent inside a moonlit glass virtual-machine chamber connected to three compact mirror nodes in a cyan and green loop">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 5, 2026</p>
+              <h3>Safer rooms, steadier mirrors</h3>
+              <p>Opt-in KVM agent isolation, a released Go mirror runtime, clearer desktop diagnostics, a lighter World, and carefully bounded mobile Git groundwork.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/a-week-closer-to-the-mesh/" data-published="2026-08-03" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/a-week-closer-to-the-mesh.webp" alt="A moonlit ForkMesh World with a repository dome, connected mirror nodes, a desktop Git graph, and two coding agents">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · August 3, 2026</p>
+              <h3>A week closer to the mesh</h3>
+              <p>Six days of progress across the desktop app, durable agent branches, independent mirror nodes, and a clearer, lighter ForkMesh World.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/forkmesh-forever/" data-published="2026-07-28" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/forkmesh-forever.webp" alt="ForkMesh Forever end frame showing connected mirror nodes around the message Run a node. Mirror a repo. Keep code available.">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · July 28, 2026 · 2:27 video</p>
+              <h3>ForkMesh Forever: a full-song tour through the mesh</h3>
+              <p>A 2:27 trip through ForkMesh World: mirror a repository, bring a node online, route a clone, carry signed collaboration, and turn agent work into a reviewed change.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/building-forkmesh-in-the-open/" data-published="2026-07-27" data-section="updates">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/building-forkmesh-in-the-open.webp" alt="ForkMesh Office, task board, mirror node, and coding agents in a moonlit forest">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Product update · July 27, 2026</p>
+              <h3>Building ForkMesh in the open</h3>
+              <p>A field report from the current build round: a smoother World and Office, stronger mirror workflows, clearer pull-request review, and coding agents that work with the team.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-mesh">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Distributed hosting</p>
+            <h2>Distributed hosting &amp; preservation</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/desktop-node-mirrors/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/desktop-node-mirrors.webp" alt="Abstract ForkMesh artwork for Desktop-node mirrors">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 01</p>
+              <h3>Desktop-node mirrors</h3>
+              <p>Actively mirrored repositories live on independent nodes and refresh while configured synchronization is healthy; external stubs stay labeled.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/zero-custody-relay/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/zero-custody-relay.webp" alt="Abstract ForkMesh artwork for a packfile-free routing relay">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 02</p>
+              <h3>Packfile-free routing relay</h3>
+              <p>The routing service stores signed discovery and health metadata, not Git packfiles. Repository bytes stream from selected independent origins over HTTPS.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/live-clone-routing/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/live-clone-routing.webp" alt="Abstract ForkMesh artwork for Live clone routing">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 03</p>
+              <h3>Live clone routing</h3>
+              <p>Git Smart HTTP keeps the public ForkMesh URL while the Worker selects a signed, healthy, integrity-verified mirror behind it.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/streaming-transfers/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/streaming-transfers.webp" alt="Abstract ForkMesh artwork for Streaming transfers">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 04</p>
+              <h3>Streaming transfers</h3>
+              <p>Git packs stream over ordinary HTTPS from a selected mirror and are never retained as repository storage by the routing proxy or its database.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/mirror-failover/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/mirror-failover.webp" alt="Abstract ForkMesh artwork for Mirror failover">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 05</p>
+              <h3>Mirror failover</h3>
+              <p>When an eligible, healthy, integrity-matching mirror exists, ForkMesh can fail over behind the same public URL and keep a clone exchange sticky.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/source-attested-integrity/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/source-attested-integrity.webp" alt="Abstract ForkMesh artwork for Source-attested integrity">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 06</p>
+              <h3>Source-attested integrity</h3>
+              <p>Fallback serving is checked against integrity pins attested by the source of truth, so a mirror can prove it's handing you the same history the author published.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/root-commit-identity/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/root-commit-identity.webp" alt="Abstract ForkMesh artwork for Root-commit identity">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 07</p>
+              <h3>Root-commit identity</h3>
+              <p>Reported mirrors can be grouped by a signed repository root commit, independent of the local name each host chose.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/headless-mirror-nodes/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/headless-mirror-nodes.webp" alt="Abstract ForkMesh artwork for Headless mirror nodes">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 08</p>
+              <h3>Headless mirror nodes</h3>
+              <p>One command turns any Linux box or VM into a mirror node. The installer registers its account, syncs its repositories, and starts serving, no GUI required.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/public-network-map/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/public-network-map.webp" alt="Abstract ForkMesh artwork for Public network map">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 09</p>
+              <h3>Public network map</h3>
+              <p>The network page shows recently verified public nodes, generalized mirror health, and operator-approved optional telemetry.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/presence-done-right/" data-published="2026-07-04" data-section="mesh">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/presence-done-right.webp" alt="Abstract ForkMesh artwork for Presence done right">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Distributed hosting · Feature 10</p>
+              <h3>Presence done right</h3>
+              <p>Bounded heartbeats, expiry, and live probes reduce stale presence while allowing the deliberately minimal real-time layer to lag.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-signed">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Signed collaboration</p>
+            <h2>Signed, portable collaboration</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/ed25519-identity/" data-published="2026-07-04" data-section="signed">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/ed25519-identity.webp" alt="Abstract ForkMesh artwork for Ed25519 identity">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Signed collaboration · Feature 11</p>
+              <h3>Ed25519 identity</h3>
+              <p>Nodes and people are identified by local Ed25519 keys. Profiles, catalog records, and every collaboration event carry a signature you can check yourself.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/signed-issue-events/" data-published="2026-07-04" data-section="signed">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/signed-issue-events.webp" alt="Abstract ForkMesh artwork for Signed issue events">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Signed collaboration · Feature 12</p>
+              <h3>Signed issue events</h3>
+              <p>Every issue open, comment, edit, and close is a signed event. Authorship is verifiable no matter which node, or which mirror, served you the data.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/signed-patch-pull-requests/" data-published="2026-07-04" data-section="signed">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/signed-patch-pull-requests.webp" alt="Abstract ForkMesh artwork for Signed patch pull requests">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Signed collaboration · Feature 13</p>
+              <h3>Signed patch pull requests</h3>
+              <p>PRs are signed patch submissions. Anyone can propose a change to any repository in the mesh and the maintainer can verify exactly who sent what.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/everything-lives-in-git/" data-published="2026-07-04" data-section="signed">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/everything-lives-in-git.webp" alt="Abstract ForkMesh artwork for Everything lives in Git">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Signed collaboration · Feature 14</p>
+              <h3>Everything lives in Git</h3>
+              <p>Issues, pull requests, discussions, and release notes are files committed to the repository. Clone the repo and you own the whole project history, code and conversation alike.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/web-contribution-inbox/" data-published="2026-07-04" data-section="signed">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/web-contribution-inbox.webp" alt="Abstract ForkMesh artwork for Web contribution inbox">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Signed collaboration · Feature 15</p>
+              <h3>Web contribution inbox</h3>
+              <p>Visitors can file issues and pull requests from the website even while the owner is offline. Signed submissions wait in an inbox; the owner reviews, commits, and the mesh syncs back.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/branch-backed-and-patch-backed-prs/" data-published="2026-07-04" data-section="signed">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/branch-backed-and-patch-backed-prs.webp" alt="Abstract ForkMesh artwork for Branch-backed &amp; patch-backed PRs">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Signed collaboration · Feature 16</p>
+              <h3>Branch-backed &amp; patch-backed PRs</h3>
+              <p>Pull requests can ride a live branch (diffs derived straight from the head ref) or carry a stored patch for cross-node and offline submissions; both merge the same way.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/binary-safe-patches/" data-published="2026-07-04" data-section="signed">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/binary-safe-patches.webp" alt="Abstract ForkMesh artwork for Binary-safe patches">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Signed collaboration · Feature 17</p>
+              <h3>Binary-safe patches</h3>
+              <p>Patches embed binary content, so images, fonts, and other assets survive the trip and merge cleanly, with a proper placeholder and badge in the diff view.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-issues">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Issues &amp; planning</p>
+            <h2>Issues &amp; planning</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/full-issue-tracker/" data-published="2026-07-04" data-section="issues">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/full-issue-tracker.webp" alt="Abstract ForkMesh artwork for Full issue tracker">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Issues &amp; planning · Feature 18</p>
+              <h3>Full issue tracker</h3>
+              <p>Open and closed states, priorities, assignees, and custom fields, all stored as signed events in the repository and browsable on the web.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/kanban-board/" data-published="2026-07-04" data-section="issues">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/kanban-board.webp" alt="Abstract ForkMesh artwork for Kanban board">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Issues &amp; planning · Feature 19</p>
+              <h3>Kanban board</h3>
+              <p>Drag issues across columns to plan work visually, right inside the desktop app.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/milestones-with-progress/" data-published="2026-07-04" data-section="issues">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/milestones-with-progress.webp" alt="Abstract ForkMesh artwork for Milestones with progress">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Issues &amp; planning · Feature 20</p>
+              <h3>Milestones with progress</h3>
+              <p>Group issues into milestones and watch live progress bars fill as work lands.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/burnup-charts/" data-published="2026-07-04" data-section="issues">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/burnup-charts.webp" alt="Abstract ForkMesh artwork for Burnup charts">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Issues &amp; planning · Feature 21</p>
+              <h3>Burnup charts</h3>
+              <p>Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/quick-add-from-anywhere/" data-published="2026-07-04" data-section="issues">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/quick-add-from-anywhere.webp" alt="Abstract ForkMesh artwork for Quick-add from anywhere">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Issues &amp; planning · Feature 22</p>
+              <h3>Quick-add from anywhere</h3>
+              <p>A prompt-style quick-add box captures an issue in one line, and can hand it straight to an AI agent as it's filed.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/issues-prs-that-talk/" data-published="2026-07-04" data-section="issues">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/issues-prs-that-talk.webp" alt="Abstract ForkMesh artwork for Issues ↔ PRs that talk">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Issues &amp; planning · Feature 23</p>
+              <h3>Issues ↔ PRs that talk</h3>
+              <p>Merge a pull request and its linked issue closes itself. One checkbox syncs the merge straight to main.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-pulls">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Pull requests &amp; review</p>
+            <h2>Pull requests &amp; review</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/rich-diffs/" data-published="2026-07-04" data-section="pulls">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/rich-diffs.webp" alt="Abstract ForkMesh artwork for Rich diffs">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Pull requests &amp; review · Feature 24</p>
+              <h3>Rich diffs</h3>
+              <p>Syntax-aware diffs with side-by-side image comparison and clear badges for binary changes, in the app and on the web.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/real-mergeability-checks/" data-published="2026-07-04" data-section="pulls">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/real-mergeability-checks.webp" alt="Abstract ForkMesh artwork for Real mergeability checks">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Pull requests &amp; review · Feature 25</p>
+              <h3>Real mergeability checks</h3>
+              <p>Every PR is checked with a true three-way merge against the live base branch, so "can merge" reflects a real merge against the current base.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/review-conversations/" data-published="2026-07-04" data-section="pulls">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/review-conversations.webp" alt="Abstract ForkMesh artwork for Review conversations">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Pull requests &amp; review · Feature 26</p>
+              <h3>Review conversations</h3>
+              <p>Inline comment threads, emoji reactions, and Markdown everywhere, signed like every other event.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/ai-code-review/" data-published="2026-07-04" data-section="pulls">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/ai-code-review.webp" alt="Abstract ForkMesh artwork for AI code review">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Pull requests &amp; review · Feature 27</p>
+              <h3>AI code review</h3>
+              <p>One click asks an AI reviewer for findings, each anchored to the exact lines as a mini-diff suggestion. Apply a single quick-fix or fix everything at once.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/ai-conflict-resolution/" data-published="2026-07-04" data-section="pulls">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/ai-conflict-resolution.webp" alt="Abstract ForkMesh artwork for AI conflict resolution">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Pull requests &amp; review · Feature 28</p>
+              <h3>AI conflict resolution</h3>
+              <p>When a merge conflicts, hand the conflict to an agent that edits the files in place and reports back, no manual &lt;&lt;&lt;&lt;&lt;&lt;&lt; spelunking.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/merge-from-anywhere/" data-published="2026-07-04" data-section="pulls">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/merge-from-anywhere.webp" alt="Abstract ForkMesh artwork for Merge from anywhere">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Pull requests &amp; review · Feature 29</p>
+              <h3>Merge from anywhere</h3>
+              <p>Merge from the desktop client with the branch view, the PR view, or straight from an agent's completed session.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-agents">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">AI agents</p>
+            <h2>AI agents, built in</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/assign-any-issue-to-an-agent/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/assign-any-issue-to-an-agent.webp" alt="Abstract ForkMesh artwork for Assign any issue to an agent">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 30</p>
+              <h3>Assign any issue to an agent</h3>
+              <p>From the issue detail, the quick-add box, or even the website's new-issue form: one click sends the issue to Claude Code or Codex, which works the issue and opens a PR when it's done.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/dedicated-agent-worktrees/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/dedicated-agent-worktrees.webp" alt="Abstract ForkMesh artwork for Dedicated agent worktrees">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 31</p>
+              <h3>Dedicated agent worktrees</h3>
+              <p>Each session runs on its own branch in its own worktree, so agents never trample your working tree, and finished work arrives as a reviewable pull request automatically.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/parallel-agents/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/parallel-agents.webp" alt="Abstract ForkMesh artwork for Parallel agents">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 32</p>
+              <h3>Parallel agents</h3>
+              <p>Run as many agents as you like across your issues at once, with live activity indicators showing who's working right now.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/resumable-sessions/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/resumable-sessions.webp" alt="Abstract ForkMesh artwork for Resumable sessions">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 33</p>
+              <h3>Resumable sessions</h3>
+              <p>Pick any conversation back up where it left off: sessions persist, survive restarts, and keep their full context.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/rich-live-transcripts/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/rich-live-transcripts.webp" alt="Abstract ForkMesh artwork for Rich live transcripts">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 34</p>
+              <h3>Rich live transcripts</h3>
+              <p>Agent sessions render as a live, structured transcript: tool calls, diffs, and results as cards, with a raw-output toggle for the curious.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/agents-can-ask-you-questions/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/agents-can-ask-you-questions.webp" alt="Abstract ForkMesh artwork for Agents can ask you questions">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 35</p>
+              <h3>Agents can ask you questions</h3>
+              <p>When an agent needs a decision, it asks, and the transcript shows an interactive multiple-choice card. Click an answer and the agent continues.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/native-terminal/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/native-terminal.webp" alt="Abstract ForkMesh artwork for Native terminal">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 36</p>
+              <h3>Native terminal</h3>
+              <p>A real VT100 terminal widget renders agent sessions with full color and emoji, not a flat log viewer.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/your-app-is-the-ide/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/your-app-is-the-ide.webp" alt="Abstract ForkMesh artwork for Your app is the IDE">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 37</p>
+              <h3>Your app is the IDE</h3>
+              <p>The desktop app speaks the Claude Code IDE protocol: run claude in a repo and it connects to ForkMesh for diff views and selection context, just like an editor extension.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/live-usage-meter/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/live-usage-meter.webp" alt="Abstract ForkMesh artwork for Live usage meter">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 38</p>
+              <h3>Live usage meter</h3>
+              <p>See your Claude 5-hour and weekly usage right in the app, so you know how much agent runway is left.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/custom-agent-instructions/" data-published="2026-07-04" data-section="agents">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/custom-agent-instructions.webp" alt="Abstract ForkMesh artwork for Custom agent instructions">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">AI agents · Feature 39</p>
+              <h3>Custom agent instructions</h3>
+              <p>Replace the built-in agent workflow with your own preamble in Settings; your rules govern every session.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-ci">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">CI, releases &amp; distribution</p>
+            <h2>CI, releases &amp; distribution</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/actions/" data-published="2026-07-04" data-section="ci">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/actions.webp" alt="Abstract ForkMesh artwork for Actions">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">CI, releases &amp; distribution · Feature 40</p>
+              <h3>Actions</h3>
+              <p>Shell-step workflows run on push on your own desktop or an opt-in mirror, with the live log one click away in the app.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/artifacts/" data-published="2026-07-04" data-section="ci">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/artifacts.webp" alt="Abstract ForkMesh artwork for Artifacts">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">CI, releases &amp; distribution · Feature 41</p>
+              <h3>Artifacts</h3>
+              <p>Workflow outputs are collected per run and browsable from the repository's Artifacts tab.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/releases-and-tags/" data-published="2026-07-04" data-section="ci">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/releases-and-tags.webp" alt="Abstract ForkMesh artwork for Releases &amp; tags">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">CI, releases &amp; distribution · Feature 42</p>
+              <h3>Releases &amp; tags</h3>
+              <p>Browse tags, mark the current release, and cut new releases in seconds; release notes live in the repository like everything else.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/content-addressed-release-storage/" data-published="2026-07-04" data-section="ci">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/content-addressed-release-storage.webp" alt="Abstract ForkMesh artwork for Content-addressed release storage">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">CI, releases &amp; distribution · Feature 43</p>
+              <h3>Content-addressed release storage</h3>
+              <p>Release binaries live in a content-addressed store keyed by SHA-256, keeping the Git history lean while downloads stay verifiable end-to-end.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/one-line-installer/" data-published="2026-07-04" data-section="ci">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/one-line-installer.webp" alt="Abstract ForkMesh artwork for One-line installer">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">CI, releases &amp; distribution · Feature 44</p>
+              <h3>One-line installer</h3>
+              <p>curl ... | sh installs the desktop or headless node with SHA-256-verified binaries, and a matching one-line uninstaller when you need it.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/quality-and-security-tabs/" data-published="2026-07-04" data-section="ci">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/quality-and-security-tabs.webp" alt="Abstract ForkMesh artwork for Quality &amp; Security tabs">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">CI, releases &amp; distribution · Feature 45</p>
+              <h3>Quality &amp; Security tabs</h3>
+              <p>Per-repository quality and security views keep checks, advisories, and repository health next to the code they describe.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/insights/" data-published="2026-07-04" data-section="ci">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/insights.webp" alt="Abstract ForkMesh artwork for Insights">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">CI, releases &amp; distribution · Feature 46</p>
+              <h3>Insights</h3>
+              <p>Contribution and activity insights per repository show where the energy is going.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-chat">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Chat &amp; private sharing</p>
+            <h2>Chat &amp; private sharing</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/encrypted-repo-rooms/" data-published="2026-07-04" data-section="chat">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/beyond-the-room-key.webp" alt="A protected message travels inside nested cyan and violet envelopes from a metallic ForkMesh node to several device nodes">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Chat &amp; private sharing · Feature 47</p>
+              <h3>Encrypted repo rooms</h3>
+              <p>Public rooms are controller-readable for integrations; private channels add automatic device-to-device encryption. Up to 500 persisted frames remain for 7 days.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/direct-messages/" data-published="2026-07-04" data-section="chat">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/direct-messages.webp" alt="Abstract ForkMesh artwork for Direct messages">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Chat &amp; private sharing · Feature 48</p>
+              <h3>Direct messages</h3>
+              <p>Message a node operator with automatic device-to-device encryption beyond the controller's room key.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/coves/" data-published="2026-07-04" data-section="chat">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/coves.webp" alt="Abstract ForkMesh artwork for Coves">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Chat &amp; private sharing · Feature 49</p>
+              <h3>Coves</h3>
+              <p>Encrypted vaults for the things that don't belong in a repo: notes, credentials, plans. Documents live inside authenticated ciphertext, and every unlock is recorded in an access log the creator can audit.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/discussions/" data-published="2026-07-04" data-section="chat">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/discussions.webp" alt="Abstract ForkMesh artwork for Discussions">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Chat &amp; private sharing · Feature 50</p>
+              <h3>Discussions</h3>
+              <p>Longer-form threaded conversations per repository, signed, synced, and browsable like issues.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/web-chat/" data-published="2026-07-04" data-section="chat">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/web-chat.webp" alt="Abstract ForkMesh artwork for Web chat">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Chat &amp; private sharing · Feature 51</p>
+              <h3>Web chat</h3>
+              <p>Join the conversation from the browser too, the website speaks the same room protocol as the desktop app.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-desktop">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Desktop app</p>
+            <h2>The desktop app</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/complete-repository-workspace/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/complete-repository-workspace.webp" alt="Abstract ForkMesh artwork for Complete repository workspace">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 52</p>
+              <h3>Complete repository workspace</h3>
+              <p>Code, Commits, Issues, Agents, Pull requests, Discussions, Actions, Security, Quality, Insights, Branches, Worktrees, Releases, Mirror nodes, Artifacts, Shortcuts, and Settings, every view one click apart.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/source-control-and-worktrees/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/source-control-and-worktrees.webp" alt="Abstract ForkMesh artwork for Source control &amp; worktrees">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 53</p>
+              <h3>Source control &amp; worktrees</h3>
+              <p>Stage, commit, branch, and manage multiple worktrees from the app, including the worktrees your agents are working in.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/voice-dictation/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/voice-dictation.webp" alt="Abstract ForkMesh artwork for Voice dictation">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 54</p>
+              <h3>Voice dictation</h3>
+              <p>Dictate issues, comments, and prompts with built-in Whisper speech recognition, transcribed locally, streamed live as you speak.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/screenshot-and-markup/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/screenshot-and-markup.webp" alt="Abstract ForkMesh artwork for Screenshot &amp; markup">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 55</p>
+              <h3>Screenshot &amp; markup</h3>
+              <p>Capture any region of the screen, annotate it with built-in drawing tools, and drop it straight into an issue, PR, or chat.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/markdown-everywhere/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/markdown-everywhere.webp" alt="Abstract ForkMesh artwork for Markdown everywhere">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 56</p>
+              <h3>Markdown everywhere</h3>
+              <p>A proper Markdown editor with preview for issues, PRs, discussions, and chat, plus emoji reactions and cross-references that link issues, PRs, and commits together.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/qr-handoffs/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/qr-handoffs.webp" alt="Abstract ForkMesh artwork for QR handoffs">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 57</p>
+              <h3>QR handoffs</h3>
+              <p>Repos, invites, and addresses render as QR codes for instant scannable handoff to a phone.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/keyboard-first-navigation/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/keyboard-first-navigation.webp" alt="Abstract ForkMesh artwork for Keyboard-first navigation">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 58</p>
+              <h3>Keyboard-first navigation</h3>
+              <p>Shortcuts for every major view and arrow-key navigation across tables keep your hands on the keyboard.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/fork-with-intent/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/fork-with-intent.webp" alt="Abstract ForkMesh artwork for Fork with intent">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 59</p>
+              <h3>Fork with intent</h3>
+              <p>Fork any repository in the mesh and choose exactly where the copy lands in your working tree.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/built-to-stay-up/" data-published="2026-07-04" data-section="desktop">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/built-to-stay-up.webp" alt="Abstract ForkMesh artwork for Built to stay up">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Desktop app · Feature 60</p>
+              <h3>Built to stay up</h3>
+              <p>A crash handler, a UI stall watchdog, network backoff, and a network activity log keep long-running nodes healthy, and tell you exactly what happened when something hiccups.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-money">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Accounts &amp; rewards</p>
+            <h2>Accounts, money &amp; rewards</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/anonymous-accounts/" data-published="2026-07-04" data-section="money">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/anonymous-accounts.webp" alt="Abstract ForkMesh artwork for guest-first access">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Accounts &amp; rewards · Feature 61</p>
+              <h3>Guest-first access</h3>
+              <p>Enter the world immediately as a guest; registered accounts use email, password, and email verification.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/public-node-profiles/" data-published="2026-07-04" data-section="money">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/public-node-profiles.webp" alt="Abstract ForkMesh artwork for Public node profiles">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Accounts &amp; rewards · Feature 62</p>
+              <h3>Public node profiles</h3>
+              <p>Registered nodes can publish a generalized profile, public repositories, and operator-approved status fields.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/solana-donations/" data-published="2026-07-04" data-section="money">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/solana-donations.webp" alt="Abstract ForkMesh artwork for Solana donations">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Accounts &amp; rewards · Feature 63</p>
+              <h3>Solana donations</h3>
+              <p>Publish a self-custodial address or contribute directly from your wallet to a transparent public reward pool. ForkMesh never stores contributors’ or recipients’ wallet private keys.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/make-it-rain/" data-published="2026-07-04" data-section="money">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/make-it-rain.webp" alt="Abstract ForkMesh artwork for Make it rain">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Accounts &amp; rewards · Feature 64</p>
+              <h3>Make it rain</h3>
+              <p>Choose an immediate all-eligible-node distribution or fund the transparent pool for later randomized community incentives.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/issue-bounties/" data-published="2026-07-04" data-section="money">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/issue-bounties.webp" alt="Abstract ForkMesh artwork for Issue bounties">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Accounts &amp; rewards · Feature 65</p>
+              <h3>Issue bounties</h3>
+              <p>The earlier issue-bounty flow is retired. Funding and payouts are switched off, and historical records are read-only.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/mirror-rewards/" data-published="2026-07-04" data-section="money">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/mirror-rewards.webp" alt="Abstract ForkMesh artwork for Mirror rewards">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Accounts &amp; rewards · Feature 66</p>
+              <h3>Mirror rewards</h3>
+              <p>A transparent mainnet-beta community pool may reward eligible, integrity-verified mirrors through an owner-controlled local signer.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-section" id="feature-everywhere">
+          <div class="blog1-section-head">
+            <p class="blog1-eyebrow">Mobile, web &amp; IDE</p>
+            <h2>Mobile, web &amp; IDE</h2>
+          </div>
+          <div class="blog1-grid">
+          <a class="blog1-card" href="/blog/web-repo-browser/" data-published="2026-07-04" data-section="everywhere">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/web-repo-browser.webp" alt="Abstract ForkMesh artwork for Web repo browser">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Mobile, web &amp; IDE · Feature 67</p>
+              <h3>Web repo browser</h3>
+              <p>Explore public repositories at forkmesh.com while a healthy integrity-verified mirror serves repository bytes over HTTPS.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/clean-repo-urls/" data-published="2026-07-04" data-section="everywhere">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/clean-repo-urls.webp" alt="Abstract ForkMesh artwork for Clean repo URLs">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Mobile, web &amp; IDE · Feature 68</p>
+              <h3>Clean repo URLs</h3>
+              <p>forkmesh.com/owner/repo stays the public entry point; during an origin outage it can continue through an eligible, healthy, integrity-matching mirror.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/mobile-app/" data-published="2026-07-04" data-section="everywhere">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/mobile-app.webp" alt="Abstract ForkMesh artwork for Mobile app">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Mobile, web &amp; IDE · Feature 69</p>
+              <h3>Mobile app</h3>
+              <p>Carry the mesh in your pocket: browse repositories, follow activity, chat, and get notifications from a native mobile app.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/vs-code-extension/" data-published="2026-07-04" data-section="everywhere">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/vs-code-extension.webp" alt="Abstract ForkMesh artwork for the VS Code Marketplace plugin">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Marketplace · Plugin</p>
+              <h3>VS Code Marketplace plugin</h3>
+              <p>An optional plugin for browsing ForkMesh issues and handing work to Claude Code or Codex from VS Code-compatible editors.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/docs-with-search/" data-published="2026-07-04" data-section="everywhere">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/docs-with-search.webp" alt="Abstract ForkMesh artwork for Docs with search">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Mobile, web &amp; IDE · Feature 71</p>
+              <h3>Docs with search</h3>
+              <p>Searchable documentation covering encrypted mirrors, direct-HTTPS routing, cloning, and the collaboration protocol.</p>
+            </div>
+          </a>
+          <a class="blog1-card" href="/blog/status-blog-and-changelog/" data-published="2026-07-04" data-section="everywhere">
+            <img class="blog1-post-image blog1-has-art" src="/assets/blog/features/status-blog-and-changelog.webp" alt="Abstract ForkMesh artwork for Status, blog &amp; changelog">
+            <div class="blog1-card-copy">
+              <p class="blog1-card-meta">Mobile, web &amp; IDE · Feature 72</p>
+              <h3>Status, blog &amp; changelog</h3>
+              <p>A public status page, a blog, and a human-readable changelog keep the network's story out in the open.</p>
+            </div>
+          </a>
+          </div>
+        </section>
+        <section class="blog1-next">
+          <div><p class="blog1-eyebrow">Archive</p><h2>72 feature posts live under /blog.</h2></div>
+          <a class="blog1-button" href="/features">View features</a>
+        </section>
+        <article id="introducing-forkmesh" class="blog1-detail"><h2>Introducing ForkMesh: code beyond a single host</h2><p>Independent mirrors, owner-held keys, private collaboration, and transparent community incentives.</p></article>
+      </main>
+      <div id="blog-search-modal" class="blog1-search-modal" role="dialog" aria-modal="true" aria-labelledby="blog-search-title" hidden>
+        <div class="blog1-search-backdrop" data-blog-search-close></div>
+        <section class="blog1-search-panel">
+          <div class="blog1-search-panel-head"><div><p class="blog1-eyebrow">Search</p><h2 id="blog-search-title">Find a ForkMesh article</h2></div><button class="blog1-search-close" type="button" data-blog-search-close>Close</button></div>
+          <label class="blog1-search-field" for="blog-search-input"><span class="blog1-search-icon" aria-hidden="true">⌕</span><input id="blog-search-input" type="search" autocomplete="off" placeholder="Search mirrors, AI, bounties, chat..."><span class="blog1-search-hint" aria-hidden="true">Esc to close</span></label>
+          <div class="blog1-search-results" aria-live="polite">
+            <a class="blog1-search-result" href="/blog/start-your-own-forkmesh/" data-blog-search-result data-blog-search-text="start your own forkmesh announcement instance self-hosted self host white label vps server ssh domain sslip https admin organization repository install installer debian ubuntu mailtrap sendgrid mailgun plugins powered by forkmesh">
+              <span class="blog1-search-result-meta">Announcement · October 7, 2026</span>
+              <span class="blog1-search-result-title">Start your own ForkMesh</span>
+              <span class="blog1-search-result-copy">Your name, your server, your domain: forkmesh.com/start sets up Git hosting, repositories, chat and agents of your own on a VPS and shows every step live.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/forkmesh-coaster/" data-blog-search-result data-blog-search-text="ride the forkmesh coaster announcement world roller coaster rollercoaster town station lift hill double loop ramp jump freefall airtime hills corkscrew helix tunnel parachute speed drone race rings quadcopter">
+              <span class="blog1-search-result-meta">Announcement · October 7, 2026</span>
+              <span class="blog1-search-result-title">Ride the ForkMesh coaster</span>
+              <span class="blog1-search-result-copy">A roller coaster now circles the town in the ForkMesh World: a double loop, a ramp jump into free fall, airtime hills, a corkscrew and a tunnel, about 75 seconds a lap.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/runs-that-listen-branches-that-let-go/" data-blog-search-result data-blog-search-text="runs that listen branches that let go product update cloud runner follow-ups steer images live stream phone merge clean up create pr update from base merged pull requests refs pr metadata branches deleted upstream mesh notifications chat formatting slack markup marketing crm phones account email tracking analytics consent">
+              <span class="blog1-search-result-meta">Product update · October 7, 2026</span>
+              <span class="blog1-search-result-title">Runs that listen, branches that let go</span>
+              <span class="blog1-search-result-copy">Follow-ups reach cloud runs and phones watch them live. Merged pull requests stop leaving branches behind, and the phones pick up more of the desktop.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/the-work-keeps-its-place/" data-blog-search-result data-blog-search-text="the work keeps its place product update hosted repositories browser merge cores GitHub GitLab Codeberg runner sessions branch diff cleanup transcripts web file editing Android local repository sync iOS commit graph Office profiles avatars rooms focus campfire applause">
+              <span class="blog1-search-result-meta">Product update · October 4, 2026</span>
+              <span class="blog1-search-result-title">The work keeps its place</span>
+              <span class="blog1-search-result-copy">Hosted repositories can finish web merges on their cores. Runner work is easier to follow, phones carry more Git, and the Office remembers where people work.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/brief-reports-clear-signals/" data-blog-search-result data-blog-search-text="brief reports clear signals product update reddit scout special agent accelerometer pedometer fitness HealthKit phone pings icons relay connection iOS inbox">
+              <span class="blog1-search-result-meta">Product update · October 2, 2026</span>
+              <span class="blog1-search-result-title">Brief reports, clear signals</span>
+              <span class="blog1-search-result-copy">A Reddit scout teammate joins the team. Your phone's pings get icons and states. iOS accelerometer powers fitness tracking. Relay connections light up on your desktop.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/1-2-7-and-a-phone-that-listens/" data-blog-search-result data-blog-search-text="1.2.7 and a phone that listens product update desktop release 1.2.6 windows installer qt6openglwidgets dll clean install macos universal dmg linux appimage native android apk kotlin signed manifest ed25519 start agent desktop terminal from phone claude code codex model switch phone revoke relay recycle bin stop all agents siri hey siri voice dictation auto send direct messages deleted on receipt not stored on the server calls task reminders always ring quick fixes pings crm my queue waiting on us duplicates zoho office turn relay status page llms.txt">
+              <span class="blog1-search-result-meta">Product update · October 2, 2026</span>
+              <span class="blog1-search-result-title">1.2.7, and a phone that listens</span>
+              <span class="blog1-search-result-copy">Desktop 1.2.7 fixes the Windows clean install and brings the native Android app. Your phone can start desktop agents and take spoken prompts, and direct messages leave the server once delivered.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/office-identity/" data-blog-search-result data-blog-search-text="office identity product update developers stay signed in office reloads team switches desktop agents clean up cloud runs merge persistent developer identity sign in gate smooth workflows team coordination">
+              <span class="blog1-search-result-meta">Product update · October 1, 2026</span>
+              <span class="blog1-search-result-title">Office identity</span>
+              <span class="blog1-search-result-copy">Developers now stay signed in across Office reloads and team switches. The desktop cleans up agent cloud runs on merge.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/the-week-after-the-move/" data-blog-search-result data-blog-search-text="the week after the move product update cloudflare retired d1 deleted workers email dkim dmarc deploy on push autoscaling runners merge and clean up live transcripts desktop agents web composer gemma task trash forkmesh term terminal handoff phone steer claude code codex office kaif world performance drone racing flutter removed native ios android testflight ad hoc apns push outage 1.2.5 linux glibc macos universal dmg windows installer checkout deleted safe delete">
+              <span class="blog1-search-result-meta">Product update · September 30, 2026</span>
+              <span class="blog1-search-result-title">The week after the move</span>
+              <span class="blog1-search-result-copy">The last of Cloudflare switched off, cloud agents that finish their own work, an office you can walk around in, a much faster World, the Flutter app deleted, and safer updates.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/open-collective/" data-blog-search-result data-blog-search-text="forkmesh is on open collective announcement opencollective funding money donations expenses transparency budget patreon solana support">
+              <span class="blog1-search-result-meta">Announcement · September 28, 2026</span>
+              <span class="blog1-search-result-title">ForkMesh is on Open Collective</span>
+              <span class="blog1-search-result-copy">ForkMesh has a page on Open Collective now. It went up today and it's still mostly empty; here is what it's for and what's on it so far.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/three-small-servers/" data-blog-search-result data-blog-search-text="three small servers and a long september product update forkmesh next cloudflare repository page performance server rendering runners opus 5.5 mobile code push projects composer photos native ios swift watch testflight macos dmg windows 1.2.3 1.2.4 security audit production move cutover">
+              <span class="blog1-search-result-meta">Product update · September 24, 2026</span>
+              <span class="blog1-search-result-title">Three small servers and a long September</span>
+              <span class="blog1-search-result-copy">ForkMesh Next on three servers of our own, a much faster repository page, agents on separate runners, phone updates, ten desktop releases, and a Windows startup bug.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/signals-that-lead-somewhere/" data-blog-search-result data-blog-search-text="signals that lead somewhere product update durable usage reset pings contextual teammate follow ups agent sessions responsive diagnostics cloud logs cached synthetic status probes marketing channels current main v0.7.29 candidate v0.7.95">
+              <span class="blog1-search-result-meta">Product update · September 1, 2026</span>
+              <span class="blog1-search-result-title">Signals that lead somewhere</span>
+              <span class="blog1-search-result-copy">Durable usage pings, contextual teammate follow-ups, responsive diagnostics, and lower-noise status checks land on current main.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/proof-before-promises/" data-blog-search-result data-blog-search-text="proof before promises product update free protocol paid service business model human gated agent loops health aware routing custody release evidence current main v0.7.29 candidate v0.7.95 launch readiness">
+              <span class="blog1-search-result-meta">Product update · September 1, 2026</span>
+              <span class="blog1-search-result-title">Proof before promises</span>
+              <span class="blog1-search-result-copy">A clearer product contract, human-gated agent work, honest routing language, and release evidence land on current main.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/the-mirror-becomes-a-front-door/" data-blog-search-result data-blog-search-text="the mirror becomes a front door product update direct https independent mirror dashboard portable login mobile coding agent marketplace plugin lifecycle tasks dependencies spellcheck current main v0.7.29 candidate v0.7.95">
+              <span class="blog1-search-result-meta">Product update · August 31, 2026</span>
+              <span class="blog1-search-result-title">The mirror becomes a front door</span>
+              <span class="blog1-search-result-copy">Independent mirror pages, a focused mobile coding agent, modular work tools, and faster task loops land on current main.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/the-mesh-keeps-moving/" data-blog-search-result data-blog-search-text="the mesh keeps moving product update shared teammate runs agent sessions priorities task links portable identity recovery mobile node foreground sealed private chat end to end encryption status monitoring gaps mirror recovery current main v0.7.29">
+              <span class="blog1-search-result-meta">Product update · August 28, 2026</span>
+              <span class="blog1-search-result-title">The mesh keeps moving</span>
+              <span class="blog1-search-result-copy">Shared teammate runs, portable identity and mobile-node groundwork, sealed private chat, and more honest mirror recovery land on current main.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/the-teammate-who-asks-what-should-leave/" data-blog-search-result data-blog-search-text="the teammate who asks what should leave product update reaper grim reaper feature retirement pruning evidence telemetry persistent teammates weekly schedule issues permissions read only no deletion coo grades skills backup model quota failover self assignment organizations mcp agent guestbook marketplace ide plugin offline status monitoring gaps mirrors work payments ledger current main v0.7.29">
+              <span class="blog1-search-result-meta">Product update · August 25, 2026</span>
+              <span class="blog1-search-result-title">The teammate who asks what should leave</span>
+              <span class="blog1-search-result-copy">Reaper makes one evidence-backed retirement case at a time—without deleting code—while current main strengthens team feedback, mirror recovery, and verified payments.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/a-wider-door-a-clearer-trail/" data-blog-search-result data-blog-search-text="a wider door a clearer trail product update v0.7.29 resumable repository migrations github gitlab codeberg stock git compatibility ssh https package marketplace lifecycle capture discord ledger gemma winamp cove files workflows actions agents issue reports checklists mirrors event driven payments receipts qt 6.4">
+              <span class="blog1-search-result-meta">Product update · August 22, 2026</span>
+              <span class="blog1-search-result-title">A wider door, a clearer trail</span>
+              <span class="blog1-search-result-copy">v0.7.29 brings resumable migrations, a signed package lifecycle, clearer live workflows, and sturdier receipts across mirrors and payments.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/a-team-around-the-work/" data-blog-search-result data-blog-search-text="a team around the work product update persistent ai teammates repository roles skills shortcuts schedules events permissions review progress diff files viewed branch history discord bot chat threads direct messages repository pages logos calendars mirror source of truth status world v0.7.23">
+              <span class="blog1-search-result-meta">Product update · August 18, 2026</span>
+              <span class="blog1-search-result-title">A team around the work</span>
+              <span class="blog1-search-result-copy">Repository-backed AI teammates, embedded Discord, clearer review progress, and stricter mirror authority bring more of the work into one place.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/shorter-loops-stronger-proof/" data-blog-search-result data-blog-search-text="shorter loops stronger proof product update pull request review readiness checks update branch image diffs mirror native collaboration intake slow clone cloudflare workers ai local llama shared calendars chat webhooks self hosting export import tips microjobs solana issue reporters financial ledger v0.7.23">
+              <span class="blog1-search-result-meta">Product update · August 17, 2026</span>
+              <span class="blog1-search-result-title">Shorter loops, stronger proof</span>
+              <span class="blog1-search-result-copy">Faster review, native mirror intake, shared calendars, and verifiable rewards shorten the path from a report to public proof.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/one-app-one-mesh/" data-blog-search-result data-blog-search-text="one app one mesh self hosted forkmesh custom domain cloudflare app api world cors cross origin remote instance avatar account switching selective deploy desktop mobile extensions server mirror provisioning status">
+              <span class="blog1-search-result-meta">Product update · August 8, 2026</span>
+              <span class="blog1-search-result-title">One app, one mesh</span>
+              <span class="blog1-search-result-copy">One complete app and API deployment for every ForkMesh operator, with an optional World and independent mirrors.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/safer-rooms-steadier-mirrors/" data-blog-search-result data-blog-search-text="safer rooms steadier mirrors product update kvm virtual machine agent isolation go mirror node runtime round robin desktop diagnostics world mobile dart git memberships">
+              <span class="blog1-search-result-meta">Product update · August 5, 2026</span>
+              <span class="blog1-search-result-title">Safer rooms, steadier mirrors</span>
+              <span class="blog1-search-result-copy">Opt-in KVM agent isolation, a released Go mirror runtime, clearer desktop diagnostics, a lighter World, and carefully bounded mobile Git groundwork.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/a-week-closer-to-the-mesh/" data-blog-search-result data-blog-search-text="a week closer to the mesh product update desktop git agents durable branches pull requests mirrors convergence diagnostics world repository dome yurt performance">
+              <span class="blog1-search-result-meta">Product update · August 3, 2026</span>
+              <span class="blog1-search-result-title">A week closer to the mesh</span>
+              <span class="blog1-search-result-copy">Six days of progress across the desktop app, durable agent branches, independent mirror nodes, and a clearer, lighter ForkMesh World.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/forkmesh-forever/" data-blog-search-result data-blog-search-text="forkmesh forever full song explainer video world repository mirror node clone https signed issues pull requests codex claude code agents worktrees review">
+              <span class="blog1-search-result-meta">Product update · July 28, 2026 · 2:27 video</span>
+              <span class="blog1-search-result-title">ForkMesh Forever: a full-song tour through the mesh</span>
+              <span class="blog1-search-result-copy">A 2:27 trip through ForkMesh World: mirror a repository, bring a node online, route a clone, carry signed collaboration, and turn agent work into a reviewed change.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/building-forkmesh-in-the-open/" data-blog-search-result data-blog-search-text="building forkmesh in the open product update world office mirrors pull request review claude codex coding agents headless nodes">
+              <span class="blog1-search-result-meta">Product update · July 27, 2026</span>
+              <span class="blog1-search-result-title">Building ForkMesh in the open</span>
+              <span class="blog1-search-result-copy">A field report from the current build round: a smoother World and Office, stronger mirror workflows, clearer pull-request review, and coding agents that work with the team.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/desktop-node-mirrors/" data-blog-search-result data-blog-search-text="desktop-node mirrors independently operated nodes external stubs clearly labeled private encrypted replicas distributed hosting &amp; preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 01</span>
+              <span class="blog1-search-result-title">Desktop-node mirrors</span>
+              <span class="blog1-search-result-copy">Actively mirrored repositories live on independently operated nodes; external stubs stay labeled until a mirror accepts them.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/zero-custody-relay/" data-blog-search-result data-blog-search-text="packfile-free routing relay service signed discovery health metadata no git packfiles direct https origins distributed hosting preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 02</span>
+              <span class="blog1-search-result-title">Packfile-free routing relay</span>
+              <span class="blog1-search-result-copy">The routing service stores signed discovery and health metadata, not Git packfiles; bytes stream from independent origins over HTTPS.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/live-clone-routing/" data-blog-search-result data-blog-search-text="live clone routing git smart http unchanged public url healthy integrity verified mirror direct https distributed hosting &amp; preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 03</span>
+              <span class="blog1-search-result-title">Live clone routing</span>
+              <span class="blog1-search-result-copy">Git Smart HTTP keeps the public ForkMesh URL while the Worker selects a signed, healthy, integrity-verified mirror.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/streaming-transfers/" data-blog-search-result data-blog-search-text="streaming transfers git packs ordinary https selected mirror not retained repository storage distributed hosting &amp; preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 04</span>
+              <span class="blog1-search-result-title">Streaming transfers</span>
+              <span class="blog1-search-result-copy">Git packs stream over ordinary HTTPS from a selected mirror and are never retained as repository storage by the routing proxy or its database.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/mirror-failover/" data-blog-search-result data-blog-search-text="mirror failover eligible healthy integrity matching mirror same public url sticky clone distributed hosting preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 05</span>
+              <span class="blog1-search-result-title">Mirror failover</span>
+              <span class="blog1-search-result-copy">When an eligible, healthy, integrity-matching mirror exists, ForkMesh can fail over behind the same public URL and keep a clone exchange sticky.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/source-attested-integrity/" data-blog-search-result data-blog-search-text="source-attested integrity fallback serving is checked against integrity pins attested by the source of truth, so a mirror can prove it&#x27;s handing you the same history the author published. distributed hosting &amp; preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 06</span>
+              <span class="blog1-search-result-title">Source-attested integrity</span>
+              <span class="blog1-search-result-copy">Fallback serving is checked against integrity pins attested by the source of truth, so a mirror can prove it's handing you the same history the author published.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/root-commit-identity/" data-blog-search-result data-blog-search-text="root-commit identity reported mirrors grouped by signed repository root commit independent of local name distributed hosting preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 07</span>
+              <span class="blog1-search-result-title">Root-commit identity</span>
+              <span class="blog1-search-result-copy">Reported mirrors can be grouped by a signed repository root commit, independent of the local name each host chose.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/headless-mirror-nodes/" data-blog-search-result data-blog-search-text="headless mirror nodes one command turns any linux box or vm into a mirror node. the installer registers its account, syncs its repositories, and starts serving, no gui required. distributed hosting &amp; preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 08</span>
+              <span class="blog1-search-result-title">Headless mirror nodes</span>
+              <span class="blog1-search-result-copy">One command turns any Linux box or VM into a mirror node. The installer registers its account, syncs its repositories, and starts serving, no GUI required.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/public-network-map/" data-blog-search-result data-blog-search-text="public network map recently verified public nodes generalized mirror health operator approved optional telemetry distributed hosting preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 09</span>
+              <span class="blog1-search-result-title">Public network map</span>
+              <span class="blog1-search-result-copy">The network page shows recently verified public nodes, generalized mirror health, and operator-approved optional telemetry.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/presence-done-right/" data-blog-search-result data-blog-search-text="presence heartbeats expiry live probes reduce stale eventually consistent minimal realtime lag distributed hosting preservation">
+              <span class="blog1-search-result-meta">Distributed hosting · Feature 10</span>
+              <span class="blog1-search-result-title">Presence done right</span>
+              <span class="blog1-search-result-copy">Bounded heartbeats, expiry, and live probes reduce stale presence while allowing the deliberately minimal real-time layer to lag.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/ed25519-identity/" data-blog-search-result data-blog-search-text="ed25519 identity nodes and people are identified by local ed25519 keys. profiles, catalog records, and every collaboration event carry a signature you can check yourself. signed, portable collaboration">
+              <span class="blog1-search-result-meta">Signed collaboration · Feature 11</span>
+              <span class="blog1-search-result-title">Ed25519 identity</span>
+              <span class="blog1-search-result-copy">Nodes and people are identified by local Ed25519 keys. Profiles, catalog records, and every collaboration event carry a signature you can check yourself.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/signed-issue-events/" data-blog-search-result data-blog-search-text="signed issue events every issue open, comment, edit, and close is a signed event. authorship is verifiable no matter which node, or which mirror, served you the data. signed, portable collaboration">
+              <span class="blog1-search-result-meta">Signed collaboration · Feature 12</span>
+              <span class="blog1-search-result-title">Signed issue events</span>
+              <span class="blog1-search-result-copy">Every issue open, comment, edit, and close is a signed event. Authorship is verifiable no matter which node, or which mirror, served you the data.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/signed-patch-pull-requests/" data-blog-search-result data-blog-search-text="signed patch pull requests prs are signed patch submissions. anyone can propose a change to any repository in the mesh and the maintainer can verify exactly who sent what. signed, portable collaboration">
+              <span class="blog1-search-result-meta">Signed collaboration · Feature 13</span>
+              <span class="blog1-search-result-title">Signed patch pull requests</span>
+              <span class="blog1-search-result-copy">PRs are signed patch submissions. Anyone can propose a change to any repository in the mesh and the maintainer can verify exactly who sent what.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/everything-lives-in-git/" data-blog-search-result data-blog-search-text="everything lives in git issues, pull requests, discussions, and release notes are files committed to the repository. clone the repo and you own the whole project history, code and conversation alike. signed, portable collaboration">
+              <span class="blog1-search-result-meta">Signed collaboration · Feature 14</span>
+              <span class="blog1-search-result-title">Everything lives in Git</span>
+              <span class="blog1-search-result-copy">Issues, pull requests, discussions, and release notes are files committed to the repository. Clone the repo and you own the whole project history, code and conversation alike.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/web-contribution-inbox/" data-blog-search-result data-blog-search-text="web contribution inbox visitors can file issues and pull requests from the website even while the owner is offline. signed submissions wait in an inbox; the owner reviews, commits, and the mesh syncs back. signed, portable collaboration">
+              <span class="blog1-search-result-meta">Signed collaboration · Feature 15</span>
+              <span class="blog1-search-result-title">Web contribution inbox</span>
+              <span class="blog1-search-result-copy">Visitors can file issues and pull requests from the website even while the owner is offline. Signed submissions wait in an inbox; the owner reviews, commits, and the mesh syncs back.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/branch-backed-and-patch-backed-prs/" data-blog-search-result data-blog-search-text="branch-backed &amp; patch-backed prs pull requests can ride a live branch (diffs derived straight from the head ref) or carry a stored patch for cross-node and offline submissions; both merge the same way. signed, portable collaboration">
+              <span class="blog1-search-result-meta">Signed collaboration · Feature 16</span>
+              <span class="blog1-search-result-title">Branch-backed &amp; patch-backed PRs</span>
+              <span class="blog1-search-result-copy">Pull requests can ride a live branch (diffs derived straight from the head ref) or carry a stored patch for cross-node and offline submissions; both merge the same way.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/binary-safe-patches/" data-blog-search-result data-blog-search-text="binary-safe patches patches embed binary content, so images, fonts, and other assets survive the trip and merge cleanly, with a proper placeholder and badge in the diff view. signed, portable collaboration">
+              <span class="blog1-search-result-meta">Signed collaboration · Feature 17</span>
+              <span class="blog1-search-result-title">Binary-safe patches</span>
+              <span class="blog1-search-result-copy">Patches embed binary content, so images, fonts, and other assets survive the trip and merge cleanly, with a proper placeholder and badge in the diff view.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/full-issue-tracker/" data-blog-search-result data-blog-search-text="full issue tracker open and closed states, priorities, assignees, and custom fields, all stored as signed events in the repository and browsable on the web. issues &amp; planning">
+              <span class="blog1-search-result-meta">Issues &amp; planning · Feature 18</span>
+              <span class="blog1-search-result-title">Full issue tracker</span>
+              <span class="blog1-search-result-copy">Open and closed states, priorities, assignees, and custom fields, all stored as signed events in the repository and browsable on the web.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/kanban-board/" data-blog-search-result data-blog-search-text="kanban board drag issues across columns to plan work visually, right inside the desktop app. issues &amp; planning">
+              <span class="blog1-search-result-meta">Issues &amp; planning · Feature 19</span>
+              <span class="blog1-search-result-title">Kanban board</span>
+              <span class="blog1-search-result-copy">Drag issues across columns to plan work visually, right inside the desktop app.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/milestones-with-progress/" data-blog-search-result data-blog-search-text="milestones with progress group issues into milestones and watch live progress bars fill as work lands. issues &amp; planning">
+              <span class="blog1-search-result-meta">Issues &amp; planning · Feature 20</span>
+              <span class="blog1-search-result-title">Milestones with progress</span>
+              <span class="blog1-search-result-copy">Group issues into milestones and watch live progress bars fill as work lands.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/burnup-charts/" data-blog-search-result data-blog-search-text="burnup charts built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance. issues &amp; planning">
+              <span class="blog1-search-result-meta">Issues &amp; planning · Feature 21</span>
+              <span class="blog1-search-result-title">Burnup charts</span>
+              <span class="blog1-search-result-copy">Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/quick-add-from-anywhere/" data-blog-search-result data-blog-search-text="quick-add from anywhere a prompt-style quick-add box captures an issue in one line, and can hand it straight to an ai agent as it&#x27;s filed. issues &amp; planning">
+              <span class="blog1-search-result-meta">Issues &amp; planning · Feature 22</span>
+              <span class="blog1-search-result-title">Quick-add from anywhere</span>
+              <span class="blog1-search-result-copy">A prompt-style quick-add box captures an issue in one line, and can hand it straight to an AI agent as it's filed.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/issues-prs-that-talk/" data-blog-search-result data-blog-search-text="issues ↔ prs that talk merge a pull request and its linked issue closes itself. one checkbox syncs the merge straight to main. issues &amp; planning">
+              <span class="blog1-search-result-meta">Issues &amp; planning · Feature 23</span>
+              <span class="blog1-search-result-title">Issues ↔ PRs that talk</span>
+              <span class="blog1-search-result-copy">Merge a pull request and its linked issue closes itself. One checkbox syncs the merge straight to main.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/rich-diffs/" data-blog-search-result data-blog-search-text="rich diffs syntax-aware diffs with side-by-side image comparison and clear badges for binary changes, in the app and on the web. pull requests &amp; review">
+              <span class="blog1-search-result-meta">Pull requests &amp; review · Feature 24</span>
+              <span class="blog1-search-result-title">Rich diffs</span>
+              <span class="blog1-search-result-copy">Syntax-aware diffs with side-by-side image comparison and clear badges for binary changes, in the app and on the web.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/real-mergeability-checks/" data-blog-search-result data-blog-search-text="real mergeability checks every pr is checked with a true three-way merge against the live base branch, so &quot;can merge&quot; reflects a real merge against the current base. pull requests &amp; review">
+              <span class="blog1-search-result-meta">Pull requests &amp; review · Feature 25</span>
+              <span class="blog1-search-result-title">Real mergeability checks</span>
+              <span class="blog1-search-result-copy">Every PR is checked with a true three-way merge against the live base branch, so "can merge" reflects a real merge against the current base.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/review-conversations/" data-blog-search-result data-blog-search-text="review conversations inline comment threads, emoji reactions, and markdown everywhere, signed like every other event. pull requests &amp; review">
+              <span class="blog1-search-result-meta">Pull requests &amp; review · Feature 26</span>
+              <span class="blog1-search-result-title">Review conversations</span>
+              <span class="blog1-search-result-copy">Inline comment threads, emoji reactions, and Markdown everywhere, signed like every other event.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/ai-code-review/" data-blog-search-result data-blog-search-text="ai code review one click asks an ai reviewer for findings, each anchored to the exact lines as a mini-diff suggestion. apply a single quick-fix or fix everything at once. pull requests &amp; review">
+              <span class="blog1-search-result-meta">Pull requests &amp; review · Feature 27</span>
+              <span class="blog1-search-result-title">AI code review</span>
+              <span class="blog1-search-result-copy">One click asks an AI reviewer for findings, each anchored to the exact lines as a mini-diff suggestion. Apply a single quick-fix or fix everything at once.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/ai-conflict-resolution/" data-blog-search-result data-blog-search-text="ai conflict resolution when a merge conflicts, hand the conflict to an agent that edits the files in place and reports back, no manual &lt;&lt;&lt;&lt;&lt;&lt;&lt; spelunking. pull requests &amp; review">
+              <span class="blog1-search-result-meta">Pull requests &amp; review · Feature 28</span>
+              <span class="blog1-search-result-title">AI conflict resolution</span>
+              <span class="blog1-search-result-copy">When a merge conflicts, hand the conflict to an agent that edits the files in place and reports back, no manual &lt;&lt;&lt;&lt;&lt;&lt;&lt; spelunking.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/merge-from-anywhere/" data-blog-search-result data-blog-search-text="merge from anywhere merge from the desktop client with the branch view, the pr view, or straight from an agent&#x27;s completed session. pull requests &amp; review">
+              <span class="blog1-search-result-meta">Pull requests &amp; review · Feature 29</span>
+              <span class="blog1-search-result-title">Merge from anywhere</span>
+              <span class="blog1-search-result-copy">Merge from the desktop client with the branch view, the PR view, or straight from an agent's completed session.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/assign-any-issue-to-an-agent/" data-blog-search-result data-blog-search-text="assign any issue to an agent from the issue detail, the quick-add box, or even the website&#x27;s new-issue form: one click sends the issue to claude code or codex, which works the issue and opens a pr when it&#x27;s done. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 30</span>
+              <span class="blog1-search-result-title">Assign any issue to an agent</span>
+              <span class="blog1-search-result-copy">From the issue detail, the quick-add box, or even the website's new-issue form: one click sends the issue to Claude Code or Codex, which works the issue and opens a PR when it's done.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/dedicated-agent-worktrees/" data-blog-search-result data-blog-search-text="dedicated agent worktrees each session runs on its own branch in its own worktree, so agents never trample your working tree, and finished work arrives as a reviewable pull request automatically. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 31</span>
+              <span class="blog1-search-result-title">Dedicated agent worktrees</span>
+              <span class="blog1-search-result-copy">Each session runs on its own branch in its own worktree, so agents never trample your working tree, and finished work arrives as a reviewable pull request automatically.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/parallel-agents/" data-blog-search-result data-blog-search-text="parallel agents run as many agents as you like across your issues at once, with live activity indicators showing who&#x27;s working right now. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 32</span>
+              <span class="blog1-search-result-title">Parallel agents</span>
+              <span class="blog1-search-result-copy">Run as many agents as you like across your issues at once, with live activity indicators showing who's working right now.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/resumable-sessions/" data-blog-search-result data-blog-search-text="resumable sessions pick any conversation back up where it left off: sessions persist, survive restarts, and keep their full context. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 33</span>
+              <span class="blog1-search-result-title">Resumable sessions</span>
+              <span class="blog1-search-result-copy">Pick any conversation back up where it left off: sessions persist, survive restarts, and keep their full context.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/rich-live-transcripts/" data-blog-search-result data-blog-search-text="rich live transcripts agent sessions render as a live, structured transcript: tool calls, diffs, and results as cards, with a raw-output toggle for the curious. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 34</span>
+              <span class="blog1-search-result-title">Rich live transcripts</span>
+              <span class="blog1-search-result-copy">Agent sessions render as a live, structured transcript: tool calls, diffs, and results as cards, with a raw-output toggle for the curious.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/agents-can-ask-you-questions/" data-blog-search-result data-blog-search-text="agents can ask you questions when an agent needs a decision, it asks, and the transcript shows an interactive multiple-choice card. click an answer and the agent continues. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 35</span>
+              <span class="blog1-search-result-title">Agents can ask you questions</span>
+              <span class="blog1-search-result-copy">When an agent needs a decision, it asks, and the transcript shows an interactive multiple-choice card. Click an answer and the agent continues.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/native-terminal/" data-blog-search-result data-blog-search-text="native terminal a real vt100 terminal widget renders agent sessions with full color and emoji, not a flat log viewer. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 36</span>
+              <span class="blog1-search-result-title">Native terminal</span>
+              <span class="blog1-search-result-copy">A real VT100 terminal widget renders agent sessions with full color and emoji, not a flat log viewer.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/your-app-is-the-ide/" data-blog-search-result data-blog-search-text="your app is the ide the desktop app speaks the claude code ide protocol: run claude in a repo and it connects to forkmesh for diff views and selection context, just like an editor extension. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 37</span>
+              <span class="blog1-search-result-title">Your app is the IDE</span>
+              <span class="blog1-search-result-copy">The desktop app speaks the Claude Code IDE protocol: run claude in a repo and it connects to ForkMesh for diff views and selection context, just like an editor extension.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/live-usage-meter/" data-blog-search-result data-blog-search-text="live usage meter see your claude 5-hour and weekly usage right in the app, so you know how much agent runway is left. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 38</span>
+              <span class="blog1-search-result-title">Live usage meter</span>
+              <span class="blog1-search-result-copy">See your Claude 5-hour and weekly usage right in the app, so you know how much agent runway is left.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/custom-agent-instructions/" data-blog-search-result data-blog-search-text="custom agent instructions replace the built-in agent workflow with your own preamble in settings; your rules govern every session. ai agents, built in">
+              <span class="blog1-search-result-meta">AI agents · Feature 39</span>
+              <span class="blog1-search-result-title">Custom agent instructions</span>
+              <span class="blog1-search-result-copy">Replace the built-in agent workflow with your own preamble in Settings; your rules govern every session.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/actions/" data-blog-search-result data-blog-search-text="actions shell-step workflows run on push on your own desktop or an opt-in mirror, with the live log one click away in the app. ci, releases &amp; distribution">
+              <span class="blog1-search-result-meta">CI, releases &amp; distribution · Feature 40</span>
+              <span class="blog1-search-result-title">Actions</span>
+              <span class="blog1-search-result-copy">Shell-step workflows run on push on your own desktop or an opt-in mirror, with the live log one click away in the app.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/artifacts/" data-blog-search-result data-blog-search-text="artifacts workflow outputs are collected per run and browsable from the repository&#x27;s artifacts tab. ci, releases &amp; distribution">
+              <span class="blog1-search-result-meta">CI, releases &amp; distribution · Feature 41</span>
+              <span class="blog1-search-result-title">Artifacts</span>
+              <span class="blog1-search-result-copy">Workflow outputs are collected per run and browsable from the repository's Artifacts tab.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/releases-and-tags/" data-blog-search-result data-blog-search-text="releases &amp; tags browse tags, mark the current release, and cut new releases in seconds; release notes live in the repository like everything else. ci, releases &amp; distribution">
+              <span class="blog1-search-result-meta">CI, releases &amp; distribution · Feature 42</span>
+              <span class="blog1-search-result-title">Releases &amp; tags</span>
+              <span class="blog1-search-result-copy">Browse tags, mark the current release, and cut new releases in seconds; release notes live in the repository like everything else.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/content-addressed-release-storage/" data-blog-search-result data-blog-search-text="content-addressed release storage release binaries live in a content-addressed store keyed by sha-256, keeping the git history lean while downloads stay verifiable end-to-end. ci, releases &amp; distribution">
+              <span class="blog1-search-result-meta">CI, releases &amp; distribution · Feature 43</span>
+              <span class="blog1-search-result-title">Content-addressed release storage</span>
+              <span class="blog1-search-result-copy">Release binaries live in a content-addressed store keyed by SHA-256, keeping the Git history lean while downloads stay verifiable end-to-end.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/one-line-installer/" data-blog-search-result data-blog-search-text="one-line installer curl ... | sh installs the desktop or headless node with sha-256-verified binaries, and a matching one-line uninstaller when you need it. ci, releases &amp; distribution">
+              <span class="blog1-search-result-meta">CI, releases &amp; distribution · Feature 44</span>
+              <span class="blog1-search-result-title">One-line installer</span>
+              <span class="blog1-search-result-copy">curl ... | sh installs the desktop or headless node with SHA-256-verified binaries, and a matching one-line uninstaller when you need it.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/quality-and-security-tabs/" data-blog-search-result data-blog-search-text="quality &amp; security tabs per-repository quality and security views keep checks, advisories, and repository health next to the code they describe. ci, releases &amp; distribution">
+              <span class="blog1-search-result-meta">CI, releases &amp; distribution · Feature 45</span>
+              <span class="blog1-search-result-title">Quality &amp; Security tabs</span>
+              <span class="blog1-search-result-copy">Per-repository quality and security views keep checks, advisories, and repository health next to the code they describe.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/insights/" data-blog-search-result data-blog-search-text="insights contribution and activity insights per repository show where the energy is going. ci, releases &amp; distribution">
+              <span class="blog1-search-result-meta">CI, releases &amp; distribution · Feature 46</span>
+              <span class="blog1-search-result-title">Insights</span>
+              <span class="blog1-search-result-copy">Contribution and activity insights per repository show where the energy is going.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/encrypted-repo-rooms/" data-blog-search-result data-blog-search-text="encrypted repo rooms authenticated shared key relay readable aes 256 gcm 7 days 500 frames chat &amp; private sharing">
+              <span class="blog1-search-result-meta">Chat &amp; private sharing · Feature 47</span>
+              <span class="blog1-search-result-title">Encrypted repo rooms</span>
+              <span class="blog1-search-result-copy">Public rooms are controller-readable for integrations; private channels add automatic device-to-device encryption.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/direct-messages/" data-blog-search-result data-blog-search-text="direct messages relay readable authenticated shared key transport chat &amp; private sharing">
+              <span class="blog1-search-result-meta">Chat &amp; private sharing · Feature 48</span>
+              <span class="blog1-search-result-title">Direct messages</span>
+              <span class="blog1-search-result-copy">Direct messages automatically add device-to-device encryption beyond the controller room key.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/coves/" data-blog-search-result data-blog-search-text="coves encrypted vaults for the things that don&#x27;t belong in a repo: notes, credentials, plans. documents live inside authenticated ciphertext, and every unlock is recorded in an access log the creator can audit. chat &amp; private sharing">
+              <span class="blog1-search-result-meta">Chat &amp; private sharing · Feature 49</span>
+              <span class="blog1-search-result-title">Coves</span>
+              <span class="blog1-search-result-copy">Encrypted vaults for the things that don't belong in a repo: notes, credentials, plans. Documents live inside authenticated ciphertext, and every unlock is recorded in an access log the creator can audit.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/discussions/" data-blog-search-result data-blog-search-text="discussions longer-form threaded conversations per repository, signed, synced, and browsable like issues. chat &amp; private sharing">
+              <span class="blog1-search-result-meta">Chat &amp; private sharing · Feature 50</span>
+              <span class="blog1-search-result-title">Discussions</span>
+              <span class="blog1-search-result-copy">Longer-form threaded conversations per repository, signed, synced, and browsable like issues.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/web-chat/" data-blog-search-result data-blog-search-text="web chat join the conversation from the browser too, the website speaks the same room protocol as the desktop app. chat &amp; private sharing">
+              <span class="blog1-search-result-meta">Chat &amp; private sharing · Feature 51</span>
+              <span class="blog1-search-result-title">Web chat</span>
+              <span class="blog1-search-result-copy">Join the conversation from the browser too, the website speaks the same room protocol as the desktop app.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/complete-repository-workspace/" data-blog-search-result data-blog-search-text="complete repository workspace code, commits, issues, agents, pull requests, discussions, actions, security, quality, insights, branches, worktrees, releases, mirror nodes, artifacts, shortcuts, and settings, every view one click apart. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 52</span>
+              <span class="blog1-search-result-title">Complete repository workspace</span>
+              <span class="blog1-search-result-copy">Code, Commits, Issues, Agents, Pull requests, Discussions, Actions, Security, Quality, Insights, Branches, Worktrees, Releases, Mirror nodes, Artifacts, Shortcuts, and Settings, every view one click apart.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/source-control-and-worktrees/" data-blog-search-result data-blog-search-text="source control &amp; worktrees stage, commit, branch, and manage multiple worktrees from the app, including the worktrees your agents are working in. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 53</span>
+              <span class="blog1-search-result-title">Source control &amp; worktrees</span>
+              <span class="blog1-search-result-copy">Stage, commit, branch, and manage multiple worktrees from the app, including the worktrees your agents are working in.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/voice-dictation/" data-blog-search-result data-blog-search-text="voice dictation dictate issues, comments, and prompts with built-in whisper speech recognition, transcribed locally, streamed live as you speak. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 54</span>
+              <span class="blog1-search-result-title">Voice dictation</span>
+              <span class="blog1-search-result-copy">Dictate issues, comments, and prompts with built-in Whisper speech recognition, transcribed locally, streamed live as you speak.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/screenshot-and-markup/" data-blog-search-result data-blog-search-text="screenshot &amp; markup capture any region of the screen, annotate it with built-in drawing tools, and drop it straight into an issue, pr, or chat. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 55</span>
+              <span class="blog1-search-result-title">Screenshot &amp; markup</span>
+              <span class="blog1-search-result-copy">Capture any region of the screen, annotate it with built-in drawing tools, and drop it straight into an issue, PR, or chat.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/markdown-everywhere/" data-blog-search-result data-blog-search-text="markdown everywhere a proper markdown editor with preview for issues, prs, discussions, and chat, plus emoji reactions and cross-references that link issues, prs, and commits together. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 56</span>
+              <span class="blog1-search-result-title">Markdown everywhere</span>
+              <span class="blog1-search-result-copy">A proper Markdown editor with preview for issues, PRs, discussions, and chat, plus emoji reactions and cross-references that link issues, PRs, and commits together.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/qr-handoffs/" data-blog-search-result data-blog-search-text="qr handoffs repos, invites, and addresses render as qr codes for instant scannable handoff to a phone. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 57</span>
+              <span class="blog1-search-result-title">QR handoffs</span>
+              <span class="blog1-search-result-copy">Repos, invites, and addresses render as QR codes for instant scannable handoff to a phone.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/keyboard-first-navigation/" data-blog-search-result data-blog-search-text="keyboard-first navigation shortcuts for every major view and arrow-key navigation across tables keep your hands on the keyboard. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 58</span>
+              <span class="blog1-search-result-title">Keyboard-first navigation</span>
+              <span class="blog1-search-result-copy">Shortcuts for every major view and arrow-key navigation across tables keep your hands on the keyboard.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/fork-with-intent/" data-blog-search-result data-blog-search-text="fork with intent fork any repository in the mesh and choose exactly where the copy lands in your working tree. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 59</span>
+              <span class="blog1-search-result-title">Fork with intent</span>
+              <span class="blog1-search-result-copy">Fork any repository in the mesh and choose exactly where the copy lands in your working tree.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/built-to-stay-up/" data-blog-search-result data-blog-search-text="built to stay up a crash handler, a ui stall watchdog, network backoff, and a network activity log keep long-running nodes healthy, and tell you exactly what happened when something hiccups. the desktop app">
+              <span class="blog1-search-result-meta">Desktop app · Feature 60</span>
+              <span class="blog1-search-result-title">Built to stay up</span>
+              <span class="blog1-search-result-copy">A crash handler, a UI stall watchdog, network backoff, and a network activity log keep long-running nodes healthy, and tell you exactly what happened when something hiccups.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/anonymous-accounts/" data-blog-search-result data-blog-search-text="guest-first access enter the world immediately as a guest registered accounts use email password and email verification accounts money rewards">
+              <span class="blog1-search-result-meta">Accounts &amp; rewards · Feature 61</span>
+              <span class="blog1-search-result-title">Guest-first access</span>
+              <span class="blog1-search-result-copy">Enter the world immediately as a guest; registered accounts use email, password, and email verification.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/public-node-profiles/" data-blog-search-result data-blog-search-text="public node profiles registered nodes generalized profile public repositories operator approved status fields accounts money rewards">
+              <span class="blog1-search-result-meta">Accounts &amp; rewards · Feature 62</span>
+              <span class="blog1-search-result-title">Public node profiles</span>
+              <span class="blog1-search-result-copy">Registered nodes can publish a generalized profile, public repositories, and operator-approved status fields.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/solana-donations/" data-blog-search-result data-blog-search-text="solana donations self-custodial address direct wallet contribution transparent public reward pool no private keys accounts, money &amp; rewards">
+              <span class="blog1-search-result-meta">Accounts &amp; rewards · Feature 63</span>
+              <span class="blog1-search-result-title">Solana donations</span>
+              <span class="blog1-search-result-copy">Publish a self-custodial address or contribute directly from your wallet to a transparent public reward pool. ForkMesh never stores contributors’ or recipients’ wallet private keys.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/make-it-rain/" data-blog-search-result data-blog-search-text="make it rain instant all eligible nodes transparent trickle reward pool non-custodial accounts, money &amp; rewards">
+              <span class="blog1-search-result-meta">Accounts &amp; rewards · Feature 64</span>
+              <span class="blog1-search-result-title">Make it rain</span>
+              <span class="blog1-search-result-copy">Choose an immediate all-eligible-node distribution or fund the transparent pool for later randomized community incentives.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/issue-bounties/" data-blog-search-result data-blog-search-text="issue bounties retired funding payouts switched off historical records read-only accounts, money &amp; rewards">
+              <span class="blog1-search-result-meta">Accounts &amp; rewards · Feature 65</span>
+              <span class="blog1-search-result-title">Issue bounties</span>
+              <span class="blog1-search-result-copy">The earlier issue-bounty flow is retired. Funding and payouts are switched off, and historical records are read-only.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/mirror-rewards/" data-blog-search-result data-blog-search-text="mirror rewards transparent mainnet beta community pool eligible integrity verified local signer accounts, money &amp; rewards">
+              <span class="blog1-search-result-meta">Accounts &amp; rewards · Feature 66</span>
+              <span class="blog1-search-result-title">Mirror rewards</span>
+              <span class="blog1-search-result-copy">A transparent mainnet-beta community pool may reward eligible, integrity-verified mirrors through an owner-controlled local signer.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/web-repo-browser/" data-blog-search-result data-blog-search-text="web repo browser public repositories files commits diffs issues prs healthy integrity verified mirror https mobile, web &amp; ide">
+              <span class="blog1-search-result-meta">Mobile, web &amp; IDE · Feature 67</span>
+              <span class="blog1-search-result-title">Web repo browser</span>
+              <span class="blog1-search-result-copy">Explore public repositories at forkmesh.com while a healthy integrity-verified mirror serves repository bytes over HTTPS.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/clean-repo-urls/" data-blog-search-result data-blog-search-text="clean repo urls forkmesh.com owner repo public entry point origin outage eligible healthy integrity matching mirror mobile web ide">
+              <span class="blog1-search-result-meta">Mobile, web &amp; IDE · Feature 68</span>
+              <span class="blog1-search-result-title">Clean repo URLs</span>
+              <span class="blog1-search-result-copy">forkmesh.com/owner/repo stays the public entry point; during an origin outage it can continue through an eligible, healthy, integrity-matching mirror.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/mobile-app/" data-blog-search-result data-blog-search-text="mobile app carry the mesh in your pocket: browse repositories, follow activity, chat, and get notifications from a native mobile app. mobile, web &amp; ide">
+              <span class="blog1-search-result-meta">Mobile, web &amp; IDE · Feature 69</span>
+              <span class="blog1-search-result-title">Mobile app</span>
+              <span class="blog1-search-result-copy">Carry the mesh in your pocket: browse repositories, follow activity, chat, and get notifications from a native mobile app.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/vs-code-extension/" data-blog-search-result data-blog-search-text="vs code marketplace plugin optional forkmesh issues claude code codex vscode cursor windsurf vscodium editor">
+              <span class="blog1-search-result-meta">Marketplace · Plugin</span>
+              <span class="blog1-search-result-title">VS Code Marketplace plugin</span>
+              <span class="blog1-search-result-copy">An optional plugin for browsing ForkMesh issues and handing work to Claude Code or Codex from VS Code-compatible editors.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/docs-with-search/" data-blog-search-result data-blog-search-text="docs with search searchable documentation covering encrypted mirrors, direct HTTPS routing, cloning, and the collaboration protocol. mobile, web &amp; ide">
+              <span class="blog1-search-result-meta">Mobile, web &amp; IDE · Feature 71</span>
+              <span class="blog1-search-result-title">Docs with search</span>
+              <span class="blog1-search-result-copy">Searchable documentation covering encrypted mirrors, direct-HTTPS routing, cloning, and the collaboration protocol.</span>
+            </a>
+            <a class="blog1-search-result" href="/blog/status-blog-and-changelog/" data-blog-search-result data-blog-search-text="status, blog &amp; changelog a public status page, a blog, and a human-readable changelog keep the network&#x27;s story out in the open. mobile, web &amp; ide">
+              <span class="blog1-search-result-meta">Mobile, web &amp; IDE · Feature 72</span>
+              <span class="blog1-search-result-title">Status, blog &amp; changelog</span>
+              <span class="blog1-search-result-copy">A public status page, a blog, and a human-readable changelog keep the network's story out in the open.</span>
+            </a>
+            <p class="blog1-search-empty" data-blog-search-empty hidden>No articles found. Try mirror, signed, agents, releases, or rewards.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+    <script>
+      (() => {
+        const modal = document.getElementById("blog-search-modal");
+        const input = document.getElementById("blog-search-input");
+        const openButtons = document.querySelectorAll("[data-blog-search-open]");
+        const closeButtons = modal.querySelectorAll("[data-blog-search-close]");
+        const results = Array.from(modal.querySelectorAll("[data-blog-search-result]"));
+        const empty = modal.querySelector("[data-blog-search-empty]");
+        let previousFocus = null;
+        function filterBlogSearchResults() {
+          const q = (input.value || "").trim().toLowerCase(); let shown = 0;
+          for (const result of results) { const text = result.dataset.blogSearchText || result.textContent || ""; const hit = !q || text.toLowerCase().includes(q); result.hidden = !hit; if (hit) shown += 1; }
+          empty.hidden = shown !== 0;
+        }
+        function openBlogSearch() { previousFocus = document.activeElement; modal.hidden = false; document.body.classList.add("blog1-search-open"); input.value = ""; filterBlogSearchResults(); requestAnimationFrame(() => input.focus()); }
+        function closeBlogSearch(options = {}) { modal.hidden = true; document.body.classList.remove("blog1-search-open"); if (options.restoreFocus !== false && previousFocus) previousFocus.focus(); }
+        window.openBlogSearch = openBlogSearch; window.filterBlogSearchResults = filterBlogSearchResults;
+        openButtons.forEach((button) => button.addEventListener("click", openBlogSearch)); closeButtons.forEach((button) => button.addEventListener("click", closeBlogSearch)); input.addEventListener("input", filterBlogSearchResults);
+        modal.addEventListener("click", (event) => { const resultLink = event.target.closest("a[data-blog-search-result]"); if (resultLink) closeBlogSearch({ restoreFocus: false }); });
+        document.addEventListener("keydown", (event) => { if (!modal.hidden && event.key === "Escape") closeBlogSearch(); if (modal.hidden && event.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) { event.preventDefault(); openBlogSearch(); } });
+      })();
+    </script>
+{% endblock %}

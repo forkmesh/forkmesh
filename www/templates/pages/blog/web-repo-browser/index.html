@@ -1,0 +1,39 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Web repo browser" %}
+{% set slug = "web-repo-browser" %}
+{% set image = "/assets/blog/features/web-repo-browser.webp" %}
+{% set description = "Explore public repositories, files, commits, diffs, issues, and PRs at forkmesh.com while a healthy integrity-verified mirror serves repository bytes over HTTPS." %}
+{% set share_description = "Explore public repositories at forkmesh.com while a healthy integrity-verified mirror serves repository bytes over HTTPS." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Mobile, web &amp; IDE</p>
+            <h1>Web repo browser</h1>
+            <p class="lede">Explore public repositories, files, commits, diffs, issues, and PRs at forkmesh.com while a healthy integrity-verified mirror serves repository bytes over HTTPS.</p>
+            <div class="meta"><span class="pill">Feature 67 of 72</span><span>Feature</span><span>Mobile, web &amp; IDE</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/web-repo-browser.webp" alt="Abstract ForkMesh artwork for Web repo browser">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>The web repository browser gives readers a stable entry point without turning the website into repository storage. Public files and Git data stream from a selected mirror; signed collaboration metadata is rendered alongside them.</p>
+          <p>A distributed forge still needs clean entry points for readers, contributors, mobile users, and editor workflows. In ForkMesh, web repo browser addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles web repo browser through the same split it uses across the product: ForkMesh exposes web, mobile, editor, docs, status, and clean URL surfaces on top of the desktop-node and mainnode model.</p>
+          <p>The behavior is intentionally narrow: public browse and file operations use the same signed direct-HTTPS routing boundary as clone. Repository stubs say when they are not mirrored. Private repositories require an authenticated owner or collaborator and otherwise remain indistinguishable from missing repositories.</p>
+          <h2>Where it fits</h2>
+          <p>Use web repo browser when people need to browse, contribute, learn, and receive updates outside the main desktop window.</p>
+          <p>It pairs with the rest of Mobile, web &amp; IDE because Web repo browser keeps live file, commit, diff, issue, and PR browsing from forkmesh.com connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/mirror-rewards/">← Mirror rewards</a>
+          <a href="/blog/clean-repo-urls/">Clean repo URLs →</a>
+        </nav>
+{% endblock %}

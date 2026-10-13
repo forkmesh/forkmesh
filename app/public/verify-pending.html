@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pending verification · ForkMesh</title>
+    <meta
+      name="description"
+      content="Confirm your ForkMesh email address to finish setting up your account."
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/favicon/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/favicon/favicon-16x16.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/favicon/apple-touch-icon.png"
+    />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/verify-pending.js?v=${version}" defer></script>
+    <style>
+      /* Every colour here comes from auth-page-theme.css, which ships both the
+         dark defaults and the html.light overrides. That stylesheet only
+         re-themes the selectors it knows about, so anything this page adds of
+         its own (the recap rows, the secondary button) has to read the
+         variables directly or it renders white-on-white in light mode. */
+      body {
+        min-height: 100vh;
+        color: var(--auth-text);
+        background: var(--auth-page-bg);
+      }
+
+      /* The mesh backdrop is fixed behind everything, so the form needs a
+         stacking context of its own to sit on top. */
+      .auth-shell {
+        position: relative;
+        z-index: 1;
+        min-height: calc(100vh - 3.5rem);
+        display: grid;
+        place-items: center;
+        padding: 28px 16px;
+      }
+
+      .auth-card {
+        width: min(100%, 448px);
+        border: 1px solid var(--auth-border);
+        border-radius: 16px;
+        background: var(--auth-card-bg);
+        box-shadow: var(--auth-shadow);
+        padding: 40px 36px 32px;
+      }
+
+      .auth-card .brand {
+        width: fit-content;
+        margin: 0 auto 18px;
+      }
+
+      .auth-button-primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 2.875rem;
+        border-radius: 0.75rem;
+        border: 0;
+        background: var(--auth-action-bg);
+        color: var(--auth-action-text);
+        font-size: 13px;
+        font-weight: 750;
+        cursor: pointer;
+        transition:
+          transform 150ms ease,
+          background-color 150ms ease,
+          color 150ms ease;
+      }
+
+      .auth-button-primary:hover {
+        background: var(--auth-action-hover);
+        color: var(--auth-action-text);
+      }
+
+      .auth-button-primary:active {
+        transform: translateY(1px);
+      }
+
+      .auth-button-primary:focus-visible,
+      .auth-button-secondary:focus-visible {
+        outline: 0;
+        box-shadow: 0 0 0 3px var(--auth-focus-ring);
+      }
+
+      .auth-button-primary:disabled {
+        background: var(--auth-action-disabled);
+        color: var(--auth-action-text);
+        cursor: not-allowed;
+      }
+
+      .auth-button-secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 2.875rem;
+        margin-top: 8px;
+        border-radius: 0.75rem;
+        border: 1px solid var(--auth-border);
+        background: var(--auth-surface);
+        color: var(--auth-text);
+        font-size: 13px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .auth-button-secondary:hover {
+        background: var(--auth-surface-strong);
+      }
+
+      .auth-button-secondary:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .join-title {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        text-align: center;
+        margin: 8px 0 10px;
+        color: var(--auth-text);
+      }
+      .join-sub {
+        color: var(--auth-text-secondary);
+        text-align: center;
+        max-width: 460px;
+        margin: 0 auto 16px;
+        line-height: 1.5;
+        font-size: 15px;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--auth-text-quiet);
+        margin-top: 10px;
+        text-align: center;
+        min-height: 1.2em;
+      }
+      .hint.bad {
+        color: var(--auth-danger);
+      }
+      .hint.good {
+        color: var(--auth-good);
+      }
+      .row-links {
+        text-align: center;
+        margin-top: 14px;
+        color: var(--auth-text-quiet);
+        font-size: 13px;
+      }
+      .row-links a,
+      .row-links button {
+        color: var(--auth-link);
+        background: none;
+        border: 0;
+        padding: 0;
+        font: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
+      .verify-icon {
+        width: 48px;
+        height: 48px;
+        margin: 0 auto 6px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        border: 1px solid var(--auth-border);
+        background: var(--auth-surface);
+        font-size: 22px;
+      }
+      .recap {
+        border: 1px solid var(--auth-border);
+        background: var(--auth-surface);
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin: 0 0 16px;
+      }
+      .recap-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 6px 0;
+        font-size: 13px;
+      }
+      .recap-row + .recap-row {
+        border-top: 1px solid var(--auth-border);
+      }
+      .recap-row .k {
+        color: var(--auth-text-quiet);
+      }
+      .recap-row .v {
+        color: var(--auth-text);
+        font-weight: 650;
+        word-break: break-all;
+        text-align: right;
+      }
+
+      @media (max-width: 620px) {
+        .auth-card {
+          padding: 32px 22px 24px;
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="/auth-page-theme.css" />
+    <link rel="stylesheet" href="/auth-mesh.css" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/auth-mesh.js?v=${version}" defer></script>
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body data-fm-auth>
+    <div data-forkmesh-auth-mesh></div>
+    <div data-forkmesh-header="simple"></div>
+    <main class="auth-shell">
+      <section class="auth-card" aria-labelledby="verify-title">
+        <a class="brand" href="/" aria-label="ForkMesh home">
+          <img
+            class="brand-mark"
+            src="/assets/logo.svg"
+            alt=""
+            aria-hidden="true"
+          />
+        </a>
+        <div class="verify-icon" aria-hidden="true">✉️</div>
+        <h1 id="verify-title" class="join-title">Pending verification</h1>
+        <p class="join-sub">
+          Your account exists, but ForkMesh stays locked until you confirm the
+          address it was created with. Open the link in the email we sent, then
+          come back here.
+        </p>
+        <div class="recap" aria-label="Account awaiting verification">
+          <div class="recap-row">
+            <span class="k">Username</span>
+            <span class="v" id="pending-name">—</span>
+          </div>
+          <div class="recap-row">
+            <span class="k">Email</span>
+            <span class="v" id="pending-email">—</span>
+          </div>
+        </div>
+        <button class="auth-button-primary" id="pending-recheck" type="button">
+          I've confirmed — continue
+        </button>
+        <button class="auth-button-secondary" id="pending-resend" type="button">
+          Resend verification email
+        </button>
+        <p class="hint" id="pending-hint" role="status" aria-live="polite"></p>
+        <p class="row-links">
+          Wrong address? <button id="pending-logout" type="button">Sign out and start over</button>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Introducing ForkMesh: code beyond a single host · ForkMesh</title>
+    <meta name="description" content="ForkMesh is a distributed Git network where code lives on independently operated mirrors, collaboration is signed, and eligible nodes may receive transparent non-custodial community incentives.">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <script src="/static-page.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Introducing ForkMesh: code beyond a single host">
+    <meta property="og:description" content="A distributed Git network with independently operated mirrors, signed collaboration, and transparent non-custodial community incentives.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/forkmesh-noise.webp">
+    <meta property="og:image:width" content="1838">
+    <meta property="og:image:height" content="1023">
+    <meta property="og:image:alt" content="ForkMesh distributed Git network announcement">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Introducing ForkMesh: code beyond a single host">
+    <meta name="twitter:description" content="A distributed Git network with independently operated mirrors, signed collaboration, and transparent non-custodial community incentives.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/forkmesh-noise.webp">
+    <meta name="twitter:image:alt" content="ForkMesh distributed Git network announcement">
+
+    <style>
+      .blog-shell { max-width: 820px; margin: 0 auto; padding: 32px 20px 96px; }
+      .blog-back { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); text-decoration: none; margin-bottom: 20px; }
+      .blog-back:hover { color: var(--accent-bright); }
+      .blog-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; color: var(--muted); font-size: 14px; margin: 14px 0 22px; }
+      .blog-meta .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--border); }
+      .blog-tag { font-size: 12px; font-weight: 700; letter-spacing:0; text-transform: uppercase; color: var(--accent-bright); }
+      .blog-title { font-family: var(--display); font-size:44px; line-height: 1.1; letter-spacing:0; margin: 8px 0 0; }
+      .blog-hero-img { width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--border); margin: 26px 0 8px; display: block; }
+      .blog-lede { font-size: 20px; line-height: 1.55; color: var(--muted); margin: 28px 0; }
+      .blog-body { font-size: 18px; line-height: 1.75; }
+      .blog-body h2 { font-size: 26px; letter-spacing:0; margin: 48px 0 6px; }
+      .blog-body h2 .num { color: var(--accent-bright); font-variant-numeric: tabular-nums; margin-right: 10px; }
+      .blog-body h3 { font-size: 18px; margin: 28px 0 4px; }
+      .blog-body p { margin: 14px 0; color: var(--foreground); }
+      .blog-body code { background: var(--card-soft); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 1px 6px; font-size: 0.9em; }
+      .blog-body pre { background: var(--card-soft); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; overflow-x: auto; margin: 18px 0; }
+      .blog-body pre code { background: none; border: none; padding: 0; }
+      .blog-body blockquote { border-left: 3px solid var(--accent-bright); margin: 22px 0; padding: 4px 0 4px 18px; color: var(--muted); font-style: italic; }
+      .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 26px 0; }
+      .feature-card { border: 1px solid var(--border); border-radius: 14px; padding: 18px; background: var(--card); }
+      .feature-card .ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 18px; margin-bottom: 12px; }
+      .feature-card h4 { margin: 0 0 4px; font-size: 16px; }
+      .feature-card p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+      .blog-cta { margin: 56px 0 0; padding: 28px; border-radius: 18px; border: 1px solid var(--border); background: linear-gradient(135deg, color-mix(in srgb, var(--accent-bright) 12%, var(--card)), var(--card)); text-align: center; }
+      .blog-cta h2 { margin: 0 0 8px; font-size: 24px; }
+      .blog-cta p { margin: 0 0 18px; color: var(--muted); }
+      .blog-cta .row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+      .blog-divider { border: none; border-top: 1px solid var(--border-subtle); margin: 40px 0; }
+    </style>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+      <div data-forkmesh-header="simple"></div>
+
+    <main class="blog-shell">
+      <a class="blog-back" href="/blog">&larr; All posts</a>
+
+      <span class="blog-tag">Announcing</span>
+      <h1 class="blog-title">Introducing ForkMesh: code beyond a single host</h1>
+      <div class="blog-meta">
+        <span>The ForkMesh team</span>
+        <span class="dot"></span>
+        <time datetime="2026-06-23">June 23, 2026</time>
+        <span class="dot"></span>
+        <span>6 min read</span>
+      </div>
+
+      <img class="blog-hero-img" src="/assets/blog/forkmesh-noise.webp"
+           alt="A distributed mesh of Git repository nodes connected through encrypted relays, with the ForkMesh wordmark.">
+
+      <p class="blog-lede">
+        Most code today lives on a hosted service, under that service's terms.
+        ForkMesh offers another option: a distributed Git network where your code
+        stays on <em>your</em> machine, every action is signed with <em>your</em> key,
+        and eligible mirror operators may receive transparent community incentives.
+        Selection and payment are never guaranteed.
+      </p>
+
+      <div class="blog-body">
+        <p>
+          Today we're opening up ForkMesh — an open-source desktop node and relay for
+          hosting, mirroring, discovering, and discussing software projects without
+          depending on a single code-hosting company. It is not a front end for an
+          existing forge and it is not a blockchain repo. It's a different shape: a
+          mesh of peers where the network coordinates, but no one in the middle holds
+          the only copy of your code.
+        </p>
+
+        <hr class="blog-divider">
+
+        <h2>Why we built it</h2>
+        <p>
+          Centralized forges have been great for collaboration, but they concentrate
+          risk. Accounts can be suspended, services change direction, and a project
+          that lives in exactly one place depends on whoever controls that place.
+        </p>
+        <p>
+          ForkMesh starts from a simple premise: <strong>the canonical copy of your
+          code is the bare Git mirror on your own disk.</strong> The network's job is to
+          help people find it, clone it, talk about it, and mirror it — not to be the
+          single place everything depends on.
+        </p>
+
+        <h2>What's different</h2>
+        <p>
+          Six ideas shape how ForkMesh works.
+        </p>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="ico" style="background:color-mix(in srgb,var(--accent-bright) 18%,transparent)">🗄️</div>
+            <h4>Your machine is the server</h4>
+            <p>The relay is a control plane, not storage. Git objects stream from a connected host node — there is no central repository store.</p>
+          </div>
+          <div class="feature-card">
+            <div class="ico" style="background:color-mix(in srgb,var(--primary) 18%,transparent)">🔑</div>
+            <h4>Keys, not passwords</h4>
+            <p>Your identity is a local Ed25519 keypair. Profiles, issues, and pull requests are cryptographically signed — portable across any relay.</p>
+          </div>
+          <div class="feature-card">
+            <div class="ico" style="background:color-mix(in srgb,var(--purple) 22%,transparent)">🔒</div>
+            <h4>Public and protected chat</h4>
+            <p>Every room has client-side AES-256-GCM transport. Public channels remain controller-readable for integrations; private channels and direct messages now add automatic recipient encryption beyond that key.</p>
+          </div>
+          <div class="feature-card">
+            <div class="ico" style="background:color-mix(in srgb,var(--warning) 22%,transparent)">◎</div>
+            <h4>Transparent mirror incentives</h4>
+            <p>Eligible, integrity-verified mirrors may receive small community-funded mainnet-beta rewards at a self-custodial public address. Test networks require explicit development configuration; selection and payment are never guaranteed.</p>
+          </div>
+          <div class="feature-card">
+            <div class="ico" style="background:color-mix(in srgb,var(--accent-bright) 18%,transparent)">🌐</div>
+            <h4>Federated by design</h4>
+            <p>Anyone can run a relay node, Matrix- and Mastodon-style. No company sits at the center of the network — or owns its leaderboards.</p>
+          </div>
+          <div class="feature-card">
+            <div class="ico" style="background:color-mix(in srgb,var(--primary) 18%,transparent)">⑂</div>
+            <h4>Signed history in Git</h4>
+            <p>Issues and PRs are append-only signed events that can live as files inside the repository itself — your project's history travels with the code.</p>
+          </div>
+        </div>
+
+        <h2><span class="num">01</span>Your machine is the server</h2>
+        <p>
+          When you publish a repository, ForkMesh doesn't upload your packfiles anywhere.
+          Your desktop node can expose its read-only mirror gateway through a proxied
+          Cloudflare Tunnel. The routing service performs signed health and integrity
+          checks, selects an available origin, and streams normal clone and browse
+          traffic over HTTPS while the public URL stays unchanged:
+        </p>
+        <pre><code>git clone https://forkmesh.com/forkmesh/forkmesh</code></pre>
+        <p>
+          The relay never becomes the source of truth for Git bytes. If it became
+          unavailable, each current local mirror would still retain its own repository
+          copy; discovery and collaboration services would need another relay or direct
+          node access.
+        </p>
+
+        <h2><span class="num">02</span>Identity you own</h2>
+        <p>
+          There is no account form before exploring the world as a guest. Registering a
+          user account requires an email, password, and email verification. The desktop
+          node generates a local Ed25519 identity, and that key signs repository and
+          collaboration metadata; the private signing key remains on the device.
+        </p>
+
+        <h2><span class="num">03</span>Public and private conversations</h2>
+        <p>
+          A catalog repository can use its own scoped encrypted room. Messages are
+          encrypted in your client with AES-256-GCM before they touch the wire.
+          Public channels intentionally remain controller-readable so ForkBot,
+          MCP, and webhooks can participate. Private channels and direct messages
+          automatically add device-to-device encryption beyond the controller's
+          room key. The relay retains only marked frames, capped at the
+          newest 500 per room for 7 days.
+        </p>
+
+        <h2><span class="num">04</span>A network that pays its hosts</h2>
+        <p>
+          Mirroring helps keep open source available, and ForkMesh treats it as
+          first-class work. A node may publish a self-custodial Solana payout address.
+          Configurable rounds evaluate signed identity, fresh HTTPS health, integrity,
+          abuse status, observed contribution, and wallet validity before selecting from
+          the deduplicated eligible set using public entropy. A transparent,
+          community-funded mainnet-beta pool can provide small incentives, but running a
+          node never guarantees selection or payment. Test networks require explicit
+          development configuration.
+        </p>
+        <div class="note"><strong>Non-custodial notice:</strong> ForkMesh does not hold or control user funds and never stores community members’ payout- or contribution-wallet private keys, seed phrases, or mnemonics. Separately, the instance owner’s encrypted local Qt signer must explicitly approve exact outgoing pool transfers. Community rewards are incentives, not investments or promised returns.</div>
+
+        <h2><span class="num">05</span>Signed issues and pull requests</h2>
+        <p>
+          Collaboration history shouldn't live in a proprietary silo either. ForkMesh
+          issues and PRs are signed, append-only events that can be represented as files
+          inside the repository. A PR carries a patch — and an optional
+          <code>git format-patch</code> commit series — so it can be submitted with no
+          push access, no fork, and no branch at all; it can also ride a real branch when
+          a contributor has one. Every comment and review is signed too, each bound to
+          its own PR:
+        </p>
+        <pre><code>forkmesh-pull-event-v1
+&lt;author pubkey&gt;
+&lt;ts&gt;
+sha256hex(title + NUL + base + NUL + head + NUL + patch + NUL + commits)</code></pre>
+        <p>
+          When a maintainer merges, ForkMesh runs a real <code>git merge</code> whenever
+          there's a resolvable commit behind the PR, falling back to replaying the stored
+          patch when there isn't — and the accepted PR, with its whole discussion thread,
+          is committed straight into the repository on its own branch. So the
+          conversation around your code travels with every retained copy of that
+          repository branch.
+        </p>
+
+        <h2><span class="num">06</span>No center to capture</h2>
+        <p>
+          Relays are federated. The hosted <code>mainnode</code> offers conveniences —
+          repository catalogs, encrypted rooms, mirror-health indexing, public reward
+          metadata, leaderboards — but it owns none of them by right. Anyone can run their own. The
+          network is a mesh, not a hub, so it does not rely on any one operator.
+        </p>
+
+        <blockquote>
+          ForkMesh is a Git app first. Chat, community incentives, and discovery exist to support
+          repositories, mirrors, and the maintainers who keep them alive.
+        </blockquote>
+
+        <h2>Where we are today</h2>
+        <p>
+          ForkMesh is past its prototype stage. forkmesh.com and app.forkmesh.com
+          run in production on self-hosted core nodes with a runner tier, and
+          signed desktop releases ship for Linux, macOS, and Windows. Live file
+          browsing and clone need at least one healthy mirror online. The routing service
+          stores discovery and health metadata, not repository bytes. The direct HTTPS
+          gateway is read-only; push and administrative operations remain separate from
+          browse and clone traffic. Private replicas use opaque client-encrypted archives
+          and fail closed when the requesting owner is not authorized.
+        </p>
+        <p>
+          But the foundation that matters is already standing: real Ed25519 identity, real
+          Git mirroring, real encrypted rooms, a non-custodial mainnet-beta reward
+          program, and a real federated relay. Everything from here is building
+          outward from independently operated components that reduce reliance on any
+          one host when current mirrors and replacement coordination remain available.
+        </p>
+
+        <div class="blog-cta">
+          <h2>Run a node. Mirror a repo. Keep code available.</h2>
+          <p>The desktop node starts with no setup and connects to the network out of the box. Install it with one command:</p>
+          <pre><code>curl -fsSL https://forkmesh.com/install.sh | bash</code></pre>
+          <div class="row">
+            <a class="primary-button" href="/signup">Join the network</a>
+            <a class="secondary-button" href="/docs/">Read the docs</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Where this post was announced. Paste the permalink into the
+           matching attribute; the ones left blank render as empty. -->
+      <section data-blog-social
+               data-reddit=""
+               data-mastodon=""
+               data-twitter=""></section>
+    </main>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

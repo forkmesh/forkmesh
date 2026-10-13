@@ -1,0 +1,1965 @@
+{% extends "base.html" %}
+{% block title %}ForkMesh Features — everything the mesh can do{% endblock %}
+{% block meta %}
+    <meta
+      name="description"
+      content="The complete ForkMesh feature catalog: distributed Git mirrors with live clone routing and failover, signed issues and patch PRs, built-in AI coding agents, encrypted chat and coves, CI, releases, non-custodial community rewards, mobile and IDE apps."
+    />
+    <link rel="canonical" href="https://forkmesh.com/features" />
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forkmesh.com/features" />
+    <meta property="og:site_name" content="ForkMesh" />
+    <meta property="og:title" content="ForkMesh Features — everything the mesh can do" />
+    <meta
+      property="og:description"
+      content="Distributed Git mirrors, signed collaboration, built-in AI agents, encrypted chat, CI, releases, and non-custodial community rewards — the full ForkMesh feature catalog."
+    />
+    <style>
+      @font-face {
+        font-family: "ForkMesh Favorit";
+        src: url("/assets/fonts/ABCFavorit-Bold.woff2") format("woff2");
+        font-weight: 400 800;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "ForkMesh Geist";
+        src: url("/assets/fonts/Geist-Variable.woff2") format("woff2");
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "ForkMesh Geist Mono";
+        src: url("/assets/fonts/GeistMono-Variable.woff2") format("woff2");
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: swap;
+      }
+      :root {
+        --fx-bg: #090909;
+        --fx-surface: #141416;
+        --fx-ink: #f5f5f5;
+        --fx-body: #9d9da5;
+        --fx-icon: #a1a1aa;
+        --fx-line: #2c2c31;
+        --fx-tile-a: #232326;
+        --fx-tile-b: #18181b;
+        --fx-tag-bg: #1b1b1e;
+        --fx-card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 5px -4px rgba(0, 0, 0, 0.9), 0 4px 8px rgba(0, 0, 0, 0.35);
+        --fx-card-shadow-hover: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 5px -4px rgba(0, 0, 0, 0.9), 0 10px 22px rgba(0, 0, 0, 0.5);
+        --fx-badge-bg: #141416;
+        --fx-badge-ink: #e4e4e7;
+        --fx-badge-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 8px rgba(0, 0, 0, 0.3);
+        --fx-btn-a: #fafafa;
+        --fx-btn-b: #e6e6e9;
+        --fx-btn-ink: #111113;
+        --fx-btn-inset: inset 0 2px 0 rgba(255, 255, 255, 0.6);
+        --fx-btn-hover-a: #ffffff;
+        --fx-btn-hover-b: #f0f0f2;
+        --fx-btn2-a: #1a1a1d;
+        --fx-btn2-b: #151517;
+        --fx-btn2-ink: #f5f5f5;
+        --fx-btn2-line: #2c2c31;
+        --fx-btn2-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        --fx-btn2-hover-a: #202024;
+        --fx-btn2-hover-b: #1a1a1d;
+        --fx-code-bg: #1d1d20;
+        --fx-focus: #58a6ff;
+        --fx-display: "ForkMesh Favorit", "ForkMesh Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --fx-ui: "ForkMesh Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        --fx-mono: "ForkMesh Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      html.light {
+        --fx-bg: #f4f4f4;
+        --fx-surface: #ffffff;
+        --fx-ink: #242424;
+        --fx-body: #6f6f6f;
+        --fx-icon: #898989;
+        --fx-line: #e1e2e3;
+        --fx-tile-a: #ffffff;
+        --fx-tile-b: #eeeeee;
+        --fx-tag-bg: #f7f7f7;
+        --fx-card-shadow: 0 1px 5px -4px rgba(36, 36, 36, 0.7), 0 4px 8px rgba(36, 36, 36, 0.05);
+        --fx-card-shadow-hover: 0 1px 5px -4px rgba(36, 36, 36, 0.7), 0 10px 22px rgba(36, 36, 36, 0.1);
+        --fx-badge-bg: #ffffff;
+        --fx-badge-ink: #292929;
+        --fx-badge-shadow: 0 4px 8px rgba(34, 42, 53, 0.05);
+        --fx-btn-a: #292929;
+        --fx-btn-b: #242424;
+        --fx-btn-ink: #ffffff;
+        --fx-btn-inset: inset 0 2px 0 rgba(255, 255, 255, 0.15);
+        --fx-btn-hover-a: #363636;
+        --fx-btn-hover-b: #2e2e2e;
+        --fx-btn2-a: #fcfcfc;
+        --fx-btn2-b: #ffffff;
+        --fx-btn2-ink: #292929;
+        --fx-btn2-line: #e1e2e3;
+        --fx-btn2-inset: inset 0 2px 0 #ffffff;
+        --fx-btn2-hover-a: #f6f6f6;
+        --fx-btn2-hover-b: #fbfbfb;
+        --fx-code-bg: #f5f5f5;
+        --fx-focus: #0969da;
+      }
+      body.fx-page {
+        background: var(--fx-bg);
+      }
+      .fx-sprite {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+      }
+      .fx-sprite mask > g {
+        fill: none;
+        stroke: #000;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .fx {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 0 16px 48px;
+        color: var(--fx-ink);
+        font-family: var(--fx-ui);
+        font-size: 16px;
+        line-height: 24px;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      .fx svg {
+        display: block;
+        flex: none;
+        fill: currentColor;
+        stroke: none;
+      }
+      .fx-sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      .fx-head {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      .fx-hero {
+        padding: 88px 0 0;
+      }
+      .fx-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 4px 12px 4px 8px;
+        border-radius: 9999px;
+        background: var(--fx-badge-bg);
+        box-shadow: var(--fx-badge-shadow);
+        color: var(--fx-badge-ink);
+        font-size: 12px;
+        font-weight: 450;
+        line-height: 12px;
+        white-space: nowrap;
+      }
+      .fx-badge-ico {
+        width: 14px;
+        height: 14px;
+        color: var(--fx-icon);
+      }
+      .fx-title {
+        max-width: 800px;
+        margin: 16px 0 0;
+        color: var(--fx-ink);
+        font-family: var(--fx-display);
+        font-size: 48px;
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        text-wrap: balance;
+      }
+      .fx-title-hero {
+        font-size: 64px;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+      .fx-lede {
+        max-width: 640px;
+        margin: 12px 0 0;
+        color: var(--fx-body);
+        font-size: 16px;
+        line-height: 24px;
+        text-wrap: balance;
+      }
+      .fx-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        margin-top: 16px;
+      }
+      .fx-hero .fx-lede {
+        max-width: 700px;
+      }
+      .fx-hero .fx-actions {
+        margin-top: 24px;
+      }
+      .fx-btn {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
+        padding: 8px 12px;
+        border-radius: 12px;
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 20px;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: background 0.15s ease;
+      }
+      .fx-btn:hover {
+        text-decoration: none;
+      }
+      .fx-btn-ico {
+        width: 14px;
+        height: 14px;
+        margin-right: -2px;
+        opacity: 0.7;
+        transition: transform 0.15s ease;
+      }
+      .fx-btn:hover .fx-btn-ico {
+        transform: translateX(2px);
+      }
+      .fx-btn-primary {
+        background: linear-gradient(var(--fx-btn-a), var(--fx-btn-b));
+        box-shadow: var(--fx-btn-inset);
+        color: var(--fx-btn-ink);
+      }
+      .fx-btn-primary:hover {
+        background: linear-gradient(var(--fx-btn-hover-a), var(--fx-btn-hover-b));
+        color: var(--fx-btn-ink);
+      }
+      .fx-btn-secondary {
+        background: linear-gradient(var(--fx-btn2-a), var(--fx-btn2-b));
+        box-shadow: var(--fx-btn2-inset);
+        color: var(--fx-btn2-ink);
+      }
+      .fx-btn-secondary::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid var(--fx-btn2-line);
+        border-radius: inherit;
+        pointer-events: none;
+      }
+      .fx-btn-secondary:hover {
+        background: linear-gradient(var(--fx-btn2-hover-a), var(--fx-btn2-hover-b));
+        color: var(--fx-btn2-ink);
+      }
+      .fx-toc {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        max-width: 1000px;
+        margin-top: 48px;
+      }
+      .fx-toc a {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 12px 0 10px;
+        border-radius: 9999px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        color: var(--fx-ink);
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: box-shadow 0.15s ease;
+      }
+      .fx-toc a:hover {
+        box-shadow: var(--fx-card-shadow-hover);
+        text-decoration: none;
+      }
+      .fx-toc-ico {
+        width: 16px;
+        height: 16px;
+        color: var(--fx-icon);
+      }
+      .fx-section {
+        padding-top: 120px;
+        scroll-margin-top: 8px;
+      }
+      .fx-section > .fx-head {
+        margin-bottom: 48px;
+      }
+      .fx-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 12px;
+        max-width: 1048px;
+        margin: 0 auto;
+      }
+      .fx-card {
+        position: relative;
+        display: flex;
+        grid-column: span 2;
+        flex-direction: column;
+        padding: 24px;
+        border-radius: 16px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        transition: box-shadow 0.2s ease, transform 0.2s ease;
+      }
+      .fx-card:hover {
+        box-shadow: var(--fx-card-shadow-hover);
+        transform: translateY(-2px);
+      }
+
+      .fx-card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .fx-tile {
+        position: relative;
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        background: linear-gradient(var(--fx-tile-a), var(--fx-tile-b));
+        color: var(--fx-icon);
+      }
+      .fx-tile::before {
+        content: "";
+        position: absolute;
+        inset: 4px;
+        background:
+          radial-gradient(circle, var(--fx-line) 1.5px, transparent 2px) 0 0 / 4px 4px no-repeat,
+          radial-gradient(circle, var(--fx-line) 1.5px, transparent 2px) 100% 0 / 4px 4px no-repeat,
+          radial-gradient(circle, var(--fx-line) 1.5px, transparent 2px) 0 100% / 4px 4px no-repeat,
+          radial-gradient(circle, var(--fx-line) 1.5px, transparent 2px) 100% 100% / 4px 4px no-repeat;
+      }
+      .fx-tile::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid var(--fx-line);
+        border-radius: inherit;
+      }
+      .fx-ico {
+        position: relative;
+        width: 20px;
+        height: 20px;
+      }
+      .fx-card:hover .fx-tile {
+        color: var(--fx-ink);
+      }
+      .fx-tag {
+        display: inline-flex;
+        align-items: center;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 9999px;
+        background: var(--fx-tag-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+        color: var(--fx-body);
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .fx-card h3 {
+        margin: 16px 0 0;
+        color: var(--fx-ink);
+        font-family: var(--fx-ui);
+        font-size: 18px;
+        font-weight: 560;
+        line-height: 23.4px;
+        letter-spacing: -0.2px;
+      }
+      .fx-card p {
+        margin: 2px 0 0;
+        color: var(--fx-body);
+        font-size: 16px;
+        line-height: 24px;
+      }
+      .fx-card code {
+        padding: 1px 5px;
+        border-radius: 6px;
+        background: var(--fx-code-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+        color: var(--fx-ink);
+        font-family: var(--fx-mono);
+        font-size: 0.8125em;
+        overflow-wrap: anywhere;
+        -webkit-box-decoration-break: clone;
+        box-decoration-break: clone;
+      }
+      .fx-more {
+        display: inline-flex;
+        align-items: center;
+        align-self: flex-start;
+        gap: 6px;
+        margin-top: auto;
+        padding-top: 20px;
+        color: var(--fx-body);
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 20px;
+        text-decoration: none;
+        transition: color 0.15s ease;
+      }
+      .fx-more::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+      }
+      .fx-more:hover,
+      .fx-card:hover .fx-more {
+        color: var(--fx-ink);
+        text-decoration: none;
+      }
+      .fx-more-ico {
+        width: 14px;
+        height: 14px;
+        transition: transform 0.2s ease;
+      }
+      .fx-card:hover .fx-more-ico {
+        transform: translateX(3px);
+      }
+      .fx-more:focus-visible {
+        outline: none;
+      }
+      .fx-more:focus-visible::after,
+      .fx-btn:focus-visible,
+      .fx-toc a:focus-visible {
+        outline: 2px solid var(--fx-focus);
+        outline-offset: 2px;
+      }
+      .fx-note {
+        display: flex;
+        gap: 12px;
+        max-width: 1048px;
+        margin: 12px auto 0;
+        padding: 20px 24px;
+        border-radius: 16px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+      }
+      .fx-note-ico {
+        width: 18px;
+        height: 18px;
+        margin-top: 3px;
+        color: var(--fx-icon);
+      }
+      .fx-note p {
+        margin: 0;
+        color: var(--fx-body);
+        font-size: 14px;
+        line-height: 22px;
+      }
+      .fx-note strong {
+        color: var(--fx-ink);
+        font-weight: 560;
+      }
+      .fx-outro {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        max-width: 1048px;
+        margin: 120px auto 0;
+        padding: 64px 24px;
+        border-radius: 24px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        text-align: center;
+      }
+      .fx-outro::before {
+        content: "";
+        position: absolute;
+        inset: 12px;
+        background:
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 0 0 / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 100% 0 / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 0 100% / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 100% 100% / 6px 6px no-repeat;
+        pointer-events: none;
+      }
+      .fx-outro .fx-badge {
+        background: var(--fx-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+      }
+      .fx-mosaic {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 32px;
+      }
+      .fx-mosaic .fx-tile:nth-child(1),
+      .fx-mosaic .fx-tile:nth-child(9) {
+        opacity: 0.35;
+      }
+      .fx-mosaic .fx-tile:nth-child(2),
+      .fx-mosaic .fx-tile:nth-child(8) {
+        opacity: 0.6;
+      }
+      .fx-mosaic .fx-tile:nth-child(3),
+      .fx-mosaic .fx-tile:nth-child(7) {
+        opacity: 0.85;
+      }
+      .fx-tile-lg {
+        width: 64px;
+        height: 64px;
+        border-radius: 12px;
+        color: var(--fx-ink);
+      }
+      .fx-tile-lg .fx-ico {
+        width: 28px;
+        height: 28px;
+      }
+      .fx-tile-lg::before {
+        inset: 5px;
+      }
+      @media (min-width: 961px) {
+        .fx-card:last-child:nth-child(3n + 1) {
+          grid-column: 3 / span 2;
+        }
+        .fx-card:nth-last-child(2):nth-child(3n + 1) {
+          grid-column: 2 / span 2;
+        }
+        .fx-card:last-child:nth-child(3n + 2) {
+          grid-column: 4 / span 2;
+        }
+      }
+      @media (min-width: 641px) and (max-width: 960px) {
+        .fx-card:last-child:nth-child(odd) {
+          grid-column: 2 / span 2;
+        }
+      }
+      @media (max-width: 960px) {
+        .fx-grid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+        .fx-mosaic .fx-tile:nth-child(1),
+        .fx-mosaic .fx-tile:nth-child(9) {
+          display: none;
+        }
+      }
+      @media (max-width: 640px) {
+        .fx {
+          padding-bottom: 80px;
+        }
+        .fx-hero {
+          padding-top: 56px;
+        }
+        .fx-title {
+          font-size: 34px;
+        }
+        .fx-title-hero {
+          font-size: 42px;
+        }
+        .fx-section {
+          padding-top: 88px;
+        }
+        .fx-section > .fx-head {
+          margin-bottom: 32px;
+        }
+        .fx-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .fx-card {
+          grid-column: auto;
+        }
+        .fx-toc {
+          margin-top: 36px;
+        }
+        .fx-outro {
+          margin-top: 88px;
+          padding: 48px 20px;
+        }
+        .fx-outro .fx-badge {
+        background: var(--fx-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+      }
+      .fx-mosaic {
+          gap: 8px;
+        }
+        .fx-mosaic .fx-tile:nth-child(2),
+        .fx-mosaic .fx-tile:nth-child(8) {
+          display: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .fx-card,
+        .fx-more-ico,
+        .fx-btn-ico {
+          transition: none;
+        }
+        .fx-card:hover {
+          transform: none;
+        }
+      }
+    </style>
+{% endblock %}
+{% block body_attrs %} class="fx-page"{% endblock %}
+{% block body %}
+    <svg class="fx-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <defs>
+        <mask id="fxk-copy" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><rect x="1" y="7" width="16" height="16" rx="5" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-transfer" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M9 16.5v-9M6.2 10.2L9 7.4l2.8 2.8" stroke-width="2.0"/><path d="M15 7.5v9M12.2 13.8l2.8 2.8 2.8-2.8" stroke-width="2.0"/></g></mask>
+        <mask id="fxk-refresh" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M7.1 12.9A5 5 0 0 1 16.3 9.5" stroke-width="1.9"/><path d="M17 6.8l-.7 2.7-2.7-.7" stroke-width="1.9"/><path d="M16.9 11.1A5 5 0 0 1 7.7 14.5" stroke-width="1.9"/><path d="M7 17.2l.7-2.7 2.7.7" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-shield-check" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M8.6 12.1l2.3 2.3 4.5-4.6" stroke-width="2.0"/></g></mask>
+        <mask id="fxk-commit" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="12" cy="12" r="1.9" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-server" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="6.8" cy="7" r="1.25" fill="#000" stroke="none"/><circle cx="6.8" cy="17" r="1.25" fill="#000" stroke="none"/><path d="M12.5 7h5M12.5 17h5" stroke-width="1.8"/></g></mask>
+        <mask id="fxk-map" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M8.5 3.4v14.5M15.5 5.9v14.8" stroke-width="1.7"/></g></mask>
+        <mask id="fxk-key" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="7.1" cy="16.9" r="1.7" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-pen" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M14.2 5.3l4.5 4.5" stroke-width="1.7"/></g></mask>
+        <mask id="fxk-patch" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><g transform="rotate(-45 12 12)"><path d="M8.3 7.4v9.2M15.7 7.4v9.2" stroke-width="1.5"/><circle cx="10.9" cy="10.9" r="1" fill="#000" stroke="none"/><circle cx="13.1" cy="10.9" r="1" fill="#000" stroke="none"/><circle cx="10.9" cy="13.1" r="1" fill="#000" stroke="none"/><circle cx="13.1" cy="13.1" r="1" fill="#000" stroke="none"/></g></g></mask>
+        <mask id="fxk-git" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M10 8.3v7.4M10 8.8l4.4 3.4" stroke-width="1.7"/><circle cx="10" cy="8.3" r="1.6" fill="#000" stroke="none"/><circle cx="10" cy="15.8" r="1.6" fill="#000" stroke="none"/><circle cx="14.6" cy="12.4" r="1.6" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-inbox" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M4.5 5.5h15v6.8h-3.6c-.4 0-.8.2-1 .6l-.6 1.1c-.2.4-.6.6-1 .6h-2.6c-.4 0-.8-.2-1-.6l-.6-1.1c-.2-.4-.6-.6-1-.6H4.5z" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-photo" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="8.6" cy="8.9" r="1.9" fill="#000" stroke="none"/><path d="M5.2 17.2l4-4.1 3 3 3.4-3.9 3.3 3.9" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-issue" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M12 7.2a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6z" stroke-width="2.3"/></g></mask>
+        <mask id="fxk-chart-up" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M7 15.6l3.3-3.3 2.6 2.6 4.1-4.4" stroke-width="2.0"/><path d="M13.7 10.3H17v3.3" stroke-width="2.0"/></g></mask>
+        <mask id="fxk-plus-circle" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M12 7.4v9.2M7.4 12h9.2" stroke-width="2.1"/></g></mask>
+        <mask id="fxk-exchange" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M7.3 9.5h9.2M13.9 6.9l2.6 2.6-2.6 2.6" stroke-width="1.9"/><path d="M16.7 14.5H7.5M10.1 11.9l-2.6 2.6 2.6 2.6" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-diff" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M12 7.4v5.2M9.4 10h5.2" stroke-width="2"/><path d="M9.4 16.6h5.2" stroke-width="2"/></g></mask>
+        <mask id="fxk-check-circle" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M7.7 12.2l2.9 2.9 5.7-5.9" stroke-width="2.2"/></g></mask>
+        <mask id="fxk-chat" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M7.6 8.2h8.8M7.6 12.2h5.4" stroke-width="2"/></g></mask>
+        <mask id="fxk-robot" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="8.9" cy="12.9" r="1.7" fill="#000" stroke="none"/><circle cx="15.1" cy="12.9" r="1.7" fill="#000" stroke="none"/><path d="M10 16.7h4" stroke-width="1.7"/></g></mask>
+        <mask id="fxk-play-circle" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M9.8 8.4v7.2c0 .6.7 1 1.2.7l5.3-3.6c.5-.3.5-1 0-1.4L11 7.7c-.5-.3-1.2 0-1.2.7z" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-doc-text" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M13.5 2.8v4.1a1.6 1.6 0 0 0 1.6 1.6h4.1" stroke-width="1.6"/><path d="M8 12.8h8M8 16.6h5.2" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-chat-question" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M9.6 9.7a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1.1.9-1.1 1.6v.3" stroke-width="2"/><circle cx="12" cy="16.9" r="1.25" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-terminal" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M7.2 9.2l2.9 2.8-2.9 2.8" stroke-width="2.0"/><path d="M12.8 15h4" stroke-width="2.0"/></g></mask>
+        <mask id="fxk-code" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M10 8.4L6.8 12l3.2 3.6" stroke-width="2.0"/><path d="M14 8.4l3.2 3.6-3.2 3.6" stroke-width="2.0"/></g></mask>
+        <mask id="fxk-sliders" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="8.5" cy="6" r="3.9" fill="#000" stroke="none"/><circle cx="15.5" cy="12" r="3.9" fill="#000" stroke="none"/><circle cx="7" cy="18" r="3.9" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-box" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M3.5 7.2L12 12l8.5-4.8M12 12v9.6" stroke-width="1.7"/></g></mask>
+        <mask id="fxk-tag" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="7.6" cy="7.6" r="1.9" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-database" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M4 6.6c0 2 3.6 3.5 8 3.5s8-1.5 8-3.5M4 12.4c0 2 3.6 3.5 8 3.5s8-1.5 8-3.5" stroke-width="1.7"/></g></mask>
+        <mask id="fxk-download" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M12 6.6v7.2M8.9 10.9l3.1 3.1 3.1-3.1" stroke-width="2.0"/><path d="M7.6 17.4h8.8" stroke-width="2.0"/></g></mask>
+        <mask id="fxk-clipboard-check" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><rect x="6.7" y=".7" width="10.6" height="7.2" rx="2.8" fill="#000" stroke="none"/><path d="M8.6 14l2.3 2.3 4.5-4.6" stroke-width="2"/></g></mask>
+        <mask id="fxk-lock" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="12" cy="15" r="1.7" fill="#000" stroke="none"/><path d="M12 15.6v2.4" stroke-width="1.6"/></g></mask>
+        <mask id="fxk-send" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M10.1 13.9l4.8-4.8" stroke-width="1.7"/></g></mask>
+        <mask id="fxk-safe" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="12" cy="11" r="3.9" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-chats" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M4.8 9.2h8a2.8 2.8 0 0 1 2.8 2.8v5a2.8 2.8 0 0 1-2.8 2.8H8.5L5 22.6c-.5.4-1.1 0-1.1-.5v-2.3A2.8 2.8 0 0 1 2 17v-5a2.8 2.8 0 0 1 2.8-2.8z" fill="#000" stroke-width="3.2"/></g></mask>
+        <mask id="fxk-browser" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M2.5 8.6h19" stroke-width="1.7"/><circle cx="5.9" cy="6.1" r=".95" fill="#000" stroke="none"/><circle cx="8.7" cy="6.1" r=".95" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-camera" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="12" cy="13.6" r="3.7" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-markdown" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M5.6 15.3V8.7l2.9 3.4 2.9-3.4v6.6" stroke-width="1.8"/><path d="M17 8.7v6.4M14.6 12.8l2.4 2.4 2.4-2.4" stroke-width="1.8"/></g></mask>
+        <mask id="fxk-qr" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><rect x="4.4" y="4.4" width="4.2" height="4.2" rx=".9" fill="#000" stroke="none"/><rect x="15.4" y="4.4" width="4.2" height="4.2" rx=".9" fill="#000" stroke="none"/><rect x="4.4" y="15.4" width="4.2" height="4.2" rx=".9" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-keyboard" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="5.6" cy="9.4" r="1.05" fill="#000" stroke="none"/><circle cx="8.8" cy="9.4" r="1.05" fill="#000" stroke="none"/><circle cx="12" cy="9.4" r="1.05" fill="#000" stroke="none"/><circle cx="15.2" cy="9.4" r="1.05" fill="#000" stroke="none"/><circle cx="18.4" cy="9.4" r="1.05" fill="#000" stroke="none"/><circle cx="5.6" cy="12.4" r="1.05" fill="#000" stroke="none"/><circle cx="8.8" cy="12.4" r="1.05" fill="#000" stroke="none"/><circle cx="12" cy="12.4" r="1.05" fill="#000" stroke="none"/><circle cx="15.2" cy="12.4" r="1.05" fill="#000" stroke="none"/><circle cx="18.4" cy="12.4" r="1.05" fill="#000" stroke="none"/><path d="M8.2 15.7h7.6" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-heartbeat" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M6.4 12.6h2.4l1.8-3.9 2.8 7.1 1.8-3.2h2.4" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-id-card" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="8" cy="10.2" r="2.3" fill="#000" stroke="none"/><path d="M4.6 16.4c.4-2 1.8-3.3 3.4-3.3s3 1.3 3.4 3.3z" fill="#000" stroke="none"/><path d="M14.4 10h4.6M14.4 14h3.2" stroke-width="1.8"/></g></mask>
+        <mask id="fxk-gift" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M12 8v14" stroke-width="2"/><path d="M3 12.6h18" stroke-width="1.2"/></g></mask>
+        <mask id="fxk-globe" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><ellipse cx="12" cy="12" rx="4.1" ry="10" stroke-width="1.7"/><path d="M2 12h20" stroke-width="1.7"/></g></mask>
+        <mask id="fxk-phone" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M10.3 18.4h3.4" stroke-width="1.9"/></g></mask>
+        <mask id="fxk-rocket" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><circle cx="12" cy="9.6" r="2.1" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-wallet" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><rect x="14.8" y="10.4" width="9" height="5.6" rx="2.8" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-devices" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><rect x="13.2" y="7.6" width="10.8" height="15.8" rx="3.4" fill="#000" stroke="none"/></g></mask>
+        <mask id="fxk-info" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff" stroke="none"/><g><path d="M12 11v5.6" stroke-width="2.2"/><circle cx="12" cy="7.7" r="1.35" fill="#000" stroke="none"/></g></mask>
+      </defs>
+      <symbol id="fx-copy" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-copy)"><rect x="8.5" y="2.5" width="13" height="13" rx="3.5"/></g><g fill="currentColor" stroke="none"><rect x="2.5" y="8.5" width="13" height="13" rx="3.5"/></g></symbol>
+      <symbol id="fx-signpost" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="11" y="2" width="2" height="20" rx="1"/><path d="M4.5 4.5h11.8l3 3-3 3H4.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M19.5 12.5H7.7l-3 3 3 3h11.8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-navigation" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M12 2.8l7.2 18.4-7.2-4-7.2 4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-transfer" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-transfer)"><rect x="3" y="3" width="18" height="18" rx="4.5"/></g></symbol>
+      <symbol id="fx-refresh" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-refresh)"><circle cx="12" cy="12" r="10"/></g></symbol>
+      <symbol id="fx-shield-check" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-shield-check)"><path d="M12 2.4l7.6 3v5.9c0 4.7-3.2 8.6-7.6 10.3-4.4-1.7-7.6-5.6-7.6-10.3V5.4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-commit" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-commit)"><circle cx="12" cy="12" r="5"/><path d="M2.5 12h4.5M17 12h4.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-server" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-server)"><rect x="2.5" y="3" width="19" height="8" rx="2.8"/><rect x="2.5" y="13" width="19" height="8" rx="2.8"/></g></symbol>
+      <symbol id="fx-map" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-map)"><path d="M2.5 6.4c0-.5.3-.9.8-1.1l5.2-1.9 7 2.5 5-1.8c.7-.3 1.5.3 1.5 1v12.5c0 .5-.3.9-.8 1.1l-5.7 2-7-2.5-4.5 1.6c-.7.3-1.5-.3-1.5-1z"/></g></symbol>
+      <symbol id="fx-broadcast" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="12" cy="12" r="2.8"/><path d="M8.1 8.1a5.5 5.5 0 0 0 0 7.8M15.9 8.1a5.5 5.5 0 0 1 0 7.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.2 5.2a9.6 9.6 0 0 0 0 13.6M18.8 5.2a9.6 9.6 0 0 1 0 13.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-key" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-key)"><circle cx="8" cy="16" r="5.7"/><path d="M11.6 12.4L20 4M17.1 6.9l2.4 2.4M14.6 9.4l1.9 1.9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-pen" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-pen)"><path d="M16.3 3.2a2.4 2.4 0 0 1 3.4 0l1.1 1.1a2.4 2.4 0 0 1 0 3.4L9.6 18.9l-5.3 1.4c-.5.1-.9-.3-.8-.8l1.4-5.3z"/></g><g fill="currentColor" stroke="none"><path d="M13.5 20.5h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-patch" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-patch)"><rect x="1.2" y="7.4" width="21.6" height="9.2" rx="4.6" transform="rotate(-45 12 12)"/></g></symbol>
+      <symbol id="fx-git" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-git)"><rect x="4.4" y="4.4" width="15.2" height="15.2" rx="3.2" transform="rotate(45 12 12)"/></g></symbol>
+      <symbol id="fx-inbox" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-inbox)"><rect x="2.5" y="3.5" width="19" height="17" rx="3.5"/></g></symbol>
+      <symbol id="fx-git-compare" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M13.5 6H16a2 2 0 0 1 2 2v7M15.5 3.5L13 6l2.5 2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 18H8a2 2 0 0 1-2-2V9M8.5 20.5L11 18l-2.5-2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-photo" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-photo)"><rect x="2.5" y="3.5" width="19" height="17" rx="3.5"/></g></symbol>
+      <symbol id="fx-issue" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-issue)"><circle cx="12" cy="12" r="10"/></g></symbol>
+      <symbol id="fx-kanban" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="2.5" y="3" width="5.4" height="18" rx="2"/><rect x="9.3" y="3" width="5.4" height="11.5" rx="2"/><rect x="16.1" y="3" width="5.4" height="14.5" rx="2"/></g></symbol>
+      <symbol id="fx-flag" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="3.8" y="2.5" width="2.4" height="19" rx="1.2"/><path d="M6.2 4h12.3c.7 0 1.1.8.7 1.4L16.9 9l2.3 3.6c.4.6 0 1.4-.7 1.4H6.2z" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-chart-up" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-chart-up)"><rect x="3" y="3" width="18" height="18" rx="4.5"/></g></symbol>
+      <symbol id="fx-plus-circle" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-plus-circle)"><circle cx="12" cy="12" r="10"/></g></symbol>
+      <symbol id="fx-exchange" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-exchange)"><circle cx="12" cy="12" r="10"/></g></symbol>
+      <symbol id="fx-diff" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-diff)"><rect x="4.5" y="2.5" width="15" height="19" rx="3"/></g></symbol>
+      <symbol id="fx-check-circle" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-check-circle)"><circle cx="12" cy="12" r="10"/></g></symbol>
+      <symbol id="fx-chat" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-chat)"><path d="M3 6.5A3.5 3.5 0 0 1 6.5 3h11A3.5 3.5 0 0 1 21 6.5v7.5a3.5 3.5 0 0 1-3.5 3.5h-5.6l-4.6 3.5c-.7.5-1.6 0-1.6-.8v-2.8A3.5 3.5 0 0 1 3 14z"/></g></symbol>
+      <symbol id="fx-sparkles" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M10.00 5.20C10.83 8.11 15.39 12.67 18.30 13.50C15.39 14.33 10.83 18.89 10.00 21.80C9.17 18.89 4.60 14.33 1.70 13.50C4.60 12.67 9.17 8.11 10.00 5.20Z" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/><path d="M18.50 1.70C18.86 2.96 20.84 4.94 22.10 5.30C20.84 5.66 18.86 7.64 18.50 8.90C18.14 7.64 16.16 5.66 14.90 5.30C16.16 4.94 18.14 2.96 18.50 1.70Z" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-wand" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M3.6 20.4L14 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M17.20 2.40C17.64 3.94 20.06 6.36 21.60 6.80C20.06 7.24 17.64 9.66 17.20 11.20C16.76 9.66 14.34 7.24 12.80 6.80C14.34 6.36 16.76 3.94 17.20 2.40Z" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/><path d="M8.60 2.20C8.82 2.97 10.03 4.18 10.80 4.40C10.03 4.62 8.82 5.83 8.60 6.60C8.38 5.83 7.17 4.62 6.40 4.40C7.17 4.18 8.38 2.97 8.60 2.20Z" stroke="currentColor" stroke-width="0.6" stroke-linejoin="round"/><path d="M19.80 12.40C20.02 13.17 21.23 14.38 22.00 14.60C21.23 14.82 20.02 16.03 19.80 16.80C19.58 16.03 18.37 14.82 17.60 14.60C18.37 14.38 19.58 13.17 19.80 12.40Z" stroke="currentColor" stroke-width="0.6" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-merge" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="6" cy="5.8" r="3"/><circle cx="18" cy="17.8" r="3"/><path d="M6 8.8v12.4M6 9a8.8 8.8 0 0 0 8.8 8.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-robot" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-robot)"><rect x="3.5" y="7.2" width="17" height="13.3" rx="3.6"/><rect x="11" y="4" width="2" height="4"/><circle cx="12" cy="3.4" r="1.9"/><rect x="1.2" y="11.2" width="2.8" height="5.2" rx="1.2"/><rect x="20" y="11.2" width="2.8" height="5.2" rx="1.2"/></g></symbol>
+      <symbol id="fx-layers" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M11.2 2.9c.5-.3 1.1-.3 1.6 0l8.2 4.3c.7.4.7 1.3 0 1.7l-8.2 4.3c-.5.3-1.1.3-1.6 0L3 8.9c-.7-.4-.7-1.3 0-1.7z"/></g><g fill="currentColor" stroke="none"><path d="M3.2 12.5L12 17l8.8-4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.2 16.6L12 21.1l8.8-4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-lanes" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="2.5" y="3.3" width="19" height="4.6" rx="2.3"/><rect x="2.5" y="9.7" width="12.5" height="4.6" rx="2.3"/><rect x="2.5" y="16.1" width="16" height="4.6" rx="2.3"/></g></symbol>
+      <symbol id="fx-play-circle" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-play-circle)"><circle cx="12" cy="12" r="10"/></g></symbol>
+      <symbol id="fx-doc-text" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-doc-text)"><path d="M6.5 2.5h6.9c.5 0 1 .2 1.4.6l4.6 4.6c.4.4.6.9.6 1.4v10.4a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 19.5v-14a2.5 2.5 0 0 1 2.5-2.5z"/></g></symbol>
+      <symbol id="fx-chat-question" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-chat-question)"><path d="M12 2.7a9.3 9.3 0 0 0-8.1 13.9l-1.1 3.8c-.2.6.4 1.1 1 1l3.8-1.1A9.3 9.3 0 1 0 12 2.7z"/></g></symbol>
+      <symbol id="fx-terminal" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-terminal)"><rect x="2.5" y="3.5" width="19" height="17" rx="3.5"/></g></symbol>
+      <symbol id="fx-code" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-code)"><rect x="3" y="3" width="18" height="18" rx="4.5"/></g></symbol>
+      <symbol id="fx-gauge" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M5.4 18.6A9.3 9.3 0 1 1 18.6 18.6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13.2" r="2.4"/><path d="M12 13.2l3.8-4.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-sliders" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-sliders)"><path d="M3 6h18M3 12h18M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g><g fill="currentColor" stroke="none"><circle cx="8.5" cy="6" r="2.6"/><circle cx="15.5" cy="12" r="2.6"/><circle cx="7" cy="18" r="2.6"/></g></symbol>
+      <symbol id="fx-bolt" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M13.3 2.6L4.9 13.1c-.4.5 0 1.3.6 1.3h5.3l-1 6.8c-.1.8.9 1.2 1.3.6l8.4-10.5c.4-.5 0-1.3-.6-1.3h-5.3l1-6.8c.1-.8-.9-1.2-1.3-.6z"/></g></symbol>
+      <symbol id="fx-box" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-box)"><path d="M10.9 2.4c.7-.4 1.5-.4 2.2 0l6.9 3.9c.7.4 1.1 1.1 1.1 1.9v7.6c0 .8-.4 1.5-1.1 1.9l-6.9 3.9c-.7.4-1.5.4-2.2 0L4 17.7c-.7-.4-1.1-1.1-1.1-1.9V8.2c0-.8.4-1.5 1.1-1.9z"/></g></symbol>
+      <symbol id="fx-tag" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-tag)"><path d="M2.8 4.9v5.8c0 .6.2 1.1.6 1.5l8.5 8.5c.8.8 2.1.8 2.9 0l5.8-5.8c.8-.8.8-2.1 0-2.9l-8.5-8.5c-.4-.4-.9-.6-1.5-.6H4.9a2.1 2.1 0 0 0-2.1 2z"/></g></symbol>
+      <symbol id="fx-database" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-database)"><path d="M4 6c0-2 3.6-3.5 8-3.5S20 4 20 6v12c0 2-3.6 3.5-8 3.5S4 20 4 18z"/></g></symbol>
+      <symbol id="fx-download" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-download)"><rect x="3" y="3" width="18" height="18" rx="4.5"/></g></symbol>
+      <symbol id="fx-clipboard-check" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-clipboard-check)"><rect x="4" y="4" width="16" height="18" rx="3"/></g><g fill="currentColor" stroke="none"><rect x="8" y="2" width="8" height="4.6" rx="1.6"/></g></symbol>
+      <symbol id="fx-chart-bar" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="3" y="12" width="4.6" height="9" rx="1.6"/><rect x="9.7" y="3" width="4.6" height="18" rx="1.6"/><rect x="16.4" y="7.5" width="4.6" height="13.5" rx="1.6"/></g></symbol>
+      <symbol id="fx-lock" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-lock)"><rect x="3.8" y="10" width="16.4" height="11.8" rx="3"/><path d="M7.8 10.4V7.3a4.2 4.2 0 0 1 8.4 0v3.1" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-send" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-send)"><path d="M21.3 3.9c.3-.8-.5-1.5-1.2-1.2L2.9 9.4c-.8.3-.8 1.5 0 1.8l7 2.9 2.9 7c.3.8 1.5.8 1.8 0z"/></g></symbol>
+      <symbol id="fx-safe" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-safe)"><rect x="2.5" y="3" width="19" height="16" rx="3"/><rect x="5.2" y="17.5" width="3.3" height="4" rx="1.2"/><rect x="15.5" y="17.5" width="3.3" height="4" rx="1.2"/></g></symbol>
+      <symbol id="fx-chats" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-chats)"><path d="M9.2 3h10a2.8 2.8 0 0 1 2.8 2.8v5.9a2.8 2.8 0 0 1-2.8 2.8h-.4v2.3c0 .6-.7.9-1.1.5l-3.2-2.8H9.2a2.8 2.8 0 0 1-2.8-2.8V5.8A2.8 2.8 0 0 1 9.2 3z"/></g><g fill="currentColor" stroke="none"><path d="M4.8 9.2h8a2.8 2.8 0 0 1 2.8 2.8v5a2.8 2.8 0 0 1-2.8 2.8H8.5L5 22.6c-.5.4-1.1 0-1.1-.5v-2.3A2.8 2.8 0 0 1 2 17v-5a2.8 2.8 0 0 1 2.8-2.8z"/></g></symbol>
+      <symbol id="fx-browser" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-browser)"><rect x="2.5" y="3.5" width="19" height="17" rx="3.5"/></g></symbol>
+      <symbol id="fx-layout" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="3" y="3" width="8" height="8" rx="2.4"/><rect x="13" y="3" width="8" height="8" rx="2.4"/><rect x="3" y="13" width="8" height="8" rx="2.4"/><rect x="13" y="13" width="8" height="8" rx="2.4"/></g></symbol>
+      <symbol id="fx-branch" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><path d="M6 3v12M18 9a9 9 0 0 1-9 9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-mic" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="8.4" y="2.4" width="7.2" height="12.2" rx="3.6"/><path d="M5.4 11.2a6.6 6.6 0 0 0 13.2 0M12 17.8v3.5M8.8 21.3h6.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-camera" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-camera)"><path d="M3.8 7.4h2.9l1.6-2.3c.3-.4.8-.7 1.3-.7h4.8c.5 0 1 .3 1.3.7l1.6 2.3h2.9A1.8 1.8 0 0 1 22 9.2v9.1a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 18.3V9.2a1.8 1.8 0 0 1 1.8-1.8z"/></g></symbol>
+      <symbol id="fx-markdown" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-markdown)"><rect x="1.5" y="4.5" width="21" height="15" rx="3.2"/></g></symbol>
+      <symbol id="fx-qr" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-qr)"><rect x="2.5" y="2.5" width="8" height="8" rx="2.2"/><rect x="13.5" y="2.5" width="8" height="8" rx="2.2"/><rect x="2.5" y="13.5" width="8" height="8" rx="2.2"/><rect x="13.5" y="13.5" width="3.4" height="3.4" rx="1"/><rect x="18.1" y="18.1" width="3.4" height="3.4" rx="1"/><rect x="18.1" y="13.5" width="3.4" height="3.4" rx="1"/><rect x="13.5" y="18.1" width="3.4" height="3.4" rx="1"/></g><g fill="currentColor" stroke="none"><rect x="5.5" y="5.5" width="2" height="2" rx=".5"/><rect x="16.5" y="5.5" width="2" height="2" rx=".5"/><rect x="5.5" y="16.5" width="2" height="2" rx=".5"/></g></symbol>
+      <symbol id="fx-keyboard" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-keyboard)"><rect x="1.5" y="5" width="21" height="14" rx="3.2"/></g></symbol>
+      <symbol id="fx-fork" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="6" cy="5.2" r="2.9"/><circle cx="18" cy="5.2" r="2.9"/><circle cx="12" cy="18.8" r="2.9"/><path d="M6 8.1v.8a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-.8M12 11.9v4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-heartbeat" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-heartbeat)"><rect x="3" y="3" width="18" height="18" rx="4.5"/></g></symbol>
+      <symbol id="fx-user" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="12" cy="7.5" r="4.6"/><path d="M3.5 19.6c0-3.8 3.8-6.3 8.5-6.3s8.5 2.5 8.5 6.3c0 1-.8 1.9-1.9 1.9H5.4c-1 0-1.9-.9-1.9-1.9z"/></g></symbol>
+      <symbol id="fx-id-card" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-id-card)"><rect x="1.5" y="4" width="21" height="16" rx="3.2"/></g></symbol>
+      <symbol id="fx-heart" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M12 20.4c-.3 0-.6-.1-.8-.3C8.3 17.8 2.8 13.6 2.8 8.8 2.8 6 5 3.8 7.7 3.8c1.8 0 3.3.9 4.3 2.3 1-1.4 2.5-2.3 4.3-2.3 2.7 0 4.9 2.2 4.9 5 0 4.8-5.5 9-8.4 11.3-.2.2-.5.3-.8.3z"/></g></symbol>
+      <symbol id="fx-cloud-rain" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M7.2 16.2a4.6 4.6 0 0 1-.5-9.2 6.2 6.2 0 0 1 11.5 1.2 4 4 0 0 1-.2 8z"/><path d="M8 19l-.9 2.2M12.4 19l-.9 2.2M16.8 19l-.9 2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-trophy" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M7 3.2h10v5.3a5 5 0 0 1-10 0z" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/><path d="M7 5.2H4.9c-.5 0-.9.4-.9.9 0 2.1 1.4 3.9 3.4 4.3M17 5.2h2.1c.5 0 .9.4.9.9 0 2.1-1.4 3.9-3.4 4.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="10.9" y="12.8" width="2.2" height="5"/><rect x="7" y="17.3" width="10" height="3.8" rx="1.4"/></g></symbol>
+      <symbol id="fx-gift" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-gift)"><rect x="2.5" y="7.4" width="19" height="4.8" rx="1.4"/><rect x="4" y="12.2" width="16" height="9.3" rx="1.8"/><path d="M12 7.4C10.9 4.6 8.2 3.4 7.1 4.5c-1.1 1.1.2 2.9 4.9 2.9zM12 7.4c1.1-2.8 3.8-4 4.9-2.9 1.1 1.1-.2 2.9-4.9 2.9z"/></g></symbol>
+      <symbol id="fx-globe" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-globe)"><circle cx="12" cy="12" r="10"/></g></symbol>
+      <symbol id="fx-link" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M10 13.6a4.3 4.3 0 0 0 6.2.4l2.8-2.8a4.3 4.3 0 0 0-6.1-6.1l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 10.4a4.3 4.3 0 0 0-6.2-.4L5 12.8a4.3 4.3 0 0 0 6.1 6.1l1.5-1.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-phone" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-phone)"><rect x="5.5" y="1.8" width="13" height="20.4" rx="3.2"/></g></symbol>
+      <symbol id="fx-puzzle" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path transform="translate(-1 1)" d="M5.5 6H9.4C8.9 5.5 8.7 4.9 8.7 4.3 8.7 2.9 9.8 2 11 2s2.3.9 2.3 2.3c0 .6-.2 1.2-.7 1.7h3.9A1.5 1.5 0 0 1 18 7.5v3.9c.5-.5 1.1-.7 1.7-.7 1.4 0 2.3 1.1 2.3 2.3s-.9 2.3-2.3 2.3c-.6 0-1.2-.2-1.7-.7v3.9a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6z"/></g></symbol>
+      <symbol id="fx-book" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M11 5.7C9 4.3 6.1 3.8 3.3 4.4c-.5.1-.8.5-.8 1v12.9c0 .6.6 1.1 1.2 1 2.6-.5 5.2-.1 7.3 1.3zM13 5.7c2-1.4 4.9-1.9 7.7-1.3.5.1.8.5.8 1v12.9c0 .6-.6 1.1-1.2 1-2.6-.5-5.2-.1-7.3 1.3z"/></g></symbol>
+      <symbol id="fx-megaphone" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M3 10.3v3.4c0 .9.8 1.7 1.7 1.7h1.7l8 4.4c.7.4 1.6-.1 1.6-.9V5.1c0-.8-.9-1.3-1.6-.9l-8 4.4H4.7c-.9 0-1.7.8-1.7 1.7z"/><path d="M7 15.6l1.1 4.6h2.5l-1.1-4.6z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M19.2 9.1a4 4 0 0 1 0 5.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-network" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="12" cy="4.8" r="3"/><circle cx="4.8" cy="18.6" r="3"/><circle cx="19.2" cy="18.6" r="3"/><path d="M10.6 7.5l-4.4 8.4M13.4 7.5l4.4 8.4M7.8 18.6h8.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-pr" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><circle cx="6" cy="5.6" r="2.9"/><circle cx="6" cy="18.4" r="2.9"/><circle cx="18" cy="18.4" r="2.9"/><path d="M6 8.5v7M18 15.5V9.8a3 3 0 0 0-3-3h-4.2M13.2 4.3l-2.5 2.5 2.5 2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-rocket" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-rocket)"><path d="M12 2.2c3.2 1.8 5.2 5.3 5.2 9.3v4.3c0 .4-.3.7-.7.7h-9c-.4 0-.7-.3-.7-.7v-4.3c0-4 2-7.5 5.2-9.3z"/><path d="M6.8 11.6L4 14.3c-.3.3-.5.7-.5 1.1V19l3.3-1.6z"/><path d="M17.2 11.6l2.8 2.7c.3.3.5.7.5 1.1V19l-3.3-1.6z"/><path d="M9.8 17.8h4.4l-.8 2.9c-.2.7-.8 1.2-1.4 1.2s-1.2-.5-1.4-1.2z"/></g></symbol>
+      <symbol id="fx-monitor" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="2" y="3" width="20" height="13.6" rx="3"/><rect x="10.8" y="15" width="2.4" height="5.4"/><path d="M8.2 20.6h7.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g></symbol>
+      <symbol id="fx-wallet" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-wallet)"><rect x="2.5" y="6" width="19" height="14.5" rx="3.2"/><path d="M5.4 6l9.3-2.9c1.2-.4 2.4.5 2.4 1.8V6z"/></g><g fill="currentColor" stroke="none"><circle cx="17.6" cy="13.2" r="1.35"/></g></symbol>
+      <symbol id="fx-devices" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-devices)"><rect x="1.5" y="3.8" width="16" height="11.4" rx="2.6"/><rect x="8.3" y="14" width="2.4" height="4.8"/><path d="M6.2 19.6h6.6" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></g><g fill="currentColor" stroke="none"><rect x="14.7" y="9.1" width="7.8" height="12.8" rx="2.2"/></g></symbol>
+      <symbol id="fx-info" viewBox="0 0 24 24"><g fill="currentColor" stroke="none" mask="url(#fxk-info)"><circle cx="12" cy="12" r="10"/></g></symbol>
+      <symbol id="fx-grid" viewBox="0 0 24 24"><path d="M4.5 3.5h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM15.5 3.5h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM4.5 14.5h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM15.5 14.5h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="fx-chevron" viewBox="0 0 24 24"><path d="M9.5 6.5l5.5 5.5-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="fx-arrow" viewBox="0 0 24 24"><path d="M4.5 12h14.5M13.5 6.5l5.5 5.5-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </svg>
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="fx">
+      <div class="fx-hero fx-head">
+        <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-grid"/></svg>Feature catalog</span>
+        <h1 class="fx-title fx-title-hero">Every feature in the mesh.</h1>
+        <p class="fx-lede">
+          ForkMesh is a complete code forge that lives on machines you and your
+          community control — not on one company's servers. This page is the
+          whole catalog: hosting, collaboration, AI agents, CI, chat, money, and
+          the apps that tie it together.
+        </p>
+        <div class="fx-actions">
+          <a class="fx-btn fx-btn-primary" href="/signup">Join the mesh<svg class="fx-btn-ico" aria-hidden="true"><use href="#fx-chevron"/></svg></a>
+          <a class="fx-btn fx-btn-secondary" href="/docs/">Read the docs<svg class="fx-btn-ico" aria-hidden="true"><use href="#fx-chevron"/></svg></a>
+        </div>
+        <nav class="fx-toc" aria-label="Feature categories">
+          <a href="#mesh"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-network"/></svg>Distributed hosting</a>
+          <a href="#signed"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-key"/></svg>Signed collaboration</a>
+          <a href="#issues"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-issue"/></svg>Issues &amp; planning</a>
+          <a href="#pulls"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-pr"/></svg>Pull requests &amp; review</a>
+          <a href="#agents"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-robot"/></svg>AI agents</a>
+          <a href="#ci"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-rocket"/></svg>CI, releases &amp; distribution</a>
+          <a href="#chat"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-chats"/></svg>Chat &amp; private sharing</a>
+          <a href="#desktop"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-monitor"/></svg>Desktop app</a>
+          <a href="#money"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-wallet"/></svg>Accounts &amp; rewards</a>
+          <a href="#everywhere"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-devices"/></svg>Mobile, web &amp; plugins</a>
+        </nav>
+      </div>
+
+      <section id="mesh" class="fx-section" aria-labelledby="mesh-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-network"/></svg>Distributed hosting &amp; preservation</span>
+          <h2 id="mesh-title" class="fx-title">Repositories that outlive any one machine</h2>
+          <p class="fx-lede">
+            The core bet: a repository should survive any single machine,
+            company, or account. ForkMesh keeps real Git mirrors on real
+            desktops and coordinates them through a routing layer that never
+            becomes permanent repository storage.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-copy"/></svg></span>
+            </div>
+            <h3>Desktop-node mirrors</h3>
+            <p>
+              Actively mirrored repositories live on independently operated
+              nodes and refresh while their configured synchronization is
+              healthy. External stubs are clearly labeled until a mirror accepts
+              them; private replicas are opaque client-encrypted archives.
+            </p>
+            <a class="fx-more" href="/blog/desktop-node-mirrors/">
+              Read the blog post<span class="fx-sr"> about Desktop-node mirrors</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-signpost"/></svg></span>
+            </div>
+            <h3>Packfile-free routing relay</h3>
+            <p>
+              The routing layer stores signed discovery and generalized health
+              metadata, not packfiles. Repository bytes stream from a selected
+              independent origin over ordinary HTTPS.
+            </p>
+            <a class="fx-more" href="/blog/zero-custody-relay/">
+              Read the blog post<span class="fx-sr"> about Packfile-free routing relay</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-navigation"/></svg></span>
+            </div>
+            <h3>Live clone routing</h3>
+            <p>
+              <code>git clone https://forkmesh.com/owner/repo</code> uses normal
+              Smart HTTP while the router selects a fresh, healthy,
+              integrity-verified mirror behind the unchanged public URL.
+            </p>
+            <a class="fx-more" href="/blog/live-clone-routing/">
+              Read the blog post<span class="fx-sr"> about Live clone routing</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-transfer"/></svg></span>
+            </div>
+            <h3>Streaming transfers</h3>
+            <p>
+              Packs stream over HTTPS from the selected read-only gateway. The
+              router proxies the response but never keeps it as repository
+              storage.
+            </p>
+            <a class="fx-more" href="/blog/streaming-transfers/">
+              Read the blog post<span class="fx-sr"> about Streaming transfers</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-refresh"/></svg></span>
+            </div>
+            <h3>Mirror failover</h3>
+            <p>
+              When an eligible, healthy, integrity-matching mirror exists,
+              ForkMesh can fail over behind the same public URL. Sticky routing
+              keeps one clone exchange on one mirror.
+            </p>
+            <a class="fx-more" href="/blog/mirror-failover/">
+              Read the blog post<span class="fx-sr"> about Mirror failover</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-shield-check"/></svg></span>
+            </div>
+            <h3>Source-attested integrity</h3>
+            <p>
+              Fallback serving is checked against integrity pins attested by the
+              source of truth, so a mirror can prove it's handing you the same
+              history the author published.
+            </p>
+            <a class="fx-more" href="/blog/source-attested-integrity/">
+              Read the blog post<span class="fx-sr"> about Source-attested integrity</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-commit"/></svg></span>
+            </div>
+            <h3>Root-commit identity</h3>
+            <p>
+              Reported mirrors can be grouped by a signed repository root
+              commit, independent of the local name each host chose.
+            </p>
+            <a class="fx-more" href="/blog/root-commit-identity/">
+              Read the blog post<span class="fx-sr"> about Root-commit identity</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-server"/></svg></span>
+            </div>
+            <h3>Headless mirror nodes</h3>
+            <p>
+              One command turns any Linux box or VM into a mirror node. The
+              installer registers its account, syncs its repositories, and
+              starts serving — no GUI required.
+            </p>
+            <a class="fx-more" href="/blog/headless-mirror-nodes/">
+              Read the blog post<span class="fx-sr"> about Headless mirror nodes</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-map"/></svg></span>
+            </div>
+            <h3>Public network map</h3>
+            <p>
+              The network page shows recently verified public nodes, generalized
+              mirror health, and only optional telemetry each operator chose to
+              publish.
+            </p>
+            <a class="fx-more" href="/blog/public-network-map/">
+              Read the blog post<span class="fx-sr"> about Public network map</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-broadcast"/></svg></span>
+            </div>
+            <h3>Presence done right</h3>
+            <p>
+              Bounded heartbeats, expiry, and live probes reduce stale presence
+              while allowing the deliberately minimal real-time layer to lag.
+            </p>
+            <a class="fx-more" href="/blog/presence-done-right/">
+              Read the blog post<span class="fx-sr"> about Presence done right</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="signed" class="fx-section" aria-labelledby="signed-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-key"/></svg>Signed, portable collaboration</span>
+          <h2 id="signed-title" class="fx-title">Collaboration that lives in the repository</h2>
+          <p class="fx-lede">
+            Collaboration records aren't rows in someone else's database. They
+            are signed events committed into the repository itself — verifiable
+            anywhere, hosted everywhere.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-key"/></svg></span>
+              <span class="fx-tag">No passwords</span>
+            </div>
+            <h3>Ed25519 identity</h3>
+            <p>
+              Nodes and people are identified by local Ed25519 keys. Profiles,
+              catalog records, and every collaboration event carry a signature
+              you can check yourself.
+            </p>
+            <a class="fx-more" href="/blog/ed25519-identity/">
+              Read the blog post<span class="fx-sr"> about Ed25519 identity</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-pen"/></svg></span>
+            </div>
+            <h3>Signed issue events</h3>
+            <p>
+              Every issue open, comment, edit, and close is a signed event.
+              Authorship is verifiable no matter which node — or which mirror —
+              served you the data.
+            </p>
+            <a class="fx-more" href="/blog/signed-issue-events/">
+              Read the blog post<span class="fx-sr"> about Signed issue events</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-patch"/></svg></span>
+            </div>
+            <h3>Signed patch pull requests</h3>
+            <p>
+              PRs are signed patch submissions. Anyone can propose a change to
+              any repository in the mesh and the maintainer can verify exactly
+              who sent what.
+            </p>
+            <a class="fx-more" href="/blog/signed-patch-pull-requests/">
+              Read the blog post<span class="fx-sr"> about Signed patch pull requests</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-git"/></svg></span>
+            </div>
+            <h3>Everything lives in Git</h3>
+            <p>
+              Issues, pull requests, discussions, and release notes are files
+              committed to the repository. Clone the repo and you own the whole
+              project history — code and conversation alike.
+            </p>
+            <a class="fx-more" href="/blog/everything-lives-in-git/">
+              Read the blog post<span class="fx-sr"> about Everything lives in Git</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-inbox"/></svg></span>
+            </div>
+            <h3>Web contribution inbox</h3>
+            <p>
+              Visitors can file issues and pull requests from the website even
+              while the owner is offline. Signed submissions wait in an inbox;
+              the owner reviews, commits, and the mesh syncs back.
+            </p>
+            <a class="fx-more" href="/blog/web-contribution-inbox/">
+              Read the blog post<span class="fx-sr"> about Web contribution inbox</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-git-compare"/></svg></span>
+            </div>
+            <h3>Branch-backed &amp; patch-backed PRs</h3>
+            <p>
+              Pull requests can ride a live branch (diffs derived straight from
+              the head ref) or carry a stored patch for cross-node and offline
+              submissions — both merge the same way.
+            </p>
+            <a class="fx-more" href="/blog/branch-backed-and-patch-backed-prs/">
+              Read the blog post<span class="fx-sr"> about Branch-backed &amp; patch-backed PRs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-photo"/></svg></span>
+            </div>
+            <h3>Binary-safe patches</h3>
+            <p>
+              Patches embed binary content, so images, fonts, and other assets
+              survive the trip and merge cleanly — with a proper placeholder and
+              badge in the diff view.
+            </p>
+            <a class="fx-more" href="/blog/binary-safe-patches/">
+              Read the blog post<span class="fx-sr"> about Binary-safe patches</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="issues" class="fx-section" aria-labelledby="issues-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-issue"/></svg>Issues &amp; planning</span>
+          <h2 id="issues-title" class="fx-title">Plan the work right next to the code</h2>
+          <p class="fx-lede">
+            A tracker that grows with the project — from a quick TODO to a
+            milestone-driven roadmap — without leaving the mesh.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-issue"/></svg></span>
+            </div>
+            <h3>Full issue tracker</h3>
+            <p>
+              Open and closed states, priorities, assignees, and custom fields —
+              all stored as signed events in the repository and browsable on the
+              web.
+            </p>
+            <a class="fx-more" href="/blog/full-issue-tracker/">
+              Read the blog post<span class="fx-sr"> about Full issue tracker</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-kanban"/></svg></span>
+            </div>
+            <h3>Kanban board</h3>
+            <p>
+              Drag issues across columns to plan work visually, right inside the
+              desktop app.
+            </p>
+            <a class="fx-more" href="/blog/kanban-board/">
+              Read the blog post<span class="fx-sr"> about Kanban board</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-flag"/></svg></span>
+            </div>
+            <h3>Milestones with progress</h3>
+            <p>
+              Group issues into milestones and watch live progress bars fill as
+              work lands.
+            </p>
+            <a class="fx-more" href="/blog/milestones-with-progress/">
+              Read the blog post<span class="fx-sr"> about Milestones with progress</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-up"/></svg></span>
+            </div>
+            <h3>Burnup charts</h3>
+            <p>
+              Built-in burnup charts show scope and completion over time, so you
+              can see a release converging (or not) at a glance.
+            </p>
+            <a class="fx-more" href="/blog/burnup-charts/">
+              Read the blog post<span class="fx-sr"> about Burnup charts</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-plus-circle"/></svg></span>
+            </div>
+            <h3>Quick-add from anywhere</h3>
+            <p>
+              A prompt-style quick-add box captures an issue in one line — and
+              can hand it straight to an AI agent as it's filed.
+            </p>
+            <a class="fx-more" href="/blog/quick-add-from-anywhere/">
+              Read the blog post<span class="fx-sr"> about Quick-add from anywhere</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-exchange"/></svg></span>
+            </div>
+            <h3>Issues ↔ PRs that talk</h3>
+            <p>
+              Merge a pull request and its linked issue closes itself. One
+              checkbox syncs the merge straight to main.
+            </p>
+            <a class="fx-more" href="/blog/issues-prs-that-talk/">
+              Read the blog post<span class="fx-sr"> about Issues ↔ PRs that talk</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="pulls" class="fx-section" aria-labelledby="pulls-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-pr"/></svg>Pull requests &amp; review</span>
+          <h2 id="pulls-title" class="fx-title">Review that doesn&rsquo;t stop at comments</h2>
+          <p class="fx-lede">
+            Review with rich diffs, real mergeability checks, and an AI reviewer
+            that doesn't just comment — it fixes.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-diff"/></svg></span>
+            </div>
+            <h3>Rich diffs</h3>
+            <p>
+              Syntax-aware diffs with side-by-side image comparison and clear
+              badges for binary changes — in the app and on the web.
+            </p>
+            <a class="fx-more" href="/blog/rich-diffs/">
+              Read the blog post<span class="fx-sr"> about Rich diffs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-check-circle"/></svg></span>
+            </div>
+            <h3>Real mergeability checks</h3>
+            <p>
+              Every PR is checked with a true three-way merge against the live
+              base branch, so "can merge" means it will actually merge.
+            </p>
+            <a class="fx-more" href="/blog/real-mergeability-checks/">
+              Read the blog post<span class="fx-sr"> about Real mergeability checks</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chat"/></svg></span>
+            </div>
+            <h3>Review conversations</h3>
+            <p>
+              Inline comment threads, emoji reactions, and Markdown everywhere —
+              signed like every other event.
+            </p>
+            <a class="fx-more" href="/blog/review-conversations/">
+              Read the blog post<span class="fx-sr"> about Review conversations</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sparkles"/></svg></span>
+              <span class="fx-tag">AI</span>
+            </div>
+            <h3>AI code review</h3>
+            <p>
+              One click asks an AI reviewer for findings, each anchored to the
+              exact lines as a mini-diff suggestion. Apply a single quick-fix or
+              fix everything at once.
+            </p>
+            <a class="fx-more" href="/blog/ai-code-review/">
+              Read the blog post<span class="fx-sr"> about AI code review</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-wand"/></svg></span>
+              <span class="fx-tag">AI</span>
+            </div>
+            <h3>AI conflict resolution</h3>
+            <p>
+              When a merge conflicts, hand the conflict to an agent that edits
+              the files in place and reports back — no manual
+              <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> spelunking.
+            </p>
+            <a class="fx-more" href="/blog/ai-conflict-resolution/">
+              Read the blog post<span class="fx-sr"> about AI conflict resolution</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-merge"/></svg></span>
+            </div>
+            <h3>Merge from anywhere</h3>
+            <p>
+              Merge from the desktop client with the branch view, the PR view,
+              or straight from an agent's completed session.
+            </p>
+            <a class="fx-more" href="/blog/merge-from-anywhere/">
+              Read the blog post<span class="fx-sr"> about Merge from anywhere</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="agents" class="fx-section" aria-labelledby="agents-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-robot"/></svg>AI agents, built in</span>
+          <h2 id="agents-title" class="fx-title">Assign the issue, review the pull request</h2>
+          <p class="fx-lede">
+            Open an issue, hand it to an agent, get a pull request. ForkMesh
+            treats AI coding agents as first-class contributors — with real
+            sandboxed worktrees, live transcripts, and a native terminal.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-robot"/></svg></span>
+              <span class="fx-tag">Claude Code · Codex</span>
+            </div>
+            <h3>Assign any issue to an agent</h3>
+            <p>
+              From the issue detail, the quick-add box, or even the website's
+              new-issue form: one click sends the issue to Claude Code or Codex,
+              which works the issue and opens a PR when it's done.
+            </p>
+            <a class="fx-more" href="/blog/assign-any-issue-to-an-agent/">
+              Read the blog post<span class="fx-sr"> about Assign any issue to an agent</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layers"/></svg></span>
+            </div>
+            <h3>Dedicated agent worktrees</h3>
+            <p>
+              Each session runs on its own branch in its own worktree, so agents
+              never trample your working tree — and finished work arrives as a
+              reviewable pull request automatically.
+            </p>
+            <a class="fx-more" href="/blog/dedicated-agent-worktrees/">
+              Read the blog post<span class="fx-sr"> about Dedicated agent worktrees</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lanes"/></svg></span>
+            </div>
+            <h3>Parallel agents</h3>
+            <p>
+              Run as many agents as you like across your issues at once, with
+              live activity indicators showing who's working right now.
+            </p>
+            <a class="fx-more" href="/blog/parallel-agents/">
+              Read the blog post<span class="fx-sr"> about Parallel agents</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
+            </div>
+            <h3>Resumable sessions</h3>
+            <p>
+              Pick any conversation back up where it left off — sessions
+              persist, survive restarts, and keep their full context.
+            </p>
+            <a class="fx-more" href="/blog/resumable-sessions/">
+              Read the blog post<span class="fx-sr"> about Resumable sessions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
+            </div>
+            <h3>Rich live transcripts</h3>
+            <p>
+              Agent sessions render as a live, structured transcript — tool
+              calls, diffs, and results as cards, with a raw-output toggle for
+              the curious.
+            </p>
+            <a class="fx-more" href="/blog/rich-live-transcripts/">
+              Read the blog post<span class="fx-sr"> about Rich live transcripts</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chat-question"/></svg></span>
+            </div>
+            <h3>Agents can ask you questions</h3>
+            <p>
+              When an agent needs a decision, it asks — and the transcript shows
+              an interactive multiple-choice card. Click an answer and the agent
+              continues.
+            </p>
+            <a class="fx-more" href="/blog/agents-can-ask-you-questions/">
+              Read the blog post<span class="fx-sr"> about Agents can ask you questions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-terminal"/></svg></span>
+            </div>
+            <h3>Native terminal</h3>
+            <p>
+              A real VT100 terminal widget renders agent sessions with full
+              color and emoji — not a flat log viewer.
+            </p>
+            <a class="fx-more" href="/blog/native-terminal/">
+              Read the blog post<span class="fx-sr"> about Native terminal</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-code"/></svg></span>
+            </div>
+            <h3>Your app is the IDE</h3>
+            <p>
+              The desktop app speaks the Claude Code IDE protocol: run
+              <code>claude</code> in a repo and it connects to ForkMesh for diff
+              views and selection context, just like an editor extension.
+            </p>
+            <a class="fx-more" href="/blog/your-app-is-the-ide/">
+              Read the blog post<span class="fx-sr"> about Your app is the IDE</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gauge"/></svg></span>
+            </div>
+            <h3>Live usage meter</h3>
+            <p>
+              See your Claude 5-hour and weekly usage right in the app, updated
+              every minute, so you always know how much agent runway is left.
+            </p>
+            <a class="fx-more" href="/blog/live-usage-meter/">
+              Read the blog post<span class="fx-sr"> about Live usage meter</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sliders"/></svg></span>
+            </div>
+            <h3>Custom agent instructions</h3>
+            <p>
+              Replace the built-in agent workflow with your own preamble in
+              Settings — your rules govern every session.
+            </p>
+            <a class="fx-more" href="/blog/custom-agent-instructions/">
+              Read the blog post<span class="fx-sr"> about Custom agent instructions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="ci" class="fx-section" aria-labelledby="ci-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-rocket"/></svg>CI, releases &amp; distribution</span>
+          <h2 id="ci-title" class="fx-title">From push to published release</h2>
+          <p class="fx-lede">
+            Push, build, tag, publish — the whole delivery loop runs on the
+            mesh.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
+            </div>
+            <h3>Actions</h3>
+            <p>
+              Shell-step workflows run on push on your own desktop, with the
+              latest live log one click away. <code>uses:</code> steps are not run.
+            </p>
+            <a class="fx-more" href="/blog/actions/">
+              Read the blog post<span class="fx-sr"> about Actions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-box"/></svg></span>
+            </div>
+            <h3>Artifacts</h3>
+            <p>
+              Workflow outputs are collected per run and browsable from the
+              repository's Artifacts tab.
+            </p>
+            <a class="fx-more" href="/blog/artifacts/">
+              Read the blog post<span class="fx-sr"> about Artifacts</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-tag"/></svg></span>
+            </div>
+            <h3>Releases &amp; tags</h3>
+            <p>
+              Browse tags, mark the current release, and cut new releases in
+              seconds — release notes live in the repository like everything
+              else.
+            </p>
+            <a class="fx-more" href="/blog/releases-and-tags/">
+              Read the blog post<span class="fx-sr"> about Releases &amp; tags</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-database"/></svg></span>
+            </div>
+            <h3>Content-addressed release storage</h3>
+            <p>
+              Release binaries live in a content-addressed store keyed by
+              SHA-256 — keeping the Git history lean while downloads stay
+              verifiable end-to-end.
+            </p>
+            <a class="fx-more" href="/blog/content-addressed-release-storage/">
+              Read the blog post<span class="fx-sr"> about Content-addressed release storage</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-download"/></svg></span>
+            </div>
+            <h3>One-line installer</h3>
+            <p>
+              <code>curl … | sh</code> installs the desktop or headless node
+              with SHA-256-verified binaries — and a matching one-line
+              uninstaller when you need it.
+            </p>
+            <a class="fx-more" href="/blog/one-line-installer/">
+              Read the blog post<span class="fx-sr"> about One-line installer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-clipboard-check"/></svg></span>
+            </div>
+            <h3>Quality &amp; Security tabs</h3>
+            <p>
+              Per-repository quality and security views keep checks, advisories,
+              and repository health next to the code they describe.
+            </p>
+            <a class="fx-more" href="/blog/quality-and-security-tabs/">
+              Read the blog post<span class="fx-sr"> about Quality &amp; Security tabs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-bar"/></svg></span>
+            </div>
+            <h3>Insights</h3>
+            <p>
+              Contribution and activity insights per repository — see where the
+              energy is going.
+            </p>
+            <a class="fx-more" href="/blog/insights/">
+              Read the blog post<span class="fx-sr"> about Insights</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="chat" class="fx-section" aria-labelledby="chat-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-chats"/></svg>Chat &amp; private sharing</span>
+          <h2 id="chat-title" class="fx-title">Talk in the open, encrypt what&rsquo;s private</h2>
+          <p class="fx-lede">
+            Talk next to the code with an explicit boundary: public rooms admit
+            controller integrations, while private conversations add automatic
+            device-recipient encryption.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lock"/></svg></span>
+              <span class="fx-tag">Policy-aware</span>
+            </div>
+            <h3>Encrypted repo rooms</h3>
+            <p>
+              Public rooms are controller-readable for integrations. Private
+              channels automatically add device-to-device encryption; up to 500
+              persisted frames remain for 7 days.
+            </p>
+            <a class="fx-more" href="/blog/encrypted-repo-rooms/">
+              Read the blog post<span class="fx-sr"> about Encrypted repo rooms</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-send"/></svg></span>
+            </div>
+            <h3>Direct messages</h3>
+            <p>
+              Message any node operator with automatic device-to-device
+              encryption beyond the controller's room key.
+            </p>
+            <a class="fx-more" href="/blog/direct-messages/">
+              Read the blog post<span class="fx-sr"> about Direct messages</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-safe"/></svg></span>
+              <span class="fx-tag">AES-256-GCM</span>
+            </div>
+            <h3>Coves</h3>
+            <p>
+              Encrypted vaults for the things that don't belong in a repo:
+              notes, credentials, plans. Documents live inside authenticated
+              ciphertext, and every unlock is recorded in an access log the
+              creator can audit.
+            </p>
+            <a class="fx-more" href="/blog/coves/">
+              Read the blog post<span class="fx-sr"> about Coves</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chats"/></svg></span>
+            </div>
+            <h3>Discussions</h3>
+            <p>
+              Longer-form threaded conversations per repository — signed,
+              synced, and browsable like issues.
+            </p>
+            <a class="fx-more" href="/blog/discussions/">
+              Read the blog post<span class="fx-sr"> about Discussions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-browser"/></svg></span>
+            </div>
+            <h3>Web chat</h3>
+            <p>
+              Join the conversation from the browser too — the website speaks
+              the same room protocol as the desktop app.
+            </p>
+            <a class="fx-more" href="/blog/web-chat/">
+              Read the blog post<span class="fx-sr"> about Web chat</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="desktop" class="fx-section" aria-labelledby="desktop-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-monitor"/></svg>The desktop app</span>
+          <h2 id="desktop-title" class="fx-title">A full forge in one native app</h2>
+          <p class="fx-lede">
+            A native desktop app (built with Qt) that is a full forge: seventeen
+            repository views from Code to Settings, plus the workflow tools
+            you'd normally need three other apps for.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layout"/></svg></span>
+            </div>
+            <h3>Complete repository workspace</h3>
+            <p>
+              Code, Commits, Issues, Agents, Pull requests, Discussions,
+              Actions, Security, Quality, Insights, Branches, Worktrees,
+              Releases, Mirror nodes, Artifacts, Shortcuts, and Settings — every
+              view one click apart.
+            </p>
+            <a class="fx-more" href="/blog/complete-repository-workspace/">
+              Read the blog post<span class="fx-sr"> about Complete repository workspace</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-branch"/></svg></span>
+            </div>
+            <h3>Source control &amp; worktrees</h3>
+            <p>
+              Stage, commit, branch, and manage multiple worktrees from the app
+              — including the worktrees your agents are working in.
+            </p>
+            <a class="fx-more" href="/blog/source-control-and-worktrees/">
+              Read the blog post<span class="fx-sr"> about Source control &amp; worktrees</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-mic"/></svg></span>
+              <span class="fx-tag">On-device</span>
+            </div>
+            <h3>Voice dictation</h3>
+            <p>
+              Dictate issues, comments, and prompts with built-in Whisper speech
+              recognition — transcribed locally, streamed live as you speak.
+            </p>
+            <a class="fx-more" href="/blog/voice-dictation/">
+              Read the blog post<span class="fx-sr"> about Voice dictation</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-camera"/></svg></span>
+            </div>
+            <h3>Screenshot &amp; markup</h3>
+            <p>
+              Capture any region of the screen, annotate it with built-in
+              drawing tools, and drop it straight into an issue, PR, or chat.
+            </p>
+            <a class="fx-more" href="/blog/screenshot-and-markup/">
+              Read the blog post<span class="fx-sr"> about Screenshot &amp; markup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-markdown"/></svg></span>
+            </div>
+            <h3>Markdown everywhere</h3>
+            <p>
+              A proper Markdown editor with preview for issues, PRs,
+              discussions, and chat — plus emoji reactions and cross-references
+              that link issues, PRs, and commits together.
+            </p>
+            <a class="fx-more" href="/blog/markdown-everywhere/">
+              Read the blog post<span class="fx-sr"> about Markdown everywhere</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-qr"/></svg></span>
+            </div>
+            <h3>QR handoffs</h3>
+            <p>
+              Repos, invites, and addresses render as QR codes for instant
+              scannable handoff to a phone.
+            </p>
+            <a class="fx-more" href="/blog/qr-handoffs/">
+              Read the blog post<span class="fx-sr"> about QR handoffs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-keyboard"/></svg></span>
+            </div>
+            <h3>Keyboard-first navigation</h3>
+            <p>
+              Shortcuts for every major view and arrow-key navigation across
+              tables keep your hands on the keyboard.
+            </p>
+            <a class="fx-more" href="/blog/keyboard-first-navigation/">
+              Read the blog post<span class="fx-sr"> about Keyboard-first navigation</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-fork"/></svg></span>
+            </div>
+            <h3>Fork with intent</h3>
+            <p>
+              Fork any repository in the mesh and choose exactly where the copy
+              lands in your working tree.
+            </p>
+            <a class="fx-more" href="/blog/fork-with-intent/">
+              Read the blog post<span class="fx-sr"> about Fork with intent</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heartbeat"/></svg></span>
+            </div>
+            <h3>Built to stay up</h3>
+            <p>
+              A crash handler, a UI stall watchdog, network backoff, and a
+              network activity log keep long-running nodes healthy — and tell
+              you exactly what happened when something hiccups.
+            </p>
+            <a class="fx-more" href="/blog/built-to-stay-up/">
+              Read the blog post<span class="fx-sr"> about Built to stay up</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="money" class="fx-section" aria-labelledby="money-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-wallet"/></svg>Accounts, money &amp; rewards</span>
+          <h2 id="money-title" class="fx-title">Community incentives, out in the open</h2>
+          <p class="fx-lede">
+            Community incentives are transparent and non-custodial. ForkMesh
+            does not hold or control user funds; for community members it stores
+            only an optional public payout address, while wallet keys and
+            transfer approval remain on their owners’ devices. The operator’s
+            separate community-pool signer stays encrypted on the operator’s
+            own device. User-owned funds, the
+            community-funded public pool, pending allocations, and completed
+            on-chain transfers are separate states.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
+            </div>
+            <h3>Guest-first access</h3>
+            <p>
+              Enter the world immediately as a guest. Registration uses an
+              email, password, and email verification; optional public identity
+              and device fields remain configurable.
+            </p>
+            <a class="fx-more" href="/blog/anonymous-accounts/">
+              Read the blog post<span class="fx-sr"> about Guest-first access</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-id-card"/></svg></span>
+            </div>
+            <h3>Public node profiles</h3>
+            <p>
+              Registered nodes can publish a generalized profile and public
+              repositories. Optional platform, device, status, and activity
+              fields follow the owner’s visibility controls.
+            </p>
+            <a class="fx-more" href="/blog/public-node-profiles/">
+              Read the blog post<span class="fx-sr"> about Public node profiles</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heart"/></svg></span>
+              <span class="fx-tag">SOL · USDT</span>
+            </div>
+            <h3>Solana donations</h3>
+            <p>
+              Publish a Solana address and accept donations with on-chain
+              confirmation. Contributors sign direct transfers from their own
+              wallet; ForkMesh never creates or stores a deposit key.
+            </p>
+            <a class="fx-more" href="/blog/solana-donations/">
+              Read the blog post<span class="fx-sr"> about Solana donations</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-cloud-rain"/></svg></span>
+            </div>
+            <h3>Make it rain</h3>
+            <p>
+              Contribute directly from a self-custodial wallet, then choose an
+              immediate split across the current eligible nodes or fund the
+              transparent pool for later randomized incentives.
+            </p>
+            <a class="fx-more" href="/blog/make-it-rain/">
+              Read the blog post<span class="fx-sr"> about Make it rain</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-trophy"/></svg></span>
+            </div>
+            <h3>Issue bounties</h3>
+            <p>
+              Bounty funding requires an owner-controlled external wallet,
+              program, or multisig and independently verified public transfers.
+            </p>
+            <a class="fx-more" href="/blog/issue-bounties/">
+              Read the blog post<span class="fx-sr"> about Issue bounties</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gift"/></svg></span>
+            </div>
+            <h3>Mirror rewards</h3>
+            <p>
+              The community pool may reward eligible, integrity-verified
+              nodes. Selection and payment are never guaranteed.
+            </p>
+            <a class="fx-more" href="/world?landmark=fountain">
+              Join or fund the reward program<svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+        <aside class="fx-note">
+          <svg class="fx-note-ico" aria-hidden="true"><use href="#fx-info"/></svg>
+          <p>
+            <strong>One deliberate exception:</strong> if the operator enables
+            temporary deposit addresses for world-element purchases, ForkMesh
+            generates that address and holds its key from the moment it is
+            created until it sweeps the payment — half to the treasury, half to
+            online mirror nodes. During that window those specific funds are
+            custodial and an operator compromise could move them. The store
+            labels that option with its own custody, and paying the published
+            pool address from your own wallet remains available and puts no key
+            on ForkMesh.
+          </p>
+        </aside>
+      </section>
+
+      <section id="everywhere" class="fx-section" aria-labelledby="everywhere-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-devices"/></svg>Mobile, web &amp; plugins</span>
+          <h2 id="everywhere-title" class="fx-title">Pick it up from any device</h2>
+          <p class="fx-lede">
+            The mesh follows you: a phone app, a full web experience, and an
+            optional Marketplace plugin for your editor.
+          </p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-globe"/></svg></span>
+            </div>
+            <h3>Web repo browser</h3>
+            <p>
+              Explore any published repository — files, commits, rich diffs,
+              issues, and PRs — straight from forkmesh.com, streamed live from
+              its host. No clone, no account required.
+            </p>
+            <a class="fx-more" href="/blog/web-repo-browser/">
+              Read the blog post<span class="fx-sr"> about Web repo browser</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-link"/></svg></span>
+            </div>
+            <h3>Clean repo URLs</h3>
+            <p>
+              <code>forkmesh.com/owner/repo</code> takes you straight to the
+              repository. During an origin outage, the same link can keep
+              working when an eligible, healthy, integrity-matching mirror is
+              online.
+            </p>
+            <a class="fx-more" href="/blog/clean-repo-urls/">
+              Read the blog post<span class="fx-sr"> about Clean repo URLs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
+              <span class="fx-tag">iOS &amp; Android</span>
+            </div>
+            <h3>Mobile app</h3>
+            <p>
+              Carry the mesh in your pocket: browse repositories, follow
+              activity, chat, and get notifications from a native mobile app.
+            </p>
+            <a class="fx-more" href="/blog/mobile-app/">
+              Read the blog post<span class="fx-sr"> about Mobile app</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg></span>
+            </div>
+            <h3>VS Code Marketplace plugin</h3>
+            <p>
+              Optionally browse ForkMesh issues and hand work to Claude Code or
+              Codex from VS Code-compatible editors. The base app does not
+              install or activate the plugin.
+            </p>
+            <a class="fx-more" href="/blog/vs-code-extension/">
+              Read the blog post<span class="fx-sr"> about VS Code Marketplace plugin</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-book"/></svg></span>
+            </div>
+            <h3>Docs with search</h3>
+            <p>
+              Searchable documentation covering encrypted mirrors, direct-HTTPS
+              routing, cloning, and the collaboration protocol.
+            </p>
+            <a class="fx-more" href="/blog/docs-with-search/">
+              Read the blog post<span class="fx-sr"> about Docs with search</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-megaphone"/></svg></span>
+            </div>
+            <h3>Status, blog &amp; changelog</h3>
+            <p>
+              A public status page, a blog, and a human-readable changelog keep
+              the network's story out in the open.
+            </p>
+            <a class="fx-more" href="/blog/status-blog-and-changelog/">
+              Read the blog post<span class="fx-sr"> about Status, blog &amp; changelog</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section class="fx-outro" aria-labelledby="fx-outro-title">
+        <div class="fx-mosaic" aria-hidden="true">
+          <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-copy"/></svg></span>
+          <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-shield-check"/></svg></span>
+          <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-robot"/></svg></span>
+          <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-pr"/></svg></span>
+          <span class="fx-tile fx-tile-lg"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sparkles"/></svg></span>
+          <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
+          <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lock"/></svg></span>
+          <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
+          <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-git"/></svg></span>
+        </div>
+        <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-grid"/></svg>The whole catalog</span>
+        <h2 id="fx-outro-title" class="fx-title">Seventy-plus features. One promise.</h2>
+        <p class="fx-lede">
+          Everything above serves the same idea: your code, your conversations,
+          and your community should never depend on one company staying online.
+        </p>
+        <div class="fx-actions">
+          <a class="fx-btn fx-btn-primary" href="/signup">Join the mesh<svg class="fx-btn-ico" aria-hidden="true"><use href="#fx-chevron"/></svg></a>
+          <a class="fx-btn fx-btn-secondary" href="/dashboard">Browse repositories<svg class="fx-btn-ico" aria-hidden="true"><use href="#fx-chevron"/></svg></a>
+        </div>
+      </section>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+{% endblock %}

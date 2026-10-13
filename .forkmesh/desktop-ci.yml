@@ -1,0 +1,86 @@
+name: Desktop client CI tests
+on: [push, pull_request]
+# Split out of "CI tests" (.forkmesh/ci.yml) because the deploy waits on that
+# workflow. Compiling the Qt client takes minutes even with a warm ccache,
+# while the Worker that deploy.sh publishes contains none of it — so every
+# Cloudflare deploy used to sit behind a desktop build it does not ship. The
+# two run as separate workflows on separate runners now: the Worker contracts
+# gate the deploy, this one gates nothing and can take as long as it needs.
+jobs:
+  desktop:
+    steps:
+      - name: Critical Qt client contracts
+        run: |
+          set -eu
+          ci_tmp="$PWD/.forkmesh-ci-tmp"
+          export TMPDIR="$ci_tmp"
+          rm -rf "$ci_tmp"
+          mkdir -p "$ci_tmp"
+
+          # Every other directory in this sandbox is created fresh for the run,
+          # so the client used to recompile from zero — a quarter of an hour —
+          # on every push. $FORKMESH_ACTIONS_CACHE is the one mount the node
+          # keeps between runs, and it hands it to a single run at a time, so
+          # both the ccache and the configured CMake tree can live there. When
+          # it is absent (cache disabled on the node, or another run of this
+          # repository holds it) fall back to the disposable directory and
+          # build cold rather than failing.
+          cache="${FORKMESH_ACTIONS_CACHE:-$ci_tmp}"
+          export CCACHE_DIR="$cache/ccache"
+          build="$cache/desktop-build-ci"
+          mkdir -p "$CCACHE_DIR"
+          if command -v ccache >/dev/null 2>&1; then
+            ccache --version | head -1
+          else
+            echo "note: ccache is not installed on this node; compiling cold"
+          fi
+
+          # Size -j from the sandbox's memory budget as well as its CPU quota.
+          # The heaviest translation units here (MainWindow*.cpp) peak near
+          # 1.6 GiB each in a Release build. Preserve 2 GiB for CMake, Qt's
+          # autogen processes and the runner, budget 2 GiB per compiler, and
+          # never start more than four heavy compilers on one host.
+          cpus="${FORKMESH_ACTIONS_CPUS:-2}"
+          memory_mb="${FORKMESH_ACTIONS_MEMORY_MB:-4096}"
+          jobs=$(( (memory_mb - 2048) / 2048 ))
+          if [ "$jobs" -lt 1 ]; then jobs=1; fi
+          if [ "$jobs" -gt "$cpus" ]; then jobs="$cpus"; fi
+          if [ "$jobs" -gt 4 ]; then jobs=4; fi
+          echo "building with -j$jobs (${cpus} cpus, ${memory_mb} MiB budget)"
+
+          # AUTOGEN_PARALLEL defaults to AUTO, and AUTO means the *host's* core
+          # count: nothing in the sandbox can see the cgroup. Every AUTOMOC
+          # driver make starts then opens a host-sized thread pool, so a -j8
+          # build asked for eight of them at once and pthread_create failed
+          # against TasksMax with "Resource temporarily unavailable" (#1586).
+          # Pin the pools to the same budget the compiles are sized from.
+          configure() {
+            cmake -S desktop -B "$build" -DCMAKE_BUILD_TYPE=Release -DFORKMESH_BUILD_TESTS=ON -DCMAKE_AUTOGEN_PARALLEL="$jobs"
+          }
+
+          # A CMake tree only stays usable from the absolute source path it was
+          # configured against. The sandbox always mounts the checkout at
+          # /workspace, so a kept tree remains valid across runs — but drop one
+          # that names anywhere else instead of letting the configure fail on
+          # it, and give a tree CMake cannot fix in place (interrupted
+          # configure, changed generator) exactly one clean retry.
+          if [ -f "$build/CMakeCache.txt" ] &&
+             ! grep -qxF "CMAKE_HOME_DIRECTORY:INTERNAL=$PWD/desktop" "$build/CMakeCache.txt"; then
+            echo "kept CMake tree was configured elsewhere; starting clean"
+            rm -rf "$build"
+          fi
+          configure || {
+            echo "reconfigure failed on the kept CMake tree; starting clean"
+            rm -rf "$build"
+            configure
+          }
+
+          # `critical-tests` is defined next to the "critical" CTest label, so
+          # it always covers exactly the binaries the runner is about to
+          # execute. Naming the suites here instead let the two lists drift,
+          # and an unbuilt suite only surfaces as a ctest "***Not Run".
+          cmake --build "$build" -j "$jobs" --target critical-tests
+          if command -v ccache >/dev/null 2>&1; then
+            ccache --show-stats 2>/dev/null | head -8 || true
+          fi
+          python3 tools/run_critical_tests.py qt --build-dir "$build"

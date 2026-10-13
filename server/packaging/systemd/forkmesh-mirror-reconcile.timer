@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodically reconcile ForkMesh mirror publication
+Documentation=https://forkmesh.com/docs/operations/git-ssh-gateway
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=30min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=forkmesh-mirror-reconcile.service
+
+[Install]
+WantedBy=timers.target

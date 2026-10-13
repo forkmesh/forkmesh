@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Packfile-free routing relay · ForkMesh Blog</title>
+    <meta name="description" content="The ForkMesh routing service stores discovery and health metadata, not Git packfiles. Repository bytes stream from selected independent origins over ordinary HTTPS.">
+    <link rel="canonical" href="https://forkmesh.com/blog/zero-custody-relay/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/zero-custody-relay/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Packfile-free routing relay">
+    <meta property="og:description" content="The ForkMesh routing service stores discovery and health metadata, not Git packfiles. Repository bytes stream from selected independent origins over ordinary HTTPS.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/zero-custody-relay.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/zero-custody-relay.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Packfile-free routing relay</h1>
+            <p class="lede">The ForkMesh routing service stores discovery and health metadata, not Git packfiles. Repository bytes stream from selected independent origins over ordinary HTTPS.</p>
+            <div class="meta"><span class="pill">Feature 02 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/zero-custody-relay.webp" alt="Abstract ForkMesh artwork for a packfile-free routing relay">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Packfile-free routing gives ForkMesh a control plane without turning it into canonical Git storage. The routing service tracks signed endpoint registration, generalized health, integrity state, and selection metadata; repository bytes remain on independent mirror nodes.</p>
+          <p>Code becomes fragile when one hosted account, VM, or storage path is the only way to reach it. This routing boundary keeps repository bytes separate from the coordination layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>Desktop and organization nodes keep real Git mirrors behind operator-managed HTTPS. The routing service verifies the node identity and signed repository proof, prefers a healthy direct Git origin, and keeps a capability-bound tunnel path as a fallback.</p>
+          <p>Git clone, browse, raw files, search, and release downloads use normal HTTPS. Multiplayer sockets are reserved for small presence, chat, movement, and invalidation events. The routing service is service discovery and bounded failover, not repository or wallet custody.</p>
+          <div class="note">Private or unknown repositories produce the same response for unauthorized callers. Private mirror bytes remain in opaque client-encrypted replicas and are never enabled by adding a public gateway path.</div>
+          <h2>Where it fits</h2>
+          <p>Use packfile-free routing when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>The claim is intentionally scoped: the routing service has no packfile or wallet-key custody, but it does store bounded coordination metadata. Chat has bounded message retention; public channels are controller-readable, while private channels and direct messages add automatic recipient encryption.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/desktop-node-mirrors/">← Desktop-node mirrors</a>
+          <a href="/blog/live-clone-routing/">Live clone routing →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

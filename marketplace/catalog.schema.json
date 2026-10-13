@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/marketplace-catalog-v2.json",
+  "title": "ForkMesh Marketplace Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "marketplace", "packages"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 2 },
+    "marketplace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "locations"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+          "maxLength": 96
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "locations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/location" }
+        }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version", "manifest"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+            "maxLength": 96
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$",
+            "maxLength": 80
+          },
+          "marketplace": {
+            "description": "Original marketplace provenance in a combined installed catalog.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+            "maxLength": 96
+          },
+          "manifest": { "$ref": "#/$defs/safePath" },
+          "manifestSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "sources": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": { "$ref": "#/$defs/location" }
+          },
+          "artifact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sha256", "locations"],
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "size": { "type": "integer", "minimum": 1 },
+              "locations": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": { "$ref": "#/$defs/location" }
+              }
+            }
+          }
+        },
+        "allOf": [{
+          "if": { "required": ["artifact"] },
+          "then": { "required": ["manifestSha256"] }
+        }]
+      }
+    }
+  },
+  "$defs": {
+    "safePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._/-]+$",
+      "maxLength": 320
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "url"],
+      "properties": {
+        "transport": { "enum": ["local", "git", "https"] },
+        "url": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "ref": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "catalog": { "$ref": "#/$defs/safePath" },
+        "provider": {
+          "description": "Presentation-only hint; transport behavior never depends on a forge brand.",
+          "type": "string",
+          "maxLength": 40
+        }
+      }
+    }
+  }
+}

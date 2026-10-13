@@ -1,0 +1,14 @@
+{
+  "examples": [
+    "github-bugs-to-slack",
+    "daily-weather-telegram",
+    "summarize-with-claude",
+    "stripe-customers-to-hubspot",
+    "form-to-airtable-and-email",
+    "uptime-alert",
+    "translate-and-reply",
+    "shopify-orders-to-sheets",
+    "new-github-release-notes",
+    "calendly-to-notion"
+  ]
+}

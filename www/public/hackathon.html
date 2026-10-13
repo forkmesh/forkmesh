@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ForkMesh September Revenue Contest</title>
+<meta name="description" content="Open to everyone, 15 September to 15 October 2026 (UTC). Bring new companies onto a paid ForkMesh plan through Patreon, earn 50% of their first month, and compete for $100, $50 and $25 cash prizes.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ForkMesh September Revenue Contest">
+<meta property="og:description" content="Bring new companies onto a paid ForkMesh plan through Patreon, earn 50% of their first month, and compete for cash prizes. 15 September to 15 October 2026, UTC.">
+<meta property="og:url" content="https://forkmesh.com/hackathon">
+<meta name="twitter:card" content="summary_large_image">
+<!-- Page-scoped Tailwind build (assets/hackathon/tailwind.input.css). It supplies the
+     column counts and responsive steps for the sections below; hackathon.css supplies
+     the design system they are dressed in, and loads second so its rules win wherever
+     the two touch the same property. home-nav.css is the homepage's own header,
+     themed entirely from tokens hackathon.css declares for light and dark. -->
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+<link rel="stylesheet" href="/assets/hackathon/tailwind.css">
+<link rel="stylesheet" href="/assets/hackathon/hackathon.css">
+<link rel="stylesheet" href="/home-nav.css?v=${version}">
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+
+<!-- The fixed backdrop for the first viewport: ThreeUI <TerrainPlumeCanvas> with the
+     hero card overlaid, exactly where the authored source parks its canvas overlays. -->
+<div id="canvas-container">
+  <div id="plume-host"></div>
+  <div id="loader"><span>loading contest</span></div>
+  <div id="herocard">
+    <div class="inner">
+      <div class="eyebrow"><span>Open to everyone</span><hr class="rule" data-line><span class="live">15 Sep – 15 Oct 2026 · UTC</span></div>
+      <h1 class="f-h0">ForkMesh September Revenue Contest</h1>
+      <p class="lede f-h4">Bring new companies onto a paid ForkMesh plan through Patreon, earn commission, and compete for cash prizes.</p>
+      <div class="cta-row">
+        <a class="cta primary arcade" href="/#support-forkmesh">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2 12.1 7l5.2.45-3.94 3.43 1.18 5.1L10 13.28l-4.54 2.7 1.18-5.1L2.7 7.45 7.9 7 10 2.2Z"/></svg>
+          <span>Get the Patreon link</span>
+        </a>
+        <a class="cta ghost arcade metal" href="#commission">
+          <span>See the commission</span>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11.1075 14.2752 4.2763-4.29004-4.2625-4.2625h1.9112l4.2625 4.27625-4.2763 4.27629h-1.9112ZM2.5 10.8102V9.17391h13.8188v1.63629H2.5Z"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- The ForkMesh site header, same markup and behaviour as the homepage's
+     (home-nav.css / home-nav.js, lifted out of index.html). The one addition is
+     the machine-readable view toggle, which sits beside the theme switch so the
+     authored CRT view survives the swap. -->
+<header class="home-nav-wrap">
+  <nav id="site-nav" class="home-nav" data-open="false" aria-label="Primary">
+    <div class="home-nav-shell">
+      <!-- `brand` / `brand-mark` sit alongside the homepage's own class names so the
+           shared brand-logo contract (app/tests/test_public_logo.py) recognises this
+           header. Nothing on this page styles either token. -->
+      <a href="/" class="home-brand brand" aria-label="ForkMesh home">
+        <img src="/assets/logo.svg" alt="" aria-hidden="true" class="home-brand-mark brand-mark" width="208" height="238">
+        <span class="home-brand-word">forkmesh</span>
+      </a>
+
+      <ul class="home-nav-links">
+        <li class="home-nav-item has-menu">
+          <button type="button" class="home-nav-link" aria-expanded="false" aria-haspopup="true" aria-controls="home-menu-product">
+            Product
+            <svg class="home-nav-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
+          </button>
+          <div class="home-menu" id="home-menu-product">
+            <a class="home-menu-item" href="/features"><span class="home-menu-title">Features</span><span class="home-menu-desc">Mirror, route, sign and merge across nodes</span></a>
+            <a class="home-menu-item" href="/desktop"><span class="home-menu-title">Desktop app</span><span class="home-menu-desc">Run a node on your own machine</span></a>
+            <a class="home-menu-item" href="/market"><span class="home-menu-title">Marketplace</span><span class="home-menu-desc">Signed extensions, agents and themes</span></a>
+            <a class="home-menu-item" href="/ecosystem"><span class="home-menu-title">Ecosystem</span><span class="home-menu-desc">Projects around Git-native collaboration</span></a>
+            <a class="home-menu-item" href="https://world.forkmesh.com/" data-plugin-entry="world"><span class="home-menu-title">World</span><span class="home-menu-desc">The shared 3D developer world</span></a>
+            <a class="home-menu-item" href="https://app.forkmesh.com/"><span class="home-menu-title">App</span><span class="home-menu-desc">Dashboard, repos and account</span></a>
+          </div>
+        </li>
+        <li class="home-nav-item"><a class="home-nav-link" href="/docs">Docs</a></li>
+        <li class="home-nav-item"><a class="home-nav-link" href="/changelog">Changelog</a></li>
+        <li class="home-nav-item has-menu">
+          <button type="button" class="home-nav-link" aria-expanded="false" aria-haspopup="true" aria-controls="home-menu-company">
+            Company
+            <svg class="home-nav-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
+          </button>
+          <div class="home-menu" id="home-menu-company">
+            <a class="home-menu-item" href="/about"><span class="home-menu-title">About</span><span class="home-menu-desc">Why the mesh exists and who runs it</span></a>
+            <a class="home-menu-item" href="/blog"><span class="home-menu-title">Blog</span><span class="home-menu-desc">Updates, design notes and proofs</span></a>
+            <a class="home-menu-item" href="/careers"><span class="home-menu-title">Careers</span><span class="home-menu-desc">Open roles</span></a>
+            <a class="home-menu-item" href="/press"><span class="home-menu-title">Press</span><span class="home-menu-desc">Brand assets and coverage</span></a>
+          </div>
+        </li>
+        <li class="home-nav-item has-menu">
+          <button type="button" class="home-nav-link" aria-expanded="false" aria-haspopup="true" aria-controls="home-menu-ai">
+            AI
+            <svg class="home-nav-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
+          </button>
+          <div class="home-menu" id="home-menu-ai">
+            <a class="home-menu-item" href="/docs#developer-integrations"><span class="home-menu-title">MCP server</span><span class="home-menu-desc">Repository and issue tools for your agent</span></a>
+            <a class="home-menu-item" href="/api/chat/agent-guestbook"><span class="home-menu-title">Agent capability contract</span><span class="home-menu-desc">Machine-readable description of what agents can do</span></a>
+          </div>
+        </li>
+        <li class="home-nav-item"><a class="home-nav-link" href="/#pricing">Pricing</a></li>
+        <li class="home-nav-item"><a class="home-nav-link" href="/#membership">Membership</a></li>
+      </ul>
+
+      <div class="home-nav-actions">
+        <button type="button" id="termstatus" class="home-theme-toggle hack-term" aria-pressed="false" aria-label="Open the machine-readable view" title="Open the machine-readable view">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2.75" y="4.25" width="18.5" height="15.5" rx="2.25"></rect>
+            <path d="M6.75 9.5 9.5 12l-2.75 2.5M12.5 15h4.5"></path>
+          </svg>
+          <span class="sr-only txt">online</span>
+        </button>
+        <button type="button" data-home-theme class="home-theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode">
+          <svg class="home-theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M6 18l-1.4 1.4M19.4 4.6L18 6"></path>
+          </svg>
+          <svg class="home-theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+            <path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a6.6 6.6 0 0 0 9.9 9.9Z"></path>
+          </svg>
+          <span class="sr-only">Switch color theme</span>
+        </button>
+        <a data-home-auth-secondary class="home-nav-signin" href="/login">Sign in</a>
+        <span class="home-nav-divider" aria-hidden="true"></span>
+        <a data-home-auth-primary class="home-nav-signup" href="/signup">Sign up</a>
+        <button id="mobile-menu-toggle" type="button" class="home-nav-burger" aria-label="Open menu" aria-expanded="false" aria-controls="home-mobile-panel">
+          <svg class="menu-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line>
+          </svg>
+          <svg class="menu-close-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="home-mobile-panel" id="home-mobile-panel">
+      <div class="home-mobile-group">
+        <p class="home-mobile-heading">Revenue Contest</p>
+        <a href="#commission">Commission</a><a href="#prizes">Prizes</a><a href="#how">How it works</a><a href="#rules">Rules</a><a href="/hackathon/rules">Official rules</a>
+      </div>
+      <div class="home-mobile-group">
+        <p class="home-mobile-heading">Product</p>
+        <a href="/features">Features</a><a href="/desktop">Desktop app</a><a href="/market">Marketplace</a><a href="/ecosystem">Ecosystem</a><a href="https://world.forkmesh.com/" data-plugin-entry="world">World</a><a href="https://app.forkmesh.com/">App</a>
+      </div>
+      <div class="home-mobile-group">
+        <p class="home-mobile-heading">Resources</p>
+        <a href="/docs">Docs</a><a href="/changelog">Changelog</a><a href="/status" data-status-entry>Status</a><a href="/#pricing">Pricing</a><a href="/#membership">Membership</a>
+      </div>
+      <div class="home-mobile-group">
+        <p class="home-mobile-heading">Company</p>
+        <a href="/about">About</a><a href="/blog">Blog</a><a href="/careers">Careers</a><a href="/press">Press</a>
+      </div>
+      <div class="home-mobile-foot">
+        <button type="button" data-home-theme class="home-theme-toggle home-theme-toggle-wide" aria-label="Switch to dark mode" title="Switch to dark mode">
+          <svg class="home-theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M6 18l-1.4 1.4M19.4 4.6L18 6"></path>
+          </svg>
+          <svg class="home-theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+            <path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a6.6 6.6 0 0 0 9.9 9.9Z"></path>
+          </svg>
+          <span>Switch color theme</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<div id="layout">
+<div class="vrules" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+<main id="top">
+
+  <!-- ============================= commission ============================= -->
+  <section class="grid-layout tracks" id="commission">
+    <img class="ill ill-joystick" src="/assets/hackathon/ill-joystick.webp" alt="" aria-hidden="true">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Commission</h2></div>
+    <hr class="rule sec-line" data-line>
+    <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <p class="f-h1" data-ps>Earn 50% of each eligible customer’s first month</p>
+      <p class="f-h4" data-ps style="margin-top:22px">Customers pay through Patreon. The Patreon link is on the <a class="actionable" href="/#support-forkmesh">ForkMesh homepage</a>.</p>
+    </div>
+    <div class="sec-body grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>$5 plan</span></p>
+        <h3 class="award f-h2" data-ps>$2.50</h3>
+        <p class="sub f-p" data-ps>50% of the first month</p>
+      </article>
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>$10 plan</span></p>
+        <h3 class="award f-h2" data-ps>$5</h3>
+        <p class="sub f-p" data-ps>50% of the first month</p>
+      </article>
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>$50 plan</span></p>
+        <h3 class="award f-h2" data-ps>$25</h3>
+        <p class="sub f-p" data-ps>50% of the first month</p>
+      </article>
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>$100 plan</span></p>
+        <h3 class="award f-h2" data-ps>$50</h3>
+        <p class="sub f-p" data-ps>50% of the first month</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============================== prizes ================================ -->
+  <section class="grid-layout prizes" id="prizes">
+    <img class="ill ill-lantern" src="/assets/hackathon/ill-lantern.webp" alt="" aria-hidden="true">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Leaderboard</h2></div>
+    <hr class="rule sec-line" data-line>
+    <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <p class="f-h1" data-ps>Ranked by revenue, not by signups</p>
+      <p class="f-h4" data-ps style="margin-top:22px">Rankings are based on total eligible first-month revenue generated, not number of signups.</p>
+    </div>
+    <div class="sec-body grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <article class="prize top framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>1st place</span><span class="flag" data-ps>Top prize</span></p>
+        <h3 class="award f-h2" data-ps>$100</h3>
+        <p class="sub f-p" data-ps>Minimum $200 in eligible first-month revenue. Plus every commission you earned</p>
+      </article>
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>2nd place</span></p>
+        <h3 class="award f-h2" data-ps>$50</h3>
+        <p class="sub f-p" data-ps>Minimum $100 in eligible first-month revenue. Plus every commission you earned</p>
+      </article>
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>3rd place</span></p>
+        <h3 class="award f-h2" data-ps>$25</h3>
+        <p class="sub f-p" data-ps>Minimum $50 in eligible first-month revenue. Plus every commission you earned</p>
+      </article>
+    </div>
+    <p class="sec-note f-p" data-ps>To win any prize you also need at least 3 different eligible customers. If you rank for a place but are below its minimum, you take the highest lower place whose minimum you meet, and a place nobody qualifies for is not awarded. Prizes are paid in addition to commissions. Commissions and contest revenue are final once a subscription has stayed paid and in good standing for 30 days. The full terms are in the <a class="actionable" href="/hackathon/rules">official rules</a>.</p>
+  </section>
+
+  <!-- ============================ how it works ============================ -->
+  <section class="grid-layout steps" id="how">
+    <img class="ill ill-cat" src="/assets/hackathon/ill-cat.webp" alt="" aria-hidden="true">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>How it works</h2></div>
+    <hr class="rule sec-line" data-line>
+    <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <p class="f-h1" data-ps>Four steps, in this order</p>
+    </div>
+    <ol class="sec-body grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="num" data-ps>1</span>
+        <h3 class="f-h3" data-ps>Pick your companies</h3>
+        <p data-ps>Choose up to 10 companies at a time that are not already ForkMesh customers.</p>
+      </li>
+      <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="num" data-ps>2</span>
+        <h3 class="f-h3" data-ps>Post your list</h3>
+        <p data-ps>Claim them publicly before any outreach. The first valid public claim gets the company.</p>
+      </li>
+      <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="num" data-ps>3</span>
+        <h3 class="f-h3" data-ps>Start selling</h3>
+        <p data-ps>Bring them onto a paid plan through the Patreon link on the homepage. A referral counts once the payment succeeds.</p>
+      </li>
+      <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="num" data-ps>4</span>
+        <h3 class="f-h3" data-ps>Climb the board</h3>
+        <p data-ps>Earn 50% of each first month, and rank on the total first-month revenue you bring in.</p>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ================================ rules =============================== -->
+  <section class="grid-layout prizes" id="rules">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Rules</h2></div>
+    <hr class="rule sec-line" data-line>
+    <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <p class="f-h1" data-ps>Open to everyone, fair to everyone</p>
+      <p class="f-h4" data-ps style="margin-top:22px">The contest runs from 15 September 2026, 00:00 UTC, to 15 October 2026, 23:59 UTC.</p>
+    </div>
+    <div class="sec-body grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>Claims</span></p>
+        <ul>
+          <li data-ps>You may claim a maximum of 10 companies at a time.</li>
+          <li data-ps>Claims must be posted publicly before outreach to prevent overlap. First valid public claim gets the company.</li>
+          <li data-ps>Claims expire after 7 days without meaningful outreach or activity.</li>
+        </ul>
+      </article>
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>What counts</span></p>
+        <ul>
+          <li data-ps>Referrals must be new ForkMesh paid customers and cannot already be in an active ForkMesh sales conversation.</li>
+          <li data-ps>One customer counts as one referral. Related accounts or entities may be treated as one customer when appropriate.</li>
+          <li data-ps>A referral counts after successful payment through Patreon. Refunds, chargebacks, fraudulent payments or reversals do not count.</li>
+          <li data-ps>The customer must pay with their own payment method. A payment made or funded by the entrant, or by anyone acting for the entrant, does not count.</li>
+          <li data-ps>Subscriptions must remain paid and in good standing for 30 days before commissions and contest revenue are final.</li>
+        </ul>
+      </article>
+      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span data-ps>Fair play</span></p>
+        <ul>
+          <li data-ps>No self-referrals, fake accounts, duplicate customers, artificial upgrades, or coordinated purchases intended to manipulate the contest.</li>
+          <li data-ps>ForkMesh may verify referrals and resolve disputes, duplicate claims, or suspected abuse.</li>
+          <li data-ps>The contest ends 15 October 2026, 23:59 UTC.</li>
+          <li data-ps>ForkMesh may modify or clarify rules as needed. Changes will be communicated publicly.</li>
+        </ul>
+      </article>
+    </div>
+    <p class="sec-note f-p" data-ps>The <a class="actionable" href="/hackathon/rules">official rules</a> carry the same terms and apply if anything on this page disagrees.</p>
+  </section>
+
+  <hr class="rule grid-layout" data-line style="display:block;height:1px">
+
+  <!-- ============================== closing =============================== -->
+  <div class="grid-layout contact" id="join">
+    <img class="ill ill-crt" src="/assets/hackathon/ill-crt.webp" alt="" aria-hidden="true">
+    <div class="box framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div class="lines with-diagonal-lines"></div>
+      <h2 class="f-h3" data-ps>Start</h2>
+      <p class="lead f-h1" data-ps>Pick your 10 companies, post your list, start selling, and climb the leaderboard.</p>
+      <div class="cta-row">
+        <a class="cta primary arcade" href="/#support-forkmesh">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2 12.1 7l5.2.45-3.94 3.43 1.18 5.1L10 13.28l-4.54 2.7 1.18-5.1L2.7 7.45 7.9 7 10 2.2Z"/></svg>
+          <span>Get the Patreon link</span>
+        </a>
+        <a class="cta ghost arcade metal" href="/hackathon/rules">
+          <span>Read the rules</span>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11.1075 14.2752 4.2763-4.29004-4.2625-4.2625h1.9112l4.2625 4.27625-4.2763 4.27629h-1.9112ZM2.5 10.8102V9.17391h13.8188v1.63629H2.5Z"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer id="notify">
+  <div class="grid-layout"><hr class="rule" data-line style="grid-column:1/-1"></div>
+
+  <div class="grid-layout fcard-wrap">
+    <div class="fcard framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <p class="tag">15 Sep – 15 Oct 2026 · UTC</p>
+      <h3 class="f-h2" data-ps>One month to climb the board.</h3>
+      <p class="sub f-h4" data-ps>Opens 15 September, 00:00 UTC. Closes 15 October, 23:59 UTC.</p>
+      <div class="cta-row">
+        <a class="cta primary arcade" href="/#support-forkmesh"><span>Get the Patreon link</span></a>
+        <a class="cta ghost arcade metal" href="#rules"><span>Rules</span></a>
+      </div>
+      <p class="fine">Commissions and contest revenue are final after 30 paid days.</p>
+    </div>
+  </div>
+
+  <div class="grid-layout">
+    <div class="mark"><svg viewBox="0 0 1673 149" xmlns="http://www.w3.org/2000/svg" aria-label="FORKMESH.26"><text x="0" y="140" textLength="1673" lengthAdjust="spacingAndGlyphs" font-family="Geist, 'Geist Fallback', Arial, sans-serif" font-weight="500" font-size="196" letter-spacing="-6">FORKMESH.26</text></svg></div>
+  </div>
+
+  <div class="grid-layout bottom">
+    <div class="links f-h3"><a class="blink" href="#top">Contest</a><a class="blink" href="#commission">Commission</a><a class="blink" href="#prizes">Prizes</a><a class="blink" href="#how">How it works</a><a class="blink" href="#rules">Rules</a><a class="blink" href="/hackathon/rules">Official rules</a></div>
+    <div class="social"><a href="https://x.com/forkmesh" rel="noopener" aria-label="ForkMesh on X" title="X"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.2 2.6h4.1l3.8 5.1 4.3-5.1h2.4l-5.6 6.6 6 8.2h-4.1l-4-5.4-4.6 5.4H3.1l6-7.1-5.9-7.7Zm2.3 1.5 8.5 11.4h1.6L7.1 4.1H5.5Z"/></svg></a><a href="https://reddit.com/r/forkmesh" rel="noopener" aria-label="ForkMesh on Reddit" title="Reddit"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2a7.8 7.8 0 1 0 0 15.6 7.8 7.8 0 0 0 0-15.6Zm4.3 6.1a1.1 1.1 0 0 1 .76 1.9 2.3 2.3 0 0 1 .04.42c0 2.02-2.28 3.66-5.1 3.66s-5.1-1.64-5.1-3.66c0-.14.01-.28.04-.42a1.1 1.1 0 1 1 1.25-1.78A6.2 6.2 0 0 1 9.6 7.3l.62-2.9 2.02.43a.95.95 0 1 1 .1.86l-1.4-.3-.54 2.5c1.3.05 2.48.4 3.4.95a1.1 1.1 0 0 1 .5-.54ZM7.6 10.6a.95.95 0 1 1 1.9 0 .95.95 0 0 1-1.9 0Zm4.85.95a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Zm-.36 1.5c.18.18.18.46 0 .64-.63.63-1.83.68-2.09.68-.26 0-1.46-.05-2.09-.68a.45.45 0 1 1 .64-.64c.4.4 1.24.54 1.45.54.21 0 1.06-.14 1.45-.54.18-.18.46-.18.64 0Z"/></svg></a><a href="/market" aria-label="ForkMesh Marketplace" title="Marketplace"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.2 3.2h13.6v2.1l-1.1 2.4a2.2 2.2 0 0 1-2 1.3 2.2 2.2 0 0 1-1.8-.95A2.2 2.2 0 0 1 10 9.05a2.2 2.2 0 0 1-1.9-.95 2.2 2.2 0 0 1-1.8.95 2.2 2.2 0 0 1-2-1.3L3.2 5.3V3.2Zm1.1 7.1h1.6v5.2h8.2v-5.2h1.6v6.7H4.3v-6.7Zm3.2 1.3h4.9v3.9H7.5v-3.9Z"/></svg></a></div>
+    <p class="copy f-p">© ForkMesh 2026 · Commission, prizes, dates and eligibility are governed by the <a class="actionable" href="/hackathon/rules">official rules</a>.</p>
+  </div>
+</footer>
+</div>
+
+<div id="machine-scrim" aria-hidden="true"></div>
+<div id="machine-scan" aria-hidden="true"></div>
+<div id="machine" aria-label="Machine-readable index">
+  <div id="crt-host"></div>
+  <button id="machine-close" class="f-nav">[esc] close</button>
+  <pre class="sr-only">FORKMESH SEPTEMBER REVENUE CONTEST :: MACHINE-READABLE INDEX
+
+# PLAIN-TEXT MIRROR OF THE FORKMESH REVENUE CONTEST PAGE FOR AI AGENTS,
+# CRAWLERS, AND HUMANS WHO PREFER IT RAW.
+
+── ABOUT ─────────────────────────────────────────────────────────
+NAME .......... FORKMESH SEPTEMBER REVENUE CONTEST
+OPEN_TO ....... EVERYONE
+STARTS ........ 2026-09-15 00:00 UTC
+ENDS .......... 2026-10-15 23:59 UTC
+FORMAT ........ BRING NEW COMPANIES ONTO A PAID FORKMESH PLAN THROUGH
+                PATREON, EARN COMMISSION, COMPETE FOR CASH PRIZES
+PATREON ....... LINKED FROM THE FORKMESH HOMEPAGE (/#SUPPORT-FORKMESH)
+RULES ......... /HACKATHON/RULES
+
+── COMMISSION ────────────────────────────────────────────────────
+50% OF EACH ELIGIBLE CUSTOMER'S FIRST MONTH.
+- $5 PLAN ..... $2.50
+- $10 PLAN .... $5
+- $50 PLAN .... $25
+- $100 PLAN ... $50
+
+── LEADERBOARD ───────────────────────────────────────────────────
+RANKED BY TOTAL ELIGIBLE FIRST-MONTH REVENUE GENERATED, NOT SIGNUPS.
+- 1ST ......... $100
+- 2ND ......... $50
+- 3RD ......... $25
+PRIZES ARE PAID IN ADDITION TO COMMISSIONS.
+
+── HOW_IT_WORKS ──────────────────────────────────────────────────
+1. PICK UP TO 10 COMPANIES.
+2. POST YOUR LIST PUBLICLY BEFORE OUTREACH. FIRST VALID PUBLIC CLAIM WINS.
+3. SELL THROUGH THE PATREON LINK. COUNTS AFTER SUCCESSFUL PAYMENT.
+4. CLIMB THE LEADERBOARD.
+
+── RULES ─────────────────────────────────────────────────────────
+* MAXIMUM 10 CLAIMED COMPANIES AT A TIME.
+* CLAIMS MUST BE POSTED PUBLICLY BEFORE OUTREACH. FIRST VALID PUBLIC CLAIM
+  GETS THE COMPANY.
+* CLAIMS EXPIRE AFTER 7 DAYS WITHOUT MEANINGFUL OUTREACH OR ACTIVITY.
+* REFERRALS MUST BE NEW FORKMESH PAID CUSTOMERS, NOT ALREADY IN AN ACTIVE
+  FORKMESH SALES CONVERSATION.
+* NO SELF-REFERRALS, FAKE ACCOUNTS, DUPLICATE CUSTOMERS, ARTIFICIAL
+  UPGRADES, OR COORDINATED PURCHASES.
+* ONE CUSTOMER COUNTS AS ONE REFERRAL. RELATED ACCOUNTS MAY COUNT AS ONE.
+* REFUNDS, CHARGEBACKS, FRAUDULENT PAYMENTS OR REVERSALS DO NOT COUNT.
+* FINAL AFTER 30 DAYS PAID AND IN GOOD STANDING.
+* FORKMESH MAY VERIFY REFERRALS AND RESOLVE DISPUTES.
+* FORKMESH MAY MODIFY OR CLARIFY RULES; CHANGES ARE COMMUNICATED PUBLICLY.
+
+── LINKS ─────────────────────────────────────────────────────────
+PATREON ....... /#SUPPORT-FORKMESH
+RULES ......... /HACKATHON/RULES</pre>
+</div>
+
+<canvas id="vhs-overlay" aria-hidden="true"></canvas>
+
+<!-- Authored ThreeUI modules, carried over verbatim from the canonical single-file
+     source. All three are raw WebGL, so the 593KB Three.js build the source inlines
+     is no longer needed: the only thing that used it was the 3D paper-sheet menu,
+     which the site header replaced. -->
+<script src="/assets/hackathon/vendor/threeui-crt.js"></script>
+<script src="/assets/hackathon/vendor/threeui-particle-scroll.js"></script>
+<script src="/assets/hackathon/vendor/threeui-terrain-plume.js"></script>
+<script src="/assets/hackathon/hackathon.js"></script>
+<script src="/home-nav.js?v=${version}" defer></script>
+<script src="/home-theme.js?v=${version}" defer></script>
+<script src="/home-header-auth.js?v=${version}" defer></script>
+  </body>
+</html>

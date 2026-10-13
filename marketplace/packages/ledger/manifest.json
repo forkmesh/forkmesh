@@ -1,0 +1,73 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "ledger",
+  "name": "Ledger",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Extensions",
+  "version": "1.4.0",
+  "summary": "Read ForkMesh's public financial system of record in the desktop, keep your own expense and income records beside it, see what every wallet in it holds, and pay pending contributor rewards from your own linked wallet.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:ledger",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "ledger.records.read",
+      "label": "Read the active ForkMesh host's public financial records",
+      "risk": "low"
+    },
+    {
+      "id": "wallet.payment.send",
+      "label": "Pay a pending reward from the Solana wallet you linked to this app",
+      "risk": "high"
+    },
+    {
+      "id": "repository.reward.write",
+      "label": "Record a completed payment on the issue or pull it paid for",
+      "risk": "sensitive"
+    },
+    {
+      "id": "external.link.open",
+      "label": "Open the active ForkMesh host's public ledger in your browser",
+      "risk": "sensitive"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "ForkMesh public ledger listing records with exact SOL amounts, USD estimates, and transaction IDs"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

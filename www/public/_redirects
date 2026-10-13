@@ -1,0 +1,37 @@
+/favicon.ico /favicon/favicon.ico 200
+/apple-touch-icon.png /favicon/apple-touch-icon.png 200
+/apple-touch-icon-precomposed.png /favicon/apple-touch-icon.png 200
+/docs /docs/ 308
+/docs.html /docs/ 308
+/blog/ /blog 308
+/blogs /blog 308
+/marketplace /market 308
+/pricing /#pricing 308
+/pricing/ /#pricing 308
+/pricing.html /#pricing 308
+/docs/ide-extension /market 308
+/docs/ide-extension/ /market 308
+/docs/ide-extension-protocol /market 308
+/docs/ide-extension-protocol/ /market 308
+/blog/:slug /blog/:slug/ 308
+
+# Product and World handoffs are static redirects. Keeping them in the asset
+# router avoids executing the marketing Worker just to construct a Location
+# header. The Worker retains the same fallback rules for non-asset requests.
+/world https://world.forkmesh.com/ 308
+/world/* https://world.forkmesh.com/world/:splat 308
+/dashboard https://app.forkmesh.com/dashboard 308
+/dashboard/* https://app.forkmesh.com/dashboard/:splat 308
+/notes/* https://app.forkmesh.com/notes/:splat 308
+/chat https://app.forkmesh.com/chat 308
+/hackathon/me https://app.forkmesh.com/hackathon/me 308
+/forgot-password https://app.forkmesh.com/forgot-password 308
+/ledger https://app.forkmesh.com/ledger 308
+/login https://app.forkmesh.com/login 308
+/microjobs https://app.forkmesh.com/microjobs 308
+/mirror-payouts https://app.forkmesh.com/mirror-payouts 308
+/referral https://app.forkmesh.com/referral 308
+/referrals https://app.forkmesh.com/referrals 308
+/reset-password https://app.forkmesh.com/reset-password 308
+/signup https://app.forkmesh.com/signup 308
+/start https://app.forkmesh.com/start 308

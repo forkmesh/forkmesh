@@ -1,0 +1,185 @@
+# ForkMesh Next fleet description. Copy to deploy/fleet.toml (git-ignored is
+# not required: this file holds no secrets). A node with a `label` and no
+# public_ipv4 takes its addresses from the operator's fleet-instances.json,
+# which `tools/next_fleet.py create-core N --execute` fills in.
+#
+# Secrets never appear here. Every secret is named by its credential name and
+# read from ~/projects/forkmesh/config/fleet/secrets.env on the operator box,
+# then pushed into `systemd-creds encrypt` on the node (docs/OPERATIONS.md).
+
+domain = "next.forkmesh.com"          # DNS suffix for the nN/app/world hosts; its homepage Worker was retired 2026-09-27
+app_host = "app.next.forkmesh.com"    # round-robin A records over the core nodes
+world_host = "world.next.forkmesh.com"
+region = "ewr"
+os_name = "Debian 13 x64 (trixie)"
+instance_label_prefix = "fmnext-"     # hard guard in tools/next_fleet.py
+instance_tag = "forkmesh-next"        # hard guard in tools/next_fleet.py
+ssh_key_name = "fmnext-fleet"
+# No fixed ACME issuer: for app/world the live core first in rendezvous
+# order (sha256 of hostname:node) issues and renews over HTTP-01; the others
+# forward /.well-known/acme-challenge/* to the cores over WireGuard and pull
+# the freshest valid pair from any peer (deploy/core/certsync.py).
+acme_email = ""                       # optional ACME account e-mail
+
+[paths]
+opt = "/opt/forkmesh-next"
+releases = "/opt/forkmesh-next/app/releases"
+current = "/opt/forkmesh-next/app/current"
+var = "/var/lib/forkmesh-next"
+etc = "/etc/forkmesh-next"
+creds = "/etc/forkmesh-next/creds"
+tls = "/etc/forkmesh-next/tls"
+
+[wireguard]
+port = 51820
+prefix = 24
+
+[rqlite]
+version = "v10.3.6"
+# sha256 of rqlite-v10.3.6-linux-amd64.tar.gz from the GitHub release.
+sha256 = "17df480e697e135641fc66aac6c2e7d938c021311e1a8500070e730ccdfa8aa0"
+http_port = 4001
+raft_port = 4002
+user = "fmnext"                       # rqlite basic-auth user (password: RQLITE_PASSWORD)
+gomemlimit = "110MiB"
+# Enforce foreign keys like D1 does (checked 2026-09-23: all migrations and the
+# signup/login/session flows pass with -fk, PRAGMA foreign_key_check clean).
+fk = true
+# Snapshot at a 32 MiB SQLite WAL, not rqlite's 4 MiB (docs/deploy/README.md Traps).
+snap_wal_size = 33554432
+
+[caddy]
+# Upstream release binary, installed by `next_fleet.py install nN --steps caddy`
+# as /usr/local/bin/caddy (docs/OPERATIONS.md "Caddy"). sha256 of
+# caddy_2.11.4_linux_amd64.tar.gz, checked against the release's signed
+# sha512 checksums file.
+version = "2.11.4"
+sha256 = "527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9"
+
+[app]
+port = 8080
+mesh_port = 8792
+certsync_port = 8793
+acme_forward_port = 8794              # certsync's HTTP-01 forwarder, loopback only
+gateway_port = 8790
+# "http" (every read over rqlite HTTP, level=none) or "local" (read-only
+# in-process sqlite3 on rqlite's db.sqlite; PLAN.md Phase 2).
+read_mode = "http"
+d1_log = true
+# Vault (docs/VAULT.md): true = the app starts sealed and loads only the
+# bootstrap credentials (RQLITE_PASSWORD, FORKMESH_MESH_SECRET); every other
+# name below is sealed into the host_secrets table under DATA_KEY by
+# tools/next_vault.py sync, and DATA_KEY stays on the operator desktop,
+# reaching a node's memory only through tools/next_vault.py unseal (or from
+# an unsealed peer's memory, below).
+vault = false
+# With the vault on: a sealed node (reboot, crash restart) fetches DATA_KEY
+# from any live, unsealed core peer over the WireGuard mesh, so only a
+# restart of every node at once needs the desktop (docs/VAULT.md).
+vault_peer_unseal = true
+# Credentials the app always loads (LoadCredentialEncrypted=); with the vault
+# on, the app variables to seal into host_secrets instead.
+secrets = [
+  "DATA_KEY",
+  "ADMIN_PASS",
+  "MIRROR_ROUTER_SIGNING_SEED",
+  "MIRROR_ROUTER_PUBLIC_KEY",       # public, but must match the seed
+  "FORKMESH_MESH_SECRET",
+  "WWW_EDGE_SECRET",
+  "RQLITE_PASSWORD",
+]
+# Integrations start off (PLAN.md). Add a name here only after putting its
+# value into secrets.env; e.g. "MAILTRAP_API_TOKEN" for the sandbox token.
+optional_secrets = []
+
+[turn]
+enabled = false
+
+[dns]
+# Leaderless DNS health on the core nodes (app/host/forkmesh_host/
+# dns_reconciler.py): every node votes, the node chosen for each 30 s interval
+# would change the app.next/world.next A records when a majority agrees. It
+# needs NEXT_DNS_API_TOKEN / NEXT_DNS_ZONE_ID in the vault, which are NOT
+# there (audit 2026-09-24: the token edits the whole forkmesh.com zone); without
+# them it only votes and logs, never calling Cloudflare. DNS changes stay
+# manual (tools/next_dns.py) until a token scoped to a next-only zone exists.
+# "on" | "dry" (log decisions only) | "off".
+reconciler = "dry"
+
+[ids]
+# Host intrusion detection (deploy/core/ids.py, docs/IDS.md): a root
+# fmnext-ids service on every core and runner. false renders none of it.
+enabled = true
+# SHA256 fingerprints of the keys allowed to log in over SSH (the fleet key:
+# `ssh-keygen -lf ~/projects/forkmesh/ssh/fleet/next_fleet_ed25519.pub`). A
+# login with any other key locks the node down. Empty: that check is off.
+ssh_fleet_fingerprints = []
+# Operator source addresses (IPv4 or CIDR). Set: a login from elsewhere is an
+# alert (ssh_foreign_ip_severity), and a locked-down node accepts SSH only from
+# these. Empty: every interactive login alerts, and a locked-down node keeps
+# SSH open to everyone (key-only), so a new home IP never locks you out.
+ssh_allow = []
+ssh_foreign_ip_severity = "alert"
+# The operator release key (public half; `tools/next_ids.py keygen --execute`
+# writes the private half to config/ids-operator.key). Without it no release
+# verifies, so a lockdown can only be cleared by rebuilding the node.
+operator_public_key = ""
+# Per-detector severity overrides ("info" | "alert" | "lockdown"), e.g.
+# listener_unexpected = "lockdown". Defaults: docs/IDS.md.
+severity = {}
+# Direct mail from the IDS itself (works when every app is sealed or down):
+# loads FMNEXT_IDS_MAIL_TOKEN (a Mailtrap sending token) and
+# FMNEXT_IDS_ALERT_EMAIL (the recipient) from secrets.env as credentials.
+direct_mail = false
+mail_from = ""
+# Optional signed webhook to the operator desktop (https only).
+webhook_url = ""
+# Peers remove a quarantined node as an rqlite voter once it has been
+# unreachable for 2 minutes and two reachable voters remain.
+remove_voter = true
+# A peer whose app runs while its IDS stays silent this long is voted into
+# quarantine by the other cores (a strict majority).
+heartbeat_stale_s = 180
+
+# Phone-approved self-deploy (docs/deploy/self-deploy.md): a merge signed by
+# an enrolled phone key is built and activated by the cores themselves.
+[self_deploy]
+enabled = false
+approver_keys = []
+repository = "forkmesh/forkmesh"
+git_dir = "/var/lib/forkmesh/repositories/forkmesh-forkmesh.git"
+roll_daemon = true
+
+[logs]
+reader_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMG2ajXAEwFNW/LoahHVcCrAoFfL4IOBhTdX/98mVagk fmnext-logread"
+access_log = true
+
+[[nodes]]
+name = "n1"
+role = "core"
+public_ipv4 = "203.0.113.11"
+wg_ip = "10.77.0.1"
+wg_pubkey = "REPLACE_WITH_N1_WG_PUBLIC_KEY"
+rqlite_id = "n1"
+
+[[nodes]]
+name = "n2"
+role = "core"
+public_ipv4 = "203.0.113.12"
+wg_ip = "10.77.0.2"
+wg_pubkey = "REPLACE_WITH_N2_WG_PUBLIC_KEY"
+rqlite_id = "n2"
+
+[[nodes]]
+name = "n3"
+role = "core"
+public_ipv4 = "203.0.113.13"
+wg_ip = "10.77.0.3"
+wg_pubkey = "REPLACE_WITH_N3_WG_PUBLIC_KEY"
+rqlite_id = "n3"
+
+# Runners are untrusted and outbound-only: no WireGuard, no public hostname,
+# no core secrets.
+[[runners]]
+name = "r1"
+public_ipv4 = "203.0.113.21"

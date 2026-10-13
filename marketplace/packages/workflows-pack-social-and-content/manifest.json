@@ -1,0 +1,85 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "workflows-pack-social-and-content",
+  "name": "Workflows: Social and content",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Workflow add-ons",
+  "version": "1.0.0",
+  "summary": "Adds 8 social and content integrations to Workflows: X (Twitter), Mastodon, LinkedIn, Facebook Pages and more.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Workflows: Social and content"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "pack": "content/pack.json",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "workflows.integrations",
+      "entrypoint": "pack",
+      "config": {
+        "category": "Social and content",
+        "integrations": [
+          "x",
+          "mastodon",
+          "linkedin",
+          "facebookPages",
+          "youtube",
+          "reddit",
+          "wordpress",
+          "webflow"
+        ]
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "network.workflows.outbound",
+      "label": "Let workflow steps call social and content services you connect",
+      "risk": "high"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "workflows",
+      "version": "^1.0.0"
+    }
+  ],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

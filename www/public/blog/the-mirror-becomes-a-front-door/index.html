@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The mirror becomes a front door · ForkMesh Blog</title>
+    <meta name="description" content="ForkMesh current main turns independent mirrors into usable repository entrances while mobile agents, modular tools, and task work move closer to the code.">
+    <link rel="canonical" href="https://forkmesh.com/blog/the-mirror-becomes-a-front-door/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/the-mirror-becomes-a-front-door/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="The mirror becomes a front door">
+    <meta property="og:description" content="Direct mirror pages, a small mobile coding agent, modular work tools, and faster task loops arrive on ForkMesh current main.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/the-mirror-becomes-a-front-door.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit glass gateway links an independent green mirror capsule to a repository workbench, phone, and modular tools, while the official ForkMesh logo and its full vertical reflection stand on wet stone">
+    <meta property="article:published_time" content="2026-08-31T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The mirror becomes a front door">
+    <meta name="twitter:description" content="A current-main report on direct mirrors, mobile coding agents, modular work tools, and quicker task loops.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/the-mirror-becomes-a-front-door.webp">
+    <meta name="twitter:image:alt" content="A moonlit glass gateway links an independent green mirror capsule to a repository workbench, phone, and modular tools, while the official ForkMesh logo and its full vertical reflection stand on wet stone">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>The mirror becomes a front door</h1>
+            <p class="lede">ForkMesh's current <code>main</code> branch gives an independent mirror more ways to be a useful repository entrance, then carries that shorter path into mobile agent work, installable tools, and the tasks developers move every day.</p>
+            <div class="meta"><span class="pill">August 31, 2026</span><span>Product update</span><span>7 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/the-mirror-becomes-a-front-door.webp" alt="A moonlit glass gateway links an independent green mirror capsule to a repository workbench, phone, and modular tools, while the official ForkMesh logo and its full vertical reflection stand on wet stone">
+        </section>
+        <article class="body">
+          <p><a href="/blog/the-mesh-keeps-moving/">The mesh keeps moving</a> ended with more candid recovery and a phone that could participate in the foreground. This update follows the next step: a healthy independent node can do more than wait behind a routing layer, and the everyday work around that node is becoming easier to carry between web, desktop, and mobile.</p>
+          <p>This update covers the 322 commits that landed on <code>main</code> from August 28 through August 30. The repository's complete <code>latest</code> manifest still points to <strong>v0.7.29</strong>. A detached-signature Linux candidate exists for v0.7.95, while later tags do not establish a complete cross-platform release. Unless a section says otherwise, the work below is merged on current <code>main</code>, not promised in every installed client or hosted surface.</p>
+
+          <h2>A mirror can be a destination</h2>
+          <p>ForkMesh's direct-HTTPS path now gives a public mirror a standard Smart HTTP URL of its own. A Git client can follow a temporary redirect to a fresh, proven mirror instead of sending repository bytes through the control-plane Worker. The stable ForkMesh clone URL remains the starting point, so routing can change without changing repository identity.</p>
+          <p>The same node can serve the repository dashboard from the site's own build assets stored in the mirrored repository. Code, branches, commits, diffs, releases, and Git-backed issues, pulls, and discussions resolve from that mirror's validated local state. Repository pages can also list independently reachable mirror pages, giving a developer an explicit route when the canonical App origin is unavailable.</p>
+          <p>Synchronization is less dependent on a tight polling loop, too. Managed peers announce repository and replica changes over the node event socket, then fetch the actual Git or projection bytes over HTTPS. Events are coalesced, while a bounded reconciliation interval remains as recovery for a missed or disconnected stream. Large repository payloads never move inside the event socket.</p>
+
+          <h2>The shorter route keeps a narrow authority</h2>
+          <p>Serving a page from a mirror does not make that mirror another account database. The mirror's local public projection is an allowlist, not a copy of D1: passwords, controller sessions, encrypted account rows, private inboxes, direct messages, notes, payments, and administration state do not enter it. A last-good projection can keep public status and network views useful during an outage, with response headers identifying that source.</p>
+          <p>For a signed-in repository link, the controller can issue an expiry-bounded portable grant containing opaque account and session identifiers plus a public username. The handoff uses a form body and an HttpOnly cookie rather than putting the grant into a URL, referrer, or local storage. The mirror verifies the controller signature; it never receives a password or bearer credential. This is login continuity for a bounded repository experience, not independent account recovery or a new payment authority.</p>
+          <p>Public upload-pack reads may use the direct route without a routing capability. Control, mutation, private, and non-Git repository requests keep their capability checks, and unknown, private, disabled, or integrity-quarantined repositories retain uniform failure behavior. Direct HTTPS is replaceable transport metadata; signed repository identity and the integrity checks remain separate.</p>
+
+          <h2>A small coding agent fits on the phone</h2>
+          <p>The Flutter client now contains a focused coding-agent loop for a local repository. A developer can connect an Anthropic or OpenAI API key, ask for a change, watch tool calls and results, steer the run, and turn a completed branch into a pull-request proposal. Provider credentials use the mobile secure store and the implementation sends each key only to its selected provider.</p>
+          <p>The tool set is deliberately smaller than desktop Codex or Claude Code. It can list, search, read, write, and replace repository files, inspect Git status, and commit. It has no shell, cannot execute project code, and does not claim to run tests or linters on iOS. Read-only mode refuses mutating tools rather than pretending they succeeded.</p>
+          <p>Each run starts only from a clean working tree, creates an isolated branch, and restores the base branch after finishing. The phone runs one session per repository at a time because its Dart Git engine does not provide linked worktrees. Interrupted runs leave durable branch records for cleanup; publishing still requires the explicit push-and-open step. This is substantial current-main implementation with an end-to-end repository test, but the App Store checklist remains unfinished, so it is not evidence of a public mobile release.</p>
+          <p>A broader mobile design pass landed beside it: one type scale, consistent fields and controls, reduced-motion-aware haptics, skeleton loading states, gentler state transitions, and regenerated platform icons from the official mark. Those changes are merged and tested, but still share the same store-release boundary.</p>
+
+          <h2>The Market is becoming a real boundary</h2>
+          <p>The Marketplace now has a more general contract for software that plugs into ForkMesh. Package manifests declare host-neutral contribution sockets instead of requiring the core app to branch on every package ID. The web host currently understands dashboard-page and Worker-HTTP sockets; package code is staged into generated build directories during deployment rather than copied into tracked application source.</p>
+          <p>Installation and removal carry a paired lifecycle. A package validates its manifest, permissions, paths, signature, and content before activation. Package-owned database migrations need both up and down steps. Uninstall quarantines the package, stops active work, detaches its UI and capabilities, clears package-owned settings and cache, and rolls back if removal cannot complete. A licence, creator attribution, user output, and purchase receipts remain distinct from whether the package is currently installed.</p>
+          <p>That boundary is now doing visible work. CRM contributes a dashboard and Worker module; Sentry owns its connection and cached issue data inside a removable desktop package; and Tasks, Calendar, and Notes are catalog-discovered productivity pages instead of hard-coded core routes. The public Market adds repository links and ratings, while the desktop can separate installed packages from those still available. Catalog publication alone does not grant runtime permission, and bundled discovery is not the same as activating an external package.</p>
+
+          <h2>Daily work takes fewer detours</h2>
+          <p>Organization tasks on the web grew from a catalog view into a working surface. Developers can create and edit tasks, inspect status and priority, manage assignments, add follow-ups and images within bounded limits, request QA, reply, complete or reopen work, and copy a task as an agent-ready prompt. Task edits now refresh immediately in the desktop, and issue descriptions show their dependency relationships instead of hiding that context behind another view.</p>
+          <p>Team chat can mention <code>@all</code>, shows teammate roles in its roster, and links briefing messages back to tracked work. Agent runs can stay on the current page instead of pulling the operator away from the surface that launched them. Prompt editors gained local spellcheck squiggles, while finished sessions can be selected and removed together.</p>
+          <p>Several changes make those richer surfaces feel lighter. The desktop paints its shell before deferred pages are built, repository tabs remain lazy until opened, pull refresh moves off the UI thread, and large diff HTML is appended in batched layout updates. Web issue submission avoids a cold tracker scan and returns its accepted result sooner. These are responsiveness and workflow changes backed by focused budgets and regression tests, not a performance benchmark for every repository or machine.</p>
+
+          <h2>Release evidence still sets the boundary</h2>
+          <p>The window includes annotated tags through v0.7.99 and repeated work on native packaging, direct-mirror integration, and release provenance. It also contains a detached-signature v0.7.95 candidate manifest with Linux x86_64 artifacts. That candidate is intentionally isolated from <code>latest</code>: the release workflow promotes only after the complete Windows, macOS, and Linux installer matrix shares the required provenance.</p>
+          <p>As of this repository snapshot, the signed complete <code>latest</code> channel remains v0.7.29. The direct-mirror, mobile-agent, Market, task, accounting, and desktop refinements described here therefore need their matching hosted rollout or a later complete signed release before they should be described as universal availability. Annotated version tags alone do not cross that line.</p>
+          <p>The next useful proof is operational: validate direct repository pages and portable handoff across independent nodes, complete the native release matrix, and run the mobile checklist on real devices. Until then, the accurate story is still a strong one: current <code>main</code> moves more work onto routes and surfaces developers can inspect, without pretending every route is already in every hand.</p>
+          <p><a href="/desktop">Get the current signed desktop</a>, inspect the <a href="/status">live status page</a>, or <a href="/docs/">read the public documentation</a> for the direct-mirror and operations contracts.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/proof-before-promises/">← Proof before promises</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/the-mesh-keeps-moving/">The mesh keeps moving →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

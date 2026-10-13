@@ -1,0 +1,10 @@
+# SwiftPM and Xcode output. ForkMesh.xcodeproj itself is tracked (it is what
+# tools/generate_project.rb writes); per-user state inside it is not.
+.build/
+.build-release/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcarchive
+*.ipa

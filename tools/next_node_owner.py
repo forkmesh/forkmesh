@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import secrets
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import next_common as common
+from next_common import GuardError, ToolError
+
+APP_URL = "https://app.forkmesh.com"
+IDENTITY_PEM = "/var/lib/forkmesh/identity/ed25519.pem"
+NODE_PREFIX = "fmnext-"
+RQ_POST = ("curl -fsS --max-time 20 -K /etc/forkmesh-next/rqlite.curlrc -H "
+           "'Content-Type: application/json' --data-binary @- "
+           "'http://127.0.0.1:4001%s'")
+
+SIGNER = r'''
+import base64, sys
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+with open(sys.argv[1], "rb") as handle:
+    key = serialization.load_pem_private_key(handle.read(), None)
+if not isinstance(key, Ed25519PrivateKey):
+    raise SystemExit("identity key is not Ed25519")
+enc = lambda v: base64.urlsafe_b64encode(v).decode().rstrip("=")
+raw = key.public_key().public_bytes(serialization.Encoding.Raw,
+                                    serialization.PublicFormat.Raw)
+message = "\n".join(["forkmesh-link-grant-v2"] + sys.argv[2:6]).encode()
+print(enc(raw) + " " + enc(key.sign(message)))
+'''
+
+
+def keyset():
+    import next_rekey
+    return next_rekey.read_key(common.config_dir() / "DATA_KEY", "production")
+
+
+class Db:
+    def __init__(self, fleet, ssh, keys):
+        self.fleet = fleet
+        self.ssh = ssh
+        self.keys = keys
+        self._peer = None
+
+    def peer(self):
+        if self._peer is None:
+            import next_ids
+            self._peer = next_ids.healthy_peer(self.fleet, self.ssh)
+        return self._peer
+
+    def post(self, path, body):
+        completed = self.ssh.run(self.peer()["public_ipv4"], RQ_POST % path,
+                                 input_bytes=json.dumps(body).encode(),
+                                 timeout=60)
+        reply = json.loads(completed.stdout or b"{}")
+        results = reply.get("results") or []
+        for result in results:
+            if result.get("error"):
+                raise ToolError("rqlite: %s" % result["error"][:200])
+        return results
+
+    def rows(self, sql, *args):
+        results = self.post("/db/query?level=strong&associative",
+                            [[sql, *args]])
+        return (results[0].get("rows") or []) if results else []
+
+    def execute(self, statements):
+        return self.post("/db/execute?transaction", statements)
+
+    def record(self, table, key, name):
+        rows = self.rows("SELECT data FROM %s WHERE %s=?" % (table, key),
+                         self.keys.bi(name))
+        if not rows:
+            return None
+        plain = self.keys.open(rows[0].get("data"))
+        return json.loads(plain) if plain else None
+
+    def account(self, name):
+        return self.record("users", "user_bi", name) or self.record(
+            "nodes", "node_bi", name)
+
+    def node_row(self, name):
+        rows = self.rows("SELECT n.pubkey, n.user_bi, u.username FROM nodes n "
+                         "LEFT JOIN users u ON u.user_bi=n.user_bi "
+                         "WHERE n.node_bi=?", self.keys.bi(name))
+        return rows[0] if rows else None
+
+    def runner_row(self, name):
+        rows = self.rows("SELECT name, public_key, registered_by, scope, "
+                         "allowed_owners, status, last_seen_at FROM "
+                         "runner_nodes WHERE name=?", name)
+        return rows[0] if rows else None
+
+    def is_admin(self, name):
+        rows = self.rows("SELECT is_admin FROM users WHERE user_bi=?",
+                         self.keys.bi(name))
+        return bool(rows and int(rows[0].get("is_admin") or 0))
+
+    def audit_statement(self, actor, action, target_type, target, details):
+        return ["INSERT INTO sensitive_audit_log (ts, actor_bi, actor_label, "
+                "action, target_type, target_token, outcome, details) "
+                "VALUES (?,?,?,?,?,?,?,?)", int(time.time() * 1000),
+                self.keys.bi(actor), actor, action, target_type,
+                self.keys.bi("audit:%s:%s" % (target_type, target)), "success",
+                json.dumps(details, sort_keys=True, separators=(",", ":"))]
+
+
+def core_accounts(fleet):
+    return [(node, NODE_PREFIX + node["name"]) for node in
+            fleet.get("nodes") or []]
+
+
+def runner_accounts(fleet):
+    return [(node, NODE_PREFIX + node["name"]) for node in
+            fleet.get("runners") or []]
+
+
+def owned_nodes(record):
+    nodes = (record or {}).get("nodes")
+    return [str(n) for n in nodes] if isinstance(nodes, list) else []
+
+
+def status(db, runner, fleet):
+    for _node, account in core_accounts(fleet):
+        record = db.account(account) or {}
+        row = db.node_row(account) or {}
+        runner.say("%s: kind=%s owner=%s nodes.user=%s status=%s" % (
+            account, record.get("kind"), record.get("owner") or "-",
+            row.get("username") or "-", record.get("status")))
+    for _node, account in runner_accounts(fleet):
+        row = db.runner_row(account)
+        if not row:
+            runner.say("%s: no runner_nodes row" % account)
+            continue
+        runner.say("%s: registered_by=%s scope=%s allowed_owners=%s status=%s"
+                   % (account, row["registered_by"], row["scope"],
+                      row["allowed_owners"], row["status"]))
+    return 0
+
+
+def grant_canonical(account, target, ts, nonce):
+    return "\n".join(["forkmesh-link-grant-v2", account, target, ts,
+                      nonce]).encode()
+
+
+def accept_canonical(account, target, grant_sig, accept_ts):
+    return "\n".join(["forkmesh-link-accept-v1", account, target, grant_sig,
+                      accept_ts]).encode()
+
+
+def b64url(raw):
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+class Acceptor:
+    def __init__(self, key_path="", session_env=""):
+        self.key_path = key_path
+        self.session_env = session_env
+
+    def ready(self):
+        return bool(self.key_path or self.session_env)
+
+    def describe(self):
+        if self.key_path:
+            return "the target's own key"
+        if self.session_env:
+            return "the target's session ($%s)" % self.session_env
+        return "nobody (pass --accept-key or --session-env)"
+
+    def session(self):
+        if not self.session_env:
+            return ""
+        token = os.environ.get(self.session_env, "").strip()
+        if not token:
+            raise GuardError("$%s is empty" % self.session_env)
+        return token
+
+    def sign(self, message):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PrivateKey)
+        with open(os.path.expanduser(self.key_path), "rb") as handle:
+            key = serialization.load_pem_private_key(handle.read(), None)
+        if not isinstance(key, Ed25519PrivateKey):
+            raise GuardError("%s is not an Ed25519 key" % self.key_path)
+        return b64url(key.sign(message))
+
+    def fields(self, account, target, grant_sig):
+        if not self.key_path:
+            return {}
+        accept_ts = str(int(time.time() * 1000))
+        return {"acceptTs": accept_ts, "acceptSig": self.sign(
+            accept_canonical(account, target, grant_sig, accept_ts))}
+
+
+def sign_grant(ssh, node, account, target, ts, nonce):
+    command = "python3 -I - %s %s %s %s %s" % (IDENTITY_PEM, account, target,
+                                               ts, nonce)
+    completed = ssh.run(node["public_ipv4"], command,
+                        input_bytes=SIGNER.encode(), timeout=60)
+    parts = (completed.stdout or b"").decode().split()
+    if len(parts) != 2:
+        raise ToolError("%s: the node signer returned no signature" % account)
+    return parts[0], parts[1]
+
+
+def post_grant(app_url, body, session=""):
+    headers = {"Content-Type": "application/json",
+               "User-Agent": "fmnext-tools/1"}
+    if session:
+        headers["Authorization"] = "Bearer " + session
+    request = urllib.request.Request(
+        app_url.rstrip("/") + "/api/accounts/link-grant",
+        data=json.dumps(body).encode(), method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.status, json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read() or b"{}")
+
+
+def transfer_cores(db, ssh, runner, fleet, source, target, app_url,
+                   acceptor):
+    moved = 0
+    for node, account in core_accounts(fleet):
+        record = db.account(account)
+        row = db.node_row(account)
+        if not record or record.get("kind") != "node" or not row:
+            raise GuardError("%s: no active node account" % account)
+        owner = record.get("owner") or ""
+        if owner == target:
+            runner.say("%s: already owned by %s" % (account, target))
+            continue
+        if owner != source:
+            raise GuardError("%s: owner is %r, not %r; refusing" % (
+                account, owner, source))
+        if not runner.execute:
+            runner.say("[dry-run] %s: node key signs a v2 link grant naming "
+                       "%s; %s accepts it (owner %s -> %s)"
+                       % (account, target, acceptor.describe(), source,
+                          target))
+            continue
+        if not acceptor.ready():
+            raise GuardError("the new owner must accept: pass --accept-key "
+                             "or --session-env")
+        ts = str(int(time.time() * 1000))
+        nonce = secrets.token_urlsafe(24)
+        pubkey, sig = sign_grant(ssh, node, account, target, ts, nonce)
+        if pubkey != row.get("pubkey"):
+            raise GuardError("%s: the node's identity key does not match the "
+                             "registered public key; refusing" % account)
+        body = {"nodeName": account, "user": target, "ts": ts,
+                "nonce": nonce, "sig": sig}
+        body.update(acceptor.fields(account, target, sig))
+        code, reply = post_grant(app_url, body, acceptor.session())
+        if code != 200 or not reply.get("linked") or reply.get("user") != target:
+            raise ToolError("%s: link-grant answered HTTP %d %s" % (
+                account, code, reply.get("error") or ""))
+        db.execute([db.audit_statement(
+            target, "node.owner_transfer", "node", account,
+            {"from": source, "to": target, "via": "link-grant"})])
+        after = db.account(account) or {}
+        if after.get("owner") != target:
+            raise ToolError("%s: owner reads back as %r" % (
+                account, after.get("owner")))
+        runner.say("%s: owner %s -> %s (signed link grant)" % (
+            account, source, target))
+        moved += 1
+    return moved
+
+
+def transfer_runners(db, runner, fleet, source, target):
+    moved = 0
+    for _node, account in runner_accounts(fleet):
+        row = db.runner_row(account)
+        if not row:
+            runner.say("%s: no runner_nodes row; nothing to transfer" % account)
+            continue
+        try:
+            owners = json.loads(row.get("allowed_owners") or "[]")
+        except ValueError:
+            owners = []
+        if target not in owners:
+            raise GuardError("%s: %s is not in allowed_owners %s; the runner "
+                             "would not take its jobs" % (account, target,
+                                                          owners))
+        if row["registered_by"] == target:
+            runner.say("%s: already registered by %s" % (account, target))
+            continue
+        if row["registered_by"] != source:
+            raise GuardError("%s: registered_by is %r, not %r; refusing" % (
+                account, row["registered_by"], source))
+        if row["scope"] == "pool" and not db.is_admin(target):
+            raise GuardError("%s: a pool runner's registrant must be an "
+                             "administrator; %s is not" % (account, target))
+        if row["scope"] == "personal" and owners != [target]:
+            raise GuardError("%s: a personal runner serves only its "
+                             "registrant" % account)
+        if not runner.execute:
+            runner.say("[dry-run] %s: registered_by %s -> %s" % (
+                account, source, target))
+            continue
+        now = int(time.time() * 1000)
+        results = db.execute([
+            ["UPDATE runner_nodes SET registered_by=?, updated_at=? WHERE "
+             "name=? AND registered_by=?", target, now, account, source],
+            db.audit_statement(target, "runner.owner_transfer", "runner",
+                               account, {"from": source, "to": target,
+                                         "via": "next_node_owner"})])
+        if int((results[0] or {}).get("rows_affected") or 0) != 1:
+            raise ToolError("%s: the registrant changed underneath; nothing "
+                            "written" % account)
+        runner.say("%s: registered_by %s -> %s" % (account, source, target))
+        moved += 1
+    return moved
+
+
+def transfer(db, ssh, runner, fleet, source, target, app_url,
+             acceptor=None):
+    acceptor = acceptor or Acceptor()
+    user = db.record("users", "user_bi", target)
+    if not user or user.get("kind", "user") != "user" or user.get(
+            "status") != "active":
+        raise GuardError("%s is not an active user account" % target)
+    if source == target:
+        raise GuardError("source and target are the same account")
+    cores = transfer_cores(db, ssh, runner, fleet, source, target, app_url,
+                           acceptor)
+    runners = transfer_runners(db, runner, fleet, source, target)
+    if runner.execute:
+        left = [n for n in owned_nodes(db.account(source))
+                if n.startswith(NODE_PREFIX)]
+        if left:
+            raise ToolError("%s still lists %s" % (source, ", ".join(left)))
+    runner.say("cores moved: %d, runners moved: %d" % (cores, runners))
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Fleet node ownership (docs/NODE_OWNERSHIP.md)")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("status")
+    p = sub.add_parser("transfer")
+    p.add_argument("--from", dest="source", required=True)
+    p.add_argument("--to", dest="target", required=True)
+    p.add_argument("--app-url", default=APP_URL)
+    accept = p.add_mutually_exclusive_group()
+    accept.add_argument("--accept-key", default="",
+                        help="the target account's Ed25519 PEM")
+    accept.add_argument("--session-env", default="",
+                        help="env var holding the target account's session")
+    common.add_execute_flags(p)
+    args = parser.parse_args(argv)
+    runner = common.runner_from_args(args) if hasattr(args, "execute") else \
+        common.Runner(execute=False)
+    fleet = common.load_fleet()
+    ssh = common.Ssh()
+    db = Db(fleet, ssh, keyset())
+    try:
+        if args.command == "status":
+            return status(db, runner, fleet)
+        return transfer(db, ssh, runner, fleet, args.source.strip().lower(),
+                        args.target.strip().lower(), args.app_url,
+                        Acceptor(args.accept_key, args.session_env))
+    except (ToolError, subprocess.TimeoutExpired) as error:
+        print("error: %s" % error, file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

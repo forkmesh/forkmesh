@@ -1,0 +1,78 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Ride the ForkMesh coaster · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="A roller coaster now runs right round the town in the ForkMesh World: a 60-unit lift hill, a double loop, a ramp jump into free fall, a corkscrew, a helix and a tunnel, in a lap of about 75 seconds. October 7, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/forkmesh-coaster/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/forkmesh-coaster/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Ride the ForkMesh coaster">
+    <meta property="og:description" content="A roller coaster circles the town in the ForkMesh World: a double loop, a ramp jump into free fall, airtime hills, a corkscrew and a tunnel, about 75 seconds a lap.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/forkmesh-coaster.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A rider's avatar in the front car of a ForkMesh World roller coaster climbing the lift hill into a golden sunset, its rails glowing cyan and light streaking past, with two vertical loops, drone rings and the rest of the track running off across sand and grass behind, and the ForkMesh logo in the corner">
+    <meta property="article:published_time" content="2026-10-07T20:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Ride the ForkMesh coaster">
+    <meta name="twitter:description" content="A roller coaster circles the town in the ForkMesh World: a double loop, a ramp jump into free fall, airtime hills, a corkscrew and a tunnel.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/forkmesh-coaster.webp">
+    <meta name="twitter:image:alt" content="A rider's avatar in the front car of a ForkMesh World roller coaster climbing the lift hill into a golden sunset, its rails glowing cyan and light streaking past, with two vertical loops, drone rings and the rest of the track running off across sand and grass behind, and the ForkMesh logo in the corner">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Announcement</p>
+            <h1>Ride the ForkMesh coaster</h1>
+            <p class="lede">The ForkMesh World has a roller coaster now. It runs right round the town, takes about 75 seconds a lap, and goes upside down three times. It's live at <a href="https://world.forkmesh.com/">world.forkmesh.com</a>.</p>
+            <div class="meta"><span class="pill">October 7, 2026</span><span>Announcement</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/forkmesh-coaster.webp" alt="A rider's avatar in the front car of a ForkMesh World roller coaster climbing the lift hill into a golden sunset, its rails glowing cyan and light streaking past, with two vertical loops, drone rings and the rest of the track running off across sand and grass behind, and the ForkMesh logo in the corner">
+        </section>
+        <article class="body">
+          <p>The picture at the top is the start of a ride, a screenshot with an AI sunset, glow and speed streaks added on top: the front car on the lift hill, the double loop and the long run along the east side waiting below.</p>
+
+          <h2>How to get on</h2>
+          <p>Open <a href="https://world.forkmesh.com/">the World</a> and walk to the station on the west edge of town. Click the train, or press E when you're standing next to it. The lap ends back in the station, where you step off onto the platform.</p>
+          <p>You can leave early. Press E or click the train again and you're off; if that happens high above the ground, the roof parachute opens, the same one you get when you jump off a quadcopter in the air.</p>
+
+          <h2>What's on the track</h2>
+          <p>The track is a rounded hexagon around the town, a little over 2,000 units of plan length, in the open ground between the town and its edge. In order:</p>
+          <ul>
+            <li>A chain lift to 60 units high, then the first drop through the north-west corner.</li>
+            <li>A double loop: two loops back to back, the first stepping out from the town and the second stepping back in.</li>
+            <li>A banked turn round the north corner, then three airtime hills, each lower than the last.</li>
+            <li>A kicker ramp on the east side. At the lip the rails stop and the train flies, in a real ballistic arc, over the zip-line cable and the beach road, onto a landing ramp that starts at exactly the slope the train comes down at.</li>
+            <li>A corkscrew, a descending helix, and a brake run through a tunnel back into the station.</li>
+          </ul>
+          <p>Speed comes from the height you've fallen, so the bottom of the first drop is the fastest part of the ride: the speed readout tops out at a little over 210 km/h. The readout also names each element for a moment as you enter it. You ride in the front row and go upside down in the loops and the corkscrew, your arms go up on the jump and the steepest drops, and the camera turns with the track so the loops don't spin you around.</p>
+
+          <h2>Riding together</h2>
+          <p>Other people in the World see you on the ride: your avatar goes round the track with you, the same way they see you flying a quadcopter.</p>
+          <p>The drone race course was rebuilt around the coaster as well. Its ten rings now sit directly above or below the track, and between rings the course swings out to the side, so a quadcopter lap weaves over and under the coaster all the way round town. Quadcopters also reach full cruising speed in 1.2 seconds instead of 3, which helps on the tighter turns.</p>
+
+          <h2>What it costs</h2>
+          <p>We keep a close eye on how much the World asks of a laptop. In the default town view the coaster adds four draw calls and about 4,000 triangles, because the track is split into twelve chunks that each switch to a simpler model in the distance, and the three-car train is drawn in a single call.</p>
+
+          <h2>Go for a ride</h2>
+          <p>Head to <a href="https://world.forkmesh.com/">world.forkmesh.com</a>, find the station on the west side of town and take a lap. If something looks wrong on the way round, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a> or tell us in the ForkMesh Discord. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/start-your-own-forkmesh/">← Start your own ForkMesh</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/runs-that-listen-branches-that-let-go/">Runs that listen, branches that let go →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

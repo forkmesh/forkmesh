@@ -1,0 +1,26 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=Render request_block_rules into the Caddy include and reload Caddy
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I @@OPT@@/bin/fmnext-request-rules --rules @@REQUEST_RULES_EXPORT@@ --out @@REQUEST_RULES_CADDY@@ --reload
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=@@ETC@@/caddy
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+MemoryMax=64M
+TimeoutStartSec=90s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-104 -119 208 238" width="208" height="238" role="img" aria-label="ForkMesh">
+  <title>ForkMesh</title>
+  <polygon points="0,-100 86.6,-50 86.6,50 0,100 -86.6,50 -86.6,-50" fill="#ffffff" stroke="#ffffff" stroke-width="26" stroke-linejoin="round"/>
+  <polygon points="0,-100 86.6,-50 86.6,50 0,100 -86.6,50 -86.6,-50" fill="#131316" stroke="#131316" stroke-width="10" stroke-linejoin="round"/>
+  <g transform="matrix(0.866 -0.5 0.866 0.5 -86.6 -50)">
+    <rect x="5" y="5" width="90" height="90" rx="7" fill="#ffffff"/>
+    <g fill="#131316" stroke="#131316" stroke-width="7" stroke-linecap="round">
+      <path d="M78 22 L22 78 M40 20 L40 60 M60 80 L60 40" fill="none"/>
+      <circle cx="78" cy="22" r="7.5"/>
+      <circle cx="22" cy="78" r="7.5"/>
+      <circle cx="40" cy="20" r="7.5"/>
+      <circle cx="60" cy="80" r="7.5"/>
+    </g>
+  </g>
+  <g transform="matrix(0.866 0.5 0 1 -86.6 -50)" fill="#ffffff" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">
+    <path d="M7 9 H93 V31 H31 V45 H76 V65 H31 V93 H7 Z"/>
+  </g>
+  <g transform="matrix(0.866 -0.5 0 1 0 0)" fill="#ffffff" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">
+    <path d="M7 93 V9 H28 L50 42 L72 9 H93 V93 H72 V44 L50 77 L28 44 V93 Z"/>
+  </g>
+</svg>

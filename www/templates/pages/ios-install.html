@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Install ForkMesh (test build){% endblock %}
+{% block chrome %}
+{% endblock %}
+{% block meta %}
+<meta name="robots" content="noindex">
+{% endblock %}
+{% block head %}
+<style>
+  :root { color-scheme: light dark; --bg: #fafafa; --fg: #18181b; --muted: #71717a; --card: #fff; --line: #e4e4e7; --btn: #18181b; --btn-fg: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #09090b; --fg: #fafafa; --muted: #a1a1aa; --card: #18181b; --line: #27272a; --btn: #fafafa; --btn-fg: #18181b; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 420px; margin: 0 auto; padding: 48px 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 24px; text-align: center; }
+  img { width: 64px; height: 64px; border-radius: 14px; }
+  h1 { font-size: 22px; margin: 16px 0 4px; }
+  p { color: var(--muted); margin: 8px 0; }
+  a.install { display: block; margin: 24px 0 8px; padding: 14px; border-radius: 12px; background: var(--btn); color: var(--btn-fg); font-weight: 600; text-decoration: none; }
+  a.install[hidden] { display: none; }
+  .small { font-size: 13px; }
+</style>
+{% endblock %}
+{% block body %}
+<main>
+  <div class="card">
+    <img src="/favicon/apple-touch-icon.png" alt="">
+    <h1 id="title">ForkMesh</h1>
+    <p id="version">Test build</p>
+    <a class="install" id="install" href="#" hidden>Install</a>
+    <p class="small" id="status">Checking the build…</p>
+    <p class="small">Open this page in Safari on an iPhone registered with the team. After installing, the app appears on the home screen.</p>
+  </div>
+</main>
+<script>
+(function () {
+  var status = document.getElementById("status");
+  var match = /^#([0-9a-f]{64})$/.exec(location.hash);
+  if (!match) {
+    status.textContent = "This install link is incomplete.";
+    return;
+  }
+  var manifest = location.origin + "/api/repo/forkmesh/forkmesh/releases/blob/sha256/" + match[1] + "?filename=manifest.plist";
+  var build = new URLSearchParams(location.search).get("build") || "";
+  if (!/^[0-9A-Za-z.\-]{1,32}$/.test(build)) build = "";
+  if (build) document.getElementById("version").textContent = "Test build (build " + build + ")";
+  var install = document.getElementById("install");
+  install.href = "itms-services://?action=download-manifest&url=" + encodeURIComponent(manifest);
+  fetch(manifest).then(function (response) {
+    if (!response.ok) throw new Error(response.status);
+    return response.text();
+  }).then(function (text) {
+    var doc = new DOMParser().parseFromString(text, "application/xml");
+    var keys = doc.getElementsByTagName("key");
+    var meta = {};
+    for (var i = 0; i < keys.length; i++) {
+      var value = keys[i].nextElementSibling;
+      if (value && value.tagName === "string") meta[keys[i].textContent] = value.textContent;
+    }
+    if (meta.title) document.getElementById("title").textContent = meta.title;
+    if (meta["bundle-version"]) document.getElementById("version").textContent = "Test build " + meta["bundle-version"] + (build ? " (build " + build + ")" : "");
+    install.hidden = false;
+    status.textContent = /iPhone|iPad|iPod/.test(navigator.userAgent) ? "" : "Open this page on the iPhone to install.";
+  }).catch(function () {
+    status.textContent = "This build is no longer available.";
+  });
+})();
+</script>
+{% endblock %}

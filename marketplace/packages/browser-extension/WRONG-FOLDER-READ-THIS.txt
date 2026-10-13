@@ -1,0 +1,32 @@
+╔═══════════════════════════════════════════════════════════════════╗
+║  ⚠️  WRONG FOLDER - DO NOT LOAD THIS DIRECTORY IN CHROME  ⚠️     ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+This is the package root for the ForkMesh marketplace system.
+
+To load the ForkMesh browser extension in Chrome:
+
+FROM A DOWNLOADED ZIP:
+  1. Download the ZIP from the ForkMesh dashboard (/dashboard/extension)
+  2. Unzip it - you'll get a folder called "browser-extension"
+  3. In Chrome, go to chrome://extensions
+  4. Enable "Developer mode"
+  5. Click "Load unpacked"
+  6. Select the "browser-extension" folder from step 2
+
+FROM THIS REPOSITORY:
+  1. Navigate to: content/extension/
+  2. In Chrome, go to chrome://extensions
+  3. Enable "Developer mode"
+  4. Click "Load unpacked"
+  5. Select the content/extension/ folder
+
+The correct folder contains files like:
+  - manifest.json (with "manifest_version": 3)
+  - background.js
+  - popup.html
+  - content.js
+
+If Chrome says "Missing 'manifest_version' key", you're trying to load
+the wrong folder. The manifest.json in THIS folder is for the ForkMesh
+marketplace system, NOT for Chrome.

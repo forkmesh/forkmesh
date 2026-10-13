@@ -1,0 +1,30 @@
+# Checks the special agents, shortcuts, skills and actions in .forkmesh on
+# every push that touches them. Added from the Workflows plug-in.
+name: Check ForkMesh files
+on:
+  push:
+    paths:
+      - ".forkmesh/**"
+  workflow_dispatch:
+jobs:
+  check:
+    steps:
+      - name: Check special agents
+        run: |
+          set -eu
+          for file in .forkmesh/teammates/*.json; do
+            [ -e "$file" ] || continue
+            python3 -c 'import json, sys, pathlib; p = pathlib.Path(sys.argv[1]); d = json.loads(p.read_text()); assert d.get("id") == p.stem, "id does not match the file name"; assert d.get("name") and d.get("specialty"), "name and specialty are required"' "$file"
+          done
+      - name: Check shortcut and skill headers
+        run: |
+          set -eu
+          status=0
+          for file in .forkmesh/shortcuts/* .forkmesh/skills/*.skill; do
+            [ -f "$file" ] || continue
+            if ! head -n 20 "$file" | grep -q '^# name:'; then
+              echo "$file has no '# name:' line"
+              status=1
+            fi
+          done
+          exit "$status"

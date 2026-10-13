@@ -1,0 +1,14 @@
+{
+  "category": "AI",
+  "integrations": [
+    "openai",
+    "anthropic",
+    "mistral",
+    "groq",
+    "perplexity",
+    "gemini",
+    "cohere",
+    "huggingface",
+    "deepl"
+  ]
+}

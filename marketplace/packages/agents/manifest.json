@@ -1,0 +1,65 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "agents",
+  "name": "Agents",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Agents",
+  "version": "1.0.0",
+  "summary": "Run and watch coding agents: the Agents tab, the new agent button, agent lists and runs on desktop, iPhone, Android and the web.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Agents plugin card"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:agents",
+    "ios": "builtin:agents",
+    "android": "builtin:agents",
+    "web": "builtin:agents",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "agents.run",
+      "label": "Start, watch and stop coding agents on your repositories",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

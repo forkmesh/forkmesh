@@ -1,0 +1,114 @@
+{
+  "manifest_version": 3,
+  "name": "ForkMesh: CRM and Password Vault",
+  "version": "2.18.0",
+  "description": "Fill ForkMesh Password Vault logins, link mail and Mastodon threads to CRM contacts, and update Marketing channels in a click",
+  "minimum_chrome_version": "137",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "sidePanel",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://app.forkmesh.com/*",
+    "https://forkmesh.com/*",
+    "https://www.reddit.com/*",
+    "https://old.reddit.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "refresh-panel.html"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ForkMesh",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://mail.google.com/*",
+        "https://mail.zoho.com/*",
+        "https://mail.zoho.eu/*",
+        "https://mail.zoho.in/*",
+        "https://mail.zoho.com.au/*",
+        "https://mail.zoho.jp/*",
+        "https://mail.zohocloud.ca/*"
+      ],
+      "js": [
+        "panel.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://app.forkmesh.com/dashboard/crm*",
+        "https://app.forkmesh.com/dashboard/vault*",
+        "https://app.forkmesh.com/dashboard/extension*",
+        "https://app.forkmesh.com/dashboard/marketing*",
+        "https://forkmesh.com/dashboard/crm*",
+        "https://forkmesh.com/dashboard/vault*",
+        "https://forkmesh.com/dashboard/extension*",
+        "https://forkmesh.com/dashboard/marketing*"
+      ],
+      "js": [
+        "dashboard.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "x.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.reddit.com/*",
+        "https://old.reddit.com/*"
+      ],
+      "js": [
+        "reddit.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://console.x.com/*",
+        "https://developer.x.com/*",
+        "https://developer.twitter.com/*"
+      ],
+      "js": [
+        "x-developer.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

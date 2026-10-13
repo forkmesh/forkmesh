@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "CleanupScanner.h",
+    "CleanupScanner.cpp",
+    "CleanupPlan.h",
+    "CleanupPlan.cpp",
+    "CleanupFeature.h",
+    "CleanupFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_cleanup_scanner.cpp",
+    "CleanupScanner.h",
+    "CleanupScanner.cpp",
+    "CleanupPlan.h",
+    "CleanupPlan.cpp"
+  ],
+  "testHostSources": [
+    "CleanupHostFeed.h",
+    "CleanupHostFeed.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
+}

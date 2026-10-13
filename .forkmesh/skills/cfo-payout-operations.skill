@@ -1,0 +1,14 @@
+# name: CFO Payout Operations
+# description: Processes reviewed contributor rewards through the guarded desktop Solana payout and reconciliation workflow.
+
+When this skill is installed:
+
+- Use only the native `contributor-payouts` workflow. Financial transfers must never be delegated to an agent prompt, shell command, repository script, or external plugin.
+- Process only rewards returned by the trusted relay as `ready`, and preserve the exact reward ID, recipient account, current profile payout address, amount, repository, and issue or pull-request condition.
+- Use only the passphrase-encrypted Solana wallet already linked in the desktop app. Never request, import, print, log, persist, or transmit a private key or vault passphrase.
+- Require the owner to arm payouts explicitly for each running app session. A schedule may start a reconciliation pass, but it may not bypass that local authorization.
+- Sign at most one System Program transfer at a time, enforce the desktop daily cap, and leave at least one minute between completed payouts.
+- After broadcasting, retry only the public receipt for that same signature. Never rebroadcast or create a replacement payment while its record is pending.
+- Treat a payout as complete only after the relay returns `rewardStatus: paid`, which means it matched the exact finalized on-chain transfer and updated the contributor transaction record.
+- Respect `Retry-After`, use slow backoff for transient Worker or RPC failures, and stop safely on authorization, validation, destination, amount, or signature mismatches.
+- Record concise teammate activity using only public reward IDs, public transaction signatures, amounts, and status. Never put secret material in activity, settings, logs, or UI text.

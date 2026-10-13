@@ -1,0 +1,51 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Encrypted repo rooms · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="ForkMesh public rooms admit controller integrations while private channels add automatic device-to-device encryption.">
+    <link rel="canonical" href="https://forkmesh.com/blog/encrypted-repo-rooms/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/encrypted-repo-rooms/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Encrypted repo rooms">
+    <meta property="og:description" content="ForkMesh public rooms admit controller integrations while private channels add automatic device-to-device encryption.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/beyond-the-room-key.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A protected message travels inside nested cyan and violet envelopes from a metallic ForkMesh node to several device nodes">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/beyond-the-room-key.webp">
+    <meta name="twitter:image:alt" content="A protected message travels inside nested cyan and violet envelopes from a metallic ForkMesh node to several device nodes">
+{% endblock %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Chat &amp; private sharing</p>
+            <h1>Encrypted repo rooms</h1>
+            <p class="lede">Public repository rooms admit controller integrations; private channels add automatic device-to-device encryption. Up to 500 persisted frames remain for 7 days.</p>
+            <div class="meta"><span class="pill">Feature 47 of 72</span><span>Shared key</span><span>Chat &amp; private sharing</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/beyond-the-room-key.webp" alt="A protected message travels inside nested cyan and violet envelopes from a metallic ForkMesh node to several device nodes">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Encrypted repo rooms give ForkMesh a concrete mechanism for repo-scoped rooms encrypted before frames are sent. Public channels remain controller-readable for integrations, while private channels add automatic device-to-device encryption beyond the controller key.</p>
+          <p>Project conversations often carry design, access, and coordination context, so the UI makes that trust boundary explicit: Public admits controller integrations; End-to-end protects private conversation content from passive controller decryption.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>The Town Square compatibility room computes <code>SHA-256(DATA_KEY + &quot;:room-chat-passphrase-v1&quot;)</code>. Every other repository computes <code>SHA-256(DATA_KEY + &quot;:room-chat-passphrase-v2:&quot; + lower(owner + &quot;/&quot; + repo))</code>, so a public-room key cannot decrypt a private-repository room. The relay releases that scoped passphrase only to an authenticated account or signed node authorized for the repository. Clients apply PBKDF2-HMAC-SHA256 for 210,000 rounds with the first 16 bytes of <code>SHA-256(&quot;ForkMesh room:&quot; + roomName)</code>, then encrypt frames with AES-256-GCM.</p>
+          <p>Only frames marked for persistence enter history. The relay keeps the newest 500 persisted frames per room for no more than 7 days; oversized frames are relayed but not retained. Private frames carry a recipient-sealed inner envelope, so the relay-derived key alone cannot read them.</p>
+          <div class="note">Private encryption is automatic and has no shared phrase. Public-key discovery is not independently authenticated, so an active controller can inject a future recipient key even though passive access to <code>DATA_KEY</code> cannot decrypt protected content.</div>
+          <h2>Where it fits</h2>
+          <p>Use public rooms for repository-aware conversation that needs ForkBot, MCP, or webhooks. Use private channels and direct messages when controller integrations are not required.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/insights/">← Insights</a>
+          <a href="/blog/direct-messages/">Direct messages →</a>
+        </nav>
+{% endblock %}

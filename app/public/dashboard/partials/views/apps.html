@@ -1,0 +1,61 @@
+          <section data-view="apps" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full grid gap-4">
+              <div data-apps-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 class="text-base font-semibold text-foreground">Apps</h1>
+                    <p class="mt-1 text-sm text-muted-foreground">Apps you and your organizations installed, what each one may do, and when it last acted. Revoking an app deletes its tokens at once.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-2 self-start">
+                    <a href="/dashboard/apps/build" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+                      <i data-lucide="code" class="w-3.5 h-3.5"></i>
+                      Build an app
+                    </a>
+                  </div>
+                </div>
+                <div data-apps-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
+                <div class="px-4 sm:px-5 py-4 grid gap-3">
+                  <h2 class="text-sm font-semibold text-foreground">Installed apps</h2>
+                  <div data-apps-installed class="grid gap-3">
+                    <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading apps...</p>
+                  </div>
+                </div>
+                <div data-apps-orgs class="px-4 sm:px-5 py-4 border-t border-border grid gap-4"></div>
+              </div>
+
+              <div data-apps-plugins-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h2 class="text-base font-semibold text-foreground">Plugins</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">Features that follow your account to the web, the desktop app and the mobile app. Install one to add its links and screens everywhere you sign in; remove it to hide them and delete what it stored for your account. A plugin listed under another one needs it: installing it installs both, removing the parent removes it too.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-2 self-start">
+                    <button data-apps-plugins-refresh type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+                <div data-apps-plugins-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
+                <div data-apps-plugins class="px-4 sm:px-5 py-4 grid gap-3">
+                  <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading plugins...</p>
+                </div>
+              </div>
+
+              <div data-apps-directory-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border">
+                  <h2 class="text-base font-semibold text-foreground">App Directory</h2>
+                  <p class="mt-1 text-sm text-muted-foreground">Apps a ForkMesh reviewer approved. Install one from its own website; ForkMesh shows you what it asks for before anything is shared.</p>
+                </div>
+                <div data-apps-directory class="px-4 sm:px-5 py-4 grid gap-3"></div>
+              </div>
+
+              <div data-apps-review-panel hidden class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border">
+                  <h2 class="text-base font-semibold text-foreground">Review queue</h2>
+                  <p class="mt-1 text-sm text-muted-foreground">Apps waiting for a listing decision. Approval is pinned to what you see here: any later edit sends the app back to this queue.</p>
+                </div>
+                <div data-apps-review class="px-4 sm:px-5 py-4 grid gap-3"></div>
+              </div>
+            </div>
+          </section>

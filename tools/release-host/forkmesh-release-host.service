@@ -1,0 +1,19 @@
+[Unit]
+Description=ForkMesh release completion: build, sign, and publish the host-only assets for held-back releases
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs from the primary checkout so it always uses the tool on main; until
+# the tool has landed there the unit is skipped rather than failed. The
+# checkout is ~/projects/forkmesh/src in the projects layout, and
+# ~/projects/forkmesh itself on a box that has not moved yet.
+ExecCondition=/bin/sh -c 'test -f %h/projects/forkmesh/src/tools/forkmesh-release-host.py || test -f %h/projects/forkmesh/tools/forkmesh-release-host.py'
+ExecStart=/bin/sh -c 'd=%h/projects/forkmesh/src; [ -f "$d/tools/forkmesh-release-host.py" ] || d=%h/projects/forkmesh; exec /usr/bin/python3 "$d/tools/forkmesh-release-host.py" --auto'
+Environment=TMPDIR=%h/.cache/forkmesh-release-host/tmp
+Nice=10
+IOSchedulingClass=idle
+# A cold Gradle build, a cold Qt cross build, and seeding every mirror do
+# not fit in an hour between them.
+TimeoutStartSec=360min

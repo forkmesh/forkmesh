@@ -1,0 +1,1180 @@
+          <style>
+            [data-view="marketing"] {
+              --mk-s1: #4493f8; --mk-s2: #cf6f24; --mk-s3: #a877ea; --mk-s4: #22a697;
+              --mk-good: #3fb950; --mk-good-soft: rgba(46, 160, 67, .15);
+              --mk-warn: #d29922; --mk-warn-soft: rgba(187, 128, 9, .15);
+              --mk-bad: #f85149; --mk-bad-soft: rgba(248, 81, 73, .12);
+              --mk-line: rgb(var(--dashboard-border-rgb));
+              --mk-line-soft: rgb(var(--dashboard-secondary-rgb));
+              --mk-card: rgb(var(--dashboard-card-rgb));
+              --mk-raised: rgb(var(--dashboard-muted-rgb));
+              --mk-fg: rgb(var(--dashboard-foreground-rgb));
+              --mk-muted: rgb(var(--dashboard-muted-foreground-rgb));
+              --mk-mono: "ForkMesh Dashboard Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+            }
+            [data-dashboard-theme="light"] [data-view="marketing"] {
+              --mk-s1: #1f6feb; --mk-s2: #bc4c00; --mk-s3: #8250df; --mk-s4: #00897a;
+              --mk-good: #1a7f37; --mk-good-soft: #dafbe1;
+              --mk-warn: #9a6700; --mk-warn-soft: #fff8c5;
+              --mk-bad: #cf222e; --mk-bad-soft: #ffebe9;
+              --mk-line-soft: #eaeef2; --mk-raised: #f6f8fa; --mk-muted: #59636e;
+            }
+            [data-view="marketing"] [hidden] { display: none !important; }
+            /* .mk-page sets display after the utility sheet, so it must yield to .hidden itself. */
+            [data-view="marketing"] .mk-page.hidden { display: none; }
+            .mk-num { font-family: var(--mk-mono); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+            .mk-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+            .mk-page { display: grid; gap: 1rem; }
+            .mk-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; }
+            .mk-head-l { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; min-width: 0; }
+            .mk-head-r { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+            .mk-org { border: 1px solid var(--mk-line); border-radius: 999px; background: var(--mk-card); color: var(--mk-fg); padding: .3rem .75rem; font-size: 12.5px; max-width: 18rem; }
+            .mk-seg { display: inline-flex; border: 1px solid var(--mk-line); border-radius: 8px; padding: 2px; background: var(--mk-raised); }
+            .mk-seg button { border: 0; background: none; padding: 3px 10px; border-radius: 6px; font: 500 12px var(--mk-mono); color: var(--mk-muted); }
+            .mk-seg button[aria-pressed="true"] { background: var(--mk-card); color: var(--mk-fg); box-shadow: 0 0 0 1px var(--mk-line); }
+            .mk-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--mk-line); background: var(--mk-card); color: var(--mk-fg); border-radius: 8px; padding: 6px 11px; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+            .mk-btn:hover { background: var(--mk-line-soft); }
+            .mk-btn:disabled { opacity: .5; cursor: default; }
+            .mk-btn-primary { background: rgb(var(--dashboard-primary-rgb)); color: rgb(var(--dashboard-primary-foreground-rgb)); border-color: transparent; }
+            .mk-btn-primary:hover { background: rgb(var(--dashboard-primary-rgb)); filter: brightness(1.08); }
+            .mk-btn-danger { color: rgb(var(--dashboard-destructive-rgb)); border-color: rgb(var(--dashboard-destructive-rgb) / .6); }
+            .mk-menu { position: relative; }
+            .mk-menu > summary { list-style: none; cursor: pointer; padding: 6px 8px; }
+            .mk-menu > summary::-webkit-details-marker { display: none; }
+            .mk-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 13rem; display: grid; padding: 4px; border: 1px solid var(--mk-line); border-radius: 10px; background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 12px 32px -12px rgba(0, 0, 0, .45); }
+            .mk-menu-list button { display: flex; align-items: center; gap: 8px; border: 0; background: none; color: var(--mk-fg); text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
+            .mk-menu-list button:hover { background: var(--mk-line-soft); }
+            .mk-menu-list hr { border: 0; border-top: 1px solid var(--mk-line); margin: 4px 0; }
+            .mk-panel { border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-card); min-width: 0; }
+            .mk-ph { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .7rem 1rem; border-bottom: 1px solid var(--mk-line-soft); }
+            .mk-ph h2 { font-size: 13.5px; font-weight: 600; color: var(--mk-fg); margin: 0; }
+            .mk-hint { font-size: 12px; color: var(--mk-muted); }
+            .mk-pb { padding: .85rem 1rem; }
+            .mk-row { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); }
+            .mk-row-wide { grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr); }
+
+            .mk-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--mk-line); border-radius: 10px; overflow: hidden; background: var(--mk-card); }
+            .mk-kpi { display: grid; gap: 4px; align-content: start; padding: .85rem 1rem .65rem; min-width: 0; border-left: 1px solid var(--mk-line-soft); }
+            .mk-kpi:first-child { border-left: 0; background: linear-gradient(180deg, var(--mk-good-soft), transparent 85%); }
+            .mk-kpi-label { font-size: 12px; color: var(--mk-muted); }
+            .mk-kpi-value { font-size: 24px; font-weight: 500; line-height: 1.15; color: var(--mk-fg); }
+            .mk-kpi-sub { display: flex; align-items: end; justify-content: space-between; gap: .5rem; min-height: 26px; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-kpi-sub svg { width: 84px; height: 26px; overflow: visible; flex: none; }
+            .mk-delta { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 999px; font: 500 11.5px var(--mk-mono); white-space: nowrap; background: var(--mk-line-soft); color: var(--mk-muted); }
+            .mk-delta.up { background: var(--mk-good-soft); color: var(--mk-good); }
+            .mk-delta.down { background: var(--mk-bad-soft); color: var(--mk-bad); }
+            .mk-warn { color: var(--mk-warn); }
+
+            .mk-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 6px; font-size: 12px; color: var(--mk-muted); }
+            .mk-legend span { display: inline-flex; align-items: center; gap: 6px; }
+            .mk-legend i { width: 10px; height: 3px; border-radius: 2px; }
+            .mk-chart { position: relative; }
+            .mk-chart svg { width: 100%; height: auto; display: block; }
+            .mk-chart text { fill: var(--mk-muted); font: 10.5px var(--mk-mono); }
+            .mk-tip { position: absolute; top: 8px; z-index: 5; min-width: 170px; pointer-events: none; padding: 8px 10px; border: 1px solid var(--mk-line); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 12px 32px -12px rgba(0, 0, 0, .45); font-size: 12px; color: var(--mk-fg); }
+            .mk-tip b { display: block; margin-bottom: 4px; font: 500 11px var(--mk-mono); color: var(--mk-muted); }
+            .mk-tip div { display: flex; justify-content: space-between; gap: 10px; }
+            .mk-tip div span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--mk-muted); }
+            .mk-tip i { width: 8px; height: 8px; border-radius: 50%; }
+            .mk-empty { display: grid; place-items: center; gap: .5rem; padding: 2.5rem 1rem; text-align: center; font-size: 13px; color: var(--mk-muted); }
+
+            .mk-stages { display: grid; gap: 6px; }
+            .mk-stage { display: grid; grid-template-columns: 6rem minmax(0, 1fr) 2.5rem; align-items: center; gap: 10px; border: 0; background: none; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; text-align: left; font-size: 12.5px; color: var(--mk-muted); }
+            .mk-stage:hover, .mk-stage[aria-pressed="true"] { background: var(--mk-line-soft); color: var(--mk-fg); }
+            .mk-stage > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+            .mk-track { display: block; height: 8px; border-radius: 3px; overflow: hidden; background: var(--mk-line-soft); }
+            .mk-bar { display: block; height: 100%; border-radius: 3px; background: var(--mk-muted); }
+            .mk-stage .mk-num { text-align: right; color: var(--mk-fg); }
+            .mk-flow-notes { display: grid; gap: 8px; margin-top: .85rem; padding-top: .75rem; border-top: 1px dashed var(--mk-line); font-size: 12px; color: var(--mk-muted); }
+            .mk-flow-notes p { display: flex; align-items: start; gap: 8px; margin: 0; }
+            .mk-flow-notes svg { margin-top: 2px; }
+
+            .mk-table-wrap { overflow-x: auto; }
+            .mk-table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--mk-fg); }
+            .mk-table th { padding: 8px 12px; border-bottom: 1px solid var(--mk-line-soft); text-align: left; white-space: nowrap; font: 500 11px var(--mk-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mk-muted); }
+            .mk-table th button { border: 0; background: none; padding: 0; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+            .mk-table th button[aria-pressed="true"] { color: var(--mk-fg); }
+            .mk-table td { padding: 9px 12px; border-bottom: 1px solid var(--mk-line-soft); white-space: nowrap; vertical-align: middle; }
+            .mk-table tbody tr:last-child td { border-bottom: 0; }
+            .mk-table tbody tr:hover { background: var(--mk-raised); }
+            .mk-table .r { text-align: right; }
+            .mk-channel { display: flex; align-items: center; gap: 10px; min-width: 12rem; }
+            .mk-glyph { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 7px; background: var(--mk-muted); color: #fff; font: 600 11px var(--mk-mono); }
+            .mk-channel b { display: block; font-weight: 600; line-height: 1.25; }
+            .mk-channel small { display: block; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-rate { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+            .mk-rate .mk-track { width: 64px; height: 6px; }
+            .mk-rate .mk-bar { background: var(--mk-fg); opacity: .5; }
+            .mk-mini { width: 96px; height: 24px; overflow: visible; display: block; margin-left: auto; }
+            .mk-fresh { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mk-muted); }
+            .mk-fresh::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--mk-good); }
+            .mk-fresh.stale { color: var(--mk-warn); }
+            .mk-fresh.stale::before { background: var(--mk-warn); }
+            .mk-fresh.none::before { background: var(--mk-muted); }
+            .mk-link { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 3px 7px; border-radius: 6px; font-size: 12px; color: var(--mk-muted); text-decoration: none; }
+            .mk-link:hover { background: var(--mk-line-soft); color: var(--mk-fg); }
+
+            .mk-tabs { display: flex; gap: 2px; overflow-x: auto; padding: 0 .6rem; border-bottom: 1px solid var(--mk-line-soft); }
+            .mk-tab { display: inline-flex; align-items: center; gap: 6px; border: 0; border-bottom: 2px solid transparent; background: none; padding: 9px 10px 8px; white-space: nowrap; font-size: 12.5px; color: var(--mk-muted); }
+            .mk-tab em { font: normal 11px var(--mk-mono); padding: 0 6px; border-radius: 999px; background: var(--mk-line-soft); color: var(--mk-muted); }
+            .mk-tab[aria-selected="true"] { color: var(--mk-fg); font-weight: 600; border-bottom-color: var(--mk-good); }
+            .mk-tools { display: flex; flex-wrap: wrap; gap: .5rem; padding: .6rem .75rem; }
+            .mk-search { position: relative; flex: 1; min-width: 12rem; }
+            .mk-search svg { position: absolute; left: .65rem; top: 50%; transform: translateY(-50%); color: var(--mk-muted); pointer-events: none; }
+            .mk-input, .mk-select { border: 1px solid var(--mk-line); border-radius: 8px; background: rgb(var(--dashboard-background-rgb)); color: var(--mk-fg); padding: 6px 10px; font-size: 12.5px; }
+            .mk-search .mk-input { width: 100%; padding-left: 2rem; }
+            .mk-content-title { display: block; max-width: 22rem; border: 0; background: none; padding: 0; text-align: left; color: var(--mk-fg); }
+            .mk-content-title b, .mk-content-title small { display: block; overflow: hidden; text-overflow: ellipsis; }
+            .mk-content-title b { font-weight: 600; }
+            .mk-content-title small { font-size: 12px; color: var(--mk-muted); }
+            .mk-content-title:hover b { text-decoration: underline; }
+            .mk-swatch { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+            .mk-swatch i { width: 8px; height: 8px; border-radius: 2px; background: var(--mk-muted); }
+            .mk-pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border: 1px solid var(--mk-line); border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--mk-muted); }
+            .mk-pill svg { width: 12px; height: 12px; }
+            .mk-pill.published { color: var(--mk-good); background: var(--mk-good-soft); border-color: transparent; }
+            .mk-pill.review { color: var(--mk-warn); background: var(--mk-warn-soft); border-color: transparent; }
+            .mk-pill.archived { opacity: .7; }
+            .mk-tag { padding: 1px 7px; border-radius: 5px; background: var(--mk-line-soft); font: 11.5px var(--mk-mono); color: var(--mk-muted); }
+            .mk-owner { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--mk-line); border-radius: 50%; background: var(--mk-line-soft); font: 600 9.5px var(--mk-mono); color: var(--mk-muted); }
+            .mk-when b { display: block; font-size: 12.5px; font-weight: 500; }
+            .mk-when small { font-size: 11.5px; color: var(--mk-muted); }
+            .mk-more { display: flex; justify-content: center; padding: .6rem; border-top: 1px solid var(--mk-line-soft); }
+
+            .mk-day { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); gap: .75rem; padding: .6rem 0; border-bottom: 1px solid var(--mk-line-soft); }
+            .mk-day:last-child { border-bottom: 0; }
+            .mk-day-date { text-align: center; line-height: 1.1; }
+            .mk-day-date small { display: block; font: 500 10px var(--mk-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mk-muted); }
+            .mk-day-date b { font: 500 18px var(--mk-mono); color: var(--mk-fg); }
+            .mk-day.today .mk-day-date b { color: var(--mk-good); }
+            .mk-slots { display: grid; align-content: center; gap: 4px; min-width: 0; }
+            .mk-slot { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; background: none; padding: 2px 4px; margin: 0 -4px; border-radius: 5px; text-align: left; font-size: 12.5px; color: var(--mk-fg); }
+            .mk-slot:hover { background: var(--mk-line-soft); }
+            .mk-slot i { width: 3px; min-height: 16px; align-self: stretch; flex: none; border-radius: 2px; background: var(--mk-muted); }
+            .mk-slot time { flex: none; font: 11.5px var(--mk-mono); color: var(--mk-muted); }
+            .mk-slot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .mk-slot-empty { display: flex; align-items: center; font-size: 12px; color: var(--mk-muted); }
+
+            .mk-catalog-group { display: grid; gap: .6rem; }
+            .mk-catalog-group + .mk-catalog-group { margin-top: 1.25rem; }
+            .mk-catalog-group h3 { margin: 0; font: 500 11px var(--mk-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mk-muted); }
+            .mk-catalog-grid { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+            .mk-catalog-item { display: flex; align-items: center; gap: .75rem; padding: .7rem .8rem; border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-card); }
+            .mk-catalog-item > div { min-width: 0; flex: 1; }
+            .mk-catalog-item h4 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--mk-fg); }
+            .mk-catalog-item p { margin: 0; font-size: 11.5px; color: var(--mk-muted); }
+
+            .mk-spend { display: grid; gap: 2px; }
+            .mk-spend-row { display: grid; grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr) 19rem; align-items: center; gap: 10px; border: 0; background: none; padding: 5px 6px; margin: 0 -6px; border-radius: 6px; text-align: left; font-size: 12.5px; color: var(--mk-fg); }
+            .mk-spend-row:hover, .mk-spend-row[aria-pressed="true"] { background: var(--mk-line-soft); }
+            .mk-spend-row > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .mk-spend-row .mk-track { height: 10px; border-radius: 0 4px 4px 0; }
+            .mk-spend-row .mk-bar { border-radius: 0 4px 4px 0; background: var(--mk-s1); }
+            .mk-spend-row small { font: 11.5px var(--mk-mono); color: var(--mk-muted); white-space: nowrap; }
+            .mk-spend-row small { text-align: right; overflow: hidden; text-overflow: ellipsis; }
+            .mk-spend-row small b { font-weight: 500; color: var(--mk-fg); }
+            .mk-budget { display: grid; gap: 3px; min-width: 9.5rem; }
+            .mk-budget .mk-track { position: relative; height: 6px; overflow: visible; }
+            .mk-budget .mk-bar { background: var(--mk-s1); }
+            .mk-budget .mk-bar.over { background: var(--mk-bad); }
+            .mk-budget .mk-expected { position: absolute; top: -3px; width: 2px; height: 12px; border-radius: 1px; background: var(--mk-fg); }
+            .mk-budget small { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-pill.active { color: var(--mk-good); background: var(--mk-good-soft); border-color: transparent; }
+            .mk-pill.paused { color: var(--mk-warn); background: var(--mk-warn-soft); border-color: transparent; }
+            .mk-pill.completed { color: var(--mk-fg); }
+            .mk-pace { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-pace svg { width: 12px; height: 12px; }
+            .mk-pace.over, .mk-pace.under { color: var(--mk-warn); }
+            .mk-pace.overspent { color: var(--mk-bad); }
+            .mk-pace.on-track { color: var(--mk-good); }
+            .mk-goal-row { display: grid; gap: .5rem; align-items: end; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            @media (min-width: 640px) { .mk-goal-row { grid-template-columns: repeat(3, minmax(0, 1fr)) 6.5rem minmax(0, 1fr) auto; } }
+            .mk-goal-row input, .mk-goal-row select { min-width: 0; width: 100%; }
+            .mk-inline-icon { display: inline-flex; vertical-align: -2px; }
+            .mk-insights { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+            .mk-insights li { display: flex; align-items: start; gap: 8px; padding: 6px 0; font-size: 12.5px; color: var(--mk-fg); }
+            .mk-insights li svg { margin-top: 2px; flex: none; color: var(--mk-muted); }
+            .mk-insights li[data-level="setup"] svg, .mk-insights li[data-level="action"] svg { color: rgb(var(--dashboard-primary-rgb)); }
+            .mk-insights li[data-level="warning"] svg { color: var(--mk-warn); }
+            .mk-insights li[data-level="win"] svg { color: var(--mk-good); }
+            .mk-insights li small { display: block; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-attention { display: grid; gap: 2px; }
+            .mk-attention button { display: flex; align-items: start; gap: 8px; border: 0; background: none; padding: 6px; margin: 0 -6px; border-radius: 6px; text-align: left; font-size: 12.5px; color: var(--mk-fg); }
+            .mk-attention button:hover { background: var(--mk-line-soft); }
+            .mk-attention button svg { margin-top: 2px; color: var(--mk-warn); }
+            .mk-attention button small { display: block; font-size: 11.5px; color: var(--mk-muted); }
+
+            .mk-funnel .mk-stage { grid-template-columns: 8rem minmax(0, 1fr) 9rem; cursor: default; }
+            .mk-funnel .mk-stage.tight { background: var(--mk-warn-soft); color: var(--mk-fg); }
+            .mk-funnel .mk-stage small { font: 11px var(--mk-mono); color: var(--mk-muted); }
+            .mk-score { display: inline-block; min-width: 2.5rem; padding: 1px 6px; border-radius: 999px; text-align: center; font: 500 11.5px var(--mk-mono); background: var(--mk-line-soft); color: var(--mk-fg); }
+            .mk-score.top { background: var(--mk-good-soft); color: var(--mk-good); }
+            .mk-pill.running { color: var(--mk-good); background: var(--mk-good-soft); border-color: transparent; }
+            .mk-pill.review { color: var(--mk-warn); background: var(--mk-warn-soft); border-color: transparent; }
+            .mk-checks { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+            .mk-checks li { display: flex; align-items: start; gap: 6px; }
+            .mk-checks li.error { color: var(--mk-bad); }
+            .mk-checks li.warning { color: var(--mk-warn); }
+            .mk-checks li.ok { color: var(--mk-good); }
+            .mk-link-out { display: block; width: 100%; overflow-wrap: anywhere; padding: 6px 8px; border: 1px solid var(--mk-line); border-radius: 8px; font: 12px var(--mk-mono); color: var(--mk-fg); }
+            .mk-report { width: 100%; min-height: 50vh; font: 12px var(--mk-mono); }
+            .mk-watch { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; }
+            .mk-watch a { display: inline-block; padding: 2px 9px; border: 1px solid var(--mk-line); border-radius: 999px; font-size: 12px; color: var(--mk-fg); }
+            .mk-watch a:hover { background: var(--mk-line-soft); }
+            .mk-steps { display: grid; gap: 6px; margin: 0; padding-left: 1.4rem; font-size: 13px; list-style: decimal; }
+            .mk-pill.to_review { color: var(--mk-warn); background: var(--mk-warn-soft); border-color: transparent; }
+            .mk-pill.replied { color: var(--mk-good); background: var(--mk-good-soft); border-color: transparent; }
+            .mk-rules-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+            .mk-rules-item { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--mk-line-soft); }
+            .mk-rules-item:last-child { border-bottom: 0; padding-bottom: 0; }
+            .mk-rules-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 13px; }
+            .mk-rules { display: grid; gap: 3px; margin: 0; padding-left: 1.4rem; font-size: 12.5px; list-style: decimal; }
+            .mk-rules summary { cursor: pointer; }
+            .mk-rules p { margin: 4px 0 6px; white-space: pre-line; color: var(--mk-muted); font-size: 12px; }
+
+            .mk-groups { display: grid; gap: 1.25rem; }
+            .mk-group { display: grid; gap: .6rem; }
+            .mk-group-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; }
+            .mk-group-head h3 { margin: 0; font: 500 11px var(--mk-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mk-muted); }
+            .mk-group-head p { margin: 0; font-size: 12px; color: var(--mk-muted); }
+            .mk-playbook { font-size: 12px; color: var(--mk-muted); }
+            .mk-playbook summary { cursor: pointer; color: var(--mk-fg); }
+            .mk-playbook ul { margin: 6px 0 0; padding-left: 1.1rem; list-style: disc; display: grid; gap: 3px; }
+            .mk-cards { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); }
+            .mk-card { display: grid; gap: .65rem; align-content: start; padding: .85rem .95rem; border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-card); min-width: 0; }
+            .mk-card.paused { opacity: .6; }
+            .mk-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+            .mk-card-head > div { min-width: 0; flex: 1; }
+            .mk-card-head b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; color: var(--mk-fg); }
+            .mk-card-head small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-health { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--mk-line-soft); color: var(--mk-muted); }
+            .mk-health::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+            .mk-health.good { background: var(--mk-good-soft); color: var(--mk-good); }
+            .mk-health.attention, .mk-health.stale { background: var(--mk-warn-soft); color: var(--mk-warn); }
+            .mk-health.setup { background: var(--mk-bad-soft); color: var(--mk-bad); }
+            .mk-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
+            .mk-facts div { padding: 6px 8px; border-radius: 8px; background: var(--mk-raised); min-width: 0; }
+            .mk-facts dt { font-size: 10.5px; color: var(--mk-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .mk-facts dd { margin: 0; font: 500 14px var(--mk-mono); color: var(--mk-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .mk-facts dd small { font-size: 10.5px; }
+            .mk-desk { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); margin-top: 6px; }
+            .mk-desk div { background: transparent; border: 1px solid var(--mk-line); padding: 4px 7px; }
+            .mk-desk dd { font-size: 12.5px; }
+            .mk-desk-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+            .mk-desk-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+            .mk-facts dd small.up { color: var(--mk-good); }
+            .mk-facts dd small.down { color: var(--mk-bad); }
+            .mk-checks li.missing { color: var(--mk-muted); }
+            .mk-checks li.missing svg { color: var(--mk-warn); }
+            .mk-guide { padding: 6px 8px; border-radius: 8px; background: var(--mk-raised); }
+            .mk-guide li.mk-guide-head { color: var(--mk-fg); }
+            .mk-guide .mk-link { padding: 0; margin-top: 2px; }
+            .mk-recent { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+            .mk-recent li { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+            .mk-recent a, .mk-recent span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mk-fg); }
+            .mk-recent time { flex: none; font: 11px var(--mk-mono); color: var(--mk-muted); }
+            .mk-mail { display: grid; gap: 4px; font-size: 12px; }
+            .mk-mail ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+            .mk-mail li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; border-top: 1px solid var(--mk-line-soft); }
+            .mk-mail li > span { display: grid; min-width: 0; }
+            .mk-mail li small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-discord ul { max-height: 320px; overflow-y: auto; }
+            .mk-discord li > span > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .mk-ready { gap: 6px; }
+            .mk-ready img { display: block; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--mk-line-soft); }
+            .mk-ready-text { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--mk-raised); color: var(--mk-fg); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+            .mk-ready-meta { font-size: 11.5px; color: var(--mk-muted); }
+            .mk-ready-meta .over { color: var(--mk-bad); }
+            .mk-ready-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+            .mk-ready li > span > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .mk-card-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding-top: .55rem; border-top: 1px solid var(--mk-line-soft); }
+            .mk-card-foot > span { font-size: 11.5px; color: var(--mk-muted); }
+            .mk-card-foot > div { display: flex; flex-wrap: wrap; gap: 4px; }
+            .mk-capture-state { font-size: 11.5px; color: var(--mk-muted); }
+            .mk-capture-state.error { color: var(--mk-bad); }
+            .mk-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .75rem 1rem; border: 1px dashed var(--mk-line); border-radius: 10px; font-size: 12.5px; color: var(--mk-muted); }
+            .mk-banner b { color: var(--mk-fg); }
+
+            .mk-kpis-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+            .mk-grid { display: grid; gap: 1rem; grid-template-columns: repeat(12, minmax(0, 1fr)); align-items: start; }
+            .mk-span-4 { grid-column: span 4; } .mk-span-8 { grid-column: span 8; } .mk-span-12 { grid-column: 1 / -1; }
+            .mk-ph h2 { display: inline-flex; align-items: center; gap: 7px; }
+            .mk-ph-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+            .mk-scroll { max-height: 22rem; overflow-y: auto; }
+            .mk-table-dense td { padding: 6px 10px; }
+            .mk-table-dense th { padding: 7px 10px; }
+            .mk-table tfoot td { padding: 7px 10px; border-top: 1px solid var(--mk-line); font-weight: 600; }
+            .mk-share { display: flex; align-items: center; gap: 8px; min-width: 7rem; }
+            .mk-share .mk-track { position: relative; flex: 1; height: 8px; overflow: visible; }
+            .mk-share .mk-bar { background: var(--mk-s1); }
+            .mk-share .mk-prev { position: absolute; top: -3px; width: 2px; height: 14px; border-radius: 1px; background: var(--mk-fg); opacity: .55; }
+            .mk-chg.up { color: var(--mk-good); } .mk-chg.down { color: var(--mk-bad); }
+            .mk-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 7px; vertical-align: 0; background: var(--mk-muted); }
+
+            .mk-tiles { display: grid; gap: 1px; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); background: var(--mk-line-soft); border-radius: 0 0 10px 10px; overflow: hidden; }
+            .mk-tile { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: .8rem .9rem; background: var(--mk-card); border: 0; text-align: left; color: var(--mk-fg); min-width: 0; }
+            .mk-tile:hover { background: var(--mk-raised); }
+            .mk-tile.paused { opacity: .55; }
+            .mk-tile .mk-glyph { width: 40px; height: 40px; border-radius: 10px; font-size: 13px; grid-row: span 2; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14); }
+            .mk-table-dense .mk-content-title { max-width: 15rem; }
+            .mk-table-dense .mk-when b { white-space: nowrap; font-size: 12px; }
+            .mk-tile-value { font: 500 22px/1.1 var(--mk-mono); font-variant-numeric: tabular-nums; }
+            .mk-tile-value small { margin-left: 6px; font-size: 11px; }
+            .mk-tile-value small.up { color: var(--mk-good); } .mk-tile-value small.down { color: var(--mk-bad); }
+            .mk-tile-label { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-tile-label b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--mk-fg); }
+            .mk-tile-facts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 10px; padding-top: 6px; margin-top: 2px; border-top: 1px dashed var(--mk-line-soft); font: 11px var(--mk-mono); color: var(--mk-muted); }
+            .mk-tile-facts b { font-weight: 500; color: var(--mk-fg); }
+            .mk-tile-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px; margin: 0 -6px -4px; }
+            .mk-tile-actions .mk-link { padding: 2px 6px; font-size: 11.5px; }
+            .mk-state { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--mk-muted); }
+            .mk-state.good { background: var(--mk-good); } .mk-state.attention, .mk-state.stale { background: var(--mk-warn); } .mk-state.setup { background: var(--mk-bad); }
+            .mk-tile-add { display: grid; place-items: center; align-content: center; gap: 4px; min-height: 6.5rem; background: var(--mk-card); border: 0; color: var(--mk-muted); font-size: 12.5px; }
+            .mk-tile-add:hover { background: var(--mk-raised); color: var(--mk-fg); }
+            .mk-tile-add svg { width: 20px; height: 20px; }
+
+            .mk-campaigns { display: grid; gap: .75rem; padding: .85rem 1rem; grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); }
+            .mk-campaign { display: grid; gap: .6rem; align-content: start; padding: .8rem .9rem; border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-card); min-width: 0; }
+            .mk-campaign.ghost { border-style: dashed; background: transparent; }
+            .mk-campaign-head { display: flex; align-items: start; justify-content: space-between; gap: 8px; min-width: 0; }
+            .mk-campaign-head > div { min-width: 0; }
+            .mk-campaign-head b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--mk-fg); }
+            .mk-campaign-head small { display: block; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-campaign p { margin: 0; font-size: 12px; color: var(--mk-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+            .mk-timeline { position: relative; height: 4px; border-radius: 2px; background: var(--mk-line-soft); }
+            .mk-timeline span { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--mk-muted); }
+            .mk-bullets { display: grid; gap: 6px; }
+            .mk-bullet { display: grid; grid-template-columns: 6.2rem minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-bullet .mk-track { position: relative; height: 8px; overflow: visible; }
+            .mk-bullet .mk-bar { background: var(--mk-s1); }
+            .mk-bullet .mk-bar.met { background: var(--mk-good); }
+            .mk-bullet .mk-target { position: absolute; top: -3px; right: 0; width: 2px; height: 14px; border-radius: 1px; background: var(--mk-fg); }
+            .mk-bullet b { font: 500 12px var(--mk-mono); color: var(--mk-fg); white-space: nowrap; }
+            .mk-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+            .mk-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border: 1px solid var(--mk-line); border-radius: 999px; font-size: 11px; color: var(--mk-fg); }
+            .mk-chip.missing { border-style: dashed; color: var(--mk-muted); }
+            .mk-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--mk-muted); }
+            .mk-tasks { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
+            .mk-tasks label { display: flex; align-items: start; gap: 6px; color: var(--mk-fg); }
+            .mk-tasks label.done span { color: var(--mk-muted); text-decoration: line-through; }
+            .mk-campaign-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0 -6px -4px; padding-top: 6px; border-top: 1px solid var(--mk-line-soft); }
+            .mk-pill.active, .mk-pill.planned { border-color: transparent; }
+            .mk-pill.planned { color: rgb(var(--dashboard-primary-rgb)); background: var(--mk-line-soft); }
+            .mk-pill.idea { border-style: dashed; }
+
+            .mk-agent-face { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--mk-s3); color: #fff; font: 600 10.5px var(--mk-mono); }
+            .mk-ask { display: grid; gap: 6px; padding: .7rem 1rem .4rem; grid-template-columns: minmax(0, 1fr) auto; }
+            .mk-ask select { grid-column: 1 / -1; }
+            .mk-agent-out { display: grid; gap: .5rem; border-bottom: 1px solid var(--mk-line-soft); }
+            .mk-agent-out > p { margin: 0; font-size: 12.5px; color: var(--mk-fg); }
+            .mk-idea { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--mk-line); border-radius: 8px; font-size: 12.5px; }
+            .mk-idea header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+            .mk-idea header b { font-weight: 600; }
+            .mk-idea small { color: var(--mk-muted); }
+            .mk-idea blockquote { margin: 0; padding: 6px 8px; border-left: 2px solid var(--mk-s3); background: var(--mk-raised); border-radius: 0 6px 6px 0; white-space: pre-wrap; font-size: 12px; }
+            .mk-insights li .mk-link { margin-left: auto; flex: none; }
+
+            .mk-x { display: grid; gap: 8px; }
+            .mk-x textarea { resize: vertical; min-height: 6rem; font-size: 13px; }
+            .mk-x-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+            .mk-x-foot .over { color: var(--mk-bad); }
+            .mk-x p { margin: 0; }
+
+            .mk-ads-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: .6rem; }
+            .mk-ads-totals div { padding: 6px 8px; border-radius: 8px; background: var(--mk-raised); min-width: 0; }
+            .mk-ads-totals dt { font-size: 10.5px; color: var(--mk-muted); }
+            .mk-ads-totals dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px var(--mk-mono); color: var(--mk-fg); }
+            .mk-ad-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; width: 100%; border: 0; background: none; padding: 6px; margin: 0 -6px; border-radius: 6px; text-align: left; font-size: 12.5px; color: var(--mk-fg); }
+            .mk-ad-row:hover { background: var(--mk-line-soft); }
+            .mk-ad-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+            .mk-ad-row small { grid-column: 1 / -1; font-size: 11px; color: var(--mk-muted); }
+            .mk-ad-row .mk-budget { grid-column: 1 / -1; min-width: 0; }
+
+            .mk-bars { display: grid; gap: 6px; }
+            .mk-grid[data-marketing-panels] > [data-marketing-panel] > .mk-ph { cursor: grab; user-select: none; }
+            .mk-grid[data-marketing-panels] > [data-marketing-panel] > .mk-ph :is(button, a, input, select, label) { cursor: pointer; }
+            .mk-panel.mk-dragging { opacity: .55; }
+            .mk-panel.mk-drop-target { outline: 2px dashed var(--mk-s1); outline-offset: 3px; }
+            body.mk-panel-moving, body.mk-panel-moving * { cursor: grabbing !important; }
+            .mk-bars .mk-bullet { grid-template-columns: minmax(0, 1fr) 4.5rem 3rem; }
+            .mk-bars .mk-bullet span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--mk-mono); color: var(--mk-fg); }
+            .mk-bars .mk-bullet a { color: inherit; text-decoration: none; } .mk-bars .mk-bullet a:hover { text-decoration: underline; }
+            .mk-checkgrid { display: grid; gap: 4px 10px; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); max-height: 9rem; overflow-y: auto; padding: 6px 8px; border: 1px solid var(--mk-line); border-radius: 8px; }
+            .mk-checkgrid label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--mk-fg); }
+            .mk-spark-mini { width: 54px; height: 16px; overflow: visible; vertical-align: middle; }
+
+            .mk-install { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 1.5rem; align-items: center; padding: 1.5rem; }
+            .mk-install-preview { display: grid; gap: .6rem; padding: .9rem; border: 1px dashed var(--mk-line); border-radius: 10px; }
+            .mk-install-preview .mk-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+            dialog.mk-drawer { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(40rem, 100vw); max-width: 100vw; border-radius: 0; border-width: 0 0 0 1px; }
+            dialog.mk-drawer[open] { display: flex; flex-direction: column; }
+            dialog.mk-drawer form { flex: 1; overflow-y: auto; }
+            @media (prefers-reduced-motion: no-preference) {
+              dialog.mk-drawer[open] { animation: mk-slide .18s ease-out; }
+              @keyframes mk-slide { from { transform: translateX(24px); opacity: .6; } }
+            }
+            @media (max-width: 1180px) {
+              .mk-row, .mk-row-wide { grid-template-columns: minmax(0, 1fr); }
+              .mk-span-4 { grid-column: span 6; } .mk-span-8 { grid-column: 1 / -1; }
+              .mk-kpis-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+              .mk-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+              .mk-kpi:nth-child(4) { border-left: 0; }
+              .mk-kpi:nth-child(n+4) { border-top: 1px solid var(--mk-line-soft); }
+            }
+            @media (max-width: 760px) { .mk-span-4 { grid-column: 1 / -1; } }
+            @media (max-width: 640px) {
+              .mk-kpis, .mk-install-preview .mk-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+              .mk-kpi { border-left: 0; border-top: 1px solid var(--mk-line-soft); }
+              .mk-kpi:first-child { grid-column: 1 / -1; border-top: 0; }
+              .mk-kpi:nth-child(odd):not(:first-child) { border-left: 1px solid var(--mk-line-soft); }
+              .mk-install { grid-template-columns: minmax(0, 1fr); }
+              .mk-spend-row { grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr); }
+              .mk-spend-row small { grid-column: 1 / -1; text-align: left; }
+            }
+          </style>
+          <section data-view="marketing" class="view active h-full overflow-y-auto">
+            <div class="mk-page p-3 sm:p-6 w-full">
+              <header class="mk-head">
+                <div class="mk-head-l">
+                  <h1 class="text-lg font-semibold text-foreground">Marketing</h1>
+                  <select data-marketing-organization aria-label="Organization" class="mk-org"></select>
+                </div>
+                <div class="mk-head-r">
+                  <div data-marketing-requires-install class="mk-seg" role="group" aria-label="Marketing section" hidden>
+                    <button data-marketing-page="dashboard" type="button" aria-pressed="true">Dashboard</button>
+                    <button data-marketing-page="performance" type="button" aria-pressed="false">Performance</button>
+                    <button data-marketing-page="channels" type="button" aria-pressed="false">Channels</button>
+                    <button data-marketing-page="ads" type="button" aria-pressed="false">Ads manager</button>
+                    <button data-marketing-page="growth" type="button" aria-pressed="false">Growth</button>
+                  </div>
+                  <div data-marketing-requires-install data-marketing-dashboard-only class="mk-seg" role="group" aria-label="Date range" hidden>
+                    <button data-marketing-range="7" type="button" aria-pressed="false">7D</button>
+                    <button data-marketing-range="30" type="button" aria-pressed="true">30D</button>
+                    <button data-marketing-range="90" type="button" aria-pressed="false">90D</button>
+                  </div>
+                  <div data-marketing-requires-install data-marketing-performance-only class="mk-seg" role="group" aria-label="Performance window" hidden>
+                    <button data-marketing-performance-range="7" type="button" aria-pressed="false">7D</button>
+                    <button data-marketing-performance-range="28" type="button" aria-pressed="true">28D</button>
+                    <button data-marketing-performance-range="90" type="button" aria-pressed="false">90D</button>
+                  </div>
+                  <select data-marketing-performance-project aria-label="Analytics project" class="mk-select" hidden></select>
+                  <button data-marketing-goals-open data-marketing-requires-install data-marketing-performance-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>Goals</button>
+                  <button data-marketing-ad-new data-marketing-requires-install data-marketing-ads-only type="button" class="mk-btn mk-btn-primary" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New ad</button>
+                  <button data-marketing-report-open data-marketing-requires-install data-marketing-growth-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>Weekly report</button>
+                  <button data-marketing-funnel-new data-marketing-requires-install data-marketing-growth-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v6l-4 2v-8Z"/></svg>Log week</button>
+                  <button data-marketing-experiment-new data-marketing-requires-install data-marketing-growth-only type="button" class="mk-btn mk-btn-primary" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New experiment</button>
+                  <button data-marketing-capture-stale data-marketing-requires-install data-marketing-channels-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>Update stale channels</button>
+                  <button data-marketing-catalog-open data-marketing-requires-install data-marketing-channels-only type="button" class="mk-btn mk-btn-primary" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add channels</button>
+                  <button data-marketing-reddit-watch-edit data-marketing-requires-install data-marketing-reddit-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>Watch list</button>
+                  <button data-marketing-reddit-new data-marketing-requires-install data-marketing-reddit-only type="button" class="mk-btn mk-btn-primary" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Log thread</button>
+                  <details data-marketing-menu data-marketing-requires-install class="mk-menu" hidden>
+                    <summary class="mk-btn" aria-label="More marketing actions"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary>
+                    <div class="mk-menu-list">
+                      <button data-marketing-catalog-open type="button"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg>Add channels</button>
+                      <button data-marketing-settings-open type="button"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Manage channels</button>
+                      <button data-marketing-refresh type="button"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>Refresh blog feed</button>
+                      <hr />
+                      <button data-marketing-export-all type="button"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Export JSON</button>
+                    </div>
+                  </details>
+                </div>
+              </header>
+              <div data-marketing-error class="hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
+              <div data-marketing-notice class="hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+
+              <section data-marketing-install-panel class="mk-panel hidden">
+                <div class="mk-install">
+                  <div>
+                    <h2 class="text-base font-semibold text-foreground">Marketing is not installed for <span data-marketing-install-org class="font-mono"></span></h2>
+                    <p class="mt-2 text-sm text-muted-foreground">Install a shared content pipeline, an ads manager for every channel, channel trends, a weekly schedule, and encrypted metric history for the whole organization.</p>
+                    <button data-marketing-install type="button" class="mk-btn mk-btn-primary mt-4 hidden">Install for this organization</button>
+                    <p data-marketing-install-denied class="mt-4 hidden text-sm text-muted-foreground">Ask an organization owner or admin to install Marketing.</p>
+                  </div>
+                  <div class="mk-install-preview" aria-label="Preview with example figures">
+                    <p class="mk-hint">Preview · example figures</p>
+                    <div class="mk-kpis">
+                      <div class="mk-kpi"><span class="mk-kpi-label">Reach</span><span class="mk-kpi-value mk-num">48.2K</span><span class="mk-kpi-sub"><span class="mk-delta up">▲ 12.4%</span></span></div>
+                      <div class="mk-kpi"><span class="mk-kpi-label">Engagement rate</span><span class="mk-kpi-value mk-num">7.9%</span><span class="mk-kpi-sub"><span class="mk-delta up">▲ 0.6 pt</span></span></div>
+                      <div class="mk-kpi"><span class="mk-kpi-label">Scheduled · next 7D</span><span class="mk-kpi-value mk-num">6</span><span class="mk-kpi-sub">2 days open</span></div>
+                    </div>
+                    <div class="mk-stages">
+                      <div class="mk-stage"><span>Draft</span><span class="mk-track"><span class="mk-bar" style="width:45%"></span></span><span class="mk-num">9</span></div>
+                      <div class="mk-stage"><span>Review</span><span class="mk-track"><span class="mk-bar" style="width:20%;background:var(--mk-warn)"></span></span><span class="mk-num">4</span></div>
+                      <div class="mk-stage"><span>Published</span><span class="mk-track"><span class="mk-bar" style="width:100%;background:var(--mk-good)"></span></span><span class="mk-num">20</span></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <div data-marketing-app class="hidden">
+                <div data-marketing-dashboard-page class="mk-page">
+                  <section class="mk-kpis mk-kpis-6" aria-label="Key metrics">
+                    <div class="mk-kpi"><span class="mk-kpi-label" data-marketing-kpi-label="visits">Visits · 30D</span><span data-marketing-kpi="visits" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-kpi-delta="visits" class="mk-delta">—</span><span data-marketing-kpi-note="visits">from Analytics</span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Conversions</span><span data-marketing-kpi="conversions" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-kpi-delta="conversions" class="mk-delta">—</span><span data-marketing-kpi-note="conversions"></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Audience</span><span data-marketing-stat-followers class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-delta-followers class="mk-delta">—</span><svg data-marketing-spark-followers viewBox="0 0 84 26" aria-hidden="true"></svg></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Reach</span><span data-marketing-stat-reach class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-delta-reach class="mk-delta">—</span><span><span data-marketing-stat-rate class="mk-num">—</span> eng. rate</span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label" data-marketing-published-label>Published · 30D</span><span data-marketing-stat-published class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-delta-published class="mk-delta">—</span><span><span data-marketing-stat-queued class="mk-num">0</span> scheduled · 7D <span data-marketing-coverage></span></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Live campaigns</span><span data-marketing-kpi="campaigns" class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-kpi-note="campaigns"></span></span></div>
+                  </section>
+
+                  <div class="mk-grid" data-marketing-panels>
+                    <section data-marketing-panel="traffic" class="mk-panel mk-span-8">
+                      <div class="mk-ph"><h2>Web traffic by channel</h2><span data-marketing-traffic-hint class="mk-hint"></span></div>
+                      <div data-marketing-traffic-setup class="mk-banner" style="margin:.75rem" hidden></div>
+                      <div class="mk-table-wrap">
+                        <table class="mk-table mk-table-dense">
+                          <thead><tr><th>Channel</th><th>Share of visits</th><th class="r">Visits</th><th class="r">Change</th><th class="r">Conv. rate</th><th class="r">Avg time</th><th class="r">Bounce</th><th class="r">Pages / visit</th></tr></thead>
+                          <tbody data-marketing-traffic></tbody>
+                          <tfoot data-marketing-traffic-total></tfoot>
+                        </table>
+                      </div>
+                    </section>
+
+                    <section data-marketing-panel="keywords" class="mk-panel mk-span-4">
+                      <div class="mk-ph"><h2>Search keywords</h2><div class="mk-ph-tools"><div class="mk-seg" role="group" aria-label="Keyword source"><button data-marketing-keyword-view="tracked" type="button" aria-pressed="true">Tracked</button><button data-marketing-keyword-view="measured" type="button" aria-pressed="false">From visits</button></div><button data-marketing-keyword-import type="button" class="mk-link" title="Paste a Search Console export or a list of keywords">Import</button><button data-marketing-keyword-new type="button" class="mk-link">Add</button></div></div>
+                      <div class="mk-table-wrap mk-scroll">
+                        <table class="mk-table mk-table-dense">
+                          <thead data-marketing-keywords-head></thead>
+                          <tbody data-marketing-keywords></tbody>
+                        </table>
+                      </div>
+                      <div data-marketing-keywords-empty class="mk-empty" hidden></div>
+                    </section>
+
+                    <section data-marketing-panel="channels" class="mk-panel mk-span-12">
+                      <div class="mk-ph"><h2>Channels</h2><div class="mk-ph-tools"><span data-marketing-channel-hint class="mk-hint"></span><button data-marketing-capture-stale type="button" class="mk-link">Update stale</button><button data-marketing-settings-open type="button" class="mk-link">Manage</button><button data-marketing-catalog-open type="button" class="mk-btn mk-btn-primary"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add channels</button></div></div>
+                      <div data-marketing-channel-grid class="mk-tiles"></div>
+                    </section>
+
+                    <section data-marketing-panel="referrers" data-marketing-referrers-panel class="mk-panel mk-span-4">
+                      <div class="mk-ph"><h2>Referring websites</h2><span data-marketing-referrers-hint class="mk-hint"></span></div>
+                      <div data-marketing-referrers class="mk-pb mk-bars"></div>
+                    </section>
+
+                    <section data-marketing-panel="campaigns" class="mk-panel mk-span-8">
+                      <div class="mk-ph"><h2>Campaigns</h2><div class="mk-ph-tools"><div data-marketing-campaign-tabs class="mk-seg" role="group" aria-label="Campaign status"></div><button data-marketing-campaign-new type="button" class="mk-btn mk-btn-primary"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New campaign</button></div></div>
+                      <div data-marketing-campaigns class="mk-campaigns"></div>
+                    </section>
+
+                    <section data-marketing-panel="agent" class="mk-panel mk-span-4 mk-agent">
+                      <div class="mk-ph"><h2><span class="mk-agent-face" aria-hidden="true">M</span>Marketing agent</h2><button data-marketing-agent-handoff type="button" class="mk-link" title="Put a task for the Marketing special agent on the organization's task board">Hand off</button></div>
+                      <form data-marketing-assistant-form class="mk-ask">
+                        <select data-marketing-assistant-campaign aria-label="Campaign to plan" class="mk-select"></select>
+                        <input data-marketing-assistant-question maxlength="600" class="mk-input" placeholder="Ask, e.g. what should we post this week?" aria-label="Question for the Marketing agent" />
+                        <button data-marketing-assistant-run type="submit" class="mk-btn mk-btn-primary">Suggest</button>
+                      </form>
+                      <div data-marketing-assistant class="mk-pb mk-agent-out" hidden></div>
+                      <div class="mk-pb mk-scroll" style="padding-top:.25rem"><ul data-marketing-suggestions class="mk-insights"></ul></div>
+                    </section>
+
+                    <section data-marketing-panel="flow" class="mk-panel mk-span-4">
+                      <div class="mk-ph"><h2>Content flow</h2><div class="mk-ph-tools"><button data-marketing-metric-open type="button" class="mk-link">Log metrics</button><button data-marketing-content-new type="button" class="mk-btn mk-btn-primary"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New content</button></div></div>
+                      <div class="mk-pb">
+                        <div data-marketing-stages class="mk-stages"></div>
+                        <div data-marketing-flow-notes class="mk-flow-notes"></div>
+                      </div>
+                    </section>
+
+                    <section data-marketing-panel="ads" class="mk-panel mk-span-4">
+                      <div class="mk-ph"><h2>Ads</h2><div class="mk-ph-tools"><button data-marketing-page="ads" type="button" class="mk-link">Ads manager</button><button data-marketing-ad-open type="button" class="mk-link">New ad</button></div></div>
+                      <div data-marketing-ads-overview class="mk-pb"></div>
+                    </section>
+
+                    <section data-marketing-panel="x" class="mk-panel mk-span-4">
+                      <div class="mk-ph"><h2><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l16 16M20 4 4 20"/></svg>Post to X</h2><button data-marketing-x-settings type="button" class="mk-link"></button></div>
+                      <form data-marketing-x-form class="mk-pb mk-x">
+                        <p data-marketing-x-status class="mk-hint"></p>
+                        <select data-marketing-x-content aria-label="Pipeline item to post" class="mk-select"></select>
+                        <textarea data-marketing-x-text rows="4" maxlength="25000" class="mk-input" placeholder="What's happening?" aria-label="Post text"></textarea>
+                        <div class="mk-x-foot"><span data-marketing-x-count class="mk-num mk-hint">0 / 280</span><button data-marketing-x-post type="submit" class="mk-btn mk-btn-primary">Post to X</button></div>
+                      </form>
+                    </section>
+
+                    <section data-marketing-panel="pipeline" class="mk-panel mk-span-8">
+                      <div class="mk-ph"><h2>Content pipeline</h2><span data-marketing-content-count class="mk-hint"></span></div>
+                      <div data-marketing-status-tabs class="mk-tabs" role="tablist" aria-label="Filter by status"></div>
+                      <div class="mk-tools">
+                        <label class="mk-search"><span class="sr-only">Search content</span><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="marketing-search" data-marketing-search type="search" placeholder="Search title, campaign, owner, or tag" class="mk-input" /></label>
+                        <select id="marketing-channel-filter" data-marketing-channel-filter aria-label="Channel" class="mk-select"><option value="">All channels</option></select>
+                        <select id="marketing-campaign-filter" data-marketing-campaign-filter aria-label="Campaign" class="mk-select"><option value="">All campaigns</option></select>
+                      </div>
+                      <div class="mk-table-wrap">
+                        <table class="mk-table mk-table-dense">
+                          <thead><tr><th>Content</th><th>Channel</th><th>Status</th><th>Campaign</th><th>Owner</th><th>When</th><th class="r"><span class="sr-only">Actions</span></th></tr></thead>
+                          <tbody data-marketing-content-list></tbody>
+                        </table>
+                      </div>
+                      <div data-marketing-content-empty class="mk-empty" hidden>No content matches this view.</div>
+                      <div data-marketing-content-more class="mk-more" hidden><button data-marketing-content-more-button type="button" class="mk-btn"></button></div>
+                    </section>
+
+                    <section data-marketing-panel="week" class="mk-panel mk-span-4">
+                      <div class="mk-ph"><h2>This week</h2><span data-marketing-week-range class="mk-hint mk-num"></span></div>
+                      <div data-marketing-week class="mk-pb" style="padding-block:.25rem"></div>
+                    </section>
+
+                    <section data-marketing-panel="chart" class="mk-panel mk-span-8">
+                      <div class="mk-ph">
+                        <h2 data-marketing-chart-title>Reach by channel</h2>
+                        <div class="mk-seg" role="group" aria-label="Chart metric">
+                          <button data-marketing-chart-metric="reach" type="button" aria-pressed="true">Reach</button>
+                          <button data-marketing-chart-metric="engagements" type="button" aria-pressed="false">Engagements</button>
+                          <button data-marketing-chart-metric="followers" type="button" aria-pressed="false">Followers</button>
+                        </div>
+                      </div>
+                      <div class="mk-pb">
+                        <div data-marketing-chart-legend class="mk-legend"></div>
+                        <div data-marketing-chart class="mk-chart"></div>
+                      </div>
+                    </section>
+
+                    <section data-marketing-panel="landing" class="mk-panel mk-span-4">
+                      <div class="mk-ph"><h2>Top landing pages</h2><button data-marketing-page="performance" type="button" class="mk-link">Performance</button></div>
+                      <div data-marketing-landing class="mk-pb mk-bars"></div>
+                    </section>
+                  </div>
+                </div>
+
+                <div data-marketing-performance-page class="mk-page hidden">
+                  <section data-marketing-performance-setup class="mk-panel" hidden>
+                    <div class="mk-ph"><h2>Connect Analytics</h2><a href="/dashboard/analytics" class="mk-btn">Open Analytics</a></div>
+                    <div class="mk-pb"><ul data-marketing-performance-setup-list class="mk-insights"></ul></div>
+                  </section>
+                  <div data-marketing-performance-body class="mk-page" hidden>
+                    <section class="mk-kpis" aria-label="Campaign results">
+                      <div class="mk-kpi"><span class="mk-kpi-label">Visits</span><span data-marketing-performance-stat="sessions" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-performance-delta="sessions" class="mk-delta">—</span></span></div>
+                      <div class="mk-kpi"><span class="mk-kpi-label">Visitors</span><span data-marketing-performance-stat="visitors" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-performance-delta="visitors" class="mk-delta">—</span></span></div>
+                      <div class="mk-kpi"><span class="mk-kpi-label">Conversions</span><span data-marketing-performance-stat="conversions" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-performance-delta="conversions" class="mk-delta">—</span><span data-marketing-performance-note="conversions"></span></span></div>
+                      <div class="mk-kpi"><span class="mk-kpi-label">Bounce rate</span><span data-marketing-performance-stat="bounceRate" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-performance-delta="bounceRate" class="mk-delta">—</span></span></div>
+                      <div class="mk-kpi"><span class="mk-kpi-label">Tagged visits</span><span data-marketing-performance-stat="taggedShare" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-performance-note="taggedShare"></span></span></div>
+                    </section>
+
+                    <div class="mk-row">
+                      <section class="mk-panel">
+                        <div class="mk-ph"><h2>Campaigns</h2><span data-marketing-performance-campaigns-count class="mk-hint"></span></div>
+                        <div class="mk-table-wrap">
+                          <table class="mk-table">
+                            <thead><tr><th>Campaign</th><th>Source / medium</th><th class="r">Visits</th><th class="r">Change</th><th class="r">Bounce</th><th class="r">Conv.</th><th class="r">Rate</th><th class="r">Spend / visit</th><th>Lands on</th></tr></thead>
+                            <tbody data-marketing-performance-campaigns></tbody>
+                          </table>
+                        </div>
+                        <div data-marketing-performance-campaigns-empty class="mk-empty" hidden><p>No visits in this window.</p></div>
+                      </section>
+                      <section class="mk-panel">
+                        <div class="mk-ph"><h2>Where to improve</h2><span data-marketing-performance-insights-count class="mk-hint"></span></div>
+                        <div class="mk-pb"><ul data-marketing-performance-insights class="mk-insights"></ul></div>
+                      </section>
+                    </div>
+
+                    <div class="mk-row">
+                      <section class="mk-panel">
+                        <div class="mk-ph"><h2>Ads measured by Analytics</h2><span class="mk-hint">Matched by each ad's link tags</span></div>
+                        <div class="mk-table-wrap">
+                          <table class="mk-table">
+                            <thead><tr><th>Ad</th><th>Channel</th><th class="r">Clicks logged</th><th class="r">Visits</th><th class="r">Click → visit</th><th class="r">Conv.</th><th class="r">Cost / visit</th><th class="r">Cost / conv.</th></tr></thead>
+                            <tbody data-marketing-performance-ads></tbody>
+                          </table>
+                        </div>
+                        <div data-marketing-performance-ads-empty class="mk-empty" hidden><p>No ads yet. Plan one in the Ads manager with a tagged landing link.</p></div>
+                      </section>
+                      <section class="mk-panel">
+                        <div class="mk-ph"><h2>Landing pages</h2></div>
+                        <div class="mk-table-wrap">
+                          <table class="mk-table">
+                            <thead><tr><th>Page</th><th class="r">Visits</th><th class="r">Bounce</th><th class="r">Conv.</th></tr></thead>
+                            <tbody data-marketing-performance-landing></tbody>
+                          </table>
+                        </div>
+                      </section>
+                    </div>
+
+                    <section data-marketing-performance-reddit-panel class="mk-panel" hidden>
+                      <div class="mk-ph"><h2>Reddit desk results</h2><span class="mk-hint">Visits from each subreddit's tagged links</span></div>
+                      <div class="mk-table-wrap">
+                        <table class="mk-table">
+                          <thead><tr><th>Subreddit</th><th class="r">Threads</th><th class="r">Replied</th><th class="r">Visits</th><th class="r">Bounce</th><th class="r">Conv.</th></tr></thead>
+                          <tbody data-marketing-performance-reddit></tbody>
+                        </table>
+                      </div>
+                    </section>
+                    <p data-marketing-performance-source class="mk-hint"></p>
+                  </div>
+                </div>
+
+                <div data-marketing-ads-page class="mk-page hidden">
+                  <section class="mk-kpis" aria-label="Ad results">
+                    <div class="mk-kpi"><span class="mk-kpi-label">Spend</span><span data-marketing-ads-stat-spend class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-ads-stat-budget></span><select data-marketing-ads-currency aria-label="Currency" class="mk-select" style="padding:1px 6px;font-size:11.5px" hidden></select></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Impressions</span><span data-marketing-ads-stat-impressions class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-ads-stat-cpm></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Clicks</span><span data-marketing-ads-stat-clicks class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-ads-stat-ctr></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Conversions</span><span data-marketing-ads-stat-conversions class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-ads-stat-cpa></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Return on ad spend</span><span data-marketing-ads-stat-roas class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-ads-stat-revenue></span></span></div>
+                  </section>
+
+                  <div class="mk-row">
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2 data-marketing-ads-spend-title>Spend by channel</h2><span class="mk-hint">Select a channel to filter</span></div>
+                      <div class="mk-pb"><div data-marketing-ads-spend class="mk-spend"></div></div>
+                    </section>
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Needs attention</h2><span data-marketing-ads-attention-count class="mk-hint"></span></div>
+                      <div class="mk-pb"><div data-marketing-ads-attention class="mk-attention"></div></div>
+                    </section>
+                  </div>
+
+                  <section class="mk-panel">
+                    <div class="mk-ph"><h2>Ads</h2><span data-marketing-ads-count class="mk-hint"></span></div>
+                    <div data-marketing-ads-status-tabs class="mk-tabs" role="tablist" aria-label="Filter ads by status"></div>
+                    <div class="mk-tools">
+                      <label class="mk-search"><span class="sr-only">Search ads</span><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="marketing-ads-search" data-marketing-ads-search type="search" placeholder="Search ad, campaign, owner, audience, or tag" class="mk-input" /></label>
+                      <select id="marketing-ads-channel-filter" data-marketing-ads-channel-filter aria-label="Ad channel" class="mk-select"><option value="">All channels</option></select>
+                    </div>
+                    <div class="mk-table-wrap">
+                      <table class="mk-table">
+                        <thead><tr><th>Ad</th><th>Channel</th><th>Status</th><th>Flight</th><th>Spend / budget</th><th class="r">Impr.</th><th class="r">CTR</th><th class="r">Conv.</th><th class="r">CPA</th><th class="r">ROAS</th><th class="r"><span class="sr-only">Actions</span></th></tr></thead>
+                        <tbody data-marketing-ads-list></tbody>
+                      </table>
+                    </div>
+                    <div data-marketing-ads-empty class="mk-empty" hidden><p>No ads match this view.</p><button data-marketing-ad-open type="button" class="mk-btn">New ad</button></div>
+                  </section>
+                  <p class="mk-hint">Ads are planned and measured here and bought in each platform’s own console. Results are logged by hand; ForkMesh never spends money or connects to an ad account. Follow each platform’s advertising policies and the disclosure rules of every market you advertise in.</p>
+                </div>
+
+                <div data-marketing-growth-page class="mk-page hidden">
+                  <section class="mk-kpis" aria-label="Funnel scorecard">
+                    <div class="mk-kpi"><span class="mk-kpi-label">North star</span><span data-marketing-growth-stat="northStar" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-growth-delta="northStar" class="mk-delta">—</span><span data-marketing-growth-week></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Signup rate</span><span data-marketing-growth-stat="signupRate" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-growth-delta="signupRate" class="mk-delta">—</span><span data-marketing-growth-note="signupRate"></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Activation rate</span><span data-marketing-growth-stat="activationRate" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-growth-delta="activationRate" class="mk-delta">—</span><span data-marketing-growth-note="activationRate"></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Retention rate</span><span data-marketing-growth-stat="retentionRate" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-growth-delta="retentionRate" class="mk-delta">—</span><span data-marketing-growth-note="retentionRate"></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Referral share</span><span data-marketing-growth-stat="referralRate" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-growth-delta="referralRate" class="mk-delta">—</span><span data-marketing-growth-note="referralRate"></span></span></div>
+                  </section>
+
+                  <div class="mk-row">
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Funnel</h2><span data-marketing-funnel-source class="mk-hint"></span></div>
+                      <div class="mk-pb">
+                        <div data-marketing-funnel class="mk-stages mk-funnel"></div>
+                        <div class="mk-flow-notes"><p data-marketing-bottleneck></p></div>
+                      </div>
+                    </section>
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Link builder</h2><span class="mk-hint">Tags a link and checks it</span></div>
+                      <form data-marketing-link-form class="mk-pb grid gap-2">
+                        <label class="grid gap-1 text-xs text-muted-foreground">Landing page<input data-marketing-link-url maxlength="1000" placeholder="https://…" class="mk-input" /></label>
+                        <div class="grid gap-2" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+                          <label class="grid gap-1 text-xs text-muted-foreground">Source<input data-marketing-link-source list="marketing-utm-sources" maxlength="100" placeholder="mastodon" class="mk-input" /></label>
+                          <label class="grid gap-1 text-xs text-muted-foreground">Medium<input data-marketing-link-medium list="marketing-utm-mediums" maxlength="100" placeholder="social" class="mk-input" /></label>
+                          <label class="grid gap-1 text-xs text-muted-foreground">Campaign<input data-marketing-link-campaign list="marketing-utm-campaigns" maxlength="100" placeholder="launch" class="mk-input" /></label>
+                          <label class="grid gap-1 text-xs text-muted-foreground">Content<input data-marketing-link-content maxlength="100" placeholder="post-slug" class="mk-input" /></label>
+                        </div>
+                        <datalist id="marketing-utm-sources" data-marketing-utm-sources></datalist>
+                        <datalist id="marketing-utm-mediums" data-marketing-utm-mediums></datalist>
+                        <datalist id="marketing-utm-campaigns" data-marketing-utm-campaigns></datalist>
+                        <div class="flex justify-end"><button type="submit" class="mk-btn mk-btn-primary">Build and check</button></div>
+                        <div data-marketing-link-result class="grid gap-2" hidden><code data-marketing-link-output class="mk-link-out"></code><div class="flex justify-end"><button data-marketing-link-copy type="button" class="mk-btn">Copy link</button></div><ul data-marketing-link-checks class="mk-checks"></ul></div>
+                      </form>
+                    </section>
+                  </div>
+
+                  <section class="mk-panel">
+                    <div class="mk-ph"><h2>Experiment backlog</h2><span data-marketing-experiments-count class="mk-hint"></span></div>
+                    <div data-marketing-experiments-notes class="mk-pb mk-flow-notes" style="margin-top:0;border-top:0" hidden></div>
+                    <div data-marketing-experiments-tabs class="mk-tabs" role="tablist" aria-label="Filter experiments by status"></div>
+                    <div class="mk-table-wrap">
+                      <table class="mk-table">
+                        <thead><tr><th>Experiment</th><th>Stage</th><th>Status</th><th class="r" title="Impact">I</th><th class="r" title="Confidence">C</th><th class="r" title="Ease">E</th><th class="r">Score</th><th>Dates</th><th class="r"><span class="sr-only">Actions</span></th></tr></thead>
+                        <tbody data-marketing-experiments-list></tbody>
+                      </table>
+                    </div>
+                    <div data-marketing-experiments-empty class="mk-empty" hidden><p>No experiments in this view. Score each idea by impact, confidence and ease, then run the top three.</p><button data-marketing-experiment-open type="button" class="mk-btn">New experiment</button></div>
+                  </section>
+
+                  <section class="mk-panel">
+                    <div class="mk-ph"><h2>Weekly funnel</h2><span class="mk-hint">A dash means nobody logged it, not zero</span></div>
+                    <div class="mk-table-wrap">
+                      <table class="mk-table">
+                        <thead><tr><th>Week of</th><th class="r">North star</th><th class="r">Visits</th><th class="r">Signups</th><th class="r">Activated</th><th class="r">Retained</th><th class="r">Referrals</th><th class="r">Revenue</th><th>Source</th><th class="r"><span class="sr-only">Actions</span></th></tr></thead>
+                        <tbody data-marketing-funnel-list></tbody>
+                      </table>
+                    </div>
+                    <div data-marketing-funnel-empty class="mk-empty" hidden><p>No weeks logged. Copy this week's numbers from your analytics.</p><button data-marketing-funnel-open type="button" class="mk-btn">Log week</button></div>
+                  </section>
+                  <p class="mk-hint">Funnel numbers are copied by hand from your own analytics; ForkMesh does not estimate or fill them. A rate whose base is under 20 is marked as too small to read.</p>
+                </div>
+
+                <div data-marketing-channels-page class="mk-page hidden">
+                  <section class="mk-kpis" aria-label="Channel health">
+                    <div class="mk-kpi"><span class="mk-kpi-label">On track</span><span data-marketing-health-stat="good" class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub">every check passes</span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Needs attention</span><span data-marketing-health-stat="attention" class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub">a check is failing</span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Stale numbers</span><span data-marketing-health-stat="stale" class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub">not updated in 14 days</span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Not set up</span><span data-marketing-health-stat="setup" class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub">no link, no numbers</span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Audience</span><span data-marketing-health-audience class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-health-change class="mk-delta">—</span><span>over 30 days</span></span></div>
+                  </section>
+                  <div data-marketing-extension-banner class="mk-banner" hidden><span><b>Update any channel in one click.</b> Install the ForkMesh browser extension: each Update button opens the channel's page, reads its followers, posts, likes, views, ratings and reviews, and records them here.</span><a href="/dashboard/extension" class="mk-btn">Get the extension</a></div>
+                  <section class="mk-panel">
+                    <div data-marketing-health-tabs class="mk-tabs" role="tablist" aria-label="Channel status"></div>
+                    <div class="mk-tools">
+                      <label class="mk-search"><span class="sr-only">Search channels</span><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input data-marketing-channels-search type="search" placeholder="Search channels" class="mk-input" /></label>
+                      <select data-marketing-channels-category aria-label="Channel category" class="mk-select"><option value="">All categories</option></select>
+                    </div>
+                  </section>
+                  <div data-marketing-channel-groups class="mk-groups"></div>
+                  <div data-marketing-channels-empty class="mk-empty" hidden><p>No channels in this view.</p><button data-marketing-catalog-open type="button" class="mk-btn">Add channels</button></div>
+                  <p class="mk-hint">Health checks: a channel link, numbers updated in the last 7 days, a post within twice the channel's usual cadence, and an audience that is not shrinking. The extension reads only the channel page you asked it to open, in your own browser; ForkMesh's servers never sign in to your accounts.</p>
+                </div>
+
+                <div data-marketing-reddit-page class="mk-page hidden">
+                  <div class="mk-desk-head"><button data-marketing-page="channels" type="button" class="mk-link">‹ All channels</button><h2>Reddit</h2><span class="mk-hint">The Reddit channel's desk: threads, watch list, rules and results</span></div>
+                  <section class="mk-kpis" aria-label="Reddit desk this week">
+                    <div class="mk-kpi"><span class="mk-kpi-label">Logged · 7D</span><span data-marketing-reddit-stat="loggedThisWeek" class="mk-kpi-value mk-num">—</span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Replied · 7D</span><span data-marketing-reddit-stat="repliedThisWeek" class="mk-kpi-value mk-num">—</span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Skipped · 7D</span><span data-marketing-reddit-stat="skippedThisWeek" class="mk-kpi-value mk-num">—</span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Still open</span><span data-marketing-reddit-stat="open" class="mk-kpi-value mk-num">—</span></div>
+                  </section>
+
+                  <div class="mk-row">
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Watch</h2><span class="mk-hint">Each link opens Reddit in a new tab for you to read</span><button data-marketing-reddit-walk type="button" class="mk-link" title="The ForkMesh browser extension opens each watched subreddit and search in one tab, reads at a person's pace, and sends what it finds to the thread log">Walk the watch list</button></div>
+                      <p data-marketing-reddit-walk-status class="mk-hint" hidden></p>
+                      <div class="mk-pb grid gap-3">
+                        <div><span class="mk-kpi-label">Subreddits, newest posts</span><ul data-marketing-reddit-subreddits class="mk-watch"></ul></div>
+                        <div><span class="mk-kpi-label">Searches, newest posts</span><ul data-marketing-reddit-queries class="mk-watch"></ul></div>
+                        <div><span class="mk-kpi-label">Your accounts, their posts and views</span><ul data-marketing-reddit-accounts class="mk-watch"></ul></div>
+                      </div>
+                    </section>
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Before you reply</h2></div>
+                      <div class="mk-pb grid gap-2">
+                        <ol data-marketing-reddit-checklist class="mk-steps">
+                          <li>Read the subreddit’s rules on self-promotion.</li>
+                          <li>Say that you work on ForkMesh.</li>
+                          <li>Write and post the reply yourself.</li>
+                          <li>Never vote on the thread or ask anyone for votes.</li>
+                        </ol>
+                        <p class="mk-hint">A thread can be marked replied only after both checks are ticked and the address of your reply is saved.</p>
+                      </div>
+                    </section>
+                  </div>
+
+                  <section class="mk-panel">
+                    <div class="mk-ph"><h2>Where to post next</h2><span data-marketing-reddit-ideas-hint class="mk-hint"></span></div>
+                    <div class="mk-table-wrap">
+                      <table class="mk-table">
+                        <thead><tr><th>Subreddit</th><th>Why here</th><th class="r">Threads</th><th class="r">Open</th><th class="r">Replied</th><th>Before you post</th></tr></thead>
+                        <tbody data-marketing-reddit-places></tbody>
+                      </table>
+                    </div>
+                    <p data-marketing-reddit-places-empty class="mk-empty" hidden><span>Add subreddits to the watch list to get suggestions.</span></p>
+                  </section>
+
+                  <section class="mk-panel">
+                    <div class="mk-ph"><h2>What to talk about</h2><span data-marketing-reddit-topics-hint class="mk-hint"></span></div>
+                    <div class="mk-pb grid gap-2">
+                      <ul data-marketing-reddit-topics class="mk-watch"></ul>
+                      <p class="mk-hint">Topics come from this desk: the searches on the watch list, and the words that keep coming back in the threads logged here. Each one opens Reddit’s newest results for it. Nothing is generated: a topic with no threads behind it is one nobody has logged yet.</p>
+                    </div>
+                  </section>
+
+                  <section class="mk-panel">
+                    <div class="mk-ph"><h2>Subreddit rules</h2><span data-marketing-reddit-rules-count class="mk-hint"></span><button data-marketing-reddit-rules-copy type="button" class="mk-link">Copy rules for the scout</button></div>
+                    <div class="mk-pb grid gap-2">
+                      <ul data-marketing-reddit-rules-list class="mk-rules-list"></ul>
+                      <p class="mk-hint">Rules are read by the <a href="/dashboard/extension" class="underline">ForkMesh browser extension</a> when you open a watched subreddit’s rules page yourself, and saved here for the whole team. They do not tick “Rules read” on a thread: that stays your own check.</p>
+                    </div>
+                  </section>
+
+                  <section class="mk-panel">
+                    <div class="mk-ph"><h2>Thread log</h2><span data-marketing-reddit-count class="mk-hint"></span></div>
+                    <div data-marketing-reddit-tabs class="mk-tabs" role="tablist" aria-label="Filter threads by status"></div>
+                    <div class="mk-table-wrap">
+                      <table class="mk-table">
+                        <thead><tr><th>Thread</th><th>Status</th><th>Checks</th><th>Tagged link</th><th class="r"><span class="sr-only">Actions</span></th></tr></thead>
+                        <tbody data-marketing-reddit-list></tbody>
+                      </table>
+                    </div>
+                    <div data-marketing-reddit-empty class="mk-empty" hidden><p>No threads in this view. Open a watch link, read the thread on Reddit, then paste its address here.</p><button data-marketing-reddit-open type="button" class="mk-btn">Log thread</button></div>
+                  </section>
+                  <p class="mk-hint">The Reddit desk works from your own browser. ForkMesh’s servers never fetch or post to Reddit: you open each link yourself, and either log the thread by hand or let the <a href="/dashboard/extension" class="underline">ForkMesh browser extension</a> fill the log from the pages you open (watched subreddits, watched searches, threads and rules pages), then send it here from the extension’s popup. Nothing is ever posted, voted or sent to Reddit.</p>
+                </div>
+
+                <section data-marketing-catalog-page class="hidden">
+                  <div class="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border bg-card p-4">
+                    <div><h2 class="text-base font-semibold text-foreground">Add channels</h2><p class="mt-1 max-w-2xl text-sm text-muted-foreground">Choose from 100 social, owned, search, publishing, community, advertising, commerce, video, and audio channels used by teams worldwide. Add any channel to the dashboard with one click.</p><p class="mt-2 max-w-2xl text-xs text-muted-foreground">Availability is not a compliance certification. Follow each platform’s terms and the advertising, disclosure, review, email, SMS, privacy, and industry rules of every market you publish in.</p></div>
+                    <button data-marketing-dashboard-open type="button" class="mk-btn">← Back to dashboard</button>
+                  </div>
+                  <div class="mk-tools" style="padding:0 0 .75rem">
+                    <label class="mk-search"><span class="sr-only">Search channels</span><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="marketing-catalog-search" data-marketing-catalog-search type="search" placeholder="Search 100 channels" class="mk-input" /></label>
+                    <select id="marketing-catalog-category" data-marketing-catalog-category aria-label="Channel category" class="mk-select"><option value="">All categories</option></select>
+                  </div>
+                  <div data-marketing-catalog-list></div>
+                  <p data-marketing-catalog-empty class="mk-empty hidden">No channels match this search.</p>
+                </section>
+              </div>
+            </div>
+
+            <dialog data-marketing-campaign-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
+              <form data-marketing-campaign-form class="p-5">
+                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-campaign-title class="text-base font-semibold">New campaign</h2><p class="text-xs text-muted-foreground">One audience, one message, dated deliverables and a target. Content, ads and links join it by its name or tag.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <input data-marketing-campaign-id type="hidden" />
+                <input data-marketing-campaign-source type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Name<input data-marketing-campaign-field="name" maxlength="120" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Status<select data-marketing-campaign-field="status" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Objective<select data-marketing-campaign-field="objective" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Starts<input data-marketing-campaign-field="startsAt" type="datetime-local" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Ends<input data-marketing-campaign-field="endsAt" type="datetime-local" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Campaign tag (utm_campaign)<input data-marketing-campaign-field="slug" maxlength="100" placeholder="from the name" class="rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Owner<input data-marketing-campaign-field="owner" maxlength="64" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Landing page<input data-marketing-campaign-field="landingUrl" maxlength="1000" placeholder="https://…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <fieldset class="grid gap-1 text-xs text-muted-foreground sm:col-span-2"><legend class="mb-1">Channels</legend><div data-marketing-campaign-channels class="mk-checkgrid"></div></fieldset>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Audience<input data-marketing-campaign-field="audience" maxlength="1000" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Message<textarea data-marketing-campaign-field="message" maxlength="2000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Offer<input data-marketing-campaign-field="offer" maxlength="500" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Hashtags<input data-marketing-campaign-field="hashtags" maxlength="1200" placeholder="#launch, #devtools" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Search keywords<input data-marketing-campaign-field="keywords" maxlength="2000" placeholder="git mirror, self-hosted git" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <div class="grid gap-3 sm:col-span-2" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+                    <label class="grid gap-1 text-xs text-muted-foreground">Budget<input data-marketing-campaign-field="budget" type="number" min="0" step="0.01" style="min-width:0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Currency<input data-marketing-campaign-field="currency" maxlength="3" pattern="[A-Za-z]{3}" placeholder="USD" style="min-width:0;text-transform:uppercase" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Target visits<input data-marketing-campaign-field="targetVisits" type="number" min="0" style="min-width:0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Target conv.<input data-marketing-campaign-field="targetConversions" type="number" min="0" style="min-width:0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  </div>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Checklist <span>one step per line; start a line with [x] when it is done</span><textarea data-marketing-campaign-field="tasks" rows="5" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Brief<textarea data-marketing-campaign-field="brief" maxlength="20000" rows="7" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Internal notes<textarea data-marketing-campaign-field="notes" maxlength="10000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                </div>
+                <div class="mt-4 flex items-center justify-between"><button data-marketing-campaign-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save campaign</button></div></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-keyword-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-keyword-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-keyword-title class="text-base font-semibold">Track a keyword</h2><p class="text-xs text-muted-foreground">A search phrase you want to rank for. Log its position and clicks from Google Search Console or Bing Webmaster Tools.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <input data-marketing-keyword-id type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Keyword<input data-marketing-keyword-field="term" maxlength="100" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Page that should rank<input data-marketing-keyword-field="targetUrl" maxlength="1000" placeholder="https://…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Intent<select data-marketing-keyword-field="intent" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="">Not set</option><option value="informational">Informational</option><option value="navigational">Navigational</option><option value="commercial">Commercial</option><option value="transactional">Transactional</option></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Priority<select data-marketing-keyword-field="priority" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="0">Normal</option><option value="1">Watch</option><option value="2">High</option><option value="3">Top</option></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Campaign<input data-marketing-keyword-field="campaign" maxlength="120" list="marketing-campaign-options" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <fieldset class="grid gap-2 rounded-md border border-border p-3 sm:col-span-2" style="grid-template-columns:repeat(4,minmax(0,1fr))"><legend class="px-1 text-xs text-muted-foreground">Latest numbers (optional)</legend>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Position<input data-marketing-keyword-snap="position" type="number" min="1" max="1000" step="0.1" style="min-width:0" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Impressions<input data-marketing-keyword-snap="impressions" type="number" min="0" style="min-width:0" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Clicks<input data-marketing-keyword-snap="clicks" type="number" min="0" style="min-width:0" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Date<input data-marketing-keyword-snap="at" type="date" style="min-width:0" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label>
+                  </fieldset>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Notes<textarea data-marketing-keyword-field="notes" maxlength="2000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                </div>
+                <div class="mt-4 flex items-center justify-between"><button data-marketing-keyword-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save keyword</button></div></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-keyword-import-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-keyword-import-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Import keywords</h2><p class="text-xs text-muted-foreground">Paste Search Console's Queries export (Top queries, Clicks, Impressions, CTR, Position), Bing's keyword report, or one keyword per line. Known keywords get a new reading; new ones are added.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <textarea data-marketing-keyword-import-text rows="10" required class="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground" placeholder="Top queries,Clicks,Impressions,CTR,Position&#10;git mirror,12,340,3.5%,8.2"></textarea>
+                <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Reading date<input data-marketing-keyword-import-date type="date" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Source<input data-marketing-keyword-import-source maxlength="60" value="Search Console" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Keep the top<input data-marketing-keyword-import-limit type="number" min="1" max="500" value="100" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                </div>
+                <p data-marketing-keyword-import-preview class="mt-2 text-xs text-muted-foreground"></p>
+                <div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Import</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-x-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-x-connect-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Connect X (Twitter)</h2><p class="text-xs text-muted-foreground">Owners and admins can post from Marketing with the organization's own X app. The keys are stored encrypted and are never shown again.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <div class="mb-3 rounded-md border border-border p-3 text-xs"><p class="mb-2"><b>Let the browser extension walk you through it.</b> It opens X's developer console in a new tab and guides you page by page: it fills in X's forms, presses the generate buttons, reads the four keys off the page and saves them here. You only sign in to X, tick X's agreement boxes and add API credits yourself.</p><button data-marketing-x-guide type="button" class="mk-btn mk-btn-primary">Guide me with the extension</button><p data-marketing-x-guide-status class="mt-2 text-muted-foreground" hidden></p></div>
+                <p class="mb-2 text-xs text-muted-foreground">Or do it yourself:</p>
+                <ol class="mk-steps mb-3 text-xs text-muted-foreground">
+                  <li>Open <a href="https://console.x.com/" target="_blank" rel="noopener noreferrer" class="underline">X's developer console</a> and create an app.</li>
+                  <li>Under User authentication settings, give the app <b>Read and write</b> permission.</li>
+                  <li>Under Keys and tokens, copy the API key and secret, then generate an Access token and secret for the account that should post.</li>
+                </ol>
+                <p data-marketing-x-connected class="mb-3 text-sm" hidden></p>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground">API key<input data-marketing-x-key="apiKey" autocomplete="off" required class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">API key secret<input data-marketing-x-key="apiSecret" type="password" autocomplete="off" required class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Access token<input data-marketing-x-key="accessToken" autocomplete="off" required class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Access token secret<input data-marketing-x-key="accessSecret" type="password" autocomplete="off" required class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" /></label>
+                </div>
+                <div class="mt-4 flex items-center justify-between"><button data-marketing-x-disconnect type="button" class="mk-btn mk-btn-danger" hidden>Disconnect</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Check and save</button></div></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-content-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
+              <form data-marketing-content-form class="p-5">
+                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-content-title class="text-base font-semibold">New content</h2><p class="text-xs text-muted-foreground">One shared pipeline item for any supported channel.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <input data-marketing-content-id type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Title<input id="marketing-content-name" data-marketing-content-name maxlength="300" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Channel<select id="marketing-content-channel" data-marketing-content-channel class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Status<select id="marketing-content-status" data-marketing-content-status class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="draft">Draft</option><option value="review">Review</option><option value="queued">Queued</option><option value="scheduled">Scheduled</option><option value="published">Published</option><option value="archived">Archived</option></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Campaign<input id="marketing-content-campaign" data-marketing-content-campaign maxlength="120" list="marketing-campaign-options" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Owner<input id="marketing-content-owner" data-marketing-content-owner maxlength="64" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Scheduled time<input id="marketing-content-scheduled" data-marketing-content-scheduled type="datetime-local" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Published URL<input id="marketing-content-url" data-marketing-content-url type="url" maxlength="1000" placeholder="https://…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Tags<input id="marketing-content-tags" data-marketing-content-tags maxlength="500" placeholder="launch, product, community" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Copy / outline<textarea id="marketing-content-body" data-marketing-content-body maxlength="100000" rows="10" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Internal notes<textarea id="marketing-content-notes" data-marketing-content-notes maxlength="10000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                </div>
+                <datalist id="marketing-campaign-options" data-marketing-campaign-options></datalist>
+                <div class="mt-4 flex items-center justify-between"><button data-marketing-content-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save content</button></div></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-ad-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
+              <form data-marketing-ad-form class="p-5">
+                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-ad-title class="text-base font-semibold">New ad</h2><p data-marketing-ad-platform class="text-xs text-muted-foreground"></p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <input data-marketing-ad-id type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Ad name<input id="marketing-ad-name" data-marketing-ad-name maxlength="200" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Channel<select id="marketing-ad-channel" data-marketing-ad-channel class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Status<select id="marketing-ad-status" data-marketing-ad-status class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Objective<select id="marketing-ad-objective" data-marketing-ad-objective class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Campaign<input id="marketing-ad-campaign" data-marketing-ad-campaign maxlength="120" list="marketing-campaign-options" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Budget<input id="marketing-ad-budget" data-marketing-ad-budget type="number" min="0" step="0.01" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <div class="grid gap-3" style="grid-template-columns:repeat(2,minmax(0,1fr))"><label class="grid gap-1 text-xs text-muted-foreground">Budget type<select id="marketing-ad-budget-type" data-marketing-ad-budget-type style="min-width:0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="lifetime">Lifetime</option><option value="daily">Daily</option></select></label><label class="grid gap-1 text-xs text-muted-foreground">Currency<input id="marketing-ad-currency" data-marketing-ad-currency maxlength="3" pattern="[A-Za-z]{3}" placeholder="USD" style="min-width:0;width:100%;text-transform:uppercase" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label></div>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Starts<input id="marketing-ad-starts" data-marketing-ad-starts type="datetime-local" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Ends<input id="marketing-ad-ends" data-marketing-ad-ends type="datetime-local" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Owner<input id="marketing-ad-owner" data-marketing-ad-owner maxlength="64" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Tags<input id="marketing-ad-tags" data-marketing-ad-tags maxlength="500" placeholder="launch, retargeting" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Audience / targeting<input id="marketing-ad-audience" data-marketing-ad-audience maxlength="1000" placeholder="Who should see this ad" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Headline<input id="marketing-ad-headline" data-marketing-ad-headline maxlength="300" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Ad copy / creative brief<textarea id="marketing-ad-body" data-marketing-ad-body maxlength="10000" rows="6" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Landing page URL<input id="marketing-ad-destination" data-marketing-ad-destination maxlength="1000" placeholder="https://…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Link to this ad in its console<input id="marketing-ad-manager" data-marketing-ad-manager maxlength="1000" placeholder="https://…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Internal notes<textarea id="marketing-ad-notes" data-marketing-ad-notes maxlength="10000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                </div>
+                <div class="mt-4 flex items-center justify-between"><button data-marketing-ad-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save ad</button></div></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-ad-results-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-ad-results-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Log ad results</h2><p data-marketing-ad-results-hint class="text-xs text-muted-foreground"></p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <input data-marketing-ad-results-id type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Spend to date<input id="marketing-ad-results-spend" data-marketing-ad-results-spend type="number" min="0" step="0.01" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Revenue attributed<input id="marketing-ad-results-revenue" data-marketing-ad-results-revenue type="number" min="0" step="0.01" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Impressions<input id="marketing-ad-results-impressions" data-marketing-ad-results-impressions type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Clicks<input id="marketing-ad-results-clicks" data-marketing-ad-results-clicks type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Conversions<input id="marketing-ad-results-conversions" data-marketing-ad-results-conversions type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                </div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save results</button></div></form>
+            </dialog>
+
+            <dialog data-marketing-experiment-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
+              <form data-marketing-experiment-form class="p-5">
+                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-experiment-title class="text-base font-semibold">New experiment</h2><p class="text-xs text-muted-foreground">Score impact, confidence and ease from 1 to 10. The score is their product.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <input data-marketing-experiment-id type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Idea<input id="marketing-experiment-name" data-marketing-experiment-name maxlength="200" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Funnel stage<select id="marketing-experiment-stage" data-marketing-experiment-stage class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Status<select id="marketing-experiment-status" data-marketing-experiment-status class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <div class="grid gap-3 sm:col-span-2" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+                    <label class="grid gap-1 text-xs text-muted-foreground">Impact<input id="marketing-experiment-impact" data-marketing-experiment-impact type="number" min="1" max="10" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Confidence<input id="marketing-experiment-confidence" data-marketing-experiment-confidence type="number" min="1" max="10" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                    <label class="grid gap-1 text-xs text-muted-foreground">Ease<input id="marketing-experiment-ease" data-marketing-experiment-ease type="number" min="1" max="10" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  </div>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Hypothesis<textarea id="marketing-experiment-hypothesis" data-marketing-experiment-hypothesis maxlength="2000" rows="3" placeholder="If we change…, then … will rise, because…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Audience<input id="marketing-experiment-audience" data-marketing-experiment-audience maxlength="500" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Success measure<input id="marketing-experiment-metric" data-marketing-experiment-metric maxlength="300" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Baseline<input id="marketing-experiment-baseline" data-marketing-experiment-baseline maxlength="300" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Target<input id="marketing-experiment-target" data-marketing-experiment-target maxlength="300" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Owner<input id="marketing-experiment-owner" data-marketing-experiment-owner maxlength="64" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Campaign<input id="marketing-experiment-campaign" data-marketing-experiment-campaign maxlength="120" list="marketing-campaign-options" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Starts<input id="marketing-experiment-starts" data-marketing-experiment-starts type="datetime-local" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Ends<input id="marketing-experiment-ends" data-marketing-experiment-ends type="datetime-local" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Review on<input id="marketing-experiment-review" data-marketing-experiment-review type="datetime-local" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Decision<select id="marketing-experiment-decision" data-marketing-experiment-decision class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Result<textarea id="marketing-experiment-result" data-marketing-experiment-result maxlength="2000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Internal notes<textarea id="marketing-experiment-notes" data-marketing-experiment-notes maxlength="10000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                </div>
+                <div class="mt-4 flex items-center justify-between"><button data-marketing-experiment-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save experiment</button></div></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-funnel-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-funnel-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Log funnel week</h2><p class="text-xs text-muted-foreground">Copy the week's numbers from your analytics. Leave a field empty when nobody measured it; empty is not zero.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Week containing<input id="marketing-funnel-week" data-marketing-funnel-week type="date" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">North star<input id="marketing-funnel-northStar" data-marketing-funnel-field="northStar" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Visits<input id="marketing-funnel-visits" data-marketing-funnel-field="visits" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Signups<input id="marketing-funnel-signups" data-marketing-funnel-field="signups" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Activated<input id="marketing-funnel-activated" data-marketing-funnel-field="activated" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Referral signups<input id="marketing-funnel-referrals" data-marketing-funnel-field="referrals" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Retained<input id="marketing-funnel-retained" data-marketing-funnel-field="retained" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">…out of accounts eligible<input id="marketing-funnel-retainedBase" data-marketing-funnel-field="retainedBase" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Revenue<input id="marketing-funnel-revenue" data-marketing-funnel-revenue type="number" min="0" step="0.01" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Currency<input id="marketing-funnel-currency" data-marketing-funnel-currency maxlength="3" pattern="[A-Za-z]{3}" placeholder="USD" style="text-transform:uppercase" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <div class="flex items-center justify-between gap-2 sm:col-span-2"><p data-marketing-funnel-analytics-note class="text-xs text-muted-foreground">Visits can be read from this organization's Analytics.</p><button data-marketing-funnel-analytics type="button" class="mk-btn">Fill visits from Analytics</button></div>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Source<input id="marketing-funnel-source" data-marketing-funnel-source-input maxlength="300" placeholder="Where these numbers came from" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Note<textarea id="marketing-funnel-note" data-marketing-funnel-note maxlength="2000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                </div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save week</button></div></form>
+            </dialog>
+
+            <dialog data-marketing-goals-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-goals-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Conversion goals</h2><p class="text-xs text-muted-foreground">A visit converts when it records one of these Analytics events. Use the event your site already sends: a pageview of the signup or download page, or a button's product action. Up to 5 goals.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <div data-marketing-goals-list class="grid gap-2"></div>
+                <div class="mt-2 flex flex-wrap gap-2"><button data-marketing-goal-add="pageview" type="button" class="mk-btn">Add page goal</button><button data-marketing-goal-add="action" type="button" class="mk-btn">Add product action goal</button><button data-marketing-goal-add="event" type="button" class="mk-btn">Add custom event goal</button></div>
+                <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Default Analytics project<select id="marketing-goals-project" data-marketing-goals-project class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Your site's host<input id="marketing-goals-host" data-marketing-goals-host maxlength="253" placeholder="forkmesh.com" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                </div>
+                <p class="mt-2 text-xs text-muted-foreground">Visits referred by your own host count as direct, not as referrals. Left empty, the host of the default landing page is used.</p>
+                <p data-marketing-goals-access class="mt-3 text-xs text-muted-foreground"></p>
+                <div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button data-marketing-goals-save type="submit" class="mk-btn mk-btn-primary">Save goals</button></div></form>
+            </dialog>
+
+            <dialog data-marketing-report-dialog class="w-full max-w-3xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Weekly marketing report</h2><p class="text-xs text-muted-foreground">Scorecard, experiments, ads, content and the Reddit desk in Markdown, ready to paste into a plan, an issue or a special agent's run.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <textarea data-marketing-report-text readonly class="mk-report rounded-md border border-border bg-background px-3 py-2 text-foreground"></textarea>
+                <div class="mt-4 flex justify-end gap-2"><button data-marketing-report-download type="button" class="mk-btn">Download .md</button><button data-marketing-report-copy type="button" class="mk-btn mk-btn-primary">Copy report</button></div></div>
+            </dialog>
+
+            <dialog data-marketing-reddit-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
+              <form data-marketing-reddit-form class="p-5">
+                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-reddit-title class="text-base font-semibold">Log thread</h2><p class="text-xs text-muted-foreground">Paste the address of a thread you opened and read yourself, or let the ForkMesh browser extension send the threads you open. ForkMesh stores what you or the extension record and never opens the thread itself.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <input data-marketing-reddit-id type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Thread address<input id="marketing-reddit-url" data-marketing-reddit-url type="url" maxlength="1000" required placeholder="https://www.reddit.com/r/…/comments/…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Title<input id="marketing-reddit-name" data-marketing-reddit-name maxlength="300" placeholder="As you read it on Reddit" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Status<select id="marketing-reddit-status" data-marketing-reddit-status class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Landing page<input id="marketing-reddit-landing" data-marketing-reddit-landing maxlength="64" placeholder="/" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <p class="text-xs text-muted-foreground sm:col-span-2">The tagged link lands on a top-level forkmesh.com page, such as / or /download/.</p>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Note<textarea id="marketing-reddit-note" data-marketing-reddit-note maxlength="2000" rows="4" placeholder="What the thread asks and what you plan to say" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="flex items-center gap-2 text-xs text-foreground sm:col-span-2"><input data-marketing-reddit-rules type="checkbox" /> I read this subreddit’s rules on self-promotion</label>
+                  <label class="flex items-center gap-2 text-xs text-foreground sm:col-span-2"><input data-marketing-reddit-disclosed type="checkbox" /> My reply says that I work on ForkMesh</label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Your reply’s address<input id="marketing-reddit-reply" data-marketing-reddit-reply type="url" maxlength="1000" placeholder="https://www.reddit.com/r/…/comments/…/…/…/" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <p class="text-xs text-muted-foreground sm:col-span-2">Replied needs both boxes ticked and the address of the reply you posted yourself.</p>
+                  <label class="flex items-center gap-2 text-xs text-foreground sm:col-span-2"><input data-marketing-reddit-monitored type="checkbox" /> Monitor views with the browser extension</label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Comment to monitor<input id="marketing-reddit-comment" data-marketing-reddit-comment type="url" maxlength="1000" placeholder="https://www.reddit.com/r/…/comments/…/comment/…/" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <p class="text-xs text-muted-foreground sm:col-span-2">A monitored thread’s views, points and comments, and those of its comment (or your reply when no comment is set), are read by the ForkMesh browser extension from your own signed-in Reddit tab. Reddit shows view counts only to the person who posted, so open it from that account. Pasting a comment link as the thread address fills this in.</p>
+                </div>
+                <div class="mt-4 flex items-center justify-between"><button data-marketing-reddit-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save thread</button></div></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-reddit-watch-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-reddit-watch-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Reddit watch list</h2><p class="text-xs text-muted-foreground">Up to 40 subreddits and 40 searches. Each becomes a link that opens Reddit in your browser; ForkMesh’s servers never read them. The ForkMesh browser extension reads only these subreddits and searches when you open them.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+                <div class="grid gap-3">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Subreddits, one per line<textarea id="marketing-reddit-watch-subreddits" data-marketing-reddit-watch-subreddits rows="6" placeholder="selfhosted" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Searches, one per line, up to 120 characters each<textarea id="marketing-reddit-watch-queries" data-marketing-reddit-watch-queries rows="6" placeholder="self-hosted git" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Your Reddit accounts, one per line, up to 10. The extension records each post and comment they make, with its link and views, in Posts<textarea id="marketing-reddit-watch-accounts" data-marketing-reddit-watch-accounts rows="3" placeholder="forkmesh" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <p data-marketing-reddit-watch-access class="text-xs text-muted-foreground"></p>
+                </div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button data-marketing-reddit-watch-save type="submit" class="mk-btn mk-btn-primary">Save watch list</button></div></form>
+            </dialog>
+
+            <dialog data-marketing-metric-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-metric-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Log channel metrics</h2><p class="text-xs text-muted-foreground">Record a point-in-time snapshot from a channel dashboard. Each snapshot becomes a point on the trend chart.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div><div class="grid gap-3 sm:grid-cols-2">
+                <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Channel<select id="marketing-metric-channel" data-marketing-metric-channel class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                <p data-marketing-metric-previous class="text-xs text-muted-foreground sm:col-span-2"></p>
+                <label class="grid gap-1 text-xs text-muted-foreground">Reach<input id="marketing-metric-reach" data-marketing-metric-reach type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Followers<input id="marketing-metric-followers" data-marketing-metric-followers type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                <label class="grid gap-1 text-xs text-muted-foreground">Impressions<input id="marketing-metric-impressions" data-marketing-metric-impressions type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Engagements<input id="marketing-metric-engagements" data-marketing-metric-engagements type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                <label class="grid gap-1 text-xs text-muted-foreground">Clicks<input id="marketing-metric-clicks" data-marketing-metric-clicks type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Views<input id="marketing-metric-views" data-marketing-metric-views type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                <label class="grid gap-1 text-xs text-muted-foreground">Visits (30 days)<input id="marketing-metric-visits" data-marketing-metric-visits type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Pages on Google<input id="marketing-metric-indexed-pages" data-marketing-metric-indexed-pages type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                <label class="grid gap-1 text-xs text-muted-foreground">Stars (GitHub)<input id="marketing-metric-stars" data-marketing-metric-stars type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Forks (GitHub)<input id="marketing-metric-forks" data-marketing-metric-forks type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+              </div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save snapshot</button></div></form>
+            </dialog>
+
+            <dialog data-marketing-settings-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-marketing-settings-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Marketing channels</h2><p class="text-xs text-muted-foreground">Choose active channels and link their public profiles.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div><div data-marketing-channel-settings class="grid max-h-[40vh] gap-3 overflow-y-auto pr-1"></div><details data-marketing-attribution class="mt-4 rounded-md border border-border bg-secondary p-3"><summary class="cursor-pointer text-xs font-semibold">Link tracking and funnel targets</summary><p class="mt-1 text-xs text-muted-foreground">The link builder and the Ads manager flag a link whose source, medium or campaign is not on these lists, or that lands on a path your analytics does not record. Copy the lists from your analytics configuration; separate values with commas.</p><div class="mt-2 grid gap-2 sm:grid-cols-2"><label class="grid gap-1 text-xs text-muted-foreground">Allowed sources<input data-marketing-attribution-field="sources" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Allowed mediums<input data-marketing-attribution-field="mediums" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Allowed campaigns<input data-marketing-attribution-field="campaigns" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Untracked paths<input data-marketing-attribution-field="untrackedPaths" placeholder="/blog, /docs" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Tracked domains<input data-marketing-attribution-field="domains" placeholder="example.com" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Default landing page<input data-marketing-attribution-field="landingUrl" placeholder="https://…" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label></div><p class="mt-3 text-xs text-muted-foreground">Targets, in percent. The Growth page names the rate furthest below its target as the bottleneck; with no targets it names none.</p><div class="mt-2 grid gap-2" style="grid-template-columns:repeat(4,minmax(0,1fr))"><label class="grid gap-1 text-xs text-muted-foreground">Signup<input data-marketing-target="signupRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Activation<input data-marketing-target="activationRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Retention<input data-marketing-target="retentionRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Referral<input data-marketing-target="referralRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label></div></details><p data-marketing-settings-access class="mt-3 text-xs text-muted-foreground"></p><div data-marketing-plugin-zone class="mt-4 hidden rounded-md border border-border bg-secondary p-3"><p class="text-xs font-semibold">Plugin data</p><p class="mt-1 text-xs text-muted-foreground">Export all organization marketing data, or uninstall and remove it.</p><div class="mt-2 flex gap-2"><button data-marketing-export-all type="button" class="mk-btn">Export JSON</button><button data-marketing-uninstall type="button" class="mk-btn mk-btn-danger">Uninstall…</button></div></div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button data-marketing-settings-save type="submit" class="mk-btn mk-btn-primary">Save channels</button></div></form>
+            </dialog>
+          </section>

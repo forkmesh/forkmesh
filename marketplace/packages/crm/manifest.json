@@ -1,0 +1,147 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "crm",
+  "name": "CRM",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.29.0",
+  "summary": "Run customizable relationship flows, open a contact for every detail and their accounts' latest posts, send founders outreach, share the investor deck through a tracked link, link Gmail, Zoho Mail and Mastodon threads, and share sheets.",
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "CRM page with shared contacts, customizable flows, grouped Zoho Mail boxes, and email activity"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:crm",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "worker": "content/worker/crm.py",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/crm",
+        "title": "CRM",
+        "description": "Run customizable relationship flows, send founders outreach, and group imported Zoho Mail into shared CRM boxes.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "CRM",
+          "icon": "contact-round",
+          "order": 40
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "organization.crm.read",
+      "label": "Read encrypted contacts and email history for your organizations",
+      "risk": "sensitive"
+    },
+    {
+      "id": "organization.crm.write",
+      "label": "Create and update shared organization CRM records",
+      "risk": "sensitive"
+    },
+    {
+      "id": "email.send",
+      "label": "Send an email, including founders outreach, only after you explicitly submit its compose form",
+      "risk": "high"
+    },
+    {
+      "id": "email.zoho.import",
+      "label": "Use encrypted organization OAuth credentials to import Zoho Mail after an explicit sync",
+      "risk": "high"
+    },
+    {
+      "id": "external.link.open",
+      "label": "Open a configured email-provider send link after an explicit click",
+      "risk": "sensitive"
+    },
+    {
+      "id": "file.csv.readwrite",
+      "label": "Import a selected contacts CSV and export organization contacts",
+      "risk": "sensitive"
+    },
+    {
+      "id": "browser.mail.link",
+      "label": "Tie the Gmail or Zoho Mail message you open to a contact after an explicit click in the ForkMesh browser extension",
+      "risk": "sensitive"
+    },
+    {
+      "id": "organization.crm.share",
+      "label": "Share a contact sheet read-only with named ForkMesh users outside the organization",
+      "risk": "sensitive"
+    },
+    {
+      "id": "social.mastodon.read",
+      "label": "Read a contact's newest public Mastodon post from their own instance for the Mastodon last update column",
+      "risk": "sensitive"
+    },
+    {
+      "id": "platform.accounts.evidence",
+      "label": "For ForkMesh administrators, record which contacts have a ForkMesh account, pay, or are on a trial",
+      "risk": "high"
+    },
+    {
+      "id": "social.profile.read",
+      "label": "Read a contact's Gravatar, and the picture and newest public posts of the Mastodon, Bluesky or GitHub account it names",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "organization"
+  },
+  "worker": {
+    "module": "crm",
+    "api": "/api/crm",
+    "outboundOrigins": [
+      "https://accounts.zoho.com",
+      "https://mail.zoho.com",
+      "https://accounts.zoho.eu",
+      "https://mail.zoho.eu",
+      "https://accounts.zoho.in",
+      "https://mail.zoho.in",
+      "https://accounts.zoho.com.au",
+      "https://mail.zoho.com.au",
+      "https://accounts.zoho.jp",
+      "https://mail.zoho.jp",
+      "https://accounts.zohocloud.ca",
+      "https://mail.zohocloud.ca"
+    ]
+  }
+}

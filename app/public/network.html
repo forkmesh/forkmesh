@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Network · ForkMesh</title>
+    <meta name="description" content="ForkMesh network architecture, relay status, and authenticated direct-HTTPS mirror routing.">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .online-graph {
+        display: grid;
+        gap: 10px;
+      }
+      .online-axis,
+      .online-node-row {
+        display: grid;
+        grid-template-columns: minmax(96px, 168px) minmax(0, 1fr) 88px;
+        gap: 14px;
+        align-items: center;
+      }
+      .online-axis {
+        color: var(--kit-faint);
+        font-size: 12px;
+      }
+      .online-axis > span:last-child,
+      .online-node-total {
+        text-align: right;
+      }
+      .online-axis-hours,
+      .online-node-cells {
+        display: grid;
+        grid-template-columns: repeat(24, minmax(0, 1fr));
+        gap: 4px;
+        min-width: 0;
+      }
+      .online-axis-hours span {
+        overflow: visible;
+        white-space: nowrap;
+      }
+      .online-node-label {
+        overflow: hidden;
+        color: var(--kit-ink);
+        font-size: 13.5px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .online-cell,
+      .network-legend i {
+        border-radius: 5px;
+        background: color-mix(in srgb, var(--kit-ink) 7%, transparent);
+      }
+      .online-cell {
+        height: 28px;
+      }
+      .online-cell[data-level="1"],
+      .network-legend i[data-level="1"] {
+        background: color-mix(in srgb, var(--accent-bright) 30%, var(--kit-surface));
+      }
+      .online-cell[data-level="2"],
+      .network-legend i[data-level="2"] {
+        background: color-mix(in srgb, var(--accent-bright) 62%, var(--kit-surface));
+      }
+      .online-cell[data-level="3"],
+      .network-legend i[data-level="3"] {
+        background: var(--accent-bright);
+      }
+      .online-node-total {
+        color: var(--kit-body);
+        font: 500 12.5px/1 var(--mono);
+        white-space: nowrap;
+      }
+      .online-graph-empty,
+      .board-empty {
+        padding: 24px 0;
+        color: var(--kit-body);
+      }
+      .network-legend {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 4px;
+        color: var(--kit-faint);
+        font-size: 12px;
+      }
+      .network-legend i {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+      }
+      .network-legend span:first-child {
+        margin-right: 4px;
+      }
+      .network-legend span:last-child {
+        margin-left: 4px;
+      }
+      .wallet-table {
+        display: grid;
+      }
+      .wallet-row {
+        display: grid;
+        grid-template-columns: minmax(120px, 1fr) minmax(150px, 1.2fr) minmax(110px, 0.8fr) 150px;
+        gap: 16px;
+        align-items: center;
+        min-height: 52px;
+        border-top: 1px solid var(--kit-line);
+      }
+      .wallet-row[hidden] {
+        display: none;
+      }
+      .wallet-heading {
+        min-height: 36px;
+        border-top: 0;
+        color: var(--kit-body);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+      .wallet-node {
+        overflow: hidden;
+        color: var(--kit-ink);
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wallet-address {
+        overflow: hidden;
+        color: var(--kit-ink);
+        font: 500 12.5px/1.4 var(--mono);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wallet-address.is-empty,
+      .wallet-balance.is-empty {
+        color: var(--kit-faint);
+        font-family: var(--sans);
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .wallet-balance {
+        color: var(--kit-ink);
+        font: 500 13px/1.4 var(--mono);
+      }
+      .wallet-status {
+        justify-self: start;
+        display: inline-flex;
+        align-items: center;
+        height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--kit-ink) 7%, transparent);
+        color: var(--kit-body);
+        font-size: 12.5px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .wallet-status[data-eligible="true"] {
+        background: color-mix(in srgb, var(--accent-bright) 14%, transparent);
+        color: var(--accent-bright);
+      }
+      .wallet-status[data-reason="duplicate_wallet"],
+      .wallet-status[data-reason="no_mirrors"] {
+        background: color-mix(in srgb, var(--warning) 15%, transparent);
+        color: var(--warning);
+      }
+      .wallet-more {
+        justify-self: start;
+        margin-top: 12px;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--link);
+        font: inherit;
+        font-size: 13.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .wallet-more:hover,
+      .wallet-more:focus-visible {
+        text-decoration: underline;
+      }
+      .balance-refresh {
+        height: 34px;
+        border-radius: 10px;
+        font-size: 13.5px;
+      }
+      .balance-refresh:disabled {
+        cursor: progress;
+        opacity: 0.6;
+      }
+      .balance-checked {
+        padding-top: 12px;
+        color: var(--kit-faint);
+        font-size: 12.5px;
+      }
+      .network-custody-note {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin: 0 20px 20px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: var(--kit-surface-soft);
+        color: var(--kit-body);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .network-custody-note svg {
+        width: 18px;
+        height: 18px;
+        flex: none;
+        margin-top: 2px;
+        color: var(--kit-ink);
+      }
+      .network-custody-note strong {
+        color: var(--kit-ink);
+        font-weight: 600;
+      }
+      .leaderboards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+        gap: 12px;
+      }
+      .board {
+        min-width: 0;
+        padding: 16px 16px 10px;
+        border: 1px solid var(--kit-line);
+        border-radius: 14px;
+      }
+      .board h4 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-size: 14.5px;
+        font-weight: 600;
+      }
+      .board-sub {
+        margin: 3px 0 8px;
+        color: var(--kit-body);
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .board-row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 40px;
+        border-top: 1px solid var(--kit-line);
+      }
+      .board-row:first-of-type {
+        border-top: 0;
+      }
+      .board-rank {
+        color: var(--kit-faint);
+        font: 600 12px/1 var(--mono);
+      }
+      .board-name {
+        overflow: hidden;
+        color: var(--kit-ink);
+        font-size: 13.5px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .board-value {
+        color: var(--kit-body);
+        font: 500 12px/1 var(--mono);
+        white-space: nowrap;
+      }
+      .board-more {
+        display: inline-block;
+        margin: 6px 0 4px;
+        color: var(--link);
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .board .board-empty {
+        padding: 10px 0 12px;
+        color: var(--kit-faint);
+        font-size: 13px;
+      }
+      @media (max-width: 720px) {
+        .online-axis,
+        .online-node-row {
+          grid-template-columns: minmax(0, 1fr) 64px;
+          gap: 6px 10px;
+        }
+        .online-axis > span:first-child {
+          display: none;
+        }
+        .online-axis-hours,
+        .online-node-cells {
+          grid-column: 1 / -1;
+          gap: 2px;
+        }
+        .online-axis-hours {
+          grid-row: 1;
+        }
+        .online-axis > span:last-child {
+          display: none;
+        }
+        .online-cell {
+          height: 20px;
+          border-radius: 3px;
+        }
+        .online-node-total {
+          grid-row: 1;
+          grid-column: 2;
+        }
+        .wallet-row {
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 4px 12px;
+          padding: 10px 0;
+        }
+        .wallet-heading {
+          display: none;
+        }
+        .wallet-address,
+        .wallet-balance {
+          grid-column: 1;
+        }
+        .wallet-balance.is-empty {
+          display: none;
+        }
+        .wallet-status {
+          grid-column: 2;
+          grid-row: 1;
+          justify-self: end;
+        }
+        .network-custody-note {
+          margin: 0 16px 16px;
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="network-command-page">
+      <section class="network-command-hero" aria-labelledby="network-title">
+        <div class="network-hero-copy kit-hero">
+          <span class="kit-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"></path></svg>
+            Network
+          </span>
+          <h1 class="kit-title" id="network-title">A clean relay view for a local-first Git mesh.</h1>
+          <p class="kit-lede">ForkMesh keeps encrypted repository data on independently operated mirror hosts while the Worker coordinates discovery, authenticated HTTPS routing, encrypted rooms, and clone failover.</p>
+          <div class="kit-actions">
+            <a class="kit-btn is-primary" href="/dashboard">Browse repositories <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+            <a class="kit-btn" href="/docs/">Read docs <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+          </div>
+        </div>
+
+        <aside class="network-console" aria-label="Live network route console">
+          <div class="network-console-topbar">
+            <span>Live relay</span>
+            <small>Counted when this page loads</small>
+          </div>
+          <div class="network-console-metrics" aria-label="Live network metrics">
+            <article>
+              <span>Live hosts</span>
+              <strong id="network-hosts" data-network-hosts>-</strong>
+              <small data-network-hosts-description>Desktop mirrors reachable by this relay right now.</small>
+            </article>
+            <article>
+              <span>Cataloged repos</span>
+              <strong id="network-repos" data-network-repos>-</strong>
+              <small data-network-repos-description>Public repositories indexed for discovery.</small>
+            </article>
+            <article>
+              <span>Relay role</span>
+              <strong>Coordinator</strong>
+              <small>Routes requests; canonical Git objects stay on user-operated hosts.</small>
+            </article>
+          </div>
+          <div class="network-console-boundary">
+            <span>Storage boundary</span>
+            <strong>Canonical Git objects remain on hosts.</strong>
+          </div>
+        </aside>
+      </section>
+
+      <section class="network-route-section" aria-labelledby="route-title">
+        <div class="network-section-heading">
+          <h2 id="route-title">How a clone travels</h2>
+          <p>The relay picks the route; the repository bytes come straight from a mirror host.</p>
+        </div>
+        <div class="network-route-map" aria-label="Clone route through the network">
+          <div class="network-route-step">
+            <span>01</span>
+            <strong>Browser or Git client</strong>
+            <small>Requests a repository URL.</small>
+          </div>
+          <div class="network-route-step is-relay">
+            <span>02</span>
+            <strong>ForkMesh relay</strong>
+            <small>Verifies the route and selects a live host.</small>
+          </div>
+          <div class="network-route-step">
+            <span>03</span>
+            <strong>Signed direct-HTTPS origin</strong>
+            <small>Cloudflare-proxied routing keeps the selected mirror hostname and origin address out of the public URL.</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="network-ops-section" aria-labelledby="ops-title">
+        <div class="network-section-heading">
+          <h2 id="ops-title">The live network</h2>
+          <p>Host activity, payout wallets, and reputation, read from the relay.</p>
+        </div>
+
+        <div class="network-ops-grid">
+          <article class="network-ops-card network-ops-card-activity">
+            <div class="network-card-heading">
+              <div>
+                <h3>Host activity</h3>
+                <p>Minutes online in each of the last 24 hours</p>
+              </div>
+              <div class="network-legend" aria-hidden="true">
+                <span>Less</span><i data-level="0"></i><i data-level="1"></i><i data-level="2"></i><i data-level="3"></i><span>More</span>
+              </div>
+            </div>
+            <div id="online-graph" class="online-graph network-activity-graph" aria-label="Node online activity over the last 24 hours">
+              <div class="online-graph-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading activity...</div>
+            </div>
+          </article>
+
+          <article class="network-ops-card network-ops-card-wallets">
+            <div class="network-card-heading">
+              <div>
+                <h3>User wallets</h3>
+                <p>Public payout addresses and whether each one can receive a reward</p>
+              </div>
+              <button
+                type="button"
+                id="wallets-refresh"
+                class="kit-btn balance-refresh"
+                title="Read these balances from Solana again"
+              >
+                Refresh
+              </button>
+            </div>
+            <div id="network-wallets" class="wallet-table network-wallet-table" aria-live="polite">
+              <div class="online-graph-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading user wallets...</div>
+            </div>
+            <p class="network-custody-note">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+              <span><strong>Non-custodial.</strong> These are users' public payout addresses only. ForkMesh never stores payout-wallet private keys or controls user funds. Federated mirror hosts are eligible only after an approved relay forwards fresh signed health and ForkMesh-mirroring proof; wallet-only claims are excluded. User-owned funds, the community-funded pool, pending allocations, and completed on-chain transfers are separate states. Eligibility does not guarantee selection or payment.</span>
+            </p>
+          </article>
+
+          <article class="network-ops-card network-ops-card-leaderboards">
+            <div class="network-card-heading">
+              <div>
+                <h3>Leaderboards</h3>
+                <p>Network-wide rankings, top five on each board</p>
+              </div>
+              <a class="kit-btn" href="/leaderboards">Open every board <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+            </div>
+            <div id="leaderboards" class="leaderboards network-leaderboards" aria-live="polite">
+              <div class="board-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading leaderboards...</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+    </main>
+    <script>
+      (() => {
+        const root = document.getElementById("online-graph");
+        if (!root) return;
+        if (location.protocol === "file:") {
+          root.innerHTML = '<div class="online-graph-empty">Preview only.</div>';
+          return;
+        }
+        async function render() {
+          let data;
+          try {
+            const res = await fetch("/api/network/online-history", {
+              headers: { accept: "application/json" },
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            data = await res.json();
+          } catch (_) {
+            root.innerHTML =
+              '<div class="online-graph-empty">Activity unavailable right now.</div>';
+            return false;
+          }
+          const hours = Array.isArray(data.hours) ? data.hours : [];
+          let nodes = Array.isArray(data.nodes) ? data.nodes : [];
+          if (!nodes.length) {
+            const total = hours.reduce(
+              (sum, h) => sum + (Number(h.nodeMinutes) || 0),
+              0,
+            );
+            if (!total) {
+              root.innerHTML =
+                '<div class="online-graph-empty">No node activity sampled yet.</div>';
+              return true;
+            }
+            nodes = [{
+              label: "all nodes",
+              totalMinutes: total,
+              hours: hours.map((h) => ({
+                hourTs: h.hourTs,
+                minutes: Number(h.nodeMinutes) || 0,
+              })),
+            }];
+          }
+
+          root.innerHTML = "";
+          const axis = document.createElement("div");
+          axis.className = "online-axis";
+          axis.appendChild(document.createElement("span"));
+          const axisHours = document.createElement("div");
+          axisHours.className = "online-axis-hours";
+          hours.forEach((h, i) => {
+            const tick = document.createElement("span");
+            tick.textContent = i % 6 === 0
+              ? String(new Date(Number(h.hourTs)).getHours()).padStart(2, "0") + ":00"
+              : "";
+            axisHours.appendChild(tick);
+          });
+          axis.appendChild(axisHours);
+          const axisTotal = document.createElement("span");
+          axisTotal.textContent = "Minutes";
+          axis.appendChild(axisTotal);
+          root.appendChild(axis);
+
+          nodes.forEach((node) => {
+            const row = document.createElement("div");
+            row.className = "online-node-row";
+            const label = document.createElement("div");
+            label.className = "online-node-label";
+            label.textContent = node.label || "node";
+            label.title = node.label || "node";
+            row.appendChild(label);
+
+            const cells = document.createElement("div");
+            cells.className = "online-node-cells";
+            (node.hours || []).forEach((h) => {
+              const minutes = Number(h.minutes) || 0;
+              const cell = document.createElement("div");
+              cell.className = "online-cell";
+              cell.dataset.level = minutes >= 45 ? "3" : minutes >= 20 ? "2" :
+                minutes > 0 ? "1" : "0";
+              const hour = new Date(Number(h.hourTs)).getHours();
+              cell.title = `${node.label || "node"} · ${minutes} min · ${String(hour).padStart(2, "0")}:00`;
+              cells.appendChild(cell);
+            });
+            row.appendChild(cells);
+
+            const total = document.createElement("div");
+            total.className = "online-node-total";
+            total.textContent = `${(Number(node.totalMinutes) || 0).toLocaleString()} min`;
+            row.appendChild(total);
+            root.appendChild(row);
+          });
+          return true;
+        }
+		const POLL_BASE_MS = 5 * 60 * 1000;
+		const POLL_MAX_MS = 30 * 60 * 1000;
+        let pollDelay = POLL_BASE_MS;
+        let pollTimer = 0;
+        function schedulePoll() {
+          window.clearTimeout(pollTimer);
+          if (document.hidden) return;
+          pollTimer = window.setTimeout(async () => {
+            const ok = await render();
+            pollDelay = ok ? POLL_BASE_MS : Math.min(pollDelay * 2, POLL_MAX_MS);
+            schedulePoll();
+          }, pollDelay);
+        }
+        render().then((ok) => {
+          if (!ok) pollDelay = Math.min(pollDelay * 2, POLL_MAX_MS);
+          schedulePoll();
+        });
+        document.addEventListener("visibilitychange", schedulePoll);
+      })();
+    </script>
+    <script>
+      (() => {
+        const root = document.getElementById("leaderboards");
+        if (!root) return;
+        if (location.protocol === "file:") {
+          root.innerHTML = '<div class="board-empty">Preview only.</div>';
+          return;
+        }
+        const BOARD_ROWS = 5;
+        const fmtMinutes = (m) => {
+          m = Number(m) || 0;
+          const h = Math.floor(m / 60);
+          const min = m % 60;
+          if (h && min) return `${h}h ${min}m`;
+          if (h) return `${h}h`;
+          return `${min}m`;
+        };
+        const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+        function board(title, sub, rows, render) {
+          const box = document.createElement("div");
+          box.className = "board";
+          const h = document.createElement("h4");
+          h.textContent = title;
+          box.appendChild(h);
+          const s = document.createElement("p");
+          s.className = "board-sub";
+          s.textContent = sub;
+          box.appendChild(s);
+          if (!rows.length) {
+            const empty = document.createElement("div");
+            empty.className = "board-empty";
+            empty.textContent = "No data yet.";
+            box.appendChild(empty);
+            return box;
+          }
+          rows.slice(0, BOARD_ROWS).forEach((row, i) => {
+            const r = document.createElement("div");
+            r.className = "board-row";
+            const rank = document.createElement("span");
+            rank.className = "board-rank";
+            rank.textContent = `${i + 1}`;
+            const name = document.createElement("span");
+            name.className = "board-name";
+            name.textContent = row.name || "node";
+            name.title = row.name || "node";
+            const value = document.createElement("span");
+            value.className = "board-value";
+            value.textContent = render(row);
+            r.append(rank, name, value);
+            box.appendChild(r);
+          });
+          if (rows.length > BOARD_ROWS) {
+            const more = document.createElement("a");
+            more.className = "board-more";
+            more.href = "/leaderboards";
+            more.textContent = `See all ${rows.length}`;
+            box.appendChild(more);
+          }
+          return box;
+        }
+        async function render() {
+          let data;
+          try {
+            const res = await fetch("/api/network/leaderboards", {
+              headers: { accept: "application/json" },
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            data = await res.json();
+          } catch (_) {
+            root.innerHTML =
+              '<div class="board-empty">Leaderboards unavailable right now.</div>';
+            return false;
+          }
+          const arr = (k) => (Array.isArray(data[k]) ? data[k] : []);
+          const hours = Number(data.windowHours) || 48;
+          const fmtSol = (row) => {
+            const sol = Number(row.sol) || (Number(row.lamports) || 0) / 1e9;
+            return `${sol.toFixed(sol >= 1 ? 2 : 4)} SOL`;
+          };
+          const fmtBytes = (b) => {
+            b = Number(b) || 0;
+            const units = ["B", "KB", "MB", "GB", "TB"];
+            let u = 0;
+            while (b >= 1024 && u < units.length - 1) { b /= 1024; u++; }
+            return `${u === 0 ? b : b.toFixed(1)} ${units[u]}`;
+          };
+          root.innerHTML = "";
+          root.appendChild(board(
+            "Mainnode uptime", `Most minutes online · last ${hours}h`,
+            arr("uptime"), (row) => fmtMinutes(row.minutes)));
+          root.appendChild(board(
+            "Top owners", "Most public repositories",
+            arr("repos"), (row) => plural(Number(row.repos) || 0, "repo")));
+          root.appendChild(board(
+            "Most mirrored", "Repositories hosted under the most owners",
+            arr("mirrors"), (row) => plural(Number(row.mirrors) || 0, "owner")));
+          root.appendChild(board(
+            "Largest repos", "Most mirror data per repository",
+            arr("largest"), (row) => fmtBytes(row.bytes)));
+          root.appendChild(board(
+            "Most data hosted", "Mirror data hosted per owner",
+            arr("dataHosted"), (row) => fmtBytes(row.bytes)));
+          root.appendChild(board(
+            "Contributor activity", "Issues + pull requests + commits",
+            arr("contributors"), (row) => plural(Number(row.total) || 0, "contribution")));
+          root.appendChild(board(
+            "Legacy funds · mainnodes", "Historical finalized transfers; not a ForkMesh balance",
+            arr("fundsMainnodes"), fmtSol));
+          root.appendChild(board(
+            "Legacy funds · contributors", "Frozen bounty history; not pending or guaranteed funds",
+            arr("fundsContributors"), fmtSol));
+          root.appendChild(board(
+            "Legacy funds · projects", "Historical migration records; do not fund old addresses",
+            arr("fundsProjects"), fmtSol));
+          return true;
+        }
+		const POLL_BASE_MS = 5 * 60 * 1000;
+		const POLL_MAX_MS = 30 * 60 * 1000;
+        let pollDelay = POLL_BASE_MS;
+        let pollTimer = 0;
+        function schedulePoll() {
+          window.clearTimeout(pollTimer);
+          if (document.hidden) return;
+          pollTimer = window.setTimeout(async () => {
+            const ok = await render();
+            pollDelay = ok ? POLL_BASE_MS : Math.min(pollDelay * 2, POLL_MAX_MS);
+            schedulePoll();
+          }, pollDelay);
+        }
+        render().then((ok) => {
+          if (!ok) pollDelay = Math.min(pollDelay * 2, POLL_MAX_MS);
+          schedulePoll();
+        });
+        document.addEventListener("visibilitychange", schedulePoll);
+      })();
+    </script>
+      <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

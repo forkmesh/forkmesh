@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/security-ingest-v1.json",
+  "title": "ForkMesh authenticated security scan ingest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "type", "rich", "clipboard"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "type": {"const": "forkmesh.security-scan-ingest"},
+    "rich": {"$ref": "security-scan.schema.json"},
+    "clipboard": {
+      "allOf": [
+        {"$ref": "security-clipboard.schema.json"},
+        {
+          "properties": {
+            "reviewStatus": {"const": "Not reviewed"},
+            "falsePositiveStatus": {
+              "properties": {
+                "confirmed": {"const": 0},
+                "dismissed": {"const": 0}
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

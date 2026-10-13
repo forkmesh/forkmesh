@@ -1,0 +1,7 @@
+{
+  "label": "Realtime Sync",
+  "systems": [
+    "realtime"
+  ],
+  "prefixes": []
+}

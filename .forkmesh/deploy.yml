@@ -1,0 +1,130 @@
+name: Deploy Cloudflare Worker
+on: [workflow_dispatch]
+# CI/CD gate: the Worker test suite "CI tests" already ran for this commit, so
+# wait for that run instead of repeating it here. The deploy starts only after
+# it succeeds; if it fails (or is rejected) this run is skipped and nothing
+# reaches Cloudflare. A commit where that workflow never ran on this node
+# (dedicated elsewhere, disabled, or absent) is not gated — there is no result
+# to wait for.
+#
+# The gate names only that workflow on purpose. The Qt client build is a
+# separate one (.forkmesh/desktop-ci.yml) and is deliberately NOT a dependency:
+# nothing it compiles reaches Cloudflare, so waiting on it delayed every deploy
+# by the length of a desktop build. The two run side by side on the node's
+# runner pool, and this deploy starts as soon as the Worker contracts pass.
+needs: [.forkmesh/ci.yml]
+jobs:
+  deploy:
+    steps:
+      - name: Refuse Cloudflare deploys from this repository
+        run: |
+          echo "Cannot deploy: production runs on the core nodes n1-n3."
+          echo "Pushes to main deploy them through the Deploy nodes workflow (.forkmesh/deploy-nodes.yml, docs/deploy/auto-deploy.md)."
+          echo "The Cloudflare app and world Workers are decommissioned (docs/CUTOVER.md, step 21)."
+          echo "The production www Worker deploys by hand from main with www/wrangler.production.toml (docs/CUTOVER.md)."
+          exit 1
+      # Node 22 reserves a large sparse virtual range when Wrangler loads its
+      # WebAssembly BLAKE3/Pyodide modules. This is not resident memory: the
+      # enclosing systemd scope still enforces MemoryMax. A real D1 invocation
+      # fails at 24 GiB and succeeds at 32 GiB on Node 22, so catch an obsolete
+      # runner before downloading packages or materializing credentials.
+      - name: Verify deploy runtime address space
+        run: |
+          address_kib="$(ulimit -v)"
+          if [ "$address_kib" != "unlimited" ] && \
+             [ "$address_kib" -lt 33554432 ]; then
+            echo "Cannot deploy: the Actions runner grants only ${address_kib} KiB"
+            echo "of virtual address space; Wrangler on Node 22 requires at least 32 GiB."
+            echo "Update and restart the ForkMesh runner; its physical MemoryMax remains enforced."
+            exit 1
+          fi
+          echo "Deploy runtime address-space gate passed."
+      # Actions run with the network namespace unshared unless the node sets the
+      # FORKMESH_ACTIONS_ALLOW_NETWORK variable, and the runner deliberately never
+      # exposes that variable to a step — so probe for egress instead of asking
+      # for it. A deploy needs egress twice over: deploy.sh reads the live
+      # mirror-router identity off the App Worker before it will publish anything,
+      # and wrangler talks to the Cloudflare API. Without it the run spent ~30s on
+      # identity retries and then died on "the live mirror-router identity could
+      # not be read safely" (run 1908). Probe before materializing production
+      # secrets, but fail the run: a deployment that never reached Cloudflare is
+      # not successful and must remain red in Actions.
+      - name: Check deploy egress
+        run: |
+          if ! command -v curl >/dev/null 2>&1; then
+            echo "note: curl is unavailable here; letting deploy.sh probe the control plane itself."
+            exit 0
+          fi
+          # Same URL deploy.sh reads the router identity from, so a reachable
+          # probe means the step that matters can run.
+          probe=0
+          curl -sS --max-time 10 -o /dev/null \
+            https://app.forkmesh.com/api/mirrors/https || probe=$?
+          # curl 6 (host unresolvable) and 7 (no route) are what an unshared
+          # network namespace looks like from inside a step. Anything else — an
+          # HTTP error, a timeout, a TLS failure — is a real control-plane problem
+          # and must stay red rather than masquerade as a policy skip, so hand it
+          # to deploy.sh, which knows which failures are safe to retry.
+          case "$probe" in
+            0)
+              echo "Control plane reachable; continuing with the deploy."
+              ;;
+            6|7)
+              echo "Cannot deploy: this node's Actions sandbox has no"
+              echo "network egress (curl exit $probe), so the App Worker's mirror-router"
+              echo "identity cannot be read and wrangler cannot reach Cloudflare."
+              echo "To deploy from Actions, allow network access for Actions on this node"
+              echo "(set the FORKMESH_ACTIONS_ALLOW_NETWORK variable under Settings ->"
+              echo "Secrets & Coves); otherwise deploy from a checkout with"
+              echo "'cd app && ./deploy.sh'."
+              exit 1
+              ;;
+            *)
+              echo "note: control-plane probe failed with curl exit $probe; this node"
+              echo "has egress, so deploy.sh runs and reports the failure itself."
+              ;;
+          esac
+      # .env.production is gitignored, so materialize it from this node's ForkMesh
+      # Variables/Secrets (Settings -> Secrets & Coves). ForkMesh fills in the
+      # ${{ vars.NAME }} references below from that store before running the step;
+      # GitHub-Actions ${{ secrets.NAME }} and step-level `env:` are NOT understood
+      # here, so reference vars.* instead. deploy.sh then reads .env.production,
+      # exports CLOUDFLARE_* for wrangler, and pushes the Worker secrets. The
+      # quoted 'EOF' writes the substituted values verbatim (no shell re-expansion),
+      # so a token/password containing $ or backticks survives intact.
+      - name: Write production env
+        run: |
+          cat > app/.env.production <<'EOF'
+          CLOUDFLARE_ACCOUNT_ID=${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN=${{ vars.CLOUDFLARE_API_TOKEN }}
+          ADMIN_PATH=${{ vars.ADMIN_PATH }}
+          ADMIN_PASS=${{ vars.ADMIN_PASS }}
+          PRODUCT_ANALYSIS_USER=${{ vars.PRODUCT_ANALYSIS_USER }}
+          PRODUCT_ANALYSIS_PASS=${{ vars.PRODUCT_ANALYSIS_PASS }}
+          TREASURY_SOLANA_ADDRESS=${{ vars.TREASURY_SOLANA_ADDRESS }}
+          MIRROR_ROUTER_PUBLIC_KEY=${{ vars.MIRROR_ROUTER_PUBLIC_KEY }}
+          MIRROR_ROUTER_SIGNING_SEED=${{ vars.MIRROR_ROUTER_SIGNING_SEED }}
+          SSH_GATEWAY_HOST=${{ vars.SSH_GATEWAY_HOST }}
+          SSH_GATEWAY_PORT=${{ vars.SSH_GATEWAY_PORT }}
+          SSH_GATEWAY_TOKEN=${{ vars.SSH_GATEWAY_TOKEN }}
+          SSH_GATEWAY_REPOSITORIES=${{ vars.SSH_GATEWAY_REPOSITORIES }}
+          SSH_GATEWAY_NODE_HOSTS=${{ vars.SSH_GATEWAY_NODE_HOSTS }}
+          MAILTRAP_API_TOKEN=${{ vars.MAILTRAP_API_TOKEN }}
+          MAILTRAP_WEBHOOK_SECRET=${{ vars.MAILTRAP_WEBHOOK_SECRET }}
+          DATA_KEY=${{ vars.DATA_KEY }}
+          APNS_AUTH_KEY=${{ vars.APNS_AUTH_KEY }}
+          APNS_KEY_ID=${{ vars.APNS_KEY_ID }}
+          APNS_TEAM_ID=${{ vars.APNS_TEAM_ID }}
+          SENTRY_DSN=${{ vars.SENTRY_DSN }}
+          DISCORD_CLIENT_ID=${{ vars.DISCORD_CLIENT_ID }}
+          DISCORD_CLIENT_SECRET=${{ vars.DISCORD_CLIENT_SECRET }}
+          DISCORD_BOT_TOKEN=${{ vars.DISCORD_BOT_TOKEN }}
+          PATREON_CLIENT_ID=${{ vars.PATREON_CLIENT_ID }}
+          PATREON_CLIENT_SECRET=${{ vars.PATREON_CLIENT_SECRET }}
+          PATREON_WEBHOOK_SECRET=${{ vars.PATREON_WEBHOOK_SECRET }}
+          PATREON_CAMPAIGN_ID=${{ vars.PATREON_CAMPAIGN_ID }}
+          PATREON_CREATOR_ACCESS_TOKEN=${{ vars.PATREON_CREATOR_ACCESS_TOKEN }}
+          EOF
+      - name: Deploy worker
+        run: |
+          cd app && ./deploy.sh changed

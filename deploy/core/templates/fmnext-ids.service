@@ -1,0 +1,47 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+# Host intrusion detection (deploy/core/ids.py, docs/IDS.md). Root: it reads
+# every process and the journal, seals the app, drives nftables and stops
+# units in a lockdown.
+[Unit]
+Description=ForkMesh Next intrusion detection (node @@NODE@@)
+Wants=network-online.target
+After=network-online.target nftables.service
+Before=forkmesh-app.service forkmesh-mirror-node.service caddy.service
+# Never give up restarting: peers treat a silent IDS as a compromise.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I @@OPT@@/bin/fmnext-ids --config @@ETC@@/ids.json run
+@@IDS_CREDENTIALS@@
+Restart=always
+RestartSec=5s
+StateDirectory=fmnext-ids
+StateDirectoryMode=0700
+RuntimeDirectory=fmnext-ids
+RuntimeDirectoryMode=0700
+UMask=0077
+# Small and quiet on a 1 GB node.
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryHigh=80M
+MemoryMax=128M
+MemorySwapMax=0
+LimitCORE=0
+OOMScoreAdjust=-500
+IPAddressDeny=169.254.0.0/16
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

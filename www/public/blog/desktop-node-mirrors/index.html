@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Desktop-node mirrors · ForkMesh Blog</title>
+    <meta name="description" content="Actively mirrored repositories live on independently operated nodes and refresh while configured synchronization is healthy; external stubs stay labeled.">
+    <link rel="canonical" href="https://forkmesh.com/blog/desktop-node-mirrors/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/desktop-node-mirrors/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Desktop-node mirrors">
+    <meta property="og:description" content="Actively mirrored repositories live on independently operated nodes; external stubs stay labeled until a mirror accepts them.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/desktop-node-mirrors.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/desktop-node-mirrors.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Desktop-node mirrors</h1>
+            <p class="lede">Actively mirrored repositories live on independently operated nodes and refresh while configured synchronization is healthy; external stubs remain clearly labeled until a mirror accepts them.</p>
+            <div class="meta"><span class="pill">Feature 01 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/desktop-node-mirrors.webp" alt="Abstract ForkMesh artwork for Desktop-node mirrors">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Desktop-node mirrors give ForkMesh a concrete mechanism for full Git replicas on machines controlled by users and organizations. A catalog entry can have multiple linked mirror nodes, while an external GitHub or GitLab stub never pretends to be mirrored.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, desktop-node mirrors addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles desktop-node mirrors through the same split it uses across the product: nodes keep real replicas, while the coordination service handles signed discovery, HTTPS health, integrity, account lookup, and bounded clone routing.</p>
+          <p>Public repositories require a signed refs digest and content integrity checks. Private replicas are client-encrypted under per-repository content keys, stored under opaque identifiers, and re-keyed when an owner revokes a recipient. The coordination service receives owner and repository names on authenticated control-plane requests and stores that metadata encrypted; it does not receive private repository plaintext. Unauthorized mirror operators receive neither the private repository name nor plaintext content.</p>
+          <h2>Where it fits</h2>
+          <p>Use desktop-node mirrors when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Desktop-node mirrors keeps full bare Git mirrors on ordinary desktop nodes connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/status-blog-and-changelog/">← Status, blog &amp; changelog</a>
+          <a href="/blog/zero-custody-relay/">Packfile-free routing relay →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

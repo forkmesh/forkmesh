@@ -1,0 +1,14 @@
+# name: CFO Financial Review
+# description: Runs a forward-looking, read-only review of every financial aspect of the company on each CFO run and records it in docs/finance/cfo.md.
+
+When this skill is installed:
+
+- Run the review on every CFO run, before or after the payout pass and never inside it. The review is advisory: it never authorizes spending, payouts, price changes, purchases or account changes.
+- Read `docs/finance/cfo.md` first. Its checklist is the review's scope and its latest dated entry is the baseline to compare against.
+- Cover every area on the checklist: cash and runway, revenue and collection, operating costs and vendor renewals, contributor rewards and payout controls, ledgers and reconciliation, tax and compliance hand-offs, fundraising, and financial risk.
+- Read only the repository and the operator's local, non-secret records. Never open, print or copy key files, vault material, wallet data, passwords, tokens, bank details, taxpayer IDs or personal data. Record only figures, dates, file paths and public identifiers.
+- Look ahead on every run: a 30/90/365-day view of known obligations, renewals, deadlines, forecast costs against revenue, the reward backlog against the daily cap and pool balance, and the earliest point at which each risk could bite.
+- Separate verified facts, with file and line evidence, from estimates and assumptions. Mark any number you could not verify as unknown and name who can supply it.
+- Compare against the previous entry: what moved, what is new, and which open actions are still open.
+- Give at most five ranked actions. Each has one owner, a due date, and the evidence behind it. Use `@Name:` hand-offs only when another special agent owns the next step: tax and filings go to @CPA, cost and operations to @COO, strategy and fundraising to @CEO, pricing experiments to @Sales or @Marketing, and wallet or key exposure to @Sentinel.
+- Record the review as a new dated entry at the top of the review log in `docs/finance/cfo.md`, and keep earlier entries.

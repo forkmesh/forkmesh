@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "forkmesh-public-daily-v1",
+  "version": "1.1.0",
+  "description": "Public-safe daily repository scan. Evidence values and source excerpts are never emitted.",
+  "maximumFileBytes": 1048576,
+  "includeExtensions": [
+    ".c",
+    ".cc",
+    ".cpp",
+    ".dart",
+    ".h",
+    ".hpp",
+    ".html",
+    ".js",
+    ".json",
+    ".md",
+    ".py",
+    ".sh",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".yaml",
+    ".yml"
+  ],
+  "excludeGlobs": [
+    ".git/**",
+    ".venv/**",
+    "**/.pywrangler/**",
+    "**/.venv-workers/**",
+    "**/build*/**",
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/*.min.js",
+    "**/*.map",
+    "www/docs/security-scan-policy.json",
+    "app/python_modules/**"
+  ],
+  "staticExcludeGlobs": [
+    "**/tests/**"
+  ],
+  "secretContract": "forkmesh-secret-scan-v1"
+}

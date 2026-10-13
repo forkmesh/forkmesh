@@ -1,0 +1,100 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "steps",
+  "name": "Pedometer",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Health",
+  "version": "1.1.0",
+  "summary": "Counts your steps on the iPhone app, reads and writes them through Apple Health, and shows daily steps, distance, goals, and streaks on the web and desktop, encrypted at rest under your own account's key.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Pedometer page with today's step ring against a 10,000 step goal, distance and floors, and a 30-day step chart"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:steps",
+    "worker": "content/worker/steps.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/steps",
+        "title": "Steps",
+        "description": "Your daily steps, distance, and goal streaks, counted on your phone and synced through Apple Health.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Steps",
+          "icon": "footprints",
+          "order": 45
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.steps.read",
+      "label": "Read your own daily steps, distance, floors, and step goal, all encrypted under your account's own key",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.steps.write",
+      "label": "Save the daily step totals your phone counts and the steps you add by hand, and set your step goal",
+      "risk": "sensitive"
+    },
+    {
+      "id": "health.steps.readwrite",
+      "label": "On iPhone, with your permission, read steps, walking distance, and floors from Apple Health and the motion coprocessor",
+      "risk": "sensitive"
+    },
+    {
+      "id": "location.country.coarse",
+      "label": "Read the approximate country of your connection to show distance in miles or kilometres",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account"
+  },
+  "worker": {
+    "module": "steps",
+    "api": "/api/steps",
+    "outboundOrigins": []
+  }
+}

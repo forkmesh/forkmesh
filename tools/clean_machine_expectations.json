@@ -1,0 +1,102 @@
+{
+  "_comment": [
+    "What the observer must read on the VM's screen before a clean-machine step",
+    "counts as observed (issue #705). tools/clean_machine_vm.py screendumps the",
+    "VM framebuffer at each step, OCRs it, and matches these phrases against the",
+    "text. require_all must all appear, require_any needs one, forbid must not",
+    "appear. Matching is case-insensitive, collapses whitespace, and retries",
+    "ignoring punctuation, so phrases should be words a person would read on",
+    "screen \u2014 never a hash or an exact column layout.",
+    "A step with no entry here is reported as unchecked, and a step whose",
+    "phrases do not appear stays NOT OBSERVED."
+  ],
+  "00-desktop-ready": {
+    "focus": "terminal",
+    "require_any": [
+      "Guest forkmesh-clean-machine",
+      "starting clean"
+    ]
+  },
+  "release-verified": {
+    "focus": "terminal",
+    "require_all": [
+      "Signature Verified Successfully",
+      "release manifest verified"
+    ],
+    "forbid": [
+      "ABORT"
+    ]
+  },
+  "installed": {
+    "focus": "terminal",
+    "require_all": [
+      "sha256(installed forkmesh)"
+    ],
+    "forbid": [
+      "MISMATCH installed binary"
+    ]
+  },
+  "first-launch": {
+    "focus": "app",
+    "require_any": [
+      "ForkMesh"
+    ]
+  },
+  "node-identity": {
+    "focus": "terminal",
+    "require_all": [
+      "node identity files"
+    ]
+  },
+  "provider-discovery": {
+    "focus": "app",
+    "require_any": [
+      "Claude",
+      "Codex",
+      "provider",
+      "agent"
+    ]
+  },
+  "decision-card": {
+    "focus": "app",
+    "require_any": [
+      "decision",
+      "continual",
+      "what should I do next"
+    ]
+  },
+  "stop-work": {
+    "focus": "app",
+    "require_any": [
+      "Stop work",
+      "paused",
+      "stopped"
+    ]
+  },
+  "uninstall-default": {
+    "focus": "terminal",
+    "require_all": [
+      "identity and repositories were kept"
+    ]
+  },
+  "uninstall-purge-prompts": {
+    "focus": "terminal",
+    "require_any": [
+      "Type DELETE to continue",
+      "Refusing to erase ForkMesh data"
+    ]
+  },
+  "uninstall-purged": {
+    "focus": "terminal",
+    "require_all": [
+      "completely removed"
+    ]
+  },
+  "99-finished": {
+    "focus": "terminal",
+    "require_any": [
+      "exited 0",
+      "transcript complete"
+    ]
+  }
+}

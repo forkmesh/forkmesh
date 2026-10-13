@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ForkMesh Marketing · update channel</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 14px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111; background: #f6f7f9; }
+    main { width: min(440px, calc(100vw - 32px)); background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 22px; display: grid; gap: 12px; }
+    h1 { margin: 0; font-size: 17px; }
+    p { margin: 0; color: #5f6b7a; line-height: 1.45; }
+    code { font-size: 13px; color: inherit; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button { border-radius: 7px; padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+    button.primary { background: #2f81f7; color: #fff; }
+    button.secondary { background: #f1f3f5; color: #111; border-color: #d7dbe0; }
+    button[disabled] { opacity: .5; cursor: not-allowed; }
+    .error { color: #d1242f; }
+    [hidden] { display: none !important; }
+    @media (prefers-color-scheme: dark) { body { background: #0d1014; color: #e8eaed; } main { background: #14171c; border-color: #2c3239; } p { color: #9aa3ad; } button.secondary { background: #1d2229; color: #e8eaed; border-color: #2c3239; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 data-capture-title>Update channel</h1>
+    <p data-capture-text>Loading…</p>
+    <p>The extension opens the page in this tab, reads the numbers it shows (followers, posts, likes, views, ratings and reviews) and records them in Marketing. It changes nothing on the page and only reads it when you ask.</p>
+    <div class="actions">
+      <button data-capture-allow class="primary" type="button" disabled>Allow and update</button>
+      <button data-capture-cancel class="secondary" type="button">Cancel</button>
+    </div>
+    <p data-capture-error class="error" hidden></p>
+  </main>
+  <script src="capture.js"></script>
+</body>
+</html>

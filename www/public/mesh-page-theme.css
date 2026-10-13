@@ -1,0 +1,250 @@
+:root {
+  color-scheme: dark;
+  --mesh-page-bg: #090909;
+  --mesh-text: #f5f5f5;
+  --mesh-muted: #a3a3a3;
+  --mesh-border: #313131;
+  --mesh-background:
+    radial-gradient(circle at 18% 10%, rgba(150, 114, 238, 0.2), transparent 28rem),
+    radial-gradient(circle at 84% 8%, rgba(63, 185, 80, 0.14), transparent 30rem),
+    #090909;
+  --mesh-grid:
+    linear-gradient(rgba(255, 255, 255, 0.065) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.065) 1px, transparent 1px);
+  --mesh-vignette: linear-gradient(
+    to bottom,
+    rgba(9, 9, 9, 0.92),
+    rgba(9, 9, 9, 0.56) 34%,
+    #090909 78%
+  );
+  --mesh-card-bg: rgba(12, 12, 12, 0.78);
+  --mesh-note-bg: rgba(255, 255, 255, 0.045);
+  --mesh-button-bg: #e8e8e8;
+  --mesh-button-text: #1f1f1f;
+  --mesh-shadow: 0 24px 90px rgba(0, 0, 0, 0.42);
+  --mesh-link: #f5f5f5;
+  --mesh-link-hover: #ffffff;
+  --mesh-ghost-bg: rgba(255, 255, 255, 0.04);
+  --mesh-ghost-hover: rgba(255, 255, 255, 0.075);
+  --mesh-button-hover: #ffffff;
+  --mesh-surface-soft: rgba(255, 255, 255, 0.04);
+  --mesh-btn-primary-fg: #111113;
+  --mesh-btn-primary-fill: linear-gradient(180deg, #ffffff 0%, #e8e8ea 100%);
+  --mesh-btn-primary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f1f1f2 100%);
+  --mesh-btn-primary-border: #f4f4f5;
+  --mesh-btn-primary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --mesh-btn-secondary-fg: #f5f5f5;
+  --mesh-btn-secondary-fill: linear-gradient(180deg, #222225 0%, #19191b 100%);
+  --mesh-btn-secondary-fill-hover: linear-gradient(180deg, #29292c 0%, #1f1f22 100%);
+  --mesh-btn-secondary-border: #34343a;
+  --mesh-btn-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+html.light {
+  color-scheme: light;
+  --mesh-page-bg: #f6f8fb;
+  --mesh-text: #1f2328;
+  --mesh-muted: #656d76;
+  --mesh-border: #d0d7de;
+  --mesh-background: radial-gradient(circle at top, #ffffff, #f6f8fb 70%);
+  --mesh-grid: linear-gradient(rgba(31, 35, 40, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(31, 35, 40, 0.08) 1px, transparent 1px);
+  --mesh-vignette: radial-gradient(circle, transparent 35%, rgba(246, 248, 251, 0.92));
+  --mesh-card-bg: #ffffff;
+  --mesh-note-bg: #eef2f7;
+  --mesh-button-bg: #1f2328;
+  --mesh-button-text: #ffffff;
+  --mesh-shadow: 0 18px 50px rgba(31, 35, 40, 0.12);
+  --mesh-link: #0969da;
+  --mesh-link-hover: #0550ae;
+  --mesh-ghost-bg: #ffffff;
+  --mesh-ghost-hover: #eef2f7;
+  --mesh-button-hover: #32383f;
+  --mesh-surface-soft: #f6f8fa;
+  --mesh-btn-primary-fg: #ffffff;
+  --mesh-btn-primary-fill: linear-gradient(180deg, #2c2c2c 0%, #222222 100%);
+  --mesh-btn-primary-fill-hover: linear-gradient(180deg, #363636 0%, #2a2a2a 100%);
+  --mesh-btn-primary-border: #161616;
+  --mesh-btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.17), 0 1px 2px rgba(0, 0, 0, 0.16);
+  --mesh-btn-secondary-fg: #292929;
+  --mesh-btn-secondary-fill: linear-gradient(180deg, #ffffff 0%, #fcfcfc 100%);
+  --mesh-btn-secondary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f5f5f6 100%);
+  --mesh-btn-secondary-border: #e1e2e3;
+  --mesh-btn-secondary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.05);
+  --background: var(--mesh-page-bg);
+  --foreground: var(--mesh-text);
+  --muted: var(--mesh-note-bg);
+  --muted-foreground: var(--mesh-muted);
+  --border: var(--mesh-border);
+  --card: var(--mesh-card-bg);
+  --card-foreground: var(--mesh-text);
+  --primary: var(--mesh-button-bg);
+  --primary-foreground: var(--mesh-button-text);
+}
+
+/*
+ * These shared mappings sit below the pages' unlayered dark styles. The
+ * html.light rules that follow opt each family into the semantic palette.
+ */
+@layer mesh-page-theme {
+  .about-shell, .legal-shell, .page-shell {
+    background: var(--mesh-page-bg);
+    color: var(--mesh-text);
+  }
+
+  .mesh-bg {
+    background: var(--mesh-background);
+  }
+
+  .mesh-grid {
+    background-image: var(--mesh-grid);
+  }
+
+  .mesh-vignette {
+    background: var(--mesh-vignette);
+  }
+
+  .about-card, .legal-card, .status-card {
+    background: var(--mesh-card-bg);
+    border-color: var(--mesh-border);
+    box-shadow: var(--mesh-shadow);
+  }
+
+  .legal-note {
+    background: var(--mesh-note-bg);
+    color: var(--mesh-muted);
+  }
+
+  .button-primary {
+    background: var(--mesh-button-bg);
+    color: var(--mesh-button-text);
+  }
+}
+
+html.light body {
+  background: var(--mesh-page-bg);
+  color: var(--mesh-text);
+}
+
+html.light .about-shell,
+html.light .legal-shell,
+html.light .page-shell {
+  background: var(--mesh-page-bg);
+  color: var(--mesh-text);
+}
+
+html.light .mesh-bg {
+  background: var(--mesh-background);
+}
+
+html.light .mesh-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(130, 80, 223, 0.12), transparent 28rem),
+    radial-gradient(circle at 84% 8%, rgba(31, 136, 61, 0.11), transparent 30rem);
+}
+
+html.light .mesh-grid {
+  background-image: var(--mesh-grid);
+  opacity: 0.46;
+}
+
+html.light .mesh-vignette {
+  background: var(--mesh-vignette);
+}
+
+html.light .about-card,
+html.light .legal-card,
+html.light .status-card {
+  background: var(--mesh-card-bg);
+  border-color: var(--mesh-border);
+  box-shadow: var(--mesh-shadow);
+}
+
+html.light .about-intro-eyebrow,
+html.light .about-intro p:not(.about-intro-eyebrow),
+html.light .about-story p,
+html.light .member-role,
+html.light .legal-content p,
+html.light .legal-content li {
+  color: var(--mesh-muted);
+}
+
+html.light .about-intro h1,
+html.light .about-story h2,
+html.light .about-story strong,
+html.light .member-name,
+html.light .legal-content h2 {
+  color: var(--mesh-text);
+}
+
+html.light .about-story a,
+html.light .legal-content a {
+  color: var(--mesh-link);
+  text-decoration-color: color-mix(in srgb, var(--mesh-link), transparent 55%);
+}
+
+html.light .about-story a:hover,
+html.light .legal-content a:hover {
+  color: var(--mesh-link-hover);
+  text-decoration-color: currentColor;
+}
+
+html.light .pullquote {
+  border-color: var(--mesh-text);
+  color: var(--mesh-text);
+}
+
+html.light .member-photo {
+  background: var(--mesh-surface-soft);
+  border-color: var(--mesh-border);
+}
+
+html.light .legal-note {
+  background: var(--mesh-note-bg);
+  border-color: var(--mesh-border);
+  color: var(--mesh-muted);
+}
+
+html.light .legal-note strong {
+  color: var(--mesh-text);
+}
+
+html.light .legal-content code {
+  border-radius: 0.25rem;
+  background: var(--mesh-note-bg);
+  color: var(--mesh-text);
+  padding: 0.08em 0.28em;
+}
+
+html .page-shell .button-primary {
+  border-color: var(--mesh-btn-primary-border);
+  background: var(--mesh-btn-primary-fill);
+  box-shadow: var(--mesh-btn-primary-shadow);
+  color: var(--mesh-btn-primary-fg);
+}
+
+html .page-shell .button-primary:hover {
+  border-color: var(--mesh-btn-primary-border);
+  background: var(--mesh-btn-primary-fill-hover);
+  color: var(--mesh-btn-primary-fg);
+}
+
+html .page-shell .button-ghost {
+  border-color: var(--mesh-btn-secondary-border);
+  background: var(--mesh-btn-secondary-fill);
+  box-shadow: var(--mesh-btn-secondary-shadow);
+  color: var(--mesh-btn-secondary-fg);
+}
+
+html .page-shell .button-ghost:hover {
+  border-color: var(--mesh-btn-secondary-border);
+  background: var(--mesh-btn-secondary-fill-hover);
+  color: var(--mesh-btn-secondary-fg);
+}
+
+html.light .page-shell .footer-word {
+  color: rgba(31, 35, 40, 0.055);
+  text-shadow: 0 0 70px rgba(130, 80, 223, 0.1);
+}

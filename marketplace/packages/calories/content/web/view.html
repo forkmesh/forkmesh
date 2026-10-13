@@ -1,0 +1,331 @@
+          <section data-view="calories" class="view active h-full overflow-y-auto calories-viz">
+            <style>
+              .calories-viz { --cal-series-1: #2a78d6; --cal-series-2: #eb6834; --cal-series-3: #1baf7a; --cal-series-4: #eda100; --cal-grid: rgb(var(--dashboard-border-rgb) / 0.9); --cal-ink: rgb(var(--dashboard-foreground-rgb)); --cal-ink-muted: rgb(var(--dashboard-muted-foreground-rgb)); --cal-surface: rgb(var(--dashboard-card-rgb)); }
+              :root[data-dashboard-theme="dark"] .calories-viz { --cal-series-1: #3987e5; --cal-series-2: #d95926; --cal-series-3: #199e70; --cal-series-4: #c98500; }
+              .calories-viz svg { display: block; width: 100%; height: auto; overflow: visible; }
+              .calories-viz .cal-bar { transition: opacity .12s; }
+              .calories-viz .cal-bar:hover { opacity: .75; }
+              .calories-viz .cal-hit { fill: transparent; }
+              .calories-viz .cal-hit:hover + .cal-bar, .calories-viz g:hover .cal-bar { opacity: .75; }
+              .cal-tip { position: absolute; z-index: 20; pointer-events: none; font-size: 12px; padding: .35rem .5rem; border-radius: .375rem; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: 0 4px 16px rgb(0 0 0 / .25); white-space: nowrap; }
+              .cal-ring-track { stroke: rgb(var(--dashboard-border-rgb)); }
+              .cal-legend-swatch { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; vertical-align: -1px; margin-right: .35rem; }
+              .cal-tab[aria-selected="true"] { background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-foreground-rgb)); }
+              .cal-video { width: 100%; max-height: 320px; border-radius: .5rem; background: #000; object-fit: cover; }
+              .cal-preview { max-height: 260px; width: auto; max-width: 100%; border-radius: .5rem; }
+              .cal-scan-frame { position: relative; }
+              .cal-diary-grid { display: grid; gap: 1rem; }
+              .cal-diary-grid > * { min-width: 0; }
+              .cal-quick { order: -1; }
+              .cal-quick-list { max-height: 15rem; overflow-y: auto; }
+              @media (min-width: 1280px) {
+                .cal-diary-grid { grid-template-columns: minmax(0, 1fr) 20rem; align-items: start; }
+                .cal-quick { order: 0; position: sticky; top: 0; }
+                .cal-quick-list { max-height: 22rem; }
+              }
+              .cal-quick-row { display: flex; align-items: center; gap: .25rem; border-radius: .375rem; }
+              .cal-quick-row:hover { background: rgb(var(--dashboard-secondary-rgb)); }
+              .cal-quick-row > button:first-child { flex: 1; min-width: 0; text-align: left; padding: .375rem .5rem; }
+              .cal-quick-row .cal-quick-name, .cal-quick-row .cal-quick-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+              .cal-quick-row .cal-quick-side { flex: none; padding: .25rem .5rem; border-radius: .25rem; font-size: .75rem; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .cal-quick-row .cal-quick-side:hover { color: rgb(var(--dashboard-foreground-rgb)); }
+              .cal-quick-row[data-busy="1"] { opacity: .5; pointer-events: none; }
+              @media (pointer: coarse) { .cal-quick-row > button { min-height: 44px; } }
+              .cal-search { position: relative; flex: 1 1 18rem; min-width: 14rem; }
+              .calories-viz .cal-search-icon { position: absolute; left: .7rem; top: 50%; width: .875rem; height: .875rem; transform: translateY(-50%); pointer-events: none; }
+              .cal-search-panel { position: absolute; left: 0; right: 0; top: calc(100% + .25rem); z-index: 30; border-radius: .375rem; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 8px 24px rgb(0 0 0 / .25); }
+              .cal-search-list { max-height: 24rem; overflow-y: auto; padding: .25rem; }
+              .cal-search-option { display: block; width: 100%; border: 0; border-radius: .25rem; padding: .45rem .6rem; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+              .cal-search-option:hover, .cal-search-option[aria-selected="true"] { background: rgb(var(--dashboard-secondary-rgb)); }
+              .cal-scan-frame::after { content: ""; position: absolute; inset: 22% 12%; border: 2px solid var(--cal-series-3); border-radius: .5rem; pointer-events: none; }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Calorie Counter</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">Your private food diary, goals, reminders, and challenges with friends. Synced to your account across web, desktop, and mobile.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button data-calories-manage data-calories-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="settings" class="mr-1 inline h-3.5 w-3.5"></i>Plugin data</button>
+                </div>
+              </div>
+              <div data-calories-error class="mb-3 hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
+              <div data-calories-notice class="mb-3 hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+
+              <section data-calories-install-panel class="hidden rounded-lg border border-border bg-card p-8 text-center">
+                <h2 class="text-base font-semibold text-foreground">Install Calorie Counter</h2>
+                <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Get a food diary, goals, reminders, charts, and friend challenges. Your diary is private to your account and syncs across the web dashboard, the desktop app, and the mobile app. Nobody else can see it: every entry, weigh-in, and goal is encrypted at rest with a key minted for your account alone.</p>
+                <button data-calories-install type="button" class="mt-4 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Install Calorie Counter</button>
+              </section>
+
+              <div data-calories-app class="hidden">
+                <div role="tablist" aria-label="Calorie Counter sections" class="mb-4 flex flex-wrap gap-1 rounded-md border border-border bg-card p-1">
+                  <button data-calories-tab="diary" role="tab" aria-selected="true" type="button" class="cal-tab rounded px-3 py-1.5 text-xs font-semibold text-muted-foreground">Diary</button>
+                  <button data-calories-tab="trends" role="tab" aria-selected="false" type="button" class="cal-tab rounded px-3 py-1.5 text-xs font-semibold text-muted-foreground">Trends</button>
+                  <button data-calories-tab="goals" role="tab" aria-selected="false" type="button" class="cal-tab rounded px-3 py-1.5 text-xs font-semibold text-muted-foreground">Goals &amp; reminders</button>
+                  <button data-calories-tab="challenges" role="tab" aria-selected="false" type="button" class="cal-tab rounded px-3 py-1.5 text-xs font-semibold text-muted-foreground">Challenges <span data-calories-challenge-badge class="ml-1 hidden rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground"></span></button>
+                </div>
+
+                <!-- Diary: everything logged, newest first -->
+                <section data-calories-panel="diary" role="tabpanel">
+                  <div class="cal-diary-grid">
+                  <div>
+                  <div class="mb-4 flex flex-wrap items-center gap-2">
+                    <label class="flex items-center gap-2 text-xs font-semibold text-muted-foreground">Log to<input data-calories-log-day type="date" aria-label="Day new entries are logged to" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                    <button data-calories-log-today type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground">Today</button>
+                    <div data-calories-search class="cal-search">
+                      <i data-lucide="search" class="cal-search-icon h-3.5 w-3.5 text-muted-foreground"></i>
+                      <input data-calories-search-query type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="calories-search-results" aria-label="Search foods" autocomplete="off" spellcheck="false" maxlength="80" placeholder="Search foods: trader joes buffalo chicken wrap…" class="w-full rounded-md border border-border bg-background py-2 pl-8 pr-3 text-sm text-foreground" />
+                      <div data-calories-search-panel class="cal-search-panel hidden">
+                        <div id="calories-search-results" data-calories-search-results role="listbox" aria-label="Foods" class="cal-search-list text-sm"></div>
+                        <p class="border-t border-border px-3 py-1.5 text-xs text-muted-foreground"><span data-calories-search-status></span> Open Food Facts<span data-calories-search-usda></span> · ↑ ↓ to move, Enter to log.</p>
+                      </div>
+                    </div>
+                    <button data-calories-open-photo type="button" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><i data-lucide="camera" class="mr-1 inline h-3.5 w-3.5"></i>Photo</button>
+                    <button data-calories-open-scan type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="scan-barcode" class="mr-1 inline h-3.5 w-3.5"></i>Barcode</button>
+                    <button data-calories-open-manual type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="plus" class="mr-1 inline h-3.5 w-3.5"></i>Add</button>
+                    <button data-calories-open-weight type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="scale" class="mr-1 inline h-3.5 w-3.5"></i>Weigh in</button>
+                  </div>
+                  <div class="mb-4 grid gap-3 md:grid-cols-3">
+                    <div class="rounded-lg border border-border bg-card p-4 md:row-span-2">
+                      <p class="text-xs font-semibold uppercase text-muted-foreground">Calories</p>
+                      <div data-calories-ring class="mx-auto mt-2 max-w-[220px]"></div>
+                      <p data-calories-ring-caption class="mt-2 text-center text-sm text-muted-foreground"></p>
+                    </div>
+                    <div class="rounded-lg border border-border bg-card p-4 md:col-span-2">
+                      <p class="text-xs font-semibold uppercase text-muted-foreground">Macros today</p>
+                      <div data-calories-macros class="mt-3 grid gap-3"></div>
+                    </div>
+                    <div class="grid gap-3 sm:grid-cols-3 md:col-span-2">
+                      <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">Logging streak</p><p data-calories-stat-logged class="mt-1 text-2xl font-semibold text-foreground">0</p><p class="text-xs text-muted-foreground">days in a row</p></div>
+                      <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">Within goal</p><p data-calories-stat-goal class="mt-1 text-2xl font-semibold text-foreground">0</p><p class="text-xs text-muted-foreground">days in a row</p></div>
+                      <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">Weight</p><p data-calories-stat-weight class="mt-1 text-2xl font-semibold text-foreground">—</p><p data-calories-stat-weight-caption class="text-xs text-muted-foreground">No weigh-in yet</p></div>
+                    </div>
+                  </div>
+                  <section class="overflow-hidden rounded-lg border border-border bg-card">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
+                      <h2 class="text-sm font-semibold text-foreground">Diary</h2>
+                      <p data-calories-diary-summary class="text-xs text-muted-foreground"></p>
+                    </div>
+                    <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-4 py-2 font-semibold">Food</th><th class="px-4 py-2 font-semibold">Meal</th><th class="px-4 py-2 text-right font-semibold">kcal</th><th class="px-4 py-2 text-right font-semibold">Protein</th><th class="px-4 py-2 text-right font-semibold">Carbs</th><th class="px-4 py-2 text-right font-semibold">Fat</th><th class="px-4 py-2 text-right font-semibold">Actions</th></tr></thead><tbody data-calories-entries class="divide-y divide-border"></tbody></table></div>
+                    <div data-calories-entries-empty class="hidden p-8 text-center text-sm text-muted-foreground">Nothing logged yet. Snap a photo, scan a barcode, or add a meal.</div>
+                    <p data-calories-entries-more class="hidden border-t border-border p-3 text-center text-xs text-muted-foreground"></p>
+                  </section>
+                  </div>
+                  <aside data-calories-quick class="cal-quick rounded-lg border border-border bg-card p-3" aria-label="Quick add">
+                    <div class="flex items-center justify-between gap-2">
+                      <h2 class="text-sm font-semibold text-foreground">Quick add</h2>
+                      <label data-calories-receipt-button class="cursor-pointer rounded-md border border-border bg-secondary px-2 py-1 text-xs font-semibold text-foreground" title="Read a grocery or restaurant receipt into My foods"><i data-lucide="receipt" class="mr-1 inline h-3.5 w-3.5"></i>Receipt<input data-calories-receipt-file type="file" accept="image/*" class="hidden" /></label>
+                    </div>
+                    <p class="mt-1 text-xs text-muted-foreground">One click logs a serving to <span data-calories-quick-day></span>. Upload a receipt photo to fill My foods.</p>
+                    <div class="mt-2 flex gap-2">
+                      <input data-calories-quick-filter type="search" placeholder="Filter foods" aria-label="Filter quick add foods" class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground" />
+                      <select data-calories-quick-meal aria-label="Meal for quick adds" class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"><option value="">By time</option><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select>
+                    </div>
+                    <p data-calories-quick-status class="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite"></p>
+                    <div data-calories-quick-lists class="mt-1 grid gap-3"></div>
+                    <p class="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Or open the Prompt dock at the bottom right and type what you ate, like “2 eggs and toast for breakfast” or “weighed 72.5 kg”; attach a meal photo or a receipt too.</p>
+                  </aside>
+                  </div>
+                </section>
+
+                <!-- Trends -->
+                <section data-calories-panel="trends" role="tabpanel" class="hidden">
+                  <div class="grid gap-3">
+                    <section class="rounded-lg border border-border bg-card p-4">
+                      <div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 class="text-sm font-semibold text-foreground">Calories · last 30 days</h2><div class="flex items-center gap-3 text-xs text-muted-foreground"><span><span class="cal-legend-swatch" style="background:var(--cal-series-1)"></span>Logged</span><span><span class="cal-legend-swatch" style="background:var(--cal-series-4)"></span>Goal</span><button data-calories-table-toggle="calories" type="button" class="rounded border border-border px-2 py-1">Table</button></div></div>
+                      <div data-calories-chart="calories" class="relative"></div>
+                      <div data-calories-table="calories" class="hidden max-h-64 overflow-auto"></div>
+                    </section>
+                    <div class="grid gap-3 lg:grid-cols-2">
+                      <section class="rounded-lg border border-border bg-card p-4">
+                        <div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 class="text-sm font-semibold text-foreground">Macros · last 7 days</h2><div class="flex items-center gap-3 text-xs text-muted-foreground"><span><span class="cal-legend-swatch" style="background:var(--cal-series-1)"></span>Protein</span><span><span class="cal-legend-swatch" style="background:var(--cal-series-2)"></span>Carbs</span><span><span class="cal-legend-swatch" style="background:var(--cal-series-3)"></span>Fat</span><button data-calories-table-toggle="macros" type="button" class="rounded border border-border px-2 py-1">Table</button></div></div>
+                        <div data-calories-chart="macros" class="relative"></div>
+                        <div data-calories-table="macros" class="hidden max-h-64 overflow-auto"></div>
+                      </section>
+                      <section class="rounded-lg border border-border bg-card p-4">
+                        <div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 class="text-sm font-semibold text-foreground">Weight · last 180 days</h2><div class="flex items-center gap-3 text-xs text-muted-foreground"><span><span class="cal-legend-swatch" style="background:var(--cal-series-3)"></span>Weigh-ins</span><span><span class="cal-legend-swatch" style="background:var(--cal-series-4)"></span>Target</span><button data-calories-table-toggle="weight" type="button" class="rounded border border-border px-2 py-1">Table</button></div></div>
+                        <div data-calories-chart="weight" class="relative"></div>
+                        <div data-calories-table="weight" class="hidden max-h-64 overflow-auto"></div>
+                      </section>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- Goals & reminders -->
+                <section data-calories-panel="goals" role="tabpanel" class="hidden">
+                  <form data-calories-goals-form class="grid gap-3 lg:grid-cols-2">
+                    <section class="rounded-lg border border-border bg-card p-4">
+                      <h2 class="text-sm font-semibold text-foreground">Daily goals</h2>
+                      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label class="grid gap-1 text-xs text-muted-foreground">Calories (kcal)<input data-calories-goal="dailyCalories" type="number" min="0" max="20000" step="10" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Units<select data-calories-goal="units" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="auto" data-calories-goal-auto>Automatic — match my location</option><option value="metric">Metric (kg, cm)</option><option value="imperial">Imperial (lb, in)</option></select></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Protein (g)<input data-calories-goal="proteinG" type="number" min="0" max="2000" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Carbs (g)<input data-calories-goal="carbsG" type="number" min="0" max="3000" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground">Fat (g)<input data-calories-goal="fatG" type="number" min="0" max="1500" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground"><span>Target weight (<span data-calories-weight-unit>kg</span>)</span><input data-calories-goal="targetWeight" type="number" min="0" max="1500" step="0.1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground"><span>Starting weight (<span data-calories-weight-unit>kg</span>)</span><input data-calories-goal="startWeight" type="number" min="0" max="1500" step="0.1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                        <label class="grid gap-1 text-xs text-muted-foreground"><span>Height (<span data-calories-height-unit>cm</span>)</span><input data-calories-goal="height" type="number" min="0" max="300" step="0.1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                      </div>
+                      <p data-calories-bmi class="mt-3 text-xs text-muted-foreground"></p>
+                    </section>
+                    <section class="rounded-lg border border-border bg-card p-4">
+                      <div class="flex items-center justify-between"><h2 class="text-sm font-semibold text-foreground">Reminders</h2><button data-calories-reminder-add type="button" class="rounded-md border border-border px-2 py-1 text-xs font-semibold text-foreground">Add reminder</button></div>
+                      <p class="mt-1 text-xs text-muted-foreground">Delivered as pings in your local time zone (<span data-calories-tz></span>). Up to eight per day.</p>
+                      <div data-calories-reminders class="mt-3 grid gap-2"></div>
+                    </section>
+                    <div class="flex flex-wrap items-center gap-2 lg:col-span-2">
+                      <button type="submit" class="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Save goals and reminders</button>
+                      <button data-calories-export-mine type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground">Export my diary</button>
+                      <span data-calories-goals-saved class="text-xs text-muted-foreground"></span>
+                    </div>
+                  </form>
+                  <section data-calories-food-databases class="mt-3 rounded-lg border border-border bg-card p-4">
+                    <h2 class="text-sm font-semibold text-foreground">Food databases</h2>
+                    <p class="mt-1 text-xs text-muted-foreground">Open Food Facts is always used for barcodes and search. Add your own free USDA FoodData Central API key to also search the USDA database. Your key is stored encrypted on your account. Leave the field empty and save to remove it.</p>
+                    <form data-calories-settings-form class="mt-3 flex flex-wrap items-center gap-2">
+                      <input data-calories-usda-key type="password" autocomplete="off" maxlength="120" placeholder="Your USDA FoodData Central API key" class="min-w-[240px] flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" />
+                      <button type="submit" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground">Save key</button>
+                      <span data-calories-usda-status class="text-xs text-muted-foreground"></span>
+                    </form>
+                  </section>
+                </section>
+
+                <!-- Challenges -->
+                <section data-calories-panel="challenges" role="tabpanel" class="hidden">
+                  <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-sm text-muted-foreground">Challenge friends by their ForkMesh username to lose weight or keep a logging streak. Standings show progress only, never anyone's diary.</p>
+                    <button data-calories-challenge-new type="button" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><i data-lucide="trophy" class="mr-1 inline h-3.5 w-3.5"></i>New challenge</button>
+                  </div>
+                  <div data-calories-challenges class="grid gap-3 md:grid-cols-2"></div>
+                  <div data-calories-challenges-empty class="hidden rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">No challenges yet. Start one and invite your friends.</div>
+                </section>
+              </div>
+            </div>
+
+            <!-- Entry editor -->
+            <dialog data-calories-entry-dialog class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-calories-entry-form class="p-5">
+                <div class="mb-4 flex items-center justify-between"><h2 data-calories-entry-title class="text-base font-semibold">Add food</h2><button data-calories-dialog-close type="button" aria-label="Close">✕</button></div>
+                <input data-calories-entry-id type="hidden" /><input data-calories-entry-source type="hidden" value="manual" /><input data-calories-entry-barcode type="hidden" /><input data-calories-entry-brand type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Food<input data-calories-entry-name maxlength="160" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Day<input data-calories-entry-day type="date" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Portion<input data-calories-entry-portion maxlength="80" placeholder="1 bowl, 150 g…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Meal<select data-calories-entry-meal class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Calories (kcal)<input data-calories-entry-calories type="number" min="0" max="50000" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Protein (g)<input data-calories-entry-protein type="number" min="0" max="5000" step="0.1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Carbs (g)<input data-calories-entry-carbs type="number" min="0" max="5000" step="0.1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Fat (g)<input data-calories-entry-fat type="number" min="0" max="5000" step="0.1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Notes<textarea data-calories-entry-notes maxlength="2000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                </div>
+                <div class="mt-4 flex items-center justify-between"><button data-calories-entry-delete type="button" class="hidden rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Delete</button><div class="ml-auto flex gap-2"><button data-calories-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save</button></div></div>
+              </form>
+            </dialog>
+
+            <!-- Photo analysis -->
+            <dialog data-calories-photo-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <div class="mb-3 flex items-center justify-between"><div><h2 class="text-base font-semibold">Identify a meal from a photo</h2><p class="text-xs text-muted-foreground">The photo is sent once to the host's AI model for an estimate and is not stored. Check the numbers before saving.</p></div><button data-calories-dialog-close type="button" aria-label="Close">✕</button></div>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <div data-calories-photo-camera class="hidden"><video data-calories-photo-video class="cal-video" autoplay playsinline muted></video></div>
+                    <div data-calories-photo-preview-wrap class="hidden text-center"><img data-calories-photo-preview class="cal-preview mx-auto" alt="Selected meal photo" /></div>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                      <button data-calories-photo-start type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Open camera</button>
+                      <button data-calories-photo-snap type="button" class="hidden rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Take photo</button>
+                      <label class="cursor-pointer rounded-md border border-border px-3 py-2 text-xs font-semibold">Choose file<input data-calories-photo-file type="file" accept="image/*" capture="environment" class="hidden" /></label>
+                    </div>
+                    <label class="mt-3 grid gap-1 text-xs text-muted-foreground">Hint for the model (optional)<input data-calories-photo-hint maxlength="300" placeholder="e.g. half portion, brown rice" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                    <label class="mt-3 grid gap-1 text-xs text-muted-foreground">Or describe the meal instead<textarea data-calories-photo-description maxlength="1000" rows="2" placeholder="2 scrambled eggs, 1 slice of toast with butter" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                    <button data-calories-photo-analyze type="button" class="mt-3 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><i data-lucide="sparkles" class="mr-1 inline h-3.5 w-3.5"></i>Estimate calories</button>
+                    <p data-calories-photo-status class="mt-2 text-xs text-muted-foreground"></p>
+                  </div>
+                  <div>
+                    <div class="flex items-center justify-between"><h3 class="text-sm font-semibold">Suggestions</h3><label class="text-xs text-muted-foreground">Meal <select data-calories-photo-meal class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label></div>
+                    <div data-calories-photo-results class="mt-2 grid gap-2 text-sm"></div>
+                    <p data-calories-photo-summary class="mt-2 text-xs text-muted-foreground"></p>
+                    <button data-calories-photo-save type="button" class="mt-3 hidden rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Add selected to diary</button>
+                  </div>
+                </div>
+              </div>
+            </dialog>
+
+            <!-- Barcode scan -->
+            <dialog data-calories-scan-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <div class="mb-3 flex items-center justify-between"><div><h2 class="text-base font-semibold">Scan a barcode</h2><p class="text-xs text-muted-foreground">Nutrition comes from Open Food Facts<span data-calories-scan-usda></span>. Point the camera at the barcode or type the digits.</p></div><button data-calories-dialog-close type="button" aria-label="Close">✕</button></div>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <div data-calories-scan-camera class="cal-scan-frame hidden"><video data-calories-scan-video class="cal-video" autoplay playsinline muted></video></div>
+                    <p data-calories-scan-unsupported class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs text-muted-foreground">This browser cannot read barcodes from the camera. Type the digits printed under the barcode instead.</p>
+                    <div class="mt-2 flex flex-wrap gap-2"><button data-calories-scan-start type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Open camera</button><button data-calories-scan-stop type="button" class="hidden rounded-md border border-border px-3 py-2 text-xs font-semibold">Stop</button></div>
+                    <form data-calories-scan-form class="mt-3 flex gap-2"><input data-calories-scan-code inputmode="numeric" pattern="[0-9]{6,14}" maxlength="14" placeholder="Barcode digits" class="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Look up</button></form>
+                    <p data-calories-scan-status class="mt-2 text-xs text-muted-foreground"></p>
+                  </div>
+                  <div data-calories-product class="hidden rounded-md border border-border bg-secondary p-3 text-sm"></div>
+                </div>
+              </div>
+            </dialog>
+
+            <!-- Product → entry -->
+            <dialog data-calories-portion-dialog class="w-full max-w-md rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-calories-portion-form class="p-5">
+                <div class="mb-3 flex items-center justify-between"><h2 data-calories-portion-title class="text-base font-semibold">Add product</h2><button data-calories-dialog-close type="button" aria-label="Close">✕</button></div>
+                <p data-calories-portion-brand class="text-xs text-muted-foreground"></p>
+                <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Basis<select data-calories-portion-basis class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Amount<input data-calories-portion-amount type="number" min="0.1" max="100" step="0.1" value="1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Meal<select data-calories-portion-meal class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label>
+                </div>
+                <p data-calories-portion-preview class="mt-3 text-sm text-foreground"></p>
+                <div class="mt-4 flex justify-end gap-2"><button data-calories-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Add to diary</button></div>
+              </form>
+            </dialog>
+
+            <!-- Weigh in -->
+            <dialog data-calories-weight-dialog class="w-full max-w-sm rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-calories-weight-form class="p-5">
+                <div class="mb-3 flex items-center justify-between"><h2 class="text-base font-semibold">Weigh in</h2><button data-calories-dialog-close type="button" aria-label="Close">✕</button></div>
+                <div class="grid gap-3">
+                  <label class="grid gap-1 text-xs text-muted-foreground">Day<input data-calories-weight-day type="date" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground"><span>Weight (<span data-calories-weight-unit>kg</span>)</span><input data-calories-weight-value type="number" min="1" max="1500" step="0.1" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                </div>
+                <div class="mt-4 flex items-center justify-between"><button data-calories-weight-delete type="button" class="rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Remove</button><div class="flex gap-2"><button data-calories-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save</button></div></div>
+              </form>
+            </dialog>
+
+            <!-- Challenge editor -->
+            <dialog data-calories-challenge-dialog class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-calories-challenge-form class="p-5">
+                <div class="mb-3 flex items-center justify-between"><h2 data-calories-challenge-dialog-title class="text-base font-semibold">New challenge</h2><button data-calories-dialog-close type="button" aria-label="Close">✕</button></div>
+                <input data-calories-challenge-id type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Title<input data-calories-challenge-title maxlength="120" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Kind<select data-calories-challenge-kind class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="weight_loss_percent">Lose the most percent of body weight</option><option value="weight_loss_kg">Lose the most weight</option><option value="calorie_streak">Most days within the calorie goal</option><option value="log_streak">Most days logged</option></select></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Starts<input data-calories-challenge-start type="date" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Ends<input data-calories-challenge-end type="date" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Description<textarea data-calories-challenge-description maxlength="2000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Invite friends by username<input data-calories-challenge-invite maxlength="2000" autocomplete="off" spellcheck="false" placeholder="alice, @bob carol" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /><span data-calories-challenge-invite-hint class="text-xs text-muted-foreground">Separate names with commas or spaces.</span></label>
+                </div>
+                <div class="mt-4 flex justify-end gap-2"><button data-calories-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save challenge</button></div>
+              </form>
+            </dialog>
+
+            <!-- Challenge detail -->
+            <dialog data-calories-board-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <div class="mb-3 flex items-start justify-between gap-3"><div><h2 data-calories-board-title class="text-base font-semibold"></h2><p data-calories-board-meta class="text-xs text-muted-foreground"></p></div><button data-calories-dialog-close type="button" aria-label="Close">✕</button></div>
+                <p data-calories-board-description class="text-sm text-muted-foreground"></p>
+                <div data-calories-board-actions class="mt-3 flex flex-wrap gap-2"></div>
+                <div data-calories-board class="mt-4 grid gap-2"></div>
+                <div data-calories-board-pending class="mt-3 text-xs text-muted-foreground"></div>
+              </div>
+            </dialog>
+
+            <dialog data-calories-manage-dialog class="w-full max-w-lg rounded-lg border border-border bg-card p-5 text-foreground shadow-2xl backdrop:bg-background/80">
+              <h2 class="text-base font-semibold">Calorie Counter data</h2>
+              <p class="mt-2 text-sm text-muted-foreground">Export your diary, weights, goals, reminders, and challenges as JSON, or uninstall Calorie Counter from your account. Uninstalling downloads your export first, then deletes your data on web, desktop, and mobile.</p>
+              <div class="mt-4 flex flex-wrap justify-end gap-2"><button data-calories-export type="button" class="rounded-md border border-border px-3 py-2 text-xs">Export my data</button><button data-calories-uninstall type="button" class="rounded-md border border-destructive px-3 py-2 text-xs text-destructive">Uninstall…</button><button data-calories-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs">Close</button></div>
+            </dialog>
+          </section>

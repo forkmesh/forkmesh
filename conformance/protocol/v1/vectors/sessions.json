@@ -1,0 +1,165 @@
+{
+  "suite": "forkmesh-protocol",
+  "suiteVersion": "1.0.0-rc.1",
+  "vectorSet": "sessions",
+  "procedure": "Parse each portable session token at nowMs and verify it with routerPublicKey.",
+  "routerPublicKey": "nZWLcQuYxHF1JS9qScXVx-MIbBek7GNKvQBWta70SaM",
+  "cases": [
+    {
+      "id": "session-valid",
+      "requirements": [
+        "FM-AUTH-003"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzAzNjAwMDAwLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoxfQ.SdBHv1LBCdAEpwa8mkFYvCdL-OKNcRCNApWY7KkpUZs-Yn64DAF8kr2A5VP9Pag4ZKnuk4LAABv2vq_b3KSGCg",
+      "nowMs": 1789300000000,
+      "expect": {
+        "valid": true,
+        "claim": {
+          "aud": "forkmesh-mirror-dashboard",
+          "exp": 1789303600000,
+          "iat": 1789300000000,
+          "jti": "grant-0000000001",
+          "name": "alice",
+          "sid": "session-000000001",
+          "sub": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+          "type": "forkmesh.portable-session",
+          "v": 1
+        }
+      }
+    },
+    {
+      "id": "session-valid-within-expiry-skew",
+      "requirements": [
+        "FM-AUTH-003"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzAzNjAwMDAwLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoxfQ.SdBHv1LBCdAEpwa8mkFYvCdL-OKNcRCNApWY7KkpUZs-Yn64DAF8kr2A5VP9Pag4ZKnuk4LAABv2vq_b3KSGCg",
+      "nowMs": 1789303659999,
+      "expect": {
+        "valid": true,
+        "claim": {
+          "aud": "forkmesh-mirror-dashboard",
+          "exp": 1789303600000,
+          "iat": 1789300000000,
+          "jti": "grant-0000000001",
+          "name": "alice",
+          "sid": "session-000000001",
+          "sub": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+          "type": "forkmesh.portable-session",
+          "v": 1
+        }
+      }
+    },
+    {
+      "id": "session-expired",
+      "requirements": [
+        "FM-AUTH-003"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzAzNjAwMDAwLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoxfQ.SdBHv1LBCdAEpwa8mkFYvCdL-OKNcRCNApWY7KkpUZs-Yn64DAF8kr2A5VP9Pag4ZKnuk4LAABv2vq_b3KSGCg",
+      "nowMs": 1789303660000,
+      "expect": {
+        "valid": false,
+        "error": "not_current"
+      }
+    },
+    {
+      "id": "session-issued-in-future",
+      "requirements": [
+        "FM-AUTH-003"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzAzNjAwMDAwLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoxfQ.SdBHv1LBCdAEpwa8mkFYvCdL-OKNcRCNApWY7KkpUZs-Yn64DAF8kr2A5VP9Pag4ZKnuk4LAABv2vq_b3KSGCg",
+      "nowMs": 1789299939999,
+      "expect": {
+        "valid": false,
+        "error": "not_current"
+      }
+    },
+    {
+      "id": "session-lifetime-over-12h",
+      "requirements": [
+        "FM-AUTH-003"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzQzMjAwMDAxLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoxfQ.tgnkDmxiqXVolL1uw8wrhyAEOttXVVLcEOTw3PyUZmbN_vZU-RQI-agZsc-NKH5X9pL96plNxtvYryxtYx24Cg",
+      "nowMs": 1789300000000,
+      "expect": {
+        "valid": false,
+        "error": "not_current"
+      }
+    },
+    {
+      "id": "session-future-token-prefix",
+      "requirements": [
+        "FM-AUTH-003",
+        "FM-VER-001"
+      ],
+      "token": "v2.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzAzNjAwMDAwLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoxfQ.SdBHv1LBCdAEpwa8mkFYvCdL-OKNcRCNApWY7KkpUZs-Yn64DAF8kr2A5VP9Pag4ZKnuk4LAABv2vq_b3KSGCg",
+      "nowMs": 1789300000000,
+      "expect": {
+        "valid": false,
+        "error": "token_invalid"
+      }
+    },
+    {
+      "id": "session-future-claim-version",
+      "requirements": [
+        "FM-AUTH-003",
+        "FM-VER-001"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzAzNjAwMDAwLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoyfQ.rgwXyblIMig9-fpSXjjULm6hD6QX4LRxAbpivBgh0lIVWvjjYD_V7fBU9uBF_SHOYFjXrkNmj0GG5ri_g_fRBw",
+      "nowMs": 1789300000000,
+      "expect": {
+        "valid": false,
+        "error": "claim_invalid"
+      }
+    },
+    {
+      "id": "session-wrong-audience",
+      "requirements": [
+        "FM-AUTH-003"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1vdGhlciIsImV4cCI6MTc4OTMwMzYwMDAwMCwiaWF0IjoxNzg5MzAwMDAwMDAwLCJqdGkiOiJncmFudC0wMDAwMDAwMDAxIiwibmFtZSI6ImFsaWNlIiwic2lkIjoic2Vzc2lvbi0wMDAwMDAwMDEiLCJzdWIiOiJhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMSIsInR5cGUiOiJmb3JrbWVzaC5wb3J0YWJsZS1zZXNzaW9uIiwidiI6MX0.R3qO0cbjPQVTdqjc1n8rjC12YcqWfC-5TNHBwAYVeGZsoUgmnNyVFCM7atsKB5HAjXtsmFWuy-n0IzwPzrLBCQ",
+      "nowMs": 1789300000000,
+      "expect": {
+        "valid": false,
+        "error": "claim_invalid"
+      }
+    },
+    {
+      "id": "session-noncanonical-claim",
+      "requirements": [
+        "FM-AUTH-003",
+        "FM-ENC-004"
+      ],
+      "token": "v1.eyJhdWQiOiAiZm9ya21lc2gtbWlycm9yLWRhc2hib2FyZCIsICJleHAiOiAxNzg5MzAzNjAwMDAwLCAiaWF0IjogMTc4OTMwMDAwMDAwMCwgImp0aSI6ICJncmFudC0wMDAwMDAwMDAxIiwgIm5hbWUiOiAiYWxpY2UiLCAic2lkIjogInNlc3Npb24tMDAwMDAwMDAxIiwgInN1YiI6ICJhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMSIsICJ0eXBlIjogImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCAidiI6IDF9.4C7Lk4WrIV41ZF1rj6-vuvLGa-hjfYHBQG_Wkm-KU-qBtsqHY72ol6amd37B2BBwS0JBpqQEe3uEreCkhjl9Dg",
+      "nowMs": 1789300000000,
+      "expect": {
+        "valid": false,
+        "error": "claim_noncanonical"
+      }
+    },
+    {
+      "id": "session-other-signer",
+      "requirements": [
+        "FM-AUTH-003"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzAzNjAwMDAwLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoxfQ.YKyjiVN8JTH4zfHSqKxeXpB_CA3Vo18slieKPMAsCj_CRwTeWwED0hWFjvGlbbsK690InfahhWJXTnvlsSugAg",
+      "nowMs": 1789300000000,
+      "expect": {
+        "valid": false,
+        "error": "signature_invalid"
+      }
+    },
+    {
+      "id": "session-alternate-signature-spelling",
+      "requirements": [
+        "FM-AUTH-003",
+        "FM-ENC-006"
+      ],
+      "token": "v1.eyJhdWQiOiJmb3JrbWVzaC1taXJyb3ItZGFzaGJvYXJkIiwiZXhwIjoxNzg5MzAzNjAwMDAwLCJpYXQiOjE3ODkzMDAwMDAwMDAsImp0aSI6ImdyYW50LTAwMDAwMDAwMDEiLCJuYW1lIjoiYWxpY2UiLCJzaWQiOiJzZXNzaW9uLTAwMDAwMDAwMSIsInN1YiI6ImExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExIiwidHlwZSI6ImZvcmttZXNoLnBvcnRhYmxlLXNlc3Npb24iLCJ2IjoxfQ.SdBHv1LBCdAEpwa8mkFYvCdL-OKNcRCNApWY7KkpUZs-Yn64DAF8kr2A5VP9Pag4ZKnuk4LAABv2vq_b3KSGCh",
+      "nowMs": 1789300000000,
+      "expect": {
+        "valid": false,
+        "error": "encoding_invalid"
+      }
+    }
+  ]
+}

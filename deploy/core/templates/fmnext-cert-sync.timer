@@ -1,0 +1,12 @@
+# Managed by deploy/core/render.py for node @@NODE@@.
+[Unit]
+Description=Sync the shared certificate every 5 minutes and after boot
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5min
+RandomizedDelaySec=20s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

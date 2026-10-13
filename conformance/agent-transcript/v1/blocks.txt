@@ -1,0 +1,24 @@
+prompt check in on the background agents and tell me where things stand
+text I'll check the runner fix and the Mac build.
+tools Agent,Bash,Read,Grep,mcp__forkmesh__list_tasks
+task update running Monitor event: "1.2.5 macOS desktop build on the Mac (stage lines, EXIT, errors)" [text]
+task failed failed Background command "Wait for download and verify signature" failed with exit code 144 []
+task completed done Agent "Fix runner OOM and tmp leak" finished [text, text, bullet, bullet, bullet, text]
+steer ForkMesh (phone) (you) Test from the app to steering please give me status on tasks
+steer a-13 ping from a
+text The runner fix is live on `fmnext-run-1` as of 22:28 UTC. The dry run was clean and so was the deploy. Nothing was running on the runner at the time, so no job was interrupted.
+table 3x4 |Before|After sss
+text The daemon came back up on the new unit. The 419 MB of leftovers were freed when it restarted.
+text On the board, the runner task is now "[Verify]" at 90%. Two things are left on it:
+bullet • 0 **Confirm it holds:** tomorrow, check that the runner has logged no new out-of-memory kills.
+bullet • 0 **The cores:** they still log the socket warning until their next roll. It's harmless, so I didn't roll them now.
+text The fix is merged into `main` locally but *not pushed*.
+status Conversation compacted
+prompt and the mac build?
+heading2 Where each item stands
+table 2x2 Item|Status se
+text The task board answered:
+json 17
+bullet 1. 0 Merge `fix/runner-oom-tmp`
+bullet 2. 0 Roll the cores
+text See [the runbook](https://forkmesh.com/docs/runners) for details.

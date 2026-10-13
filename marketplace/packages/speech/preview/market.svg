@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">Speech Playground on iPhone reading a short story aloud, the spoken word highlighted, with the Ava Premium voice picked and speed and pitch sliders below</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <text x="64" y="84" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f4f5f7">Speech Playground</text>
+  <text x="64" y="114" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#9aa3b2">Type anything · hear it in Premium and Personal voices · on iPhone, on the device</text>
+  <g transform="translate(64,150)">
+    <rect width="300" height="500" rx="40" fill="#0b0d11" stroke="#2a2f3a" stroke-width="3"/>
+    <rect x="110" y="14" width="80" height="22" rx="11" fill="#171a21"/>
+    <text x="150" y="70" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#f4f5f7">Speech</text>
+    <rect x="18" y="88" width="264" height="168" rx="12" fill="#1e222b" stroke="#7c6cf2" stroke-width="1.5"/>
+    <text font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#c9ced8">
+      <tspan x="32" y="116">The lighthouse keeper climbed</tspan>
+      <tspan x="32" y="138">the spiral stairs one last time.</tspan>
+      <tspan x="32" y="160">Below, the sea was calm and</tspan>
+      <tspan x="88" y="182">and far out on the</tspan>
+    </text>
+    <rect x="29" y="167" width="54" height="21" rx="4" fill="#2e2a5a"/>
+    <text x="32" y="182" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#a99cff">silver,</text>
+    <text x="32" y="240" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#7d8594">31 words · about 11 s</text>
+    <rect x="18" y="270" width="210" height="44" rx="22" fill="#7c6cf2"/>
+    <rect x="96" y="284" width="5" height="16" rx="1.5" fill="#ffffff"/>
+    <rect x="105" y="284" width="5" height="16" rx="1.5" fill="#ffffff"/>
+    <text x="120" y="298" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#ffffff">Pause</text>
+    <rect x="240" y="280" width="24" height="24" rx="5" fill="none" stroke="#c9ced8" stroke-width="2"/>
+    <rect x="248" y="288" width="8" height="8" rx="1" fill="#c9ced8"/>
+    <rect x="18" y="326" width="264" height="64" rx="10" fill="#1e222b"/>
+    <circle cx="48" cy="358" r="16" fill="#2e2a5a"/>
+    <path d="M42 352 v12 M48 348 v20 M54 354 v8" stroke="#a99cff" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="74" y="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10" fill="#7d8594">VOICE</text>
+    <text x="74" y="370" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#f4f5f7">Ava</text>
+    <rect x="108" y="358" width="64" height="16" rx="8" fill="#163a2e"/>
+    <text x="140" y="370" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="9" font-weight="600" fill="#3ccf91">PREMIUM</text>
+    <rect x="18" y="400" width="264" height="84" rx="10" fill="#1e222b"/>
+    <text x="32" y="422" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#c9ced8">Speed</text>
+    <text x="268" y="422" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#7d8594">1.1×</text>
+    <rect x="32" y="430" width="236" height="4" rx="2" fill="#2a2f3a"/><rect x="32" y="430" width="126" height="4" rx="2" fill="#7c6cf2"/><circle cx="158" cy="432" r="7" fill="#f4f5f7"/>
+    <text x="32" y="458" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#c9ced8">Pitch</text>
+    <text x="268" y="458" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#7d8594">Natural</text>
+    <rect x="32" y="466" width="236" height="4" rx="2" fill="#2a2f3a"/><rect x="32" y="466" width="79" height="4" rx="2" fill="#7c6cf2"/><circle cx="111" cy="468" r="7" fill="#f4f5f7"/>
+  </g>
+  <g transform="translate(420,150)">
+    <rect width="796" height="500" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <text x="40" y="52" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#7d8594">VOICES · ENGLISH (UNITED STATES)</text>
+    <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+      <line x1="40" x2="756" y1="76" y2="76" stroke="#2a2f3a"/>
+      <text x="64" y="112" font-size="18" fill="#a99cff">✓</text>
+      <text x="96" y="112" font-size="18" font-weight="600" fill="#f4f5f7">Ava</text>
+      <rect x="146" y="96" width="82" height="22" rx="11" fill="#163a2e"/><text x="187" y="111" text-anchor="middle" font-size="11" font-weight="600" fill="#3ccf91">PREMIUM</text>
+      <circle cx="730" cy="106" r="15" fill="#7c6cf2"/><rect x="724" y="100" width="12" height="12" rx="2" fill="#ffffff"/>
+      <line x1="40" x2="756" y1="136" y2="136" stroke="#2a2f3a"/>
+      <text x="96" y="172" font-size="18" font-weight="600" fill="#f4f5f7">My Voice</text>
+      <rect x="190" y="156" width="82" height="22" rx="11" fill="#2e2a5a"/><text x="231" y="171" text-anchor="middle" font-size="11" font-weight="600" fill="#a99cff">PERSONAL</text>
+      <circle cx="730" cy="166" r="15" fill="none" stroke="#7c6cf2" stroke-width="2"/><path d="M725 159 L737 166 L725 173 Z" fill="#7c6cf2"/>
+      <line x1="40" x2="756" y1="196" y2="196" stroke="#2a2f3a"/>
+      <text x="96" y="232" font-size="18" font-weight="600" fill="#f4f5f7">Zoe</text>
+      <rect x="140" y="216" width="88" height="22" rx="11" fill="#3a3016"/><text x="184" y="231" text-anchor="middle" font-size="11" font-weight="600" fill="#e0b13c">ENHANCED</text>
+      <circle cx="730" cy="226" r="15" fill="none" stroke="#7c6cf2" stroke-width="2"/><path d="M725 219 L737 226 L725 233 Z" fill="#7c6cf2"/>
+      <line x1="40" x2="756" y1="256" y2="256" stroke="#2a2f3a"/>
+      <text x="96" y="292" font-size="18" font-weight="600" fill="#f4f5f7">Evan</text>
+      <rect x="148" y="276" width="88" height="22" rx="11" fill="#3a3016"/><text x="192" y="291" text-anchor="middle" font-size="11" font-weight="600" fill="#e0b13c">ENHANCED</text>
+      <circle cx="730" cy="286" r="15" fill="none" stroke="#7c6cf2" stroke-width="2"/><path d="M725 279 L737 286 L725 293 Z" fill="#7c6cf2"/>
+      <line x1="40" x2="756" y1="316" y2="316" stroke="#2a2f3a"/>
+      <text x="96" y="352" font-size="18" fill="#c9ced8">Samantha</text>
+      <circle cx="730" cy="346" r="15" fill="none" stroke="#7c6cf2" stroke-width="2"/><path d="M725 339 L737 346 L725 353 Z" fill="#7c6cf2"/>
+      <line x1="40" x2="756" y1="376" y2="376" stroke="#2a2f3a"/>
+    </g>
+    <g transform="translate(40,408)">
+      <path d="M0 40 C20 10 30 70 50 40 S80 10 100 40 S130 70 150 40 S180 0 200 40 S230 80 250 40 S280 15 300 40 S330 65 350 40 S380 20 400 40 S430 60 450 40 S480 25 500 40 S530 55 550 40 S580 30 600 40 S630 50 650 40 S680 35 716 40" fill="none" stroke="#7c6cf2" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+    </g>
+  </g>
+</svg>

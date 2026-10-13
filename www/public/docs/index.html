@@ -1,0 +1,2344 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Docs · ForkMesh</title>
+    <meta
+      name="description"
+      content="ForkMesh documentation for encrypted desktop mirrors, direct-HTTPS Git routing, APIs, multiplayer WebSockets, issues, pull requests, accounts, and encrypted rooms."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/tailwind.css" />
+    <script>window.tailwind = window.tailwind || {};</script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: [
+                "ForkMesh Lato",
+                "-apple-system",
+                "BlinkMacSystemFont",
+                "Segoe UI",
+                "Helvetica",
+                "Arial",
+                "sans-serif",
+              ],
+              mono: [
+                "ForkMesh Mono",
+                "ui-monospace",
+                "SFMono-Regular",
+                "Menlo",
+                "Consolas",
+                "monospace",
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      @font-face {
+        font-family: "ForkMesh Lato";
+        src: url("/assets/fonts/Lato-Regular.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "ForkMesh Lato";
+        src: url("/assets/fonts/Lato-Semibold.woff2") format("woff2");
+        font-weight: 600;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "ForkMesh Lato";
+        src: url("/assets/fonts/Lato-Bold.woff2") format("woff2");
+        font-weight: 700 900;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "ForkMesh Mono";
+        src: url("/assets/fonts/DejaVuSansMono.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "ForkMesh Mono";
+        src: url("/assets/fonts/DejaVuSansMono-Bold.woff2") format("woff2");
+        font-weight: 600 800;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      :root {
+        color-scheme: light;
+        --docs-bg: #ffffff;
+        --docs-fg: #252525;
+        --docs-muted: #646464;
+        --docs-soft: #898989;
+        --docs-line: #ececea;
+        --docs-line-strong: #dededb;
+        --docs-panel: #ffffff;
+        --docs-panel-soft: #efefed;
+        --docs-hover: #f7f7f5;
+        --docs-button: #4b4b4b;
+        --docs-button-fg: #ffffff;
+        --docs-code: #f6f6f4;
+      }
+
+      html.dark {
+        color-scheme: dark;
+        --docs-bg: #101011;
+        --docs-fg: #eeeeee;
+        --docs-muted: #a4a4a4;
+        --docs-soft: #8c8c8c;
+        --docs-line: #202023;
+        --docs-line-strong: #29292d;
+        --docs-panel: #111112;
+        --docs-panel-soft: #242426;
+        --docs-hover: #18181a;
+        --docs-button: #4c4c4f;
+        --docs-button-fg: #f6f6f6;
+        --docs-code: #18181a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--docs-bg);
+        color: var(--docs-fg);
+        font-family:
+          "ForkMesh Lato",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Helvetica,
+          Arial,
+          sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      svg {
+        display: block;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      code {
+        font-family:
+          "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+          monospace;
+      }
+
+      .brand-mark {
+        width: 2rem;
+        height: 2.25rem;
+        object-fit: contain;
+        flex-shrink: 0;
+        display: block;
+      }
+
+      .docs-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: var(--docs-line-strong) transparent;
+      }
+
+      .docs-scrollbar::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+
+      .docs-scrollbar::-webkit-scrollbar-thumb {
+        background: var(--docs-line-strong);
+        border-radius: 999px;
+      }
+
+      .tab-active::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -1px;
+        height: 2px;
+        border-radius: 999px;
+        background: var(--docs-fg);
+      }
+
+      .docs-tab {
+        position: relative;
+        display: inline-flex;
+        height: 3.75rem;
+        flex: none;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.93rem;
+        font-weight: 700;
+        color: var(--docs-muted);
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      a.docs-tab:hover {
+        color: var(--docs-fg);
+      }
+
+      .docs-tab.tab-active {
+        color: var(--docs-fg);
+        font-weight: 900;
+      }
+
+      .docs-tabs {
+        gap: clamp(1.15rem, 1.6vw, 2rem);
+      }
+
+      .docs-tab-divider {
+        flex: none;
+        align-self: center;
+        width: 1px;
+        height: 1.5rem;
+        background: var(--docs-line-strong);
+      }
+
+      /* The docs shell spans the full viewport: the section nav hugs the
+         left edge, the "On this page" outline hugs the right edge, and the
+         article takes everything in between. */
+      .docs-shell {
+        width: 100%;
+      }
+
+      @media (min-width: 1024px) {
+        .docs-shell {
+          grid-template-columns: 270px minmax(0, 1fr) 270px;
+        }
+
+        .docs-shell > .docs-sidebar-left {
+          justify-self: start;
+          width: 100%;
+        }
+
+        .docs-shell > .docs-sidebar-right {
+          justify-self: end;
+          width: 100%;
+        }
+      }
+
+      .doc-card {
+        border: 1px solid var(--docs-line-strong);
+        border-radius: 1rem;
+        background: var(--docs-panel);
+      }
+
+      .doc-card:hover {
+        border-color: color-mix(
+          in srgb,
+          var(--docs-fg) 18%,
+          var(--docs-line-strong)
+        );
+      }
+
+      .library-area {
+        margin-top: 2.25rem;
+        scroll-margin-top: 11rem;
+      }
+
+      .library-title {
+        margin: 0 0 0.25rem;
+        font-size: 1.1rem;
+        font-weight: 900;
+        color: var(--docs-fg);
+      }
+
+      .library-blurb {
+        margin: 0 0 1rem;
+        color: var(--docs-muted);
+        font-size: 0.95rem;
+      }
+
+      .library-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 0.85rem;
+      }
+
+      .library-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        padding: 0.95rem 1.05rem;
+        color: var(--docs-fg);
+        text-decoration: none;
+      }
+
+      .library-card:hover {
+        background: var(--docs-hover);
+      }
+
+      .library-card-title {
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+        font-size: 0.98rem;
+        font-weight: 800;
+        line-height: 1.3;
+      }
+
+      .library-kind {
+        flex: none;
+        border: 1px solid var(--docs-line-strong);
+        border-radius: 999px;
+        padding: 0.05rem 0.45rem;
+        color: var(--docs-soft);
+        font-family:
+          "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+          monospace;
+        font-size: 0.66rem;
+        font-weight: 700;
+      }
+
+      .library-card-body {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        color: var(--docs-muted);
+        font-size: 0.86rem;
+        line-height: 1.5;
+      }
+
+      .nav-link {
+        display: block;
+        border-radius: 0.85rem;
+        padding: 0.52rem 0.9rem;
+        color: var(--docs-muted);
+        font-size: 0.97rem;
+        font-weight: 600;
+        text-decoration: none;
+      }
+
+      .nav-link:hover {
+        color: var(--docs-fg);
+        background: var(--docs-hover);
+      }
+
+      .nav-link.active {
+        color: var(--docs-fg);
+        background: var(--docs-panel-soft);
+        font-weight: 800;
+      }
+
+      .route-row {
+        display: grid;
+        grid-template-columns: 5.25rem minmax(0, 1fr) minmax(9.5rem, 0.55fr);
+        gap: 1rem;
+        align-items: center;
+        border-top: 1px solid var(--docs-line);
+        padding: 0.85rem 0;
+      }
+
+      .route-row:first-child {
+        border-top: 0;
+      }
+
+      .kbd {
+        border: 1px solid var(--docs-line-strong);
+        border-radius: 0.45rem;
+        background: var(--docs-code);
+        padding: 0.08rem 0.42rem;
+        color: var(--docs-muted);
+        font-family:
+          "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+          monospace;
+        font-size: 0.74rem;
+      }
+
+      .docs-footer-icon {
+        width: 1.35rem;
+        height: 1.35rem;
+        color: var(--docs-soft);
+      }
+
+      @media (max-width: 1180px) {
+        .route-row {
+          grid-template-columns: 1fr;
+          gap: 0.35rem;
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="min-h-screen bg-[var(--docs-bg)] text-[var(--docs-fg)]">
+    <div data-forkmesh-header="simple"></div>
+    <header
+      class="sticky top-0 z-30 border-b border-[var(--docs-line)] bg-[color-mix(in_srgb,var(--docs-bg)_94%,transparent)] backdrop-blur-xl"
+    >
+      <div
+        class="hidden h-20 w-full grid-cols-1 items-center px-5 sm:px-8 md:grid lg:px-8"
+      >
+        <div class="relative min-w-0 max-w-[560px]">
+          <label
+            class="flex h-11 min-w-0 items-center justify-between gap-4 rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-panel)] px-4 text-left text-[0.92rem] font-semibold text-[var(--docs-soft)] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.01)]"
+            aria-label="Search documentation"
+          >
+            <span class="inline-flex min-w-0 flex-1 items-center gap-3">
+              <svg
+                class="h-5 w-5 flex-none"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-3.5-3.5"></path>
+              </svg>
+              <input
+                id="docs-search"
+                class="min-w-0 flex-1 border-0 bg-transparent text-[var(--docs-fg)] outline-none placeholder:text-[var(--docs-soft)]"
+                type="search"
+                placeholder="Search..."
+                autocomplete="off"
+                aria-controls="docs-search-panel"
+                aria-expanded="false"
+              />
+            </span>
+            <span class="kbd">⌘K</span>
+          </label>
+          <div
+            id="docs-search-panel"
+            class="absolute left-0 right-0 top-[calc(100%+0.55rem)] z-50 hidden overflow-hidden rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-panel)] shadow-2xl"
+            role="listbox"
+            aria-label="Documentation search results"
+          >
+            <div
+              id="docs-search-results"
+              class="max-h-80 overflow-y-auto p-2 docs-scrollbar"
+            ></div>
+            <div
+              id="docs-search-empty"
+              class="hidden px-4 py-5 text-sm font-semibold text-[var(--docs-muted)]"
+            >
+              No results found.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <nav
+        class="docs-tabs flex h-[3.75rem] w-full items-end overflow-x-auto border-t border-[var(--docs-line)] px-5 sm:px-8 lg:px-8"
+        aria-label="Product documentation"
+      >
+        <a class="docs-tab tab-active" href="#welcome" aria-current="page">
+          <span>Desktop</span>
+        </a>
+        <span class="docs-tab" aria-disabled="true">
+          <span>Extension</span>
+          <span
+            class="rounded-full border border-[var(--docs-line-strong)] px-2 py-0.5 text-[0.65rem] font-black tracking-normal text-[var(--docs-soft)]"
+            >Coming soon</span
+          >
+        </span>
+        <span class="docs-tab" aria-disabled="true">
+          <span>Mobile</span>
+          <span
+            class="rounded-full border border-[var(--docs-line-strong)] px-2 py-0.5 text-[0.65rem] font-black tracking-normal text-[var(--docs-soft)]"
+            >Coming soon</span
+          >
+        </span>
+        <span class="docs-tab-divider" aria-hidden="true"></span>
+        <a class="docs-tab" href="#install"><span>Install</span></a>
+        <a class="docs-tab" href="#quickstart"><span>Quickstart</span></a>
+        <a class="docs-tab" href="#repository"><span>Concepts</span></a>
+        <a class="docs-tab" href="#api-websockets"><span>APIs</span></a>
+        <a class="docs-tab" href="#self-hosting"><span>Self-hosting</span></a>
+        <a class="docs-tab" href="/docs/protocol"><span>Protocol spec</span></a>
+        <a class="docs-tab" href="/docs/onboarding"><span>Team onboarding</span></a>
+        <a class="docs-tab" href="#library"><span>Library</span></a>
+        <a class="docs-tab" href="/docs/history/"><span>Updates</span></a>
+      </nav>
+    </header>
+
+    <main
+      class="docs-shell grid w-full grid-cols-1 gap-8 px-5 py-8 sm:px-8 lg:gap-12 lg:px-8"
+    >
+      <aside class="docs-sidebar-left hidden lg:block">
+        <nav
+          class="sticky top-[10.5rem] max-h-[calc(100vh-11.5rem)] overflow-y-auto pr-2 docs-scrollbar"
+          aria-label="Documentation sections"
+        >
+          <a class="nav-link active mb-7" href="#welcome">Welcome</a>
+
+          <div class="mb-8">
+            <h2
+              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
+            >
+              Quickstart
+            </h2>
+            <a class="nav-link" href="#install">Install</a>
+            <a class="nav-link" href="#quickstart">Quickstart</a>
+            <a class="nav-link" href="/docs/onboarding">Team onboarding</a>
+            <a class="nav-link" href="/docs/product-promise">Product promise proof</a>
+            <a class="nav-link" href="/docs/business-model">Free protocol / paid services</a>
+          </div>
+
+          <div class="mb-8">
+            <h2
+              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
+            >
+              Concepts
+            </h2>
+            <a class="nav-link" href="#repository">Repository model</a>
+            <a class="nav-link" href="/docs/contributions">Contribution counting</a>
+            <a class="nav-link" href="#https-routing">HTTPS mirror routing</a>
+            <a class="nav-link" href="#git-clone">Git clone</a>
+            <a class="nav-link" href="#issues">Issues</a>
+            <a class="nav-link" href="#pull-requests">Pull requests</a>
+            <a class="nav-link" href="#accounts">Accounts</a>
+            <a class="nav-link" href="#chat">Encrypted rooms</a>
+            <a class="nav-link" href="#api-websockets">APIs and WebSockets</a>
+            <a class="nav-link" href="#bounty-custody">Bounty custody</a>
+            <a class="nav-link" href="#installers-updates">Installers and updates</a>
+            <a class="nav-link" href="#developer-integrations">Developer integrations</a>
+            <a class="nav-link" href="#self-hosting">Self-hosting</a>
+            <a class="nav-link" href="#limitations">Limitations</a>
+          </div>
+
+          <div class="mb-8">
+            <h2
+              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
+            >
+              Developer docs
+            </h2>
+            <a class="nav-link" href="/docs/protocol">Protocol spec</a>
+            <a class="nav-link" href="/docs/git-compatibility">Git compatibility</a>
+            <a class="nav-link" href="/docs/cloudflare-worker">Relay &amp; website</a>
+            <a class="nav-link" href="/docs/qt-client">Desktop client</a>
+            <a class="nav-link" href="/mobile">Mobile app</a>
+          </div>
+
+          <div class="mb-8">
+            <h2
+              class="mb-3 px-3 text-[0.93rem] font-black text-[var(--docs-fg)]"
+            >
+              Library
+            </h2>
+            <a class="nav-link" href="/docs/library/">Library overview</a>
+            <a class="nav-link" href="/docs/history/">Recent updates</a>
+            <a class="nav-link" href="/docs/documents/">All documents</a>
+            <!-- forkmesh-docs-library-nav -->
+          </div>
+        </nav>
+      </aside>
+
+      <article class="min-w-0 pb-12">
+        <section
+          id="welcome"
+          class="scroll-mt-44"
+          data-search-title="Welcome"
+          data-search-body="ForkMesh desktop documentation overview install quickstart encrypted repository direct HTTPS mirror routing Git clone issues pull requests accounts encrypted rooms"
+        >
+          <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div></div>
+            <button
+              id="copy-page"
+              class="inline-flex h-11 items-center gap-3 rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-panel)] px-4 text-[0.93rem] font-bold text-[var(--docs-muted)]"
+              type="button"
+            >
+              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="12" height="12" rx="2"></rect>
+                <path
+                  d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"
+                ></path>
+              </svg>
+              <span>Copy page</span>
+              <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
+            </button>
+          </div>
+
+          <h1
+            class="max-w-[760px] text-[2.1rem] font-black leading-[1.08] text-[var(--docs-fg)] sm:text-[2.25rem]"
+          >
+            ForkMesh
+          </h1>
+          <p
+            class="mt-4 max-w-[820px] text-[1.18rem] leading-8 text-[var(--docs-muted)] sm:text-[1.38rem]"
+          >
+            Host, mirror, inspect, and collaborate on Git repositories across
+            local desktop nodes, signed inboxes, encrypted rooms, and live clone
+            routes.
+          </p>
+
+          <div
+            class="mt-12 grid gap-8 text-[1.02rem] leading-8 text-[var(--docs-muted)]"
+          >
+            <p>
+              ForkMesh is a distributed Git collaboration protocol where code
+              remains on local mirrors while the relay coordinates discovery,
+              routing, identities, and collaboration records.
+            </p>
+            <p>
+              You organize work around encrypted mirrors, direct-HTTPS
+              Git-over-HTTP routes, issues, pull requests, accounts, and
+              encrypted rooms. The relay is service discovery and a bounded
+              in-place proxy, not canonical Git storage.
+            </p>
+          </div>
+
+          <a
+            id="install"
+            class="doc-card mt-10 grid min-h-[6.7rem] scroll-mt-44 grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-5 p-6 no-underline"
+            href="/desktop"
+          >
+            <svg
+              class="h-8 w-8 text-[var(--docs-fg)]"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M12 3v12"></path>
+              <path d="m7 10 5 5 5-5"></path>
+              <path d="M5 19h14"></path>
+            </svg>
+            <span>
+              <strong
+                class="block text-[1.1rem] font-black text-[var(--docs-fg)]"
+                >Install ForkMesh Desktop</strong
+              >
+              <span class="mt-1 block text-[0.95rem] text-[var(--docs-muted)]"
+                >Download the desktop app, connect a mirror, then continue to
+                the Quickstart.</span
+              >
+            </span>
+          </a>
+
+          <a
+            class="doc-card mt-5 grid min-h-[6.7rem] grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-5 p-6 no-underline"
+            href="/docs/onboarding"
+          >
+            <svg class="h-8 w-8 text-[var(--docs-fg)]" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M19 8v6"></path>
+              <path d="M22 11h-6"></path>
+            </svg>
+            <span>
+              <strong class="block text-[1.1rem] font-black text-[var(--docs-fg)]">Start by role: QA, developers, and marketing</strong>
+              <span class="mt-1 block text-[0.95rem] text-[var(--docs-muted)]">Join the World, use the desktop app, submit a pull request, get an independent review, and share links for rewards.</span>
+            </span>
+          </a>
+        </section>
+
+        <section
+          id="mental-model"
+          class="mt-16 scroll-mt-44"
+          data-search-title="The ForkMesh Mental Model"
+          data-search-body="Repositories direct HTTPS mirrors signed inboxes encrypted rooms mental model concepts"
+        >
+          <h2
+            class="text-[1.78rem] font-black leading-tight text-[var(--docs-fg)]"
+          >
+            The ForkMesh Mental Model
+          </h2>
+          <div class="mt-8 grid gap-5 md:grid-cols-2">
+            <a
+              class="doc-card min-h-[14rem] p-7 no-underline"
+              href="#repository"
+            >
+              <svg
+                class="h-8 w-8 text-[var(--docs-fg)]"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M3 7h5l2 3h11l-2 8H3z"></path>
+                <path d="M3 7v11"></path>
+              </svg>
+              <h3 class="mt-7 text-[1.1rem] font-black text-[var(--docs-fg)]">
+                Repositories
+              </h3>
+              <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+                Local mirrors remain canonical, with public metadata and live
+                browsing routed through the relay.
+              </p>
+            </a>
+            <a
+              class="doc-card min-h-[14rem] p-7 no-underline"
+              href="#https-routing"
+            >
+              <svg
+                class="h-8 w-8 text-[var(--docs-fg)]"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M4 12h5"></path>
+                <path d="m7 9 3 3-3 3"></path>
+                <path d="M20 12h-5"></path>
+                <path d="m17 15-3-3 3-3"></path>
+                <path d="M12 4v16"></path>
+              </svg>
+              <h3 class="mt-7 text-[1.1rem] font-black text-[var(--docs-fg)]">
+                HTTPS mirror routing
+              </h3>
+              <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+                Independent mirror nodes expose an authenticated HTTPS origin;
+                the relay selects a healthy origin and serves it under the
+                original ForkMesh URL.
+              </p>
+            </a>
+            <a
+              class="doc-card min-h-[14rem] p-7 no-underline"
+              href="#pull-requests"
+            >
+              <svg
+                class="h-8 w-8 text-[var(--docs-fg)]"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+              </svg>
+              <h3 class="mt-7 text-[1.1rem] font-black text-[var(--docs-fg)]">
+                Signed inboxes
+              </h3>
+              <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+                Issues and pull requests travel as signed events and patch
+                records for maintainers to review.
+              </p>
+            </a>
+            <a class="doc-card min-h-[14rem] p-7 no-underline" href="#chat">
+              <svg
+                class="h-8 w-8 text-[var(--docs-fg)]"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"
+                ></path>
+              </svg>
+              <h3 class="mt-7 text-[1.1rem] font-black text-[var(--docs-fg)]">
+                Encrypted rooms
+              </h3>
+              <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+                Public channels use a relay-derived authenticated shared key:
+                encrypted on the wire but readable by the relay. Private
+                channels and direct messages add device-to-device encryption
+                the relay cannot read.
+              </p>
+            </a>
+          </div>
+        </section>
+
+        <section
+          id="quickstart"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Find What You Need"
+          data-search-body="Concepts Git terminal account extension mobile coming soon quickstart"
+        >
+          <h2
+            class="text-[1.78rem] font-black leading-tight text-[var(--docs-fg)]"
+          >
+            Find What You Need
+          </h2>
+          <div class="mt-8 grid gap-5 md:grid-cols-2">
+            <a class="doc-card p-7 no-underline" href="#repository">
+              <svg
+                class="h-8 w-8 text-[var(--docs-fg)]"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                <path
+                  d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"
+                ></path>
+              </svg>
+              <h3 class="mt-7 text-[1.1rem] font-black text-[var(--docs-fg)]">
+                Concepts
+              </h3>
+              <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+                Learn the vocabulary: mirrors, signed events, rooms, and
+                account identity.
+              </p>
+            </a>
+            <a class="doc-card p-7 no-underline" href="#git-clone">
+              <svg
+                class="h-8 w-8 text-[var(--docs-fg)]"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M4 17l6-6-6-6"></path>
+                <path d="M12 19h8"></path>
+              </svg>
+              <h3 class="mt-7 text-[1.1rem] font-black text-[var(--docs-fg)]">
+                Git and terminal
+              </h3>
+              <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+                Clone repositories through native Git smart HTTP while the
+                relay routes to an active host.
+              </p>
+            </a>
+            <a class="doc-card p-7 no-underline" href="#accounts">
+              <svg
+                class="h-8 w-8 text-[var(--docs-fg)]"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                <path d="M3 10h18"></path>
+              </svg>
+              <h3 class="mt-7 text-[1.1rem] font-black text-[var(--docs-fg)]">
+                Account
+              </h3>
+              <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+                Understand node names, public identities, signup, login,
+                storage, and sync boundaries.
+              </p>
+            </a>
+            <a class="doc-card p-7 no-underline" href="#limitations">
+              <svg
+                class="h-8 w-8 text-[var(--docs-fg)]"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <rect x="5" y="3" width="14" height="18" rx="2"></rect>
+                <path d="M8 7h8"></path>
+                <path d="M8 11h8"></path>
+              </svg>
+              <h3 class="mt-7 text-[1.1rem] font-black text-[var(--docs-fg)]">
+                Extension and mobile
+              </h3>
+              <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+                Extension and mobile application docs are preserved as coming
+                soon areas for future releases.
+              </p>
+            </a>
+          </div>
+        </section>
+
+        <section
+          id="repository"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Repository model"
+          data-search-body="Canonical code local Git mirror public discovery repo route browser view tree blob"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Repository model
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            Each repository is hosted by one or more desktop nodes that keep a
+            local Git mirror. The public catalog stores metadata such as owner,
+            repo name, description, maintainer key, and last sync time.
+          </p>
+          <div class="doc-card mt-6 p-6">
+            <ul class="grid gap-4 text-[0.95rem] text-[var(--docs-muted)]">
+              <li>
+                <strong class="text-[var(--docs-fg)]">Canonical code:</strong>
+                local Git mirror on the host node.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Public discovery:</strong>
+                <code class="rounded-md bg-[var(--docs-code)] px-2 py-1"
+                  >GET /api/repositories</code
+                >
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Repo route:</strong>
+                <code class="rounded-md bg-[var(--docs-code)] px-2 py-1"
+                  >https://forkmesh.com/&lt;owner&gt;/&lt;repo&gt;</code
+                >
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Browser view:</strong>
+                tree and blob requests proxied over HTTPS to a healthy,
+                integrity-verified mirror.
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section
+          id="https-routing"
+          class="mt-16 scroll-mt-44"
+          data-search-title="HTTPS mirror routing"
+          data-search-body="Desktop node direct HTTPS signed capability health check integrity tree blob"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            HTTPS mirror routing
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            Each independent mirror runs an authenticated HTTPS gateway. The
+            relay performs signed health and integrity checks, selects an
+            eligible origin, and streams ordinary HTTPS responses under the
+            original ForkMesh URL. Repository bytes never
+            travel over the multiplayer socket.
+          </p>
+          <div class="doc-card mt-6 p-6">
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >POST</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/api/mirrors/https</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >Register a node-signed HTTPS endpoint</span
+              >
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >GET</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/api/repo/&lt;owner&gt;/&lt;repo&gt;/tree?path=...</code
+              >
+              <span class="text-[var(--docs-muted)]">Browse directories</span>
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >GET</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/api/repo/&lt;owner&gt;/&lt;repo&gt;/blob?path=...</code
+              >
+              <span class="text-[var(--docs-muted)]">Fetch file content</span>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="git-clone"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Git clone"
+          data-search-body="Git upload-pack clone fetch smart HTTP packfiles repository terminal command"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Git clone
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            The public HTTPS path supports Git upload-pack for ordinary,
+            shallow, and protocol-v2 partial clone/fetch operations. The relay
+            proxies Git smart HTTP requests in place from an authenticated,
+            healthy HTTPS mirror instead of storing packfiles itself. Push over
+            the repository's <code>ssh://</code> URL, or over HTTPS when the
+            push is authorized: signed by a desktop or mobile node, or made to
+            a repository ForkMesh hosts with the push credential the website
+            issues. Unauthorized HTTPS pushes are refused before the request
+            body is read. See the
+            <a href="/docs/git-compatibility">generated compatibility matrix</a>
+            for exact operations, clients, reproductions, and recovery steps.
+          </p>
+          <pre
+            class="doc-card mt-6 overflow-x-auto p-5 text-sm leading-7 text-[var(--docs-fg)]"
+          ><code>git clone https://forkmesh.com/forkmesh/forkmesh</code></pre>
+          <div class="doc-card mt-4 p-6">
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >GET</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/&lt;owner&gt;/&lt;repo&gt;/info/refs?service=git-upload-pack</code
+              >
+              <span class="text-[var(--docs-muted)]">Advertise refs</span>
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >POST</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/&lt;owner&gt;/&lt;repo&gt;/git-upload-pack</code
+              >
+              <span class="text-[var(--docs-muted)]">Fetch pack data</span>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="issues"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Issues"
+          data-search-body="Issue events signed Ed25519 identity inbox submissions repository history"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">Issues</h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            Issue events are signed by the author's Ed25519 identity. The relay
+            can hold pending inbox submissions, but accepted issue history
+            should be represented as repository files.
+          </p>
+          <pre
+            class="doc-card mt-6 overflow-x-auto p-5 text-sm leading-7 text-[var(--docs-fg)]"
+          ><code>forkmesh-issue-event-v1
+&lt;type&gt;
+&lt;issue number&gt;
+&lt;author pubkey&gt;
+&lt;ts&gt;
+sha256hex(content)</code></pre>
+        </section>
+
+        <section
+          id="pull-requests"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Pull requests"
+          data-search-body="Signed patch submissions maintainer review merge Git project history"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Pull requests
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            A PR is a signed record built around a patch: either a plain diff
+            plus an optional <code>git format-patch</code> commit series a
+            contributor attaches directly (no branch, fork, or push access
+            required), or a pointer to a real branch, whose diff is derived
+            from the live ref instead of stored. The whole PR object, and
+            every comment and review on it, carries its own Ed25519
+            signature bound to that PR's number. A maintainer verifies the
+            signatures and merges &mdash; a real <code>git merge</code> when
+            there is a resolvable commit, falling back to replaying the
+            stored patch/commit series otherwise &mdash; and the accepted
+            record is committed straight into the repository itself, on its
+            own <code>forkmesh/pulls</code> branch, so it travels with the
+            project rather than living only in the relay's database.
+          </p>
+          <pre
+            class="doc-card mt-6 overflow-x-auto p-5 text-sm leading-7 text-[var(--docs-fg)]"
+          ><code>forkmesh-pull-event-v1
+&lt;author pubkey&gt;
+&lt;ts&gt;
+sha256hex(title + NUL + base + NUL + head + NUL + patch + NUL + commits)</code></pre>
+        </section>
+
+        <section
+          id="accounts"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Accounts and identities"
+          data-search-body="Signup node name reserve finalize email password login Ed25519 key public identity"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Accounts and identities
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            People create a password account on the signup page. A desktop or
+            headless node reserves a public node name with a request signed by
+            its Ed25519 key, then finalizes the registration, which binds the
+            name to that key.
+          </p>
+          <div class="doc-card mt-6 p-6">
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >POST</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/api/accounts/reserve</code
+              >
+              <span class="text-[var(--docs-muted)]">Claim a node name</span>
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >POST</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/api/accounts/finalize</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >Set email and password</span
+              >
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >GET</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/api/accounts/&lt;nodeName&gt;</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >Resolve public identity</span
+              >
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="chat"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Encrypted rooms"
+          data-search-body="Room clients WebSockets clients observer network presence encrypted chat"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Encrypted rooms
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            Room clients use WebSockets. The Town Square compatibility room
+            derives SHA-256(DATA_KEY +
+            &quot;:room-chat-passphrase-v1&quot;); other repositories derive a
+            distinct v2 passphrase from DATA_KEY and lower(owner/repo). The
+            relay releases it only to an authenticated repository participant.
+            Clients apply PBKDF2-HMAC-SHA256 for 210,000 rounds with a
+            room-scoped salt before AES-256-GCM. Public channels remain
+            controller-readable for integrations; private channels and direct
+            messages add automatic device-to-device encryption beyond that
+            room key. The relay retains at most 500 persisted frames per room
+            for 7 days. The header reads bounded, cached aggregate counts
+            without joining the room.
+          </p>
+          <div class="doc-card mt-6 p-6">
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >WS</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/api/repo/&lt;owner&gt;/&lt;repo&gt;/rooms/&lt;room&gt;/ws</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >Join an authenticated shared-key room</span
+              >
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >WS</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >/api/repo/&lt;owner&gt;/&lt;repo&gt;/rooms/&lt;room&gt;/clients</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >Observe room presence</span
+              >
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="api-websockets"
+          class="mt-16 scroll-mt-44"
+          data-search-title="APIs and WebSockets"
+          data-search-body="API WebSocket endpoint reference relay direct HTTPS mirror routing repository catalog signed inboxes agents notifications accounts network status"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            APIs and WebSockets
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            The public API is served by the relay. It holds transient
+            WebSocket state for authenticated shared-key rooms and generalized
+            presence, and stores encrypted records, blind indexes, inboxes,
+            endpoint health, notifications, status samples, small
+            control-plane state, and up to 500 persisted room frames per room
+            for 7 days. The relay-derived room key can decrypt public-channel
+            application frames. Private-channel and direct-message history
+            contains a second recipient-encrypted envelope, so that controller
+            key alone cannot read its application content. Device public keys
+            are discovered through the relay, so the relay is trusted to
+            publish the right recipient keys.
+            Desktop and headless nodes keep encrypted mirror data and serve
+            authorized repository reads through direct HTTPS.
+          </p>
+
+          <div class="doc-card mt-6 p-6">
+            <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
+              Realtime and repository transport
+            </h3>
+            <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              WebSockets are limited to chat, presence, movement, shared live
+              interactions, and small repository-update signals. Clone, browse,
+              release, and other repository payloads use ordinary HTTPS.
+              Presence summaries also use HTTP snapshots and periodic
+              heartbeats as a durable fallback.
+            </p>
+            <div class="mt-5">
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GONE</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/host</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Retired repository socket transport. Every method answers a
+                  cacheable
+                  <code>410 repository_socket_transport_retired</code>, and an
+                  <code>Upgrade</code> to it is rejected with <code>426</code>.
+                  Read repository bytes over the HTTPS routes below rather than
+                  polling this one.</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/{tree,blobs,blob,raw,history,commit,branches,search}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Website browse requests forwarded to a live host</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >WS</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/rooms/&lt;room&gt;/ws</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Repo-scoped encrypted chat room</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/rooms/&lt;room&gt;/clients</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Room client-count snapshot</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >WS/GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/room/&lt;room&gt;/{ws,clients}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Legacy bare-room compatibility path</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="doc-card mt-6 p-6">
+            <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
+              Git, catalog, mirrors, and releases
+            </h3>
+            <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              The relay coordinates discovery and routing, but Git objects and
+              release blobs stream from live desktop nodes. Catalog rows are
+              signed, encrypted at rest, and cached briefly at the edge.
+            </p>
+            <div class="mt-5">
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/&lt;owner&gt;/&lt;repo&gt;/info/refs?service=git-upload-pack</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Clone/fetch ref advertisement</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/&lt;owner&gt;/&lt;repo&gt;/git-upload-pack</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Clone/fetch pack negotiation</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET/POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/&lt;owner&gt;/&lt;repo&gt;/info/refs?service=git-receive-pack and /git-receive-pack</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Authorized HTTPS push; an unauthorized request gets 401 before its body is read</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET/POST/DELETE</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repositories</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >List, publish, or delete signed catalog records</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/mirrors</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Logical repo mirror health and state-pin status</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/about</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Owner updates catalog-facing description metadata</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/releases/blob/sha256/&lt;hash&gt;?filename=&lt;asset-name&gt;</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Content-addressed release asset stream; user-facing links pass
+                  the manifest filename to preserve the downloaded extension</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/releases/downloads</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Per-artifact release download counts</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="doc-card mt-6 p-6">
+            <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
+              Collaboration, agents, and private access
+            </h3>
+            <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              Cross-user work is staged as signed records in the relay &mdash; a
+              temporary inbox, not the permanent record &mdash; then the repo
+              owner's node drains it and merges/commits it into Git. Delivery
+              is event-driven: a minimal repository-update signal on the
+              control channel triggers one consolidated HTTPS sync fetch, with
+              a periodic fallback sync for dropped events and exponential
+              backoff on relay failures.
+            </p>
+            <div class="mt-5">
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST/GET/DELETE</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/{issues,pulls,commits,discussions}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Signed pending inboxes for collaboration events</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/subscribe</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Signed issue or PR thread subscription state</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/bounty</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Retired legacy custody path; returns migration guidance and never creates or pays a bounty</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET/POST/DELETE</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/shares</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Owner-signed private-repo collaborator ACL</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET/POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/agents</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Desktop pushes owner-sealed snapshots and drains ciphertext prompts</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/agents/list</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Authorized client retrieves owner-sealed session envelopes; the relay cannot decrypt them</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/agents/&lt;id&gt;/transcript</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Authorized client retrieves one owner-sealed session envelope for local decryption</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/repo/&lt;owner&gt;/&lt;repo&gt;/agents/&lt;id&gt;/prompt</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Queues an owner-sealed prompt; plaintext prompts are rejected</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="doc-card mt-6 p-6">
+            <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
+              Accounts, notifications, and platform
+            </h3>
+            <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              Account APIs bind names to Ed25519 keys, handle signup and
+              recovery, and carry node liveness. The dashboard consolidates
+              some periodic reads through <code class="rounded-md bg-[var(--docs-code)] px-2 py-1">/api/poll</code>
+              so it does not re-fetch full profile and notification payloads on
+              every tick.
+            </p>
+            <div class="mt-5">
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/accounts/{signup,reserve,donation-address,finalize,login,logout,forgot-password,reset-password,profile,heartbeat}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Signup, auth, profile, and signed node heartbeat flows</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/accounts/{donation-status,treasury-address,central-fund,verify-email,users,&lt;name&gt;}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Account lookup, payment status, and directories</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/accounts/{ownership-transfer-confirm,claim-node,claim-confirm,reclaim-node,link-node,link-install,link-self,link-grant}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Ownership, claim, and user-node linking actions</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET/POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/notifications</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Encrypted notification list and read-state updates</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/poll</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Lightweight dashboard digest and change tokens</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/federation/{register,donation-address,donation-status,nodes,treasury-address,central-fund}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Signed relay-to-main federation control plane</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/{version,mainnode,status,install-source} and /health</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Build marker, capabilities, public status, and installer source</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >GET</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/network/{overview,stats,online-history,leaderboards}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Cached network aggregates and historical samples</span
+                >
+              </div>
+              <div class="route-row">
+                <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                  >POST</strong
+                >
+                <code class="break-words text-sm text-[var(--docs-fg)]"
+                  >/api/{install-diag,feedback,security/report}</code
+                >
+                <span class="text-[var(--docs-muted)]"
+                  >Bounded diagnostics, docs feedback, and reports</span
+                >
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="bounty-custody"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Bounty custody and payouts"
+          data-search-body="Solana bounty legacy custody frozen migration external signer non-custodial"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Bounty custody and payouts
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            New relay-custodied bounty wallets and payouts are disabled.
+            Historical bounty records are frozen for a balance-reconciled
+            migration. New bounty work must use an external
+            self-custodial wallet, program, or multisig and an unsigned intent.
+          </p>
+          <div class="doc-card mt-6 p-6">
+            <ul
+              class="grid gap-4 text-[0.95rem] leading-7 text-[var(--docs-muted)]"
+            >
+              <li>
+                <strong class="text-[var(--docs-fg)]">Current boundary:</strong>
+                the relay never creates, accepts through an API, signs with,
+                broadcasts, or rewrites a wallet private key.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Historical funding:</strong>
+                do not send funds to a legacy per-issue or owner bounty address.
+                Its public status is migration-only until reconciliation is
+                complete.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Authorization:</strong>
+                a repository owner may approve public payout metadata, but an
+                owner-controlled external signer must separately review and
+                authorize the exact on-chain transfer.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Fund states:</strong>
+                user-owned funds, community pools, pending allocations, and
+                finalized on-chain transfers are always displayed separately.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Verification:</strong>
+                the relay may accept a public transaction signature only after
+                an external signer broadcasts. It independently checks finality,
+                source, destination, amount, and replay protection.
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section
+          id="installers-updates"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Installers and updates"
+          data-search-body="signed installers auto update release.json appcast sha256 AppImage Windows macOS Sparkle WinSparkle release verification"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Installers and updates
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            ForkMesh releases are published as content-addressed assets with
+            small committed metadata. The same manifest drives the installer,
+            update checks, and release download pages so they agree on the
+            current version.
+          </p>
+          <div class="doc-card mt-6 p-6">
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >Linux</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >.AppImage + .zsync</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >AppImageUpdate applies zsync deltas and verifies sha256 metadata</span
+              >
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >Windows</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >NSIS setup.exe</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >Update by running the newer signed setup.exe; the app has no built-in updater on Windows</span
+              >
+            </div>
+            <div class="route-row">
+              <strong class="text-xs font-black uppercase text-[var(--docs-fg)]"
+                >macOS</strong
+              >
+              <code class="break-words text-sm text-[var(--docs-fg)]"
+                >dmg</code
+              >
+              <span class="text-[var(--docs-muted)]"
+                >Ad-hoc signed and not notarized yet, so macOS asks for confirmation on first open; update by installing the newer dmg, as the app has no built-in updater on macOS</span
+              >
+            </div>
+          </div>
+          <div class="doc-card mt-4 p-6">
+            <ul
+              class="grid gap-4 text-[0.95rem] leading-7 text-[var(--docs-muted)]"
+            >
+              <li>
+                <strong class="text-[var(--docs-fg)]">Manifest:</strong>
+                <code class="rounded-md bg-[var(--docs-code)] px-2 py-1">releases/&lt;channel&gt;/release.json</code>
+                lists the version, artifacts, sizes, sha256 hashes, and
+                content-addressed blob URLs.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Appcast:</strong>
+                <code class="rounded-md bg-[var(--docs-code)] px-2 py-1">appcast.xml</code>
+                is generated from the same release manifest and carries the
+                signed installer enclosure. No shipped desktop reads it yet.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Verification chain:</strong>
+                install scripts check sha256 sums; AppImage checks sha256 and
+                optional GPG signatures; the operating system verifies native
+                code signing where certificates are configured.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Source installs:</strong>
+                a source checkout keeps using the existing rebuild-from-tag path.
+                Installer-based installs defer to the native updater instead.
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section
+          id="developer-integrations"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Developer integrations"
+          data-search-body="MCP server issue tracker actions mobile iOS Android encrypted relay signed inbox"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Developer integrations
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            ForkMesh integrations use the same local files, signed inboxes, and
+            encrypted relay protocol as the desktop node. They do not get a
+            privileged side door into issues, pull requests, or agents.
+          </p>
+          <div class="doc-card mt-6 p-6">
+            <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
+              MCP and mobile clients
+            </h3>
+            <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              The MCP server exposes repository and issue operations to
+              MCP-capable agents. Write tools sign with the local node identity
+              and produce the same native issue and pull files as the desktop.
+              The iOS and Android apps speak the same encrypted room protocol
+              and signed inbox format for chat, catalog reads, issues, and pull
+              request submissions.
+            </p>
+            <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              Connecting an agent is a desktop setting: Settings &rarr; MCP
+              mints a connector token, shows the exact configuration block to
+              paste into the agent, and can probe the server to confirm it
+              answers. Because the write tools act as your node, they require
+              that token in <code>FORKMESH_MCP_TOKEN</code>; read tools
+              (<code>whoami</code>, <code>list_repos</code>,
+              <code>read_file</code>, <code>search_issues</code>,
+              <code>get_pr_diff</code>) work without one. Revoking the token
+              from that tab demotes every agent still holding it to read-only.
+            </p>
+          </div>
+        </section>
+
+        <section
+          id="self-hosting"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Self-hosting and development"
+          data-search-body="self hosting mainnode relay Cloudflare Worker Qt desktop build local relay pywrangler deploy requirements headless node"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Self-hosting and development
+          </h2>
+          <p class="mt-4 text-[0.95rem] leading-8 text-[var(--docs-muted)]">
+            A self-hosted ForkMesh needs a desktop or headless node for Git and
+            one App relay for the product UI, API, WebSockets, and Git routing.
+            The documented self-hosting path deploys the App as a Cloudflare
+            Worker with D1 and Durable Objects. ForkMesh's official marketing
+            site is separate and is not required by your instance.
+          </p>
+          <div class="doc-card mt-6 p-6">
+            <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
+              Desktop node
+            </h3>
+            <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              Build requirements are Qt 6.4 or newer, CMake 3.16 or newer, Git,
+              OpenSSL development headers, the OpenSSL CLI at runtime, and a C++17
+              compiler.
+            </p>
+            <pre
+              class="mt-5 overflow-x-auto rounded-xl bg-[var(--docs-code)] p-4 text-sm leading-7 text-[var(--docs-fg)]"
+            ><code>cd desktop
+./run.sh
+./run.sh test</code></pre>
+          </div>
+          <div class="doc-card mt-4 p-6">
+            <h3 class="text-[1.1rem] font-black text-[var(--docs-fg)]">
+              One App Worker
+            </h3>
+            <p class="mt-2 text-[0.95rem] leading-7 text-[var(--docs-muted)]">
+              The bootstrapper derives <code>forkmesh.your-domain</code>, stages
+              every operational App asset, creates or reuses D1, deploys the
+              Worker, and attaches DNS without saving your Cloudflare token.
+            </p>
+            <pre
+              class="mt-5 overflow-x-auto rounded-xl bg-[var(--docs-code)] p-4 text-sm leading-7 text-[var(--docs-fg)]"
+            ><code>export CLOUDFLARE_API_TOKEN=&quot;your-scoped-token&quot;
+python3 tools/cloudflare_bootstrap.py \
+  --auto-configure \
+  --main-relay-url &quot;&quot; \
+  --skip-mirror-manifest
+
+cd app
+./deploy.sh dry-run app</code></pre>
+          </div>
+          <div class="doc-card mt-4 p-6">
+            <ul
+              class="grid gap-4 text-[0.95rem] leading-7 text-[var(--docs-muted)]"
+            >
+              <li>
+                <strong class="text-[var(--docs-fg)]">One origin:</strong>
+                set <code>PUBLIC_BASE_URL</code>, <code>API_ORIGIN</code>,
+                <code>APP_ORIGIN</code>, <code>WWW_ORIGIN</code>, and
+                <code>CORS_ALLOWED_ORIGINS</code> to
+                <code>https://forkmesh.your-domain</code>.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Worker plan:</strong>
+                use Cloudflare Workers Paid for the App. Its Python API, D1,
+                and Durable Object paths exceed the free plan's 10 ms CPU
+                ceiling during normal operation.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Complete App root:</strong>
+                set <code>SINGLE_WORKER_SITE=&quot;true&quot;</code>. The root then
+                includes login, signup, dashboard, repositories, install and
+                uninstall scripts, while <code>/api</code> shows developer stats.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Source layout:</strong>
+                backend and product assets live in <code>app/</code>. Official
+                marketing/docs/blog live in <code>www/</code>; World lives in
+                <code>world/</code>.
+              </li>
+              <li>
+                <strong class="text-[var(--docs-fg)]">Optional World:</strong>
+                deploy <code>world/</code> at
+                <code>forkmesh-world.your-domain</code>, set its
+                <code>APP_ORIGIN</code> to your App, and add the World origin to
+                the App CORS allowlist. Never store wallet private keys in a
+                Worker configuration.
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section
+          id="limitations"
+          class="mt-16 scroll-mt-44"
+          data-search-title="Current limitations"
+          data-search-body="relay metadata host online Git push receive-pack cross-relay federation storage limitations"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Current limitations
+          </h2>
+          <div class="doc-card mt-6 p-6">
+            <ul
+              class="grid gap-4 text-[0.95rem] leading-7 text-[var(--docs-muted)]"
+            >
+              <li>
+                The relay and its network front door can see connection
+                metadata.
+              </li>
+              <li>
+                Fresh file browsing, clone, and release downloads require a
+                healthy HTTPS gateway serving the repository; the relay does
+                not store packfiles. An HTTPS push needs a signed node or, for
+                a repository ForkMesh hosts, the website's push credential, and
+                it never falls back to a content socket. Otherwise use the
+                repository's owner-authorized SSH URL for stock Git push,
+                force-with-lease, and explicit force updates.
+              </li>
+              <li>
+                Routing metadata is currently scoped to one relay instance.
+                Repositories remain on independent HTTPS gateways (or in
+                owner-sealed private replicas), and automatic cross-instance
+                repository replication is not yet available.
+              </li>
+              <li>
+                Relay WebSockets carry only real-time presence, chat,
+                collaboration, control signals, and minimal repository-update
+                notifications. They never carry Git objects or large files.
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section
+          id="library"
+          class="mt-20 scroll-mt-44 border-t border-[var(--docs-line)] pt-10"
+          data-search-title="Documentation library"
+          data-search-body="Every guide, design note, engineering policy, security contract, operations runbook, mobile spec, plan and JSON schema from the ForkMesh source tree, rendered from www/docs"
+        >
+          <h2 class="text-[1.5rem] font-black text-[var(--docs-fg)]">
+            Documentation library
+          </h2>
+          <p class="mt-4 max-w-[820px] text-[1.02rem] leading-8 text-[var(--docs-muted)]">
+            Every Markdown document and JSON schema in the ForkMesh source tree's
+            <code>www/docs</code> tree, rendered with cross-links, an outline,
+            and previous/next navigation. Browse the
+            <a href="/docs/library/">library overview</a> or jump to an area
+            below. Each page links to its source file and to every page that
+            references it.
+          </p>
+          <div class="library">
+            <!-- forkmesh-docs-library -->
+          </div>
+        </section>
+
+        <section
+          class="mt-20 flex flex-wrap items-center justify-between gap-5 border-t border-[var(--docs-line)] pt-10"
+        >
+          <p
+            class="text-[0.95rem] font-semibold text-[var(--docs-muted)]"
+            data-feedback-status
+          >
+            Was this page helpful?
+          </p>
+          <div class="flex gap-3">
+            <button
+              class="inline-flex h-10 items-center gap-2 rounded-2xl border border-[var(--docs-line-strong)] px-4 text-[0.95rem] font-bold text-[var(--docs-muted)]"
+              type="button"
+              data-feedback-like
+            >
+              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 10v11"></path>
+                <path
+                  d="M15 5.5 14 10h5.7a1.8 1.8 0 0 1 1.7 2.3l-2 6.4A3 3 0 0 1 16.5 21H7"
+                ></path>
+                <path d="M7 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"></path>
+              </svg>
+              Yes
+            </button>
+            <button
+              class="inline-flex h-10 items-center gap-2 rounded-2xl border border-[var(--docs-line-strong)] px-4 text-[0.95rem] font-bold text-[var(--docs-muted)]"
+              type="button"
+              data-feedback-dislike
+            >
+              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M17 14V3"></path>
+                <path
+                  d="M9 18.5 10 14H4.3a1.8 1.8 0 0 1-1.7-2.3l2-6.4A3 3 0 0 1 7.5 3H17"
+                ></path>
+                <path d="M17 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3"></path>
+              </svg>
+              No
+            </button>
+          </div>
+        </section>
+
+        <footer class="mt-16 border-t border-[var(--docs-line)] pt-10">
+          <div
+            class="flex flex-wrap items-center justify-between gap-5 text-[0.95rem] text-[var(--docs-soft)]"
+          >
+            <div class="flex items-center gap-5">
+              <a
+                class="docs-footer-icon"
+                href="https://app.forkmesh.com/chat"
+                aria-label="ForkMesh chat"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"
+                  ></path>
+                </svg>
+              </a>
+              <a
+                class="docs-footer-icon"
+                href="/network"
+                aria-label="ForkMesh network"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M2 12h20"></path>
+                  <path d="M12 2a15.3 15.3 0 0 1 0 20"></path>
+                  <path d="M12 2a15.3 15.3 0 0 0 0 20"></path>
+                </svg>
+              </a>
+            </div>
+            <p>
+              Powered by
+              <strong class="font-black text-[var(--docs-muted)]"
+                >ForkMesh</strong
+              >
+            </p>
+          </div>
+        </footer>
+      </article>
+
+      <aside class="docs-sidebar-right hidden lg:block">
+        <nav
+          class="sticky top-[10.5rem] max-h-[calc(100vh-11.5rem)] overflow-y-auto text-[0.92rem] docs-scrollbar"
+          aria-label="On this page"
+        >
+          <h2
+            class="mb-4 flex items-center gap-3 font-black text-[var(--docs-fg)]"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 6h13"></path>
+              <path d="M8 12h13"></path>
+              <path d="M8 18h13"></path>
+              <path d="M3 6h.01"></path>
+              <path d="M3 12h.01"></path>
+              <path d="M3 18h.01"></path>
+            </svg>
+            On this page
+          </h2>
+          <a
+            class="mb-4 block font-bold text-[var(--docs-fg)] no-underline"
+            href="#mental-model"
+            >The ForkMesh Mental Model</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#quickstart"
+            >Find What You Need</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#repository"
+            >Repository model</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#https-routing"
+            >HTTPS mirror routing</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#git-clone"
+            >Git clone</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#api-websockets"
+            >APIs and WebSockets</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#bounty-custody"
+            >Bounty custody</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#installers-updates"
+            >Installers and updates</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#developer-integrations"
+            >Developer integrations</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#self-hosting"
+            >Self-hosting</a
+          >
+          <a
+            class="mb-4 block font-bold text-[var(--docs-muted)] no-underline"
+            href="#library"
+            >Documentation library</a
+          >
+          <div class="ml-3 border-l border-[var(--docs-line)] pl-3">
+            <!-- forkmesh-docs-library-toc -->
+          </div>
+        </nav>
+      </aside>
+    </main>
+
+    <div
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-black/45 px-4 py-6"
+      data-feedback-modal
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="feedback-modal-title"
+    >
+      <div class="absolute inset-0" data-feedback-close aria-hidden="true"></div>
+      <form
+        class="relative w-full max-w-md rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-panel)] p-5 shadow-2xl"
+        data-feedback-form
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2
+              class="text-[1.1rem] font-black text-[var(--docs-fg)]"
+              id="feedback-modal-title"
+            >
+              What was confusing, missing, or could be improved?
+            </h2>
+            <p class="mt-2 text-sm font-semibold text-[var(--docs-muted)]">
+              Optional, but useful for improving the docs.
+            </p>
+          </div>
+          <button
+            class="-mr-2 -mt-2 grid h-10 w-10 flex-none cursor-pointer place-items-center rounded-full text-[var(--docs-soft)] hover:bg-[var(--docs-hover)] hover:text-[var(--docs-fg)]"
+            type="button"
+            data-feedback-close
+            aria-label="Close feedback"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <textarea
+          class="mt-4 min-h-32 w-full resize-y rounded-2xl border border-[var(--docs-line-strong)] bg-[var(--docs-bg)] p-3 text-sm font-semibold text-[var(--docs-fg)] outline-none focus:border-[var(--docs-fg)]"
+          data-feedback-message
+          maxlength="2000"
+          placeholder="Tell us what would have helped."
+        ></textarea>
+        <div class="mt-4 flex justify-end gap-3">
+          <button
+            class="inline-flex h-10 items-center rounded-2xl border border-[var(--docs-line-strong)] px-4 text-sm font-bold text-[var(--docs-muted)]"
+            type="button"
+            data-feedback-close
+          >
+            Cancel
+          </button>
+          <button
+            class="inline-flex h-10 items-center rounded-2xl bg-[var(--docs-button)] px-4 text-sm font-bold text-[var(--docs-button-fg)]"
+            type="submit"
+          >
+            Send feedback
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      (() => {
+        const docsSearch = document.querySelector("#docs-search");
+        const docsSearchPanel = document.querySelector("#docs-search-panel");
+        const docsSearchResults = document.querySelector(
+          "#docs-search-results",
+        );
+        const docsSearchEmpty = document.querySelector("#docs-search-empty");
+        const docsSearchIndex = Array.from(
+          document.querySelectorAll("[data-search-title]"),
+        ).map((section) => ({
+          title: section.getAttribute("data-search-title") || "",
+          body: section.getAttribute("data-search-body") || "",
+          target:
+            section.getAttribute("data-search-href") || `#${section.id}`,
+        }));
+
+        function setDocsSearchPanel(open) {
+          if (!docsSearch || !docsSearchPanel) return;
+          docsSearchPanel.classList.toggle("hidden", !open);
+          docsSearch.setAttribute("aria-expanded", open ? "true" : "false");
+        }
+
+        function renderDocsSearchResults(query) {
+          if (!docsSearchResults || !docsSearchEmpty) return;
+          const normalized = query.trim().toLowerCase();
+          const matches = (
+            normalized
+              ? docsSearchIndex
+                  .map((item) => {
+                    const title = item.title.toLowerCase();
+                    const body = item.body.toLowerCase();
+                    const matched =
+                      title.includes(normalized) || body.includes(normalized);
+                    const score = title.includes(normalized) ? 0 : 1;
+                    return { ...item, matched, score };
+                  })
+                  .filter((item) => item.matched)
+                  .sort(
+                    (a, b) =>
+                      a.score - b.score || a.title.localeCompare(b.title),
+                  )
+              : docsSearchIndex
+          ).slice(0, 8);
+
+          docsSearchResults.textContent = "";
+          docsSearchEmpty.classList.toggle("hidden", matches.length > 0);
+
+          matches.forEach((item) => {
+            const link = document.createElement("a");
+            link.href = item.target;
+            link.className =
+              "block rounded-xl px-3 py-3 text-sm font-semibold text-[var(--docs-fg)] no-underline hover:bg-[var(--docs-hover)]";
+            link.setAttribute("role", "option");
+
+            const title = document.createElement("span");
+            title.className = "block";
+            title.textContent = item.title;
+
+            const body = document.createElement("span");
+            body.className =
+              "mt-1 block truncate text-xs font-semibold text-[var(--docs-muted)]";
+            body.textContent = item.body;
+
+            link.append(title, body);
+            link.addEventListener("click", () => {
+              setDocsSearchPanel(false);
+              docsSearch.value = "";
+            });
+            docsSearchResults.append(link);
+          });
+        }
+
+        if (docsSearch && docsSearchPanel) {
+          docsSearch.addEventListener("focus", () => {
+            renderDocsSearchResults(docsSearch.value);
+            setDocsSearchPanel(true);
+          });
+
+          docsSearch.addEventListener("input", () => {
+            renderDocsSearchResults(docsSearch.value);
+            setDocsSearchPanel(true);
+          });
+
+          docsSearch.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+              setDocsSearchPanel(false);
+              docsSearch.blur();
+              return;
+            }
+            if (event.key === "Enter") {
+              const firstResult = docsSearchPanel.querySelector("a");
+              if (firstResult) {
+                event.preventDefault();
+                firstResult.click();
+              }
+            }
+          });
+
+          document.addEventListener("keydown", (event) => {
+            if (
+              (event.metaKey || event.ctrlKey) &&
+              event.key.toLowerCase() === "k"
+            ) {
+              event.preventDefault();
+              docsSearch.focus();
+              docsSearch.select();
+            }
+          });
+
+          document.addEventListener("click", (event) => {
+            if (
+              !docsSearchPanel.contains(event.target) &&
+              event.target !== docsSearch
+            ) {
+              setDocsSearchPanel(false);
+            }
+          });
+        }
+
+        const copyButton = document.querySelector("#copy-page");
+        if (copyButton) {
+          const copyLabel = copyButton.querySelector("span");
+          copyButton.addEventListener("click", async () => {
+            const text = window.location.href.split("#")[0];
+            try {
+              await navigator.clipboard.writeText(text);
+            } catch (error) {
+              const area = document.createElement("textarea");
+              area.value = text;
+              area.style.position = "fixed";
+              area.style.left = "-9999px";
+              document.body.append(area);
+              area.select();
+              document.execCommand("copy");
+              area.remove();
+            }
+            if (!copyLabel) return;
+            const original = copyLabel.textContent;
+            copyLabel.textContent = "Copied";
+            setTimeout(() => {
+              copyLabel.textContent = original;
+            }, 1400);
+          });
+        }
+
+        const feedbackLike = document.querySelector("[data-feedback-like]");
+        const feedbackDislike = document.querySelector(
+          "[data-feedback-dislike]",
+        );
+        const feedbackStatus = document.querySelector("[data-feedback-status]");
+        const feedbackModal = document.querySelector("[data-feedback-modal]");
+        const feedbackForm = document.querySelector("[data-feedback-form]");
+        const feedbackMessage = document.querySelector(
+          "[data-feedback-message]",
+        );
+        const feedbackCloseButtons = document.querySelectorAll(
+          "[data-feedback-close]",
+        );
+
+        function setFeedbackStatus(message) {
+          if (feedbackStatus) feedbackStatus.textContent = message;
+        }
+
+        function setFeedbackDisabled(disabled) {
+          [feedbackLike, feedbackDislike].forEach((button) => {
+            if (button) button.disabled = disabled;
+          });
+        }
+
+        function setFeedbackModal(open) {
+          if (!feedbackModal) return;
+          feedbackModal.classList.toggle("hidden", !open);
+          feedbackModal.classList.toggle("flex", open);
+          if (open && feedbackMessage) feedbackMessage.focus();
+        }
+
+        async function submitFeedback({ vote, message = "" }) {
+          setFeedbackDisabled(true);
+          try {
+            const response = await fetch("/api/feedback", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                source: "docs",
+                vote,
+                path: window.location.pathname + window.location.hash,
+                message,
+              }),
+              keepalive: true,
+            });
+            if (!response.ok) throw new Error("feedback failed");
+            setFeedbackStatus("Thanks for the feedback.");
+            setFeedbackModal(false);
+          } catch (error) {
+            setFeedbackStatus("Was this page helpful?");
+            setFeedbackDisabled(false);
+          }
+        }
+
+        if (feedbackLike) {
+          feedbackLike.addEventListener("click", () => {
+            submitFeedback({ vote: "like" });
+          });
+        }
+
+        if (feedbackDislike) {
+          feedbackDislike.addEventListener("click", () => {
+            setFeedbackModal(true);
+          });
+        }
+
+        if (feedbackForm) {
+          feedbackForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            submitFeedback({
+              vote: "dislike",
+              message: feedbackMessage ? feedbackMessage.value : "",
+            });
+          });
+        }
+
+        feedbackCloseButtons.forEach((button) => {
+          button.addEventListener("click", () => setFeedbackModal(false));
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") setFeedbackModal(false);
+        });
+      })();
+    </script>
+  </body>
+</html>

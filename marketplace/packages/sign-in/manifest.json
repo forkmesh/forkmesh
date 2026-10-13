@@ -1,0 +1,62 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "sign-in",
+  "name": "Sign in",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Account",
+  "version": "1.0.0",
+  "summary": "The guest's Sign in button in the phone's top bar, and Sign in or Sign out in the menu. Your avatar always stays. Settings always keeps a way to sign in.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Sign in plugin card"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "ios": "builtin:sign-in",
+    "android": "builtin:sign-in",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "account.session",
+      "label": "Start sign-in from the top bar and the menu",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

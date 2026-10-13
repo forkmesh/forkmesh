@@ -1,0 +1,115 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "vault",
+  "name": "Password Vault",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Security",
+  "version": "1.2.0",
+  "summary": "An end-to-end encrypted password vault on web, desktop and mobile. Share a login with a ForkMesh user or an organization under X25519 and post-quantum ML-KEM-768 keys. Fills logins in the browser extension and in apps on your phone.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Password Vault listing saved logins with share badges, and a share dialog showing a recipient's key fingerprint"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:vault",
+    "worker": "content/worker/vault.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/vault",
+        "title": "Password Vault",
+        "description": "Your end-to-end encrypted logins, shared with ForkMesh users and organizations under keys the server never holds.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Vault",
+          "icon": "key-round",
+          "order": 46
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.vault.store",
+      "label": "Store your logins as ciphertext only your master password or recovery code opens; ForkMesh cannot read them",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.vault.share",
+      "label": "Seal a login you choose to the public keys of a named ForkMesh user or of an organization's members",
+      "risk": "high"
+    },
+    {
+      "id": "organization.members.read",
+      "label": "Read the member list of organizations you belong to, to know whose keys an organization share reaches",
+      "risk": "sensitive"
+    },
+    {
+      "id": "clipboard.write",
+      "label": "Copy a username or password you click, and clear the clipboard 30 seconds later",
+      "risk": "sensitive"
+    },
+    {
+      "id": "device.autofill.provide",
+      "label": "On Android, offer logins to other apps you open; each fill asks for your fingerprint, face, or screen lock",
+      "risk": "high"
+    },
+    {
+      "id": "device.biometric.unlock",
+      "label": "If you turn it on, open the vault on your phone with its biometrics or passcode instead of the master password",
+      "risk": "high"
+    },
+    {
+      "id": "notifications.ping",
+      "label": "Ping a person when a login is shared with them, without naming the login",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account"
+  },
+  "worker": {
+    "module": "vault",
+    "api": "/api/vault",
+    "outboundOrigins": []
+  }
+}

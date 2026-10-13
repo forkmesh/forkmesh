@@ -1,0 +1,93 @@
+          <section data-view="status-page" class="view active h-full overflow-y-auto status-page-view">
+            <style>
+              .status-page-view { --sp-green: #1baf7a; --sp-amber: #eda100; --sp-red: rgb(var(--dashboard-destructive-rgb)); --sp-muted: rgb(var(--dashboard-muted-foreground-rgb)); --sp-border: rgb(var(--dashboard-border-rgb)); }
+              :root[data-dashboard-theme="dark"] .status-page-view { --sp-green: #2fbf71; --sp-amber: #d29922; }
+              .status-page-view .sp-dots:not(.hidden) { display: flex; flex-wrap: wrap; gap: .5rem .9rem; }
+              .status-page-view .sp-dot-item { display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; color: rgb(var(--dashboard-foreground-rgb)); }
+              .status-page-view .sp-dot { display: inline-block; flex: none; width: .625rem; height: .625rem; border-radius: 999px; background: var(--sp-muted); }
+              .status-page-view .sp-dot.is-operational { background: var(--sp-green); }
+              .status-page-view .sp-dot.is-degraded { background: var(--sp-amber); }
+              .status-page-view .sp-dot.is-down { background: var(--sp-red); }
+              .status-page-view .sp-dot.is-unknown { background: var(--sp-muted); }
+              .status-page-view .sp-dot.is-checking { background: var(--sp-muted); animation: sp-pulse 1.2s ease-in-out infinite; }
+              .status-page-view .sp-dot.is-monitoring-stale { background: color-mix(in srgb, var(--sp-red) 88%, transparent); }
+              .status-page-view .sp-dot.is-rate-limited { background: color-mix(in srgb, var(--sp-red) 80%, transparent); }
+              .status-page-view .sp-dot.is-monitoring-missing { background: color-mix(in srgb, var(--sp-red) 72%, transparent); }
+              .status-page-view .sp-dot.is-monitoring-empty { background: color-mix(in srgb, var(--sp-red) 56%, transparent); }
+              .status-page-view .sp-switch { position: relative; flex: none; width: 2.25rem; height: 1.25rem; border-radius: 999px; border: 1px solid var(--sp-border); background: rgb(var(--dashboard-border-rgb) / .6); transition: background .15s; }
+              .status-page-view .sp-switch::after { content: ""; position: absolute; top: 1px; left: 1px; width: 1rem; height: 1rem; border-radius: 999px; background: rgb(var(--dashboard-foreground-rgb)); transition: transform .15s; }
+              .status-page-view .sp-switch[aria-checked="true"] { background: var(--sp-green); border-color: var(--sp-green); }
+              .status-page-view .sp-switch[aria-checked="true"]::after { transform: translateX(1rem); background: #fff; }
+              .status-page-view .sp-switch:disabled { opacity: .5; }
+              @keyframes sp-pulse { 50% { opacity: .35; } }
+              @media (prefers-reduced-motion: reduce) { .status-page-view .sp-dot.is-checking { animation: none; } }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Status monitors</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">Green dots for the ForkMesh systems you watch and for your own sites. Your checks, monitors and settings follow your account to the desktop and mobile apps.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <a data-status-requires-install href="/status" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Open the Status page</a>
+                  <button data-status-refresh data-status-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="refresh-cw" class="mr-1 inline h-3.5 w-3.5"></i>Refresh</button>
+                </div>
+              </div>
+              <div data-status-error role="alert" class="mb-3 hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
+              <div data-status-notice role="status" class="mb-3 hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+
+              <section data-status-install-panel class="hidden rounded-lg border border-border bg-card p-8 text-center">
+                <h2 class="text-base font-semibold text-foreground">Install Status Page</h2>
+                <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Shows ForkMesh's live status as green dots on the web, desktop and mobile apps, with a check for each system and your own monitors. Installing it here installs it on every device signed in to your account, with the default checks switched on.</p>
+                <button data-status-install type="button" class="mt-4 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Install Status Page</button>
+              </section>
+
+              <div data-status-app class="hidden grid gap-4">
+                <section class="rounded-lg border border-border bg-card p-4">
+                  <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 class="text-sm font-semibold text-foreground">Status</h2>
+                    <p data-status-summary class="text-xs text-muted-foreground"></p>
+                  </div>
+                  <ul data-status-dots class="sp-dots mt-3" aria-label="ForkMesh systems"></ul>
+                  <ul data-status-custom-dots class="sp-dots mt-3" aria-label="Your monitors"></ul>
+                  <p data-status-empty class="mt-3 hidden text-sm text-muted-foreground"></p>
+                </section>
+
+                <div class="grid gap-4 lg:grid-cols-2">
+                  <section class="rounded-lg border border-border bg-card p-4">
+                    <h2 class="text-sm font-semibold text-foreground">Checks</h2>
+                    <p class="mt-1 text-xs text-muted-foreground">Each check is its own package and adds one or more dots. Switching one off removes its dots from every device.</p>
+                    <div data-status-checks class="mt-3 grid gap-1"></div>
+                  </section>
+
+                  <div class="grid content-start gap-4">
+                    <section class="rounded-lg border border-border bg-card p-4">
+                      <h2 class="text-sm font-semibold text-foreground">Settings</h2>
+                      <div data-status-settings class="mt-3 grid gap-3"></div>
+                    </section>
+
+                    <section class="rounded-lg border border-border bg-card p-4">
+                      <div class="flex flex-wrap items-baseline justify-between gap-2">
+                        <h2 class="text-sm font-semibold text-foreground">Your monitors</h2>
+                        <p data-status-monitor-count class="text-xs text-muted-foreground"></p>
+                      </div>
+                      <p class="mt-1 text-xs text-muted-foreground">Each of your devices loads these addresses itself and shows a green dot while they answer.</p>
+                      <div data-status-monitors class="mt-3 grid gap-1"></div>
+                      <form data-status-monitor-form class="mt-3 flex flex-wrap items-end gap-2">
+                        <label class="text-xs text-muted-foreground">Name<input data-status-monitor-name type="text" maxlength="40" required autocomplete="off" placeholder="Blog" class="mt-1 block w-36 rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"></label>
+                        <label class="min-w-[12rem] flex-1 text-xs text-muted-foreground">Address<input data-status-monitor-url type="url" maxlength="300" required autocomplete="off" placeholder="https://blog.example.com/" class="mt-1 block w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"></label>
+                        <button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Add monitor</button>
+                      </form>
+                      <p data-status-monitor-error role="alert" class="mt-2 hidden text-xs text-destructive"></p>
+                    </section>
+
+                    <section class="rounded-lg border border-border bg-card p-4">
+                      <h2 class="text-sm font-semibold text-foreground">Remove Status Page</h2>
+                      <p class="mt-1 text-xs text-muted-foreground">Removes the dots, every check and your monitors from the web, desktop and mobile apps.</p>
+                      <button data-status-remove type="button" class="mt-3 rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Remove Status Page</button>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>

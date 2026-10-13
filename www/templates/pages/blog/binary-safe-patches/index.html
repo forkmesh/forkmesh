@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Binary-safe patches" %}
+{% set slug = "binary-safe-patches" %}
+{% set image = "/assets/blog/features/binary-safe-patches.webp" %}
+{% set description = "Patches embed binary content, so images, fonts, and other assets survive the trip and merge cleanly, with a proper placeholder and badge in the diff view." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Signed collaboration</p>
+            <h1>Binary-safe patches</h1>
+            <p class="lede">Patches embed binary content, so images, fonts, and other assets survive the trip and merge cleanly, with a proper placeholder and badge in the diff view.</p>
+            <div class="meta"><span class="pill">Feature 17 of 72</span><span>Feature</span><span>Signed, portable collaboration</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/binary-safe-patches.webp" alt="Abstract ForkMesh artwork for Binary-safe patches">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Binary-safe patches gives ForkMesh a concrete mechanism for moving asset changes through signed patches without losing binary content. Patches embed binary content, so images, fonts, and other assets survive the trip and merge cleanly, with a proper placeholder and badge in the diff view.</p>
+          <p>Collaboration data becomes fragile when issues, reviews, and authorship only exist inside one hosted database. In ForkMesh, binary-safe patches addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles binary-safe patches through the same split it uses across the product: local identities sign issue events, patch PRs, catalog records, and contribution inbox items before they travel through mirrors.</p>
+          <p>The behavior is intentionally narrow: Patches embed binary content, so images, fonts, and other assets survive the trip and merge cleanly, with a proper placeholder and badge in the diff view. Mirrors can verify provenance before accepting or displaying collaboration records.</p>
+          <h2>Where it fits</h2>
+          <p>Use binary-safe patches when project context needs to survive migrations, forks, offline work, and mirror failover.</p>
+          <p>It pairs with the rest of Signed, portable collaboration because Binary-safe patches keeps moving asset changes through signed patches without losing binary content connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/branch-backed-and-patch-backed-prs/">← Branch-backed &amp; patch-backed PRs</a>
+          <a href="/blog/full-issue-tracker/">Full issue tracker →</a>
+        </nav>
+{% endblock %}

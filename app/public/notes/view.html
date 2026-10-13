@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="/api-client.js?v=${version}"></script>
+<script src="/analytics.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ForkMesh note</title>
+<meta name="description" content="Read a published ForkMesh note and its current signed version.">
+<meta name="application-name" content="ForkMesh">
+<meta name="apple-mobile-web-app-title" content="ForkMesh">
+<meta name="theme-color" content="#090909">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/favicon/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png">
+<link rel="manifest" href="/favicon/site.webmanifest">
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/site-header.css">
+<script src="/site-header.js?v=${version}" defer></script>
+<style>
+:root{color-scheme:light dark;--note-bg:var(--background);--note-fg:var(--foreground);--note-muted:var(--muted);--note-border:var(--border);--note-code:#121722;--note-link:var(--link);--note-quote:#adb6c6;--note-error:#ff9c9c}
+html.light{--note-bg:var(--background);--note-fg:var(--foreground);--note-muted:var(--muted);--note-border:var(--border);--note-code:#eef2f7;--note-link:var(--link);--note-quote:#424a53;--note-error:#cf222e}
+body{margin:0;background:var(--note-bg);color:var(--note-fg);font:16px/1.65 var(--sans)}
+.page{max-width:860px;margin:42px auto;padding:0 22px}
+.meta{color:var(--note-muted);font-size:13px}
+.content{margin-top:28px}
+.content pre{overflow:auto;padding:14px;border:1px solid var(--note-border);border-radius:8px;background:var(--note-code)}
+.content code{font-family:ui-monospace,monospace}
+.content a{color:var(--note-link)}
+.content blockquote{border-left:3px solid var(--note-border);margin-left:0;padding-left:16px;color:var(--note-quote)}
+.error{color:var(--note-error)}
+</style>
+  <script src="/genie-spider.js?v=${version}" defer></script>
+</head>
+<body><div data-forkmesh-header="simple"></div><main class="page"><h1 id="title">Loading note…</h1><div id="meta" class="meta"></div><article id="content" class="content"></article></main>
+<script>
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function md(raw){const lines=String(raw||"").replace(/\r/g,"").split("\n"),out=[];let code=false,buf=[];for(const line of lines){if(/^```/.test(line)){if(code){out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`);buf=[]}code=!code;continue}if(code){buf.push(line);continue}const h=line.match(/^(#{1,6})\s+(.+)/);if(h){out.push(`<h${h[1].length}>${esc(h[2])}</h${h[1].length}>`);continue}if(/^>\s?/.test(line)){out.push(`<blockquote>${esc(line.replace(/^>\s?/,""))}</blockquote>`);continue}const li=line.match(/^\s*[-*+]\s+(.+)/);if(li){out.push(`<ul><li>${esc(li[1])}</li></ul>`);continue}if(!line.trim()){out.push("");continue}let safe=esc(line).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'<a href="$2" rel="nofollow noopener">$1</a>');out.push(`<p>${safe}</p>`)}if(code)out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`);return out.join("")}
+(async()=>{const id=location.pathname.split("/").filter(Boolean).pop();try{const response=await fetch(`/api/notes/${id}`,{headers:{accept:"application/json"}}),data=await response.json();if(!response.ok)throw new Error(data.error||"Note unavailable");const note=data.note;document.title=`${note.title} · ForkMesh`;document.querySelector("#title").textContent=note.title;const views=Number(note.views||0),reads=views===1?"1 view":`${views} views`;document.querySelector("#meta").textContent=`Published on ForkMesh · version ${note.version} · updated ${new Date(note.updatedAt).toLocaleString()}${views>0?` · ${reads}`:""}`;document.querySelector("#content").innerHTML=md(note.markdown)}catch(error){document.querySelector("#title").textContent="Note unavailable";document.querySelector("#content").textContent="This note is private, missing, or no longer published.";document.querySelector("#content").className="content error"}})();
+</script></body></html>

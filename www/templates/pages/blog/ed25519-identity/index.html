@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Ed25519 identity" %}
+{% set slug = "ed25519-identity" %}
+{% set image = "/assets/blog/features/ed25519-identity.webp" %}
+{% set description = "Nodes and people are identified by local Ed25519 keys. Profiles, catalog records, and every collaboration event carry a signature you can check yourself." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Signed collaboration</p>
+            <h1>Ed25519 identity</h1>
+            <p class="lede">Nodes and people are identified by local Ed25519 keys. Profiles, catalog records, and every collaboration event carry a signature you can check yourself.</p>
+            <div class="meta"><span class="pill">Feature 11 of 72</span><span>Feature</span><span>Signed, portable collaboration</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/ed25519-identity.webp" alt="Abstract ForkMesh artwork for Ed25519 identity">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Ed25519 identity gives ForkMesh a concrete mechanism for local keys that sign people, nodes, catalog records, and collaboration events. Nodes and people are identified by local Ed25519 keys. Profiles, catalog records, and every collaboration event carry a signature you can check yourself.</p>
+          <p>Collaboration data becomes fragile when issues, reviews, and authorship only exist inside one hosted database. In ForkMesh, Ed25519 identity addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles Ed25519 identity through the same split it uses across the product: local identities sign issue events, patch PRs, catalog records, and contribution inbox items before they travel through mirrors.</p>
+          <p>The behavior is intentionally narrow: Nodes and people are identified by local Ed25519 keys. Profiles, catalog records, and every collaboration event carry a signature you can check yourself. Mirrors can verify provenance before accepting or displaying collaboration records.</p>
+          <h2>Where it fits</h2>
+          <p>Use Ed25519 identity when project context needs to survive migrations, forks, offline work, and mirror failover.</p>
+          <p>It pairs with the rest of Signed, portable collaboration because Ed25519 identity keeps local keys that sign people, nodes, catalog records, and collaboration events connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/presence-done-right/">← Presence done right</a>
+          <a href="/blog/signed-issue-events/">Signed issue events →</a>
+        </nav>
+{% endblock %}

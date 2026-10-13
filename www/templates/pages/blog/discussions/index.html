@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Discussions" %}
+{% set slug = "discussions" %}
+{% set image = "/assets/blog/features/discussions.webp" %}
+{% set description = "Longer-form threaded conversations per repository, signed, synced, and browsable like issues." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Chat &amp; private sharing</p>
+            <h1>Discussions</h1>
+            <p class="lede">Longer-form threaded conversations per repository, signed, synced, and browsable like issues.</p>
+            <div class="meta"><span class="pill">Feature 50 of 72</span><span>Feature</span><span>Chat &amp; private sharing</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/discussions.webp" alt="Abstract ForkMesh artwork for Discussions">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Discussions gives ForkMesh a concrete mechanism for long-form signed conversations that sync like other collaboration records.</p>
+          <p>Project conversations often carry design, access, and coordination context. In ForkMesh, discussions addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles discussions through the same split it uses across the product: ForkMesh attaches rooms, direct messages, discussions, and browser chat to repository identity.</p>
+          <p>The behavior is intentionally narrow: longer-form threaded conversations per repository are signed, synced, and browsable like issues. This page makes no end-to-end or relay-blind claim for those records.</p>
+          <h2>Where it fits</h2>
+          <p>Use discussions when teams need signed, repository-aware threaded conversation.</p>
+          <p>It pairs with the rest of Chat &amp; private sharing because Discussions keeps long-form signed conversations that sync like other collaboration records connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/coves/">← Coves</a>
+          <a href="/blog/web-chat/">Web chat →</a>
+        </nav>
+{% endblock %}

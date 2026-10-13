@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>About ForkMesh</title>
+    <meta
+      name="description"
+      content="Why ForkMesh exists - and the day a deleted GitHub account inspired Md Kaif Ansari to build independently operated, verifiable code mirrors."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .about-shell {
+        width: min(1120px, calc(100% - 32px));
+        max-width: none;
+        margin: 0 auto;
+        padding: 0 0 96px;
+      }
+
+      .about-intro.kit-hero {
+        width: auto;
+        margin: 0;
+        padding: clamp(40px, 6vw, 72px) 0 0;
+      }
+
+      .about-intro .kit-title {
+        max-width: 13ch;
+      }
+
+      .about-promise {
+        max-width: 60ch;
+        margin: 18px 0 0;
+        color: var(--kit-ink);
+        font-size: 19px;
+        font-weight: 600;
+        line-height: 1.55;
+      }
+
+      .about-intro .kit-lede {
+        margin-top: 12px;
+      }
+
+      .about-story {
+        display: grid;
+        grid-template-columns: minmax(0, 0.8fr) minmax(0, 2fr);
+        gap: 40px;
+        margin-top: 80px;
+        padding-top: 40px;
+        border-top: 1px solid var(--kit-line);
+        scroll-margin-top: 24px;
+      }
+
+      .about-story h2 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(26px, 3vw, 32px);
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        line-height: 1.1;
+      }
+
+      .about-story p {
+        max-width: 68ch;
+        margin: 0 0 18px;
+        color: var(--kit-body);
+        font-size: 17px;
+        line-height: 1.75;
+      }
+
+      .about-story p:last-child {
+        margin-bottom: 0;
+      }
+
+      .about-story strong {
+        color: var(--kit-ink);
+        font-weight: 600;
+      }
+
+      .about-story a {
+        color: var(--link);
+        text-underline-offset: 3px;
+      }
+
+      .pullquote {
+        max-width: 60ch;
+        margin: 8px 0 26px;
+        padding: 26px 28px;
+        border-radius: 18px;
+        background: var(--kit-surface);
+        box-shadow: var(--kit-card-shadow);
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(20px, 2.4vw, 26px);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.35;
+      }
+
+      .team {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+        gap: 16px;
+      }
+
+      .member {
+        min-width: 0;
+        padding: 24px;
+      }
+
+      .member-head {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+
+      .member-photo {
+        width: 64px;
+        height: 64px;
+        flex: 0 0 auto;
+        border-radius: 14px;
+        background: var(--kit-surface-soft);
+        box-shadow: 0 0 0 1px var(--kit-line);
+        object-fit: cover;
+      }
+
+      .member-name {
+        color: var(--kit-ink);
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 1.25;
+      }
+
+      .member-role {
+        margin-top: 4px;
+        color: var(--kit-body);
+        font-size: 14px;
+      }
+
+      .about-story .member-bio {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.7;
+      }
+
+      .about-story .member-bio + .member-bio {
+        margin-top: 12px;
+      }
+
+      .about-contact {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px 24px;
+        margin-top: 80px;
+        padding: 26px 28px;
+      }
+
+      .about-contact h2 {
+        margin: 0 0 4px;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .about-contact p {
+        max-width: 56ch;
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      @media (max-width: 860px) {
+        .about-story {
+          grid-template-columns: 1fr;
+          gap: 20px;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .about-shell {
+          width: calc(100% - 24px);
+        }
+
+        .about-story p {
+          font-size: 16px;
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="about-shell">
+      <section class="about-intro kit-hero" aria-labelledby="about-title">
+        <span class="kit-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z"></path><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5A2.5 2.5 0 0 1 4 20.5Z"></path></svg>
+          Our story
+        </span>
+        <h1 class="kit-title" id="about-title">Your Code, Your World.</h1>
+        <p class="about-promise">ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.</p>
+        <p class="kit-lede">ForkMesh began with a loss - and a refusal to let it happen again.</p>
+        <div class="kit-actions">
+          <a class="kit-btn is-primary" href="#story">Read the story <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+          <a class="kit-btn" href="#founders">Meet the founders <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+        </div>
+      </section>
+
+      <section class="about-story" id="story" aria-labelledby="about-disappeared">
+        <h2 id="about-disappeared">The day the code disappeared</h2>
+        <div>
+          <p>
+            One ordinary morning, <strong>Md Kaif Ansari</strong> opened GitHub to
+            find his repositories gone. No warning he could act on, no second copy to
+            fall back on. Years of work - side projects, experiments, the small tools
+            he'd quietly built for himself and others - gone in an instant.
+          </p>
+          <p>
+            The code wasn't lost because it was wrong. It was lost because it lived
+            in exactly one place.
+          </p>
+          <blockquote class="pullquote">
+            "If a single account can erase years of work overnight, then we never
+            really owned our code - we were only borrowing it."
+          </blockquote>
+        </div>
+      </section>
+
+      <section class="about-story" aria-labelledby="about-antidote">
+        <h2 id="about-antidote">So he built the antidote</h2>
+        <div>
+          <p>
+            ForkMesh is what Kaif wished he'd had that morning: a network where your
+            code does not have to depend on a single host.
+            Repositories can be copied to independently operated mirrors, with signed
+            state and integrity checks. External stubs and repositories without a
+            healthy mirror remain clearly labeled; availability improves only when
+            enough authorized, current copies actually exist.
+          </p>
+          <p>
+            Around that foundation grew everything a modern project needs: issues and
+            milestones, pull requests and releases, encrypted chat, shell-step CI on your own desktop, and AI
+            agents that can pick up an issue and ship a fix - all without surrendering
+            your work to a single point of failure. And because the people who keep
+            the network alive deserve recognition, ForkMesh includes a transparent,
+            non-custodial community reward program. Rewards are voluntary
+            incentives, never guaranteed returns.
+          </p>
+        </div>
+      </section>
+
+      <section class="about-story" id="founders" aria-labelledby="about-founders">
+        <h2 id="about-founders">Meet the founders</h2>
+        <div class="team">
+          <article class="about-card member kit-card">
+            <div class="member-head">
+              <img class="member-photo" src="/assets/kaif.webp" alt="Md Kaif Ansari" width="64" height="64" />
+              <div>
+                <div class="member-name">Md Kaif Ansari</div>
+                <div class="member-role">Founder &amp; Full-Stack Developer</div>
+              </div>
+            </div>
+            <p class="member-bio">
+              Md Kaif Ansari is a full-stack developer from India with a passion for
+              building resilient, well-crafted software - and for taking things
+              apart to understand how to make them better. He works primarily across
+              the MERN stack and currently builds full-stack products for an
+              Australian startup.
+            </p>
+            <p class="member-bio">
+              Beyond his day-to-day work, Kaif is an active open-source contributor
+              drawn to projects with real-world impact, and a dedicated Python and
+              AI enthusiast who treats every hard problem as a puzzle worth solving.
+              A regular on the hackathon circuit, he thrives in fast-paced
+              environments where ambitious ideas become working products - and he
+              approaches every day as a chance to learn and push his craft further.
+            </p>
+          </article>
+
+          <article class="about-card member kit-card">
+            <div class="member-head">
+              <img class="member-photo" src="/assets/jett.webp" alt="Jett Vale" width="64" height="64" />
+              <div>
+                <div class="member-name">Jett Vale</div>
+                <div class="member-role">Co-Founder &amp; Systems Engineer</div>
+              </div>
+            </div>
+            <p class="member-bio">
+              Jett Vale is a developer and Kaif's partner in building ForkMesh, with
+              a deep love for the layer most people never see - distributed systems,
+              peer-to-peer networking, and the quiet infrastructure that keeps data
+              alive. He cut his teeth writing performance-critical backends in Rust
+              and Go, and is happiest tracing a packet through a mesh until it does
+              exactly what it should.
+            </p>
+            <p class="member-bio">
+              When a deleted repository turned into a mission, Jett was the one
+              mapping out how code could live everywhere at once instead of nowhere.
+              He's a tinkerer and an open-source believer who cares as much about
+              clean protocols as he does about the people relying on them - and he's
+              convinced the best software is the kind that simply refuses to
+              disappear.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="about-story" aria-labelledby="about-headed">
+        <h2 id="about-headed">Where we're headed</h2>
+        <div>
+          <p>
+            Source code is infrastructure. It shouldn't depend on the goodwill of a
+            single host. ForkMesh exists so that the next developer who opens their
+            account to find it empty has somewhere else their work already lives.
+          </p>
+        </div>
+      </section>
+
+      <div class="about-contact kit-card">
+        <div>
+          <h2>We'd love to hear from you</h2>
+          <p>
+            We're just getting started. Reach the founders directly at
+            <a href="mailto:founders@forkmesh.com">founders@forkmesh.com</a>.
+          </p>
+        </div>
+        <a class="kit-btn is-primary" href="mailto:founders@forkmesh.com">Email the founders <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+      </div>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

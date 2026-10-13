@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/ssh-authorization-broker-v1.json",
+  "title": "ForkMesh local SSH authorization broker configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "socketPath",
+    "socketGroup",
+    "lookupUser",
+    "gitUser"
+  ],
+  "description": "apiOrigin and gatewayTokenFile are required together unless localAuthorization.mode is \"local\"; with mode \"fallback\" both the Worker uplink and the local grants store must be present.",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "type": {"const": "forkmesh.ssh-authorization-broker"},
+    "apiOrigin": {
+      "type": "string",
+      "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?/?$"
+    },
+    "gatewayTokenFile": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$",
+      "description": "Owner-only file readable by the broker account and by neither SSH-facing account."
+    },
+    "socketPath": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$"
+    },
+    "socketGroup": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,62}$"
+    },
+    "lookupUser": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,62}$"
+    },
+    "gitUser": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,62}$"
+    },
+    "localAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "grantsFile"],
+      "description": "Controller-free authorization. \"fallback\" consults grantsFile only when the Worker is unreachable (never after a denial); \"local\" never contacts a Worker.",
+      "properties": {
+        "mode": {"enum": ["fallback", "local"]},
+        "grantsFile": {
+          "type": "string",
+          "pattern": "^/[^\\r\\n\\u0000]+$",
+          "description": "Signed forkmesh.ssh-local-grants store mapping keys to accounts and per-repository access."
+        },
+        "dynamicRepositoriesFile": {
+          "type": "string",
+          "pattern": "^/[^\\r\\n\\u0000]+$",
+          "description": "Node-owned forkmesh.dynamic-repositories fork registry; an account's own forks are implicitly writable."
+        }
+      }
+    }
+  }
+}

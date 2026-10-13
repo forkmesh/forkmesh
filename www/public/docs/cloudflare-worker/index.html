@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>App &amp; relay · ForkMesh Docs</title>
+    <meta
+      name="description"
+      content="How the ForkMesh App serves the product UI and API, hosts encrypted repository rooms, and publishes the repository catalog."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .doc-wrap { max-width: 860px; margin: 0 auto; padding: 42px 20px 80px; }
+      .doc-wrap h1 { font-size: clamp(32px, 5vw, 48px); margin: 0 0 12px; }
+      .doc-intro { color: var(--muted); max-width: 68ch; font-size: 17px; margin: 0 0 8px; line-height: 1.6; }
+      .doc-crumbs { margin: 0 0 18px; font-size: 13px; color: var(--muted); }
+      .doc-crumbs a { color: var(--muted); }
+      .doc-crumbs a:hover { color: var(--foreground); }
+      .doc-toc { margin: 28px 0 8px; padding: 16px 20px; border: 1px solid var(--border); border-radius: 12px; }
+      .doc-toc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+      .doc-toc ol { margin: 0; padding-left: 18px; columns: 2; column-gap: 24px; }
+      .doc-toc li { margin: 4px 0; break-inside: avoid; }
+      .doc-toc a { color: var(--foreground); text-decoration: none; }
+      .doc-toc a:hover { text-decoration: underline; }
+      .doc-body { margin-top: 32px; }
+      .doc-body h2 { font-size: 26px; margin: 44px 0 14px; padding-top: 22px; border-top: 1px solid var(--border); }
+      .doc-body h2:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+      .doc-body h3 { font-size: 19px; margin: 28px 0 10px; }
+      .doc-body p { color: var(--muted); line-height: 1.65; margin: 0 0 14px; }
+      .doc-body p strong, .doc-body li strong { color: var(--foreground); }
+      .doc-body a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+      .doc-body ul, .doc-body ol { padding-left: 22px; margin: 0 0 14px; color: var(--muted); }
+      .doc-body li { margin: 6px 0; line-height: 1.6; }
+      .doc-body code { font-family: "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: rgba(127,127,127,0.14); border-radius: 4px; padding: 0.12em 0.4em; }
+      .doc-body pre { background: rgba(127,127,127,0.08); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+      .doc-body pre code { background: none; padding: 0; font-size: 0.86em; line-height: 1.55; }
+      .doc-body blockquote { margin: 0 0 16px; padding: 4px 16px; border-left: 3px solid var(--border); color: var(--muted); }
+      .doc-body table { width: 100%; border-collapse: collapse; margin: 0 0 20px; font-size: 0.93em; }
+      .doc-body th, .doc-body td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      .doc-body th { color: var(--foreground); font-weight: 700; }
+      .doc-body hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+      .doc-siblings { margin-top: 44px; padding-top: 24px; border-top: 1px solid var(--border); }
+      .doc-siblings h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+      .doc-siblings ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; color: var(--muted); }
+      .doc-siblings a { font-weight: 600; color: var(--foreground); text-decoration: none; }
+      .doc-siblings a:hover { text-decoration: underline; }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="doc-wrap">
+      <p class="doc-crumbs"><a href="/docs">Docs</a> / App &amp; relay</p>
+      <p class="eyebrow">Developer docs</p>
+      <h1>ForkMesh App &amp; relay</h1>
+      <p class="doc-intro">
+        The Python application in <code>app/</code> serves the Git product UI,
+        REST API, realtime routes, and encrypted repository rooms. The
+        canonical official origin is <code>https://app.forkmesh.com</code>.
+      </p>
+
+      <div class="doc-body">
+        <h2 id="where-it-runs">Where it runs</h2>
+        <p>
+          Until September 2026 the hosted App ran as a Cloudflare Python Worker.
+          Since 24 September 2026, <code>app.forkmesh.com</code> and
+          <code>world.forkmesh.com</code> run the same Python application on
+          ForkMesh's own servers. The landing pages, docs, and blog at
+          <code>forkmesh.com</code> are a separate static site in
+          <code>www/</code>. This page keeps its old address so existing links
+          still work.
+        </p>
+        <p>
+          To run your own instance, follow
+          <a href="/docs/protocol#self-hosting-a-mainnode">Self-hosting a mainnode</a>
+          in the protocol spec.
+        </p>
+
+        <h2 id="routes">Rooms and catalog</h2>
+        <p>Repository rooms connect over a WebSocket at:</p>
+        <pre><code>/api/repo/{owner}/{repo}/rooms/{room}/ws</code></pre>
+        <p>
+          The older <code>/api/room/{room}/ws</code> path remains as a
+          temporary compatibility endpoint. The official ForkMesh room is:
+        </p>
+        <pre><code>wss://app.forkmesh.com/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
+        <p>
+          Go mirror services publish signed metadata to the repository catalog
+          at <code>/api/repositories</code>, which the product UI reads to
+          render the network repository list. The App stores signed metadata
+          only, not local filesystem paths or Git object data.
+        </p>
+
+        <h2 id="room-encryption">Room encryption</h2>
+        <p>
+          Every room frame leaves the client inside an AES-256-GCM outer
+          cipher whose passphrase the server can derive.
+          Public channels intentionally stop at that controller-readable layer
+          so ForkBot, MCP, and webhooks can participate. Private channels and
+          direct messages first encrypt each application frame under a fresh
+          content key and wrap that key to known X25519 device identities, so
+          the controller room key alone cannot read protected content. Device
+          discovery is automatic but not independently authenticated: an
+          active controller can inject a future recipient key. Frames marked
+          <code>persist: true</code> are kept for at most 7 days, with only the
+          newest 500 retained per room; other frames are broadcast without
+          history storage.
+        </p>
+      </div>
+
+      <nav class="doc-siblings" aria-label="Other developer docs">
+        <h2>More developer docs</h2>
+        <ul>
+          <li><a href="/docs/protocol">Protocol spec</a> — identity, signatures, HTTP API, self-hosting a mainnode</li>
+          <li><a href="/docs/qt-client">Desktop client</a> — the Qt 6 node</li>
+          <li><a href="/mobile">Mobile app</a> — the native iOS and Android apps</li>
+          <li><a href="/changelog">Changelog</a> — release-by-release history</li>
+        </ul>
+      </nav>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

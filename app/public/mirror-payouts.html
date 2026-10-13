@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Community mirror rewards - ForkMesh</title>
+    <meta
+      name="description"
+      content="See ForkMesh’s transparent, non-custodial mainnet reward pool, mirror eligibility policy, pending allocations, and finalized transfers."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <script src="/mirror-payouts.js?v=${version}" defer></script>
+    <style>
+      .payouts-page {
+        width: min(1120px, calc(100% - 32px));
+        max-width: none;
+        margin: 0 auto;
+        padding: 0 0 96px;
+      }
+
+      .payouts-page .kit-hero {
+        width: auto;
+        margin: 0;
+        padding: clamp(40px, 6vw, 72px) 0 0;
+      }
+
+      .payouts-page .kit-title {
+        max-width: 14ch;
+      }
+
+      .payouts-badges {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .payouts-state {
+        display: inline-flex;
+        align-items: center;
+        height: 30px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--warning) 15%, transparent);
+        color: var(--warning);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .payouts-notice {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        max-width: 760px;
+        margin-top: 32px;
+        padding: 20px 22px;
+      }
+
+      .payouts-notice .kit-tile {
+        width: 40px;
+        height: 40px;
+        border-radius: 11px;
+      }
+
+      .payouts-notice .kit-tile svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .payouts-notice strong {
+        display: block;
+        color: var(--kit-ink);
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .payouts-notice p {
+        margin: 6px 0 0;
+        color: var(--kit-body);
+        font-size: 14.5px;
+        line-height: 1.6;
+      }
+
+      .payouts-section {
+        margin-top: 80px;
+      }
+
+      .payouts-section > h2 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(28px, 3.4vw, 38px);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1.08;
+      }
+
+      .payouts-section > p {
+        max-width: 62ch;
+        margin: 12px 0 0;
+        color: var(--kit-body);
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      .payouts-steps {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .payouts-step {
+        padding: 22px;
+      }
+
+      .payouts-step span {
+        display: inline-grid;
+        width: 32px;
+        height: 32px;
+        place-items: center;
+        border: 1px solid var(--kit-line);
+        border-radius: 9px;
+        background: var(--kit-surface-soft);
+        color: var(--kit-ink);
+        font: 600 12px/1 var(--mono);
+      }
+
+      .payouts-step h3 {
+        margin: 18px 0 6px;
+        color: var(--kit-ink);
+        font-size: 15.5px;
+        font-weight: 600;
+      }
+
+      .payouts-step p {
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 13.5px;
+        line-height: 1.6;
+      }
+
+      .payouts-panels {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .payouts-panel {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        padding: 8px;
+      }
+
+      .payouts-panel h3 {
+        margin: 0;
+        padding: 12px 12px 14px;
+        color: var(--kit-ink);
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .payouts-figures {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .payouts-figure {
+        min-width: 0;
+        padding: 16px;
+        border: 1px solid var(--kit-line);
+        border-radius: 12px;
+        background: var(--kit-surface-soft);
+      }
+
+      .payouts-figure .cap {
+        color: var(--kit-body);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .payouts-figure .big {
+        margin-top: 10px;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        overflow-wrap: break-word;
+      }
+
+      .payouts-figure .small {
+        margin-top: 8px;
+        color: var(--kit-faint);
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+
+      .balance-refresh {
+        height: 30px;
+        margin-top: 10px;
+        padding: 0 12px;
+        border-radius: 9px;
+        font-size: 13px;
+      }
+
+      .balance-refresh:disabled {
+        cursor: progress;
+        opacity: 0.6;
+      }
+
+      .payouts-panel .calc-note {
+        margin: 0;
+        padding: 14px 12px 10px;
+        color: var(--kit-body);
+        font-size: 13.5px;
+        line-height: 1.6;
+      }
+
+      .payouts-wallet {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .custody-notice {
+        padding: 22px 24px;
+        color: var(--kit-body);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .custody-notice strong {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--kit-ink);
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .payouts-account {
+        display: flex;
+        flex-direction: column;
+        padding: 22px 24px;
+      }
+
+      .payouts-account h3 {
+        margin: 0 0 8px;
+        color: var(--kit-ink);
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .payouts-account p {
+        margin: 0 0 12px;
+        color: var(--kit-body);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      #mp-node {
+        color: var(--kit-ink);
+        font-weight: 600;
+      }
+
+      #mp-node a {
+        color: var(--link);
+      }
+
+      .payouts-account .kit-actions {
+        margin-top: auto;
+        padding-top: 8px;
+      }
+
+      .payouts-fund {
+        max-width: 760px;
+        margin: 24px 0 0;
+        color: var(--kit-body);
+        font-size: 13.5px;
+        line-height: 1.6;
+      }
+
+      .payouts-fund a {
+        color: var(--link);
+        font-weight: 600;
+      }
+
+      @media (max-width: 900px) {
+        .payouts-steps,
+        .payouts-panels,
+        .payouts-wallet {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .payouts-page {
+          width: calc(100% - 24px);
+        }
+
+        .payouts-figures {
+          grid-template-columns: 1fr;
+        }
+
+        .payouts-notice {
+          flex-direction: column;
+        }
+      }
+    </style>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="payouts-page">
+      <section class="kit-hero" aria-labelledby="mp-title">
+        <div class="payouts-badges">
+          <span class="kit-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="7" rx="2"></rect><rect x="4" y="13" width="16" height="7" rx="2"></rect><path d="M8 7.5h.01M8 16.5h.01"></path></svg>
+            Mirror rewards
+          </span>
+          <span class="payouts-state">Not live yet</span>
+        </div>
+        <h1 id="mp-title" class="kit-title">Transparent mirror rewards</h1>
+        <p class="kit-lede">
+          Healthy, integrity-verified nodes that actively mirror ForkMesh may be
+          selected for configurable community incentives. Selection is auditable;
+          a reward is never promised.
+        </p>
+        <div class="payouts-notice kit-card" role="note" aria-label="Program status">
+          <span class="kit-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+          <div>
+            <strong>Mirror rewards are not active yet.</strong>
+            <p>
+              The program has not been released. No node is being selected or
+              paid right now, and nothing on this page is a payment. It shows the
+              policy and the public pool as they will work once rewards launch.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="payouts-section" aria-labelledby="mp-how">
+        <h2 id="mp-how">How it will work</h2>
+        <p>Mirroring keeps the network decentralized. Rewards are an optional thank-you on top of it, never a wage.</p>
+        <div class="payouts-steps">
+          <article class="payouts-step kit-card">
+            <span>01</span>
+            <h3>You mirror code</h3>
+            <p>Your node stores and serves Git repositories, keeping the network decentralized.</p>
+          </article>
+          <article class="payouts-step kit-card">
+            <span>02</span>
+            <h3>Your node stays eligible</h3>
+            <p>Fresh signed presence, a healthy HTTPS endpoint, a verified forkmesh/forkmesh refs proof, no abuse flag, minimum uptime, and a valid public payout address.</p>
+          </article>
+          <article class="payouts-step kit-card">
+            <span>03</span>
+            <h3>You may receive rewards</h3>
+            <p>Eligible, healthy nodes may receive configurable community incentives after the local signer and on-chain finality checks. No reward is promised.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="payouts-section" aria-labelledby="mp-state">
+        <h2 id="mp-state">Policy and pool</h2>
+        <p>Read live from the relay and the public Solana pool. Numbers here describe the configuration; they are not balances you are owed.</p>
+        <div class="payouts-panels">
+          <article class="payouts-panel kit-card">
+            <h3>Current randomized policy</h3>
+            <div class="payouts-figures">
+              <div class="payouts-figure">
+                <div class="cap">Nodes online</div>
+                <div class="big" id="calc-nodes">...</div>
+              </div>
+              <div class="payouts-figure">
+                <div class="cap">Configured reward</div>
+                <div class="big" id="calc-reward">...</div>
+                <div class="small">per selected round</div>
+              </div>
+              <div class="payouts-figure">
+                <div class="cap">Recipients</div>
+                <div class="big">1 eligible node</div>
+                <div class="small">public entropy + snapshot</div>
+              </div>
+            </div>
+            <p class="calc-note">
+              Eligibility requires fresh signed presence, a healthy HTTPS endpoint,
+              a verified forkmesh/forkmesh refs proof, no abuse flag, minimum
+              server-observed uptime, and a valid public payout address. An approved
+              federated relay must forward the original node-signed registration and
+              fresh repository-health message; a wallet-only relay claim is never
+              eligible.
+            </p>
+          </article>
+
+          <article class="payouts-panel kit-card" id="split-card">
+            <h3>Public pool state</h3>
+            <div class="payouts-figures">
+              <div class="payouts-figure">
+                <div class="cap">Network</div>
+                <div class="big" id="pool-network">mainnet-beta</div>
+                <div class="small">production; test networks require explicit development configuration</div>
+              </div>
+              <div class="payouts-figure">
+                <div class="cap">Public balance</div>
+                <div class="big" id="pool-balance">...</div>
+                <div class="small" id="pool-balance-checked">on-chain, not an estimate</div>
+                <button
+                  type="button"
+                  id="pool-balance-refresh"
+                  class="kit-btn balance-refresh"
+                  title="Read the pool balance from Solana again"
+                >
+                  Refresh
+                </button>
+              </div>
+              <div class="payouts-figure">
+                <div class="cap">Recent transfers</div>
+                <div class="big" id="pool-transfers">...</div>
+                <div class="small">finalized signatures only</div>
+              </div>
+            </div>
+            <p class="calc-note">
+              Contributors transfer directly from their own wallet to the public
+              pool and choose either the randomized trickle pool or an externally
+              signed all-eligible-node intent. Visual coins never prove a transfer.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="payouts-section" aria-labelledby="mp-wallet">
+        <h2 id="mp-wallet">Your payout wallet</h2>
+        <p>Publish a public address now so your node is ready when rewards go live.</p>
+        <div class="payouts-wallet">
+          <div class="custody-notice kit-card" role="note" aria-label="Non-custodial wallet notice">
+            <strong>Non-custodial payout wallet</strong>
+            Your payout address belongs to you. Wallet keys and recovery phrases stay
+            on your device; ForkMesh never asks you to upload them. User-owned funds,
+            community-pool funds, pending rewards, and completed on-chain transfers
+            are separate states. The public community pool is signed only by the
+            first instance owner’s local Qt client; the Worker stores unsigned plans
+            and finalized public signatures, never the pool private key. Rewards are
+            community incentives, not investments or guaranteed returns.
+          </div>
+          <div class="payouts-account kit-card">
+            <h3>Your node</h3>
+            <p id="mp-node"><span class="fm-spinner" aria-hidden="true"></span>Loading your node…</p>
+            <p>
+              Use a compatible external self-custodial Solana wallet you independently
+              trust. ForkMesh only needs its public payout address—never its private key
+              or recovery phrase.
+            </p>
+            <div class="kit-actions">
+              <a class="kit-btn is-primary" href="/dashboard">Back to dashboard <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+              <a class="kit-btn" href="/network">See the network <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+            </div>
+          </div>
+        </div>
+        <p class="payouts-fund">
+          <a href="/world?landmark=fountain">Join or fund the community reward program →</a>
+          Contributions are voluntary direct wallet transfers and do not purchase
+          ownership, governance control, guaranteed rewards, or returns.
+        </p>
+      </section>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

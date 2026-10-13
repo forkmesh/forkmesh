@@ -1,0 +1,31 @@
+{
+  "schema": "forkmesh-governance-record-v1",
+  "id": "FMP-0001",
+  "process": "proposal",
+  "adoptedUnder": "1.0.0-rc.1",
+  "title": "Adopt the protocol and ecosystem governance charter",
+  "summary": "Adopt charter 1.0.0-rc.1: a protocol council, security response team, and appeals panel with seats reserved for independent implementers and community operators; published timelines for proposals, security decisions, appeals, and deprecation; conflict and funding disclosures linked to every decision; and rights that no plan, token, or funder can remove.",
+  "breaking": false,
+  "affects": ["charter", "protocol", "certification", "security", "moderation-baseline"],
+  "protectedRights": ["free-protocol", "portable-identity", "portable-repositories", "token-free-governance"],
+  "authors": ["forkmesh-maintainers"],
+  "disclosures": ["DISC-0001"],
+  "links": [
+    {"label": "Issue #513", "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/513"},
+    {"label": "Charter guide", "href": "www/docs/governance/README.md"}
+  ],
+  "timeline": {
+    "opened": "2026-09-14",
+    "reviewCloses": "2026-10-14",
+    "lastCallCloses": null,
+    "decided": null,
+    "implemented": null
+  },
+  "stage": "review",
+  "outcome": null,
+  "decidingBody": "protocol-council",
+  "votes": [],
+  "dissent": [],
+  "dissentSolicited": true,
+  "note": "The charter sets its own adoption review at the 30-day breaking-change minimum. It cannot be decided while the council has no independent-implementer or community-operator seat holder, because the quorum requires both."
+}

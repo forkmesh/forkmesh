@@ -1,0 +1,95 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "sleep",
+  "name": "Sleep",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Health",
+  "version": "1.1.0",
+  "summary": "Counts the time your iPhone lies still and unused by your bed as sleep, reads and writes sleep through Apple Health, and shows your nights, bedtime, and sleep debt on the web and desktop, encrypted under your account's key.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Sleep page with last night's 7 h 20 min against an 8 hour goal, bedtime and wake time, and a 30-night sleep chart"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:sleep",
+    "worker": "content/worker/sleep.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/sleep",
+        "title": "Sleep",
+        "description": "How long you slept each night, worked out from your phone resting by your bed and from Apple Health.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Sleep",
+          "icon": "moon",
+          "order": 46
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.sleep.read",
+      "label": "Read your own nights, bedtimes, wake times, and sleep goal, encrypted under your account's own key",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.sleep.write",
+      "label": "Save the nights your phone detects, Apple Health sleep, nights you add by hand, and your goal",
+      "risk": "sensitive"
+    },
+    {
+      "id": "health.sleep.readwrite",
+      "label": "On iPhone, with your permission, read motion history and Apple Health sleep, and write detected sleep",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account"
+  },
+  "worker": {
+    "module": "sleep",
+    "api": "/api/sleep",
+    "outboundOrigins": []
+  }
+}

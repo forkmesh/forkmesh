@@ -1,0 +1,1051 @@
+/* ==================================================================
+   The landing page's design system, applied to the campaign.
+
+   Token names, values, fonts and component proportions are lifted
+   verbatim from index.html so this reads as the same site rather than
+   as a microsite that happens to share a logo: Domine for the hero,
+   ABCFavorit for headings, the same pill navigation, the same
+   1.125rem card radius, the same plan cards for the prize table and
+   the same bracket-ruled closing frame.
+
+   The one component with no ancestor on the homepage is the milestone
+   meter, because the homepage has nothing that fills up.
+   ================================================================== */
+@font-face {
+  font-family: "Domine";
+  src: url("/assets/fonts/Domine-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Domine";
+  src: url("/assets/fonts/Domine-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "ABCFavorit";
+  src: url("/assets/fonts/ABCFavorit-Bold.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --background: #090909;
+  --foreground: #f5f5f5;
+  --primary: #e8e8e8;
+  --primary-foreground: #1f1f1f;
+  --muted-foreground: #a3a3a3;
+  --accent: oklch(0.72 0.17 152);
+  --border: #313131;
+  --landing-body-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --landing-hero-font: Domine, Georgia, serif;
+  --landing-heading-font: ABCFavorit, Inter, ui-sans-serif, system-ui, sans-serif;
+  --landing-mono-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --home-nav-h: 4.5rem;
+  --home-ink: #f5f5f5;
+  --home-muted: #a3a3a3;
+  --home-line: #2a2a2e;
+  --home-surface: #121214;
+  --home-surface-2: #1b1b1f;
+  --home-announce-bg: #141416;
+  --home-announce-fg: #f5f5f5;
+  --home-announce-line: #26262a;
+  --home-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 16px 40px -22px rgba(0, 0, 0, 0.9);
+  --home-shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 24px 56px -24px rgba(0, 0, 0, 0.95);
+  --btn-primary-fg: #111113;
+  --btn-primary-fill: linear-gradient(180deg, #ffffff 0%, #e8e8ea 100%);
+  --btn-primary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f1f1f2 100%);
+  --btn-primary-border: #f4f4f5;
+  --btn-primary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --btn-secondary-fg: #f5f5f5;
+  --btn-secondary-fill: linear-gradient(180deg, #222225 0%, #19191b 100%);
+  --btn-secondary-fill-hover: linear-gradient(180deg, #29292c 0%, #1f1f22 100%);
+  --btn-secondary-border: #34343a;
+  --btn-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+html.light {
+  --background: #ffffff;
+  --foreground: #1f2328;
+  --primary: #1f2328;
+  --primary-foreground: #ffffff;
+  --muted-foreground: #57606a;
+  --accent: #1a7f37;
+  --border: #d0d7de;
+  --home-ink: #101012;
+  --home-muted: #5f6270;
+  --home-line: #e4e5ea;
+  --home-surface: #ffffff;
+  --home-surface-2: #f4f4f6;
+  --home-announce-bg: #0b0b0c;
+  --home-announce-fg: #ffffff;
+  --home-announce-line: #0b0b0c;
+  --home-shadow:
+    0 1px 2px rgba(16, 16, 18, 0.05),
+    0 14px 36px -22px rgba(16, 16, 18, 0.3);
+  --home-shadow-raised:
+    0 1px 2px rgba(16, 16, 18, 0.06),
+    0 22px 48px -22px rgba(16, 16, 18, 0.32);
+  --btn-primary-fg: #ffffff;
+  --btn-primary-fill: linear-gradient(180deg, #2c2c2c 0%, #222222 100%);
+  --btn-primary-fill-hover: linear-gradient(180deg, #363636 0%, #2a2a2a 100%);
+  --btn-primary-border: #161616;
+  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.17), 0 1px 2px rgba(0, 0, 0, 0.16);
+  --btn-secondary-fg: #292929;
+  --btn-secondary-fill: linear-gradient(180deg, #ffffff 0%, #fcfcfc 100%);
+  --btn-secondary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f5f5f6 100%);
+  --btn-secondary-border: #e1e2e3;
+  --btn-secondary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+* { box-sizing: border-box; }
+
+/* The `hidden` attribute has to actually hide things. The homepage gets this
+   from tailwind.css's preflight; these pages do not load Tailwind, and an
+   <svg> takes its display from the SVG user-agent sheet rather than the HTML
+   one - so the theme toggle, which carries a sun and a moon and hides one of
+   them with `hidden`, was showing both at once. Everything else on these
+   pages that starts hidden (the milestone meter, the QR panel) relies on the
+   same attribute. */
+[hidden] { display: none !important; }
+
+body {
+  min-height: 100%;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--landing-body-font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+.landing-main { overflow-x: clip; }
+
+a, button, summary {
+  outline-color: color-mix(in oklab, var(--accent), white 8%);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------- Announcement strip ---------------- */
+.home-announce {
+  position: relative;
+  z-index: 41;
+  border-bottom: 1px solid var(--home-announce-line);
+  background: var(--home-announce-bg);
+  color: var(--home-announce-fg);
+  font-size: 0.875rem;
+  line-height: 1.2;
+}
+
+.home-announce-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 1rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-announce-text { opacity: 0.92; }
+
+.home-announce-sep {
+  width: 1px;
+  height: 1rem;
+  background: currentColor;
+  opacity: 0.3;
+}
+
+.home-announce-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.home-announce-cta svg {
+  width: 0.7rem;
+  height: 0.7rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 150ms ease;
+}
+
+.home-announce-link:hover .home-announce-cta svg { transform: translateX(2px); }
+
+@media (max-width: 640px) {
+  .home-announce-link {
+    flex-wrap: wrap;
+    gap: 0.15rem 0.6rem;
+    font-size: 0.8125rem;
+    text-align: center;
+  }
+  .home-announce-sep { display: none; }
+}
+
+/* ---------------- Floating pill navigation ---------------- */
+.home-nav-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  height: var(--home-nav-h);
+  padding: 0.75rem 1rem 0;
+  pointer-events: none;
+}
+
+.home-nav {
+  position: relative;
+  max-width: 84rem;
+  margin: 0 auto;
+  pointer-events: auto;
+}
+
+.home-nav-shell {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-height: 3.25rem;
+  padding: 0.375rem 0.75rem 0.375rem 1rem;
+  border: 1px solid var(--home-line);
+  border-radius: 0.875rem;
+  background: color-mix(in oklab, var(--home-surface) 86%, transparent);
+  color: var(--home-ink);
+  box-shadow: var(--home-shadow);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  transition: box-shadow 250ms ease, background-color 250ms ease;
+}
+
+.home-nav.is-scrolled .home-nav-shell {
+  background: color-mix(in oklab, var(--home-surface) 92%, transparent);
+  box-shadow: var(--home-shadow-raised);
+}
+
+.home-brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-brand-mark {
+  width: auto;
+  height: 1.75rem;
+  object-fit: contain;
+}
+
+.home-brand-word {
+  font-family: var(--landing-heading-font);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.home-nav-links {
+  display: none;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.7rem;
+  border-radius: 0.55rem;
+  color: var(--home-ink);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color 150ms ease;
+}
+
+.home-nav-link:hover { background: var(--home-surface-2); }
+
+.home-nav-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.home-nav-signin,
+.home-nav-signup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  border-radius: 0.55rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* Sign in and Sign up are the same control: two ways into the same account,
+   neither more important than the other. A filled pill next to a plain link
+   reads as the primary action of the page, and on the hackathon pages the
+   primary action is Join, in the hero. */
+.home-nav-signin,
+.home-nav-signup {
+  background: transparent;
+  color: var(--home-ink);
+}
+
+.home-nav-signin:hover,
+.home-nav-signup:hover {
+  background: var(--home-surface-2);
+}
+
+.home-nav-divider {
+  width: 1px;
+  height: 1.25rem;
+  background: var(--home-line);
+}
+
+.home-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding-inline: 0.55rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--home-ink);
+  cursor: pointer;
+}
+
+.home-theme-toggle:hover { background: var(--home-surface-2); }
+.home-theme-toggle svg { width: 1rem; height: 1rem; }
+
+.home-nav-burger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--home-ink);
+  cursor: pointer;
+}
+
+.home-nav-burger:hover { background: var(--home-surface-2); }
+.home-nav-burger svg { width: 1.25rem; height: 1.25rem; }
+.home-nav[data-open="true"] .menu-open-icon,
+.home-nav[data-open="false"] .menu-close-icon { display: none; }
+
+.home-mobile-panel {
+  display: none;
+  margin-top: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--home-line);
+  border-radius: 0.875rem;
+  background: var(--home-surface);
+  box-shadow: var(--home-shadow-raised);
+}
+
+.home-nav[data-open="true"] .home-mobile-panel { display: block; }
+
+.home-mobile-panel a {
+  display: block;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.5rem;
+  color: var(--home-ink);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.home-mobile-panel a:hover { background: var(--home-surface-2); }
+
+@media (min-width: 900px) {
+  .home-nav-links { display: flex; }
+  .home-nav-burger { display: none; }
+  .home-nav[data-open="true"] .home-mobile-panel { display: none; }
+}
+
+/* ---------------- Hero ---------------- */
+.hero-section {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  margin-top: calc(var(--home-nav-h) * -1);
+  padding:
+    calc(var(--home-nav-h) + clamp(4rem, 9vw, 7rem))
+    1.5rem
+    clamp(2.5rem, 5vw, 4rem);
+  background: var(--background);
+  text-align: center;
+}
+
+/* The same faint schematic band the homepage hero sits on, drawn as a
+   repeating grid rather than an illustration so it costs one gradient
+   instead of a second SVG download. */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--home-line), transparent 35%) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--home-line), transparent 35%) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 22%, #000 20%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 22%, #000 20%, transparent 78%);
+  pointer-events: none;
+}
+
+.hero-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--home-line);
+  border-radius: 999px;
+  background: var(--home-surface-2);
+  color: var(--home-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.hero-kicker b { color: var(--accent); font-weight: 700; }
+
+.hero-kicker .dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.hero-section h1 {
+  max-width: 18ch;
+  margin: clamp(1.25rem, 2.4vw, 1.9rem) 0 0;
+  color: var(--home-ink);
+  font-family: var(--landing-heading-font);
+  font-synthesis: none;
+  font-size: clamp(2.1rem, 6.4vw, 4.9rem);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+.hero-sub {
+  max-width: 60ch;
+  margin: clamp(1.1rem, 2vw, 1.6rem) 0 0;
+  color: var(--home-muted);
+  font-size: clamp(1.0625rem, 1.55vw, 1.3125rem);
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: clamp(1.75rem, 3.2vw, 2.5rem);
+}
+
+.button-primary,
+.button-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.9rem;
+  padding: 0 1.4rem;
+  border-radius: 0.65rem;
+  font-size: 0.975rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.button-primary {
+  border: 1px solid var(--btn-primary-border);
+  background: var(--btn-primary-fill);
+  box-shadow: var(--btn-primary-shadow);
+  color: var(--btn-primary-fg);
+}
+
+.button-primary:hover {
+  background: var(--btn-primary-fill-hover);
+}
+
+.button-outline {
+  border: 1px solid var(--btn-secondary-border);
+  background: var(--btn-secondary-fill);
+  box-shadow: var(--btn-secondary-shadow);
+  color: var(--btn-secondary-fg);
+}
+
+.button-outline:hover { background: var(--btn-secondary-fill-hover); }
+.button-primary:active, .button-outline:active { transform: translateY(1px); }
+
+/* ---------------- Milestone meter ----------------
+   The one component with no homepage ancestor. It is the whole point
+   of a community milestone: the number has to be seen moving, so it
+   opens filled to its real value rather than animating from zero. */
+.meter-card {
+  width: min(100%, 44rem);
+  margin: clamp(2rem, 4vw, 3rem) auto 0;
+  padding: 1.15rem 1.3rem 1.25rem;
+  border: 1px solid var(--home-line);
+  border-radius: 1.125rem;
+  background: var(--home-surface);
+  box-shadow: var(--home-shadow);
+  text-align: left;
+}
+
+.meter-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.meter-label {
+  color: var(--home-ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.meter-count {
+  color: var(--home-muted);
+  font-family: var(--landing-mono-font);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-track {
+  height: 0.5rem;
+  margin-top: 0.85rem;
+  border-radius: 999px;
+  background: var(--home-surface-2);
+  overflow: hidden;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.meter-note {
+  margin: 0.75rem 0 0;
+  color: var(--home-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* ---------------- Shared section chrome ---------------- */
+.section {
+  padding: clamp(3.5rem, 8vw, 6rem) 1.5rem 0;
+  /* The pill navigation floats over the page, so an in-page link would
+     otherwise land with its own heading hidden underneath it. */
+  scroll-margin-top: calc(var(--home-nav-h) + 1rem);
+}
+
+.section-shell {
+  width: min(100%, 76rem);
+  margin-inline: auto;
+}
+
+.section-kicker {
+  margin: 0 0 1rem;
+  color: var(--accent);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.section h2 {
+  margin: 0;
+  max-width: 24ch;
+  color: var(--home-ink);
+  font-family: var(--landing-heading-font);
+  font-size: clamp(1.9rem, 3.3vw, 2.6rem);
+  font-synthesis: none;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.section-lede {
+  max-width: 60ch;
+  margin: clamp(1rem, 1.8vw, 1.5rem) 0 0;
+  color: var(--home-muted);
+  font-size: clamp(1rem, 1.35vw, 1.1875rem);
+  line-height: 1.6;
+  text-wrap: balance;
+}
+
+/* ---------------- Track / step cards ---------------- */
+.cards {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: clamp(2rem, 4vw, 3rem);
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  padding: 1.75rem;
+  border: 1px solid var(--home-line);
+  border-radius: 1.125rem;
+  background: var(--home-surface);
+}
+
+.card h3 {
+  margin: 0;
+  color: var(--home-ink);
+  font-family: var(--landing-heading-font);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.card p {
+  margin: 0.6rem 0 0;
+  color: var(--home-muted);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.card .card-eg {
+  margin-top: auto;
+  padding-top: 1rem;
+  color: var(--home-muted);
+  font-family: var(--landing-mono-font);
+  font-size: 0.78rem;
+}
+
+/* Steps are numbered because they genuinely are a sequence: you cannot
+   submit before you build, or build before you join. */
+.steps {
+  counter-reset: step;
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: clamp(2rem, 4vw, 3rem);
+}
+
+.step {
+  padding: 1.4rem;
+  border: 1px solid var(--home-line);
+  border-radius: 1.125rem;
+  background: var(--home-surface);
+}
+
+.step .n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--home-line);
+  border-radius: 999px;
+  background: var(--home-surface-2);
+  color: var(--home-muted);
+  font-family: var(--landing-mono-font);
+  font-size: 0.75rem;
+}
+
+.step h3 {
+  margin: 0.75rem 0 0;
+  color: var(--home-ink);
+  font-family: var(--landing-heading-font);
+  font-size: 0.975rem;
+  font-weight: 700;
+}
+
+.step p {
+  margin: 0.4rem 0 0;
+  color: var(--home-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* ---------------- Prize cards ---------------- */
+.plans {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: clamp(2rem, 4vw, 3rem);
+  align-items: stretch;
+}
+
+.plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 1.25rem 1.15rem 1.15rem;
+  border: 1px solid var(--home-line);
+  border-radius: 0.9rem;
+  background: var(--home-surface);
+}
+
+.plan.popular {
+  border-color: color-mix(in oklab, var(--home-ink) 26%, transparent);
+  background: var(--home-surface-2);
+}
+
+.plan .p-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--home-ink);
+  font-family: var(--landing-heading-font);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.pop-tag {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--landing-body-font);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.plan .p-price {
+  margin-top: 0.75rem;
+  color: var(--home-ink);
+  font-family: var(--landing-hero-font);
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan .p-price .per {
+  color: var(--home-muted);
+  font-family: var(--landing-body-font);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.plan .early {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--home-muted);
+  font-size: 0.8125rem;
+}
+
+.plan ul {
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan li {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  color: var(--home-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.plan li .gdot {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-top: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.plan .p-btn {
+  display: block;
+  width: 100%;
+  margin-top: auto;
+  padding: 0.6rem 0;
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 0.6rem;
+  background: var(--btn-secondary-fill);
+  box-shadow: var(--btn-secondary-shadow);
+  color: var(--btn-secondary-fg);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  transition: background 150ms ease;
+}
+
+.plan .p-btn:hover { background: var(--btn-secondary-fill-hover); }
+
+.plan.popular .p-btn {
+  margin-top: 1rem;
+  border-color: var(--btn-primary-border);
+  background: var(--btn-primary-fill);
+  box-shadow: var(--btn-primary-shadow);
+  color: var(--btn-primary-fg);
+}
+
+.plan.popular .p-btn:hover { background: var(--btn-primary-fill-hover); }
+
+.plan-note {
+  max-width: 62rem;
+  margin: 1.5rem auto 0;
+  color: var(--home-muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ---------------- Leaderboard preview ---------------- */
+.boards {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: clamp(2rem, 4vw, 3rem);
+}
+
+.board {
+  border: 1px solid var(--home-line);
+  border-radius: 1.125rem;
+  background: var(--home-surface);
+  overflow: hidden;
+}
+
+.board-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--home-line);
+}
+
+.board-head h3 {
+  margin: 0;
+  color: var(--home-ink);
+  font-family: var(--landing-heading-font);
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.board-head span {
+  color: var(--home-muted);
+  font-size: 0.78rem;
+}
+
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.7rem 1.25rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--home-line), transparent 45%);
+  font-size: 0.875rem;
+}
+
+.board-row:last-child { border-bottom: 0; }
+
+.board-row .rank {
+  width: 1.4rem;
+  color: var(--home-muted);
+  font-family: var(--landing-mono-font);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-row .who {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--home-ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-row .score {
+  color: var(--home-muted);
+  font-family: var(--landing-mono-font);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-empty {
+  padding: 1.75rem 1.25rem;
+  color: var(--home-muted);
+  font-size: 0.875rem;
+}
+
+/* ---------------- FAQ ---------------- */
+.faq-list {
+  margin-top: clamp(2rem, 4vw, 3rem);
+  border: 1px solid var(--home-line);
+  border-radius: 1.125rem;
+  background: var(--home-surface);
+  overflow: hidden;
+}
+
+.faq-item { border-bottom: 1px solid var(--home-line); }
+.faq-item:last-child { border-bottom: 0; }
+
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.05rem 1.4rem;
+  color: var(--home-ink);
+  font-family: var(--landing-heading-font);
+  font-size: 0.975rem;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.faq-item summary::-webkit-details-marker { display: none; }
+
+.faq-item summary::after {
+  content: "＋";
+  color: var(--home-muted);
+  font-family: var(--landing-body-font);
+  font-weight: 400;
+}
+
+.faq-item[open] summary::after { content: "－"; }
+
+.faq-item p {
+  margin: 0;
+  padding: 0 1.4rem 1.2rem;
+  max-width: 76ch;
+  color: var(--home-muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+/* ---------------- Closing frame ---------------- */
+#final-cta {
+  position: relative;
+  margin-top: clamp(4rem, 9vw, 7rem);
+  padding: 0 1.5rem clamp(4rem, 9vw, 7rem);
+}
+
+.final-cta-frame {
+  position: relative;
+  width: min(100%, 76rem);
+  margin-inline: auto;
+  padding: clamp(3rem, 6vw, 5rem) 1.5rem;
+  border: 1px solid var(--home-line);
+  border-radius: 1.5rem;
+  background: var(--home-surface);
+  text-align: center;
+  overflow: hidden;
+}
+
+.final-cta-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--home-line), transparent 40%) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--home-line), transparent 40%) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, #000 10%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, #000 10%, transparent 75%);
+  pointer-events: none;
+}
+
+.final-cta-content { position: relative; }
+
+.final-cta-content h2 {
+  margin: 0;
+  color: var(--home-ink);
+  font-family: var(--landing-heading-font);
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.final-cta-content p {
+  max-width: 52ch;
+  margin: 1.1rem auto 0;
+  color: var(--home-muted);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+
+.final-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+/* ---------------- Responsive ---------------- */
+@media (max-width: 1000px) {
+  .cards, .plans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .cards, .plans, .steps, .boards { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

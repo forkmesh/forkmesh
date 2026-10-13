@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "sources": ["StretchFeature.h", "StretchFeature.cpp"],
+  "mocHeaders": []
+}

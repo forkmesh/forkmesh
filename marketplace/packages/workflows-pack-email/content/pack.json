@@ -1,0 +1,13 @@
+{
+  "category": "Email",
+  "integrations": [
+    "sendgrid",
+    "mailgun",
+    "postmark",
+    "resend",
+    "mailchimp",
+    "brevo",
+    "kit",
+    "mailerlite"
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "water",
+  "name": "Water Intake",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Health",
+  "version": "1.1.0",
+  "summary": "Log the water and drinks you have each day on the web, desktop, or iPhone, keep a daily goal and streak, and share every glass with Apple Health, encrypted at rest under your own account's key.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Water Intake page with a glass filling toward a 2 litre goal, quick add buttons, today's drinks, and a 30-day chart"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:water",
+    "worker": "content/worker/water.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/water",
+        "title": "Water",
+        "description": "Log glasses of water and other drinks, keep a daily goal, and sync with Apple Health.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Water",
+          "icon": "glass-water",
+          "order": 46
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.water.read",
+      "label": "Read your own drinks log and water goal, encrypted under your account's own key",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.water.write",
+      "label": "Log, edit, and delete drinks and set your daily water goal",
+      "risk": "sensitive"
+    },
+    {
+      "id": "health.water.readwrite",
+      "label": "On iPhone, with your permission, write the water you log to Apple Health and bring in water other apps logged there",
+      "risk": "sensitive"
+    },
+    {
+      "id": "location.country.coarse",
+      "label": "Read the approximate country of your connection to show fluid ounces or millilitres",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account"
+  },
+  "worker": {
+    "module": "water",
+    "api": "/api/water",
+    "outboundOrigins": []
+  }
+}

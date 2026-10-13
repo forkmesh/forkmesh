@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Authorize an app · ForkMesh</title>
+    <meta name="description" content="Review what a ForkMesh app is asking for before you install it." />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="no-referrer" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/analytics.js"></script>
+    <script src="/oauth-authorize.js?v=${version}" defer></script>
+    <style>
+      body { min-height: 100vh; margin: 0; color: #f5f5f5; background: #050505; font-family: system-ui, sans-serif; }
+      .consent-shell { min-height: 100vh; display: grid; place-items: center; padding: 28px 16px; box-sizing: border-box; }
+      .consent-card { width: min(100%, 480px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; background: #18181b; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55); padding: 32px 28px; box-sizing: border-box; }
+      .consent-head { display: flex; gap: 14px; align-items: center; }
+      .consent-icon { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; font-weight: 700; flex: none; overflow: hidden; }
+      .consent-icon img { width: 100%; height: 100%; object-fit: cover; }
+      .consent-card h1 { font-size: 1.15rem; margin: 0; }
+      .consent-muted { color: #a1a1aa; font-size: 0.875rem; margin: 4px 0 0; }
+      .consent-scopes { list-style: none; padding: 0; margin: 20px 0; display: grid; gap: 10px; }
+      .consent-scopes li { border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px 12px; }
+      .consent-scopes strong { display: block; font-size: 0.9rem; }
+      .consent-scopes span { color: #a1a1aa; font-size: 0.8rem; }
+      .consent-scopes code { color: #a5b4fc; font-size: 0.75rem; }
+      label.consent-target { display: grid; gap: 6px; font-size: 0.85rem; margin-bottom: 18px; }
+      select { background: #09090b; color: inherit; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 8px; padding: 8px; font: inherit; }
+      .consent-actions { display: flex; gap: 10px; justify-content: flex-end; }
+      .consent-actions button { border-radius: 8px; padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.14); background: transparent; color: inherit; }
+      .consent-actions button[data-allow] { background: #f5f5f5; color: #09090b; border-color: #f5f5f5; }
+      .consent-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .consent-note { font-size: 0.78rem; color: #a1a1aa; margin: 14px 0 0; }
+      .consent-error { color: #fca5a5; font-size: 0.9rem; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main class="consent-shell">
+      <section class="consent-card" aria-live="polite">
+        <p data-consent-status class="consent-muted">Loading...</p>
+        <div data-consent-body hidden>
+          <div class="consent-head">
+            <div data-consent-icon class="consent-icon" aria-hidden="true"></div>
+            <div>
+              <h1><span data-consent-app></span> wants to access ForkMesh</h1>
+              <p class="consent-muted">by <span data-consent-developer></span> · signed in as <span data-consent-account></span></p>
+            </div>
+          </div>
+          <p data-consent-unlisted class="consent-note" hidden>This app is not reviewed for the App Directory. Install it only if you trust its developer.</p>
+          <ul data-consent-scopes class="consent-scopes"></ul>
+          <label class="consent-target">
+            Install for
+            <select data-consent-target></select>
+          </label>
+          <p data-consent-target-note class="consent-note" hidden></p>
+          <div class="consent-actions">
+            <button type="button" data-deny>Cancel</button>
+            <button type="button" data-allow>Allow</button>
+          </div>
+          <p class="consent-note">You will be sent to <strong data-consent-host></strong>. You can revoke access at any time under Installed apps.</p>
+        </div>
+        <p data-consent-error class="consent-error" hidden></p>
+      </section>
+    </main>
+  </body>
+</html>

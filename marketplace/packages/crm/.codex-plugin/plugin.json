@@ -1,0 +1,30 @@
+{
+  "name": "crm",
+  "version": "1.2.0",
+  "description": "Organization CRM with customizable flows, shared mail boxes, Zoho Mail import, a Gmail/Zoho Mail browser extension that ties emails to contacts, cross-organization sheet sharing, and auditable email activity.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["crm", "contacts", "email", "gmail", "zoho-mail", "mailtrap", "csv", "chrome-extension"],
+  "interface": {
+    "displayName": "CRM",
+    "shortDescription": "Manage shared relationship flows and grouped mail.",
+    "longDescription": "A shared organization CRM with encrypted contacts, customizable pipelines, Zoho Mail import into grouped boxes, CSV workflows, external provider links, and one-off Mailtrap sends.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "Show my organization's recent CRM activity.",
+      "Help me prepare contacts for CSV import.",
+      "Draft a one-off follow-up email."
+    ],
+    "brandColor": "#2F81F7"
+  }
+}

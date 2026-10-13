@@ -1,0 +1,10 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=Render the app's request_block_rules export into Caddy when it changes
+
+[Path]
+PathChanged=@@REQUEST_RULES_EXPORT@@
+Unit=fmnext-request-rules.service
+
+[Install]
+WantedBy=multi-user.target

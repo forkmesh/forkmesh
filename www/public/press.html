@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ForkMesh Press Kit</title>
+    <meta
+      name="description"
+      content="ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider."
+    />
+    <link rel="canonical" href="https://forkmesh.com/press" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forkmesh.com/press" />
+    <meta property="og:site_name" content="ForkMesh" />
+    <meta property="og:title" content="ForkMesh Press Kit" />
+    <meta
+      property="og:description"
+      content="ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .press-main {
+        width: min(100%, 1120px);
+        margin: 0 auto;
+        padding: 0 24px 88px;
+      }
+
+      .press-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+        gap: 40px;
+        align-items: center;
+        padding-top: 56px;
+      }
+
+      .press-hero .kit-hero {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
+
+      .press-hero .kit-title {
+        max-width: 12ch;
+      }
+
+      .press-actions .kit-btn svg {
+        width: 15px;
+        height: 15px;
+        opacity: 0.7;
+      }
+
+      .press-logo-stage {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        min-height: 380px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: var(--background);
+        box-shadow: var(--kit-card-shadow);
+      }
+
+      .press-logo-card {
+        display: grid;
+        place-items: center;
+        align-content: center;
+        margin: 0;
+        padding: 32px 20px 18px;
+        gap: 14px;
+      }
+
+      .press-logo-card.is-light {
+        background: #ffffff;
+        color: #4a4a52;
+      }
+
+      .press-logo-card.is-dark {
+        background: #000000;
+        color: #a1a1ab;
+      }
+
+      .press-logo-card img {
+        width: min(70%, 180px);
+        height: auto;
+        object-fit: contain;
+      }
+
+      .press-logo-card figcaption {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .press-logo-caption {
+        margin: 14px 0 0;
+        color: var(--kit-body);
+        font-size: 13px;
+        text-align: center;
+      }
+
+      .press-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 56px;
+      }
+
+      .press-panel {
+        min-width: 0;
+        padding: 24px;
+        color: var(--kit-ink);
+      }
+
+      .press-panel h2 {
+        margin: 0;
+        color: var(--foreground);
+        font-family: var(--display);
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+        line-height: 1.2;
+      }
+
+      .press-panel p {
+        margin: 10px 0 0;
+        color: var(--kit-body);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      .press-list {
+        display: grid;
+        gap: 0;
+        margin: 18px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .press-list li {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 10px 0;
+        border-top: 1px solid var(--kit-line);
+        color: var(--kit-body);
+        font-size: 14px;
+      }
+
+      .press-list strong {
+        color: var(--kit-ink);
+        font-weight: 600;
+      }
+
+      .press-list span {
+        text-align: right;
+      }
+
+      .press-list a {
+        color: var(--kit-ink);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      .press-swatch-grid {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .press-swatch {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+      }
+
+      .press-swatch-chip {
+        width: 44px;
+        height: 34px;
+        border: 1px solid var(--kit-line);
+        border-radius: 10px;
+        background: var(--swatch);
+      }
+
+      .press-swatch span {
+        display: block;
+        color: var(--kit-ink);
+        font-weight: 600;
+      }
+
+      .press-swatch code {
+        color: var(--kit-body);
+      }
+
+      .press-beta {
+        grid-column: span 2;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: center;
+      }
+
+      .press-status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 30px;
+        padding: 0 12px;
+        border: 1px solid color-mix(in srgb, var(--warning) 44%, transparent);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--warning) 12%, transparent);
+        color: var(--warning);
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .press-boilerplate {
+        grid-column: 1 / -1;
+      }
+
+      .press-boilerplate p {
+        max-width: 82ch;
+      }
+
+      @media (max-width: 900px) {
+        .press-hero,
+        .press-grid,
+        .press-beta {
+          grid-template-columns: 1fr;
+        }
+
+        .press-logo-stage {
+          min-height: 300px;
+        }
+
+        .press-beta {
+          grid-column: auto;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .press-main {
+          padding: 0 18px 64px;
+        }
+
+        .press-hero {
+          padding-top: 36px;
+        }
+
+        .press-panel {
+          padding: 20px;
+        }
+
+        .press-list li {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .press-list span {
+          text-align: left;
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="press-main">
+      <section class="press-hero" aria-labelledby="press-title">
+        <div class="kit-hero">
+          <span class="kit-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5v3a1 1 0 0 0 1 1h2.5L12 19V5L6.5 9.5H4a1 1 0 0 0-1 1Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"></path></svg>
+            Press
+          </span>
+          <h1 class="kit-title" id="press-title">ForkMesh Press Kit</h1>
+          <p class="kit-lede">
+            ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.
+          </p>
+          <div class="kit-actions press-actions" aria-label="Press actions">
+            <a class="kit-btn is-primary" href="/assets/logo.svg" download="forkmesh-logo.svg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10.5m0 0-4.2-4.2M12 14.5l4.2-4.2M5 19.5h14"></path></svg>Download logo</a>
+            <a class="kit-btn" href="mailto:founders@forkmesh.com?subject=ForkMesh%20press%20request">Contact founders <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+            <a class="kit-btn" href="/docs/product-promise" data-forkmesh-product-action="commercial-proof-opened">Verify the promise <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+          </div>
+        </div>
+
+        <div>
+          <div class="press-logo-stage" aria-label="ForkMesh logo preview">
+            <figure class="press-logo-card is-light">
+              <img src="/assets/logo.svg" alt="ForkMesh logo on white" />
+              <figcaption>On white</figcaption>
+            </figure>
+            <figure class="press-logo-card is-dark">
+              <img src="/assets/logo.svg" alt="ForkMesh logo on black" />
+              <figcaption>On black</figcaption>
+            </figure>
+          </div>
+          <p class="press-logo-caption">logo.svg · vector · one file for white and black backgrounds</p>
+        </div>
+      </section>
+
+      <section class="press-grid" aria-label="Press resources">
+        <article class="press-panel kit-card">
+          <h2>Logo</h2>
+          <p>
+            Use the ForkMesh mark on light or dark backgrounds with enough clear space for the symbol to breathe.
+          </p>
+          <ul class="press-list">
+            <li><strong>Primary asset</strong><a href="/assets/logo.svg" download="forkmesh-logo.svg">SVG</a></li>
+            <li><strong>Raster (transparent, 895×1024)</strong><a href="/assets/logo.png" download="forkmesh-logo.png">PNG</a></li>
+            <li><strong>Minimum padding</strong><span>24px around the mark</span></li>
+            <li><strong>Background</strong><span>Light or dark</span></li>
+          </ul>
+        </article>
+
+        <article class="press-panel kit-card">
+          <h2>Style guide</h2>
+          <p>
+            ForkMesh should feel technical, resilient, and human - clear enough for infrastructure, warm enough for the people protecting their work.
+          </p>
+          <ul class="press-list">
+            <li><strong>Name</strong><span>ForkMesh</span></li>
+            <li><strong>Voice</strong><span>Direct, practical, developer-first</span></li>
+            <li><strong>Fonts</strong><span>ABC Favorit headings, ForkMesh Lato and ForkMesh Mono</span></li>
+          </ul>
+        </article>
+
+        <article class="press-panel kit-card">
+          <h2>Colors</h2>
+          <p>
+            Keep the palette dark, crisp, and code-native, with neutral surfaces and green reserved for live status.
+          </p>
+          <div class="press-swatch-grid">
+            <div class="press-swatch">
+              <span class="press-swatch-chip" style="--swatch: #090909"></span>
+              <div><span>Background</span><code>#090909</code></div>
+            </div>
+            <div class="press-swatch">
+              <span class="press-swatch-chip" style="--swatch: #4ade80"></span>
+              <div><span>Status green</span><code>#4ade80</code></div>
+            </div>
+            <div class="press-swatch">
+              <span class="press-swatch-chip" style="--swatch: #a371f7"></span>
+              <div><span>Accent purple</span><code>#a371f7</code></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="press-panel press-beta kit-card">
+          <div>
+            <h2>BetaNYC</h2>
+            <p>
+              We will post the BetaNYC link here when it comes out, along with any related event or coverage notes.
+            </p>
+          </div>
+          <span class="press-status">coming soon</span>
+        </article>
+
+        <article class="press-panel kit-card">
+          <h2>Fast facts</h2>
+          <ul class="press-list">
+            <li><strong>Category</strong><span>Developer infrastructure</span></li>
+            <li><strong>Focus</strong><span>Distributed Git collaboration</span></li>
+            <li><strong>Availability</strong><span>Public beta</span></li>
+          </ul>
+        </article>
+
+        <article class="press-panel press-boilerplate kit-card">
+          <h2>Boilerplate</h2>
+          <p>
+            ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.
+            The public proof uses ordinary developer actions: collaborate, add a mirror, take the source host offline, and clone again.
+          </p>
+        </article>
+      </section>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

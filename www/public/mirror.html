@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Is your repo mirrored? · ForkMesh</title>
+    <meta
+      name="description"
+      content="Copy a public GitHub, GitLab or Codeberg repository to ForkMesh from your browser, so anyone can still clone it without an account if its first host is down."
+    />
+    <link rel="canonical" href="https://forkmesh.com/mirror" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forkmesh.com/mirror" />
+    <meta property="og:site_name" content="ForkMesh" />
+    <meta property="og:title" content="Is your repo mirrored?" />
+    <meta
+      property="og:description"
+      content="Copy a public GitHub, GitLab or Codeberg repository to ForkMesh from your browser, so anyone can still clone it without an account if its first host is down."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .mirror-main {
+        width: min(100%, 1040px);
+        margin: 0 auto;
+        padding: 0 24px 88px;
+      }
+
+      .mirror-hero {
+        padding-top: 56px;
+      }
+
+      .mirror-hero .kit-hero {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
+
+      .mirror-steps,
+      .mirror-grid {
+        display: grid;
+        gap: 18px;
+        margin-top: 40px;
+      }
+
+      .mirror-steps {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .mirror-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .mirror-panel {
+        padding: 24px;
+        color: var(--kit-ink);
+      }
+
+      .mirror-panel h2 {
+        margin: 0 0 10px;
+        font-size: 17px;
+        font-weight: 750;
+        line-height: 1.25;
+      }
+
+      .mirror-panel p,
+      .mirror-panel li {
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .mirror-panel ul {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .mirror-panel strong {
+        color: var(--kit-ink);
+      }
+
+      .mirror-step-number {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--kit-body);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .mirror-panel pre {
+        margin: 12px 0 0;
+        padding: 12px 14px;
+        overflow-x: auto;
+        border: 1px solid var(--kit-line);
+        border-radius: 12px;
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+
+      .mirror-panel a {
+        color: var(--kit-ink);
+      }
+
+      .mirror-closing {
+        margin-top: 40px;
+      }
+
+      @media (max-width: 900px) {
+        .mirror-steps,
+        .mirror-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .mirror-main {
+          padding: 0 18px 64px;
+        }
+
+        .mirror-hero {
+          padding-top: 36px;
+        }
+
+        .mirror-panel {
+          padding: 20px;
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="mirror-main">
+      <section class="mirror-hero" aria-labelledby="mirror-title">
+        <div class="kit-hero">
+          <span class="kit-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="8" height="16" rx="2"></rect><rect x="13" y="4" width="8" height="16" rx="2"></rect></svg>
+            A second home for your code
+          </span>
+          <h1 class="kit-title" id="mirror-title">Is your repo mirrored?</h1>
+          <p class="kit-lede">
+            If your project's only public copy lives on one host, an outage, a policy change or a locked account takes it away from everyone who clones it.
+            Copy a public GitHub, GitLab or Codeberg repository to ForkMesh from your browser, and anyone can clone that copy without an account.
+          </p>
+          <div class="kit-actions" aria-label="Get started">
+            <a class="kit-btn is-primary" href="/signup">Create an account</a>
+            <a class="kit-btn" href="https://app.forkmesh.com/dashboard/repos/new?source=remote">Signed in? Copy a repository <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="mirror-steps" aria-label="Three steps">
+        <article class="mirror-panel kit-card">
+          <span class="mirror-step-number">Step 1</span>
+          <h2>Create an account</h2>
+          <p>Sign up and confirm your email. There is no payment step.</p>
+        </article>
+        <article class="mirror-panel kit-card">
+          <span class="mirror-step-number">Step 2</span>
+          <h2>Paste the clone URL</h2>
+          <p>In <strong>New repository</strong>, choose <strong>Remote clone URL</strong>, paste the <code>https://</code> address of a public repository on github.com, gitlab.com or codeberg.org, and press <strong>Create &amp; mirror</strong>.</p>
+        </article>
+        <article class="mirror-panel kit-card">
+          <span class="mirror-step-number">Step 3</span>
+          <h2>Clone it from ForkMesh</h2>
+          <p>ForkMesh copies every branch and tag. Anyone can clone the copy, no account needed:</p>
+          <pre><code>git clone https://app.forkmesh.com/OWNER/REPOSITORY</code></pre>
+        </article>
+      </section>
+
+      <section class="mirror-grid" aria-label="What you get and what to know">
+        <article class="mirror-panel kit-card">
+          <h2>What you get</h2>
+          <ul>
+            <li>A copy of every branch and tag, kept on three ForkMesh servers.</li>
+            <li>A public clone URL that works without a ForkMesh account.</li>
+            <li>Plain Git over HTTPS: push new commits to it like any other remote.</li>
+          </ul>
+        </article>
+        <article class="mirror-panel kit-card">
+          <h2>What to know first</h2>
+          <ul>
+            <li><strong>It is a copy, not a live sync.</strong> ForkMesh copies the repository once. Push to it to keep it current.</li>
+            <li><strong>Code only.</strong> Issues, pull requests, releases, wikis and LFS files stay where they are.</li>
+            <li><strong>Public sources only,</strong> up to 200 MiB each and 10 repositories per account.</li>
+            <li><strong>Set it up before you need it.</strong> Copying from a host that is down fails.</li>
+            <li><strong>One operator today.</strong> The three servers are all run by the ForkMesh team, so this is a second host, not an independent network.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="mirror-closing mirror-panel kit-card" aria-label="Your own copy">
+        <h2>Want the copy on your own machine?</h2>
+        <p>Clone it with <code>git clone --mirror</code>, or read the <a href="/docs/hosted-repositories/">hosted repositories guide</a> for moving it to a node you run.</p>
+      </section>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

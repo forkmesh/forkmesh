@@ -1,0 +1,75 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}The work keeps its place · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="Hosted repositories can now finish web merges on their cores, runner work is easier to follow, phones carry more Git, and the Office remembers where people work. October 4, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/the-work-keeps-its-place/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/the-work-keeps-its-place/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="The work keeps its place">
+    <meta property="og:description" content="Hosted merges, clearer runner work, more capable phone repositories, and an Office that remembers where people work.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/the-work-keeps-its-place.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit wet-stone clearing connects a glowing repository prism to a browser workstation, a phone, and a glass office pavilion, with the official ForkMesh logo and its vertical reflection in the foreground">
+    <meta property="article:published_time" content="2026-10-04T19:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The work keeps its place">
+    <meta name="twitter:description" content="Hosted merges, clearer runner work, more capable phone repositories, and an Office that remembers where people work.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/the-work-keeps-its-place.webp">
+    <meta name="twitter:image:alt" content="A moonlit wet-stone clearing connects a glowing repository prism to a browser workstation, a phone, and a glass office pavilion, with the official ForkMesh logo and its vertical reflection in the foreground">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>The work keeps its place</h1>
+            <p class="lede">A hosted repository can now finish a web merge on its own cores. Runner work is easier to follow from the desktop. Phones carry more of a local repository, and the Office has started to remember the people and places around the work.</p>
+            <div class="meta"><span class="pill">October 4, 2026</span><span>Product update</span><span>5 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/the-work-keeps-its-place.webp" alt="A moonlit wet-stone clearing connects a glowing repository prism to a browser workstation, a phone, and a glass office pavilion, with the official ForkMesh logo and its vertical reflection in the foreground">
+        </section>
+        <article class="body">
+          <p>This update covers the work merged on main from the afternoon of October 2 through October 4. The served stack is still catching up to the end of that window, and the desktop and native apps have their own release gates, so the notes below say when something is on the hosted service, on current main, or waiting for a release.</p>
+
+          <h2>A hosted repository can carry the merge</h2>
+          <p>A pull request in a public hosted repository can now finish where the repository lives: on one of ForkMesh's cores. The server performs a real non-fast-forward Git merge, records the result, and lets the other cores fetch it. If an agent's branch already lives on a mirror, the merge starts there first instead of making the branch travel somewhere else.</p>
+          <p>There is a small but important change behind that: publishing no longer waits for the repository cache to warm up. The new generation is registered first and warmed in the background, so a successful merge can return without holding the next branch operation in line. This is merged on main; the latest fleet manifest had not yet advanced to this reporting window when we wrote it.</p>
+          <p>Browser mirroring from GitHub, GitLab, or Codeberg works on the hosted ForkMesh service only. Paste a public HTTPS repository URL into the hosted service's New repository page and ForkMesh creates a real hosted, cloneable copy. The separate provider metadata import still brings over issues, pull requests, releases, and selected documents; it does not make the Git objects cloneable by itself. Self-hosted operators still use the desktop handoff and their own mirror setup.</p>
+
+          <h2>From runner session to reviewed change</h2>
+          <p>Cloud runner sessions now carry the parts of a branch that matter when you come back to them: the base branch, runner, file count, additions and removals, and merge state. The phone and web views can inspect the same branch diff and follow it through merge and cleanup. A session can continue after a runner changes, instead of treating the last lease as the only place it exists.</p>
+          <p>On the desktop, a cloud transcript now reads more like a local agent run. Bash calls fold into compact command rows with familiar icons, while the actual agent conversation stays visible. The web can also edit a repository file directly, and a branch diff can collect a comment from a line number even when no pull request exists yet. These changes are on current main and await the next desktop build where the client is involved.</p>
+
+          <h2>The phone holds more of the repository</h2>
+          <p>Android now keeps one local copy of each repository on the phone and can sync a clone forward with Git's fast-forward path. Packed objects are read on demand, and checkout writes only the files that changed. The phone clone path also stopped carrying its old small-size ceiling and uses a shallow first clone, which makes the local copy a more practical working surface. The code and tests are merged; the next Android release is the availability boundary.</p>
+          <p>On iOS, the Commits screen now has a lane graph with Desktop, Web, and Mobile markers, and branch review comments can travel through the pull inbox. The native iPhone app is still not in the App Store, so these are current-main native changes, not an App Store availability claim. The phone's Desktop screen also has clearer load and battery signals, with a power-loss alarm in the native clients.</p>
+
+          <h2>The Office remembers the people in it</h2>
+          <p>The shared Office has grown from a map into a more legible place to work. Profile cards can show a display name, local time, picture, status, room, and team; an avatar editor lets each member choose their look. The browser keeps your room and position after a refresh, so returning to the Office does not begin by dropping you somewhere random.</p>
+          <p>There are now quiet rooms, a Library, a Media Room, Lobby Couches, a Workspace, and a Focus Lounge. A couch can start a timed focus session, with an optional status and recent-session history. Desks can carry a small set of personal decorations. Applause is no longer a silent emoji: a clap animates, a celebration throws confetti, and a room can answer a shared moment with a short cheer. The Garden pond and Campfire give the Office somewhere to pause as well as somewhere to work.</p>
+          <p>Those changes are merged together with the Office's new release path, which means an Office-only change can now reach the served build. The current deployment still needs to pass its fleet health gate before we call the whole window live.</p>
+
+          <h2>What follows</h2>
+          <p>The next release boundary is deliberately visible: desktop changes stay in current main until a desktop build carries them, native iPhone work still needs App Store submission, and Android repository sync waits for its next APK. On the hosted side, the browser repository and merge work is ready on main while the fleet catches up.</p>
+          <p><a href="https://app.forkmesh.com/signup?utm_source=blog&amp;utm_medium=referral&amp;utm_campaign=changelog&amp;utm_content=the-work-keeps-its-place">Try ForkMesh in the browser</a> to start the hosted workflow. If something here does not work the way we described it, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a>. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/runs-that-listen-branches-that-let-go/">← Runs that listen, branches that let go</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/brief-reports-clear-signals/">Brief reports, clear signals →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

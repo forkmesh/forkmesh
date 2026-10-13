@@ -1,0 +1,18 @@
+{
+  "category": "Developer tools",
+  "integrations": [
+    "github",
+    "gitlab",
+    "bitbucket",
+    "jira",
+    "linear",
+    "sentry",
+    "pagerduty",
+    "opsgenie",
+    "circleci",
+    "netlify",
+    "vercel",
+    "cloudflare",
+    "digitalocean"
+  ]
+}

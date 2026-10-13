@@ -1,0 +1,8 @@
+{
+  "label": "Website",
+  "systems": [
+    "website",
+    "desktop_website"
+  ],
+  "prefixes": []
+}

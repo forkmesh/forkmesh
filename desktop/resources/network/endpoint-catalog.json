@@ -1,0 +1,2818 @@
+{
+  "version": 1,
+  "description": "What every network call the desktop makes is for. importance: 1 cosmetic .. 10 the app does not work without it. modestPerHour: a reasonable ceiling while the app is open (connections per hour for sockets). requestNeeded: 0..100, how likely it truly has to be a request rather than a websocket push, an event or a refresh. alternative: the push, event or refresh path that could replace it. source: where the call is made, repo-relative \"path: Class::function\", shown in the firewall prompt. Patterns use firewall rule syntax; the most specific matching pattern wins and a named method beats none. Hosts that cannot be named (Mastodon instances, custom Solana RPCs, mirror DNS names outside forkmesh.com) are not listed.",
+  "endpoints": [
+    {
+      "pattern": "app.forkmesh.com/api/repo/mainnode/forkmesh/rooms/*/ws",
+      "method": "WS",
+      "importance": 10,
+      "description": "The relay room socket: world chat, presence, mirror updates and the latency ping",
+      "trigger": "Persistent for the session; reconnects with backoff up to 5 min",
+      "modestPerHour": 12,
+      "alternative": "This is the push channel",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/ServerNode.cpp: ServerNode::openConnection",
+        "desktop/src/MainWindowChat.cpp: MainWindow::loadServers",
+        "desktop/src/MainnodeRoom.h: kDefaultServerUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/nodes/events*",
+      "method": "WS",
+      "importance": 10,
+      "description": "The node event socket: pings, tasks, catalog and commit topics plus signed heartbeat frames that trigger syncs",
+      "trigger": "Persistent for the session; reconnects with backoff up to 10 min",
+      "modestPerHour": 12,
+      "alternative": "This is the push channel",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowRepoSync.cpp: MainWindow::startNodeEventSocket",
+        "desktop/src/NodeEventSocket.cpp: NodeEventSocket::openConnection"
+      ]
+    },
+    {
+      "pattern": "gateway.discord.gg",
+      "method": "WS",
+      "importance": 4,
+      "description": "The Discord gateway socket for the Discord package",
+      "trigger": "Persistent while Discord is connected; reconnects with backoff up to 5 min",
+      "modestPerHour": 12,
+      "alternative": "This is the push channel",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::openGateway",
+        "marketplace/packages/discord/content/desktop/DiscordClient.h: m_gatewayUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/login",
+      "method": "POST",
+      "importance": 10,
+      "description": "Signs in and opens an account session",
+      "trigger": "Sign-in",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::verifyTotpLogin",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::runLoginFlow"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/logout",
+      "method": "POST",
+      "importance": 6,
+      "description": "Revokes the account session",
+      "trigger": "Sign-out",
+      "modestPerHour": 2,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::revokeAccountSessionToken",
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::logout"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/reserve",
+      "method": "POST",
+      "importance": 9,
+      "description": "Reserves the account name during setup",
+      "trigger": "Account creation",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::runSignupFlow"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/finalize",
+      "method": "POST",
+      "importance": 9,
+      "description": "Finishes creating the account",
+      "trigger": "Account creation",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::runSignupFlow"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/heartbeat",
+      "method": "POST",
+      "importance": 7,
+      "description": "Fallback node heartbeat (liveness, credits, ping pause) when the node event socket cannot carry it",
+      "trigger": "60 s heartbeat timer, only when the socket path fails or its ack is 30 s late",
+      "modestPerHour": 6,
+      "alternative": "Already a signed heartbeat frame on the node event socket; this is the fallback",
+      "requestNeeded": 15,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::postNodeHeartbeatFallback",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::sendNodeHeartbeat",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::retryNodeHeartbeatOverHttp"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/profile",
+      "method": "POST",
+      "importance": 6,
+      "description": "Saves profile edits, or checks a cached session token when switching relays",
+      "trigger": "Profile save, avatar change, relay switch",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 90,
+      "source": [
+        "desktop/src/MainWindowSettings.cpp: MainWindow::submitAccountProfileSave",
+        "desktop/src/MainWindowSettings.cpp: MainWindow::pushAccountAvatar",
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::restoreCachedAccountSession"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/user-status",
+      "method": "POST",
+      "importance": 4,
+      "description": "Sets or reads the signed-in member's away flag and custom status (emoji, text, clear time)",
+      "trigger": "Once after sign-in when the sign-in answer lacks the status, plus the account menu's away toggle and the Set a status dialog",
+      "modestPerHour": 4,
+      "alternative": "The sign-in answer and the user directory carry the status, so the read runs only when the sign-in answer lacks it. Peers learn changes from relay presence frames, not from this call",
+      "requestNeeded": 95,
+      "source": [
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::postOwnUserStatus",
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::fetchOwnUserStatus",
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::showSetUserStatusDialog"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/chat-retention",
+      "method": "POST",
+      "importance": 3,
+      "description": "Reads or sets how long the signed-in member's chat messages stay before they disappear: a default for all chats and per-chat overrides, seven days at most",
+      "trigger": "Once after sign-in when the sign-in answer lacks the preference, plus each change in Settings > General > Chat or a chat's \"Messages disappear after\" menu",
+      "modestPerHour": 2,
+      "alternative": "The sign-in answer carries the preference, so the read runs only when it is missing; changes are single writes",
+      "requestNeeded": 90,
+      "source": [
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::postChatRetention",
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::fetchChatRetention"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/activity-today",
+      "method": "POST",
+      "importance": 2,
+      "description": "Sends this desktop's interaction counts for today (288 five-minute slots) and reads the counts of the member's other desktops, phones and browsers, so the Today's activity chart after a merge shows the whole day",
+      "trigger": "After sign-in, then every 2 min while there is new input (a read every 10 min otherwise), plus each post-merge page or Git leaderboard opened",
+      "modestPerHour": 30,
+      "alternative": "A node-socket event when another device posts would replace the idle reads",
+      "requestNeeded": 40,
+      "source": [
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::syncUserActivity",
+        "desktop/src/MainWindowAccounts.cpp: MainWindow::startUserActivitySync"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/users",
+      "method": "GET",
+      "importance": 5,
+      "description": "The chat and world user directory used for invitees, assignees and profiles",
+      "trigger": "10 min directory timer, plus Chat, Settings, Ledger and assignee pickers (5 min floor)",
+      "modestPerHour": 12,
+      "alternative": "A directory-changed event on the node socket would refresh it only when someone joins or edits a profile",
+      "requestNeeded": 30,
+      "source": [
+        "desktop/src/MainWindowMessages.cpp: MainWindow::refreshChatUserDirectory",
+        "desktop/src/MainWindowCalendar.cpp: MainWindow::requestCalendar"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/link-*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Links this or a remote host node to the account",
+      "trigger": "Link dialog submit, host deploy",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowHostInstall.cpp: MainWindow::submitHostLinkCode",
+        "desktop/src/MainWindowNodes.cpp: MainWindow::submitLinkNodeToUser"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/tip-notice",
+      "method": "POST",
+      "importance": 7,
+      "description": "Reports a sent tip or payout receipt so the relay records it and emails the recipient",
+      "trigger": "After each tip or payout, re-polled every 5-20 s on 202 until final",
+      "modestPerHour": 60,
+      "alternative": "A payout-final event from the relay could replace the 202 re-polls",
+      "requestNeeded": 75,
+      "source": [
+        "desktop/src/MainWindowTips.cpp: MainWindow::announceTip",
+        "desktop/src/MainWindowTips.cpp: MainWindow::prepareContributorNoticeRequest"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/admin-pending*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Lists accounts waiting for admin verification",
+      "trigger": "Once per session for admins, plus the verify dialog",
+      "modestPerHour": 4,
+      "alternative": "An admin topic on the node socket",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::pollPendingUsers",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::showAdminVerifyDialog"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/admin-cron-report*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Admin cron job status",
+      "trigger": "Every 60 s while the Cron log tab is visible",
+      "modestPerHour": 60,
+      "alternative": "A cron-run event would replace the 60 s poll",
+      "requestNeeded": 35,
+      "source": [
+        "desktop/src/MainWindowLogs.cpp: MainWindow::fetchAdminCronReport"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/admin-database*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Admin D1 database browser reads (inventory, pages, schema, export)",
+      "trigger": "Admin database tab actions",
+      "modestPerHour": 120,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/DatabaseManagerWidget.cpp: DatabaseManagerWidget::read",
+        "desktop/src/MainWindowLogs.cpp: MainWindow::buildLogSection"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/admin-database",
+      "method": "POST",
+      "importance": 3,
+      "description": "Admin D1 database row edits and deletes",
+      "trigger": "Row save or delete",
+      "modestPerHour": 30,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/DatabaseManagerWidget.cpp: DatabaseManagerWidget::write",
+        "desktop/src/MainWindowLogs.cpp: MainWindow::buildLogSection"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/admin-session",
+      "method": "POST",
+      "importance": 3,
+      "description": "Mints a signed admin error console URL",
+      "trigger": "Status row click",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowChat.cpp: MainWindow::openAdminErrorConsole"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/admin-*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Admin reports and lists: Cloudflare usage, D1 usage, joining relays",
+      "trigger": "Logs dock tab switches and refresh clicks",
+      "modestPerHour": 30,
+      "alternative": "Tab-driven; fine as requests",
+      "requestNeeded": 75,
+      "source": [
+        "desktop/src/MainWindowLogs.cpp: MainWindow::fetchAdminUsageReport",
+        "desktop/src/MainWindowLogs.cpp: MainWindow::fetchAdminD1UsageReport",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::showRelayJoinApprovalDialog"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/admin-*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Admin moderation writes: quarantine, verify, approve relays, delete accounts, D1 read guard",
+      "trigger": "Admin clicks, one call per selected user",
+      "modestPerHour": 60,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::adminMarkEmailVerified",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::adminRelayApprove",
+        "desktop/src/MainWindowUsers.cpp: MainWindow::quarantineNextSelectedUser"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/*",
+      "method": "GET",
+      "importance": 7,
+      "description": "Reads an account record: exists, payout address, linked nodes, admin flag, bio",
+      "trigger": "Silent sign-in, setup name checks (350 ms debounce), profile and dialog opens, unknown-admin events, and a 5 s loop while waiting for a link grant",
+      "modestPerHour": 30,
+      "alternative": "Account-changed and link-granted events on the node socket, above all for the 5 s link-grant loop",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::getAccountSync",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::authenticateSilently"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/accounts/*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Other signed account writes such as ownership transfer decisions",
+      "trigger": "Admin and owner clicks",
+      "modestPerHour": 10,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::submitOwnershipTransferDecision"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/security/owner-keys",
+      "method": "POST",
+      "importance": 9,
+      "description": "Registers this desktop's owner encryption key",
+      "trigger": "Once per sign-in, per private replica download and per repo agent handshake",
+      "modestPerHour": 4,
+      "alternative": "none: a one-off handshake",
+      "requestNeeded": 95,
+      "source": [
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::ensureAgentE2EEControlPlane",
+        "desktop/src/MainWindowRepoSync.cpp: MainWindow::ensurePrivateRepositoryControlPlane",
+        "desktop/src/MainWindowRepos.cpp: MainWindow::ensurePrivateMirrorRecipientIdentityRegistered"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/security/owner-keys",
+      "method": "GET",
+      "importance": 7,
+      "description": "Fetches your other devices' public owner keys",
+      "trigger": "At most every 10 min while agent snapshots push",
+      "modestPerHour": 6,
+      "alternative": "A key enrolled or revoked event",
+      "requestNeeded": 40,
+      "source": [
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::refreshCompanionOwnerBundles"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/security/report",
+      "method": "POST",
+      "importance": 5,
+      "description": "Sends a vulnerability report",
+      "trigger": "Report submit",
+      "modestPerHour": 2,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowSettings.cpp: MainWindow::submitVulnerabilityReport"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sync*",
+      "method": "GET",
+      "importance": 9,
+      "description": "One consolidated drain of issue, pull and discussion inboxes and agent prompts",
+      "trigger": "2 s debounce after node socket topics, on socket reconnect, and 20 s after launch; no periodic tick",
+      "modestPerHour": 60,
+      "alternative": "Already event-driven: this is the request the push triggers",
+      "requestNeeded": 80,
+      "source": [
+        "desktop/src/MainWindowPulls.cpp: MainWindow::performRelaySync",
+        "desktop/src/MainWindowPulls.cpp: MainWindow::scheduleRelaySync"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/issues*",
+      "method": "GET",
+      "importance": 7,
+      "description": "Drains the issues inbox for a repository",
+      "trigger": "Page or tab open, Inbox button, and repos the /api/sync reply did not cover",
+      "modestPerHour": 20,
+      "alternative": "/api/sync already carries this; the drain on page open is extra",
+      "requestNeeded": 40,
+      "source": [
+        "desktop/src/MainWindowIssues.cpp: MainWindow::drainIssuesInboxFor",
+        "desktop/src/MainWindowIssues.cpp: MainWindow::issuesApiUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/issues*",
+      "method": "POST",
+      "importance": 8,
+      "description": "Files signed issues events (new items, comments, reviews, votes) to the owner inbox",
+      "trigger": "User actions and agents landing pull requests",
+      "modestPerHour": 60,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowIssues.cpp: MainWindow::submitNewIssueToInbox",
+        "desktop/src/MainWindowIssues.cpp: MainWindow::submitIssueCommentToInbox",
+        "desktop/src/MainWindowIssues.cpp: MainWindow::submitIssueVoteToInbox"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/issues*",
+      "method": "DELETE",
+      "importance": 7,
+      "description": "Acknowledges drained issues inbox items",
+      "trigger": "Once per drained batch",
+      "modestPerHour": 20,
+      "alternative": "Could be folded into the drain response as ack-on-read",
+      "requestNeeded": 70,
+      "source": [
+        "desktop/src/MainWindowIssues.cpp: MainWindow::applyIssuesInboxPayload"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/pulls*",
+      "method": "GET",
+      "importance": 7,
+      "description": "Drains the pulls inbox for a repository",
+      "trigger": "Page or tab open, Inbox button, and repos the /api/sync reply did not cover",
+      "modestPerHour": 20,
+      "alternative": "/api/sync already carries this; the drain on page open is extra",
+      "requestNeeded": 40,
+      "source": [
+        "desktop/src/MainWindowPulls.cpp: MainWindow::drainPullsInboxFor",
+        "desktop/src/MainWindowPulls.cpp: MainWindow::pullsApiUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/pulls*",
+      "method": "POST",
+      "importance": 8,
+      "description": "Files signed pulls events (new items, comments, reviews, votes) to the owner inbox",
+      "trigger": "User actions and agents landing pull requests",
+      "modestPerHour": 60,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowPulls.cpp: MainWindow::submitPullToInbox",
+        "desktop/src/MainWindowPulls.cpp: MainWindow::submitPullEventToInbox"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/pulls*",
+      "method": "DELETE",
+      "importance": 7,
+      "description": "Acknowledges drained pulls inbox items",
+      "trigger": "Once per drained batch",
+      "modestPerHour": 20,
+      "alternative": "Could be folded into the drain response as ack-on-read",
+      "requestNeeded": 70,
+      "source": [
+        "desktop/src/MainWindowPulls.cpp: MainWindow::applyPullsInboxPayload"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/discussions*",
+      "method": "GET",
+      "importance": 5,
+      "description": "Drains the discussions inbox for a repository",
+      "trigger": "Page or tab open, Inbox button, and repos the /api/sync reply did not cover",
+      "modestPerHour": 20,
+      "alternative": "/api/sync already carries this; the drain on page open is extra",
+      "requestNeeded": 40,
+      "source": [
+        "desktop/src/MainWindowDiscussions.cpp: MainWindow::drainDiscussionsInboxFor",
+        "desktop/src/MainWindowDiscussions.cpp: MainWindow::discussionsApiUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/discussions*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Files signed discussions events (new items, comments, reviews, votes) to the owner inbox",
+      "trigger": "User actions and agents landing pull requests",
+      "modestPerHour": 60,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowDiscussions.cpp: MainWindow::submitDiscussionEventToInbox"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/discussions*",
+      "method": "DELETE",
+      "importance": 5,
+      "description": "Acknowledges drained discussions inbox items",
+      "trigger": "Once per drained batch",
+      "modestPerHour": 20,
+      "alternative": "Could be folded into the drain response as ack-on-read",
+      "requestNeeded": 70,
+      "source": [
+        "desktop/src/MainWindowDiscussions.cpp: MainWindow::applyDiscussionsInboxPayload"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/agents*",
+      "method": "GET",
+      "importance": 5,
+      "description": "Legacy agent prompt drain for relays without /api/sync",
+      "trigger": "Once per relay sync, old relays only",
+      "modestPerHour": 20,
+      "alternative": "/api/sync carries prompts on current relays",
+      "requestNeeded": 20,
+      "source": [
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::drainAgentPromptsFor",
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::agentsApiUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/agents*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Uploads owner-encrypted agent session snapshots",
+      "trigger": "3 s debounce after session changes; the 30 s tick skips unchanged payloads",
+      "modestPerHour": 120,
+      "alternative": "Could ride the node event socket like agent-status frames",
+      "requestNeeded": 55,
+      "source": [
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::pushAgentSessionsForRepoWithTranscripts"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/agents/ack*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Acknowledges delivered agent prompts",
+      "trigger": "Once per delivered batch",
+      "modestPerHour": 20,
+      "alternative": "Ack-on-read inside /api/sync",
+      "requestNeeded": 70,
+      "source": [
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::acknowledgeAgentPrompts"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/agents/*/handoff*",
+      "method": "POST",
+      "importance": 5,
+      "description": "Hands a local agent session to the cloud queue",
+      "trigger": "Move to cloud click",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowAgentEvents.cpp: MainWindow::moveAgentSessionToCloud"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/account/agent-sessions*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Lists every cloud agent session running on the account's mirrors, across all its repositories, for the Agents list",
+      "trigger": "The relay's 'cloud-agents' account event frame, opening the Agents tab, a list reload, window activation and the Cloud filter button",
+      "modestPerHour": 12,
+      "alternative": "already push-driven: the relay rings the account event socket when a mirror claims, starts or finishes a run",
+      "requestNeeded": 20,
+      "source": [
+        "desktop/src/MainWindowAgentCloud.cpp: MainWindow::refreshCloudAgentSessions"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/agent-sessions/*",
+      "method": "POST",
+      "importance": 5,
+      "description": "Sends a follow-up message to a cloud agent session, stops it, merges, updates or cleans up its branch, or links the pull request opened from it",
+      "trigger": "Sending from the composer with a cloud agent open, or Stop, Merge & clean up, Pull main, Clean up or Create PR on a cloud agent; a merge repeats every 2 s while a core is still publishing it",
+      "modestPerHour": 30,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowAgentCloud.cpp: MainWindow::sendCloudAgentFollowUp",
+        "desktop/src/MainWindowAgentCloud.cpp: MainWindow::postCloudAgentBranchAction",
+        "desktop/src/MainWindowAgentCloud.cpp: MainWindow::stopCloudAgentRun"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/agent-sessions/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Deletes a cloud agent session from the relay",
+      "trigger": "Trash click on a cloud agent row",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowAgentCloud.cpp: MainWindow::deleteCloudAgentSession"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/org-agent-jobs*",
+      "method": "GET",
+      "importance": 6,
+      "description": "Leases queued organization agent jobs",
+      "trigger": "Once per relay sync per owned repo",
+      "modestPerHour": 60,
+      "alternative": "Could be folded into the /api/sync response",
+      "requestNeeded": 35,
+      "source": [
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::drainOrgAgentJobsFor"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/org-agent-jobs/*/result*",
+      "method": "POST",
+      "importance": 7,
+      "description": "Reports the verdict and result of a leased organization agent job",
+      "trigger": "1-2 per job",
+      "modestPerHour": 30,
+      "alternative": "none: reports a result",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::reportOrgAgentJob"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/privacy*",
+      "method": "POST",
+      "importance": 8,
+      "description": "Registers owner-only privacy for a private repository or agent channel",
+      "trigger": "Once per repo per launch",
+      "modestPerHour": 6,
+      "alternative": "none: a one-off handshake",
+      "requestNeeded": 95,
+      "source": [
+        "desktop/src/MainWindowAgentSync.cpp: MainWindow::ensureAgentE2EEControlPlane",
+        "desktop/src/MainWindowRepoSync.cpp: MainWindow::ensurePrivateRepositoryControlPlane"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/mirrors*",
+      "method": "GET",
+      "importance": 6,
+      "description": "Mirror list, integrity pin and hosting info for a repository",
+      "trigger": "Repo detail open, after syncs, catalog events, Network Repos rows and the Nodes tab with its Repository mirrors section (5 min cache per repo)",
+      "modestPerHour": 60,
+      "alternative": "mirror-update and mirror-synced frames on the room socket plus the catalog topic",
+      "requestNeeded": 35,
+      "source": [
+        "desktop/src/MainWindowNetworkRepos.cpp: MainWindow::fetchNetworkRepoMirrors",
+        "desktop/src/MainWindowNetworkRepos.cpp: MainWindow::applyNetworkRepoMirrors",
+        "desktop/src/MainWindowReleases.cpp: MainWindow::fetchMirrorSectionCatalog"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/releases/blob/sha256/*",
+      "method": "GET",
+      "importance": 9,
+      "description": "Downloads content-addressed release artifacts for updates and mirror replication",
+      "trigger": "When the hourly update check finds a release, or a sync finds artifacts behind",
+      "modestPerHour": 20,
+      "alternative": "The bytes need a request; a release event could replace the hourly check",
+      "requestNeeded": 90,
+      "source": [
+        "desktop/src/MainWindowReleases.cpp: MainWindow::downloadNextReleaseBlob",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::tryPrebuiltAutoUpdate",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::installMirrorCompanionThenRelaunch"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/releases/downloads*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Release download counts",
+      "trigger": "Releases tab render, 15 s floor per repo",
+      "modestPerHour": 20,
+      "alternative": "A download-count event or a longer cache",
+      "requestNeeded": 30,
+      "source": [
+        "desktop/src/MainWindowReleases.cpp: MainWindow::fetchReleaseDownloadCounts"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/ap-publish*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Publishes a release or manual post to fediverse followers",
+      "trigger": "Release publish or announce click",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowReleases.cpp: MainWindow::announceReleaseOnFediverse",
+        "desktop/src/MainWindowIssues.cpp: MainWindow::publishQuickAddToActivityPub"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/about*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Loads a repository's federation settings",
+      "trigger": "Edit repository details dialog",
+      "modestPerHour": 6,
+      "alternative": "none: one read per dialog",
+      "requestNeeded": 90,
+      "source": [
+        "desktop/src/MainWindowRepoDetail.cpp: MainWindow::editRepoAbout",
+        "desktop/src/MainWindowRepoDetail.cpp: MainWindow::repoAboutApiUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/about*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Saves a repository's owner-signed federation settings",
+      "trigger": "Dialog save",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowRepoDetail.cpp: MainWindow::saveRepoFediverseSettings",
+        "desktop/src/MainWindowRepoDetail.cpp: MainWindow::saveRepoAboutMetadata"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/shares*",
+      "method": "GET",
+      "importance": 7,
+      "description": "Fetches a private repository's collaborator key bundles",
+      "trigger": "Repo Settings tab, after share changes, private repo sync key checks",
+      "modestPerHour": 20,
+      "alternative": "A collaborator-changed event",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowIssues.cpp: MainWindow::requestPrivateRecipientBundles",
+        "desktop/src/MainWindowIssues.cpp: MainWindow::sharesApiUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/shares*",
+      "method": "POST",
+      "importance": 7,
+      "description": "Grants or revokes private repository access",
+      "trigger": "Collaborator add or remove",
+      "modestPerHour": 10,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowIssues.cpp: MainWindow::shareRepoRequest",
+        "desktop/src/MainWindowIssues.cpp: MainWindow::sharesApiUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repo/*/fedi-comments*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Remote ActivityPub replies for a public issue, pull or discussion",
+      "trigger": "Thread open",
+      "modestPerHour": 30,
+      "alternative": "A federation reply event, or a per-thread cache",
+      "requestNeeded": 55,
+      "source": [
+        "desktop/src/FederatedThreadView.cpp: FederatedThreadView::load"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/channels",
+      "method": "GET",
+      "importance": 7,
+      "description": "Lists office chat channels",
+      "trigger": "After the signed heartbeat, account switch, and Chat opens (10 s floor)",
+      "modestPerHour": 12,
+      "alternative": "A channel-changed event on the node socket",
+      "requestNeeded": 40,
+      "source": [
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::fetchChannels"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/channels/*/room-access*",
+      "method": "GET",
+      "importance": 8,
+      "description": "Encrypted room name, passphrase and socket URL for a live room",
+      "trigger": "Once per room per socket (re)connect, up to 16 rooms",
+      "modestPerHour": 30,
+      "alternative": "Needed to open the room socket",
+      "requestNeeded": 85,
+      "source": [
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::fetchRoomAccess"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/channels/*/history*",
+      "method": "GET",
+      "importance": 7,
+      "description": "Catches up room messages missed while a socket was down",
+      "trigger": "Per room per channel list or reconnect",
+      "modestPerHour": 30,
+      "alternative": "Live messages already arrive on the room socket; this is reconnect catch-up",
+      "requestNeeded": 70,
+      "source": [
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::fetchHistory"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/channels/*/webhooks*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Lists a channel's webhooks",
+      "trigger": "Channel settings open",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::refreshWebhooks"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/channels/*",
+      "method": "POST",
+      "importance": 5,
+      "description": "Channel settings and webhook changes",
+      "trigger": "Settings saves, room deletes, webhook create, rotate and delete",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::createWebhook",
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::rotateWebhook"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/channels/*",
+      "method": "PATCH",
+      "importance": 5,
+      "description": "Channel settings and webhook changes",
+      "trigger": "Settings saves, room deletes, webhook create, rotate and delete",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::updateChannel"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/channels/*",
+      "method": "DELETE",
+      "importance": 5,
+      "description": "Channel settings and webhook changes",
+      "trigger": "Settings saves, room deletes, webhook create, rotate and delete",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::deleteChannel",
+        "desktop/src/OfficeChannelMirror.cpp: OfficeChannelMirror::deleteWebhook"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/room-key*",
+      "method": "GET",
+      "importance": 8,
+      "description": "The passphrase that seals world chat",
+      "trigger": "After heartbeats until it succeeds, about once a session",
+      "modestPerHour": 4,
+      "alternative": "Could ride the heartbeat-result frame",
+      "requestNeeded": 50,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::fetchRoomPassphrase"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/chat/activity",
+      "method": "GET",
+      "importance": 2,
+      "description": "Activity counts shown in the support prompt",
+      "trigger": "At most once per launch",
+      "modestPerHour": 2,
+      "alternative": "Could come with the membership read",
+      "requestNeeded": 60,
+      "source": [
+        "desktop/src/MainWindowMembership.cpp: MainWindow::openMembershipOptions"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/ads/serve*",
+      "method": "GET",
+      "importance": 1,
+      "description": "The one text-only Sponsored line above the status bar. Sends the word desktop and nothing else: no sign-in, no cookie, no account, no repository. Never needed; denying it just hides the line",
+      "trigger": "20 seconds after launch, then every 30 minutes while the window is open; never while hidden, switched off in Settings, offline, or on a headless node",
+      "modestPerHour": 3,
+      "alternative": "None. Turn it off with Settings > General > Show sponsored messages, or deny this pattern",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowAds.cpp: MainWindow::refreshAdBanner"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/ads/*/click",
+      "method": "POST",
+      "importance": 1,
+      "description": "Counts one click for the advertiser when you open a Sponsored link. Sends the ad's id and the word desktop; nothing about who clicked. The link opens either way",
+      "trigger": "Clicking the button on the Sponsored line",
+      "modestPerHour": 2,
+      "alternative": "None; it is dropped silently when it cannot be sent",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowAds.cpp: MainWindow::showAdBanner"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/tasks",
+      "method": "GET",
+      "importance": 7,
+      "description": "Loads the organization task catalog",
+      "trigger": "25 s after launch, Tasks page open, tasks topic, socket reconnect, and after every task write",
+      "modestPerHour": 30,
+      "alternative": "The tasks topic already announces changes; the refetch after each write is redundant",
+      "requestNeeded": 35,
+      "source": [
+        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskCatalogPage",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskCatalog",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::refreshOrganizationTasks"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/tasks",
+      "method": "POST",
+      "importance": 7,
+      "description": "Creates an organization task",
+      "trigger": "Create, quick prompt, subtask, org-task agent launch",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowTasks.cpp: MainWindow::composeOrganizationTask",
+        "desktop/src/MainWindowAgentLanding.cpp: MainWindow::openOrgTaskForSession",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::createOrganizationTaskFollowUp"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/tasks/agent-status",
+      "method": "POST",
+      "importance": 6,
+      "description": "Fallback agent status for linked tasks when the node socket frame cannot be sent",
+      "trigger": "Status bursts only while the socket is down; requeued after 30 s without an ack",
+      "modestPerHour": 30,
+      "alternative": "Already a node socket frame; HTTP is the fallback",
+      "requestNeeded": 15,
+      "source": [
+        "desktop/src/MainWindowAgentLanding.cpp: MainWindow::flushOrgTaskAgentStatus"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/tasks/*/complete",
+      "method": "POST",
+      "importance": 7,
+      "description": "Marks a linked organization task complete with a run summary",
+      "trigger": "Agent run finish or merge",
+      "modestPerHour": 10,
+      "alternative": "Could use a node socket frame like agent-status",
+      "requestNeeded": 60,
+      "source": [
+        "desktop/src/MainWindowAgentLanding.cpp: MainWindow::completeOrgTaskForSession"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/tasks/*",
+      "method": "GET",
+      "importance": 6,
+      "description": "One task, its history, or an attachment image",
+      "trigger": "Task open, missing linked task, image render",
+      "modestPerHour": 60,
+      "alternative": "none: on-demand reads",
+      "requestNeeded": 90,
+      "source": [
+        "desktop/src/MainWindowTasks.cpp: MainWindow::loadOrganizationTaskHistory",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::requestOrganizationTaskAttachment",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::applyOrganizationTasks"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/tasks/*",
+      "method": "POST",
+      "importance": 7,
+      "description": "Task actions, replies and check-ins",
+      "trigger": "Task buttons",
+      "modestPerHour": 30,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowTasks.cpp: MainWindow::runOrganizationTaskAction",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::commentOnOrganizationTask",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::checkInOnOrganizationTask"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/tasks/*",
+      "method": "PATCH",
+      "importance": 7,
+      "description": "Updates a task (edit, assign, link a session)",
+      "trigger": "Save, assign, link",
+      "modestPerHour": 30,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowTasks.cpp: MainWindow::editOrganizationTask",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::assignOrganizationTaskToAgent",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::queueOrganizationTaskAgent"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/tasks/*",
+      "method": "DELETE",
+      "importance": 6,
+      "description": "Deletes a task",
+      "trigger": "Delete click, closed-task bulk delete, deleting a linked session",
+      "modestPerHour": 30,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowTasks.cpp: MainWindow::deleteOrganizationTask",
+        "desktop/src/MainWindowAgentLaunch.cpp: MainWindow::deleteAgentSessionAndCleanup",
+        "desktop/src/MainWindowTasks.cpp: MainWindow::deleteClosedOrganizationTasks"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notes",
+      "method": "GET",
+      "importance": 5,
+      "description": "Lists cloud notes",
+      "trigger": "Notes page open and after changes",
+      "modestPerHour": 20,
+      "alternative": "A notes-changed event",
+      "requestNeeded": 40,
+      "source": [
+        "desktop/src/MainWindowNotes.cpp: MainWindow::refreshNotes"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notes/*/versions",
+      "method": "GET",
+      "importance": 3,
+      "description": "Lists a note's version history",
+      "trigger": "Version history click",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowNotes.cpp: MainWindow::showNoteVersions"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notes/*",
+      "method": "GET",
+      "importance": 5,
+      "description": "Opens a cloud note, and checks whether a collaborator saved a newer version",
+      "trigger": "Every 3 s while a cloud note is on screen with no unsaved edits; per note open",
+      "modestPerHour": 60,
+      "alternative": "A note-updated event on the node socket; this is the busiest poller in the app",
+      "requestNeeded": 15,
+      "source": [
+        "desktop/src/MainWindowNotes.cpp: MainWindow::selectNote"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notes*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Creates, shares, links or restores a cloud note",
+      "trigger": "Note saves and dialogs",
+      "modestPerHour": 30,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowNotes.cpp: MainWindow::saveNote",
+        "desktop/src/MainWindowNotes.cpp: MainWindow::shareNote",
+        "desktop/src/MainWindowNotes.cpp: MainWindow::showNoteVersions"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notes/*",
+      "method": "PATCH",
+      "importance": 6,
+      "description": "Saves an existing cloud note",
+      "trigger": "Save",
+      "modestPerHour": 60,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowNotes.cpp: MainWindow::saveNote"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notes/*",
+      "method": "DELETE",
+      "importance": 5,
+      "description": "Deletes a cloud note",
+      "trigger": "Delete click",
+      "modestPerHour": 10,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowNotes.cpp: MainWindow::deleteNote"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calendar*",
+      "method": "GET",
+      "importance": 5,
+      "description": "Loads calendars and events for the visible range",
+      "trigger": "Calendar page open and after each calendar write",
+      "modestPerHour": 20,
+      "alternative": "A calendar-changed event (there is no calendar topic yet)",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowCalendar.cpp: MainWindow::refreshCalendar"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calendar*",
+      "method": "POST",
+      "importance": 5,
+      "description": "Creates an event or answers an RSVP",
+      "trigger": "Calendar dialog actions",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowCalendar.cpp: MainWindow::openCalendarEventDialog"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calendar*",
+      "method": "PATCH",
+      "importance": 5,
+      "description": "Updates a calendar event",
+      "trigger": "Calendar dialog actions",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowCalendar.cpp: MainWindow::openCalendarEventDialog"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calendar*",
+      "method": "DELETE",
+      "importance": 5,
+      "description": "Deletes a calendar event",
+      "trigger": "Calendar dialog actions",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowCalendar.cpp: MainWindow::openCalendarEventDialog"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/orgs*",
+      "method": "GET",
+      "importance": 6,
+      "description": "Organizations, members, teams and linked repositories",
+      "trigger": "Organizations page, org selection, new-repo picker, and one call per org on Network Repos refresh",
+      "modestPerHour": 60,
+      "alternative": "Mostly on demand; the per-org fan-out on the Repos page could be one call or the catalog topic",
+      "requestNeeded": 70,
+      "source": [
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::refreshOrganizations",
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::loadOrganizationMembers",
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::populateNewRepositoryOrganizationChoices"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/orgs*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Creates organizations, adds members and teams, links repositories",
+      "trigger": "Clicks; linking a new repo retries up to 7 times while its mirror publishes",
+      "modestPerHour": 30,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::createOrganization",
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::linkOrganizationRepository",
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::saveOrganizationMember"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/orgs/*",
+      "method": "PATCH",
+      "importance": 5,
+      "description": "Updates an organization profile",
+      "trigger": "Save",
+      "modestPerHour": 10,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::saveOrganizationProfile"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/orgs/*",
+      "method": "DELETE",
+      "importance": 5,
+      "description": "Deletes an organization or removes members, teams and repo links",
+      "trigger": "Clicks",
+      "modestPerHour": 10,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::deleteOrganization",
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::removeOrganizationMember",
+        "desktop/src/MainWindowOrganizations.cpp: MainWindow::unlinkOrganizationRepository"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repositories*",
+      "method": "DELETE",
+      "importance": 5,
+      "description": "Erases a repository from the network as an administrator",
+      "trigger": "Clicks",
+      "modestPerHour": 10,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowNetworkRepos.cpp: MainWindow::adminPurgeNetworkRepo"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/repositories*",
+      "method": "GET",
+      "importance": 7,
+      "description": "The network repository catalog, which is also the repository list this relay stores for the account",
+      "trigger": "Network Repos open, refresh, and after delete or mirror actions; once per session start or relay switch (answers 304 when unchanged)",
+      "modestPerHour": 12,
+      "alternative": "The catalog topic on the node socket",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowNetworkRepos.cpp: MainWindow::refreshNetworkReposPage",
+        "desktop/src/MainWindowRepoSettings.cpp: MainWindow::refreshRelayRepositoryList",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::fetchCatalogRepos",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::catalogListUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/world/organizations",
+      "method": "GET",
+      "importance": 5,
+      "description": "Lists organizations for the Network Repos page",
+      "trigger": "Each Repos page refresh",
+      "modestPerHour": 12,
+      "alternative": "The catalog topic on the node socket",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowNetworkRepos.cpp: MainWindow::refreshNetworkReposPage"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/world/wallet*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Cached SOL balance for a tracked wallet",
+      "trigger": "Ledger refresh per wallet at most hourly, plus forced refreshes",
+      "modestPerHour": 6,
+      "alternative": "A balance-changed event",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowLedger.cpp: MainWindow::fetchLedgerWalletBalance",
+        "desktop/src/MainWindowLedger.cpp: MainWindow::refreshLedgerLocalWalletBalances"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/world/admin/*",
+      "method": "POST",
+      "importance": 3,
+      "description": "Admin removes a node from the mesh",
+      "trigger": "Delete click",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowNodes.cpp: MainWindow::sendMeshNodeDeleteRequest"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/network/stats",
+      "method": "GET",
+      "importance": 4,
+      "description": "Online node counts",
+      "trigger": "Nodes tab refresh, 60 s throttle",
+      "modestPerHour": 60,
+      "alternative": "Room socket presence already carries live presence",
+      "requestNeeded": 25,
+      "source": [
+        "desktop/src/MainWindowNodes.cpp: MainWindow::fetchRelayOnlineNodes",
+        "desktop/src/MainWindowSetup.cpp: MainWindow::fetchNodesOnline"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/status*",
+      "method": "GET",
+      "importance": 6,
+      "description": "Relay and website component status lights in the footer",
+      "trigger": "60 s latency timer for the whole session, plus recheck clicks",
+      "modestPerHour": 60,
+      "alternative": "A status-changed event on the room or node socket",
+      "requestNeeded": 30,
+      "source": [
+        "desktop/src/MainWindowChat.cpp: MainWindow::refreshFooterWebsiteStatus"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/version",
+      "method": "GET",
+      "importance": 7,
+      "description": "Relay reachability, latency and version",
+      "trigger": "60 s timer, skipped while room socket pings measure latency; Relays page and relay menu probe every saved relay",
+      "modestPerHour": 60,
+      "alternative": "The room socket's 25 s ping already measures latency",
+      "requestNeeded": 40,
+      "source": [
+        "desktop/src/MainWindowNavigation.cpp: MainWindow::probeRelayLatency",
+        "desktop/src/MainWindowNavigation.cpp: MainWindow::probeRelayHostSpeed",
+        "desktop/src/MainWindowNetworkDiagnostics.cpp: MainWindow::probeRelayRow"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/status",
+      "method": "GET",
+      "importance": 4,
+      "description": "End-to-end check that the status page loads from this desktop",
+      "trigger": "Every 15 min while healthy, every 60 s while degraded",
+      "modestPerHour": 8,
+      "alternative": "Not pushable: it tests reachability from here",
+      "requestNeeded": 85,
+      "source": [
+        "desktop/src/MainWindowChat.cpp: MainWindow::probeDesktopWebsite",
+        "desktop/src/MainWindowChat.cpp: MainWindow::crossCheckDesktopWebsiteProbe",
+        "desktop/src/MainWindowChat.cpp: MainWindow::recheckWebsiteStatus"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/dashboard",
+      "method": "GET",
+      "importance": 4,
+      "description": "End-to-end check that the website loads from this desktop",
+      "trigger": "Every 15 min while healthy, every 60 s while degraded",
+      "modestPerHour": 8,
+      "alternative": "Not pushable: it tests reachability from here",
+      "requestNeeded": 85,
+      "source": [
+        "desktop/src/MainWindowChat.cpp: MainWindow::probeDesktopWebsite",
+        "desktop/src/MainWindowChat.cpp: MainWindow::crossCheckDesktopWebsiteProbe",
+        "desktop/src/MainWindowChat.cpp: MainWindow::recheckWebsiteStatus"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/worker-footprint.json",
+      "method": "GET",
+      "importance": 2,
+      "description": "Worker footprint report for admins",
+      "trigger": "Footprint tab open or refresh",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowLogs.cpp: MainWindow::fetchWorkerFootprintReport"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/forkbot/chat",
+      "method": "POST",
+      "importance": 5,
+      "description": "Asks ForkBot for a chat reply",
+      "trigger": "Each message addressed to forkbot",
+      "modestPerHour": 60,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowMessages.cpp: MainWindow::maybeAskForkbot"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/desktop-errors*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Uploads client error reports",
+      "trigger": "Each distinct user-visible error; deferred retries every 2 min during a relay cooldown",
+      "modestPerHour": 30,
+      "alternative": "none: reports have to be sent",
+      "requestNeeded": 90,
+      "source": [
+        "desktop/src/MainWindowMessages.cpp: MainWindow::sendUserVisibleErrorReport"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notifications*",
+      "method": "GET",
+      "importance": 7,
+      "description": "Loads the Pings inbox",
+      "trigger": "Launch, pings topic (5 s floor), socket reconnect, refresh and page changes",
+      "modestPerHour": 30,
+      "alternative": "Already driven by the pings topic",
+      "requestNeeded": 60,
+      "source": [
+        "desktop/src/MainWindowActions.cpp: MainWindow::refreshWebAlerts"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notifications*",
+      "method": "DELETE",
+      "importance": 5,
+      "description": "Deletes one or all Pings",
+      "trigger": "Delete or Clear all click",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowActions.cpp: MainWindow::deleteWebAlert",
+        "desktop/src/MainWindowActions.cpp: MainWindow::clearWebAlerts",
+        "desktop/src/MainWindowPingForward.cpp: MainWindow::deleteForwardedPings"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/notifications/timer",
+      "method": "POST",
+      "importance": 6,
+      "description": "Raises the account ping for a countdown or alarm that ran out, so the phone is pushed too",
+      "trigger": "Each countdown or alarm expiry on the top-bar clock, while signed in",
+      "modestPerHour": 8,
+      "alternative": "none: only this desktop knows when its timer ran out",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowTimers.cpp: MainWindow::sendTimerPing"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/install-source",
+      "method": "GET",
+      "importance": 6,
+      "description": "Resolves the clone URL for a source-build update",
+      "trigger": "Per source-build update",
+      "modestPerHour": 2,
+      "alternative": "none: one read per update",
+      "requestNeeded": 95,
+      "source": [
+        "desktop/src/MainWindowSetup.cpp: MainWindow::resolveInstallCloneUrl"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/genie/credential",
+      "method": "POST",
+      "importance": 3,
+      "description": "Mints a task-only Genie credential",
+      "trigger": "Genie button until a token is saved",
+      "modestPerHour": 2,
+      "alternative": "none: one-off",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowMcp.cpp: MainWindow::requestGenieCredential"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/mirrors/private",
+      "method": "POST",
+      "importance": 8,
+      "description": "Registers a private replica archive route",
+      "trigger": "Per private repository sync or reseal",
+      "modestPerHour": 12,
+      "alternative": "none: a write",
+      "requestNeeded": 90,
+      "source": [
+        "desktop/src/MainWindowRepoSync.cpp: MainWindow::registerPrivateReplicaRoute"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/private-replicas/*",
+      "method": "GET",
+      "importance": 8,
+      "description": "Downloads an encrypted private replica",
+      "trigger": "Per private repository sync",
+      "modestPerHour": 12,
+      "alternative": "The commits topic could trigger it instead of a manual or scheduled sync",
+      "requestNeeded": 70,
+      "source": [
+        "desktop/src/MainWindowRepoSync.cpp: MainWindow::downloadPrivateReplica",
+        "desktop/src/MainWindowNetworkRepos.cpp: MainWindow::renderNetworkRepos"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/ledger*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Public ledger records",
+      "trigger": "Ledger tab open (60 s floor), refresh, and after payments",
+      "modestPerHour": 20,
+      "alternative": "A ledger-changed event",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowLedger.cpp: MainWindow::fetchLedgerRecords"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/rewards/estimates*",
+      "method": "GET",
+      "importance": 5,
+      "description": "Payable rewards, reminder times and the owner payout queue",
+      "trigger": "Ledger refresh (1-4 reads), payments refresh, and every 60 s during an automated payout run",
+      "modestPerHour": 90,
+      "alternative": "A rewards-changed event",
+      "requestNeeded": 45,
+      "source": [
+        "desktop/src/MainWindowLedger.cpp: MainWindow::fetchLedgerPayableRewards",
+        "desktop/src/MainWindowLedger.cpp: MainWindow::fetchLedgerReminderTimes",
+        "desktop/src/MainWindowRewardPool.cpp: MainWindow::fetchContributorRewardsRequest"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/rewards/wallet-reminder",
+      "method": "POST",
+      "importance": 3,
+      "description": "Asks a contributor to add a payout address",
+      "trigger": "Remind click (3 day cap per record)",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowLedger.cpp: MainWindow::remindLedgerRecipient"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/rewards/signing-jobs*",
+      "method": "GET",
+      "importance": 5,
+      "description": "Reward intents waiting for the owner signature",
+      "trigger": "Fetch pending intents click",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowRewardPool.cpp: MainWindow::fetchRewardPoolIntents"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/rewards/signing-jobs*",
+      "method": "POST",
+      "importance": 8,
+      "description": "Sends the signed chain receipt for a reward intent",
+      "trigger": "After each submitted transaction",
+      "modestPerHour": 10,
+      "alternative": "none: a receipt",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowRewardPool.cpp: MainWindow::submitRewardSignatureReceipt"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/rewards/pool*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Reward pool data for the donate dialog",
+      "trigger": "Donate dialog open",
+      "modestPerHour": 4,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowDiagnostics.cpp: MainWindow::showTreasuryDonateDialog"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/market/installs",
+      "method": "GET",
+      "importance": 2,
+      "description": "Package install counts for Market",
+      "trigger": "Market use, 10 min floor",
+      "modestPerHour": 6,
+      "alternative": "A longer cache",
+      "requestNeeded": 50,
+      "source": [
+        "desktop/src/MainWindowMarket.cpp: MainWindow::refreshPackageInstallCounts"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/market/installs",
+      "method": "POST",
+      "importance": 2,
+      "description": "Reports which packages are installed",
+      "trigger": "About daily, plus each install or removal",
+      "modestPerHour": 2,
+      "alternative": "none: a report",
+      "requestNeeded": 90,
+      "source": [
+        "desktop/src/MainWindowMarket.cpp: MainWindow::reportPackageInstallCounts"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/crm",
+      "method": "GET",
+      "importance": 4,
+      "description": "Lists CRM organizations",
+      "trigger": "Opening the CRM page and its Refresh button; the Genie spider's marketing health check (8 s after launch, then at most every 30 minutes)",
+      "modestPerHour": 8,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::refreshOrganizations",
+        "desktop/src/MainWindowGenie.cpp: MainWindow::fetchGenieCrm"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/crm/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Shared CRM records delta for an organization",
+      "trigger": "Opening the CRM page, its Refresh button, and org changes; the Genie spider's marketing health check (8 s after launch, then at most every 30 minutes)",
+      "modestPerHour": 14,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::loadOrganization",
+        "desktop/src/MainWindowGenie.cpp: MainWindow::fetchGenieCrm"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/marketing",
+      "method": "GET",
+      "importance": 4,
+      "description": "Lists Marketing organizations",
+      "trigger": "Opening the Marketing page; the Genie spider's check when it watches Marketing (8 s after launch, then at most every 30 minutes)",
+      "modestPerHour": 8,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/marketing/content/desktop/MarketingFeature.cpp: MarketingFeature::refreshOrganizations",
+        "desktop/src/MainWindowGenie.cpp: MainWindow::fetchGenieMarketing"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/marketing/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "An organization's Marketing overview and its Analytics performance",
+      "trigger": "Opening the Marketing page and its views; the Genie spider's check when it watches Marketing (two reads, 8 s after launch, then at most every 30 minutes)",
+      "modestPerHour": 16,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/marketing/content/desktop/MarketingFeature.cpp: MarketingFeature::loadOrganization",
+        "desktop/src/MainWindowGenie.cpp: MainWindow::fetchGenieMarketing"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/crm/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "CRM contact, view, flow and settings writes",
+      "trigger": "CRM edits and bulk actions",
+      "modestPerHour": 120,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::patchContacts",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::mergeContacts",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::addSheetMembers"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/crm/*",
+      "method": "PATCH",
+      "importance": 4,
+      "description": "CRM contact, view, flow and settings writes",
+      "trigger": "CRM edits and bulk actions",
+      "modestPerHour": 120,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::updateContactField",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::setColumnsHidden",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::renameSheet"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/crm/*",
+      "method": "PUT",
+      "importance": 4,
+      "description": "CRM contact, view, flow and settings writes",
+      "trigger": "CRM edits and bulk actions",
+      "modestPerHour": 120,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::editSettings",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::saveFlows",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::newPipeline"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/crm/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "CRM contact, view, flow and settings writes",
+      "trigger": "CRM edits and bulk actions",
+      "modestPerHour": 120,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::deletePipeline",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::deleteList",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::deleteContact"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calories",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads your Calorie Counter install state and today's overview",
+      "trigger": "Opening the Calories page, its Refresh button, and changing the day",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::load"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calories/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Exports your Calorie Counter data, looks up foods, or reads challenge standings",
+      "trigger": "Export, uninstall, barcode and food lookups, opening a challenge",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::exportMine",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::uninstallPlugin",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::barcodeLookup",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::searchFoods",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::openChallenge"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calories/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Installs or uninstalls Calorie Counter for your account, logs meals, asks for an AI photo estimate or receipt reading, or creates, answers, and invites friends to challenges",
+      "trigger": "Install, uninstall, saving a meal, a meal typed in the prompt box, photo estimate, receipt, challenge actions",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::installPlugin",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::uninstallPlugin",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::editEntry",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::addEntries",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::photoEstimate",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::describeMeal",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::submitHostPrompt",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::readReceipt",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::newChallenge",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::showBoard",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::inviteFriends"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calories/*",
+      "method": "PATCH",
+      "importance": 4,
+      "description": "Edits a diary entry or ends a challenge you started",
+      "trigger": "Editing an entry or ending a challenge",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::editEntry",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::showBoard"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calories/*",
+      "method": "PUT",
+      "importance": 4,
+      "description": "Saves your goals, reminders, weigh-ins, My foods list, or your personal USDA food-database key",
+      "trigger": "Saving goals, a weigh-in, a food to My foods, or the USDA key",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::saveGoals",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::saveSettings",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::weighIn",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::submitHostPrompt",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::saveMyFoods"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/calories/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Removes a diary entry, weigh-in, or a challenge you started",
+      "trigger": "Deleting an entry, weigh-in, or challenge",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::deleteEntry",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::weighIn",
+        "marketplace/packages/calories/content/desktop/CaloriesFeature.cpp: CaloriesFeature::showBoard"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/steps",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads your Pedometer install state, today's steps and the last 30 days",
+      "trigger": "Opening the Steps page and its Refresh button",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::load"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/steps/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Exports your Pedometer step history",
+      "trigger": "Export and uninstall",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::exportMine",
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::exportData",
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::uninstallPlugin"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/steps/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Installs or uninstalls Pedometer for your account",
+      "trigger": "Install and uninstall",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::installPlugin",
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::uninstallPlugin"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/steps/*",
+      "method": "PUT",
+      "importance": 4,
+      "description": "Saves steps you add by hand, your step goal, or your distance units",
+      "trigger": "Saving added steps or the goal",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::saveManual",
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::saveGoal"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/steps/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Removes the steps you added by hand for a day",
+      "trigger": "Remove added steps",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/steps/content/desktop/StepsFeature.cpp: StepsFeature::clearManual"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/water",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads your Water Intake install state, today's drinks and the last 30 days",
+      "trigger": "Opening the Water page, its Refresh button, and after logging a drink",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::load"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/water/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Exports your Water Intake log",
+      "trigger": "Export and uninstall",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::exportMine",
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::exportData",
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::uninstallPlugin"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/water/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Installs or uninstalls Water Intake for your account, or logs a drink",
+      "trigger": "Install, uninstall, quick add, Add drink, a drink typed in the prompt box",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::installPlugin",
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::uninstallPlugin",
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::addDrink"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/water/*",
+      "method": "PUT",
+      "importance": 4,
+      "description": "Saves your daily water goal and units",
+      "trigger": "Save goal",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::saveGoal"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/water/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Deletes a drink from your log",
+      "trigger": "Delete on a drink",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/water/content/desktop/WaterFeature.cpp: WaterFeature::deleteEntry"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/analytics",
+      "method": "GET",
+      "importance": 4,
+      "description": "Lists your organizations and whether each has Analytics installed",
+      "trigger": "Opening the Analytics page and its Refresh button",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/analytics/content/desktop/AnalyticsFeature.cpp: AnalyticsFeature::refreshOrganizations"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/analytics/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Lists an organization's Analytics projects with their write keys and today's usage",
+      "trigger": "Opening the Analytics page, its Refresh button, org changes and creating a project",
+      "modestPerHour": 8,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/analytics/content/desktop/AnalyticsFeature.cpp: AnalyticsFeature::loadOrganization"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/analytics/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Runs the visitors, pageviews and top-pages overview for a project, or creates a project",
+      "trigger": "Opening the Analytics page, range and project changes, Create project",
+      "modestPerHour": 20,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/analytics/content/desktop/AnalyticsFeature.cpp: AnalyticsFeature::loadOverview",
+        "marketplace/packages/analytics/content/desktop/AnalyticsFeature.cpp: AnalyticsFeature::createProject"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sleep",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads your Sleep install state, last night and the last 30 nights",
+      "trigger": "Opening the Sleep page and its Refresh button",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::load"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sleep/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Exports your Sleep history",
+      "trigger": "Export and uninstall",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::exportMine",
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::exportData",
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::uninstallPlugin"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sleep/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Installs or uninstalls Sleep for your account",
+      "trigger": "Install and uninstall",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::installPlugin",
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::uninstallPlugin"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sleep/*",
+      "method": "PUT",
+      "importance": 4,
+      "description": "Saves a night you add by hand, your sleep goal, or your bedtime and wake time",
+      "trigger": "Saving an added night or the goal",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::saveManual",
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::saveGoal"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sleep/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Removes the night you added by hand",
+      "trigger": "Remove added night",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sleep/content/desktop/SleepFeature.cpp: SleepFeature::clearManual"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/stretch",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads your Stretch Break install state, the routine library, today's sessions, your streak and recent sessions",
+      "trigger": "Opening the Stretch Break page, its Refresh button, and the redraw after each logged session",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::load"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/stretch/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Exports your Stretch Break sessions",
+      "trigger": "Export and uninstall",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::exportMine",
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::exportData",
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::uninstallPlugin"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/stretch/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Installs or uninstalls Stretch Break, or logs a finished or stopped stretch session",
+      "trigger": "Install, uninstall, and the end of a guided session",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::installPlugin",
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::uninstallPlugin",
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::logSession"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/stretch/*",
+      "method": "PUT",
+      "importance": 4,
+      "description": "Saves whether Stretch Break speaks its cues",
+      "trigger": "The Speak the cues box and the Voice button",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::saveVoice"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/stretch/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Deletes a stretch session from your history",
+      "trigger": "Delete beside a recent session",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/stretch/content/desktop/StretchFeature.cpp: StretchFeature::deleteSession"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sugar-break",
+      "method": "GET",
+      "importance": 4,
+      "description": "Reads your Sugar Break install state, the running break, today's +1s and past breaks",
+      "trigger": "Opening the Sugar Break page, its Refresh button, and the redraw after each +1",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::load"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sugar-break/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Exports your Sugar Break history",
+      "trigger": "Export and uninstall",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::exportMine",
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::exportData",
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::uninstallPlugin"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sugar-break/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Installs or uninstalls Sugar Break, starts a sugar break, or logs a +1 or a slip",
+      "trigger": "Install, uninstall, Start sugar break, +1 I skipped sugar, I had sugar",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::installPlugin",
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::uninstallPlugin",
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::startBreak",
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::logEvent"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sugar-break/*",
+      "method": "PATCH",
+      "importance": 4,
+      "description": "Ends the running sugar break early",
+      "trigger": "End break early",
+      "modestPerHour": 4,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::endBreak"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/sugar-break/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Undoes a +1 or slip you logged today",
+      "trigger": "Undo beside a logged entry",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/sugar-break/content/desktop/SugarBreakFeature.cpp: SugarBreakFeature::undoEvent"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/voice-changer",
+      "method": "GET",
+      "importance": 4,
+      "description": "Checks whether AI voice design is available to your account; the voice itself never leaves this computer",
+      "trigger": "Opening the Voice Changer page and Refresh",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/voice-changer/content/desktop/VoiceChangerFeature.cpp: VoiceChangerFeature::refresh"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/voice-changer/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Designs a voice from a description you typed, with the host AI model",
+      "trigger": "Design",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/voice-changer/content/desktop/VoiceChangerFeature.cpp: VoiceChangerFeature::designVoice"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/vault",
+      "method": "GET",
+      "importance": 6,
+      "description": "Reads whether your account has a Password Vault and fetches its wrapped keyset, which only your master password opens",
+      "trigger": "Opening the Vault page and each unlock",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::status"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/vault/*",
+      "method": "GET",
+      "importance": 6,
+      "description": "Lists your encrypted logins and the ones shared with you, the public keys of people you share with, and members still waiting for a shared login",
+      "trigger": "Unlocking, Refresh, checking keys in the Share dialog, export, and recovery",
+      "modestPerHour": 30,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::load",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::previewShare",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::rotate",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::syncPending",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::organizations",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::recover",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::exportData"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/vault/*",
+      "method": "POST",
+      "importance": 6,
+      "description": "Creates your vault, saves a new encrypted login, shares or stops sharing one, or deletes the vault; only ciphertext and signed shares are sent",
+      "trigger": "Create vault, saving a new login, Share, Stop sharing, Delete vault",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::setUp",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::save",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::share",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::unshare",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::syncPending",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::destroy"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/vault/*",
+      "method": "PUT",
+      "importance": 6,
+      "description": "Saves an edited encrypted login, re-encrypts one under a new key after a share ends, re-wraps your keyset after a master password change, or stores your pinned key fingerprints",
+      "trigger": "Saving an edit, Stop sharing, Change master password, New recovery code",
+      "modestPerHour": 12,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::save",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::rotate",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::rewrap",
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::saveTrust"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/vault/*",
+      "method": "DELETE",
+      "importance": 5,
+      "description": "Deletes one of your logins, or removes a login shared with you from your vault",
+      "trigger": "Delete on the Vault page",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/vault/content/desktop/VaultClient.cpp: VaultClient::remove"
+      ]
+    },
+    {
+      "pattern": "avatars.githubusercontent.com/*",
+      "method": "GET",
+      "importance": 1,
+      "description": "CRM contact pictures by GitHub username",
+      "trigger": "Opening the CRM page and its Refresh button, once per picture per session, and once more per account when a contact's detail card opens",
+      "modestPerHour": 200,
+      "alternative": "none: media, cached in memory",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::fetchAvatarImage",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::fetchAvatar",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::readContactPhoto"
+      ]
+    },
+    {
+      "pattern": "gravatar.com/avatar/*",
+      "method": "GET",
+      "importance": 1,
+      "description": "CRM contact pictures by the SHA-256 hash of the contact's email address, for contacts with no ForkMesh or account picture",
+      "trigger": "Opening the CRM page and its Refresh button, once per contact a week (a missing picture is remembered too), and once more when a contact's detail card opens",
+      "modestPerHour": 200,
+      "alternative": "none: media, cached on disk for a week",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::fetchAvatarImage",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::fetchAvatar",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::readContactPhoto"
+      ]
+    },
+    {
+      "pattern": "public.api.bsky.app/xrpc/app.bsky.actor.getProfile",
+      "method": "GET",
+      "importance": 1,
+      "description": "Bluesky profile naming a CRM contact's picture",
+      "trigger": "Opening the CRM page and its Refresh button, once per picture per session, and when a contact's detail card opens",
+      "modestPerHour": 200,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::fetchAvatar",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::readBlueskyUpdates"
+      ]
+    },
+    {
+      "pattern": "public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed",
+      "method": "GET",
+      "importance": 1,
+      "description": "Recent Bluesky posts of the contact a CRM detail card is open on",
+      "trigger": "Opening a contact's detail card, and its Read again button",
+      "modestPerHour": 60,
+      "alternative": "none: on-demand, and only while the card is open",
+      "requestNeeded": 30,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::readBlueskyUpdates"
+      ]
+    },
+    {
+      "pattern": "api.github.com/users/*/events/public",
+      "method": "GET",
+      "importance": 1,
+      "description": "Recent public GitHub activity of the contact a CRM detail card is open on",
+      "trigger": "Opening a contact's detail card, and its Read again button",
+      "modestPerHour": 60,
+      "alternative": "none: on-demand, and only while the card is open",
+      "requestNeeded": 30,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::readGithubUpdates"
+      ]
+    },
+    {
+      "pattern": "cdn.bsky.app/img/avatar/*",
+      "method": "GET",
+      "importance": 1,
+      "description": "CRM contact pictures from Bluesky",
+      "trigger": "Opening the CRM page and its Refresh button, once per picture per session, and once more per account when a contact's detail card opens",
+      "modestPerHour": 200,
+      "alternative": "none: media, cached in memory",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::fetchAvatarImage",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::readContactPhoto"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/plugins/*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Exports plugin data before uninstalling or on request",
+      "trigger": "Export click",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::exportAllData",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::uninstallPlugin",
+        "marketplace/packages/analytics/content/desktop/AnalyticsFeature.cpp: AnalyticsFeature::exportData"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/plugins/*",
+      "method": "POST",
+      "importance": 3,
+      "description": "Installs or uninstalls a package plugin for an organization",
+      "trigger": "Install or uninstall click",
+      "modestPerHour": 6,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::installPlugin",
+        "marketplace/packages/crm/content/desktop/CrmFeature.cpp: CrmFeature::uninstallPlugin",
+        "marketplace/packages/analytics/content/desktop/AnalyticsFeature.cpp: AnalyticsFeature::installPlugin"
+      ]
+    },
+    {
+      "pattern": "*.forkmesh.com/health",
+      "method": "GET",
+      "importance": 6,
+      "description": "Direct health and signed refs probe of a self-hosted mirror",
+      "trigger": "Every 20 s to 5 min per saved host while Mirror nodes or a repo detail is open, every 5 min for fleet checks, every 10-60 s while a new Vultr mirror publishes",
+      "modestPerHour": 60,
+      "alternative": "Mirror nodes could report health to the relay, which pushes it to owners",
+      "requestNeeded": 35,
+      "source": [
+        "desktop/src/MainWindowReleases.cpp: MainWindow::fetchCatalogMirrors",
+        "desktop/src/MainWindowHosts.cpp: MainWindow::reconcileDesiredMirrorFleet",
+        "desktop/src/MainWindowVultrMirrors.cpp: MainWindow::waitForVultrMirrorPublication"
+      ]
+    },
+    {
+      "pattern": "*.forkmesh.com/v1/public/repositories/*/branches",
+      "method": "GET",
+      "importance": 5,
+      "description": "A mirror's primary commit and branch count",
+      "trigger": "After each healthy mirror probe",
+      "modestPerHour": 60,
+      "alternative": "Same as the health probe",
+      "requestNeeded": 35,
+      "source": [
+        "desktop/src/MainWindowReleases.cpp: MainWindow::fetchCatalogMirrors"
+      ]
+    },
+    {
+      "pattern": "*.forkmesh.com/favicon*",
+      "method": "GET",
+      "importance": 1,
+      "description": "Relay favicon for the relay list",
+      "trigger": "Once per host; cached on disk",
+      "modestPerHour": 2,
+      "alternative": "none: cached asset",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowChat.cpp: MainWindow::fetchFaviconFromUrl"
+      ]
+    },
+    {
+      "pattern": "api.anthropic.com/v1/messages",
+      "method": "POST",
+      "importance": 5,
+      "description": "Claude completions: AI review, conflict fixes, @model answers, commit messages, release notes",
+      "trigger": "Clicks, conflicted files and new @model mentions",
+      "modestPerHour": 60,
+      "alternative": "none: an external API",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowPulls.cpp: MainWindow::reviewCurrentPullWithAi",
+        "desktop/src/MainWindowSourceControl.cpp: MainWindow::startScmAiRequest",
+        "desktop/src/MainWindowIssues.cpp: MainWindow::sendIssueMentionAsk"
+      ]
+    },
+    {
+      "pattern": "api.anthropic.com/api/oauth/usage",
+      "method": "GET",
+      "importance": 4,
+      "description": "Claude Code 5-hour and weekly limit usage",
+      "trigger": "Launch, usage chart hover and account menu, limited by backoff",
+      "modestPerHour": 12,
+      "alternative": "An external API with no push; a longer cache would do",
+      "requestNeeded": 80,
+      "source": [
+        "desktop/src/MainWindowAgentUsage.cpp: MainWindow::refreshClaudeCodeUsage"
+      ]
+    },
+    {
+      "pattern": "api.anthropic.com/v1/models*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Live Claude model list",
+      "trigger": "Usage chart hover and account menu, at most once a minute",
+      "modestPerHour": 6,
+      "alternative": "Could be cached for hours",
+      "requestNeeded": 50,
+      "source": [
+        "desktop/src/MainWindowAgentUsage.cpp: MainWindow::refreshClaudeModelCombo"
+      ]
+    },
+    {
+      "pattern": "api.anthropic.com/v1/organizations/cost_report*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Month-to-date Claude spend (admin key)",
+      "trigger": "Hourly, each Claude run end and refresh clicks, times the page count",
+      "modestPerHour": 12,
+      "alternative": "An external API with no push",
+      "requestNeeded": 70,
+      "source": [
+        "desktop/src/MainWindowAgentUsage.cpp: MainWindow::refreshClaudeSpend"
+      ]
+    },
+    {
+      "pattern": "api.openai.com/v1/responses",
+      "method": "POST",
+      "importance": 5,
+      "description": "OpenAI completions: AI review, conflict fixes, Ask AI, commit messages, release notes",
+      "trigger": "Clicks, conflicted files and new @model mentions",
+      "modestPerHour": 60,
+      "alternative": "none: an external API",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowPulls.cpp: MainWindow::reviewCurrentPullWithAi",
+        "desktop/src/MainWindowSourceControl.cpp: MainWindow::startScmAiRequest",
+        "desktop/src/MainWindowIssues.cpp: MainWindow::sendIssueMentionAsk"
+      ]
+    },
+    {
+      "pattern": "api.openai.com/v1/*",
+      "method": "GET",
+      "importance": 3,
+      "description": "OpenAI key check, credit, usage and cost",
+      "trigger": "Settings refresh and the end of each OpenAI agent run (4 calls)",
+      "modestPerHour": 16,
+      "alternative": "Could be cached for an hour",
+      "requestNeeded": 60,
+      "source": [
+        "desktop/src/MainWindowAgentUsage.cpp: MainWindow::testOpenAiAgentKey"
+      ]
+    },
+    {
+      "pattern": "api.mainnet-beta.solana.com",
+      "method": "POST",
+      "importance": 7,
+      "description": "Solana JSON-RPC: balances, blockhashes, transaction sends and finality checks",
+      "trigger": "Nav balance hourly (forced at most every 60 s), each transfer, and every 5 s for up to 3 min after a submission",
+      "modestPerHour": 60,
+      "alternative": "The balance could come from the relay heartbeat; transfers need the chain",
+      "requestNeeded": 80,
+      "source": [
+        "desktop/src/MainWindowNavigation.cpp: MainWindow::queryNavSolanaBalance",
+        "desktop/src/MainWindowNodes.cpp: MainWindow::querySolanaBalance",
+        "desktop/src/MainWindowTips.cpp: MainWindow::signAndBroadcastTip"
+      ]
+    },
+    {
+      "pattern": "solana-rpc.publicnode.com",
+      "method": "POST",
+      "importance": 7,
+      "description": "Solana JSON-RPC: balances, blockhashes, transaction sends and finality checks",
+      "trigger": "Nav balance hourly (forced at most every 60 s), each transfer, and every 5 s for up to 3 min after a submission",
+      "modestPerHour": 60,
+      "alternative": "The balance could come from the relay heartbeat; transfers need the chain",
+      "requestNeeded": 80,
+      "source": [
+        "desktop/src/MainWindowNavigation.cpp: MainWindow::queryNavSolanaBalance",
+        "desktop/src/MainWindowNodes.cpp: MainWindow::querySolanaBalance",
+        "desktop/src/MainWindowTips.cpp: MainWindow::signAndBroadcastTip"
+      ]
+    },
+    {
+      "pattern": "api.coingecko.com/api/v3/simple/price*",
+      "method": "GET",
+      "importance": 2,
+      "description": "SOL to USD price for payment dialogs",
+      "trigger": "Tip or payment dialog open",
+      "modestPerHour": 6,
+      "alternative": "Could be cached for 5 minutes",
+      "requestNeeded": 60,
+      "source": [
+        "desktop/src/MainWindowTips.cpp: MainWindow::sendTipToMember"
+      ]
+    },
+    {
+      "pattern": "discord.com/api/v10/*",
+      "method": "GET",
+      "importance": 4,
+      "description": "Discord REST reads: bot identity, servers, channels, threads, history",
+      "trigger": "Connect, Chat open, conversation open, one call per guild",
+      "modestPerHour": 60,
+      "alternative": "Gateway GUILD, CHANNEL and THREAD events can replace list refreshes",
+      "requestNeeded": 55,
+      "source": [
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::startApiRequest",
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::apiRequest"
+      ]
+    },
+    {
+      "pattern": "discord.com/api/v10/*",
+      "method": "POST",
+      "importance": 4,
+      "description": "Discord sends, edits, reactions and typing indicators",
+      "trigger": "User actions; typing at most every 8 s per channel",
+      "modestPerHour": 240,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::startApiRequest",
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::apiRequest"
+      ]
+    },
+    {
+      "pattern": "discord.com/api/v10/*",
+      "method": "PATCH",
+      "importance": 4,
+      "description": "Discord sends, edits, reactions and typing indicators",
+      "trigger": "User actions; typing at most every 8 s per channel",
+      "modestPerHour": 240,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::startApiRequest",
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::apiRequest"
+      ]
+    },
+    {
+      "pattern": "discord.com/api/v10/*",
+      "method": "PUT",
+      "importance": 4,
+      "description": "Discord sends, edits, reactions and typing indicators",
+      "trigger": "User actions; typing at most every 8 s per channel",
+      "modestPerHour": 240,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::startApiRequest",
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::apiRequest"
+      ]
+    },
+    {
+      "pattern": "discord.com/api/v10/*",
+      "method": "DELETE",
+      "importance": 4,
+      "description": "Discord sends, edits, reactions and typing indicators",
+      "trigger": "User actions; typing at most every 8 s per channel",
+      "modestPerHour": 240,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::startApiRequest",
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::apiRequest"
+      ]
+    },
+    {
+      "pattern": "cdn.discordapp.com",
+      "method": "GET",
+      "importance": 2,
+      "description": "Discord avatars and small attachments",
+      "trigger": "New avatar or attachment",
+      "modestPerHour": 60,
+      "alternative": "none: media",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::fetchAvatar",
+        "marketplace/packages/discord/content/desktop/DiscordClient.cpp: DiscordClient::fetchAttachment"
+      ]
+    },
+    {
+      "pattern": "sentry.io/api/0/*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Unresolved Sentry issues and the organization check",
+      "trigger": "Every 60 s for the whole session once connected, even with the tab hidden",
+      "modestPerHour": 12,
+      "alternative": "Sentry has no push here; pause the poll while the tab is hidden",
+      "requestNeeded": 40,
+      "source": [
+        "marketplace/packages/sentry/content/desktop/SentryClient.cpp: SentryClient::fetchIssues",
+        "marketplace/packages/sentry/content/desktop/SentryClient.cpp: SentryClient::fetchOrganization"
+      ]
+    },
+    {
+      "pattern": "*.sentry.io/api/0/*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Unresolved Sentry issues and the organization check (regional host)",
+      "trigger": "Every 60 s for the whole session once connected",
+      "modestPerHour": 12,
+      "alternative": "Sentry has no push here; pause the poll while the tab is hidden",
+      "requestNeeded": 40,
+      "source": [
+        "marketplace/packages/sentry/content/desktop/SentryClient.cpp: SentryClient::fetchIssues",
+        "marketplace/packages/sentry/content/desktop/SentryClient.cpp: SentryClient::fetchOrganization"
+      ]
+    },
+    {
+      "pattern": "gitlab.com/api/v4/groups/*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Detects a GitLab group and lists its projects for import",
+      "trigger": "Import, one call per page",
+      "modestPerHour": 20,
+      "alternative": "none: a user action",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowRepos.cpp: MainWindow::probeGitlabGroup",
+        "desktop/src/MainWindowRepos.cpp: MainWindow::fetchGitlabGroupProjects"
+      ]
+    },
+    {
+      "pattern": "api.vultr.com/v2/*",
+      "method": "",
+      "importance": 4,
+      "description": "Vultr mirror VPS management: instances, SSH keys, plans, OS images",
+      "trigger": "Mirror provisioning and removal; fleet adoption when orphans are found",
+      "modestPerHour": 30,
+      "alternative": "none: an external API",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowVultrMirrors.cpp: MainWindow::vultrApiCall"
+      ]
+    },
+    {
+      "pattern": "api.cloudflare.com/client/v4/*",
+      "method": "",
+      "importance": 4,
+      "description": "Cloudflare token checks, Workers AI, and mirror DNS records",
+      "trigger": "Token test or generate, agent model refresh and runs, workspace naming, mirror provisioning and removal",
+      "modestPerHour": 30,
+      "alternative": "none: an external API",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowVultrMirrors.cpp: MainWindow::cloudflareApiCall",
+        "desktop/src/MainWindowAgentLaunch.cpp: MainWindow::requestCloudflareWorkspaceName",
+        "desktop/src/MainWindowChat.cpp: MainWindow::refreshCloudflareAiModels",
+        "desktop/src/CloudflareAgentScript.h: CloudflareProvider"
+      ]
+    },
+    {
+      "pattern": "github.com/rhasspy/piper/releases/download/*",
+      "method": "GET",
+      "importance": 2,
+      "description": "The Piper speech engine the agent announcer speaks with (26 MB archive, checked against a pinned SHA-256)",
+      "trigger": "Only after choosing Download the voice under the Agents Announcer button; once per machine",
+      "modestPerHour": 4,
+      "alternative": "Install piper-tts and a voice yourself; the announcer uses one it finds",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/AgentAnnouncerVoice.cpp: VoiceInstaller::request"
+      ]
+    },
+    {
+      "pattern": "release-assets.githubusercontent.com/github-production-release-asset/*",
+      "method": "GET",
+      "importance": 2,
+      "description": "Where GitHub redirects the Piper release download; the bytes are checked against a pinned SHA-256",
+      "trigger": "Only after choosing Download the voice under the Agents Announcer button; once per machine",
+      "modestPerHour": 4,
+      "alternative": "Install piper-tts and a voice yourself; the announcer uses one it finds",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/AgentAnnouncerVoice.cpp: VoiceInstaller::request"
+      ]
+    },
+    {
+      "pattern": "huggingface.co/rhasspy/piper-voices/resolve/*",
+      "method": "GET",
+      "importance": 2,
+      "description": "The announcer's voice model (63 MB, checked against a pinned SHA-256)",
+      "trigger": "Only after choosing Download the voice under the Agents Announcer button; once per machine",
+      "modestPerHour": 4,
+      "alternative": "Install piper-tts and a voice yourself; the announcer uses one it finds",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/AgentAnnouncerVoice.cpp: VoiceInstaller::request"
+      ]
+    },
+    {
+      "pattern": "*.hf.co/*",
+      "method": "GET",
+      "importance": 2,
+      "description": "The Hugging Face CDN the voice model download is redirected to; the bytes are checked against a pinned SHA-256",
+      "trigger": "Only after choosing Download the voice under the Agents Announcer button; once per machine",
+      "modestPerHour": 4,
+      "alternative": "Install piper-tts and a voice yourself; the announcer uses one it finds",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/AgentAnnouncerVoice.cpp: VoiceInstaller::request"
+      ]
+    },
+    {
+      "pattern": "cloudflare-dns.com/dns-query*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Looks up a host name an agent could not resolve, over Cloudflare's DNS-over-HTTPS, so the access prompt can offer to pin its address in /etc/hosts",
+      "trigger": "Only when an agent's tool call fails to resolve a host and this machine's resolver cannot find it either; once per failure",
+      "modestPerHour": 4,
+      "alternative": "None needed: it runs only after a failure the user is being asked about",
+      "requestNeeded": 100,
+      "source": [
+        "desktop/src/MainWindowAgentAccess.cpp: MainWindow::checkAgentHostResolution"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "agent-watch",
+  "name": "Watch",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Agents",
+  "version": "1.0.0",
+  "summary": "A live picture of your whole agent fleet on its own rail page: every agent a body where it sounds, a figure for every action, their processes and network traffic, the relay's visitors, and a list of sounds that lights up as each one plays.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Watch page: agents as glowing bodies on a dark field, hosts they talk to along the top, and the list of sounds down the side"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:agent-watch",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "agents.activity.read",
+      "label": "See every agent run's events, status and usage as the desktop receives them",
+      "risk": "low"
+    },
+    {
+      "id": "device.process.network.read",
+      "label": "Read which hosts the agents' processes are connected to and how many bytes move",
+      "risk": "sensitive"
+    },
+    {
+      "id": "desktop.log.read",
+      "label": "Show the desktop's log lines and background work beside the agents",
+      "risk": "low"
+    },
+    {
+      "id": "cloudflare.firewall.write",
+      "label": "Block a web visitor at Cloudflare's edge when you ask, with your Cloudflare API token",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none"
+  }
+}

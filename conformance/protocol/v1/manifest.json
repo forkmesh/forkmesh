@@ -1,0 +1,375 @@
+{
+  "suite": "forkmesh-protocol",
+  "version": "1.0.0-rc.1",
+  "status": "candidate",
+  "changeProcess": "www/docs/protocol/README.md#change-process",
+  "documents": [
+    {
+      "path": "www/docs/protocol/README.md",
+      "sha256": "ba5eb19376fd18b1d28b2800fb7d66d61e569b65fdfe9e24d289e882222b073e"
+    },
+    {
+      "path": "www/docs/protocol/encoding-and-identifiers.md",
+      "sha256": "ee143a205c170eb5e24ffe8a8f657b9c9a4b2e47645ec3c6d6a0ddc0d837fce1"
+    },
+    {
+      "path": "www/docs/protocol/signatures-and-authentication.md",
+      "sha256": "7fd1e900a40c6dcb4176fcb63b8f70d2de4aa3ef3b0d81a14d39b1ce28a59de3"
+    },
+    {
+      "path": "www/docs/protocol/relay-sync-and-migration.md",
+      "sha256": "b61f74997b72162b919d602215a394e62409214a474545da3aee8d5fd5ac3c79"
+    },
+    {
+      "path": "www/docs/protocol/version-negotiation.md",
+      "sha256": "0f3549944660a3aad9b6c408455a3217ca49c8c5cf3b4f66f2b140d7111304fe"
+    },
+    {
+      "path": "www/docs/protocol/threat-model.md",
+      "sha256": "4e316ca0b1f2de5ffc10a65d03970e9d0659301fc6794a7488aabad220b95102"
+    },
+    {
+      "path": "www/docs/design/conflict-safe-collaboration.md",
+      "sha256": "4ccdf38c48ce59e530712afddd53d83f05f56472c829435060c6fc3b38ff33a3"
+    }
+  ],
+  "schemas": [
+    {
+      "path": "www/public/docs/protocol/collaboration-event-v1.schema.json",
+      "sha256": "f020edd295ddb69173968f385612cb3dfc1d5b5fe52f494c144e4a10f9702d5e"
+    }
+  ],
+  "vectors": [
+    {
+      "path": "conformance/protocol/v1/vectors/canonical-json.json",
+      "sha256": "8fcdeac0d440e59c43287aa7d477f7efd8eced9558cbbb4bc60dee01b886ece1"
+    },
+    {
+      "path": "conformance/protocol/v1/vectors/identifiers.json",
+      "sha256": "793a0c7897a9a5ae94cba9f6b97b4a99f21f38b59c4d0079bcf0b59a1cde354c"
+    },
+    {
+      "path": "conformance/protocol/v1/vectors/signatures.json",
+      "sha256": "c01849333adefeef7afda8cf93f4e3366a9a2b2f744d351f22cb43aeb63fd47b"
+    },
+    {
+      "path": "conformance/protocol/v1/vectors/events.json",
+      "sha256": "b19739b61baf7c38ea5e44b350f05e2e95df4e55e4ddfd049b4d024bb55b5235"
+    },
+    {
+      "path": "conformance/protocol/v1/vectors/fold.json",
+      "sha256": "d5eaafe49f4bc0187c6b2621c49c4885bb0bee4c5c9270dac5830fa6d0cd3a7f"
+    },
+    {
+      "path": "conformance/protocol/v1/vectors/sessions.json",
+      "sha256": "082339ff24681fd3f4874d065175d067ca56563fa8a567d40b81783d5cd030d7"
+    }
+  ],
+  "threatRegister": {
+    "path": "conformance/protocol/v1/threats.json",
+    "document": "www/docs/protocol/threat-model.md",
+    "sha256": "81473a40a98e417f7725c3225e0825f5682022f8cdcb483f2554aa9df081771a"
+  },
+  "implementations": [
+    {
+      "id": "reference-python",
+      "paths": [
+        "app/src/collaboration.py",
+        "app/src/portable_sessions.py",
+        "app/src/git_http.py",
+        "app/src/repository_migration.py"
+      ],
+      "vectorSets": [
+        "canonical-json",
+        "identifiers",
+        "signatures",
+        "events",
+        "fold",
+        "sessions"
+      ]
+    },
+    {
+      "id": "webcrypto-javascript",
+      "paths": [
+        "app/public/collaboration.js"
+      ],
+      "vectorSets": [
+        "canonical-json",
+        "identifiers:repositories,policies,objects",
+        "events",
+        "fold"
+      ],
+      "codeDeviations": {
+        "reject-duplicate-key": "noncanonical_encoding",
+        "reject-fraction": "unsafe_integer",
+        "reject-integral-fraction": "noncanonical_encoding",
+        "reject-exponent": "noncanonical_encoding",
+        "reject-nan": "invalid_json",
+        "encode-rejects-fraction": "unsafe_integer"
+      },
+      "codeDeviationReason": "ECMAScript JSON.parse resolves duplicate keys, number syntax, and NaN before canonical checks run; the input is still rejected."
+    },
+    {
+      "id": "clean-room-python",
+      "paths": [
+        "conformance/protocol/v1/verify_suite.py"
+      ],
+      "vectorSets": [
+        "canonical-json",
+        "identifiers",
+        "signatures",
+        "events",
+        "sessions"
+      ]
+    }
+  ],
+  "requirements": {
+    "FM-SUITE-001": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_protocol_suite.py::test_suite_is_consistent_and_candidate_blockers_are_reported",
+        "test:app/tests/test_protocol_suite.py::test_inconsistent_suite_is_rejected"
+      ]
+    },
+    "FM-SUITE-002": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_protocol_suite.py::test_clean_room_verifier_passes_every_claimed_vector",
+        "test:app/tests/test_protocol_suite.py::test_reference_implementations_pass_committed_vectors",
+        "test:app/tests/test_protocol_suite.py::test_javascript_implementation_passes_claimed_vectors"
+      ]
+    },
+    "FM-SUITE-003": {
+      "level": "SHOULD",
+      "evidence": [
+        "test:app/tests/test_protocol_suite.py::test_javascript_implementation_passes_claimed_vectors"
+      ]
+    },
+    "FM-ENC-001": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/canonical-json.json"
+      ]
+    },
+    "FM-ENC-002": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/canonical-json.json"
+      ]
+    },
+    "FM-ENC-003": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/canonical-json.json"
+      ]
+    },
+    "FM-ENC-004": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/canonical-json.json",
+        "vectors/events.json"
+      ]
+    },
+    "FM-ENC-005": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/canonical-json.json",
+        "test:app/tests/test_protocol_suite.py::test_envelope_size_limit_is_enforced_by_every_implementation"
+      ]
+    },
+    "FM-ENC-006": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/identifiers.json",
+        "vectors/events.json",
+        "vectors/sessions.json"
+      ]
+    },
+    "FM-ENC-007": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/signatures.json",
+        "test:app/tests/test_protocol_suite.py::test_worker_verifiers_build_the_published_canonical_strings"
+      ]
+    },
+    "FM-ID-001": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/identifiers.json"
+      ]
+    },
+    "FM-ID-002": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/identifiers.json",
+        "vectors/events.json"
+      ]
+    },
+    "FM-ID-003": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/identifiers.json",
+        "vectors/events.json"
+      ]
+    },
+    "FM-ID-004": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/events.json"
+      ]
+    },
+    "FM-ID-005": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/identifiers.json",
+        "vectors/signatures.json"
+      ]
+    },
+    "FM-ID-006": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/identifiers.json"
+      ]
+    },
+    "FM-SIG-001": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/signatures.json",
+        "vectors/events.json"
+      ]
+    },
+    "FM-SIG-002": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/signatures.json"
+      ]
+    },
+    "FM-SIG-003": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/events.json"
+      ]
+    },
+    "FM-SIG-004": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/events.json"
+      ]
+    },
+    "FM-AUTH-001": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/signatures.json",
+        "test:app/tests/test_protocol_suite.py::test_worker_verifiers_build_the_published_canonical_strings"
+      ]
+    },
+    "FM-AUTH-002": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/signatures.json",
+        "test:app/tests/test_protocol_suite.py::test_worker_verifiers_build_the_published_canonical_strings"
+      ]
+    },
+    "FM-AUTH-003": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/sessions.json"
+      ]
+    },
+    "FM-AUTH-004": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/signatures.json",
+        "test:app/tests/test_collaboration_mirror_materialization.py::test_mirror_state_attestation_rejects_bad_or_stale_signatures",
+        "test:app/tests/test_protocol_suite.py::test_worker_verifiers_build_the_published_canonical_strings"
+      ]
+    },
+    "FM-REL-001": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_https_mirror_routing_integration.py::test_direct_repository_check_requires_signed_refs_and_exact_git_url",
+        "test:app/tests/test_https_mirror_routing_integration.py::test_selection_is_public_group_scoped_fresh_integrity_and_abuse_gated"
+      ]
+    },
+    "FM-REL-002": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_https_mirror_routing_integration.py::test_stateless_rotation_preserves_two_request_git_clone_stickiness",
+        "test:app/tests/test_git_http.py::test_public_clone_uses_signed_direct_https_and_sticky_selection"
+      ]
+    },
+    "FM-REL-003": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body",
+        "test:app/tests/test_ssh_git_auth.py::test_real_ssh_git_services_hide_and_protect_internal_merge_refs"
+      ]
+    },
+    "FM-SYNC-001": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/fold.json",
+        "test:app/tests/test_collaboration_protocol.py::test_raw_log_export_rollback_recovery_and_corruption_are_auditable"
+      ]
+    },
+    "FM-SYNC-002": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/fold.json",
+        "test:app/tests/test_collaboration_protocol.py::test_permutation_duplicate_delay_and_replay_converge"
+      ]
+    },
+    "FM-SYNC-003": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/fold.json",
+        "test:app/tests/test_collaboration_protocol.py::test_invalid_signatures_equivocation_and_unauthorized_moderation_fail_closed"
+      ]
+    },
+    "FM-MIG-001": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/identifiers.json",
+        "test:app/tests/test_repository_migration.py::test_repeated_import_converges_and_prunes_source_deletions"
+      ]
+    },
+    "FM-MIG-002": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_collaboration_protocol.py::test_migration_wraps_every_legacy_family_without_impersonating_authorship"
+      ]
+    },
+    "FM-MIG-003": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_collaboration_protocol.py::test_raw_log_export_rollback_recovery_and_corruption_are_auditable"
+      ]
+    },
+    "FM-VER-001": {
+      "level": "MUST",
+      "evidence": [
+        "vectors/events.json",
+        "vectors/identifiers.json",
+        "vectors/sessions.json"
+      ]
+    },
+    "FM-VER-002": {
+      "level": "MUST NOT",
+      "evidence": [
+        "vectors/signatures.json"
+      ]
+    },
+    "FM-VER-003": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_protocol_suite.py::test_committed_vectors_match_reference_generation"
+      ]
+    },
+    "FM-VER-004": {
+      "level": "MUST",
+      "evidence": [
+        "test:app/tests/test_collaboration_protocol.py::test_raw_log_export_rollback_recovery_and_corruption_are_auditable"
+      ]
+    }
+  }
+}

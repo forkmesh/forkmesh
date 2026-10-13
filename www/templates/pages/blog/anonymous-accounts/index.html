@@ -1,0 +1,39 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Guest-first access" %}
+{% set slug = "anonymous-accounts" %}
+{% set image = "/assets/blog/features/anonymous-accounts.webp" %}
+{% set description = "Enter the ForkMesh world immediately as a guest; registration uses an email, password, and email verification." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Accounts &amp; rewards</p>
+            <h1>Guest-first access</h1>
+            <p class="lede">Enter the ForkMesh world immediately as a guest; registration uses an email, password, and email verification.</p>
+            <div class="meta"><span class="pill">Feature 61 of 72</span><span>Feature</span><span>Accounts, money &amp; rewards</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/anonymous-accounts.webp" alt="Abstract ForkMesh artwork for guest-first access">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Guest-first access lets every visitor enter the Town Square without completing an account form. Generalized guest presence can show exploration without exposing form contents, search terms, raw IP addresses, or private browsing details.</p>
+          <p>Preservation costs time, disk, bandwidth, and maintenance, so accountable node operation remains distinct from low-friction guest exploration.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>A registered user supplies an email and password, then verifies that email. Local desktop identities use device-held Ed25519 keys; public profile, device, platform, time, and activity fields remain separately configurable.</p>
+          <p>The distinction is explicit: a guest can explore, while account-only actions require an active authenticated session and any repository-specific authorization.</p>
+          <div class="note">Guest presence is not an anonymous registered account and does not bypass email verification or repository permissions.</div>
+          <h2>Where it fits</h2>
+          <p>Use guest access to learn and explore; register when identity, collaboration, node operation, or rewards need an accountable user session.</p>
+          <p>It pairs with configurable badges and generalized public activity so immediate entry does not become precise surveillance.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/built-to-stay-up/">← Built to stay up</a>
+          <a href="/blog/public-node-profiles/">Public node profiles →</a>
+        </nav>
+{% endblock %}

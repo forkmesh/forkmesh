@@ -1,0 +1,38 @@
+{
+  "allowed_peers": [
+    "10.77.0.2",
+    "10.77.0.3"
+  ],
+  "ca_file": null,
+  "caddy_storage": "/var/lib/caddy/.local/share/caddy/certificates",
+  "challenge_listen": "127.0.0.1:8794",
+  "challenge_peers": {
+    "n1": "10.77.0.1:80",
+    "n2": "10.77.0.2:80",
+    "n3": "10.77.0.3:80"
+  },
+  "export_dir": "/var/lib/forkmesh-next/certsync/export",
+  "export_group": "fmnext-certsync",
+  "include_dir": "/etc/forkmesh-next/caddy",
+  "listen": "10.77.0.1:8793",
+  "max_days": 100,
+  "names": [
+    "app.next.forkmesh.com",
+    "world.next.forkmesh.com"
+  ],
+  "node": "n1",
+  "peers": {
+    "n1": "http://10.77.0.1:8793",
+    "n2": "http://10.77.0.2:8793",
+    "n3": "http://10.77.0.3:8793"
+  },
+  "reload_command": [
+    "systemctl",
+    "reload",
+    "caddy"
+  ],
+  "renew_days": 30,
+  "secret_credential": "FORKMESH_CERTSYNC_SECRET",
+  "tls_dir": "/etc/forkmesh-next/tls",
+  "tls_owner": "caddy"
+}

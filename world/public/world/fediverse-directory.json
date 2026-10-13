@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 3,
+  "updatedAt": null,
+  "mastodon": [],
+  "lemmy": [],
+  "x": [],
+  "reddit": [],
+  "recordSchema": {
+    "common": [
+      "name",
+      "url",
+      "icon",
+      "description",
+      "languages",
+      "topics",
+      "registration",
+      "publicActivity",
+      "relationships"
+    ],
+    "mastodon": [
+      "consentedFollowers"
+    ],
+    "lemmy": [
+      "communities",
+      "moderation",
+      "approvedSubscriptions"
+    ],
+    "x": [
+      "consentedProfiles"
+    ],
+    "reddit": [
+      "consentedProfiles"
+    ]
+  },
+  "privacy": {
+    "publicInstanceMetadataOnly": true,
+    "publicDirectoryMetadataOnly": true,
+    "privateFollowersExcluded": true,
+    "privateAccountsExcluded": true,
+    "connectionsRequireUserConsent": true,
+    "operatorAttestationsAreNotOAuthVerification": true
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "BackupShelf.h",
+    "BackupShelf.cpp",
+    "BackupsFeature.h",
+    "BackupsFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_backup_shelf.cpp",
+    "BackupShelf.h",
+    "BackupShelf.cpp"
+  ],
+  "testHostSources": [
+    "LocalBackupStore.h",
+    "LocalBackupStore.cpp",
+    "AppPaths.h",
+    "AppPaths.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
+}

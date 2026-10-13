@@ -1,0 +1,89 @@
+{
+  "dataLoss": {
+    "commitsLost": 0,
+    "policy": "none",
+    "refsLost": [],
+    "withinPolicy": true
+  },
+  "fault": null,
+  "missingPrerequisites": [],
+  "mode": "automated-live",
+  "objective": {
+    "automatedBudgetSeconds": 120,
+    "dataLoss": "none",
+    "recoveryMinutes": 30
+  },
+  "platform": {
+    "git": "2.47",
+    "os": "linux",
+    "python": "3.13.5"
+  },
+  "ranAt": "2026-09-14T21:34:41+00:00",
+  "recoveryMs": 1610,
+  "runbookSha256": "b93908faaa80a062ef68b76c01bb1d452bd93cc0b83b821c483e25f0212229ee",
+  "runbookVersion": "1.0.0",
+  "scenario": "dns-loss",
+  "schema": "forkmesh-disaster-drill-report-v1",
+  "steps": [
+    {
+      "action": "write a lan-only profile from the roster",
+      "ms": 0,
+      "ok": true,
+      "procedure": "clone-over-lan-without-dns"
+    },
+    {
+      "action": "confirm the route needs no DNS",
+      "ms": 0,
+      "ok": true,
+      "procedure": "clone-over-lan-without-dns"
+    },
+    {
+      "action": "clone over the pinned route",
+      "ms": 136,
+      "ok": true,
+      "procedure": "clone-over-lan-without-dns"
+    },
+    {
+      "action": "verify the clone against signed pins",
+      "ms": 986,
+      "ok": true,
+      "procedure": "clone-over-lan-without-dns"
+    }
+  ],
+  "unsafeSteps": {
+    "refused": [],
+    "taken": []
+  },
+  "verdict": "pass",
+  "verification": [
+    {
+      "check": "the roster verifies",
+      "ok": true
+    },
+    {
+      "check": "the route dials a pinned address",
+      "ok": true
+    },
+    {
+      "check": "no DNS query or off-route connection was seen",
+      "ok": true
+    },
+    {
+      "check": "the clone succeeded",
+      "ok": true
+    },
+    {
+      "check": "the signed export verifies",
+      "ok": true
+    },
+    {
+      "check": "connectivity check passes",
+      "ok": true
+    },
+    {
+      "check": "every signed pin matches",
+      "ok": true
+    }
+  ],
+  "withinObjective": true
+}

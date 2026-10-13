@@ -1,0 +1,20 @@
+.room-card { position: absolute; top: 12px; right: 12px; z-index: 5; width: 250px; display: grid; gap: 10px; padding: 12px; background: var(--card); border-radius: 14px; box-shadow: var(--shadow-lg); color: var(--ink); font-size: 12.5px; animation: slide .18s ease-out; }
+.room-body { display: grid; gap: 10px; min-width: 0; }
+.room-head { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.room-ic { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--brand-soft); color: var(--brand); }
+.room-name { flex: 1; min-width: 0; display: grid; }
+.room-name b { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-name small { color: var(--muted); font-size: 11.5px; }
+.room-acts { display: flex; gap: 6px; }
+.room-acts .btn { flex: 1; min-width: 0; }
+.room-acts .room-sq { flex: none; width: 30px; padding: 0; }
+.room-count { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.room-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 164px; overflow: auto; }
+.room-people li { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 500; }
+.room-people .av { width: 26px; height: 26px; font-size: 11.5px; }
+.room-people .dot { box-shadow: 0 0 0 2px var(--card); }
+.room-who { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@container (max-width: 760px) {
+  .room-card { display: none; }
+}

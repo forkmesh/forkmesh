@@ -1,0 +1,39 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Desktop-node mirrors" %}
+{% set slug = "desktop-node-mirrors" %}
+{% set image = "/assets/blog/features/desktop-node-mirrors.webp" %}
+{% set description = "Actively mirrored repositories live on independently operated nodes and refresh while configured synchronization is healthy; external stubs stay labeled." %}
+{% set share_description = "Actively mirrored repositories live on independently operated nodes; external stubs stay labeled until a mirror accepts them." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Desktop-node mirrors</h1>
+            <p class="lede">Actively mirrored repositories live on independently operated nodes and refresh while configured synchronization is healthy; external stubs remain clearly labeled until a mirror accepts them.</p>
+            <div class="meta"><span class="pill">Feature 01 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/desktop-node-mirrors.webp" alt="Abstract ForkMesh artwork for Desktop-node mirrors">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Desktop-node mirrors give ForkMesh a concrete mechanism for full Git replicas on machines controlled by users and organizations. A catalog entry can have multiple linked mirror nodes, while an external GitHub or GitLab stub never pretends to be mirrored.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, desktop-node mirrors addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles desktop-node mirrors through the same split it uses across the product: nodes keep real replicas, while the coordination service handles signed discovery, HTTPS health, integrity, account lookup, and bounded clone routing.</p>
+          <p>Public repositories require a signed refs digest and content integrity checks. Private replicas are client-encrypted under per-repository content keys, stored under opaque identifiers, and re-keyed when an owner revokes a recipient. The coordination service receives owner and repository names on authenticated control-plane requests and stores that metadata encrypted; it does not receive private repository plaintext. Unauthorized mirror operators receive neither the private repository name nor plaintext content.</p>
+          <h2>Where it fits</h2>
+          <p>Use desktop-node mirrors when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Desktop-node mirrors keeps full bare Git mirrors on ordinary desktop nodes connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/status-blog-and-changelog/">← Status, blog &amp; changelog</a>
+          <a href="/blog/zero-custody-relay/">Packfile-free routing relay →</a>
+        </nav>
+{% endblock %}

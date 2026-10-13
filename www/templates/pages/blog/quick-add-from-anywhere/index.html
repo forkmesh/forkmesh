@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Quick-add from anywhere" %}
+{% set slug = "quick-add-from-anywhere" %}
+{% set image = "/assets/blog/features/quick-add-from-anywhere.webp" %}
+{% set description = "A prompt-style quick-add box captures an issue in one line, and can hand it straight to an AI agent as it&#x27;s filed." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Issues &amp; planning</p>
+            <h1>Quick-add from anywhere</h1>
+            <p class="lede">A prompt-style quick-add box captures an issue in one line, and can hand it straight to an AI agent as it's filed.</p>
+            <div class="meta"><span class="pill">Feature 22 of 72</span><span>Feature</span><span>Issues &amp; planning</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/quick-add-from-anywhere.webp" alt="Abstract ForkMesh artwork for Quick-add from anywhere">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Quick-add from anywhere gives ForkMesh a concrete mechanism for capturing work from a one-line prompt before context disappears. A prompt-style quick-add box captures an issue in one line, and can hand it straight to an AI agent as it's filed.</p>
+          <p>Planning loses force when it drifts away from the code history and pull requests it is supposed to guide. In ForkMesh, quick-add from anywhere addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles quick-add from anywhere through the same split it uses across the product: issues are repository-linked records surfaced in desktop and web views beside branches, pull requests, milestones, and agent sessions.</p>
+          <p>The behavior is intentionally narrow: A prompt-style quick-add box captures an issue in one line, and can hand it straight to an AI agent as it's filed. State changes stay portable because the planning layer follows the repository instead of one private dashboard.</p>
+          <h2>Where it fits</h2>
+          <p>Use quick-add from anywhere when triage and progress tracking should live beside the repository and remain portable.</p>
+          <p>It pairs with the rest of Issues &amp; planning because Quick-add from anywhere keeps capturing work from a one-line prompt before context disappears connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/burnup-charts/">← Burnup charts</a>
+          <a href="/blog/issues-prs-that-talk/">Issues ↔ PRs that talk →</a>
+        </nav>
+{% endblock %}

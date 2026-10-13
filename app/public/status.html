@@ -1,0 +1,1134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Status · ForkMesh</title>
+    <meta
+      name="description"
+      content="Live status for ForkMesh's website, API, database, git hosting network, and realtime sync — with a 30-day uptime history for each."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="status-page">
+      <section class="kit-hero status-hero" aria-labelledby="status-title">
+        <span class="kit-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"></path></svg>
+          System status
+        </span>
+        <h1 class="kit-title" id="status-title">Is ForkMesh working?</h1>
+        <p class="kit-lede">
+          Live status for the website, API, database, git hosting network, and
+          realtime sync, each with a 30-day history sampled once a minute.
+        </p>
+      </section>
+
+      <div id="status-banner" class="status-banner" role="status" aria-live="polite">
+        <span class="status-banner-dot" aria-hidden="true"></span>
+        <div>
+          <p class="status-banner-text" id="status-banner-text">Checking status…</p>
+          <p class="status-banner-sub" id="status-banner-sub"></p>
+        </div>
+      </div>
+
+      <div id="status-current" class="status-stats" aria-label="Current state" hidden>
+        <div class="status-stat">
+          <span>Mainnode</span>
+          <strong id="stat-mainnode">—</strong>
+          <small id="stat-mainnode-detail"></small>
+        </div>
+        <div class="status-stat">
+          <span>Nodes online</span>
+          <strong id="stat-nodes">—</strong>
+          <small id="stat-nodes-detail"></small>
+        </div>
+        <div class="status-stat">
+          <span>Repositories</span>
+          <strong id="stat-repos">—</strong>
+        </div>
+        <div class="status-stat">
+          <span>Errors (24h)</span>
+          <strong id="stat-errors">—</strong>
+        </div>
+        <div class="status-stat">
+          <span>DO duration aborts (24h)</span>
+          <strong id="stat-do-aborts">—</strong>
+          <small id="stat-do-aborts-detail"></small>
+        </div>
+      </div>
+
+      <div id="status-reasons" class="status-reasons" hidden></div>
+
+      <section class="status-systems" aria-labelledby="status-systems-title">
+        <div class="status-systems-head">
+          <h2 id="status-systems-title">Systems</h2>
+          <p>Each system shows its last 60 one-minute checks, then its last 24 hourly checks and 30-day history. Hover a square for its status and reason; click a system's name to see exactly what its health check tests.</p>
+        </div>
+        <p id="status-hover-detail" class="status-hover-detail">Hover a square for details.</p>
+        <div id="status-list" class="status-list">
+          <div class="status-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading…</div>
+        </div>
+        <div class="status-legend">
+          <span class="status-legend-item"><span class="status-dot is-operational"></span>Operational</span>
+          <span class="status-legend-item"><span class="status-dot is-degraded"></span>Degraded</span>
+          <span class="status-legend-item"><span class="status-dot is-down"></span>Down</span>
+          <span class="status-legend-item"><span class="status-dot is-monitoring-missing"></span>Missing sample</span>
+          <span class="status-legend-item"><span class="status-dot is-monitoring-stale"></span>Stale monitoring</span>
+          <span class="status-legend-item"><span class="status-dot is-monitoring-empty"></span>No monitoring data</span>
+          <span class="status-legend-item"><span class="status-dot is-rate-limited"></span>Rate limited</span>
+          <span class="status-legend-item"><span class="status-day-hour-swatch is-future"></span>Later today (not elapsed)</span>
+        </div>
+      </section>
+
+      <section class="status-method kit-card" aria-labelledby="status-method-title">
+        <h2 id="status-method-title">How this page measures uptime</h2>
+        <p>
+          Uptime is computed only from samples that were actually recorded;
+          minutes where the sampler itself didn't run are red monitoring
+          failures. Missing, stale, empty, and rate-limited monitoring use
+          distinct red shades so they cannot be confused with an observed
+          service outage. Click a system to see exactly what its check tests.
+        </p>
+        <p>
+          We are still tuning monitoring and optimizing traffic usage for bots.
+          On an upgraded instance, the API and scheduled checks fail closed
+          rather than report operational while a historical Worker-held wallet
+          key still requires the documented offline export, zero-balance
+          reconciliation, and scrub.
+        </p>
+      </section>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+
+    <script>
+      (() => {
+        const banner = document.getElementById("status-banner");
+        const bannerText = document.getElementById("status-banner-text");
+        const bannerSub = document.getElementById("status-banner-sub");
+        const list = document.getElementById("status-list");
+        const hoverDetail = document.getElementById("status-hover-detail");
+        let isRendering = false;
+        let renderPending = false;
+        let statusSocket = null;
+        let reconnectTimer = 0;
+        let reconnectDelay = 1_000;
+        let disposed = false;
+        let latestRenderedGeneration = 0;
+        // A click on the browser's Reload button must be stronger than a
+        // normal page visit. Ordinary visits use the cheap published snapshot;
+        // a real navigation reload asks the Worker to rebuild its canonical
+        // projection and bypasses both the browser and Worker edge caches.
+        const navigationEntry =
+          performance.getEntriesByType?.("navigation")?.[0] || null;
+        let refreshAfterBrowserReload =
+          navigationEntry?.type === "reload" ||
+          performance.navigation?.type === 1;
+        if (!banner || !list || !hoverDetail) return;
+
+        if (location.protocol === "file:") {
+          bannerText.textContent = "Preview only.";
+          list.innerHTML = '<div class="status-empty">Preview only.</div>';
+          return;
+        }
+
+        const checkTip = document.createElement("div");
+        checkTip.className = "status-check-tip";
+        checkTip.id = "status-check-tip";
+        checkTip.setAttribute("role", "tooltip");
+        checkTip.hidden = true;
+        document.body.appendChild(checkTip);
+
+        function showCheckTip(target, text) {
+          checkTip.textContent = text;
+          checkTip.hidden = false;
+          target.setAttribute("aria-describedby", checkTip.id);
+          const rect = target.getBoundingClientRect();
+          const width = checkTip.offsetWidth;
+          const height = checkTip.offsetHeight;
+          const left = Math.min(
+            Math.max(8, rect.left),
+            window.innerWidth - width - 8,
+          );
+          let top = rect.bottom + 6;
+          if (top + height > window.innerHeight - 8) {
+            top = rect.top - height - 6;
+          }
+          checkTip.style.left = Math.max(8, left) + "px";
+          checkTip.style.top = Math.max(8, top) + "px";
+        }
+
+        function hideCheckTip(target) {
+          checkTip.hidden = true;
+          if (target) target.removeAttribute("aria-describedby");
+        }
+
+        window.addEventListener("scroll", () => hideCheckTip(), { passive: true });
+
+        const SVG_NS = "http://www.w3.org/2000/svg";
+        const nextCheckMeters = [];
+        const nextCheckKinds = {
+          sample: "Next minute sample",
+          probe: "Next full probe",
+          retry: "Next retry of the failed probe",
+        };
+
+        function formatCountdown(ms) {
+          const total = Math.max(0, Math.ceil(ms / 1000));
+          if (total < 60) return total + "s";
+          const minutes = Math.floor(total / 60);
+          if (minutes < 60) {
+            return minutes + "m " + String(total % 60).padStart(2, "0") + "s";
+          }
+          return (
+            Math.floor(minutes / 60) + "h " +
+            String(minutes % 60).padStart(2, "0") + "m"
+          );
+        }
+
+        function nextCheckWindow(check, nowMs) {
+          if (check.everyMs > 0) {
+            const next = Math.floor(nowMs / check.everyMs) * check.everyMs +
+              check.everyMs;
+            return { last: next - check.everyMs, next };
+          }
+          return { last: check.last, next: check.at };
+        }
+
+        function wedgePath(fraction) {
+          const angle = fraction * 2 * Math.PI;
+          const x = (8 + 7 * Math.sin(angle)).toFixed(3);
+          const y = (8 - 7 * Math.cos(angle)).toFixed(3);
+          const large = fraction > 0.5 ? 1 : 0;
+          return "M8 8 L8 1 A7 7 0 " + large + " 1 " + x + " " + y + " Z";
+        }
+
+        function updateNextCheck(meter) {
+          const nowMs = Date.now();
+          const { last, next } = nextCheckWindow(meter.check, nowMs);
+          const remaining = next - nowMs;
+          const span = typeof last === "number" ? next - last : 0;
+          const fraction = remaining > 0 && span > 0
+            ? Math.min(1, remaining / span)
+            : 0;
+          meter.full.style.display = fraction >= 0.999 ? "" : "none";
+          meter.wedge.style.display = fraction > 0.001 && fraction < 0.999
+            ? ""
+            : "none";
+          if (fraction > 0.001 && fraction < 0.999) {
+            meter.wedge.setAttribute("d", wedgePath(fraction));
+          }
+          meter.label.textContent = remaining > 0
+            ? formatCountdown(remaining)
+            : "Checking…";
+          meter.detail =
+            (nextCheckKinds[meter.check.kind] || "Next check") + " at " +
+            new Date(next).toLocaleTimeString() +
+            (remaining > 0 ? " (in " + formatCountdown(remaining) + ")" : "") +
+            (typeof last === "number"
+              ? ". Previous slot " + new Date(last).toLocaleTimeString() + "."
+              : ".");
+          if (meter.hovered) showCheckTip(meter.root, meter.detail);
+        }
+
+        function nextCheckMeter(check) {
+          const root = document.createElement("span");
+          root.className = "status-next-check";
+          const svg = document.createElementNS(SVG_NS, "svg");
+          svg.setAttribute("viewBox", "0 0 16 16");
+          svg.setAttribute("aria-hidden", "true");
+          const track = document.createElementNS(SVG_NS, "circle");
+          track.setAttribute("class", "status-next-check-track");
+          track.setAttribute("cx", "8");
+          track.setAttribute("cy", "8");
+          track.setAttribute("r", "7");
+          const full = document.createElementNS(SVG_NS, "circle");
+          full.setAttribute("class", "status-next-check-remaining");
+          full.setAttribute("cx", "8");
+          full.setAttribute("cy", "8");
+          full.setAttribute("r", "7");
+          const wedge = document.createElementNS(SVG_NS, "path");
+          wedge.setAttribute("class", "status-next-check-remaining");
+          svg.append(track, full, wedge);
+          const label = document.createElement("span");
+          label.className = "status-next-check-label";
+          root.append(svg, label);
+          const meter = { root, full, wedge, label, check, detail: "", hovered: false };
+          root.addEventListener("mouseenter", () => {
+            meter.hovered = true;
+            showCheckTip(root, meter.detail);
+          });
+          root.addEventListener("mouseleave", () => {
+            meter.hovered = false;
+            hideCheckTip(root);
+          });
+          updateNextCheck(meter);
+          nextCheckMeters.push(meter);
+          return meter;
+        }
+
+        function tickNextChecks() {
+          nextCheckMeters.forEach(updateNextCheck);
+          window.setTimeout(tickNextChecks, 1000 - (Date.now() % 1000));
+        }
+        tickNextChecks();
+
+        function fmtDay(ts) {
+          return new Date(ts).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          });
+        }
+
+        function fmtHourRange(hourTs) {
+          const opts = { hour: "numeric" };
+          const start = new Date(hourTs).toLocaleTimeString(undefined, opts);
+          const end = new Date(hourTs + 3600000).toLocaleTimeString(undefined, opts);
+          return start + " – " + end;
+        }
+
+        function fmtMinuteRange(minuteTs) {
+          return new Date(minuteTs).toLocaleTimeString(undefined, {
+            hour: "numeric",
+            minute: "2-digit",
+          });
+        }
+
+        function fmtAgo(ts, now) {
+          if (typeof ts !== "number") return null;
+          const deltaMs = Math.max(0, now - ts);
+          const mins = Math.round(deltaMs / 60000);
+          if (mins < 1) return "just now";
+          if (mins < 60) return mins + "m ago";
+          const hours = Math.floor(mins / 60);
+          const remMins = mins % 60;
+          if (hours < 24) return hours + "h" + (remMins ? " " + remMins + "m" : "") + " ago";
+          const days = Math.floor(hours / 24);
+          return days + "d ago";
+        }
+
+        const HOUR_STATUS_LABEL = {
+          operational: "Operational",
+          degraded: "Degraded",
+          down: "Down",
+          unknown: "No health sample",
+          future: "Not yet elapsed",
+        };
+
+        const MINUTE_STATUS_LABEL = {
+          operational: "Operational",
+          down: "Down",
+          unknown: "No health sample",
+          future: "Not yet sampled",
+        };
+
+        const MONITORING_STATUS_LABEL = {
+          missing: "Sample missing",
+          stale: "Monitoring delayed",
+          empty: "No monitoring data",
+          rateLimited: "Monitoring failed (rate limited)",
+        };
+
+        // STATUS CONTRACT — DO NOT REVERT: missing expected monitoring data is
+        // red. These visual states distinguish why monitoring is unhealthy;
+        // they must never turn a missing sample green or neutral. Component
+        // rows may retain their last observed result, but the monitoring gap
+        // itself and the page-level monitoring status remain red.
+        function visualState(item) {
+          const monitoringState = String(item?.monitoringState || "");
+          return monitoringState
+            ? "monitoring-" + monitoringState.replace(/[A-Z]/g, (ch) =>
+                "-" + ch.toLowerCase())
+            : String(item?.status || "unknown");
+        }
+
+        function statusLabel(item, labels) {
+          return MONITORING_STATUS_LABEL[item?.monitoringState] ||
+            labels[item?.status] || "No data";
+        }
+
+        function escapeHtml(value) {
+          return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          })[ch]);
+        }
+
+        function normalizeBodySnippet(text) {
+          return String(text || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 500);
+        }
+
+        async function failedStatusDetail(res, error) {
+          if (!res) {
+            return {
+              title: "Status API request failed.",
+              detail: error?.message || "The browser could not reach /api/status.",
+            };
+          }
+          const contentType = res.headers.get("content-type") || "unknown content type";
+          let body = "";
+          try {
+            body = normalizeBodySnippet(await res.text());
+          } catch (bodyError) {
+            body = "Could not read response body: " + (bodyError?.message || bodyError);
+          }
+          const statusLine = "HTTP " + res.status + " " + (res.statusText || "").trim();
+          const reason = res.ok
+            ? "The status API returned a response, but the page could not parse it as JSON."
+            : "The status API returned a non-OK response.";
+          return {
+            title: statusLine.trim(),
+            detail: reason + " Content-Type: " + contentType + (body ? ". Body: " + body : ". No response body."),
+          };
+        }
+
+        function hourTooltip(dayTs, hour) {
+          const hourDay = typeof hour.hourTs === "number"
+            ? Math.floor(hour.hourTs / 86400000) * 86400000
+            : dayTs;
+          const when = fmtDay(hourDay) + ", " + fmtHourRange(hour.hourTs);
+          const label = statusLabel(hour, HOUR_STATUS_LABEL);
+          let text = when + ": " + label;
+          if (hour.status !== "future") {
+            if (hour.checks) {
+              text += " (" + (hour.checks - (hour.failures || 0)) + "/" + hour.checks +
+                " recorded samples passed";
+              if (hour.missingChecks) {
+                text += "; " + hour.missingChecks +
+                  " expected samples missing — monitoring gap, not counted";
+              }
+              text += ")";
+            } else if (hour.expectedChecks) {
+              text += " (0 of " + hour.expectedChecks + " expected samples recorded)";
+            }
+          }
+          if (hour.reason) text += " — " + hour.reason;
+          return text;
+        }
+
+        function minuteTooltip(minute) {
+          const label = statusLabel(minute, MINUTE_STATUS_LABEL);
+          let text = fmtMinuteRange(minute.minuteTs) + ": " + label;
+          if (minute.reason) text += " — " + minute.reason;
+          return text;
+        }
+
+        function summarize(systems) {
+          if (!systems.length) return "unknown";
+          if (systems.some((s) => s.status === "down")) return "down";
+          if (systems.some((s) => s.status === "degraded")) return "degraded";
+          if (systems.every((s) => s.status === "operational")) return "operational";
+          return "unknown";
+        }
+
+        function monitoringSummary(systems, current) {
+          const shared = String(current?.monitoringState || "");
+          if (shared) return shared;
+          // Compatibility with a response generated by the previous deploy.
+          if (!systems.length) return "empty";
+          const states = systems
+            .map((system) => String(system.monitoringState || ""))
+            .filter(Boolean);
+          if (states.includes("stale")) return "stale";
+          if (states.includes("missing")) return "missing";
+          if (states.includes("empty")) return "empty";
+          return null;
+        }
+
+        async function render() {
+          if (isRendering) {
+            renderPending = true;
+            return;
+          }
+          isRendering = true;
+          try {
+            await renderOnce();
+          } finally {
+            isRendering = false;
+            if (renderPending) {
+              renderPending = false;
+              void render();
+            }
+          }
+        }
+
+        async function renderOnce() {
+          let data;
+          let rateLimited = false;
+          let failedResponse = null;
+          let failedError = null;
+          const forceFresh = refreshAfterBrowserReload;
+          refreshAfterBrowserReload = false;
+          const statusUrl = forceFresh
+            ? "/api/status?fresh=browser-reload&ts=" + Date.now()
+            : "/api/status";
+          try {
+            const res = await fetch(statusUrl, {
+              cache: forceFresh ? "no-store" : "default",
+              headers: { accept: "application/json" },
+            });
+            failedResponse = typeof res.clone === "function" ? res.clone() : res;
+            if (res.status === 429) rateLimited = true;
+            if (!res.ok) {
+              throw new Error("HTTP " + res.status);
+            }
+            data = await res.json();
+          } catch (error) {
+            failedError = error;
+            banner.classList.remove(
+              "is-operational", "is-degraded", "is-down", "is-unknown",
+              "is-monitoring-missing", "is-monitoring-stale",
+              "is-monitoring-empty", "is-rate-limited",
+            );
+            if (rateLimited) {
+              banner.classList.add("is-rate-limited");
+              bannerText.textContent = "Rate limited by Cloudflare";
+              bannerSub.textContent =
+                "ForkMesh is getting more traffic than its current plan allows. This is a Cloudflare-side limit, not an outage — it resets automatically.";
+              list.innerHTML =
+                '<div class="status-empty">Status data is temporarily unavailable because Cloudflare is rate limiting requests to forkmesh.com.</div>';
+            } else {
+              banner.classList.add("is-monitoring-empty");
+              const issue = await failedStatusDetail(failedResponse, failedError);
+              bannerText.textContent = "Status API unavailable";
+              bannerSub.textContent = issue.title + " — " + issue.detail;
+              list.innerHTML =
+                '<div class="status-empty"><strong>Status data could not load.</strong><br>' +
+                escapeHtml(issue.title) + '<br>' + escapeHtml(issue.detail) +
+                '</div>';
+            }
+            return;
+          }
+
+          const generation = Number(data?.now);
+          if (
+            Number.isFinite(generation) &&
+            generation > 0 &&
+            generation < latestRenderedGeneration
+          ) {
+            // A forced reload builds an authoritative response immediately,
+            // while the WebSocket-open reread can still receive the older
+            // published snapshot. Never let an older generation overwrite a
+            // newer one: that race caused green → red flicker after refresh.
+            return;
+          }
+          if (Number.isFinite(generation) && generation > 0) {
+            latestRenderedGeneration = Math.max(
+              latestRenderedGeneration, generation,
+            );
+          }
+
+          const systems = Array.isArray(data.systems) ? data.systems : [];
+          const current = data.current || {};
+          const overall = summarize(systems);
+          const monitoringState = monitoringSummary(systems, current);
+          const observedOutage = systems.some(
+            (system) => system.status === "down" && !system.monitoringState,
+          );
+          banner.classList.remove(
+            "is-operational", "is-degraded", "is-down", "is-unknown",
+            "is-monitoring-missing", "is-monitoring-stale",
+            "is-monitoring-empty", "is-rate-limited",
+          );
+          if (observedOutage) {
+            banner.classList.add("is-down");
+            bannerText.textContent = "Partial outage";
+          } else if (overall === "degraded") {
+            banner.classList.add("is-degraded");
+            bannerText.textContent = "Degraded performance";
+          } else if (monitoringState) {
+            banner.classList.add("is-monitoring-" + monitoringState);
+            bannerText.textContent = overall === "operational"
+              ? "Systems operational — monitoring delayed"
+              : monitoringState === "empty"
+              ? "Monitoring data is not available"
+              : "Monitoring is delayed";
+          } else if (overall === "operational") {
+            banner.classList.add("is-operational");
+            bannerText.textContent = "All systems operational";
+          } else {
+            banner.classList.add("is-monitoring-empty");
+            bannerText.textContent = "Health state is unknown";
+          }
+          bannerSub.textContent = data.now
+            ? "Last checked " + new Date(data.now).toLocaleTimeString()
+            : "";
+          // A stale health sample means the sampling cron is behind, not that
+          // the site is down — say so explicitly, since the gap shows up as
+          // grey no-data squares in the strips.
+          const lastSample = data.current && data.current.lastCronSampleTs;
+          if (data.now && typeof lastSample === "number") {
+            const behindMins = Math.floor((data.now - lastSample) / 60000);
+            if (behindMins >= 3) {
+              bannerSub.textContent +=
+                " · last health sample " + behindMins + "m ago; " +
+                "component rows retain their latest observed result";
+            }
+          }
+
+          const unacceptedMirrors = Number(
+            current.mainnodeUnacceptedMirrors || 0,
+          );
+          // A fresh, signed mirror serving a revision outside the current
+          // canonical pin is a repository-sync/integrity warning, not proof
+          // that the public service is unavailable. Keep the warning visible
+          // without letting routine issue work or revision convergence create
+          // red downtime on the status page.
+          const repositoryRevisionConverging =
+            current.mainnodeOnline === false && unacceptedMirrors > 0;
+          const currentEl = document.getElementById("status-current");
+          const now = typeof data.now === "number" ? data.now : Date.now();
+          if (currentEl) {
+            const fmtNum = (n) =>
+              typeof n === "number" ? n.toLocaleString() : "—";
+            const mainnode =
+              current.mainnodeOnline === true
+                ? "Online"
+                : repositoryRevisionConverging
+                ? "Mirrors reachable"
+                : current.mainnodeOnline === false
+                ? "Offline"
+                : "—";
+            document.getElementById("stat-mainnode").textContent = mainnode;
+
+            const mainnodeDetail = document.getElementById("stat-mainnode-detail");
+            if (mainnodeDetail) {
+              if (current.mainnodeOnline === true) {
+                mainnodeDetail.textContent =
+                  "Accepted signed forkmesh/forkmesh repository proof received within the last " +
+                  Math.round((current.mainnodeStaleMs || 600000) / 60000) + "m";
+              } else if (repositoryRevisionConverging) {
+                mainnodeDetail.textContent =
+                  unacceptedMirrors + " reachable signed mirror" +
+                  (unacceptedMirrors === 1 ? " is" : "s are") +
+                  " still converging with the canonical repository revision; this is not service downtime";
+              } else if (current.mainnodeOnline === false) {
+                const ago = fmtAgo(current.mainnodeLastSeenTs, now);
+                mainnodeDetail.textContent = ago
+                  ? "No accepted signed repository proof since " + ago
+                  : "No accepted signed repository proof has been recorded";
+              } else {
+                mainnodeDetail.textContent = "";
+              }
+            }
+
+            document.getElementById("stat-nodes").textContent = fmtNum(
+              current.onlineNodes,
+            );
+            const nodesDetail = document.getElementById("stat-nodes-detail");
+            if (nodesDetail) {
+              if (repositoryRevisionConverging) {
+                nodesDetail.textContent =
+                  "Reachable mirror nodes keep serving availability separate from repository revision sync";
+              } else if (current.mainnodeOnline === false && (current.onlineNodes || 0) > 0) {
+                nodesDetail.textContent = "Other nodes are online, but no accepted flagship repository proof is fresh";
+              } else if (current.mainnodeOnline === false) {
+                nodesDetail.textContent = "No node — including mainnode — reports fresh serving availability";
+              } else {
+                nodesDetail.textContent = "";
+              }
+            }
+
+            document.getElementById("stat-repos").textContent = fmtNum(
+              current.catalogRepos,
+            );
+            document.getElementById("stat-errors").textContent = fmtNum(
+              current.errors24h,
+            );
+            const doAborts = document.getElementById("stat-do-aborts");
+            if (doAborts) {
+              doAborts.textContent = fmtNum(current.doDurationAborts24h);
+            }
+            const doAbortsDetail = document.getElementById(
+              "stat-do-aborts-detail",
+            );
+            if (doAbortsDetail) {
+              doAbortsDetail.textContent =
+                (current.doDurationAborts24h || 0) > 0
+                  ? "Durable Object requests killed by Cloudflare's free-tier duration cap; answered with a retryable 503"
+                  : "";
+            }
+            currentEl.hidden = false;
+          }
+
+          const reasonsEl = document.getElementById("status-reasons");
+          if (reasonsEl) {
+            const items = [];
+            if (monitoringState) {
+              const ago = fmtAgo(current.lastCronSampleTs, now);
+              items.push({
+                status: "unknown",
+                monitoringState,
+                label: "Status monitoring",
+                detail: monitoringState === "empty"
+                  ? "No recent health sample is available. Component rows remain unknown until a real probe is recorded."
+                  : "Health sampling is delayed" +
+                    (ago ? "; the latest completed sample was " + ago : "") +
+                    ". Component rows retain their latest observed result; the missing telemetry is not counted as service downtime.",
+              });
+            }
+            if (current.mainnodeOnline === false) {
+              const ago = fmtAgo(current.mainnodeLastSeenTs, now);
+              items.push({
+                status: repositoryRevisionConverging ? "degraded" : "down",
+                label: repositoryRevisionConverging
+                  ? "Repository revision sync"
+                  : "Mainnode",
+                detail: repositoryRevisionConverging
+                  ? unacceptedMirrors + " reachable signed mirror" +
+                    (unacceptedMirrors === 1 ? " is" : "s are") +
+                    " reporting a revision that is still converging with the canonical integrity policy. This warning does not count as service downtime."
+                  : "No accepted signed forkmesh/forkmesh repository proof has " +
+                    (ago ? "been received in " + ago : "ever been recorded") +
+                    " (marked offline after " +
+                    Math.round((current.mainnodeStaleMs || 600000) / 60000) +
+                    "m without accepted proof).",
+              });
+            }
+            systems.forEach((system) => {
+              if (
+                (system.status === "down" || system.status === "degraded") &&
+                !system.monitoringState &&
+                system.reason
+              ) {
+                const when = fmtAgo(system.reasonTs, now);
+                items.push({
+                  status: system.status,
+                  monitoringState: system.monitoringState,
+                  label: system.label || system.id,
+                  detail: system.reason + (when ? " (" + when + ")" : ""),
+                });
+              }
+            });
+            if (items.length) {
+              reasonsEl.innerHTML = "";
+              const heading = document.createElement("p");
+              heading.className = "status-reasons-title";
+              heading.textContent = "Why:";
+              reasonsEl.appendChild(heading);
+              const ul = document.createElement("ul");
+              items.forEach((item) => {
+                const li = document.createElement("li");
+                const dot = document.createElement("span");
+                dot.className = "status-dot is-" + visualState(item);
+                li.appendChild(dot);
+                const strong = document.createElement("strong");
+                strong.textContent = item.label + " — ";
+                li.appendChild(strong);
+                li.appendChild(document.createTextNode(item.detail));
+                ul.appendChild(li);
+              });
+              reasonsEl.appendChild(ul);
+              reasonsEl.hidden = false;
+            } else {
+              reasonsEl.hidden = true;
+            }
+          }
+
+          if (!systems.length) {
+            list.innerHTML = '<div class="status-empty">No systems reported.</div>';
+            return;
+          }
+
+          hideCheckTip();
+          nextCheckMeters.length = 0;
+          list.innerHTML = "";
+          systems.forEach((system) => {
+            const row = document.createElement("div");
+            row.className = "status-row";
+            const safeSystemId = String(system.id || "")
+              .trim()
+              .toLowerCase()
+              .replace(/[^a-z0-9_-]+/g, "-")
+              .replace(/^-+|-+$/g, "");
+            row.id = "system-" + safeSystemId;
+
+            const fmtPct = (value) =>
+              typeof value === "number" ? value.toFixed(2) + "%" : "—";
+
+            const head = document.createElement("div");
+            head.className = "status-row-head";
+            const name = document.createElement("div");
+            name.className = "status-row-name";
+            const dot = document.createElement("span");
+            dot.className = "status-dot is-" + visualState(system);
+            name.appendChild(dot);
+            name.appendChild(document.createTextNode(system.label || system.id));
+            const chevron = document.createElement("span");
+            chevron.className = "status-row-chevron";
+            chevron.setAttribute("aria-hidden", "true");
+            chevron.textContent = "▸";
+            name.appendChild(chevron);
+            head.appendChild(name);
+            const nextCheck = system.nextCheck;
+            let nextCheckText = "";
+            if (
+              nextCheck &&
+              (nextCheck.everyMs > 0 || typeof nextCheck.at === "number")
+            ) {
+              const meter = nextCheckMeter(nextCheck);
+              head.appendChild(meter.root);
+              nextCheckText = meter.detail;
+            }
+
+            row.appendChild(head);
+
+            const checks = Array.isArray(system.checks) ? system.checks : [];
+            const checkList = document.createElement("ul");
+            checkList.className = "status-row-checks";
+            checkList.setAttribute(
+              "aria-label",
+              "Checks for " + (system.label || system.id),
+            );
+            checks.forEach((check) => {
+              const checkName = String((check && check.name) || "").trim();
+              if (!checkName) return;
+              const detail = String((check && check.detail) || "").trim();
+              const item = document.createElement("li");
+              item.className = "status-row-check";
+              item.textContent = checkName;
+              if (detail) {
+                item.tabIndex = 0;
+                item.addEventListener("mouseenter", () => showCheckTip(item, detail));
+                item.addEventListener("mouseleave", () => hideCheckTip(item));
+                item.addEventListener("focus", () => showCheckTip(item, detail));
+                item.addEventListener("blur", () => hideCheckTip(item));
+              }
+              checkList.appendChild(item);
+            });
+            if (checkList.children.length) row.appendChild(checkList);
+
+            // Click-to-expand panel spelling out exactly what this system's
+            // health check tests (checkDescription from the API) and the raw
+            // recorded-sample numbers behind the percentages — so the page
+            // never asks anyone to trust an unexplained green dot.
+            const infoPanel = document.createElement("div");
+            infoPanel.className = "status-row-detail-panel";
+            infoPanel.hidden = true;
+            const infoTitle = document.createElement("p");
+            infoTitle.className = "status-row-detail-title";
+            infoTitle.textContent = "What this check tests";
+            infoPanel.appendChild(infoTitle);
+            const infoDesc = document.createElement("p");
+            infoDesc.textContent = system.checkDescription ||
+              "No description available for this check.";
+            infoPanel.appendChild(infoDesc);
+            const infoStats = document.createElement("p");
+            const recorded24h = typeof system.checks24h === "number" ? system.checks24h : 0;
+            const failed24h = typeof system.failures24h === "number" ? system.failures24h : 0;
+            const missing24h = typeof system.missing24h === "number" ? system.missing24h : 0;
+            infoStats.textContent =
+              "Last 24h: " + recorded24h.toLocaleString() + " samples recorded (" +
+              (recorded24h - failed24h).toLocaleString() + " passed, " +
+              failed24h.toLocaleString() + " failed), " +
+              missing24h.toLocaleString() + " expected samples missing.";
+            infoPanel.appendChild(infoStats);
+            const infoNote = document.createElement("p");
+            infoNote.className = "status-row-detail-note";
+            infoNote.textContent =
+              "Sampled once a minute by a scheduled job inside the ForkMesh " +
+              "worker. Red monitoring shades are minutes where the sampler " +
+              "itself didn't run: they remain distinct from service failures " +
+              "and never change the component's latest observed state, but " +
+              "they are included in the displayed percentage so a non-green " +
+              "history cannot read as 100%.";
+            infoPanel.appendChild(infoNote);
+            head.tabIndex = 0;
+            head.setAttribute("role", "button");
+            head.setAttribute("aria-expanded", "false");
+            head.setAttribute(
+              "aria-label",
+              (system.label || system.id) +
+                (nextCheckText ? " — " + nextCheckText : "") +
+                " — show what this check tests",
+            );
+            const toggleInfo = () => {
+              const open = infoPanel.hidden;
+              infoPanel.hidden = !open;
+              head.setAttribute("aria-expanded", String(open));
+              chevron.classList.toggle("is-open", open);
+            };
+            head.addEventListener("click", toggleInfo);
+            head.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                toggleInfo();
+              }
+            });
+            if (window.location.hash === "#" + row.id) {
+              toggleInfo();
+              row.classList.add("is-alert-target");
+              window.requestAnimationFrame(() => {
+                row.scrollIntoView({ behavior: "smooth", block: "center" });
+              });
+            }
+            row.appendChild(infoPanel);
+
+            if (system.status !== "operational" && system.reason) {
+              const why = document.createElement("p");
+              why.className = "status-row-reason is-" + visualState(system);
+              const when = fmtAgo(system.reasonTs, now);
+              why.textContent = system.reason + (when ? " (" + when + ")" : "");
+              row.appendChild(why);
+            }
+
+            const defaultDetail = "Hover a square for details.";
+            const setDetail = (text, marker) => {
+              if (marker) marker.classList.add("is-hovered");
+              hoverDetail.textContent = text;
+            };
+            const clearDetail = (marker) => {
+              if (marker) marker.classList.remove("is-hovered");
+              hoverDetail.textContent = defaultDetail;
+            };
+            const wireHourDetail = (target, tooltip, marker) => {
+              target.title = tooltip;
+              target.tabIndex = 0;
+              target.setAttribute("aria-label", tooltip);
+              target.addEventListener("mouseenter", () => setDetail(tooltip, marker));
+              target.addEventListener("mouseleave", () => clearDetail(marker));
+              target.addEventListener("focus", () => setDetail(tooltip, marker));
+              target.addEventListener("blur", () => clearDetail(marker));
+            };
+            const dayList = system.days || [];
+
+            // Keep the shortest, most recent history first: each slice is
+            // one minute, oldest to newest, and the API always returns 60
+            // buckets (including a future state for an unfinished minute).
+            const minuteHistory = document.createElement("div");
+            minuteHistory.className = "status-history-row";
+            const minuteBar = document.createElement("div");
+            minuteBar.className = "status-minute-bar";
+            minuteBar.setAttribute("aria-label", "Last 60 minutes");
+            (system.minutes || []).forEach((minute) => {
+              const slice = document.createElement("div");
+              slice.className = "status-minute-slice is-" + visualState(minute);
+              wireHourDetail(slice, minuteTooltip(minute));
+              minuteBar.appendChild(slice);
+            });
+            minuteHistory.appendChild(minuteBar);
+            const minuteLabel = document.createElement("strong");
+            minuteLabel.className = "status-history-label";
+            minuteLabel.textContent = "60m";
+            minuteLabel.setAttribute("aria-label", "Last 60 minutes");
+            minuteHistory.appendChild(minuteLabel);
+            row.appendChild(minuteHistory);
+
+            const hourHistory = document.createElement("div");
+            hourHistory.className = "status-history-row";
+            const hourBar = document.createElement("div");
+            hourBar.className = "status-hour-bar";
+            hourBar.setAttribute("aria-label", "Last 24 hours");
+            const hoursByTs = new Map();
+            dayList.forEach((day) => {
+              (day.hours || []).forEach((hour) => {
+                if (typeof hour.hourTs === "number") hoursByTs.set(hour.hourTs, hour);
+              });
+            });
+            const currentHour = Math.floor(now / 3600000) * 3600000;
+            const startHour = currentHour - 23 * 3600000;
+            for (let hourTs = startHour; hourTs <= currentHour; hourTs += 3600000) {
+              const elapsedMinutes = Math.max(0, Math.floor((now - hourTs) / 60000));
+              const expectedChecks = Math.min(60, elapsedMinutes);
+              const hour = hoursByTs.get(hourTs) || {
+                hourTs,
+                status: "unknown",
+                monitoringState: "empty",
+                checks: 0,
+                failures: 0,
+                expectedChecks,
+                missingChecks: expectedChecks,
+                reason: expectedChecks
+                  ? "No health sample recorded for this elapsed hour — monitoring gap, not evidence of an outage."
+                  : null,
+              };
+              const slice = document.createElement("div");
+              slice.className = "status-hour-slice is-" + visualState(hour);
+              wireHourDetail(slice, hourTooltip(hourTs, hour));
+              hourBar.appendChild(slice);
+            }
+            hourHistory.appendChild(hourBar);
+            const hourUptime = document.createElement("strong");
+            hourUptime.className = "status-history-uptime";
+            hourUptime.textContent = fmtPct(system.uptime24hPct);
+            hourUptime.setAttribute("aria-label", "Last 24 hours uptime: " + fmtPct(system.uptime24hPct));
+            hourHistory.appendChild(hourUptime);
+            row.appendChild(hourHistory);
+
+            const dayHistory = document.createElement("div");
+            dayHistory.className = "status-history-row";
+            const days = document.createElement("div");
+            days.className = "status-days";
+            days.setAttribute("aria-label", "Last 30 days");
+            dayList.forEach((day, dayIndex) => {
+              const isLastDay = dayIndex === dayList.length - 1;
+              const stack = document.createElement("div");
+              stack.className = "status-day-stack";
+              const cell = document.createElement("div");
+              const hours = day.hours && day.hours.length ? day.hours : [];
+              // A day only ever has < 24 hours when it's the current, still-
+              // in-progress day (see hoursElapsed) — never treat that as
+              // "no data": render the elapsed hours plus dimmed placeholders
+              // for the hours that simply haven't happened yet.
+              const isPartialToday = isLastDay && hours.length > 0 && hours.length < 24;
+              const dayChecks = day.checks || 0;
+              const dayFailures = day.failures || 0;
+              const state = dayFailures > 0
+                ? dayFailures >= dayChecks
+                  ? "down"
+                  : "degraded"
+                : !dayChecks
+                ? "monitoring-empty"
+                : day.missingChecks > 0
+                ? "monitoring-missing"
+                : "operational";
+              const compactedHours = Boolean(day.hoursCompacted);
+              cell.className = "status-day is-" + state +
+                (compactedHours ? "" : " has-hours") +
+                (isPartialToday ? " is-partial" : "");
+              const label = dayChecks
+                ? fmtDay(day.dayTs) + ": " + day.uptimePct.toFixed(2) + "% uptime from " +
+                  dayChecks + " recorded samples" +
+                  (day.missingChecks
+                    ? " (" + day.missingChecks + " expected samples missing — monitoring gap, not counted)"
+                    : "") +
+                  (isPartialToday ? " — " + hours.length + "/24h elapsed" : "")
+                : fmtDay(day.dayTs) + ": no samples recorded (monitoring gap)";
+              cell.setAttribute("aria-label", label);
+              cell.title = label;
+              const addHourMarker = (status, tooltip) => {
+                const marker = document.createElement("div");
+                marker.className = "status-day-hour is-" + (status || "unknown");
+                wireHourDetail(marker, tooltip, marker);
+                cell.appendChild(marker);
+                return marker;
+              };
+              hours.forEach((hour) => {
+                addHourMarker(visualState(hour), hourTooltip(day.dayTs, hour));
+              });
+              if (isPartialToday) {
+                for (let h = hours.length; h < 24; h++) {
+                  const tooltip = fmtDay(day.dayTs) + ", " + fmtHourRange(day.dayTs + h * 3600000) +
+                    ": hasn't happened yet";
+                  addHourMarker("future", tooltip);
+                }
+              }
+              if (!hours.length && !compactedHours) {
+                for (let h = 0; h < 24; h++) {
+                  const hourTs = day.dayTs + h * 3600000;
+                  if (hourTs > now) break;
+                  const tooltip = fmtDay(day.dayTs) + ", " + fmtHourRange(hourTs) +
+                    ": No data — no health sample recorded (monitoring gap), not evidence of an outage.";
+                  addHourMarker("monitoring-empty", tooltip);
+                }
+              }
+              stack.appendChild(cell);
+              days.appendChild(stack);
+            });
+            dayHistory.appendChild(days);
+            const dayUptime = document.createElement("strong");
+            dayUptime.className = "status-history-uptime";
+            dayUptime.textContent = fmtPct(system.uptimePct);
+            dayUptime.setAttribute("aria-label", "Last 30 days uptime: " + fmtPct(system.uptimePct));
+            dayHistory.appendChild(dayUptime);
+            row.appendChild(dayHistory);
+
+            list.appendChild(row);
+          });
+        }
+
+        function scheduleReconnect() {
+          if (disposed || document.hidden || reconnectTimer) return;
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = 0;
+            connectStatusStream();
+          }, reconnectDelay);
+          reconnectDelay = Math.min(30_000, reconnectDelay * 2);
+        }
+
+        function connectStatusStream() {
+          if (
+            disposed || document.hidden || statusSocket ||
+            typeof WebSocket !== "function"
+          ) return;
+          let socket;
+          try {
+            socket = new WebSocket(
+              (location.protocol === "https:" ? "wss:" : "ws:") +
+                "//" + location.host + "/api/status/ws",
+            );
+          } catch (_) {
+            scheduleReconnect();
+            return;
+          }
+          statusSocket = socket;
+          socket.addEventListener("open", () => {
+            reconnectDelay = 1_000;
+            // A generation may have landed while the tab was disconnected.
+            void render();
+          });
+          socket.addEventListener("message", (event) => {
+            try {
+              const message = JSON.parse(String(event.data || ""));
+              if (message.type === "status-update") void render();
+            } catch (_) {}
+          });
+          socket.addEventListener("close", () => {
+            if (statusSocket === socket) statusSocket = null;
+            scheduleReconnect();
+          });
+          socket.addEventListener("error", () => socket.close());
+        }
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            window.clearTimeout(reconnectTimer);
+            reconnectTimer = 0;
+            statusSocket?.close(1000, "hidden");
+            statusSocket = null;
+          } else {
+            void render();
+            connectStatusStream();
+          }
+        });
+        window.addEventListener("pagehide", () => {
+          disposed = true;
+          window.clearTimeout(reconnectTimer);
+          reconnectTimer = 0;
+          statusSocket?.close(1000, "page hidden");
+          statusSocket = null;
+        });
+
+        void render();
+        connectStatusStream();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Public network map · ForkMesh Blog</title>
+    <meta name="description" content="The network page shows recently verified public nodes, generalized mirror health, and operator-approved optional telemetry.">
+    <link rel="canonical" href="https://forkmesh.com/blog/public-network-map/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/public-network-map/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Public network map">
+    <meta property="og:description" content="The network page shows recently verified public nodes, generalized mirror health, and operator-approved optional telemetry.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/public-network-map.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/public-network-map.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Public network map</h1>
+            <p class="lede">The network page shows recently verified public nodes, generalized mirror health, and only the optional device telemetry each operator chose to publish.</p>
+            <div class="meta"><span class="pill">Feature 09 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/public-network-map.webp" alt="Abstract ForkMesh artwork for Public network map">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Public network map gives ForkMesh a concrete mechanism for making recently verified public-node availability and generalized mirror health visible without exposing private repositories or hidden device fields.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, public network map addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles the public network map through the same split it uses across the product: nodes keep real Git mirrors, while the app service coordinates signed HTTPS discovery, generalized health, presence, account lookup, and clone routing.</p>
+          <p>The behavior is intentionally narrow: freshness windows and active probes reduce stale routing decisions, but do not promise an instantaneous or infallible view. The routing service helps find a live host, but it is not canonical Git storage.</p>
+          <h2>Where it fits</h2>
+          <p>Use public network map when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Public network map keeps making live node availability and mirror health visible connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/headless-mirror-nodes/">← Headless mirror nodes</a>
+          <a href="/blog/presence-done-right/">Presence done right →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

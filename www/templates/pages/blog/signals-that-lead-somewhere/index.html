@@ -1,0 +1,83 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Signals that lead somewhere · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="A current-main ForkMesh update on durable usage pings, in-context teammate follow-ups, responsive diagnostics, and lower-noise status monitoring.">
+    <link rel="canonical" href="https://forkmesh.com/blog/signals-that-lead-somewhere/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/signals-that-lead-somewhere/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Signals that lead somewhere">
+    <meta property="og:description" content="ForkMesh's current main branch makes operational signals easier to act on: durable usage pings, in-context teammate follow-ups, responsive diagnostics, and quieter status checks.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/signals-that-lead-somewhere.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit glass signal prism connects a monitoring beacon, coding teammate workbench, and three channel capsules on wet stone; the official ForkMesh logo and its vertical reflection stand in the foreground">
+    <meta property="article:published_time" content="2026-09-01T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Signals that lead somewhere">
+    <meta name="twitter:description" content="A current-main report on durable pings, contextual teammate follow-ups, responsive diagnostics, and lower-noise status monitoring.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/signals-that-lead-somewhere.webp">
+    <meta name="twitter:image:alt" content="A moonlit glass signal prism connects a monitoring beacon, coding teammate workbench, and three channel capsules on wet stone; the official ForkMesh logo and its vertical reflection stand in the foreground">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Signals that lead somewhere</h1>
+            <p class="lede">ForkMesh's current <code>main</code> branch makes a handful of operational loops more deliberate: important usage pings wait for acknowledgement, teammate follow-ups keep their context, and monitoring does less redundant work without making failures wait longer.</p>
+            <div class="meta"><span class="pill">September 1, 2026</span><span>Product update</span><span>5 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/signals-that-lead-somewhere.webp" alt="A moonlit glass signal prism connects a monitoring beacon, coding teammate workbench, and three channel capsules on wet stone; the official ForkMesh logo and its vertical reflection stand in the foreground">
+        </section>
+        <article class="body">
+          <p><a href="/blog/proof-before-promises/">Proof before promises</a> drew a careful boundary around current-<code>main</code> work and released software. The next slice is narrower: it follows the signals developers and operators use to decide what to do next, then removes the small breaks that could make those signals disappear, restart from scratch, or slow the interface carrying them.</p>
+          <p>This post covers the 40 commits that landed on <code>main</code> after that post, through September 1. The signed release manifests and tags did not change in this window. Unless noted otherwise, everything below is merged on <code>main</code>, not evidence of a new hosted deployment or native release.</p>
+
+          <h2>A reset alert now waits until it has been seen</h2>
+          <p>ForkMesh can track the five-hour and weekly usage windows for supported coding-agent providers. When an exhausted window becomes usable again, that moment is more than a transient toast: it is the signal that paused work can continue. The desktop now records that reset as a dismiss-only usage ping, keeps it visible until the user acknowledges it, and restores an outstanding ping after the app restarts.</p>
+          <p>The persistence rules are explicit. Unacknowledged reset pings are not trimmed to satisfy the ordinary local notification-history cap. A restart raises them oldest first. Acknowledgement is written immediately, and the in-app card remains the authoritative surface even when a native notification server applies its own timeout policy. If the app was closed when the reset happened, reopening it clears the stale exhausted state and raises the deferred notice.</p>
+          <p>This does not claim that ForkMesh controls provider quotas or can predict a provider's account state independently. It makes the locally configured reset window and the desktop's reminder lifecycle less lossy.</p>
+
+          <h2>A follow-up can stay with the work</h2>
+          <p>Team briefings are more useful when the next choice continues the conversation that produced the briefing. Follow-up buttons now send their direction back into the existing agent session when that session is available. The general teammate run path also prefers the teammate's prior session before creating a new one, and shared team runs can reuse the prior shared session.</p>
+          <p>The briefing surface now exposes each teammate's status, keeps reference-style links clickable, offers a direct details view, and makes each suggested next step an action instead of a selection that still requires a separate run. Team-attributed sessions can be graded and counted for every participating teammate, not only the single-teammate case.</p>
+          <p>There is still a human gate. A follow-up button supplies a prompt to a configured agent session; it does not expand the teammate's repository permissions, silently publish a pull request, or turn a finished briefing into an autonomous loop.</p>
+
+          <h2>Busy diagnostics yield to the interface</h2>
+          <p>Operator tools are most valuable during bursts, which is exactly when they should avoid monopolizing the desktop event loop. Cloud Worker tail records now enter a bounded queue and drain in short turns—at most 24 records or roughly eight milliseconds before yielding. A deliberate backpressure response carries a narrow marker so the desktop can distinguish that expected degraded response from an unhandled Worker error; a real exception still wins and remains an error.</p>
+          <p>Network-log digest checkpoints moved off the GUI thread and preserve write order behind a single worker. Clearing logs and shutting down flush the pending digest before returning. Runtime diagnostics keep their recent lag and snapshot histories in bounded circular storage, and transcript image previews retain decoded images with their owning widget instead of leaving GUI-affine pixmaps in a process-wide cache during teardown.</p>
+          <p>The branch and header fixes around the same window are similarly practical: branch cleanup avoids detached widget access, the Team header keeps controls inside compact layouts, and tests exercise teardown, queue draining, ring-buffer order, and narrow window sizes.</p>
+
+          <h2>Status checks spend effort where the evidence changes</h2>
+          <p>The public status sampler still runs every minute, but not every input needs to be downloaded every minute. Healthy synthetic checks for the homepage, status assets, and the World's mobile bootstrap graph can now reuse a durable result for ten minutes. A failed result is retried on the next minute. Visitor-observed Worker errors and the database round trip remain minute-level signals, so the cache is not used to turn a reported failure green.</p>
+          <p>The deeper flagship-repository and installer sweeps move to six-hour intervals. Between repository sweeps, recent visitor 5xx responses on flagship repository content—including release-blob routes—still feed the flagship row within the minute sampler. The installer probe also stops launching a second fallback sweep after the router has already exhausted every eligible mirror; the scheduled failure retry owns the next attempt instead.</p>
+          <p>This is a resource-shaping change in current <code>main</code>, not a published uptime result. It reduces repeated asset and mirror subrequests in the implementation while preserving the documented retry boundaries. The focused status tests cover healthy reuse, one-minute failure retries, stale-result replacement, interval text, visitor-error precedence, and the no-duplicate-fallback case.</p>
+
+          <h2>Channel context is visible where the numbers are</h2>
+          <p>The optional Marketing package brings channel settings into its dashboard. Organization owners and admins can see and edit whether a channel is active, its display name, and its public profile beside that channel's aggregate reach fields, then save the set in one action. Valid HTTPS profiles can be opened directly; a saved blog profile can trigger the existing RSS refresh. Other roles see the context without receiving settings authority.</p>
+          <p>This is workflow clarity, not attribution. The package still accepts explicit metric snapshots and reads published feed data; it does not infer that a channel caused a view, publish automatically, or turn an empty metric into success.</p>
+
+          <h2>The release line has not moved</h2>
+          <p>The repository's <code>latest</code> manifest still verifies as <strong>v0.7.29</strong> against the installer-embedded Ed25519 publisher key, and its checksum-list hash remains bound to the signed body. The <code>candidate-0.7.95</code> manifest also verifies, but remains a Linux x86_64 candidate. Neither channel changed in this reporting window.</p>
+          <p>That keeps the availability sentence simple: durable usage pings, contextual teammate continuation, the diagnostics work, cached synthetic status probes, and inline Marketing channel controls are current-<code>main</code> changes. They should not be described as universally installed until a matching complete signed release or separately verified deployment carries them.</p>
+          <p><a href="/docs">Read the current documentation</a>, inspect the <a href="/status">public status surface</a>, or <a href="/desktop">get the current signed desktop</a>.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/three-small-servers/">← Three small servers and a long September</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/proof-before-promises/">Proof before promises →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

@@ -1,0 +1,75 @@
+          <section data-view="microjobs" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full">
+              <div data-microjobs-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 class="text-base font-semibold text-foreground">Microjobs</h1>
+                    <p class="mt-1 text-sm text-muted-foreground">Submit useful issues and pull requests through the repository's normal workflow. After review, an owner may attach a small SOL estimate and pay it directly from the owner's ForkMesh desktop app wallet. There is no separate claim form and ForkMesh never holds a key.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-3 self-start">
+                    <span data-microjobs-earned class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <button
+                      data-microjobs-refresh
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div data-microjobs-session class="px-4 sm:px-5 py-4 border-b border-border">
+                  <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Checking your session...</p>
+                </div>
+
+                <div data-microjobs-notice class="hidden px-4 sm:px-5 py-3 border-b border-border" role="status" aria-live="polite"></div>
+
+                <div class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Jobs you can pick up</h2>
+                  <span class="text-xs text-muted-foreground">Submit once in the normal issue or PR workflow</span>
+                </div>
+
+                <div data-microjobs-catalog class="divide-y divide-border" aria-live="polite">
+                  <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading jobs...</div>
+                </div>
+
+                <div class="border-t border-border px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reward tracking</h2>
+                  <span data-microjobs-claims-summary class="text-xs text-muted-foreground">No separate submissions to manage</span>
+                </div>
+
+                <div data-microjobs-claims class="divide-y divide-border" aria-live="polite">
+                  <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">Owner-authored estimates appear on their issue or PR and in Ledger → Pending payments.</div>
+                </div>
+
+                <div class="border-t border-border px-4 sm:px-5 py-4">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">How an estimate becomes a payment</h2>
+                  <ol class="mt-3 grid gap-3 sm:grid-cols-4">
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">1</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">Submit normally</p>
+                      <p class="mt-1 text-xs text-muted-foreground">Open a useful issue or a focused pull request in the repository.</p>
+                    </li>
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">2</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">The owner reviews it</p>
+                      <p class="mt-1 text-xs text-muted-foreground">Duplicates and spam are closed. Useful new reports and focused PRs may receive an estimate.</p>
+                    </li>
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">3</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">It appears as pending</p>
+                      <p class="mt-1 text-xs text-muted-foreground">PR rewards remain conditional until merge; missing payout wallets stay clearly blocked.</p>
+                    </li>
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">4</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">The owner pays locally</p>
+                      <p class="mt-1 text-xs text-muted-foreground">The ForkMesh desktop app unlocks the owner's linked wallet and broadcasts the exact direct transfer.</p>
+                    </li>
+                  </ol>
+                </div>
+
+                <div data-microjobs-policy class="border-t border-border px-4 sm:px-5 py-3"></div>
+              </div>
+            </div>
+          </section>

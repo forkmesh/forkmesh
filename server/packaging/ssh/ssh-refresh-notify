@@ -1,0 +1,23 @@
+#!/bin/sh
+/usr/bin/env -i \
+  PATH=/usr/bin:/bin \
+  LANG=C \
+  LC_ALL=C \
+  /usr/bin/python3 -I \
+  /opt/forkmesh-mirror/ssh_post_receive_refresh.py \
+  --config /etc/forkmesh/ssh-refresh.json \
+  notify && exit 0
+
+# A committed receive-pack cannot be changed into a failed push merely because
+# the Python notifier is temporarily unavailable. Retain fixed, input-free work
+# for the path unit instead; the periodic reconcile timer is the final fallback
+# if even this runtime marker cannot be created.
+umask 077
+retry_marker=$(/usr/bin/mktemp \
+  /run/forkmesh-mirror-refresh/.notify-failed.XXXXXXXX) || exit 1
+if /usr/bin/printf '%s\n' 'forkmesh-refresh-v1' >"$retry_marker"; then
+  /usr/bin/mv -f -- "$retry_marker" /run/forkmesh-mirror-refresh/pending
+  exit $?
+fi
+/usr/bin/rm -f -- "$retry_marker"
+exit 1

@@ -1,0 +1,44 @@
+# Managed by deploy/core/render.py for node @@NODE@@ (same on every core).
+# Serves the certificate this node holds to the other cores (WireGuard
+# address only, HMAC-authenticated) and forwards HTTP-01 challenges for the
+# shared names to the other cores' Caddy (loopback only).
+[Unit]
+Description=ForkMesh Next certificate sync server and ACME challenge forwarder
+Requires=wg-quick@wg0.service
+After=wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=fmnext-certsync
+Group=fmnext-certsync
+# Its own secret: the app (which holds FORKMESH_MESH_SECRET) cannot
+# download the TLS private keys.
+LoadCredentialEncrypted=@@CERTSYNC_SECRET@@:@@CREDS@@/@@CERTSYNC_SECRET@@.cred
+ExecStart=/usr/bin/python3 -I @@OPT@@/bin/fmnext-certsync serve --config @@ETC@@/certsync.json
+Restart=always
+RestartSec=5s
+MemoryMax=48M
+MemorySwapMax=0
+IPAddressDeny=169.254.0.0/16
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

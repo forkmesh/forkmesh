@@ -1,0 +1,7 @@
+{
+  "label": "Worker Errors",
+  "systems": [
+    "errors"
+  ],
+  "prefixes": []
+}

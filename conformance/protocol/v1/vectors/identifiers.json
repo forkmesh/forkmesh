@@ -1,0 +1,451 @@
+{
+  "suite": "forkmesh-protocol",
+  "suiteVersion": "1.0.0-rc.1",
+  "vectorSet": "identifiers",
+  "procedure": "Derive each identifier from its inputs and compare, or reject with the listed error.",
+  "repositories": [
+    {
+      "id": "repository-ascii-root",
+      "requirements": [
+        "FM-ID-001"
+      ],
+      "verifiedRoot": "git:forkmesh/conformance",
+      "expect": {
+        "valid": true,
+        "repositoryId": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb"
+      }
+    },
+    {
+      "id": "repository-precomposed-root",
+      "requirements": [
+        "FM-ID-001"
+      ],
+      "verifiedRoot": "git:caf\u00e9",
+      "expect": {
+        "valid": true,
+        "repositoryId": "urn:forkmesh:repository:sha256:8fe95d441012ebd40a571bc8fc746088b68e7e2574db7c258151a47f7220cacf"
+      }
+    },
+    {
+      "id": "repository-decomposed-root-normalizes",
+      "requirements": [
+        "FM-ID-001"
+      ],
+      "verifiedRoot": "git:cafe\u0301",
+      "expect": {
+        "valid": true,
+        "repositoryId": "urn:forkmesh:repository:sha256:8fe95d441012ebd40a571bc8fc746088b68e7e2574db7c258151a47f7220cacf"
+      }
+    },
+    {
+      "id": "repository-empty-root",
+      "requirements": [
+        "FM-ID-001"
+      ],
+      "verifiedRoot": "",
+      "expect": {
+        "valid": false,
+        "error": "invalid_repository_identity"
+      }
+    }
+  ],
+  "policies": [
+    {
+      "id": "policy-single-role-members",
+      "requirements": [
+        "FM-ID-002"
+      ],
+      "policy": {
+        "schema": "forkmesh-collaboration-policy-v1",
+        "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+        "maintainers": [
+          "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4"
+        ],
+        "moderators": [
+          "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM"
+        ],
+        "notifiers": [
+          "RkpI3DGD9LcXUTQnHXErcT3QN8iPhKUJTE5u8X3t68M"
+        ]
+      },
+      "expect": {
+        "valid": true,
+        "policyId": "sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350"
+      }
+    },
+    {
+      "id": "policy-sorted-members",
+      "requirements": [
+        "FM-ID-002"
+      ],
+      "policy": {
+        "schema": "forkmesh-collaboration-policy-v1",
+        "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+        "maintainers": [
+          "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4",
+          "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0"
+        ],
+        "moderators": [],
+        "notifiers": []
+      },
+      "expect": {
+        "valid": true,
+        "policyId": "sha256:e6c724c89ad09bc97b30f7c7c2aec995fe988a7adde3389450d635f3883cd15a"
+      }
+    },
+    {
+      "id": "policy-unsorted-members",
+      "requirements": [
+        "FM-ID-002"
+      ],
+      "policy": {
+        "schema": "forkmesh-collaboration-policy-v1",
+        "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+        "maintainers": [
+          "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+          "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4"
+        ],
+        "moderators": [],
+        "notifiers": []
+      },
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_policy"
+      }
+    },
+    {
+      "id": "policy-duplicate-member",
+      "requirements": [
+        "FM-ID-002"
+      ],
+      "policy": {
+        "schema": "forkmesh-collaboration-policy-v1",
+        "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+        "maintainers": [
+          "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+          "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0"
+        ],
+        "moderators": [
+          "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM"
+        ],
+        "notifiers": [
+          "RkpI3DGD9LcXUTQnHXErcT3QN8iPhKUJTE5u8X3t68M"
+        ]
+      },
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_policy"
+      }
+    },
+    {
+      "id": "policy-unknown-key",
+      "requirements": [
+        "FM-ID-002"
+      ],
+      "policy": {
+        "schema": "forkmesh-collaboration-policy-v1",
+        "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+        "maintainers": [
+          "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4"
+        ],
+        "moderators": [
+          "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM"
+        ],
+        "notifiers": [
+          "RkpI3DGD9LcXUTQnHXErcT3QN8iPhKUJTE5u8X3t68M"
+        ],
+        "owners": []
+      },
+      "expect": {
+        "valid": false,
+        "error": "invalid_policy"
+      }
+    },
+    {
+      "id": "policy-short-key",
+      "requirements": [
+        "FM-ID-002",
+        "FM-ENC-006"
+      ],
+      "policy": {
+        "schema": "forkmesh-collaboration-policy-v1",
+        "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+        "maintainers": [
+          "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4"
+        ],
+        "moderators": [
+          "AAAA"
+        ],
+        "notifiers": [
+          "RkpI3DGD9LcXUTQnHXErcT3QN8iPhKUJTE5u8X3t68M"
+        ]
+      },
+      "expect": {
+        "valid": false,
+        "error": "invalid_policy_key"
+      }
+    },
+    {
+      "id": "policy-future-schema",
+      "requirements": [
+        "FM-ID-002",
+        "FM-VER-001"
+      ],
+      "policy": {
+        "schema": "forkmesh-collaboration-policy-v2",
+        "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+        "maintainers": [
+          "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4"
+        ],
+        "moderators": [
+          "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM"
+        ],
+        "notifiers": [
+          "RkpI3DGD9LcXUTQnHXErcT3QN8iPhKUJTE5u8X3t68M"
+        ]
+      },
+      "expect": {
+        "valid": false,
+        "error": "invalid_policy"
+      }
+    }
+  ],
+  "objects": [
+    {
+      "id": "object-issue",
+      "requirements": [
+        "FM-ID-003"
+      ],
+      "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+      "family": "issue",
+      "creator": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "objectKey": "S258YjIUJ23e7zEjv9jnzg",
+      "references": [],
+      "expect": {
+        "valid": true,
+        "objectId": "urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c"
+      }
+    },
+    {
+      "id": "object-comment-with-subject",
+      "requirements": [
+        "FM-ID-003"
+      ],
+      "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+      "family": "comment",
+      "creator": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0",
+      "objectKey": "LhZ7ogz9_ROvNUjX_l78xA",
+      "references": [
+        {
+          "relation": "subject",
+          "family": "issue",
+          "object": "urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c"
+        }
+      ],
+      "expect": {
+        "valid": true,
+        "objectId": "urn:forkmesh:collaboration:comment:sha256:7a584b494319ff04135934c21d6c2f1ae99fdbe3fdf7230f77c6322e8471766e"
+      }
+    },
+    {
+      "id": "object-short-object-key",
+      "requirements": [
+        "FM-ID-003",
+        "FM-ENC-006"
+      ],
+      "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+      "family": "issue",
+      "creator": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "objectKey": "PetKFV2_i3Qji8_NwldU",
+      "references": [],
+      "expect": {
+        "valid": false,
+        "error": "invalid_object_key"
+      }
+    },
+    {
+      "id": "object-padded-object-key",
+      "requirements": [
+        "FM-ID-003",
+        "FM-ENC-006"
+      ],
+      "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+      "family": "issue",
+      "creator": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "objectKey": "S258YjIUJ23e7zEjv9jnzg==",
+      "references": [],
+      "expect": {
+        "valid": false,
+        "error": "invalid_object_key"
+      }
+    },
+    {
+      "id": "object-comment-without-subject",
+      "requirements": [
+        "FM-ID-003"
+      ],
+      "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+      "family": "comment",
+      "creator": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0",
+      "objectKey": "LhZ7ogz9_ROvNUjX_l78xA",
+      "references": [],
+      "expect": {
+        "valid": false,
+        "error": "comment_subject_required"
+      }
+    },
+    {
+      "id": "object-issue-with-subject",
+      "requirements": [
+        "FM-ID-003"
+      ],
+      "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+      "family": "issue",
+      "creator": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0",
+      "objectKey": "rNDM2kRi2yqV1AsYz4t3Ig",
+      "references": [
+        {
+          "relation": "subject",
+          "family": "issue",
+          "object": "urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c"
+        }
+      ],
+      "expect": {
+        "valid": false,
+        "error": "unexpected_subject"
+      }
+    },
+    {
+      "id": "object-unknown-family",
+      "requirements": [
+        "FM-ID-003",
+        "FM-VER-001"
+      ],
+      "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+      "family": "wiki",
+      "creator": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0",
+      "objectKey": "QTbWP6P2BFviHQT4uqzsew",
+      "references": [],
+      "expect": {
+        "valid": false,
+        "error": "invalid_object_identity_input"
+      }
+    }
+  ],
+  "refsState": [
+    {
+      "id": "refs-heads-and-tags-sorted-by-refname",
+      "requirements": [
+        "FM-ID-005"
+      ],
+      "advertisementHex": "30303636636363636363636363636363636363636363636363636363636363636363636363636363636363632048454144006d756c74695f61636b20736964652d62616e642d36346b2073796d7265663d484541443a726566732f68656164732f6d61696e0a303033646262626262626262626262626262626262626262626262626262626262626262626262626262626220726566732f68656164732f6d61696e0a303033646161616161616161616161616161616161616161616161616161616161616161616161616161616120726566732f68656164732f7a6574610a303033656363636363636363636363636363636363636363636363636363636363636363636363636363636320726566732f70756c6c2f312f686561640a303033616464646464646464646464646464646464646464646464646464646464646464646464646464646420726566732f746167732f76310a303033646161616161616161616161616161616161616161616161616161616161616161616161616161616120726566732f746167732f76315e7b7d0a303034636565656565656565656565656565656565656565656565656565656565656565656565656565656520726566732f666f726b6d6573682f6d657267652d6a6f62732f6a6f622d310a30303030",
+      "expect": {
+        "canonicalText": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb refs/heads/main\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/zeta\ndddddddddddddddddddddddddddddddddddddddd refs/tags/v1",
+        "stateHash": "1d58b5c21ffb602c8a4a9f32267457fb900a0477fdeec436dfc5a7361167a027"
+      }
+    },
+    {
+      "id": "refs-bytewise-refname-order",
+      "requirements": [
+        "FM-ID-005"
+      ],
+      "advertisementHex": "303034626666666666666666666666666666666666666666666666666666666666666666666666666666666620726566732f68656164732f612f62006167656e743d6769742f322e34370a303033636565656565656565656565656565656565656565656565656565656565656565656565656565656520726566732f68656164732f612d620a303033616464646464646464646464646464646464646464646464646464646464646464646464646464646420726566732f68656164732f610a30303030",
+      "expect": {
+        "canonicalText": "dddddddddddddddddddddddddddddddddddddddd refs/heads/a\neeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee refs/heads/a-b\nffffffffffffffffffffffffffffffffffffffff refs/heads/a/b",
+        "stateHash": "5c07b0c1d5255049230e831a6aefd7e9c98f2d91f189f7a0f43605c7902cc350"
+      }
+    },
+    {
+      "id": "refs-empty-advertisement",
+      "requirements": [
+        "FM-ID-005"
+      ],
+      "advertisementHex": "30303030",
+      "expect": {
+        "canonicalText": "",
+        "stateHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "migration": [
+    {
+      "id": "migration-job-id",
+      "requirements": [
+        "FM-ID-006"
+      ],
+      "operation": "migrationId",
+      "repositoryId": "forkmesh:alice/demo",
+      "expect": {
+        "value": "mig_9e9a3631e463b163f61c088a"
+      }
+    },
+    {
+      "id": "migration-object-key",
+      "requirements": [
+        "FM-ID-006"
+      ],
+      "operation": "objectKey",
+      "objectType": "issues",
+      "sourceId": "github:issue:42",
+      "expect": {
+        "value": "7346edcf42128d1dfc39e63e24a1a29e7d9c92aa8990ab703c3c0fbc5cb74bd5"
+      }
+    },
+    {
+      "id": "migration-state-hash",
+      "requirements": [
+        "FM-ID-006",
+        "FM-MIG-001"
+      ],
+      "operation": "stateHash",
+      "document": {
+        "schema": "forkmesh-repository-migration-state-v1",
+        "repositoryId": "forkmesh:alice/demo",
+        "providerRepositoryId": "gitea:caf\u00e9",
+        "objects": [
+          {
+            "objectType": "git_refs",
+            "sourceKey": "k1",
+            "payloadHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "objectType": "issues",
+            "sourceKey": "k2",
+            "payloadHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ],
+        "counts": {
+          "git_refs": 1,
+          "issues": 1,
+          "pull_requests": 0,
+          "reviews": 0,
+          "releases": 0,
+          "documentation": 0,
+          "labels": 0,
+          "users": 0,
+          "collaboration_history": 0
+        },
+        "unsupported": [
+          "projects",
+          "wiki"
+        ],
+        "skipped": [],
+        "skippedOverflow": 0,
+        "releaseCoverage": {
+          "schema": "forkmesh-release-coverage-v1",
+          "retainedDocumentation": [],
+          "documentationSiteInventory": "unavailable",
+          "missingTags": [],
+          "missingArtifacts": [],
+          "missingChecksums": [],
+          "missingProvenance": [],
+          "missingManifests": [],
+          "missingDocumentationAssets": []
+        }
+      },
+      "expect": {
+        "value": "sha256:17495aa189a1a6d38fa5f90dc0782d3c365b2251a354817542d9f4fe700eb2dd"
+      }
+    }
+  ]
+}

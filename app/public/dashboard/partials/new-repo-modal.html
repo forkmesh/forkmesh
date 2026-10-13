@@ -1,0 +1,155 @@
+    <div
+      data-new-repo-modal
+      class="hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="newRepoModalTitle"
+    >
+      <button data-new-repo-backdrop type="button" aria-label="Close new repository" class="absolute inset-0 cursor-default"></button>
+      <div class="relative z-10 flex max-h-[min(760px,calc(100vh-3rem))] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
+        <div class="flex items-center justify-between border-b border-border px-4 py-3">
+          <div class="min-w-0">
+            <h2 id="newRepoModalTitle" data-new-repo-title class="text-sm font-semibold text-foreground">Create &amp; mirror a repository</h2>
+            <p data-new-repo-subtitle class="mt-0.5 text-xs text-muted-foreground">Describe the repo, then finish creating and mirroring it from your ForkMesh desktop node.</p>
+          </div>
+          <button data-new-repo-close type="button" aria-label="Close new repository" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+            <i data-lucide="x" class="h-4 w-4"></i>
+          </button>
+        </div>
+
+        <form data-new-repo-form class="grid min-h-0 gap-4 overflow-y-auto p-4">
+          <div data-new-repo-details class="grid gap-4">
+            <label data-new-repo-name-wrap class="grid gap-1.5 text-xs text-muted-foreground">
+              Repository name
+              <input data-new-repo-name type="text" autocomplete="off" spellcheck="false" placeholder="my-project" required class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+            </label>
+
+            <div class="grid gap-1.5 text-xs text-muted-foreground">
+              Source
+              <div data-new-repo-source-toggle class="grid grid-cols-2 rounded-md border border-border overflow-hidden text-xs">
+                <button data-new-repo-source="empty" type="button" aria-pressed="true" class="bg-secondary text-foreground px-3 py-2 transition-colors">New repository</button>
+                <button data-new-repo-source="remote" type="button" aria-pressed="false" class="text-muted-foreground hover:text-foreground px-3 py-2 border-l border-border transition-colors">Remote clone URL</button>
+                <button data-new-repo-source="local" type="button" aria-pressed="false" class="text-muted-foreground hover:text-foreground px-3 py-2 border-t border-border transition-colors">Local repository</button>
+                <button data-new-repo-source="provider" type="button" aria-pressed="false" class="text-muted-foreground hover:text-foreground px-3 py-2 border-l border-t border-border transition-colors">GitHub / GitLab / Codeberg</button>
+              </div>
+              <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo.git" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+              <span data-new-repo-source-hint class="text-[11px] leading-4 text-muted-foreground">ForkMesh clones this URL into a bare mirror. Local paths never leave your machine.</span>
+            </div>
+
+            <div data-new-repo-provider-options class="hidden grid gap-3 rounded-lg border border-border bg-background p-3">
+              <label class="grid gap-1.5 text-xs text-muted-foreground">
+                Import type
+                <select data-new-repo-import-mode class="h-9 rounded-md border border-border bg-card px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20">
+                  <option value="import">Full provider metadata &amp; collaboration history (no Git contents)</option>
+                  <option value="stub">Create a non-mirrored stub</option>
+                </select>
+              </label>
+              <label class="grid gap-1.5 text-xs text-muted-foreground">
+                Provider access token <span class="text-[11px] font-normal">(required for private repositories; optional for public)</span>
+                <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Request-scoped GitHub, GitLab, or Codeberg token" class="h-9 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+              </label>
+              <p class="text-[11px] leading-4 text-muted-foreground">The token passes through ForkMesh’s Worker only for this request and is forwarded to the provider; it is not persisted. The page repeats request-scoped calls only while it advances the transfer, then clears the form. Executable source files are not fetched by the provider adapter: Git object transfer stays on the normal mirror path, while provider objects and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
+            </div>
+
+            <!-- ForkMesh-hosted options (docs/HOSTED_REPOS.md): shown when this
+                 relay's core nodes host repositories (GET /api/hosted-repositories). -->
+            <div data-new-repo-hosted-options class="hidden grid gap-3 rounded-lg border border-border bg-background p-3">
+              <label data-new-repo-owner-wrap class="grid gap-1.5 text-xs text-muted-foreground">
+                Owner
+                <select data-new-repo-owner class="h-9 rounded-md border border-border bg-card px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"></select>
+              </label>
+              <label data-new-repo-readme-wrap class="flex items-center gap-2 text-xs text-foreground">
+                <input data-new-repo-readme type="checkbox" checked class="h-4 w-4 rounded border-border" />
+                Initialize with a README
+              </label>
+              <div data-new-repo-init-wrap class="grid grid-cols-2 gap-3">
+                <label class="grid gap-1.5 text-xs text-muted-foreground">
+                  .gitignore
+                  <select data-new-repo-gitignore class="h-9 rounded-md border border-border bg-card px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20">
+                    <option value="">None</option>
+                  </select>
+                </label>
+                <label class="grid gap-1.5 text-xs text-muted-foreground">
+                  License
+                  <select data-new-repo-license class="h-9 rounded-md border border-border bg-card px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20">
+                    <option value="">None</option>
+                  </select>
+                </label>
+              </div>
+              <p data-new-repo-quota class="text-[11px] leading-4 text-muted-foreground"></p>
+            </div>
+
+            <label data-new-repo-visibility-wrap class="grid gap-1.5 text-xs text-muted-foreground">
+              Visibility
+              <select data-new-repo-visibility class="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20">
+                <option value="public">Public — listed in the catalog and browsable by anyone</option>
+                <option value="private">Private — encrypted mirror, contents stay hidden</option>
+              </select>
+            </label>
+
+            <label data-new-repo-description-wrap class="grid gap-1.5 text-xs text-muted-foreground">
+              Description <span class="text-[11px] font-normal text-muted-foreground">(optional)</span>
+              <textarea data-new-repo-description rows="2" maxlength="240" spellcheck="true" placeholder="What is this repository for?" class="resize-y rounded-md border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"></textarea>
+            </label>
+
+            <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground"></p>
+            <div data-new-repo-migration-status class="hidden rounded-md border border-border bg-card p-3 text-xs" role="status" aria-live="polite">
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span data-new-repo-setup-time class="text-foreground"></span>
+                <span data-new-repo-transfer-time class="text-muted-foreground"></span>
+              </div>
+              <p data-new-repo-migration-phase class="mt-1 text-muted-foreground"></p>
+            </div>
+          </div>
+
+          <div data-new-repo-steps role="status" aria-live="polite" class="hidden rounded-lg border border-border bg-card p-4">
+            <p class="text-sm font-semibold text-foreground">Desktop handoff required</p>
+            <p data-new-repo-steps-intro class="mt-1 text-xs leading-5 text-muted-foreground">The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ForkMesh desktop node:</p>
+            <ol data-new-repo-steps-list class="mt-2 grid gap-1.5 text-xs text-muted-foreground"></ol>
+            <a href="/desktop" class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline">
+              <i data-lucide="download" class="h-3.5 w-3.5"></i>
+              Download the desktop app
+            </a>
+          </div>
+
+          <div data-new-repo-push role="status" aria-live="polite" class="hidden rounded-lg border border-border bg-card p-4">
+            <p class="text-sm font-semibold text-foreground">Repository created — push your code</p>
+            <p class="mt-1 text-xs leading-5 text-muted-foreground">
+              ForkMesh hosts <span data-new-repo-push-repo class="font-mono text-foreground"></span> <span data-new-repo-push-intro>and it stays empty until your first push. Run these in your project folder; git asks for the credential below.</span>
+            </p>
+            <pre data-new-repo-push-commands class="mt-3 overflow-x-auto whitespace-pre rounded border border-border bg-background p-2 text-[11px] leading-5 text-foreground"></pre>
+            <div class="mt-3 grid gap-2 text-xs">
+              <label class="grid gap-1 text-muted-foreground">
+                Username
+                <code data-new-repo-push-username class="select-all break-all rounded border border-border bg-background p-2 text-foreground"></code>
+              </label>
+              <label class="grid gap-1 text-muted-foreground">
+                Password
+                <code data-new-repo-push-password class="select-all break-all rounded border border-border bg-background p-2 text-foreground"></code>
+              </label>
+            </div>
+            <p class="mt-2 text-[11px] leading-4 text-muted-foreground">
+              This credential is issued to the browser session you are signed in with, expires <span data-new-repo-push-expiry class="text-foreground"></span>, and is not stored by ForkMesh — signing this session out revokes it immediately. <span data-new-repo-push-visibility>Your repository is public; a private mirror is an owner-sealed archive only a ForkMesh node holding your key can publish.</span>
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <button data-new-repo-push-copy type="button" class="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:bg-secondary transition-colors">
+                <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+                <span data-new-repo-push-copy-label>Copy commands</span>
+              </button>
+              <a data-new-repo-push-open href="/dashboard/repos" class="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+                <i data-lucide="folder-open" class="h-3.5 w-3.5"></i>
+                Open repository
+              </a>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <button data-new-repo-cancel type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:bg-secondary transition-colors"><span data-new-repo-cancel-label>Cancel</span></button>
+            <button data-new-repo-submit type="submit" class="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+              <i data-lucide="git-branch-plus" class="h-4 w-4"></i>
+              <span data-new-repo-submit-label>Create &amp; mirror</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>

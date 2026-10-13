@@ -1,0 +1,99 @@
+          <section data-view="sugar-break" class="view active h-full overflow-y-auto sugar-viz">
+            <style>
+              .sugar-viz { --sugar-free: #1baf7a; --sugar-slip: #d9534f; --sugar-bar: #1baf7a; --sugar-track: rgb(var(--dashboard-border-rgb)); --sugar-open: rgb(var(--dashboard-border-rgb) / 0.55); --sugar-ink: rgb(var(--dashboard-foreground-rgb)); --sugar-ink-muted: rgb(var(--dashboard-muted-foreground-rgb)); }
+              :root[data-dashboard-theme="dark"] .sugar-viz { --sugar-free: #199e70; --sugar-slip: #e0645f; --sugar-bar: #199e70; }
+              .sugar-viz svg { display: block; width: 100%; height: auto; overflow: visible; }
+              .sugar-viz .sugar-plus { display: block; width: 100%; min-height: 5.5rem; border-radius: .75rem; background: var(--sugar-free); color: #fff; font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+              .sugar-viz .sugar-plus:hover { opacity: .9; }
+              .sugar-viz .sugar-plus:active { transform: scale(.98); }
+              .sugar-viz .sugar-plus small { display: block; font-size: .8rem; font-weight: 600; opacity: .9; }
+              .sugar-viz .sugar-plus:disabled, .sugar-viz .sugar-slip:disabled { opacity: .5; cursor: not-allowed; }
+              .sugar-viz .sugar-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr)); gap: .375rem; }
+              .sugar-viz .sugar-day { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 2.75rem; border-radius: .5rem; border: 1px solid transparent; font-size: .75rem; font-weight: 600; color: var(--sugar-ink); }
+              .sugar-viz .sugar-day span { font-size: .625rem; font-weight: 500; opacity: .85; }
+              .sugar-viz .sugar-day-free { background: var(--sugar-free); color: #fff; }
+              .sugar-viz .sugar-day-slip { background: var(--sugar-slip); color: #fff; }
+              .sugar-viz .sugar-day-open { background: var(--sugar-open); }
+              .sugar-viz .sugar-day-upcoming { border: 1px dashed var(--sugar-track); color: var(--sugar-ink-muted); }
+              .sugar-viz .sugar-day-today { outline: 2px solid var(--sugar-ink); outline-offset: 1px; }
+              .sugar-viz .sugar-swatch { display: inline-block; width: .75rem; height: .75rem; border-radius: .2rem; vertical-align: -1px; margin-right: .25rem; }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Sugar Break</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">Take a break from sugar for a month or any length you choose, and tap +1 every time you skip it, on the web, desktop, and mobile.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button data-sugar-refresh data-sugar-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="refresh-cw" class="mr-1 inline h-3.5 w-3.5"></i>Refresh</button>
+                  <button data-sugar-manage data-sugar-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="settings" class="mr-1 inline h-3.5 w-3.5"></i>Plugin data</button>
+                </div>
+              </div>
+              <div data-sugar-error class="mb-3 hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
+              <div data-sugar-notice class="mb-3 hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+
+              <section data-sugar-install-panel class="hidden rounded-lg border border-border bg-card p-8 text-center">
+                <h2 class="text-base font-semibold text-foreground">Install Sugar Break</h2>
+                <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Start a sugar break of a month or any length you like, then press +1 every time you skip sugar. Watch your sugar-free days, streak, and progress add up. Your break is private to your account and syncs across the web dashboard, the desktop app, and the mobile app, and on iPhone it can read the sugar Apple Health records. Every break is encrypted at rest with a key minted for your account alone.</p>
+                <button data-sugar-install type="button" class="mt-4 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Install Sugar Break</button>
+              </section>
+
+              <div data-sugar-app class="hidden grid gap-4">
+                <form data-sugar-start-panel class="hidden rounded-lg border border-border bg-card p-4">
+                  <h2 class="text-sm font-semibold text-foreground">Start sugar break</h2>
+                  <p class="mt-1 text-xs text-muted-foreground">Pick how long to go without sugar. Your break starts today; press +1 each time you skip sugar.</p>
+                  <p data-sugar-last-result class="mt-3 hidden text-sm font-semibold text-foreground"></p>
+                  <div class="mt-3 flex flex-wrap items-end gap-2">
+                    <label class="text-xs text-muted-foreground">Length<select data-sugar-length class="mt-1 block rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"></select></label>
+                    <button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Start sugar break</button>
+                  </div>
+                </form>
+
+                <div data-sugar-active-panel class="hidden grid gap-4">
+                  <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+                    <section class="rounded-lg border border-border bg-card p-4">
+                      <h2 data-sugar-day-label class="text-base font-semibold text-foreground"></h2>
+                      <p data-sugar-range class="mt-1 text-xs text-muted-foreground"></p>
+                      <div data-sugar-progress class="mt-3"></div>
+                      <p data-sugar-progress-text class="mt-1 text-xs text-muted-foreground"></p>
+                      <button data-sugar-skip type="button" class="sugar-plus mt-4">+1<small>I skipped sugar</small></button>
+                      <button data-sugar-slip type="button" class="sugar-slip mt-2 w-full rounded-md border border-border px-3 py-2 text-xs text-foreground">I had sugar</button>
+                    </section>
+                    <section class="rounded-lg border border-border bg-card p-4">
+                      <div class="flex flex-wrap items-baseline justify-between gap-2">
+                        <h2 class="text-sm font-semibold text-foreground">Today</h2>
+                        <p data-sugar-today class="text-xs text-muted-foreground"></p>
+                      </div>
+                      <div class="mt-3 grid gap-1" data-sugar-events></div>
+                    </section>
+                  </div>
+                  <section class="rounded-lg border border-border bg-card p-4">
+                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-5" data-sugar-stats></div>
+                  </section>
+                  <section class="rounded-lg border border-border bg-card p-4">
+                    <div class="flex flex-wrap items-baseline justify-between gap-2">
+                      <h2 class="text-sm font-semibold text-foreground">Every day of your break</h2>
+                      <p class="text-xs text-muted-foreground"><span class="sugar-swatch sugar-day-free"></span>Sugar-free <span class="sugar-swatch sugar-day-slip ml-2"></span>Had sugar <span class="sugar-swatch sugar-day-open ml-2"></span>Nothing logged <span class="sugar-swatch sugar-day-upcoming ml-2"></span>To come</p>
+                    </div>
+                    <div class="sugar-days mt-3" data-sugar-days></div>
+                    <div class="mt-4 flex justify-end">
+                      <button data-sugar-end type="button" class="rounded-md border border-destructive px-3 py-2 text-xs text-destructive">End break early</button>
+                    </div>
+                  </section>
+                </div>
+
+                <section data-sugar-history-panel class="hidden rounded-lg border border-border bg-card p-4">
+                  <h2 class="text-sm font-semibold text-foreground">Past breaks</h2>
+                  <div class="mt-3 grid gap-1" data-sugar-history></div>
+                </section>
+
+                <p class="text-xs text-muted-foreground">Apple Health sugar comes in through the ForkMesh iPhone app: turn on Apple Health in Sugar Break there to see the grams of sugar Health recorded beside each day. Nothing is written to Apple Health.</p>
+              </div>
+            </div>
+
+            <dialog data-sugar-manage-dialog class="w-full max-w-lg rounded-lg border border-border bg-card p-5 text-foreground shadow-2xl backdrop:bg-background/80">
+              <h2 class="text-base font-semibold">Sugar Break data</h2>
+              <p class="mt-2 text-sm text-muted-foreground">Export your breaks as JSON, or uninstall Sugar Break from your account. Uninstalling downloads your export first, then deletes your breaks on web, desktop, and mobile. Apple Health keeps its own records.</p>
+              <div class="mt-4 flex flex-wrap justify-end gap-2"><button data-sugar-export type="button" class="rounded-md border border-border px-3 py-2 text-xs">Export my data</button><button data-sugar-uninstall type="button" class="rounded-md border border-destructive px-3 py-2 text-xs text-destructive">Uninstall…</button><button data-sugar-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs">Close</button></div>
+            </dialog>
+          </section>

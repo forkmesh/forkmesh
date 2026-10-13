@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Mobile app" %}
+{% set slug = "mobile-app" %}
+{% set image = "/assets/blog/features/mobile-app.webp" %}
+{% set description = "Carry the mesh in your pocket: browse repositories, follow activity, chat, and get notifications from a native mobile app." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Mobile, web &amp; IDE</p>
+            <h1>Mobile app</h1>
+            <p class="lede">Carry the mesh in your pocket: browse repositories, follow activity, chat, and get notifications from a native mobile app.</p>
+            <div class="meta"><span class="pill">Feature 69 of 72</span><span>Flutter</span><span>Mobile, web &amp; IDE</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/mobile-app.webp" alt="Abstract ForkMesh artwork for Mobile app">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Mobile app gives ForkMesh a concrete mechanism for a native pocket surface for repository activity and chat. Carry the mesh in your pocket: browse repositories, follow activity, chat, and get notifications from a native mobile app.</p>
+          <p>A distributed forge still needs clean entry points for readers, contributors, mobile users, and editor workflows. In ForkMesh, mobile app addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles mobile app through the same split it uses across the product: ForkMesh exposes web, mobile, editor, docs, status, and clean URL surfaces on top of the desktop-node and mainnode model.</p>
+          <p>The behavior is intentionally narrow: Carry the mesh in your pocket: browse repositories, follow activity, chat, and get notifications from a native mobile app. Those surfaces route to live or mirrored data; they are access layers, not the canonical Git store.</p>
+          <h2>Where it fits</h2>
+          <p>Use mobile app when people need to browse, contribute, learn, and receive updates outside the main desktop window.</p>
+          <p>It pairs with the rest of Mobile, web &amp; IDE because Mobile app keeps a native pocket surface for repository activity and chat connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/clean-repo-urls/">← Clean repo URLs</a>
+          <a href="/blog/vs-code-extension/">VS Code Marketplace plugin →</a>
+        </nav>
+{% endblock %}

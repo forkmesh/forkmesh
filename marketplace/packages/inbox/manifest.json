@@ -1,0 +1,64 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "inbox",
+  "name": "Inbox",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Agents",
+  "version": "1.0.0",
+  "summary": "The Inbox: pings, mentions, reviews and agent results waiting for you, as a tab on iPhone and Android and the Pings page on the desktop.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Inbox plugin card"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:inbox",
+    "ios": "builtin:inbox",
+    "android": "builtin:inbox",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "notifications.read",
+      "label": "Read the pings, mentions and reviews addressed to you",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "AI code review" %}
+{% set slug = "ai-code-review" %}
+{% set image = "/assets/blog/features/ai-code-review.webp" %}
+{% set description = "One click asks an AI reviewer for findings, each anchored to the exact lines as a mini-diff suggestion. Apply a single quick-fix or fix everything at once." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Pull requests &amp; review</p>
+            <h1>AI code review</h1>
+            <p class="lede">One click asks an AI reviewer for findings, each anchored to the exact lines as a mini-diff suggestion. Apply a single quick-fix or fix everything at once.</p>
+            <div class="meta"><span class="pill">Feature 27 of 72</span><span>AI</span><span>Pull requests &amp; review</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/ai-code-review.webp" alt="Abstract ForkMesh artwork for AI code review">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>AI code review gives ForkMesh a concrete mechanism for line-anchored AI findings that turn into reviewable fix suggestions. One click asks an AI reviewer for findings, each anchored to the exact lines as a mini-diff suggestion. Apply a single quick-fix or fix everything at once.</p>
+          <p>Review becomes risky when merge state, discussion, and final application are trapped in a central service. In ForkMesh, AI code review addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles AI code review through the same split it uses across the product: ForkMesh derives diffs from live branches or signed patches, checks mergeability against the live base, and records review activity as portable data.</p>
+          <p>The behavior is intentionally narrow: One click asks an AI reviewer for findings, each anchored to the exact lines as a mini-diff suggestion. Apply a single quick-fix or fix everything at once. Maintainers can verify what changed, who proposed it, and whether it will merge before touching the base branch.</p>
+          <h2>Where it fits</h2>
+          <p>Use AI code review when contributors need familiar review mechanics without making one hosted PR database the source of truth.</p>
+          <p>It pairs with the rest of Pull requests &amp; review because AI code review keeps line-anchored AI findings that turn into reviewable fix suggestions connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/review-conversations/">← Review conversations</a>
+          <a href="/blog/ai-conflict-resolution/">AI conflict resolution →</a>
+        </nav>
+{% endblock %}

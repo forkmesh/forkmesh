@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">Calorie Counter dashboard with today's calorie ring, macro bars, a 30-day calorie chart, and a challenge leaderboard</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <text x="64" y="84" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f4f5f7">Calorie Counter</text>
+  <text x="64" y="114" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#9aa3b2">Private diary · photo and barcode identification · goals · reminders · challenges</text>
+  <g transform="translate(64,150)">
+    <rect width="300" height="220" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <circle cx="110" cy="110" r="70" fill="none" stroke="#2a2f3a" stroke-width="14"/>
+    <circle cx="110" cy="110" r="70" fill="none" stroke="#3987e5" stroke-width="14" stroke-linecap="round" stroke-dasharray="286 440" transform="rotate(-90 110 110)"/>
+    <text x="110" y="104" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f4f5f7">1,310</text>
+    <text x="110" y="128" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">of 2,000 kcal</text>
+    <text x="210" y="60" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">Protein</text>
+    <rect x="210" y="68" width="70" height="8" rx="4" fill="#2a2f3a"/><rect x="210" y="68" width="48" height="8" rx="4" fill="#3987e5"/>
+    <text x="210" y="106" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">Carbs</text>
+    <rect x="210" y="114" width="70" height="8" rx="4" fill="#2a2f3a"/><rect x="210" y="114" width="40" height="8" rx="4" fill="#d95926"/>
+    <text x="210" y="152" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">Fat</text>
+    <rect x="210" y="160" width="70" height="8" rx="4" fill="#2a2f3a"/><rect x="210" y="160" width="30" height="8" rx="4" fill="#199e70"/>
+  </g>
+  <g transform="translate(392,150)">
+    <rect width="520" height="220" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <text x="20" y="32" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#f4f5f7">Last 30 days · calories vs goal</text>
+    <line x1="20" y1="120" x2="500" y2="120" stroke="#c98500" stroke-width="2" stroke-dasharray="6 4"/>
+    <g fill="#3987e5">
+      <rect x="24" y="150" width="10" height="40" rx="3"/><rect x="40" y="130" width="10" height="60" rx="3"/><rect x="56" y="110" width="10" height="80" rx="3"/><rect x="72" y="140" width="10" height="50" rx="3"/><rect x="88" y="125" width="10" height="65" rx="3"/><rect x="104" y="135" width="10" height="55" rx="3"/><rect x="120" y="100" width="10" height="90" rx="3"/><rect x="136" y="145" width="10" height="45" rx="3"/><rect x="152" y="128" width="10" height="62" rx="3"/><rect x="168" y="132" width="10" height="58" rx="3"/><rect x="184" y="118" width="10" height="72" rx="3"/><rect x="200" y="140" width="10" height="50" rx="3"/><rect x="216" y="136" width="10" height="54" rx="3"/><rect x="232" y="124" width="10" height="66" rx="3"/><rect x="248" y="112" width="10" height="78" rx="3"/><rect x="264" y="142" width="10" height="48" rx="3"/><rect x="280" y="138" width="10" height="52" rx="3"/><rect x="296" y="128" width="10" height="62" rx="3"/><rect x="312" y="150" width="10" height="40" rx="3"/><rect x="328" y="134" width="10" height="56" rx="3"/><rect x="344" y="126" width="10" height="64" rx="3"/><rect x="360" y="144" width="10" height="46" rx="3"/><rect x="376" y="130" width="10" height="60" rx="3"/><rect x="392" y="122" width="10" height="68" rx="3"/><rect x="408" y="140" width="10" height="50" rx="3"/><rect x="424" y="136" width="10" height="54" rx="3"/><rect x="440" y="146" width="10" height="44" rx="3"/><rect x="456" y="132" width="10" height="58" rx="3"/><rect x="472" y="128" width="10" height="62" rx="3"/><rect x="488" y="152" width="10" height="38" rx="3"/>
+    </g>
+    <text x="20" y="208" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9aa3b2">Goal 2,000 kcal · week average 1,740 kcal · 12-day logging streak</text>
+  </g>
+  <g transform="translate(940,150)">
+    <rect width="276" height="220" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <text x="20" y="32" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#f4f5f7">Weight · 90 days</text>
+    <polyline points="20,80 60,86 100,92 140,90 180,104 220,112 256,120" fill="none" stroke="#199e70" stroke-width="2.5" stroke-linejoin="round"/>
+    <line x1="20" y1="150" x2="256" y2="150" stroke="#c98500" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="20" y="200" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9aa3b2">82.4 kg → 78.1 kg · target 75 kg</text>
+  </g>
+  <g transform="translate(64,400)">
+    <rect width="1152" height="256" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <text x="20" y="34" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#f4f5f7">Challenge · Spring shred · lose the most percent by 30 April</text>
+    <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#f4f5f7">
+      <text x="20" y="80">1</text><text x="60" y="80">maya</text><text x="400" y="80">4.8% of start weight</text>
+      <rect x="640" y="70" width="480" height="10" rx="5" fill="#2a2f3a"/><rect x="640" y="70" width="380" height="10" rx="5" fill="#3987e5"/>
+      <text x="20" y="130">2</text><text x="60" y="130">you</text><text x="400" y="130">3.9% of start weight</text>
+      <rect x="640" y="120" width="480" height="10" rx="5" fill="#2a2f3a"/><rect x="640" y="120" width="310" height="10" rx="5" fill="#3987e5"/>
+      <text x="20" y="180">3</text><text x="60" y="180">jordan</text><text x="400" y="180">2.1% of start weight</text>
+      <rect x="640" y="170" width="480" height="10" rx="5" fill="#2a2f3a"/><rect x="640" y="170" width="166" height="10" rx="5" fill="#3987e5"/>
+      <text x="20" y="230" font-size="12" fill="#9aa3b2">Invited: sam · Ends in 19 days · Standings show progress only, never the diary</text>
+    </g>
+  </g>
+</svg>

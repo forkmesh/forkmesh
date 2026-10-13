@@ -1,0 +1,14 @@
+{
+  "category": "CRM and support",
+  "integrations": [
+    "hubspot",
+    "salesforce",
+    "pipedrive",
+    "zohoCrm",
+    "freshdesk",
+    "zendesk",
+    "intercom",
+    "helpscout",
+    "attio"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "_docs": "https://forkmesh.com/docs/start-config/",
+  "projectName": "Acme Code",
+  "logo": "logo.svg",
+  "theme": "",
+  "host": "203.0.113.10",
+  "sshUser": "root",
+  "port": 22,
+  "sshPassword": "change-me-ssh-password",
+  "sshPrivateKey": "",
+  "sshPassphrase": "",
+  "hostKeyFingerprint": "",
+  "domain": "code.example.com",
+  "adminUsername": "ada",
+  "adminEmail": "ada@example.com",
+  "adminPassword": "change-me-admin-password",
+  "ownerType": "org",
+  "ownerName": "acme",
+  "owners": [
+    {
+      "username": "grace",
+      "email": "grace@example.com",
+      "password": "change-me-grace-password"
+    },
+    {
+      "username": "linus",
+      "email": "linus@example.com",
+      "password": "change-me-linus-password"
+    }
+  ],
+  "mailProvider": "none",
+  "mailApiKey": "",
+  "mailFrom": "",
+  "mailgunDomain": "",
+  "mailgunRegion": "us",
+  "ownWorld": true,
+  "listOnHomepage": true
+}

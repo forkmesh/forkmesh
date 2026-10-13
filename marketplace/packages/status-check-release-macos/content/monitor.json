@@ -1,0 +1,7 @@
+{
+  "label": "macOS Release",
+  "systems": [
+    "release_macos"
+  ],
+  "prefixes": []
+}

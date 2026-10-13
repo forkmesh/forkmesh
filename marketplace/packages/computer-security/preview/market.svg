@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Computer Security Checkup</title>
+  <desc id="desc">A security checkup table with green passing checks, amber reviews and an orange warning.</desc>
+  <rect width="1200" height="720" fill="#f6f8fb"/>
+  <rect x="42" y="38" width="1116" height="644" rx="18" fill="#ffffff" stroke="#d7dee9" stroke-width="2"/>
+  <path d="M94 102l38-18 38 18v46c0 44-38 59-38 59s-38-15-38-59z" fill="#1d6f42"/>
+  <path d="M113 145l13 13 28-35" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="196" y="118" fill="#172033" font-family="system-ui, sans-serif" font-size="34" font-weight="700">Computer Security Checkup</text>
+  <text x="196" y="154" fill="#62708a" font-family="system-ui, sans-serif" font-size="19">108 checks: 82 pass, 14 need review, 10 warnings, 0 critical, 2 unavailable</text>
+  <rect x="940" y="92" width="166" height="48" rx="9" fill="#235fdb"/>
+  <text x="962" y="123" fill="#fff" font-family="system-ui, sans-serif" font-size="17" font-weight="650">Run checkup</text>
+  <text x="92" y="237" fill="#64748b" font-family="system-ui, sans-serif" font-size="16" font-weight="650">STATUS</text>
+  <text x="238" y="237" fill="#64748b" font-family="system-ui, sans-serif" font-size="16" font-weight="650">CATEGORY</text>
+  <text x="470" y="237" fill="#64748b" font-family="system-ui, sans-serif" font-size="16" font-weight="650">CHECK</text>
+  <line x1="84" y1="255" x2="1116" y2="255" stroke="#d7dee9"/>
+  <g font-family="system-ui, sans-serif" font-size="17">
+    <rect x="88" y="280" width="62" height="29" rx="14" fill="#dcfce7"/><text x="101" y="301" fill="#166534">Pass</text><text x="238" y="301" fill="#334155">Firewall</text><text x="470" y="301" fill="#172033">A firewall is configured</text><text x="790" y="301" fill="#475569">A local firewall configuration was found.</text>
+    <rect x="88" y="345" width="78" height="29" rx="14" fill="#fef3c7"/><text x="100" y="366" fill="#92400e">Review</text><text x="238" y="366" fill="#334155">Network exposure</text><text x="470" y="366" fill="#172033">SSH is not exposed</text><text x="790" y="366" fill="#475569">TCP port 22 is listening. Confirm it is required.</text>
+    <rect x="88" y="410" width="86" height="29" rx="14" fill="#ffedd5"/><text x="100" y="431" fill="#9a3412">Warning</text><text x="238" y="431" fill="#334155">Kernel hardening</text><text x="470" y="431" fill="#172033">kernel.dmesg_restrict</text><text x="790" y="431" fill="#475569">Expected 1.</text>
+    <rect x="88" y="475" width="62" height="29" rx="14" fill="#dcfce7"/><text x="101" y="496" fill="#166534">Pass</text><text x="238" y="496" fill="#334155">Rootkits</text><text x="470" y="496" fill="#172033">No adore rootkit artifact</text><text x="790" y="496" fill="#475569">No known artifact found.</text>
+  </g>
+  <text x="92" y="590" fill="#64748b" font-family="system-ui, sans-serif" font-size="17">Read-only local scan. Review an open port before deciding whether it is unnecessary.</text>
+</svg>

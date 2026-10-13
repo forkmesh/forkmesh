@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "type": "forkmesh.ssh-post-receive-refresh",
+  "triggerPath": "/run/forkmesh-mirror-refresh/pending",
+  "notifyUser": "git",
+  "mirrorUser": "forkmesh-mirror",
+  "pythonProgram": "/usr/bin/python3.13",
+  "refreshProgram": "/opt/forkmesh-mirror/headless_mirror_refresh.py",
+  "refreshConfigPath": "/var/lib/forkmesh-mirror/gateway/mirror-refresh.json",
+  "gatewayConfigPath": "/var/lib/forkmesh-mirror/gateway/mirror-gateway.json",
+  "mirrorService": "forkmesh-mirror.service",
+  "healthTimeoutSeconds": 180
+}

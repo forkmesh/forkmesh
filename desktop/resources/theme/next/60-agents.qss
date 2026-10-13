@@ -1,0 +1,118 @@
+QPushButton#teammateRailAvatar:hover { background-color: @surfaceRaised; }
+
+QFrame#teammateDashboardSummary, QFrame#teammateBriefingHero {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QFrame#teammateSkillUsageCard, QFrame#teammatePerformanceCard,
+QFrame#teammateBriefingSection, QFrame#teammateBriefingContribution,
+#teammateEmpty, #teammateHero, #teammateSection, #teammateSidePanel,
+QGroupBox#teammateFormSection {
+    border-radius: 12px;
+}
+#teammateHero[kind="scheduled"], #teammateHero[kind="working"],
+#teammateHero[kind="waiting"] {
+    border-color: @border;
+}
+
+QPushButton#teammateCard, QPushButton#teammateCard[viewMode="list"] { border-radius: 12px; }
+QPushButton#teammateCard[status="scheduled"], QPushButton#teammateCard[status="idle"],
+QPushButton#teammateCard[status="working"] {
+    border-color: @border;
+}
+QPushButton#teammateCard:hover { border-color: @borderStrong; }
+
+#teammateBriefingEyebrow, #teammateInvocationEyebrow { color: @fgMuted; }
+#teammateHandle, #teammateHeroHandle, #teammateMentionPreview,
+#teammateLinkedShortcut {
+    color: @fgMuted;
+}
+#teammateActivityDot { background-color: @fgSubtle; }
+
+QPushButton#teammateDashboardGenerate, QPushButton#teammateDashboardContinue {
+    color: @fg; background-color: @surfaceRaised; border-color: @borderStrong;
+}
+QPushButton#teammateDashboardGenerate:hover, QPushButton#teammateDashboardContinue:hover {
+    background-color: @surfaceActive;
+}
+QPushButton#teammateBriefingChoice:checked {
+    color: @fg; background-color: @surfaceActive; border-color: @borderStrong;
+}
+
+QPlainTextEdit#teammatePromptInput:focus, QPlainTextEdit#teammateProfilePromptInput:focus {
+    border-color: @accent;
+}
+QPushButton#teammatePromptSend:hover, QPushButton#teammateProfilePromptSend:hover {
+    color: @fg; background-color: @surfaceActive; border-color: @borderStrong;
+}
+QPushButton#teammateRunButton, QPushButton#teammateStartButton {
+    color: @fg; background-color: @surfaceRaised; border-color: @borderStrong;
+}
+QPushButton#teammateRunButton:hover, QPushButton#teammateStartButton:hover {
+    color: @fg; background-color: @surfaceActive; border-color: @borderStrong;
+}
+QPushButton#teammateRunButton[running="true"], QPushButton#teammateStopButton {
+    color: @danger; background-color: transparent; border-color: @borderStrong;
+}
+QPushButton#teammateRunButton[running="true"]:hover, QPushButton#teammateStopButton:hover {
+    color: @danger; background-color: @dangerSubtle; border-color: @danger;
+}
+
+#teammateBriefingStatus, QLabel#teammatePill[kind="working"] {
+    color: @success; background-color: @successSubtle; border-color: transparent;
+}
+#teammateBriefingStatus[kind="scheduled"], QLabel#teammatePill[kind="scheduled"],
+QLabel#teammatePill[kind="beta"], QLabel#teammatePill[kind="cadence"] {
+    color: @accentFg; background-color: @accentSubtle; border-color: transparent;
+}
+#teammateBriefingStatus[kind="waiting"], QLabel#teammatePill[kind="waiting"] {
+    color: @warning; background-color: @warningSubtle; border-color: transparent;
+}
+QLabel#teammatePill[kind="model"], QLabel#teammatePill[kind="skill"],
+QLabel#teammatePill[kind="watch"], QLabel#teammatePill[kind="route"] {
+    color: @fgSecondary; background-color: @surfaceRaised; border-color: @border;
+}
+
+#teammateStatusBanner[kind="scheduled"] {
+    background-color: @accentSubtle; border-color: transparent;
+}
+#teammateStatusBanner[kind="idle"] { background-color: @surfaceRaised; border-color: @border; }
+#teammateStatusBanner[kind="working"] {
+    background-color: @successSubtle; border-color: transparent;
+}
+#teammateStatusBanner[kind="waiting"] {
+    background-color: @warningSubtle; border-color: transparent;
+}
+
+#teammateInvocation { background-color: @surfaceRaised; border-color: @border; }
+#teammateSchedulePreview {
+    color: @fgSecondary; background-color: @surfaceRaised; border-color: @border;
+}
+QFrame#teammateInvocation[embedded="true"] { border-top: 1px solid @borderStrong; }
+QFrame#teammateInvocation[embedded="true"][inline="true"] { border-left: 1px solid @borderStrong; }
+
+QListWidget#teammateModelPicker::item:selected {
+    background-color: @surfaceActive; border-color: @borderStrong; color: @fg;
+}
+
+QToolButton#agentStatusPill { border-color: @borderStrong; }
+QToolButton#agentStatusPill[outcomeTone="success"] {
+    background-color: @successSubtle; border-color: transparent;
+}
+QToolButton#agentStatusPill[outcomeTone="failure"] {
+    background-color: @dangerSubtle; border-color: transparent;
+}
+QToolButton#agentStatusPill[outcomeTone="pending"] {
+    background-color: @warningSubtle; border-color: transparent;
+}
+QToolButton#agentStatusPill:hover { background-color: @surfaceRaised; }
+#agentNetPanel { background-color: @surface; border-color: @border; color: @fgSecondary; }
+#agentMetaPopup, #slashActionsPopup { border-color: @borderStrong; }
+
+#promptWrapper, #promptWrapper:focus-within { border-color: @borderStrong; }
+#promptResizeGrip:hover { background-color: @accent; }
+QCheckBox#promptWorktreeCheck::indicator:checked, QCheckBox#promptVibeCheck::indicator:checked {
+    border-color: @accent; background: @accent;
+}
+QCheckBox#promptVibeCheck:checked { color: @accentFg; }
+QCheckBox#slashToggle::indicator:checked { background: @accent; }
+QFrame#slashActionRow[slashSelected="true"] { background: @surfaceActive; }

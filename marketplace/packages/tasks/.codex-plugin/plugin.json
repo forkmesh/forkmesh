@@ -1,0 +1,23 @@
+{
+  "name": "tasks",
+  "version": "1.0.0",
+  "description": "Organization task planning and agent handoff for ForkMesh.",
+  "author": { "name": "ForkMesh", "url": "https://forkmesh.com" },
+  "homepage": "https://forkmesh.com",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["tasks", "organizations", "agents", "qa"],
+  "interface": {
+    "displayName": "Tasks",
+    "shortDescription": "Plan, assign, hand off, and review organization work.",
+    "longDescription": "The organization-private ForkMesh task catalog shared by the web app, desktop client, agents, and office board.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": ["Show my active organization tasks.", "Create a task and assign it to an agent."],
+    "brandColor": "#2DA44E"
+  }
+}

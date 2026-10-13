@@ -1,0 +1,19 @@
+# systemd --user unit for the operator box (NOT installed automatically).
+# Unseals every core node that reports "sealed" on /readyz (after a reboot,
+# a crash restart or an OOM kill), by piping DATA_KEY over SSH stdin into the
+# node's /usr/local/sbin/fmnext-unseal (docs/VAULT.md). Nodes that are
+# already unsealed get no key. DATA_KEY is read from
+# ~/projects/forkmesh/config/fleet/DATA_KEY (or secrets.env) and never logged.
+[Unit]
+Description=ForkMesh Next: unseal sealed core nodes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/forkmesh/src
+ExecStart=%h/projects/forkmesh/src/.venv/bin/python %h/projects/forkmesh/src/tools/next_vault.py unseal --if-sealed --execute
+TimeoutStartSec=10min
+NoNewPrivileges=true
+# No PrivateTmp: in a --user unit it needs a user namespace, where root-owned
+# /etc/ssh/ssh_config.d files look foreign and ssh refuses to run.

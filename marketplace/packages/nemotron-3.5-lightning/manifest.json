@@ -1,0 +1,72 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "nemotron-3.5-lightning",
+  "name": "Nemotron 3.5 Lightning",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "agent",
+  "category": "Custom models",
+  "version": "1.0.0",
+  "summary": "Download NVIDIA Nemotron 3.5 Lightning through Ollama and run it locally as a ForkMesh coding agent.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "LicenseRef-NVIDIA-Open-Model-Agreement",
+    "creatorRetainsOwnership": true,
+    "terms": "The integration is MIT licensed; downloaded Nemotron model weights retain their upstream licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:agent-model",
+    "settings": "builtin:agent-model",
+    "agent": "content/agent.json"
+  },
+  "permissions": [
+    {
+      "id": "network.model.download",
+      "label": "Download the selected Nemotron model from Ollama's model registry",
+      "risk": "sensitive"
+    },
+    {
+      "id": "process.ollama",
+      "label": "Ask the locally installed Ollama runtime to inspect, download, and remove this model",
+      "risk": "sensitive"
+    },
+    {
+      "id": "storage.model.write",
+      "label": "Store the selected model's weights in Ollama's device-local model directory",
+      "risk": "sensitive"
+    },
+    {
+      "id": "repository.agent.write",
+      "label": "Run the selected model as a coding agent in an isolated ForkMesh worktree",
+      "risk": "high"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "A blue neural network becoming a lightning bolt for Nemotron 3.5 Lightning"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

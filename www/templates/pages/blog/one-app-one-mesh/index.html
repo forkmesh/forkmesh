@@ -1,0 +1,72 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}One app, one mesh · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="ForkMesh now combines its application and API into one complete, self-hostable service, with an optional World, selective deploys, cross-instance accounts, and cleaner mirror operations.">
+    <link rel="canonical" href="https://forkmesh.com/blog/one-app-one-mesh/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/one-app-one-mesh/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="One app, one mesh">
+    <meta property="og:description" content="One complete app and API deployment for every ForkMesh operator, with an optional World and independent mirrors.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/one-app-one-mesh.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="One luminous ForkMesh core connected to a public website, an optional World, and five healthy mirror nodes">
+    <meta property="article:published_time" content="2026-08-08T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="One app, one mesh">
+    <meta name="twitter:description" content="ForkMesh combines the app and API so one domain is enough to run a complete instance; World remains optional.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/one-app-one-mesh.webp">
+    <meta name="twitter:image:alt" content="One luminous ForkMesh core connected to a public website, an optional World, and five healthy mirror nodes">
+{% endblock %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>One app, one mesh</h1>
+            <p class="lede">A complete ForkMesh instance now fits behind one domain: the application and its API ship together, while the public website and immersive World can evolve independently.</p>
+            <div class="meta"><span class="pill">August 8, 2026</span><span>Product update</span><span>7 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/one-app-one-mesh.webp" alt="One luminous ForkMesh core connected to a public website, an optional World, and five healthy mirror nodes">
+        </section>
+        <article class="body">
+          <p>ForkMesh began with one Cloudflare Worker carrying the public website, repository app, API, and three-dimensional World. That made early iteration wonderfully direct. It also meant a documentation edit, a dashboard release, and a World asset change all shared one deployment and one operational envelope. As each surface grew, the convenient boundary became the bottleneck.</p>
+          <p>Our first answer was to split every surface into its own Worker. The cleaner answer emerged while doing the work: the app and API are not two products. They form the complete ForkMesh instance that another operator should be able to deploy at one memorable address.</p>
+
+          <h2>One complete instance, two optional companions</h2>
+          <p><code>app</code> owns Git browsing, collaboration, accounts, REST, WebSockets, federation, routing, and developer information at <code>app.forkmesh.com</code>. The official <code>www</code> service owns the landing page, marketing pages, documentation, and blog at <code>forkmesh.com</code>. <code>world</code> owns the immersive network view at <code>world.forkmesh.com</code>.</p>
+          <p>That shape is intentionally asymmetric. An independent operator can deploy the app at <code>forkmesh.theirdomain.com</code> and have everything required to run ForkMesh. If they want the World, they can add <code>forkmesh-world.theirdomain.com</code>. They do not need to reproduce our marketing website or coordinate a second backend domain.</p>
+          <div class="note">Separation is useful only when it survives the release path. Deploy controls expose distinct app, www, and World actions, and target fingerprints skip a service whose inputs have not changed.</div>
+
+          <h2>The API belongs to the app</h2>
+          <p>Every web and native client resolves API and WebSocket requests through the selected app origin. On the hosted services that defaults to <code>https://app.forkmesh.com</code>; a self-hosted app uses its own origin, local development can remain local, and a saved remote instance can provide another HTTPS origin. The polished developer and live-statistics page now lives at <code>app.forkmesh.com/api</code>, beside the product it describes.</p>
+          <p>Cross-origin requests also have an explicit security contract. Hosted frontends receive narrowly scoped CORS responses, credentialed requests are allowed only for recognized origins, preflight requests get the methods and headers the route actually supports, and caches vary on <code>Origin</code>. The API is shared infrastructure, not an open reflection of whichever origin a browser sends.</p>
+          <p>That boundary makes multi-instance work practical. A person can add another ForkMesh instance, sign in with an account from that instance, and keep the session alongside their other saved accounts. The avatar menu becomes the switch: choose an account and its instance together, move between them without repeatedly signing out, and manage the active instance from the same account surface. Tokens stay attached to the API origin that issued them.</p>
+
+          <h2>A repository that matches the product</h2>
+          <p>The source tree now uses the same names people see in the architecture. The stateful app and API live together in <code>app</code>. The Qt client and desktop icons live in <code>desktop</code>. The Flutter application lives in <code>mobile</code>. Editor integrations live in <code>extensions</code>. The former mirror-node runtime is now <code>server</code>, alongside its service packaging. Pull-request artifacts live under <code>.forkmesh/pulls</code>, and the maintained documentation lives with the <code>www</code> service that publishes it.</p>
+          <p>These moves are more than tidying. Build manifests, tests, release scripts, operations guides, and developer links now point at the product boundary they support. A new contributor can tell which runtime a file belongs to before opening it, while the repository-native records that make ForkMesh portable remain under <code>.forkmesh</code>.</p>
+
+          <h2>Mirrors get a cleaner operational path</h2>
+          <p>The <code>server</code> runtime remains the part that turns an ordinary Linux host into a ForkMesh mirror. Provisioning from the Network hosts page now walks a new node through provider creation, installation, registration, gateway health, repository sync, and signed endpoint verification as visible stages. A failed stage stays actionable instead of leaving a half-known host behind.</p>
+          <p>Existing mirrors receive the same scrutiny. Fleet controls can update or restart a specific node, request a targeted sync, and show whether the public gateway and the repository refs have converged. Retired registrations no longer get to masquerade as active failures, while an active mirror must provide fresh health and integrity evidence before it contributes a green status.</p>
+
+          <h2>Production evidence is part of “done”</h2>
+          <p>Code changes and passing tests are only the first half of a migration like this. A rollout counts as done once every changed service, and only those services, is deployed, the mirrors are current and serving, <code>/status</code> is green, and cross-origin sign-in and instance switching work against the hosted domains.</p>
+          <p>For the current state of any service, <a href="/status">live status</a> is the place to look, not this post. During an architectural split the interesting failures tend to live between otherwise healthy systems, so a change stays in validation until production confirms it.</p>
+
+          <h2>Simple to run, strong underneath</h2>
+          <p>This is one mesh with a deliberately complete center: the app and protocol deploy together, the public site can tell the story without carrying application load, the optional World can grow on its own rendering budget, and independent servers keep source code available underneath all of them.</p>
+          <p><a href="https://app.forkmesh.com/">Open the ForkMesh app</a>, <a href="https://app.forkmesh.com/api">explore the API</a>, <a href="https://world.forkmesh.com/">enter the World</a>, or <a href="/docs">read the documentation</a>.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/shorter-loops-stronger-proof/">← Shorter loops, stronger proof</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/safer-rooms-steadier-mirrors/">Safer rooms, steadier mirrors →</a>
+        </nav>
+{% endblock %}

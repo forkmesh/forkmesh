@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+  <title id="title">ForkMesh repository network</title>
+  <desc id="desc">A GitHub-style code panel connected to mirrored repository nodes.</desc>
+  <rect width="960" height="520" rx="18" fill="#f6f8fa"/>
+  <rect x="56" y="48" width="520" height="424" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <rect x="56" y="48" width="520" height="56" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <rect x="84" y="70" width="112" height="13" rx="6.5" fill="#57606a"/>
+  <rect x="444" y="67" width="92" height="20" rx="10" fill="#dafbe1" stroke="#2da44e"/>
+  <g fill="#ffffff" stroke="#d0d7de">
+    <rect x="84" y="134" width="420" height="42" rx="7"/>
+    <rect x="84" y="190" width="420" height="42" rx="7"/>
+    <rect x="84" y="246" width="420" height="42" rx="7"/>
+    <rect x="84" y="302" width="420" height="42" rx="7"/>
+  </g>
+  <g fill="#0969da">
+    <rect x="110" y="151" width="98" height="9" rx="4.5"/>
+    <rect x="110" y="207" width="148" height="9" rx="4.5"/>
+    <rect x="110" y="263" width="120" height="9" rx="4.5"/>
+    <rect x="110" y="319" width="88" height="9" rx="4.5"/>
+  </g>
+  <g fill="#8c959f">
+    <rect x="286" y="151" width="162" height="9" rx="4.5"/>
+    <rect x="286" y="207" width="118" height="9" rx="4.5"/>
+    <rect x="286" y="263" width="156" height="9" rx="4.5"/>
+    <rect x="286" y="319" width="132" height="9" rx="4.5"/>
+  </g>
+  <rect x="84" y="374" width="420" height="50" rx="7" fill="#24292f"/>
+  <rect x="110" y="394" width="212" height="10" rx="5" fill="#f6f8fa"/>
+  <path d="M576 188h72c34 0 44-50 82-50h44" fill="none" stroke="#8c959f" stroke-width="5" stroke-linecap="round"/>
+  <path d="M576 260h118" fill="none" stroke="#8c959f" stroke-width="5" stroke-linecap="round"/>
+  <path d="M576 332h72c34 0 44 50 82 50h44" fill="none" stroke="#8c959f" stroke-width="5" stroke-linecap="round"/>
+  <g>
+    <rect x="754" y="94" width="150" height="88" rx="12" fill="#ffffff" stroke="#d0d7de"/>
+    <circle cx="782" cy="122" r="10" fill="#2da44e"/>
+    <rect x="806" y="114" width="64" height="10" rx="5" fill="#24292f"/>
+    <rect x="782" y="146" width="90" height="8" rx="4" fill="#8c959f"/>
+  </g>
+  <g>
+    <rect x="698" y="216" width="150" height="88" rx="12" fill="#ffffff" stroke="#d0d7de"/>
+    <circle cx="726" cy="244" r="10" fill="#0969da"/>
+    <rect x="750" y="236" width="60" height="10" rx="5" fill="#24292f"/>
+    <rect x="726" y="268" width="96" height="8" rx="4" fill="#8c959f"/>
+  </g>
+  <g>
+    <rect x="754" y="338" width="150" height="88" rx="12" fill="#ffffff" stroke="#d0d7de"/>
+    <circle cx="782" cy="366" r="10" fill="#bf8700"/>
+    <rect x="806" y="358" width="68" height="10" rx="5" fill="#24292f"/>
+    <rect x="782" y="390" width="88" height="8" rx="4" fill="#8c959f"/>
+  </g>
+</svg>

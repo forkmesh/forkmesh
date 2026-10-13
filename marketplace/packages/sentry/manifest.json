@@ -1,0 +1,71 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "sentry",
+  "name": "Sentry",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Extensions",
+  "version": "1.0.1",
+  "summary": "Connect a Sentry organization: new and growing issues light up the Log activity area, and a Sentry tab aggregates unresolved errors by issue, project, and level.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "content/desktop/SentryDesktopExtension.cpp",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "network.sentry",
+      "label": "Read unresolved issues from the Sentry organization you connect, using the API key you provide",
+      "risk": "sensitive"
+    },
+    {
+      "id": "log.activity.write",
+      "label": "Add Sentry issue activity to the Log page, its activity lights, and its filter chips",
+      "risk": "low"
+    },
+    {
+      "id": "settings.apikey",
+      "label": "Keep the Sentry API key, connection details, and the last issue snapshot on this device until the package is removed",
+      "risk": "sensitive"
+    },
+    {
+      "id": "external.link.open",
+      "label": "Open a Sentry issue or your organization's issue list in your browser",
+      "risk": "sensitive"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "Log page Sentry tab listing unresolved issues with event and user counts, beside activity lights with the Sentry lane lit"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

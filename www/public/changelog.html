@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ForkMesh Changelog</title>
+    <meta
+      name="description"
+      content="How ForkMesh grew — from a single mirror on one laptop to an agent-powered, community-run developer mesh."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .log-page {
+        width: min(1120px, calc(100% - 32px));
+        max-width: none;
+        margin: 0 auto;
+        padding: 0 0 96px;
+      }
+      .log-page .kit-hero {
+        width: auto;
+        margin: 0 0 56px;
+        padding: clamp(40px, 6vw, 72px) 0 0;
+      }
+      .log-page .kit-title {
+        max-width: 14ch;
+      }
+      .release {
+        display: grid;
+        grid-template-columns: 200px minmax(0, 1fr);
+        gap: 40px;
+        padding: 40px 0;
+        border-top: 1px solid var(--kit-line);
+      }
+      .release-meta {
+        position: sticky;
+        top: 24px;
+        align-self: start;
+        display: grid;
+        justify-items: start;
+        gap: 10px;
+      }
+      .release .tag {
+        display: inline-flex;
+        align-items: center;
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 8px;
+        background: var(--kit-surface);
+        box-shadow: var(--kit-badge-shadow);
+        color: var(--kit-ink);
+        font: 600 12.5px/1 var(--mono);
+      }
+      .release .when {
+        color: var(--kit-body);
+        font-size: 14px;
+      }
+      .release h2 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(26px, 3vw, 32px);
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        line-height: 1.1;
+      }
+      .release .pitch {
+        max-width: 64ch;
+        margin: 12px 0 22px;
+        color: var(--kit-body);
+        font-size: 16.5px;
+        line-height: 1.6;
+      }
+      .release ul {
+        display: grid;
+        gap: 12px;
+        max-width: 780px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .release li {
+        position: relative;
+        padding-left: 26px;
+        color: var(--kit-body);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+      .release li::before {
+        content: "";
+        position: absolute;
+        top: 5px;
+        left: 0;
+        width: 16px;
+        height: 16px;
+        background: var(--kit-faint);
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E") center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E") center / contain no-repeat;
+      }
+      .release li strong {
+        color: var(--kit-ink);
+        font-weight: 600;
+      }
+      .log-foot {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px 24px;
+        margin: 16px 0 0;
+        padding: 24px 28px;
+        color: var(--kit-body);
+        font-size: 15px;
+      }
+      .log-foot strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--kit-ink);
+        font-size: 17px;
+        font-weight: 600;
+      }
+      @media (max-width: 760px) {
+        .log-page {
+          width: calc(100% - 24px);
+        }
+        .release {
+          grid-template-columns: 1fr;
+          gap: 16px;
+          padding: 32px 0;
+        }
+        .release-meta {
+          position: static;
+          grid-auto-flow: column;
+          align-items: center;
+          justify-content: start;
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="log-page">
+      <section class="kit-hero" aria-labelledby="log-title">
+        <span class="kit-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"></path></svg>
+          Changelog
+        </span>
+        <h1 class="kit-title" id="log-title">Every release, in plain English</h1>
+        <p class="kit-lede">
+          How ForkMesh grew — from a single mirror on one laptop to an
+          agent-powered, community-run developer mesh.
+        </p>
+      </section>
+
+      <section class="release">
+        <div class="release-meta">
+          <span class="tag">v0.7.0</span>
+          <span class="when">July 2026</span>
+        </div>
+        <div class="release-body">
+          <h2>The Living Code City</h2>
+          <p class="pitch">
+            ForkMesh becomes a shared three-dimensional developer world backed by
+            independently operated repository mirrors.
+          </p>
+          <ul>
+            <li><strong>Everyone enters the World.</strong> Guests and members share the Town Square, see live avatar movement, and can use the embedded public World chat without leaving the scene.</li>
+            <li><strong>Resilient repository routes.</strong> Public smart-HTTP traffic is proxied through healthy, signed mirrors with automatic failover and round-robin selection.</li>
+            <li><strong>SSH Git access.</strong> Users can register an OpenSSH public key and clone or push through the permission-checked Git gateway; private keys remain on their own device.</li>
+            <li><strong>Non-custodial community rewards.</strong> Contributors can fund the transparent public Solana pool directly from a self-custodial wallet. ForkMesh never stores contributor or node-operator private keys.</li>
+            <li><strong>Privacy-safe identity.</strong> Clothing badges use optional approximate country, browser, and operating-system symbols without publishing raw IP addresses or precise location.</li>
+            <li><strong>Operational clarity.</strong> World notifications, repository integrity proofs, security scan scope, and infrastructure metaphors link back to the technical state they represent.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="release">
+        <div class="release-meta">
+          <span class="tag">v0.5.0</span>
+          <span class="when">June 2026</span>
+        </div>
+        <div class="release-body">
+          <h2>The Agent Mesh</h2>
+          <p class="pitch">
+            The release where ForkMesh starts to feel alive. Open an issue, hand it
+            to an AI agent, and watch a real pull request show up — all without
+            leaving the mesh.
+          </p>
+          <ul>
+            <li><strong>Built-in coding agents.</strong> Assign any issue to Claude Code or Codex from the issue detail or quick-add box. The agent works on your connected fork and opens a pull request when it's done.</li>
+            <li><strong>A real terminal, in the app.</strong> A native VT100 terminal renders every agent and workflow run with full color output and emoji.</li>
+            <li><strong>Legacy issue bounties.</strong> This release originally added a custodial issue-bounty flow. That flow has since been retired: please do not send funds to historical bounty addresses.</li>
+            <li><strong>VS Code Marketplace plugin.</strong> Optionally browse issues and kick off ForkMesh agents from your editor without installing the plugin in the base desktop app.</li>
+            <li><strong>Profile pages.</strong> Click any node to see its full public profile — repos, identity, and version.</li>
+            <li><strong>Hardened by default.</strong> Tighter signup and relay security, with auto-publish off until you say so.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="release">
+        <div class="release-meta">
+          <span class="tag">v0.4.0</span>
+          <span class="when">June 2026</span>
+        </div>
+        <div class="release-body">
+          <h2>Autonomous Agents</h2>
+          <p class="pitch">Collaboration stopped being a one-person job.</p>
+          <ul>
+            <li><strong>Parallel agents, no queue.</strong> Run multiple agents at once across your issues.</li>
+            <li><strong>Continue the conversation.</strong> Pick a session back up where it left off, with auto-PR creation on quick tasks.</li>
+            <li><strong>Live activity indicators.</strong> See which agents are working right now.</li>
+            <li><strong>Issues and PRs that talk to each other.</strong> Merge a PR and its linked issue closes itself; sync straight to main with one checkbox.</li>
+            <li><strong>One-click delegation.</strong> Send any issue to your agent of choice — pre-filled and ready to go.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="release">
+        <div class="release-meta">
+          <span class="tag">v0.3.0</span>
+          <span class="when">June 2026</span>
+        </div>
+        <div class="release-body">
+          <h2>Identity &amp; Rewards</h2>
+          <p class="pitch">ForkMesh added optional community-funded incentives for healthy mirror operators.</p>
+          <ul>
+            <li><strong>Guest-first access.</strong> Visitors enter the world immediately; registered accounts use email, password, and email verification.</li>
+            <li><strong>Solana payouts and contributions.</strong> Publish a self-custodial payout address or voluntarily fund the public mainnet-beta community pool with a direct transfer signed in your own wallet. ForkMesh never receives a community member’s wallet key.</li>
+            <li><strong>Rewards for mirroring.</strong> Eligible, integrity-verified nodes may be selected for a community incentive; participation, payment, and financial returns are never guaranteed.</li>
+            <li><strong>Network presence, done right.</strong> Mirror-sync notices moved into a proper network log, with live connection alerts.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="release">
+        <div class="release-meta">
+          <span class="tag">v0.2.0</span>
+          <span class="when">June 2026</span>
+        </div>
+        <div class="release-body">
+          <h2>Collaborate Anywhere</h2>
+          <p class="pitch">The web caught up to the desktop, and ForkMesh went mobile.</p>
+          <ul>
+            <li><strong>Pull requests.</strong> Signed patch submissions, browsable on the web and mergeable from the client.</li>
+            <li><strong>Actions.</strong> Run shell-step workflows on push on your own desktop, with the latest live log one click away.</li>
+            <li><strong>Releases and tags.</strong> See your tags, mark the current one, and cut new releases in seconds.</li>
+            <li><strong>Browse before you mirror.</strong> Explore files, commits, and rich diffs (images side by side) — no clone required.</li>
+            <li><strong>ForkMesh on your phone.</strong> Browse repositories, follow activity, chat, and submit signed collaboration updates. The Flutter app is an access client; Git mirroring remains a desktop/headless-node job.</li>
+            <li><strong>Fork with intent.</strong> Choose exactly where a fork lands in your working tree.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="release">
+        <div class="release-meta">
+          <span class="tag">v0.1.0</span>
+          <span class="when">June 2026</span>
+        </div>
+        <div class="release-body">
+          <h2>Genesis</h2>
+          <p class="pitch">
+            The first commit. A bet that source code shouldn't be locked to a
+            single forge.
+          </p>
+          <ul>
+            <li><strong>A distributed mirror network.</strong> Local Git mirrors, signed identities, and a Cloudflare relay that coordinates without ever holding your objects.</li>
+            <li><strong>A public catalog.</strong> Public repositories and clearly labeled external stubs, with actively mirrored repository bytes streamed over HTTPS from a selected healthy origin.</li>
+            <li><strong>Issues that grow with you.</strong> Open/closed states, priorities, custom fields, a Kanban board, and milestones with progress bars.</li>
+            <li><strong>Commit history and diffs</strong>, viewable right in the browser.</li>
+            <li><strong>Authenticated shared-key room chat.</strong> Genesis shipped client-encrypted transport whose default passphrase the relay could derive. Current public channels intentionally retain that integration-compatible boundary; private channels and direct messages now add automatic device-recipient encryption beyond it. Persisted frames remain limited to 500 per room for 7 days.</li>
+            <li><strong>One-click hand-off to your AI tools</strong>, baked in from day one.</li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="log-foot kit-card">
+        <p>
+          <strong>Have feedback or want to say hi?</strong>
+          Email the founders at
+          <a href="mailto:founders@forkmesh.com">founders@forkmesh.com</a>.
+        </p>
+        <a class="kit-btn is-primary" href="mailto:founders@forkmesh.com">Email the founders <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+      </div>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

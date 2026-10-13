@@ -1,0 +1,11 @@
+// The one place the native iOS app's version lives; both targets read it (an
+// extension whose version differs from its app's is rejected at upload).
+// Codemagic's ios-native-release overrides CURRENT_PROJECT_VERSION on the
+// xcodebuild command line with the next free App Store Connect build number.
+MARKETING_VERSION = 1.4.1
+CURRENT_PROJECT_VERSION = 17
+FORKMESH_BUILD_COMMIT =
+
+FORKMESH_ENV = prod
+FORKMESH_API_HOST = app.forkmesh.com
+FORKMESH_WORLD_URL = https:/$()/world.forkmesh.com/

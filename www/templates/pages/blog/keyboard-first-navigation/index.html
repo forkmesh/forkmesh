@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Keyboard-first navigation" %}
+{% set slug = "keyboard-first-navigation" %}
+{% set image = "/assets/blog/features/keyboard-first-navigation.webp" %}
+{% set description = "Shortcuts for every major view and arrow-key navigation across tables keep your hands on the keyboard." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>Keyboard-first navigation</h1>
+            <p class="lede">Shortcuts for every major view and arrow-key navigation across tables keep your hands on the keyboard.</p>
+            <div class="meta"><span class="pill">Feature 58 of 72</span><span>Feature</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/keyboard-first-navigation.webp" alt="Abstract ForkMesh artwork for Keyboard-first navigation">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Keyboard-first navigation gives ForkMesh a concrete mechanism for fast table and view navigation for long repo sessions. Shortcuts for every major view and arrow-key navigation across tables keep your hands on the keyboard.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, keyboard-first navigation addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles keyboard-first navigation through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: Shortcuts for every major view and arrow-key navigation across tables keep your hands on the keyboard. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use keyboard-first navigation when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because Keyboard-first navigation keeps fast table and view navigation for long repo sessions connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/qr-handoffs/">← QR handoffs</a>
+          <a href="/blog/fork-with-intent/">Fork with intent →</a>
+        </nav>
+{% endblock %}

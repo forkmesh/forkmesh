@@ -1,0 +1,66 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}A week closer to the mesh · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="Six days of ForkMesh progress: faster desktop workflows, durable agent branches, stronger mirror convergence, and a clearer, lighter World.">
+    <link rel="canonical" href="https://forkmesh.com/blog/a-week-closer-to-the-mesh/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/a-week-closer-to-the-mesh/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="A week closer to the mesh">
+    <meta property="og:description" content="Six days of ForkMesh progress: faster desktop workflows, durable agent branches, stronger mirror convergence, and a clearer, lighter World.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/a-week-closer-to-the-mesh.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit ForkMesh World with a repository dome, connected mirror nodes, a desktop Git graph, and two coding agents">
+    <meta property="article:published_time" content="2026-08-03T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="A week closer to the mesh">
+    <meta name="twitter:description" content="Faster work, durable agents, stronger mirrors, and a more legible World.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/a-week-closer-to-the-mesh.webp">
+    <meta name="twitter:image:alt" content="A moonlit ForkMesh World with a repository dome, connected mirror nodes, a desktop Git graph, and two coding agents">
+{% endblock %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>A week closer to the mesh</h1>
+            <p class="lede">Since our last update, ForkMesh has become faster to navigate, safer for long-running agent work, steadier across independent mirrors, and easier to understand in the World.</p>
+            <div class="meta"><span class="pill">August 3, 2026</span><span>Product update</span><span>6 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/a-week-closer-to-the-mesh.webp" alt="A moonlit ForkMesh World with a repository dome, connected mirror nodes, a desktop Git graph, and two coding agents">
+        </section>
+        <article class="body">
+          <p>Six days ago, we published a tour through the mesh. Since then, hundreds of changes have landed across the desktop app, the coordination service, independent mirror nodes, and ForkMesh World. The common thread is continuity: the place you are working should stay responsive, the branch an agent created should remain traceable, and a mirror should keep converging even when the network is untidy.</p>
+
+          <h2>The desktop is becoming one continuous workspace</h2>
+          <p>The Git experience now brings the main graph, outgoing work, branch ranges, pull-request review, changed files, and diffs into one navigable view. Branch and pull-request links open that same review surface, commit hashes in agent transcripts are searchable and clickable, and transient diff failures can be retried with the underlying Git output visible instead of disappearing behind a generic error.</p>
+          <p>Navigation and feedback received the same attention. Every major view has back and forward history. Global search filters the page you are already on and can search agent transcripts, branches, and worktrees. Startup now narrates real progress in an in-window splash, background work has moved into the status bar, and expensive scans, transcript decoding, and action pipelines have been moved away from the interface thread.</p>
+          <div class="note">Speed is not only a benchmark. It is keeping the current branch, prompt, selection, scroll position, and explanation intact while work continues underneath.</div>
+
+          <h2>Agent work keeps its identity</h2>
+          <p>Agent branches and pull requests now retain durable provenance. Reopening a repository no longer drops branch patches, an agent link stays attached as work moves from branch to pull request, and completed changes are committed before the session is cleaned up. Review remains explicit: creating a pull request is a user action, merge candidates stay visible, and cleanup removes the session only after its linked work has been handled.</p>
+          <p>The day-to-day controls are clearer too. Sessions explain why they failed, attachments appear in the list, prompts stay visible while navigating, queue capacity and running counts are easier to inspect, and automatic approval is an option rather than an assumption. High-memory agent processes identify the run behind them, while usage calendars and charts make limits easier to plan around.</p>
+
+          <h2>Mirrors converge through real interruptions</h2>
+          <p>The mirror fleet now does more of the recovery work itself. Direct HTTPS services start with the desktop app, crashed tunnels restart, health survives reconnects, lease renewal tolerates refreshes, and sync skips repository seals that have not changed. Equivalent integrity pins can be served round-robin, while public organization aliases and canonical repository authority survive proxying and movement between devices.</p>
+          <p>Operators get better evidence as well: every node can publish self-diagnostics, the Nodes page can update node binaries, new node deployments report their stages, sync rows show what is happening and how far behind a mirror is, and a per-node action can request an immediate targeted sync. Push-triggered workflows now follow the sealed mirror head, and releases can fan out to mirrors without turning the coordination layer into Git storage.</p>
+
+          <h2>A World that explains itself</h2>
+          <p>ForkMesh World has been reshaped around legibility and bounded rendering cost. The repository area is now an enclosed dome, the member gathering place is a yurt, and the Office and leaderboard interiors stay hidden until a visitor enters. Those walls are functional: they make places read as places and let the renderer avoid work for rooms that are out of view.</p>
+          <p>Mobile texture pressure, duplicate scene work, idle fish, and heavyweight bridges have all been reduced. At the same time, the World now exposes richer live diagnostics, an online roster, operational pings, QA results, task paging, clickable ping detail, purchasable modular elements, and clearer notices when fresh code lands. The result should feel calmer even though it can explain more.</p>
+
+          <h2>Still experimental, more dependable</h2>
+          <p>This round also tightened failure boundaries: database faults replay where safe, one degraded leaderboard source cannot take down the hub, and secrets are redacted from archived patches. ForkMesh is still experimental, and independent backups still matter. But the system is increasingly able to tell you what it is doing, recover from routine faults, and preserve the trail from an idea to a signed, reviewed change.</p>
+          <p><a href="/world">Enter ForkMesh World</a>, <a href="/desktop">get the desktop app</a>, or <a href="/docs">read the documentation</a> to explore the latest build.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/safer-rooms-steadier-mirrors/">← Safer rooms, steadier mirrors</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/forkmesh-forever/">ForkMesh Forever →</a>
+        </nav>
+{% endblock %}

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Competitor Watch dashboard</title>
+  <desc id="desc">A dark dashboard with watchlist totals, a radar motif, and competitor profile rows.</desc>
+  <rect width="1200" height="675" rx="28" fill="#0b1020"/>
+  <rect x="36" y="36" width="1128" height="603" rx="22" fill="#11182b" stroke="#2b3654"/>
+  <text x="76" y="98" fill="#f7f8ff" font-family="system-ui,sans-serif" font-size="31" font-weight="700">Competitor Watch</text>
+  <text x="76" y="131" fill="#9ca9c9" font-family="system-ui,sans-serif" font-size="17">Private positioning and market intelligence for your organization</text>
+  <g transform="translate(894 58)" fill="none" stroke="#8b5cf6" stroke-width="2" opacity=".9">
+    <circle cx="78" cy="55" r="48"/><circle cx="78" cy="55" r="31"/><circle cx="78" cy="55" r="14"/>
+    <path d="M78 7v96M30 55h96"/><circle cx="99" cy="34" r="5" fill="#a78bfa" stroke="none"/>
+  </g>
+  <g font-family="system-ui,sans-serif">
+    <g transform="translate(76 171)"><rect width="238" height="104" rx="14" fill="#171f35" stroke="#303b5a"/><text x="20" y="35" fill="#9ca9c9" font-size="14">WATCHLIST</text><text x="20" y="78" fill="#fff" font-size="34" font-weight="700">12</text></g>
+    <g transform="translate(330 171)"><rect width="238" height="104" rx="14" fill="#171f35" stroke="#303b5a"/><text x="20" y="35" fill="#9ca9c9" font-size="14">PRIMARY</text><text x="20" y="78" fill="#fff" font-size="34" font-weight="700">4</text></g>
+    <g transform="translate(584 171)"><rect width="238" height="104" rx="14" fill="#171f35" stroke="#303b5a"/><text x="20" y="35" fill="#9ca9c9" font-size="14">NEEDS REVIEW</text><text x="20" y="78" fill="#fbbf24" font-size="34" font-weight="700">3</text></g>
+    <g transform="translate(838 171)"><rect width="238" height="104" rx="14" fill="#171f35" stroke="#303b5a"/><text x="20" y="35" fill="#9ca9c9" font-size="14">ARCHIVED</text><text x="20" y="78" fill="#fff" font-size="34" font-weight="700">2</text></g>
+    <rect x="76" y="303" width="1000" height="286" rx="14" fill="#171f35" stroke="#303b5a"/>
+    <g fill="#9ca9c9" font-size="13" font-weight="600"><text x="99" y="343">COMPETITOR</text><text x="371" y="343">CATEGORY</text><text x="554" y="343">POSITIONING</text><text x="934" y="343">STATUS</text></g>
+    <path d="M76 362h1000M76 431h1000M76 500h1000" stroke="#303b5a"/>
+    <g font-size="17"><text x="99" y="405" fill="#fff" font-weight="650">Northstar</text><text x="371" y="405" fill="#c5ccef">Developer tools</text><text x="554" y="405" fill="#c5ccef">Hosted collaboration for small teams</text><text x="934" y="405" fill="#c4b5fd">PRIMARY</text></g>
+    <g font-size="17"><text x="99" y="474" fill="#fff" font-weight="650">Waypoint</text><text x="371" y="474" fill="#c5ccef">Automation</text><text x="554" y="474" fill="#c5ccef">Low-code workflows for enterprises</text><text x="934" y="474" fill="#93c5fd">WATCH</text></g>
+    <g font-size="17"><text x="99" y="543" fill="#fff" font-weight="650">Signal Labs</text><text x="371" y="543" fill="#c5ccef">Analytics</text><text x="554" y="543" fill="#c5ccef">Usage intelligence with AI summaries</text><text x="934" y="543" fill="#fbbf24">REVIEW</text></g>
+  </g>
+</svg>

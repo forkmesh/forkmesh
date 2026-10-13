@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Burnup charts" %}
+{% set slug = "burnup-charts" %}
+{% set image = "/assets/blog/features/burnup-charts.webp" %}
+{% set description = "Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Issues &amp; planning</p>
+            <h1>Burnup charts</h1>
+            <p class="lede">Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance.</p>
+            <div class="meta"><span class="pill">Feature 21 of 72</span><span>Feature</span><span>Issues &amp; planning</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/burnup-charts.webp" alt="Abstract ForkMesh artwork for Burnup charts">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Burnup charts gives ForkMesh a concrete mechanism for scope and completion trends that show whether a release is converging. Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance.</p>
+          <p>Planning loses force when it drifts away from the code history and pull requests it is supposed to guide. In ForkMesh, burnup charts addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles burnup charts through the same split it uses across the product: issues are repository-linked records surfaced in desktop and web views beside branches, pull requests, milestones, and agent sessions.</p>
+          <p>The behavior is intentionally narrow: Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance. State changes stay portable because the planning layer follows the repository instead of one private dashboard.</p>
+          <h2>Where it fits</h2>
+          <p>Use burnup charts when triage and progress tracking should live beside the repository and remain portable.</p>
+          <p>It pairs with the rest of Issues &amp; planning because Burnup charts keeps scope and completion trends that show whether a release is converging connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/milestones-with-progress/">← Milestones with progress</a>
+          <a href="/blog/quick-add-from-anywhere/">Quick-add from anywhere →</a>
+        </nav>
+{% endblock %}

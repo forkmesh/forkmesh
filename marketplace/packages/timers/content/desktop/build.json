@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "TimersFeature.h",
+    "TimersFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_timers_feature.cpp",
+    "TimersFeature.h",
+    "TimersFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
+}

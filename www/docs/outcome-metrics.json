@@ -1,0 +1,974 @@
+{
+  "schema": "forkmesh-outcome-metric-dictionary-v2",
+  "version": 2,
+  "publishedAt": "2026-09-13",
+  "supersedes": "forkmesh-activation-revenue-metric-dictionary-v1",
+  "changelog": [
+    { "version": 1, "date": "2026-09-12", "change": "Twelve weekly activation-to-revenue KPIs." },
+    {
+      "version": 2,
+      "date": "2026-09-13",
+      "change": "Issue #519: privacy class, collection method, consent, opt-out, retention, minimum cell size, freshness, coverage, baseline, and target on every KPI; adds successful migration, first contribution, active maintainers, hosted-service adoption, repository availability, and independent mirror nodes."
+    }
+  ],
+  "reportingTimezone": "UTC",
+  "weekDefinition": "Monday 00:00 through Sunday 24:00 UTC; publish only after the week is complete",
+  "monthDefinition": "First day 00:00 UTC through the last day 24:00 UTC; publish only after the month is complete",
+  "principles": ["A missing or incomplete source is unknown, never zero.", "Acquisition metrics use first-touch attribution and exclude flagged bots by default.", "An anonymous clone is a server-side snapshot delta; a copied clone URL is only an attributed intent signal.", "Revenue and cost are closed-accounting measurements and are not inferred from product events.", "No KPI may require a user or self-hosted operator to report anything; optional and operator-reported sources are labelled lower-bound or partial coverage.", "Aggregates only leave the source system; a segment below its minimum cell size is suppressed.", "A baseline or target is never invented: it is unmeasured or to-be-set until a recorded review adopts it."],
+  "decisionCadence": {
+    "weekly": "Activation-to-revenue scorecard (activation-revenue-scorecard.md): one action for the next week; no definition changes.",
+    "monthly": "Outcome review (outcome-review.md): every KPI, freshness, confidence, decisions, experiments, and roadmap changes.",
+    "quarterly": "Target review at a monthly outcome review: adopt, keep, or retire targets and publish any dictionary version change."
+  },
+  "privacyClasses": {
+    "public-aggregate": "Derived from already-public records; publish aggregates only.",
+    "pseudonymous-aggregate": "Joined internally on an opaque or keyed index; only suppressed aggregates leave the source.",
+    "consented-analytics": "Collected only after explicit opt-in; coverage is partial by construction.",
+    "confidential-finance": "Billing and accounting records kept in finance systems; aggregates only.",
+    "internal-operations": "Staff and provider operational ledgers with no customer content.",
+    "synthetic": "Server-originated probes with no personal data."
+  },
+  "collectionMethods": {
+    "hosted-telemetry": "Records the hosted service already keeps to operate.",
+    "consented-analytics": "Opt-in product analytics.",
+    "accounting-ledger": "Closed billing, invoice, and support ledgers.",
+    "synthetic-probe": "Scheduled probes and conformance runs.",
+    "operator-reported": "Voluntary registrations or reports from self-hosted operators."
+  },
+  "coverageClasses": {
+    "full": "The source observes the whole defined population.",
+    "partial": "Known exclusions (opt-outs, skip countries, consent) remove part of the population.",
+    "lower-bound": "Activity outside the hosted service is invisible by design; the value can only undercount."
+  },
+  "aggregation": {
+    "defaultMinimumCellSize": 10,
+    "minimumCellSizeAppliesTo": ["pseudonymous-aggregate", "consented-analytics", "confidential-finance"],
+    "complementarySuppression": "When exactly one segment is suppressed, the next smallest segment is suppressed too so the total cannot reveal it.",
+    "forbiddenFields": ["email", "ip", "ipAddress", "account", "accountId", "user", "userId", "userBi", "authorBi", "actorBi", "ownerBi", "sessionId", "customerId", "subscriptionId", "repository", "repositoryId", "repo", "path", "url", "referrer", "name", "displayName"]
+  },
+  "confidencePolicy": {
+    "high": "Reconciled, every required continuation exhausted, data cut fresh and after the window end, measured coverage at least 0.95, and full coverage class.",
+    "medium": "Reconciled and fresh, but measured coverage below 0.95 or a partial or lower-bound coverage class.",
+    "low": "Reconciled but stale, or measured coverage below 0.5.",
+    "unknown": "Missing, unreconciled, not exhausted, or cut before the window ended; publish UNKNOWN, never zero."
+  },
+  "scopeCoverage": {
+    "activation": ["landing_activation", "signup", "first_mirror"],
+    "successful migration": ["successful_migration"],
+    "first contribution": ["first_contribution", "contribution"],
+    "active maintainers": ["active_maintainers"],
+    "repository availability": ["repository_availability", "independent_mirror_nodes"],
+    "paid-team conversion": ["managed_service_qualification", "paid_conversion"],
+    "hosted-service adoption": ["hosted_service_adoption", "feature_adoption"],
+    "retention": ["retention"],
+    "support": ["support_load"],
+    "infrastructure margin": ["infrastructure_cost", "gross_margin"]
+  },
+  "metrics": [
+    {
+      "id": "landing_activation",
+      "stage": "acquisition",
+      "label": "Landing activation",
+      "kind": "count",
+      "unit": "non-bot attributed sessions",
+      "definition": "Distinct non-bot attribution sessions first seen during the week and containing the server-recorded landing_view event.",
+      "numerator": "COUNT(DISTINCT attribution_sessions.id) where first_seen_at is in the week and landing_view is present",
+      "denominator": null,
+      "window": "session first_seen_at in the week; report end is exclusive",
+      "grain": "session",
+      "source": [
+        { "path": "app/src/attribution.py", "locator": "channel_report, list_sessions, list_events, EVENT_NAMES" },
+        { "path": "app/migrations/0174_attribution.sql", "locator": "attribution_sessions and attribution_events" },
+        { "path": "docs/attribution.md", "locator": "Attribution model" }
+      ],
+      "reconciliation": "Reconcile the scorecard value to channel_report.totals.sessions and the collected session total; include excluded_bot_sessions separately.",
+      "pagination": {
+        "required": true,
+        "reader": "list_sessions and list_events",
+        "continuation": "Call collect_all until next_cursor is null and assert collected length equals total_count.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["is_bot=1 sessions unless the report is explicitly an audit view", "DNT/GPC and configured EU/EEA skip-country visitors", "crawler requests that never receive a session"],
+      "privacyBoundary": "Only an opaque session id is joined internally. Exports contain aggregate counts, source/campaign buckets, and no IP, full referrer, email, or path query string.",
+      "owner": "Growth",
+      "availability": "implemented",
+      "cadence": "weekly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "No consent prompt: DNT/GPC visitors and configured EU/EEA skip-country visitors receive no cookie, session, or event.",
+      "optOut": "Send DNT or Sec-GPC, or delete the session with DELETE /api/attribution/session from /privacy.",
+      "retention": "Sessions and events are purged ATTRIBUTION_RETENTION_DAYS (default 400) after first_seen_at; the scorecard keeps weekly aggregates only.",
+      "minimumCellSize": 10,
+      "freshnessHours": 72,
+      "coverage": "partial",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "anonymous_clone",
+      "stage": "activation",
+      "label": "Anonymous clone",
+      "kind": "count",
+      "unit": "clone operations",
+      "definition": "The non-negative daily delta of cumulative clone counters for repositories whose mirror snapshots bracket the reporting day.",
+      "numerator": "SUM(max(0, current attribution_clone_snapshots.clones_total - prior snapshot clones_total))",
+      "denominator": null,
+      "window": "UTC snapshot days in the week",
+      "grain": "repository-day, rolled up to week",
+      "source": [
+        { "path": "app/src/attribution.py", "locator": "snapshot_clone_counts and clone_count_report" },
+        { "path": "app/migrations/0174_attribution.sql", "locator": "attribution_clone_snapshots" },
+        { "path": "app/src/schema.py", "locator": "mirror_serve_counters" },
+        { "path": "docs/attribution.md", "locator": "The clone gap" }
+      ],
+      "reconciliation": "Reconcile every repository-day delta to the two adjacent snapshots. A first-ever snapshot has no prior baseline and is excluded until the next snapshot.",
+      "pagination": {
+        "required": true,
+        "reader": "list_clone_snapshots and the snapshot cron's mirror_serve_counters reader",
+        "continuation": "Follow every keyset cursor through collect_all; do not treat 100 repositories as the population.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["clone requests before the first snapshot", "negative counter movement, clamped to zero", "clone_url_copied events; those are not clones"],
+      "privacyBoundary": "The source counters are aggregated by public repository. The weekly export contains only the aggregate total; it is never joined to a browser, account, IP, or channel.",
+      "owner": "Infrastructure",
+      "availability": "implemented",
+      "cadence": "weekly",
+      "privacyClass": "public-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "None required: repository-level serve counters record no client, IP, or account.",
+      "optOut": "Not applicable: no clone is attributable to a person. Mirrors that publish no counters are simply absent.",
+      "retention": "Snapshot rows hold public per-repository cumulative counters and are not purged today; the scorecard keeps the weekly total.",
+      "minimumCellSize": 0,
+      "freshnessHours": 72,
+      "coverage": "lower-bound",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "signup",
+      "stage": "activation",
+      "label": "Signup",
+      "kind": "count",
+      "unit": "attributed sessions",
+      "definition": "Distinct report sessions with a server-emitted signup_completed event in the week.",
+      "numerator": "COUNT(DISTINCT session_id) for signup_completed",
+      "denominator": "landing_activation for the same first-touch cohort when used as a conversion rate",
+      "window": "signup_completed occurred_at in the week, constrained to sessions first seen in the selected acquisition range",
+      "grain": "session",
+      "source": [
+        { "path": "app/src/attribution.py", "locator": "link_user and channel_report" },
+        { "path": "app/src/entry.py", "locator": "signup_started and signup_completed emission" },
+        { "path": "app/migrations/0174_attribution.sql", "locator": "attribution_events" }
+      ],
+      "reconciliation": "Match the event count to channel_report.totals.signup_completed and separately report sessions whose first_utm_source is unknown.",
+      "pagination": {
+        "required": true,
+        "reader": "list_sessions and list_events via channel_report",
+        "continuation": "Collect all continuation pages before grouping by session.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["signup_started without a completed account", "bot sessions", "accounts with no attribution session remain in the unknown bucket, not dropped"],
+      "privacyBoundary": "The attribution join uses a keyed user_bi internally. No email, password, IP, or account name enters the scorecard.",
+      "owner": "Growth",
+      "availability": "implemented",
+      "cadence": "weekly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "No consent prompt: DNT/GPC visitors and configured EU/EEA skip-country visitors receive no cookie, session, or event.",
+      "optOut": "Send DNT or Sec-GPC, or delete the session with DELETE /api/attribution/session from /privacy.",
+      "retention": "Sessions and events are purged ATTRIBUTION_RETENTION_DAYS (default 400) after first_seen_at; the scorecard keeps weekly aggregates only.",
+      "minimumCellSize": 10,
+      "freshnessHours": 72,
+      "coverage": "partial",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "first_mirror",
+      "stage": "activation",
+      "label": "First mirror",
+      "kind": "count",
+      "unit": "attributed owners",
+      "definition": "Distinct attributed sessions whose linked account published its first repository through the catalog publish path during the week.",
+      "numerator": "COUNT(DISTINCT session_id) for first_mirror_created",
+      "denominator": "signup for first-mirror conversion",
+      "window": "first_mirror_created occurred_at in the week",
+      "grain": "owner/session",
+      "source": [
+        { "path": "app/src/catalog_routes.py", "locator": "first_mirror_created emission" },
+        { "path": "app/src/attribution.py", "locator": "emit_for_user and channel_report" },
+        { "path": "docs/attribution.md", "locator": "Attribution model" }
+      ],
+      "reconciliation": "Reconcile to accepted catalog publish records and require the linked signup session; an account without an attribution record is not backfilled into a channel.",
+      "pagination": {
+        "required": true,
+        "reader": "list_events via channel_report",
+        "continuation": "Consume all event pages before deduplicating by session.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["repository metadata imports and non-published stubs", "repeat repositories from the same owner", "bot sessions"],
+      "privacyBoundary": "Repository identity is used only for operational reconciliation and is omitted from the aggregate scorecard.",
+      "owner": "Product",
+      "availability": "implemented",
+      "cadence": "weekly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "No consent prompt: DNT/GPC visitors and configured EU/EEA skip-country visitors receive no cookie, session, or event.",
+      "optOut": "Send DNT or Sec-GPC, or delete the session with DELETE /api/attribution/session from /privacy.",
+      "retention": "Sessions and events are purged ATTRIBUTION_RETENTION_DAYS (default 400) after first_seen_at; the scorecard keeps weekly aggregates only.",
+      "minimumCellSize": 10,
+      "freshnessHours": 72,
+      "coverage": "partial",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "contribution",
+      "stage": "activation",
+      "label": "Contribution",
+      "kind": "count",
+      "unit": "attributed contributing sessions",
+      "definition": "Distinct attributed sessions with a contribution_made event, emitted after a new pull is accepted.",
+      "numerator": "COUNT(DISTINCT session_id) for contribution_made",
+      "denominator": "first_mirror for the contribution-after-mirror conversion view",
+      "window": "contribution_made occurred_at in the week",
+      "grain": "session",
+      "source": [
+        { "path": "app/src/entry.py", "locator": "contribution_made emission after accepted pull" },
+        { "path": "app/src/attribution.py", "locator": "channel_report event grouping" },
+        { "path": "docs/attribution.md", "locator": "The clone gap" }
+      ],
+      "reconciliation": "Report both the deduplicated contributing-session count and, when needed, the raw accepted-pull ledger count; never label the former as number of pulls.",
+      "pagination": {
+        "required": true,
+        "reader": "list_events via channel_report",
+        "continuation": "Collect all event pages before deduplicating by session.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["rejected, withdrawn, or malformed pulls", "repeat events from the same session when presenting people activation", "bot sessions"],
+      "privacyBoundary": "The report retains no pull body, diff, email, IP, or repository path; only aggregate attributed counts are published.",
+      "owner": "Product",
+      "availability": "implemented",
+      "cadence": "weekly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "No consent prompt: DNT/GPC visitors and configured EU/EEA skip-country visitors receive no cookie, session, or event.",
+      "optOut": "Send DNT or Sec-GPC, or delete the session with DELETE /api/attribution/session from /privacy.",
+      "retention": "Sessions and events are purged ATTRIBUTION_RETENTION_DAYS (default 400) after first_seen_at; the scorecard keeps weekly aggregates only.",
+      "minimumCellSize": 10,
+      "freshnessHours": 72,
+      "coverage": "partial",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "managed_service_qualification",
+      "stage": "revenue",
+      "label": "Managed-service qualification",
+      "kind": "count",
+      "unit": "accepted discovery conversations",
+      "definition": "Discovery calls accepted by an operator for a managed-service waitlist submission; the waitlist submission count is the unqualified demand leading indicator.",
+      "numerator": "COUNT(DISTINCT session_id) for discovery_call_accepted",
+      "denominator": "managed_waitlist_submitted for accepted-conversation rate",
+      "window": "discovery_call_accepted occurred_at in the week",
+      "grain": "qualified lead/session",
+      "source": [
+        { "path": "app/src/entry.py", "locator": "managed_waitlist_submitted emission" },
+        { "path": "app/src/attribution.py", "locator": "admin_discovery_call_handler and SIDE_FUNNEL_STAGES" },
+        { "path": "docs/attribution.md", "locator": "Surfaces" }
+      ],
+      "reconciliation": "Match each accepted conversation to an existing waitlist event using the keyed email index; a missing match is a failed reconciliation, not a new lead.",
+      "pagination": {
+        "required": true,
+        "reader": "list_events via channel_report",
+        "continuation": "Read all waitlist and discovery event pages before joining.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["waitlist submissions not accepted by an operator", "duplicate acceptance attempts", "unverified or missing keyed email matches"],
+      "privacyBoundary": "The raw email is never in the event metadata; only a keyed blind index is used for the private admin join. The scorecard contains aggregate counts only.",
+      "owner": "Sales/Product",
+      "availability": "implemented",
+      "cadence": "weekly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "The submitter asks to be contacted about managed services; only a keyed email index joins the discovery record.",
+      "optOut": "Withdraw the waitlist request; DNT/GPC sessions carry no attribution.",
+      "retention": "Sessions and events are purged ATTRIBUTION_RETENTION_DAYS (default 400) after first_seen_at; the scorecard keeps weekly aggregates only.",
+      "minimumCellSize": 10,
+      "freshnessHours": 72,
+      "coverage": "full",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "paid_conversion",
+      "stage": "revenue",
+      "label": "Paid conversion",
+      "kind": "rate",
+      "unit": "basis points",
+      "definition": "Customers that became paid in the closed accounting window divided by completed trials in that same window.",
+      "numerator": "period.funnel.newPaidCustomers",
+      "denominator": "period.funnel.trialsCompleted",
+      "window": "closed accounting period matching the week or explicitly labelled month-to-date",
+      "grain": "customer",
+      "source": [
+        {
+          "path": "www/docs/unit-economics-period.schema.json",
+          "locator": "funnel.newPaidCustomers and funnel.trialsCompleted"
+        },
+        { "path": "tools/unit_economics.py", "locator": "period_report.trialToPaidConversionBps" },
+        { "path": "app/migrations/0140_restore_patreon_integration.sql", "locator": "patreon_account_links and patreon_webhook_events" },
+        { "path": "app/migrations/0184_plan_trials.sql", "locator": "plan_trials trial register" },
+        { "path": "www/docs/business-model.md", "locator": "Acquisition and paid adoption model" }
+      ],
+      "reconciliation": "Reconcile newPaidCustomers to the billing provider ledger and recognized invoice receipts; reconcile trialsCompleted to the approved trial register. Do not infer managed-service revenue while checkout is research-preview-not-for-sale.",
+      "pagination": {
+        "required": false,
+        "reader": "closed accounting export and provider ledger",
+        "continuation": "If a provider export is paginated, exhaust every continuation token and retain the export row count.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["free accounts", "refunds and failed payments until the accounting policy classifies them", "synthetic or employee trials", "managed checkout not yet enabled"],
+      "privacyBoundary": "The period file has aggregate counts and reconciliation references only; provider customer/subscription identifiers remain encrypted or in the billing system.",
+      "owner": "Finance/Product",
+      "availability": "accounting-reconciliation",
+      "cadence": "weekly",
+      "privacyClass": "confidential-finance",
+      "collection": "accounting-ledger",
+      "consent": "Contractual billing record; no product tracking is added to measure it.",
+      "optOut": "Not applicable: accounting obligation. Only aggregate counts leave the finance system.",
+      "retention": "Provider and invoice records follow the accounting retention obligation; period files keep aggregates and evidence references.",
+      "minimumCellSize": 10,
+      "freshnessHours": 720,
+      "coverage": "full",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "retention",
+      "stage": "revenue",
+      "label": "Paid logo retention",
+      "kind": "rate",
+      "unit": "basis points",
+      "definition": "Paid accounts active at the end of the week that were also active at the beginning, divided by paid accounts active at the beginning.",
+      "numerator": "COUNT(accounts active at week_start AND week_end)",
+      "denominator": "COUNT(accounts active at week_start)",
+      "window": "week boundary snapshots; use the same timezone and billing status policy at both boundaries",
+      "grain": "account",
+      "source": [
+        { "path": "app/migrations/0140_restore_patreon_integration.sql", "locator": "patreon_account_links and patreon_reconciliation_generations" },
+        { "path": "app/src/patreon_handler.py", "locator": "_apply_membership" },
+        { "path": "www/docs/business-model.md", "locator": "Unit-economics model and instrumentation" }
+      ],
+      "reconciliation": "Require retained week-start and week-end billing snapshots or provider exports. The current membership table alone is not historical evidence and must not be used to reconstruct prior weeks.",
+      "pagination": {
+        "required": false,
+        "reader": "billing/accounting snapshot export",
+        "continuation": "Exhaust every provider page for both boundary snapshots before joining on the keyed account id.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["free accounts", "cancelled accounts after the policy-defined grace period", "accounts with missing boundary status", "new accounts without a week-start observation"],
+      "privacyBoundary": "Join on keyed account identifiers only; publish a rate and counts, never an account list or cancellation reason.",
+      "owner": "Finance/Product",
+      "availability": "accounting-reconciliation",
+      "cadence": "weekly",
+      "privacyClass": "confidential-finance",
+      "collection": "accounting-ledger",
+      "consent": "Contractual billing record; no product tracking is added to measure it.",
+      "optOut": "Not applicable: accounting obligation. Only aggregate counts leave the finance system.",
+      "retention": "Week-boundary billing snapshots are kept only as long as the closed period needs them; the review keeps the rate and counts.",
+      "minimumCellSize": 10,
+      "freshnessHours": 720,
+      "coverage": "full",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "feature_adoption",
+      "stage": "product",
+      "label": "Feature adoption signal",
+      "kind": "count",
+      "unit": "consented analytics identities by allowlisted action",
+      "definition": "Distinct opted-in first-party analytics identities performing one of the fixed product actions during the week, reported by action; this is a directional signal, not total user adoption.",
+      "numerator": "COUNT(DISTINCT distinct_id) grouped by fixed forkmesh_product_action",
+      "denominator": "COUNT(DISTINCT opted-in distinct_id with any allowlisted action) only when explicitly labelled as opted-in coverage",
+      "window": "Analytics event timestamp in the week",
+      "grain": "consented analytics identity/action",
+      "source": [
+        { "path": "www/public/analytics.js", "locator": "PRODUCT_ACTIONS and recordProductAction" },
+        {
+          "path": "app/tests/test_first_party_analytics.py",
+          "locator": "test_site_controller_is_consent_gated_and_first_party"
+        },
+        { "path": "www/public/privacy.html", "locator": "analytics-choice-heading and analytics-consent-status" }
+      ],
+      "reconciliation": "Reconcile the export event total and distinct-id total to the export manifest. Label coverage as partial because consent is opt-in; never backfill non-consenting visitors as zero adoption.",
+      "pagination": {
+        "required": true,
+        "reader": "Analytics package export (GET /api/analytics/{org}/projects/{id}/export) or a trends query on forkmesh_product_action",
+        "continuation": "The export is one bounded document; when it reports truncated, narrow the window and repeat. Retain pages_collected and provider_total.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["visitors without explicit analytics consent", "DNT/GPC visitors", "autocapture, pageview, session-recording, and free-form events", "unknown action names"],
+      "privacyBoundary": "The client sends only fixed action names and coarse surfaces after consent. No raw path, query, referrer, text, account id, repository id, or session recording is used.",
+      "owner": "Product/Privacy",
+      "availability": "implemented-with-partial-coverage",
+      "cadence": "weekly",
+      "privacyClass": "consented-analytics",
+      "collection": "consented-analytics",
+      "consent": "Explicit opt-in on /privacy; analytics is off by default and DNT/GPC blocks it.",
+      "optOut": "Withdraw the analytics choice on /privacy at any time.",
+      "retention": "Provider project retention; the review export keeps weekly per-action aggregates only.",
+      "minimumCellSize": 10,
+      "freshnessHours": 72,
+      "coverage": "partial",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "support_load",
+      "stage": "sustainability",
+      "label": "Support load",
+      "kind": "quantity",
+      "unit": "priority-support hours",
+      "definition": "Human hours spent on onboarding, migration, incident, administration, and other scoped support work for the period.",
+      "numerator": "SUM(measurements.quantity) where unit=priority-support-hour",
+      "denominator": null,
+      "window": "closed weekly support ledger window",
+      "grain": "support case/time entry",
+      "source": [
+        { "path": "www/public/business-model.json", "locator": "usageUnits.priority-support-hour" },
+        { "path": "tools/unit_economics.py", "locator": "validate_period measurements and serviceCostMicrousd" },
+        { "path": "www/docs/operations/business-model-rollout.md", "locator": "Owners and release gate" }
+      ],
+      "reconciliation": "Reconcile hours to the support time ledger and the six-gate supportReview evidence. Missing support entries make the period incomplete; they are not zero hours.",
+      "pagination": {
+        "required": false,
+        "reader": "support ledger export",
+        "continuation": "Exhaust all ledger pages or attach a signed row-count reconciliation.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["unscoped community discussion", "automated alerts without human time", "internal engineering time unless booked to support"],
+      "privacyBoundary": "The scorecard stores hours and sanitized evidence references, never ticket bodies, customer names, repository names, or private incident details.",
+      "owner": "Support",
+      "availability": "accounting-reconciliation",
+      "cadence": "weekly",
+      "privacyClass": "internal-operations",
+      "collection": "accounting-ledger",
+      "consent": "Staff time entries; no customer content is recorded in the ledger export.",
+      "optOut": "Not applicable: operational ledger with no customer content.",
+      "retention": "The support ledger keeps sanitized evidence references; the review keeps hours by category.",
+      "minimumCellSize": 5,
+      "freshnessHours": 720,
+      "coverage": "full",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "infrastructure_cost",
+      "stage": "sustainability",
+      "label": "Infrastructure cost",
+      "kind": "currency",
+      "unit": "micro-USD",
+      "definition": "The sum of invoice-backed costs for every published service unit in scope, including provider usage, managed hosts, runners, and support where applicable.",
+      "numerator": "SUM(measurements.costMicrousd) for every servicesInScope unit",
+      "denominator": null,
+      "window": "closed accounting period; usage and invoices must cover the same interval",
+      "grain": "service unit/period",
+      "source": [
+        {
+          "path": "app/src/usage_reporting.py",
+          "locator": "unitEconomics measurements and provider-invoice-reconciliation-required"
+        },
+        { "path": "www/public/business-model.json", "locator": "usageUnits and costSource" },
+        { "path": "www/docs/unit-economics-period.schema.json", "locator": "measurements and sourceEvidence" },
+        { "path": "tools/unit_economics.py", "locator": "serviceCostMicrousd" }
+      ],
+      "reconciliation": "Reconcile each quantity to provider analytics and each costMicrousd value to an invoice, host ledger, runner ledger, or support ledger. Analytics unavailability and missing invoices stay unknown.",
+      "pagination": {
+        "required": true,
+        "reader": "Cloudflare analytics detail groups plus invoice/ledger exports",
+        "continuation": "Exhaust bounded provider detail pages and verify detailTruncated is false; never assume the first provider page is all usage.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["unmeasured variable-cost units", "unallocated shared cost without a reviewed allocation rule", "free allowances treated as zero dollars without invoice reconciliation"],
+      "privacyBoundary": "Usage reporting is network aggregate. Cost exports contain quantities and evidence labels, not raw requests, paths, customer ids, repository data, or IPs.",
+      "owner": "Infrastructure/Finance",
+      "availability": "implemented-with-invoice-reconciliation",
+      "cadence": "weekly",
+      "privacyClass": "internal-operations",
+      "collection": "accounting-ledger",
+      "consent": "None required: network-aggregate provider usage and invoices.",
+      "optOut": "Not applicable: no personal data.",
+      "retention": "Invoices follow the accounting retention obligation; the review keeps quantities, costs, and evidence labels.",
+      "minimumCellSize": 0,
+      "freshnessHours": 720,
+      "coverage": "full",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "gross_margin",
+      "stage": "sustainability",
+      "label": "Gross margin",
+      "kind": "rate",
+      "unit": "basis points",
+      "definition": "Recognized service revenue minus invoice-backed service cost, divided by recognized service revenue.",
+      "numerator": "recognizedRevenueMicrousd - serviceCostMicrousd",
+      "denominator": "recognizedRevenueMicrousd",
+      "window": "same closed accounting period as infrastructure_cost and paid_conversion",
+      "grain": "service/period",
+      "source": [
+        { "path": "tools/unit_economics.py", "locator": "period_report grossProfitMicrousd and grossMarginBps" },
+        { "path": "www/docs/unit-economics-period.schema.json", "locator": "recognizedRevenueMicrousd, measurements, evidence" },
+        { "path": "www/docs/business-model.md", "locator": "Unit-economics model and instrumentation" }
+      ],
+      "reconciliation": "Run tools/unit_economics.py report on the period file. The report is complete only when every in-scope unit has source evidence and all required evidence fields are present; with zero revenue, margin is unknown rather than infinite.",
+      "pagination": {
+        "required": false,
+        "reader": "validated period file",
+        "continuation": "Any source export feeding the period file must be fully collected before validation.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["unrecognized cash receipts", "unmeasured or uninvoiceable service costs", "periods with missing usageWindowComplete or evidence", "zero-revenue periods reported as a percentage"],
+      "privacyBoundary": "Publish revenue, cost, profit, margin, target, and evidence status only; retain invoice and customer detail in finance systems.",
+      "owner": "Finance",
+      "availability": "implemented-with-invoice-reconciliation",
+      "cadence": "weekly",
+      "privacyClass": "confidential-finance",
+      "collection": "accounting-ledger",
+      "consent": "Contractual billing and invoice records; no product tracking is added to measure it.",
+      "optOut": "Not applicable: accounting obligation. Only aggregate results leave the finance system.",
+      "retention": "Invoice and customer detail stay in finance systems; the review keeps revenue, cost, profit, and margin.",
+      "minimumCellSize": 10,
+      "freshnessHours": 720,
+      "coverage": "full",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "successful_migration",
+      "stage": "activation",
+      "label": "Successful migration",
+      "kind": "rate",
+      "unit": "basis points",
+      "definition": "Provider migration runs that reached signed completion divided by runs that reached any terminal outcome during the month.",
+      "numerator": "COUNT(repository_migration_runs) where outcome='completed' and finished_at is in the month",
+      "denominator": "COUNT(repository_migration_runs) where outcome IN ('completed','abandoned','failed','rolled_back') and finished_at is in the month",
+      "window": "finished_at in the UTC calendar month; runs still running are reported separately as in flight",
+      "grain": "migration run (job_id, generation)",
+      "source": [
+        { "path": "app/src/repository_imports.py", "locator": "_save_migration_run and _migration_metrics" },
+        { "path": "app/src/schema.py", "locator": "repository_migration_runs and idx_repository_migration_runs_metrics" },
+        { "path": "www/docs/engineering/quality-gates.json", "locator": "repository-migration-setup-p50" },
+        { "path": "www/docs/repository-imports.md", "locator": "Idempotence, checkpoints, and signed completion" }
+      ],
+      "reconciliation": "The authenticated _migration_metrics view reads latest_1000_runs and is a diagnostic, not a monthly population. Publish only a finished_at-bounded export whose collected row count equals COUNT(*) for the same predicate, and reconcile completed runs to jobs carrying a non-empty signed state_hash.",
+      "pagination": {
+        "required": true,
+        "reader": "finished_at-bounded repository_migration_runs export ordered by finished_at, job_id, generation",
+        "continuation": "Keyset on (finished_at, job_id, generation) until a short page; assert collected rows equal the COUNT(*) for the window.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["runs still running at the data cut", "external listings with no transfer job", "automated fixture jobs", "the encrypted data column, which is never decrypted for this metric"],
+      "privacyBoundary": "Only provider, outcome, and duration columns are read. No repository id, owner_bi, checkpoint, or provider identifier enters the export; provider breakdowns obey the minimum cell size.",
+      "owner": "Product",
+      "availability": "requires-period-export",
+      "cadence": "monthly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "Operational record of a migration the owner started; no additional tracking is added.",
+      "optOut": "Migrations run on a self-hosted node never report. Deleting a job removes its runs.",
+      "retention": "Run rows persist until their job is deleted; the review keeps monthly aggregates only.",
+      "minimumCellSize": 10,
+      "freshnessHours": 168,
+      "coverage": "full",
+      "guardrails": [
+        {
+          "id": "repository-migration-setup-p50",
+          "rule": "setup p50 must stay at or below 180000 ms",
+          "source": "www/docs/engineering/quality-gates.json"
+        }
+      ],
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "first_contribution",
+      "stage": "community",
+      "label": "First contribution",
+      "kind": "count",
+      "unit": "public contributor identities",
+      "definition": "Distinct public contributor identities whose cumulative contribution tally is positive at month end and was absent or zero at month start.",
+      "numerator": "COUNT(author_bi with total > 0 in the month-end contributor_activity snapshot AND absent or total = 0 in the month-start snapshot)",
+      "denominator": null,
+      "window": "difference between the UTC month-start and month-end boundary snapshots",
+      "grain": "contributor identity",
+      "source": [
+        { "path": "app/src/entry.py", "locator": "_record_contributor and contributor_activity" },
+        { "path": "app/src/schema.py", "locator": "contributor_activity" }
+      ],
+      "reconciliation": "contributor_activity is cumulative and keeps only last_ts, so a past month cannot be reconstructed from it. Both boundary snapshots must be retained; a missing snapshot makes the month UNKNOWN. The attributed contribution row is a different, session-grain measure and is never expected to match.",
+      "pagination": {
+        "required": true,
+        "reader": "contributor_activity boundary snapshot of (author_bi, total)",
+        "continuation": "Keyset on author_bi until exhausted; the snapshot row count must equal COUNT(*) at the cut.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["contributions rejected before _record_contributor", "display names and per-author tallies", "renamed identities, which count as new and are an acknowledged overcount"],
+      "privacyBoundary": "The boundary snapshot keeps only author_bi and total, never names. Only the monthly count is published.",
+      "owner": "Community",
+      "availability": "requires-boundary-snapshot",
+      "cadence": "monthly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "Derived from contributions the author already published; no additional tracking is added.",
+      "optOut": "Contributions that stay on a self-hosted node and never federate are not counted.",
+      "retention": "Boundary snapshots are deleted once the month's review is recorded and the following month's start snapshot exists.",
+      "minimumCellSize": 10,
+      "freshnessHours": 168,
+      "coverage": "lower-bound",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "active_maintainers",
+      "stage": "community",
+      "label": "Active maintainers",
+      "kind": "count",
+      "unit": "maintainer accounts",
+      "definition": "Distinct accounts that completed an owner-authorized web merge during the trailing 28 days ending at month end.",
+      "numerator": "COUNT(DISTINCT actor_bi) from repo_merge_jobs where status='succeeded' and updated_at is in the trailing 28 days",
+      "denominator": null,
+      "window": "28 UTC days ending at the month-end boundary",
+      "grain": "account",
+      "source": [
+        { "path": "app/src/route_handlers.py", "locator": "repo_merge_jobs and HTTPS_MIRROR_MERGE_JOB_RETENTION_MS" },
+        { "path": "app/src/schema.py", "locator": "repo_merge_jobs" },
+        { "path": "www/docs/operations/mirror-node.md", "locator": "Owner-authorized web merges" }
+      ],
+      "reconciliation": "Merge jobs expire after HTTPS_MIRROR_MERGE_JOB_RETENTION_MS (7 days), so a 28-day window needs daily exports of the distinct actor_bi set, unioned before counting. A missing daily export makes the value UNKNOWN. Merges made on a maintainer's own node or over SSH never touch this table.",
+      "pagination": {
+        "required": true,
+        "reader": "daily repo_merge_jobs export of distinct succeeded actor_bi",
+        "continuation": "Keyset on (updated_at, request_id) until exhausted before taking the distinct set.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["failed or requested jobs", "merges performed off the hosted merge path", "repository and pull identifiers"],
+      "privacyBoundary": "Daily exports hold blind indexes only and are deleted after the month is reviewed; only the distinct count is published.",
+      "owner": "Community",
+      "availability": "requires-period-export",
+      "cadence": "monthly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "Operational record of a merge the maintainer requested; no additional tracking is added.",
+      "optOut": "Merge on your own node or over SSH; the hosted merge path is never required.",
+      "retention": "Jobs expire after 7 days; daily blind-index exports are deleted after the monthly review.",
+      "minimumCellSize": 10,
+      "freshnessHours": 168,
+      "coverage": "lower-bound",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "hosted_service_adoption",
+      "stage": "product",
+      "label": "Hosted-service adoption",
+      "kind": "rate",
+      "unit": "basis points",
+      "definition": "Owners with at least one ForkMesh-hosted repository divided by owners with at least one published repository, both at the month-end snapshot.",
+      "numerator": "COUNT(DISTINCT owner) with a catalog record whose source is HOSTED_SOURCE or a hosted import promoted by _promote_hosted_repository_import",
+      "denominator": "COUNT(DISTINCT owner) with any published catalog record",
+      "window": "UTC month-end boundary snapshot",
+      "grain": "owner",
+      "source": [
+        { "path": "app/src/hosted_git.py", "locator": "HOSTED_SOURCE and _create_empty_repository" },
+        { "path": "app/src/entry.py", "locator": "_promote_hosted_repository_import" },
+        { "path": "app/src/repository_imports.py", "locator": "MIRRORED_STATUSES" },
+        { "path": "www/docs/hosted-repositories.md", "locator": "Operator notes" },
+        { "path": "www/docs/business-model.md", "locator": "Initial plans" }
+      ],
+      "reconciliation": "Count both populations from the same snapshot. A hosted record taken over by the owner's signed node publication stops counting and is reported as a hosted-to-self-hosted transition, a portability success rather than churn. Payment is never inferred from hosting; paid rows reconcile to billing.",
+      "pagination": {
+        "required": true,
+        "reader": "month-end catalog snapshot grouped by owner",
+        "continuation": "Keyset over catalog records until exhausted; the collected count must equal COUNT(*) at the cut.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["private repositories", "external listings that are not hosted", "deleted or archived records at the cut"],
+      "privacyBoundary": "Owners are counted by keyed index in the private snapshot; only the two counts and the rate are published.",
+      "owner": "Product",
+      "availability": "requires-boundary-snapshot",
+      "cadence": "monthly",
+      "privacyClass": "pseudonymous-aggregate",
+      "collection": "hosted-telemetry",
+      "consent": "Derived from catalog records the owner published; no additional tracking is added.",
+      "optOut": "Self-host the repository; a signed publication from your own node replaces the hosted record.",
+      "retention": "The month-end snapshot is deleted after the review is recorded.",
+      "minimumCellSize": 10,
+      "freshnessHours": 168,
+      "coverage": "full",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "repository_availability",
+      "stage": "availability",
+      "label": "Repository availability",
+      "kind": "rate",
+      "unit": "basis points",
+      "definition": "Passed synthetic status samples divided by expected samples for the public repository read and clone systems, over completed UTC days.",
+      "numerator": "SUM(checks - failures) over completed UTC days for the in-scope systems",
+      "denominator": "SUM(expected samples) for the same systems and days; a missing sample lowers coverage and never counts as a pass",
+      "window": "completed UTC days in the month",
+      "grain": "system-day",
+      "source": [
+        { "path": "app/src/status_monitoring.py", "locator": "status_history, _status_day_records, uptimePct, coveragePct" },
+        { "path": "app/src/schema.py", "locator": "system_status_daily_batch" },
+        { "path": "app/src/entry.py", "locator": "STATUS_HISTORY_DAYS" },
+        { "path": "www/docs/operations/git-conformance.md", "locator": "Evidence chain / Telemetry and privacy" }
+      ],
+      "reconciliation": "Status buckets keep STATUS_HISTORY_DAYS (30) days, so completed days are exported weekly; a day missing from the export is UNKNOWN, not available. Cross-check a sampled outage against the status alert log and the latest stock Git conformance report.",
+      "pagination": {
+        "required": false,
+        "reader": "weekly export of completed system_status_daily_batch days",
+        "continuation": "One row per UTC day; assert the exported day count equals the completed days in the window.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["the current incomplete UTC day", "systems outside the public read and clone path", "deploy-grace samples, which are reported separately"],
+      "privacyBoundary": "Server-originated probes only; no user, repository content, or client address is recorded.",
+      "owner": "Infrastructure",
+      "availability": "implemented",
+      "cadence": "monthly",
+      "privacyClass": "synthetic",
+      "collection": "synthetic-probe",
+      "consent": "None required: the samples are server-originated probes with no personal data.",
+      "optOut": "Not applicable: no personal data.",
+      "retention": "Status buckets keep 30 days; the review keeps daily aggregates.",
+      "minimumCellSize": 0,
+      "freshnessHours": 168,
+      "coverage": "full",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    },
+    {
+      "id": "independent_mirror_nodes",
+      "stage": "availability",
+      "label": "Independent mirror nodes",
+      "kind": "count",
+      "unit": "mirror nodes",
+      "definition": "Median over UTC days of distinct mirror nodes holding a fresh account-bound active proof, split into the ForkMesh fleet and other operators.",
+      "numerator": "MEDIAN(daily COUNT(DISTINCT node_bi) from mirror_https_endpoints where forkmesh_active=1 and forkmesh_verified_at is within HTTPS_MIRROR_STATUS_FRESH_MS of the sample)",
+      "denominator": null,
+      "window": "one daily sample per UTC day in the month",
+      "grain": "mirror node-day",
+      "source": [
+        { "path": "app/src/status_monitoring.py", "locator": "_status_active_mirror_rows and HTTPS_MIRROR_STATUS_FRESH_MS" },
+        { "path": "app/src/schema.py", "locator": "mirror_https_endpoints" },
+        { "path": "www/docs/product-promise.md", "locator": "Four-step proof / 2. Add an independent mirror" }
+      ],
+      "reconciliation": "Key liveness on the signed active proof, never on checked_at. The fleet split is by node_name GLOB 'mirror*'; other operators are the remainder. Reconcile a sampled day against the /status mirror roster.",
+      "pagination": {
+        "required": true,
+        "reader": "daily mirror_https_endpoints sample",
+        "continuation": "Keyset on node_bi until exhausted; the status roster's STATUS_MIRROR_MAX cap does not bound this count.",
+        "page_size_is_cap": false
+      },
+      "exclusions": ["abuse-blocked endpoints", "registrations without a fresh active proof", "self-hosted nodes that never register, which are invisible by design and never probed or inferred"],
+      "privacyBoundary": "Endpoint registrations are voluntary public routing records. Only counts are published; region breakdowns obey the minimum cell size.",
+      "owner": "Infrastructure/Community",
+      "availability": "requires-period-export",
+      "cadence": "monthly",
+      "privacyClass": "public-aggregate",
+      "collection": "operator-reported",
+      "consent": "An operator chooses to register a public endpoint; running ForkMesh never requires registration.",
+      "optOut": "Do not register, or remove the endpoint; no heartbeat is required to self-host.",
+      "retention": "Endpoint rows exist while registered; the review keeps daily counts.",
+      "minimumCellSize": 5,
+      "freshnessHours": 168,
+      "coverage": "lower-bound",
+      "baseline": {
+        "status": "unmeasured",
+        "value": null,
+        "asOf": null,
+        "establishedBy": "the first COMPLETE period recorded after this dictionary version"
+      },
+      "target": {
+        "status": "to-be-set",
+        "value": null,
+        "source": null,
+        "decideAt": "the first monthly review with two comparable baseline periods"
+      }
+    }
+  ]
+}

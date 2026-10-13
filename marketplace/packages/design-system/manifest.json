@@ -1,0 +1,83 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "design-system",
+  "name": "Design System",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Developer Tools",
+  "version": "1.1.0",
+  "summary": "ForkMesh's design specs for desktop, iPhone, Android and the web at /design: colours, type, spacing, every button style and every icon, read from the apps' own code. Adds a Design button to the desktop rail and the phone menu.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Design System page: platform tabs, colour swatches in light and dark, a row of button styles and a grid of icons"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:design-system",
+    "www-page": "content/www/design.html",
+    "www-script": "content/www/design.js",
+    "www-style": "content/www/design.css",
+    "www-builder": "content/www/inventory.py",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "www.page",
+      "entrypoint": "www-page",
+      "config": {
+        "route": "/design",
+        "title": "Design System",
+        "assets": ["www-script", "www-style"],
+        "builder": "www-builder"
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "chrome.rail.button",
+      "label": "Add a Design button to the desktop rail and the phone menu",
+      "risk": "low"
+    },
+    {
+      "id": "external.link.open",
+      "label": "Open the design system page of the active ForkMesh host in your browser",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

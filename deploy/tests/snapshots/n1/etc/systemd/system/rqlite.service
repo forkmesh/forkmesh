@@ -1,0 +1,62 @@
+# Managed by deploy/core/render.py for node n1. Do not edit on the node.
+[Unit]
+Description=rqlite for ForkMesh Next (node n1)
+Documentation=https://rqlite.io/docs/
+Wants=network-online.target wg-quick@wg0.service
+After=network-online.target wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=rqlite
+Group=rqlite
+# 0027: the app user (in group rqlite) may read db.sqlite for local reads.
+UMask=0027
+# rqlite rewrites 'now' with the host's local clock (app/host/RQLITE_FINDINGS.md).
+Environment=TZ=UTC
+Environment=GOMEMLIMIT=110MiB
+# Basic-auth users (built from RQLITE_PASSWORD on the operator box); %d is
+# this unit's credentials directory.
+LoadCredentialEncrypted=rqlite-auth.json:/etc/forkmesh-next/creds/rqlite-auth.json.cred
+ExecStart=/usr/local/bin/rqlited \
+  -node-id n1 \
+  -http-addr 127.0.0.1:4001 \
+  -raft-addr 10.77.0.1:4002 \
+  -auth %d/rqlite-auth.json \
+  -join-as fmnext \
+  -bootstrap-expect 3 \
+  -join 10.77.0.1:4002,10.77.0.2:4002,10.77.0.3:4002 \
+  -fk \
+  -raft-snap-wal-size 33554432 \
+  /var/lib/forkmesh-next/rqlite
+Restart=always
+RestartSec=2s
+TimeoutStopSec=30s
+OOMScoreAdjust=-800
+MemoryMax=220M
+LimitNOFILE=65536
+# Database pages never reach the swapfile or zram.
+MemorySwapMax=0
+IPAddressDeny=169.254.0.0/16
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/forkmesh-next/rqlite
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

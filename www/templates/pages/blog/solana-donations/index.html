@@ -1,0 +1,40 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Solana donations" %}
+{% set slug = "solana-donations" %}
+{% set image = "/assets/blog/features/solana-donations.webp" %}
+{% set description = "Publish a self-custodial Solana address or contribute directly from your own wallet to ForkMesh's transparent community reward pool. ForkMesh never stores contributors' or recipients' wallet private keys." %}
+{% set share_description = "Publish a self-custodial Solana address or contribute directly from your own wallet to the transparent community reward pool. ForkMesh never stores contributors' or recipients' wallet private keys." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Accounts &amp; rewards</p>
+            <h1>Solana donations</h1>
+            <p class="lede">Publish a self-custodial Solana address or contribute directly from your own wallet to the transparent community reward pool.</p>
+            <div class="meta"><span class="pill">Feature 63 of 72</span><span>SOL · USDT</span><span>Accounts, money &amp; rewards</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/solana-donations.webp" alt="Abstract ForkMesh artwork for Solana donations">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Voluntary on-chain support can help independent mirror operators without turning ForkMesh into a bank. A node publishes only its public payout address. A contributor approves a reference-bound transfer in their own wallet and ForkMesh independently verifies finality on the configured Solana network.</p>
+          <p>Preservation costs time, disk, bandwidth, and maintenance, so incentives need to point at the nodes and people doing the work. In ForkMesh, Solana donations addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh links a signed node identity to a valid public address. For the community pool, the website prepares—but never signs—a transfer from the contributor’s wallet to one visible public pool address. The pool’s signing key is never held by the website: it stays locally encrypted, and every outgoing reward needs explicit approval before it is signed.</p>
+          <p>The interface separately labels user-owned funds, the community-funded pool, pending allocations, and finalized on-chain transfers. Transaction signatures link to the public explorer, and no visual animation counts as settlement.</p>
+          <div class="note"><strong>Non-custodial notice:</strong> ForkMesh does not hold or control user funds, create user wallets, or store contributors’ or recipients’ wallet private keys, seed phrases, or mnemonics. Contributions are voluntary and do not promise a financial return.</div>
+          <h2>Where it fits</h2>
+          <p>Use direct contributions when you want transparent public settlement and are comfortable approving the transaction in a self-custodial wallet. Never send funds to an address or network you have not independently verified.</p>
+          <p>Participation in ForkMesh never requires a contribution, and a public payout address is not proof that a node is healthy or trustworthy.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/public-node-profiles/">← Public node profiles</a>
+          <a href="/blog/make-it-rain/">Make it rain →</a>
+        </nav>
+{% endblock %}

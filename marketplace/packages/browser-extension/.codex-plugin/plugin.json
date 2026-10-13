@@ -1,0 +1,30 @@
+{
+  "name": "browser-extension",
+  "version": "2.0.0",
+  "description": "The ForkMesh extension for Chrome: fills and saves Password Vault logins and links Gmail, Zoho Mail and Mastodon conversations to CRM contacts from one sign-in.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com/market",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["chrome-extension", "browser", "password-vault", "autofill", "crm", "gmail", "mastodon"],
+  "interface": {
+    "displayName": "Browser Extension",
+    "shortDescription": "One Chrome extension for the Password Vault and the CRM.",
+    "longDescription": "Install one ForkMesh extension and sign in once. It fills a Password Vault login into the site it belongs to when you press Fill, saves the login you just typed, and generates passwords. In Gmail, Zoho Mail and the Mastodon instances you add, it shows the CRM record above the open message and links the message to a contact in one click.",
+    "developerName": "ForkMesh",
+    "category": "Extensions",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com/market",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "How do I install the ForkMesh browser extension?",
+      "How does the extension fill a Password Vault login?",
+      "How do I link an email to a CRM contact?"
+    ],
+    "brandColor": "#2F81F7"
+  }
+}

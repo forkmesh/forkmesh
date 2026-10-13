@@ -1,0 +1,7 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=Reload the office TURN relay TLS certificate
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl try-reload-or-restart fmnext-turn.service

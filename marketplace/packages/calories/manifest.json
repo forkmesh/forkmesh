@@ -1,0 +1,119 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "calories",
+  "name": "Calorie Counter",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Health",
+  "version": "2.5.0",
+  "summary": "A private calorie and macro diary for your own account, encrypted at rest under your own key, synced across web, desktop, and mobile, with photo identification, barcode scanning, goals, reminders, charts, and challenges.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Calorie Counter dashboard with today's calorie ring, macro bars, a 30-day calorie chart, and a friends challenge leaderboard"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:calories",
+    "worker": "content/worker/calories.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/calories",
+        "title": "Calories",
+        "description": "Your private food diary with AI photo identification, barcode lookups, goals, reminders, charts, and friend challenges.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Calories",
+          "icon": "apple",
+          "order": 44
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.calories.read",
+      "label": "Read your own food diary, weights, goals, and challenge standings, all encrypted under your account's own key",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.calories.write",
+      "label": "Log meals and weigh-ins, set goals and reminders, and create, join, or invite friends to challenges",
+      "risk": "sensitive"
+    },
+    {
+      "id": "ai.vision.analyze",
+      "label": "Send a photo or meal description you submit to the host AI model for a calorie estimate; never stored",
+      "risk": "high"
+    },
+    {
+      "id": "external.food.lookup",
+      "label": "Look up barcodes and food names on Open Food Facts and, with your own key, USDA FoodData Central",
+      "risk": "sensitive"
+    },
+    {
+      "id": "camera.capture",
+      "label": "Use the camera you grant in the browser to photograph meals and scan barcodes",
+      "risk": "sensitive"
+    },
+    {
+      "id": "location.country.coarse",
+      "label": "Read the approximate country of your connection to show weights in pounds or kilograms",
+      "risk": "low"
+    },
+    {
+      "id": "notifications.ping",
+      "label": "Send you meal reminders and challenge invitations as pings",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account"
+  },
+  "worker": {
+    "module": "calories",
+    "api": "/api/calories",
+    "outboundOrigins": [
+      "https://world.openfoodfacts.org",
+      "https://search.openfoodfacts.org",
+      "https://api.nal.usda.gov"
+    ]
+  }
+}

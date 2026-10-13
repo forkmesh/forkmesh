@@ -1,0 +1,14 @@
+.wrangler/
+.pywrangler/
+# Wrangler generates this dependency lock during Python Worker builds. It is
+# build output, and leaving it visible makes a following target look dirty.
+pylock.toml
+# Comment/docstring-stripped copy of src/ that the Worker ships (built by
+# tools/build_worker_python.py; src/ stays the source of truth).
+src_build/
+.venv/
+__pycache__/
+.mypy_cache/
+.dev.vars
+.worktrees/
+wrangler.decommissioned.toml

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The watch's own keychain namespace, shared with its widgets. The
+	     phone's group never reaches the watch (PARITY 4.2); phase 2 keeps the
+	     watch's own login here. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.forkmesh.forkmesh.watchkitapp</string>
+	</array>
+</dict>
+</plist>

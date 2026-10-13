@@ -1,0 +1,85 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "marketing",
+  "name": "Marketing",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.36.0",
+  "summary": "One marketing command center: web traffic by channel and search keywords from Analytics, every channel's stats, campaigns planned with the Marketing agent, content, ads across 100 channels, and posting to X.",
+  "screenshots": [
+    { "path": "preview/market.png", "alt": "Marketing dashboard with channel KPIs, performance trends, and a cross-channel content pipeline" }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": {
+    "desktop": "builtin:marketing",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "worker": "content/worker/marketing.py",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/marketing",
+        "title": "Marketing",
+        "description": "Plan content and manage ads across 100 global marketing channels.",
+        "script": "dashboard-script",
+        "navigation": { "label": "Marketing", "icon": "megaphone", "order": 41 }
+      }
+    }
+  ],
+  "permissions": [
+    { "id": "organization.marketing.read", "label": "Read organization marketing content and analytics", "risk": "sensitive" },
+    { "id": "organization.analytics.read", "label": "Read visits and conversions per campaign from the organization's Analytics projects", "risk": "sensitive" },
+    { "id": "organization.marketing.write", "label": "Create and update shared marketing plans, ads, budgets, and metrics", "risk": "sensitive" },
+    { "id": "organization.crm.read", "label": "Read the organization's CRM and Zoho Mail sync to count email and closed deals and suggest emails to send", "risk": "sensitive" },
+    { "id": "organization.discord.read", "label": "Read the member and online counts of the organization's connected Discord server", "risk": "sensitive" },
+    { "id": "organization.discord.messages.read", "label": "Read the last 6 days of posts in the channels chosen for the organization's Discord connector, without storing them", "risk": "sensitive" },
+    { "id": "external.feed.read", "label": "Read configured public channel feeds and profile statistics from approved origins", "risk": "sensitive" },
+    { "id": "external.link.open", "label": "Open configured channel profiles, published content, and ad consoles after an explicit click", "risk": "sensitive" },
+    { "id": "external.social.post", "label": "Post to the organization's connected X account when an owner or admin presses Post", "risk": "high" },
+    { "id": "external.social.follow", "label": "Follow suggested people from the organization's Mastodon account when an owner or admin presses Follow", "risk": "high" },
+    { "id": "desktop.agents.run", "label": "Show this desktop's special agents on their channel pages, and open, run or message one when you press its button", "risk": "sensitive" },
+    { "id": "account.ai.prompt", "label": "Send campaign, channel and keyword summaries to ForkMesh AI when a member asks the Marketing agent for suggestions", "risk": "low" }
+  ],
+  "dependencies": [],
+  "trust": { "sourceAvailable": true, "reproducibleBuild": false, "signature": "verified-bundle" },
+  "install": { "bundled": true, "default": false },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "organization" },
+  "worker": {
+    "module": "marketing",
+    "api": "/api/marketing",
+    "outboundOrigins": [
+      "https://forkmesh.com",
+      "https://www.forkmesh.com",
+      "https://www.reddit.com",
+      "https://old.reddit.com",
+      "https://api.x.com",
+      "https://www.youtube.com",
+      "https://mastodon.social",
+      "https://mastodon.online",
+      "https://fosstodon.org",
+      "https://hachyderm.io",
+      "https://mas.to",
+      "https://infosec.exchange",
+      "https://discord.com",
+      "https://api.github.com"
+    ]
+  }
+}

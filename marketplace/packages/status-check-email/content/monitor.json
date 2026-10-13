@@ -1,0 +1,7 @@
+{
+  "label": "Email Delivery",
+  "systems": [
+    "email"
+  ],
+  "prefixes": []
+}

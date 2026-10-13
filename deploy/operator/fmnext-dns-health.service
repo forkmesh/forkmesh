@@ -1,0 +1,17 @@
+[Unit]
+Description=ForkMesh DNS health failover (app/world.forkmesh.com and next.forkmesh.com, A/AAAA)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/forkmesh/src
+ExecStart=%h/projects/forkmesh/src/.venv/bin/python %h/projects/forkmesh/src/tools/next_dns.py health-loop --execute
+Restart=always
+RestartSec=30s
+Nice=5
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/security-clipboard-v1.json",
+  "title": "ForkMesh world security clipboard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "scannedAt",
+    "scanner",
+    "model",
+    "modelVersion",
+    "policy",
+    "durationMs",
+    "commitHash",
+    "included",
+    "excluded",
+    "findings",
+    "categories",
+    "recommendations",
+    "reviewStatus",
+    "falsePositiveStatus",
+    "publicRedaction",
+    "scopeLimitations",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "status": {
+      "enum": [
+        "Daily scan completed",
+        "No known critical findings detected",
+        "Review required",
+        "Critical findings detected",
+        "Scan failed",
+        "Scan outdated",
+        "Scope limited",
+        "Human review completed"
+      ]
+    },
+    "scannedAt": {"type": "string", "format": "date-time"},
+    "scanner": {"type": "string", "minLength": 1, "maxLength": 181},
+    "model": {"type": "string", "maxLength": 100},
+    "modelVersion": {"type": "string", "maxLength": 80},
+    "policy": {"type": "string", "minLength": 1, "maxLength": 300},
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "commitHash": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|unknown)$"},
+    "included": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"type": "string", "maxLength": 300}
+    },
+    "excluded": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"type": "string", "maxLength": 500}
+    },
+    "findings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["critical", "high", "medium", "low", "informational"],
+      "properties": {
+        "critical": {"type": "integer", "minimum": 0, "maximum": 500},
+        "high": {"type": "integer", "minimum": 0, "maximum": 500},
+        "medium": {"type": "integer", "minimum": 0, "maximum": 500},
+        "low": {"type": "integer", "minimum": 0, "maximum": 500},
+        "informational": {"type": "integer", "minimum": 0, "maximum": 500}
+      }
+    },
+    "categories": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dependency", "secretDetection", "staticAnalysis"],
+      "properties": {
+        "dependency": {"type": "integer", "minimum": 0, "maximum": 500},
+        "secretDetection": {"type": "integer", "minimum": 0, "maximum": 500},
+        "staticAnalysis": {"type": "integer", "minimum": 0, "maximum": 500}
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"type": "string", "maxLength": 500}
+    },
+    "reviewStatus": {"type": "string", "minLength": 1, "maxLength": 80},
+    "falsePositiveStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unreviewed", "confirmed", "dismissed"],
+      "properties": {
+        "unreviewed": {"type": "integer", "minimum": 0, "maximum": 500},
+        "confirmed": {"type": "integer", "minimum": 0, "maximum": 500},
+        "dismissed": {"type": "integer", "minimum": 0, "maximum": 500}
+      }
+    },
+    "publicRedaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceCode", "secrets", "sensitivePrompts", "exploitDetails"],
+      "properties": {
+        "sourceCode": {"const": true},
+        "secrets": {"const": true},
+        "sensitivePrompts": {"const": true},
+        "exploitDetails": {"const": true}
+      }
+    },
+    "scopeLimitations": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {"type": "string", "maxLength": 500}
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 20,
+      "items": {"type": "string", "maxLength": 500}
+    }
+  }
+}

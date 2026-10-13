@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "updated": "2026-09-13",
+  "tiers": {
+    "supported": "A prebuilt artifact is published on the latest release channel, bound into the Ed25519-signed release manifest, SHA-256 verified by the installer, and covered by automated install and lifecycle tests. Regressions block a release.",
+    "preview": "Packaging exists, but the latest channel does not publish the artifact or clean-machine evidence is missing. Use it knowing that fixes are best-effort.",
+    "source-only": "No prebuilt artifact. Build from source with the documented toolchain (FORKMESH_FROM_SOURCE=1).",
+    "planned": "Not installable yet. Tracked under issue #500."
+  },
+  "lifecycle": {
+    "channel": "latest",
+    "supportWindow": "Only the release currently published on the latest channel is supported. Earlier releases stay installable from their candidate-<version> channel for rollback.",
+    "verification": "install.sh authenticates release.json (built-in publisher key, a trusted key file, or a controller-pinned manifest digest), checks that it binds SHASUMS256.txt, then verifies each downloaded artifact's SHA-256 before an atomic swap.",
+    "upgrade": "curl -fsSL https://forkmesh.com/install.sh | bash",
+    "rollback": "curl -fsSL https://forkmesh.com/install.sh | FORKMESH_RELEASE=candidate-<version> bash",
+    "uninstall": "curl -fsSL https://forkmesh.com/uninstall.sh | bash",
+    "purge": "curl -fsSL https://forkmesh.com/uninstall.sh | bash -s -- --purge --yes"
+  },
+  "dataPreservation": {
+    "rule": "Upgrade, rollback, and uninstall replace or remove program files only. Settings, the node identity key, repositories, and chat history survive until the owner runs an explicit purge or a confirmed reinstall.",
+    "userData": [
+      "$XDG_CONFIG_HOME/ForkMesh",
+      "$XDG_DATA_HOME/ForkMesh",
+      "$HOME/.forkmesh",
+      "/var/lib/forkmesh",
+      "$HOME/projects/forkmesh/data",
+      "$HOME/projects/forkmesh/config",
+      "$HOME/projects/forkmesh/ssh",
+      "$HOME/projects/forkmesh/state",
+      "$HOME/projects/forkmesh/logs"
+    ],
+    "programFiles": [
+      "$HOME/.local/bin/forkmesh",
+      "$XDG_DATA_HOME/forkmesh",
+      "$XDG_CACHE_HOME/ForkMesh",
+      "$HOME/projects/forkmesh/src",
+      "$HOME/projects/forkmesh/cache",
+      "$XDG_DATA_HOME/applications/forkmesh.desktop",
+      "$XDG_CONFIG_HOME/autostart/forkmesh.desktop",
+      "/usr/local/bin/forkmesh-mirror-node",
+      "/etc/systemd/system/forkmesh-mirror-node.service"
+    ]
+  },
+  "profiles": [
+    {
+      "id": "linux-desktop-x86_64",
+      "operator": "desktop",
+      "os": "linux",
+      "arch": "x86_64",
+      "tier": "supported",
+      "install": "curl -fsSL https://forkmesh.com/install.sh | bash",
+      "artifacts": ["forkmesh-linux-x86_64", "forkmesh-linux-x86_64.AppImage"],
+      "signing": "Signed release manifest plus SHA-256; optional detached GPG signature on the AppImage.",
+      "evidence": [
+        "app/tests/test_installer_release.py",
+        "app/tests/test_native_installer_packaging.py",
+        "app/tests/test_install_lifecycle.py"
+      ]
+    },
+    {
+      "id": "linux-cli-headless-x86_64",
+      "operator": "cli",
+      "os": "linux",
+      "arch": "x86_64",
+      "tier": "supported",
+      "install": "curl -fsSL https://forkmesh.com/install.sh | bash",
+      "artifacts": ["forkmesh-linux-x86_64"],
+      "signing": "Signed release manifest plus SHA-256.",
+      "evidence": [
+        "app/tests/test_installer_release.py",
+        "app/tests/test_installer_headless_checkout.py",
+        "app/tests/test_install_lifecycle.py"
+      ]
+    },
+    {
+      "id": "linux-server-mirror-node-x86_64",
+      "operator": "server",
+      "os": "linux",
+      "arch": "x86_64",
+      "tier": "supported",
+      "install": "curl -fsSL https://forkmesh.com/install.sh | sudo bash",
+      "artifacts": ["forkmesh-mirror-node-linux-x86_64"],
+      "signing": "Signed release manifest plus SHA-256; the managed systemd unit records the installed binary digest.",
+      "evidence": [
+        "app/tests/test_qt_vultr_go_mirror_install.py",
+        "app/tests/test_mirror_service_recovery.py",
+        "app/tests/test_install_lifecycle.py"
+      ]
+    },
+    {
+      "id": "windows-desktop-x86_64",
+      "operator": "desktop",
+      "os": "windows",
+      "arch": "x86_64",
+      "tier": "supported",
+      "install": "Download forkmesh-windows-x86_64-setup.exe from https://forkmesh.com/desktop",
+      "artifacts": ["forkmesh-windows-x86_64-setup.exe"],
+      "signing": "Authenticode signature from ForkMesh's self-issued certificate (SmartScreen still warns) plus the signed release manifest.",
+      "evidence": [
+        "app/tests/test_native_installer_packaging.py",
+        "app/tests/test_release_host_completion.py"
+      ]
+    },
+    {
+      "id": "android-universal",
+      "operator": "small-device",
+      "os": "android",
+      "arch": "universal",
+      "tier": "supported",
+      "install": "Download forkmesh-android-universal.apk from https://forkmesh.com/desktop",
+      "artifacts": ["forkmesh-android-universal.apk"],
+      "signing": "APK signature scheme v2 with the ForkMesh release key plus the signed release manifest.",
+      "evidence": [
+        "app/tests/test_release_host_completion.py",
+        "app/tests/test_release_promotion_gate.py"
+      ]
+    },
+    {
+      "id": "macos-desktop-arm64",
+      "operator": "desktop",
+      "os": "macos",
+      "arch": "arm64",
+      "tier": "preview",
+      "install": "Download forkmesh-macos-arm64.dmg when the release lists it; otherwise build from source.",
+      "artifacts": ["forkmesh-macos-arm64.dmg"],
+      "signing": "Not notarized. The DMG is published only with the signed release manifest.",
+      "evidence": ["app/tests/test_native_installer_packaging.py"]
+    },
+    {
+      "id": "macos-desktop-x86_64",
+      "operator": "desktop",
+      "os": "macos",
+      "arch": "x86_64",
+      "tier": "preview",
+      "install": "Download forkmesh-macos-x86_64.dmg when the release lists it; otherwise build from source.",
+      "artifacts": ["forkmesh-macos-x86_64.dmg"],
+      "signing": "Not notarized. The DMG is published only with the signed release manifest.",
+      "evidence": ["app/tests/test_native_installer_packaging.py"]
+    },
+    {
+      "id": "linux-desktop-arm64",
+      "operator": "home-server",
+      "os": "linux",
+      "arch": "arm64",
+      "tier": "preview",
+      "install": "Use forkmesh-linux-arm64.AppImage when the release lists it; otherwise FORKMESH_FROM_SOURCE=1.",
+      "artifacts": ["forkmesh-linux-arm64.AppImage"],
+      "signing": "Signed release manifest plus SHA-256 once published.",
+      "evidence": ["app/tests/test_native_installer_packaging.py"]
+    },
+    {
+      "id": "linux-arm-small-device",
+      "operator": "small-device",
+      "os": "linux",
+      "arch": "arm64",
+      "tier": "source-only",
+      "install": "curl -fsSL https://forkmesh.com/install.sh | FORKMESH_FROM_SOURCE=1 bash",
+      "artifacts": [],
+      "signing": "Source is fetched from a signed-refs-pinned mirror; there is no binary to sign.",
+      "evidence": ["app/tests/test_installer_source.py"]
+    },
+    {
+      "id": "ios",
+      "operator": "small-device",
+      "os": "ios",
+      "arch": "arm64",
+      "tier": "preview",
+      "install": "TestFlight or App Store builds uploaded by the Codemagic ios-native-release workflow (codemagic.yaml, native/ios).",
+      "artifacts": [],
+      "signing": "Apple distribution signing through App Store Connect.",
+      "evidence": []
+    },
+    {
+      "id": "oci-container",
+      "operator": "container",
+      "os": "linux",
+      "arch": "x86_64",
+      "tier": "planned",
+      "install": "No OCI image is published yet.",
+      "artifacts": [],
+      "signing": "Planned: signed image digest with provenance attestation.",
+      "evidence": []
+    },
+    {
+      "id": "cluster",
+      "operator": "cluster",
+      "os": "linux",
+      "arch": "x86_64",
+      "tier": "planned",
+      "install": "No cluster manifests are published yet. Run one systemd mirror node per host instead.",
+      "artifacts": [],
+      "signing": "Planned: builds on the signed OCI image.",
+      "evidence": []
+    }
+  ]
+}

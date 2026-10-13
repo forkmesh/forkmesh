@@ -1,0 +1,586 @@
+/* The share, "Posted on", drafts and reach block rendered by /blog-social.js
+   at the foot of a blog post. Two post shells use it — the feature posts
+   (feature-post.css: --line, --soft, --paper, --text, --link) and the
+   announcement post (styles.css: --border, --card-soft, --card, --foreground,
+   --link) — so every colour falls back through both before landing on a
+   literal. */
+
+.blog-social {
+  --blog-social-columns: repeat(auto-fit, minmax(200px, 1fr));
+  --bs-line: var(--line, var(--border, #252525));
+  --bs-soft: var(--soft, var(--card-soft, #141414));
+  --bs-paper: var(--paper, var(--card, #080808));
+  --bs-text: var(--text, var(--foreground, #f6f6f2));
+  --bs-muted: var(--muted, #9a9a94);
+  --bs-link: var(--link, #58a6ff);
+  --bs-primary-fg: #111113;
+  --bs-primary-fill: linear-gradient(180deg, #ffffff 0%, #e8e8ea 100%);
+  --bs-primary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f1f1f2 100%);
+  --bs-primary-border: #f4f4f5;
+  --bs-primary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --bs-secondary-fg: #f5f5f5;
+  --bs-secondary-fill: linear-gradient(180deg, #222225 0%, #19191b 100%);
+  --bs-secondary-fill-hover: linear-gradient(180deg, #29292c 0%, #1f1f22 100%);
+  --bs-secondary-border: #34343a;
+  --bs-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.4);
+  display: grid;
+  gap: 36px;
+  max-width: 790px;
+  margin: 56px auto 0;
+  padding-top: 36px;
+  border-top: 1px solid var(--bs-line);
+  color: var(--bs-text);
+}
+
+html.light .blog-social {
+  --bs-primary-fg: #ffffff;
+  --bs-primary-fill: linear-gradient(180deg, #2c2c2c 0%, #222222 100%);
+  --bs-primary-fill-hover: linear-gradient(180deg, #363636 0%, #2a2a2a 100%);
+  --bs-primary-border: #161616;
+  --bs-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.17), 0 1px 2px rgba(0, 0, 0, 0.16);
+  --bs-secondary-fg: #292929;
+  --bs-secondary-fill: linear-gradient(180deg, #ffffff 0%, #fcfcfc 100%);
+  --bs-secondary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f5f5f6 100%);
+  --bs-secondary-border: #e1e2e3;
+  --bs-secondary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.blog-social-intro {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.blog-social-title {
+  margin: 0;
+  color: var(--bs-text);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.blog-social-lede {
+  margin: 0;
+  color: var(--bs-muted);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.blog-social-glyph {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.blog-social-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--bs-secondary-border);
+  border-radius: 10px;
+  background: var(--bs-secondary-fill);
+  box-shadow: var(--bs-secondary-shadow);
+  color: var(--bs-secondary-fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 150ms ease, transform 150ms ease;
+}
+
+.blog-social-button:hover {
+  background: var(--bs-secondary-fill-hover);
+  color: var(--bs-secondary-fg);
+  text-decoration: none;
+}
+
+.blog-social-button:active {
+  transform: translateY(1px);
+}
+
+.blog-social-button:focus-visible,
+.blog-social-drafts-panel > summary:focus-visible {
+  outline: 2px solid var(--bs-link);
+  outline-offset: 2px;
+}
+
+.blog-social-button.is-primary {
+  border-color: var(--bs-primary-border);
+  background: var(--bs-primary-fill);
+  box-shadow: var(--bs-primary-shadow);
+  color: var(--bs-primary-fg);
+}
+
+.blog-social-button.is-primary:hover {
+  background: var(--bs-primary-fill-hover);
+  color: var(--bs-primary-fg);
+}
+
+.blog-social-button.is-small {
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.blog-social-button.is-small .blog-social-glyph {
+  width: 14px;
+  height: 14px;
+}
+
+.blog-social-button[data-state="copied"] .blog-social-glyph {
+  color: var(--green, var(--accent-bright, #3fb950));
+}
+
+.blog-social-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--bs-line);
+  border-radius: 16px;
+  background: var(--bs-soft);
+}
+
+.blog-social-share .blog-social-intro {
+  flex: 1 1 220px;
+}
+
+.blog-social-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.blog-social-section {
+  display: grid;
+  gap: 14px;
+}
+
+.blog-social-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--bs-line);
+  border-radius: 9px;
+  background: var(--bs-soft);
+  color: var(--bs-text);
+}
+
+.blog-social-icon-svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+}
+
+.blog-social-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: var(--blog-social-columns);
+  gap: 10px;
+}
+
+.blog-social-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--bs-line);
+  border-radius: 12px;
+  background: var(--bs-paper);
+  font-size: 14px;
+}
+
+.blog-social-item-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.blog-social-label {
+  color: var(--bs-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.blog-social-link {
+  overflow: hidden;
+  color: var(--bs-link);
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blog-social-link:hover {
+  text-decoration: underline;
+}
+
+/* An unannounced network still holds its slot: the row reads as empty rather
+   than disappearing, so a missing permalink is visible as a missing one. */
+.blog-social-item.is-empty .blog-social-icon {
+  color: var(--bs-muted);
+}
+
+.blog-social-empty {
+  color: var(--bs-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* A slot with no saved permalink that the referrer board shows is sending
+   readers: the source is known even though the exact post link is not, so the
+   slot names it rather than claiming the network was never posted to. */
+.blog-social-item.is-detected {
+  border-style: dashed;
+}
+
+.blog-social-detected-note {
+  color: var(--bs-muted);
+  font-size: 12px;
+}
+
+/* Administrator editing: the same slot, with the permalink as a field instead
+   of a link. Everyone else sees the rendered link or "Not posted yet". */
+.blog-social-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  margin-top: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--bs-line);
+  border-radius: 8px;
+  background: var(--bs-soft);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.blog-social-input:focus-visible {
+  outline: 2px solid var(--bs-link);
+  outline-offset: 1px;
+}
+
+.blog-social-admin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.blog-social-save {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--bs-primary-border);
+  border-radius: 9px;
+  background: var(--bs-primary-fill);
+  box-shadow: var(--bs-primary-shadow);
+  color: var(--bs-primary-fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.blog-social-save:hover {
+  background: var(--bs-primary-fill-hover);
+}
+
+.blog-social-save[disabled] {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.blog-social-status {
+  color: var(--bs-muted);
+  font-size: 12px;
+}
+
+.blog-social-status[data-state="ok"] {
+  color: var(--green, var(--accent-bright, #3fb950));
+}
+
+.blog-social-status[data-state="error"] {
+  color: #f6768c;
+}
+
+html.light .blog-social-status[data-state="error"] {
+  color: #cf222e;
+}
+
+.blog-social-drafts-panel {
+  border: 1px solid var(--bs-line);
+  border-radius: 16px;
+  background: var(--bs-paper);
+}
+
+.blog-social-drafts-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-radius: 16px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.blog-social-drafts-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.blog-social-drafts-panel > summary:hover .blog-social-summary-chevron {
+  color: var(--bs-text);
+}
+
+.blog-social-summary-chevron {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--bs-muted);
+  transition: transform 180ms ease, color 150ms ease;
+}
+
+.blog-social-drafts-panel[open] > summary .blog-social-summary-chevron {
+  transform: rotate(180deg);
+}
+
+.blog-social-drafts {
+  display: grid;
+  grid-template-columns: var(--blog-social-columns);
+  gap: 12px;
+  padding: 4px 22px 22px;
+}
+
+.blog-social-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--bs-line);
+  border-radius: 14px;
+  background: var(--bs-soft);
+}
+
+.blog-social-draft-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.blog-social-draft-head .blog-social-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--bs-paper);
+}
+
+.blog-social-draft h3 {
+  margin: 0;
+  color: var(--bs-text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.blog-social-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.blog-social-field + .blog-social-field {
+  padding-top: 12px;
+  border-top: 1px solid var(--bs-line);
+}
+
+.blog-social-field-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 10px;
+}
+
+.blog-social-field-label {
+  margin: 0;
+  color: var(--bs-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.blog-social-count {
+  color: var(--bs-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.blog-social-hint {
+  margin: 0;
+  color: var(--bs-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.blog-social-draft textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--bs-line);
+  border-radius: 10px;
+  background: var(--bs-paper);
+  color: var(--bs-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.blog-social-draft textarea:focus-visible {
+  outline: 2px solid var(--bs-link);
+  outline-offset: 1px;
+}
+
+.blog-social-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.blog-social-draft-actions .blog-social-button {
+  flex: 1 1 auto;
+}
+
+.blog-social-metrics-slot:empty {
+  display: none;
+}
+
+.blog-social-metrics {
+  display: grid;
+  gap: 10px;
+  padding: 20px 22px;
+  border: 1px solid var(--bs-line);
+  border-radius: 16px;
+  background: var(--bs-paper);
+}
+
+.blog-social-metrics-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.blog-social-metrics h3 {
+  margin: 8px 0 0;
+  color: var(--bs-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.blog-social-metric-counts,
+.blog-social-metric-hint {
+  margin: 0;
+  color: var(--bs-muted);
+  font-size: 13px;
+}
+
+.blog-social-metric-counts {
+  color: var(--bs-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.blog-social-referrers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: referrer;
+}
+
+.blog-social-referrers li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--bs-line);
+  counter-increment: referrer;
+  font-size: 14px;
+}
+
+.blog-social-referrers li::before {
+  content: counter(referrer);
+  width: 22px;
+  flex: 0 0 auto;
+  color: var(--bs-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.blog-social-referrers a {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--bs-link);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blog-social-referrers span {
+  color: var(--bs-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .blog-social-share {
+    padding: 18px;
+  }
+
+  .blog-social-actions {
+    width: 100%;
+  }
+
+  .blog-social-actions .blog-social-button {
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .blog-social-drafts-panel > summary {
+    padding: 16px 18px;
+  }
+
+  .blog-social-drafts {
+    padding: 4px 14px 14px;
+  }
+}

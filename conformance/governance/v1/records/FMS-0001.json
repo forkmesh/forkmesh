@@ -1,0 +1,32 @@
+{
+  "schema": "forkmesh-governance-record-v1",
+  "id": "FMS-0001",
+  "process": "security",
+  "adoptedUnder": null,
+  "title": "Block a stable protocol suite while any critical or high threat is open",
+  "summary": "Pre-charter record of the stable release rule in the threat register: the suite stays a candidate until each critical or high threat is mitigated by a numbered requirement or accepted with a reviewer, date, and rationale. Open high threats at the time of recording: TM-004, TM-006, TM-008, TM-014, TM-018.",
+  "breaking": false,
+  "affects": ["security", "protocol", "compatibility"],
+  "protectedRights": [],
+  "authors": ["forkmesh-maintainers"],
+  "disclosures": ["DISC-0001"],
+  "threats": ["TM-004", "TM-006", "TM-008", "TM-014", "TM-018"],
+  "links": [
+    {"label": "Issue #511", "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/511"},
+    {"label": "Threat model", "href": "www/docs/protocol/threat-model.md"}
+  ],
+  "timeline": {
+    "opened": "2026-09-13",
+    "disclosed": "2026-09-13",
+    "embargoEnds": null,
+    "decided": "2026-09-13",
+    "ratified": null
+  },
+  "stage": "decided",
+  "outcome": "deferred",
+  "decidingBody": null,
+  "votes": [],
+  "dissent": [],
+  "dissentSolicited": false,
+  "note": "Recorded retroactively from commit b949407a0. The rule predates this charter and was never ratified by a security response team, so it does not count as a completed charter process. TM-004 and TM-014 come from the 2026-07 security audit."
+}

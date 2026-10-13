@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Leaderboards · ForkMesh</title>
+    <meta
+      name="description"
+      content="Every public ForkMesh leaderboard in one place: World activity, network uptime, repositories, contributors, referrals, member SOL wallets, top tip recipients, and historical reporting."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <script src="/leaderboards.js?v=${version}" defer></script>
+    <style>
+      .leaderboards-page {
+        width: min(1440px, calc(100% - 32px));
+        max-width: none;
+        margin: 0 auto;
+        padding: 0 0 80px;
+      }
+      .leaderboards-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.5fr);
+        gap: 40px;
+        align-items: end;
+        margin-bottom: 40px;
+        padding-top: clamp(40px, 6vw, 72px);
+      }
+      .leaderboards-hero .kit-hero {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
+      .leaderboards-hero .kit-title {
+        max-width: 16ch;
+      }
+      .leaderboards-summary-label {
+        margin: 0 0 10px;
+        color: var(--kit-body);
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .leaderboards-summary {
+        padding: 22px;
+      }
+      .leaderboards-summary strong {
+        display: block;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: 44px;
+        letter-spacing: -0.03em;
+        line-height: 1;
+      }
+      .leaderboards-summary span {
+        display: block;
+        margin-top: 8px;
+        color: var(--kit-body);
+        line-height: 1.5;
+      }
+      .leaderboards-toolbar {
+        position: sticky;
+        z-index: 5;
+        top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 24px;
+        padding: 10px;
+        border-radius: 16px;
+        background: var(--kit-surface);
+        box-shadow: var(--kit-card-shadow);
+      }
+      .leaderboards-search {
+        min-width: min(100%, 280px);
+        flex: 1 1 300px;
+        min-height: 40px;
+        border: 1px solid var(--kit-line);
+        border-radius: 11px;
+        background: var(--card);
+        color: var(--foreground);
+        padding: 8px 12px;
+        font: inherit;
+      }
+      .leaderboards-filter,
+      .leaderboards-refresh {
+        min-height: 36px;
+        border: 1px solid var(--button-secondary-border);
+        border-radius: 999px;
+        background: var(--button-secondary-fill);
+        box-shadow: var(--button-secondary-shadow);
+        color: var(--button-secondary-foreground);
+        padding: 0 14px;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 150ms ease;
+      }
+      .leaderboards-filter:hover,
+      .leaderboards-refresh:hover {
+        background: var(--button-secondary-fill-hover);
+      }
+      .leaderboards-filter[aria-pressed="true"] {
+        border-color: var(--button-border);
+        background: var(--button-fill);
+        box-shadow: var(--button-shadow);
+        color: var(--button-foreground);
+      }
+      /* Per-board "check now" for the SOL wallet board. Balances are served
+         from an hourly cache, so the page — and its five-minute background
+         refresh — cost no on-chain reads; this button is the one path that
+         asks Solana again. */
+      .leaderboard-board-refresh {
+        margin-top: 8px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        padding: 4px 10px;
+        font: 700 10px/1 var(--mono);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .leaderboard-board-refresh:hover:not(:disabled) {
+        border-color: color-mix(in srgb, var(--foreground) 35%, transparent);
+        color: var(--foreground);
+      }
+      .leaderboard-board-refresh:disabled {
+        cursor: progress;
+        opacity: 0.6;
+      }
+      .leaderboards-mine {
+        min-height: 36px;
+        border: 1px solid var(--button-border);
+        border-radius: 999px;
+        background: var(--button-fill);
+        box-shadow: var(--button-shadow);
+        color: var(--button-foreground);
+        padding: 0 14px;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .leaderboards-mine[aria-pressed="true"] {
+        outline: 2px solid color-mix(in srgb, var(--button-fill) 45%, transparent);
+        outline-offset: 2px;
+      }
+      .leaderboards-mine-panel {
+        margin: 0 0 24px;
+        padding: 20px 22px;
+        border-radius: 18px;
+        background: var(--kit-surface);
+        box-shadow: var(--kit-card-shadow);
+      }
+      .leaderboards-mine-panel[hidden] { display: none; }
+      .leaderboards-mine-panel h2 {
+        margin: 0 0 6px;
+        color: var(--foreground);
+        font-family: var(--display);
+        font-size: 22px;
+        letter-spacing: -0.015em;
+      }
+      .leaderboards-mine-panel p {
+        margin: 0;
+        color: var(--kit-body);
+        line-height: 1.5;
+      }
+      .leaderboards-mine-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+        gap: 10px;
+        margin: 16px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .leaderboards-mine-list li {
+        padding: 12px 14px;
+        border: 1px solid var(--kit-line);
+        border-radius: 12px;
+      }
+      .leaderboards-mine-list strong {
+        display: block;
+        color: var(--foreground);
+        font: 800 20px/1.1 var(--mono);
+      }
+      .leaderboards-mine-list span {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .leaderboards-mine-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .leaderboard-row.is-mine {
+        background: color-mix(in srgb, var(--button-fill) 12%, transparent);
+        box-shadow: inset 3px 0 0 var(--button-fill);
+      }
+      .leaderboards-status {
+        margin-left: auto;
+        color: var(--muted-2);
+        font: 600 11px/1.3 var(--mono);
+      }
+      .leaderboards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+        gap: 18px;
+      }
+      .leaderboard-card {
+        min-width: 0;
+        overflow: hidden;
+        border-radius: 18px;
+        background: var(--kit-surface);
+        box-shadow: var(--kit-card-shadow);
+      }
+      .leaderboard-card[hidden] { display: none; }
+      .leaderboard-card-header {
+        min-height: 98px;
+        padding: 18px 18px 14px;
+        border-bottom: 1px solid var(--kit-line);
+      }
+      .leaderboard-category {
+        margin: 0 0 7px;
+        color: var(--muted);
+        font: 700 10px/1 var(--mono);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .leaderboard-card h2 {
+        margin: 0 0 5px;
+        color: var(--foreground);
+        font-family: var(--display);
+        font-size: 20px;
+        letter-spacing: -0.015em;
+      }
+      .leaderboard-card-subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .leaderboard-row {
+        display: grid;
+        grid-template-columns: 30px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 52px;
+        padding: 9px 18px;
+        border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+      }
+      .leaderboard-row:first-child { border-top: 0; }
+      .leaderboard-rank {
+        color: var(--muted-2);
+        font: 800 13px/1 var(--mono);
+      }
+      .leaderboard-name {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--foreground);
+        font-weight: 750;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .leaderboard-detail {
+        display: block;
+        overflow: hidden;
+        margin-top: 3px;
+        color: var(--muted-2);
+        font: 500 10px/1.35 var(--mono);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .leaderboard-profile-link,
+      .leaderboard-mastodon-link {
+        color: inherit;
+        text-decoration: none;
+      }
+      .leaderboard-profile-link:hover,
+      .leaderboard-profile-link:focus-visible,
+      .leaderboard-mastodon-link:hover,
+      .leaderboard-mastodon-link:focus-visible {
+        color: var(--link-hover);
+        text-decoration: underline;
+      }
+      .leaderboard-value {
+        color: var(--foreground);
+        font: 800 12px/1.2 var(--mono);
+        text-align: right;
+        white-space: nowrap;
+      }
+      .leaderboard-empty,
+      .leaderboards-empty {
+        padding: 26px 18px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .leaderboards-empty {
+        grid-column: 1 / -1;
+        border: 1px dashed var(--border);
+        border-radius: 16px;
+        text-align: center;
+      }
+      .leaderboards-disclosure {
+        margin: 28px 0 0;
+        padding: 18px 20px;
+        border-radius: 14px;
+        background: var(--kit-surface);
+        box-shadow: var(--kit-card-shadow);
+        color: var(--kit-body);
+        font-size: 13px;
+        line-height: 1.6;
+        scroll-margin-top: 24px;
+      }
+      @media (max-width: 760px) {
+        .leaderboards-hero { grid-template-columns: 1fr; }
+        .leaderboards-toolbar { position: static; }
+        .leaderboards-status { width: 100%; margin-left: 0; }
+      }
+    </style>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+    <main class="leaderboards-page">
+      <section class="leaderboards-hero" aria-labelledby="leaderboards-title">
+        <div class="kit-hero">
+          <span class="kit-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 16v5M7 3h10v6a5 5 0 0 1-10 0Z"></path><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"></path></svg>
+            Leaderboards
+          </span>
+          <h1 class="kit-title" id="leaderboards-title">Every board. One honest view.</h1>
+          <p class="kit-lede">
+            Explore public activity, node uptime, repository resilience,
+            contribution, referrals, and historical reporting. Rankings never
+            grant access, merge authority, governance weight, or guaranteed rewards.
+          </p>
+          <div class="kit-actions">
+            <a class="kit-btn is-primary" href="#boards">Browse the boards <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+            <a class="kit-btn" href="#how-rankings-work">How rankings work <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+          </div>
+        </div>
+        <aside class="leaderboards-summary kit-card" aria-live="polite">
+          <p class="leaderboards-summary-label">Live overview</p>
+          <strong data-leaderboards-count>—</strong>
+          <span data-leaderboards-summary>Loading public boards…</span>
+        </aside>
+      </section>
+
+      <section aria-label="Leaderboard controls" id="boards">
+        <div class="leaderboards-toolbar">
+          <input
+            class="leaderboards-search"
+            type="search"
+            placeholder="Find a board or participant"
+            aria-label="Search leaderboards"
+            data-leaderboards-search
+          />
+          <button class="leaderboards-filter" type="button" data-category="all" aria-pressed="true">All</button>
+          <button class="leaderboards-filter" type="button" data-category="network" aria-pressed="false">Network</button>
+          <button class="leaderboards-filter" type="button" data-category="repositories" aria-pressed="false">Repositories</button>
+          <button class="leaderboards-filter" type="button" data-category="community" aria-pressed="false">Community</button>
+          <button class="leaderboards-filter" type="button" data-category="historical" aria-pressed="false">Historical</button>
+          <button class="leaderboards-mine" type="button" data-leaderboards-mine aria-pressed="false">My stats</button>
+          <button class="leaderboards-refresh" type="button" data-leaderboards-refresh>Refresh</button>
+          <span class="leaderboards-status" role="status" data-leaderboards-status>Loading…</span>
+        </div>
+      </section>
+
+      <section class="leaderboards-mine-panel" aria-live="polite" aria-labelledby="leaderboards-mine-title" data-leaderboards-mine-panel hidden></section>
+
+      <section class="leaderboards-grid" aria-live="polite" data-leaderboards-grid>
+        <div class="leaderboards-empty"><span class="fm-spinner" aria-hidden="true"></span> Loading all leaderboard stats…</div>
+      </section>
+
+      <p class="leaderboards-disclosure" id="how-rankings-work" data-leaderboards-disclosure>
+        Historical funds boards are reporting aggregates, not balances or proof
+        of payment. ForkMesh does not hold recipient keys or funds.
+      </p>
+    </main>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

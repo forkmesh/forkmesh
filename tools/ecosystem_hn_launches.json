@@ -1,0 +1,1082 @@
+[
+ {
+  "slug": "drop",
+  "name": "Drop",
+  "tagline": "Rootless Linux sandbox for coding agents and third-party programs, with optional gVisor",
+  "summary": "Drop creates disposable, virtualenv-style environments on your existing Linux distribution using user namespaces, giving each its own home directory and exposing only files and local services allowed by a TOML config. It can optionally run programs on the gVisor user-space kernel.",
+  "watching": "Agents that work on repositories often run in local sandboxes like this, and Drop mounts a project's .git directory read-only by default.",
+  "url": "https://droprun.sh/",
+  "repo": "https://github.com/wrr/drop",
+  "category": "agent-infrastructure",
+  "tags": [
+   "sandbox",
+   "linux",
+   "gvisor",
+   "namespaces",
+   "rootless"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "Jan Wrobel",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49801329"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "foremerge",
+  "name": "Foremerge",
+  "tagline": "Coordination layer that flags intent conflicts between parallel coding agents",
+  "summary": "Foremerge has agents declare the symbols and targets they are about to change in a shared SQLite store inside the project's .git directory, then detects semantic collisions between agents working in separate worktrees before code is merged. It ships as a Rust CLI, JSON API and MCP server.",
+  "watching": "It adds a coordination layer on top of Git for parallel agents, the same problem space as multi-agent work on shared repositories.",
+  "url": "https://foremerge.com/",
+  "repo": "https://github.com/naw103/foremerge",
+  "category": "agent-infrastructure",
+  "tags": [
+   "coordination",
+   "merge-conflicts",
+   "worktrees",
+   "mcp",
+   "rust"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "naw103",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49789356"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "agentgit",
+  "name": "Agentgit",
+  "tagline": "Anonymous, append-only Git host where agents create repos by pushing to a name",
+  "summary": "Agentgit is a public Git host with no accounts: the first push to a name creates the repository, refs are append-only, pushes can be SSH-signed for provenance, and repositories expire 24 hours after their last push. A companion CLI watches a repo over a WebSocket and reports incoming pushes.",
+  "watching": "It is a Git-native scratch host for agent-to-agent exchange with append-only refs and signed-push provenance.",
+  "url": "https://agentgit.co/",
+  "repo": null,
+  "category": "forges",
+  "tags": [
+   "git-hosting",
+   "agents",
+   "append-only",
+   "signed-pushes",
+   "ephemeral"
+  ],
+  "openSource": null,
+  "license": null,
+  "gitNative": true,
+  "maker": "Zabaca",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49761528"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "skillsync",
+  "name": "Skillsync",
+  "tagline": "Converts and syncs coding-agent chat sessions across agents and teammates",
+  "summary": "Skillsync is a local-first desktop app that collects coding-agent sessions from tools such as Claude Code, Codex and Cursor, makes them searchable, and converts a session between agents' native formats so work can continue elsewhere; shared workspaces sync sessions across a team. Its conversion engine, txcript, is an open-source Rust library and CLI.",
+  "watching": "Agent session history is collaboration data that teams want to preserve and move between tools alongside their repositories.",
+  "url": "https://skillsync.com/",
+  "repo": "https://github.com/skillsynchq/txcript",
+  "category": "agent-infrastructure",
+  "tags": [
+   "agent-sessions",
+   "transcripts",
+   "portability",
+   "local-first",
+   "rust"
+  ],
+  "openSource": null,
+  "license": null,
+  "gitNative": false,
+  "maker": "Skillsync",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49743049"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "riftri",
+  "name": "Riftri",
+  "tagline": "Git worktrees backed by copy-on-write storage for running many agents in parallel",
+  "summary": "Riftri creates real Git linked worktrees whose unchanged files share filesystem copy-on-write blocks (APFS, reflink/OverlayFS on Linux, ReFS on Windows) instead of full checkouts. It targets developers and coding agents working on many branches at once.",
+  "watching": "It reduces the storage cost of per-agent worktrees on large repositories.",
+  "url": "https://riftri.dev/",
+  "repo": "https://github.com/assistant-ui/riftri",
+  "category": "agent-workspaces",
+  "tags": [
+   "git-worktrees",
+   "copy-on-write",
+   "parallel-agents",
+   "rust",
+   "storage"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "assistant-ui",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49807251"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "octoshell",
+  "name": "OctoShell",
+  "tagline": "Tauri desktop app that runs coding agents in per-task Git worktrees",
+  "summary": "OctoShell is a Windows and macOS desktop workspace where an orchestrator turns a goal into tasks, creates a Git worktree and branch for each, and starts an agent in it. It also manages dev servers and ports, offers a multi-agent planning mode and a QA review flow.",
+  "watching": "It is a worktree-per-agent orchestrator for parallel work on shared repositories.",
+  "url": "https://savvasioakeim.github.io/OctoShell/",
+  "repo": "https://github.com/savvasioakeim/OctoShell",
+  "category": "agent-workspaces",
+  "tags": [
+   "orchestrator",
+   "git-worktrees",
+   "desktop",
+   "tauri",
+   "rust"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "savvasioakeim",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49892358"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "overboard",
+  "name": "Overboard",
+  "tagline": "Mac app that schedules and dispatches Claude Code agents organized into departments",
+  "summary": "Overboard runs Claude Code sessions on a Mac on schedules or on demand, grouping agents into departments whose captain agent reviews runs and dispatches new work. Tasks can be sent from Telegram or Slack, and it is a paid app with a 14-day trial.",
+  "watching": "It runs long-lived local agents across a user's projects, a pattern that produces work needing review and preservation.",
+  "url": "https://tryoverboard.com/",
+  "repo": null,
+  "category": "ai-agents",
+  "tags": [
+   "orchestrator",
+   "scheduling",
+   "claude-code",
+   "macos",
+   "remote-dispatch"
+  ],
+  "openSource": false,
+  "license": null,
+  "gitNative": false,
+  "maker": "Overboard",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49913362"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "thurbox",
+  "name": "Thurbox",
+  "tagline": "tmux-based TUI and CLI for running several coding agents side by side",
+  "summary": "Thurbox launches unmodified agent CLIs such as Claude Code, Codex and aider in tmux sessions that survive restarts, with optional Git worktrees per repo so agents do not share a checkout. Its interface panes are user-editable Lua files, and a headless CLI is included.",
+  "watching": "It is a terminal orchestrator for parallel agents over shared repositories and worktrees.",
+  "url": "https://thurbox.thurbeen.eu/",
+  "repo": "https://github.com/Thurbeen/thurbox",
+  "category": "agent-workspaces",
+  "tags": [
+   "tui",
+   "tmux",
+   "orchestrator",
+   "git-worktrees",
+   "rust"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "Thurbeen",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49721082"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "agentbox",
+  "name": "AgentBox",
+  "tagline": "Runs coding agents in per-project VMs locally or on cloud providers",
+  "summary": "AgentBox moves a project into a dedicated Docker-based box on the local machine, a remote Docker host or providers such as Hetzner, Vercel, Daytona and E2B, bringing along Claude Code, Codex or OpenCode settings. Each box has persistent shells, a browser, IDE access and checkpoints.",
+  "watching": "It is an alternative to local worktrees for isolating parallel agents working on the same repository.",
+  "url": "https://agent-box.sh/",
+  "repo": "https://github.com/madarco/agentbox",
+  "category": "agent-workspaces",
+  "tags": [
+   "sandbox",
+   "vm",
+   "parallel-agents",
+   "cloud",
+   "cli"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "madarco",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49728120"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "brig",
+  "name": "Brig",
+  "tagline": "Runs coding agents inside a microVM sandbox on macOS and Linux",
+  "summary": "Brig starts an agent such as Claude Code or Codex in an ephemeral microVM with its own Linux kernel, mounting only the chosen project read-write and passing credentials only when the user provides them.",
+  "watching": "It isolates agents that act on local repositories, a common requirement for unattended agent work.",
+  "url": "https://www.brig.sh/",
+  "repo": "https://github.com/brig-sh/brig",
+  "category": "agent-infrastructure",
+  "tags": [
+   "sandbox",
+   "microvm",
+   "coding-agents",
+   "macos",
+   "linux"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "NOFire AI",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49802729"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "sidekernel",
+  "name": "SideKernel",
+  "tagline": "Dependency-free macOS microVM sandbox for Claude Code and other agents",
+  "summary": "SideKernel launches an ephemeral Linux microVM on Apple silicon with the current directory mounted, using only Apple frameworks on the host, and offers host-approved file drops and network toggles. It is described as a research prototype.",
+  "watching": "It provides a local isolation boundary for agents working on repositories on macOS.",
+  "url": "https://sidekernel.com/",
+  "repo": "https://github.com/minoansecurity/sidekernel",
+  "category": "agent-infrastructure",
+  "tags": [
+   "sandbox",
+   "microvm",
+   "macos",
+   "swift",
+   "security"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "Minoan Security",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49891008"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "cordum-edge",
+  "name": "Cordum Edge",
+  "tagline": "Local policy firewall that gates AI coding agents' tool calls and commands",
+  "summary": "Cordum Edge is the local component of the Cordum agent control plane, enforcing policy and human approval before risky tool calls and shell commands from agents such as Claude Code, with audit evidence. The full stack includes a gateway, scheduler, safety kernel and dashboard.",
+  "watching": "It governs what agents may do to code and infrastructure, which intersects with auditing agent contributions.",
+  "url": "https://github.com/cordum-io/cordum",
+  "repo": "https://github.com/cordum-io/cordum",
+  "category": "agent-infrastructure",
+  "tags": [
+   "policy",
+   "approvals",
+   "audit",
+   "firewall",
+   "governance"
+  ],
+  "openSource": false,
+  "license": "BUSL-1.1",
+  "gitNative": false,
+  "maker": "Cordum",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49880505"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "forkbench",
+  "name": "Forkbench",
+  "tagline": "Desktop terminal app for supervising coding agents with shared task boards",
+  "summary": "Forkbench is a macOS app that puts each agent in its own terminal tab inside Threads, each with a task board agents claim work from, and lets invited teammates join a single Thread from their own machine. Repositories and history stay on the local Mac.",
+  "watching": "It combines agent supervision with scoped human collaboration around local repositories.",
+  "url": "https://forkbench.com/",
+  "repo": null,
+  "category": "agent-workspaces",
+  "tags": [
+   "terminal",
+   "task-board",
+   "supervision",
+   "collaboration",
+   "macos"
+  ],
+  "openSource": null,
+  "license": null,
+  "gitNative": false,
+  "maker": "Forkbench",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49828775"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "grov",
+  "name": "Grov",
+  "tagline": "Captures reasoning from AI coding sessions and shares it as team memory",
+  "summary": "Grov runs as a proxy or MCP integration that extracts decisions and reasoning from Claude Code, Cursor and similar sessions and syncs them to a shared team store, injecting relevant memories into later sessions.",
+  "watching": "It treats agent knowledge as shared team data, which overlaps with preserving collaboration context next to code.",
+  "url": "https://github.com/TonyStef/Grov",
+  "repo": "https://github.com/TonyStef/Grov",
+  "category": "agent-infrastructure",
+  "tags": [
+   "team-memory",
+   "context",
+   "claude-code",
+   "mcp",
+   "proxy"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "TonyStef",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=46711958"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "pizza-bot",
+  "name": "Pizza Bot",
+  "tagline": "Local-first inbox for long-running and scheduled AI agent tasks",
+  "summary": "Pizza Bot is an Electron, web and CLI client over a DeepAgents/LangGraph api-server where runs continue after the user disconnects; finished work lands in an Unread queue and approval requests in an Action queue. It supports several model providers, cron and webhook triggers, and explicit per-folder file access.",
+  "watching": "It is an asynchronous interface for background agent work, including human-in-the-loop approvals.",
+  "url": "https://github.com/pizza-bot-app/pizza-bot",
+  "repo": "https://github.com/pizza-bot-app/pizza-bot",
+  "category": "ai-agents",
+  "tags": [
+   "inbox",
+   "background-agents",
+   "langgraph",
+   "human-in-the-loop",
+   "electron"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "pizza-bot-app",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49713894"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "amika",
+  "name": "Amika",
+  "tagline": "Shared cloud VM workstations where teams run and steer coding agents",
+  "summary": "Amika provisions VMs called Rigs on Kubernetes or sandbox clouds, loaded with a team's Git repos, dev services and chosen agents, which can be steered from the web, Slack, Linear, SSH, CLI or API. Rigs expose preview URLs and can be shared among teammates.",
+  "watching": "It is a multiplayer alternative to local worktrees for agents working on team repositories.",
+  "url": "https://www.amika.dev/",
+  "repo": "https://github.com/gofixpoint/amika",
+  "category": "agent-workspaces",
+  "tags": [
+   "cloud-workstations",
+   "vm",
+   "multiplayer",
+   "coding-agents",
+   "open-core"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "Amika",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49716282"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "codelegate",
+  "name": "Codelegate",
+  "tagline": "Keyboard-driven desktop app for running coding agents in Git worktrees",
+  "summary": "Codelegate is a Tauri desktop app for macOS and Linux that groups Claude Code and Codex sessions by repository, each with an agent pane, a terminal and a Git pane for diffs and commits, optionally in its own worktree.",
+  "watching": "It is a worktree-based workspace for parallel agent sessions on one repository.",
+  "url": "https://codelegate.dev/",
+  "repo": "https://github.com/brucehsu/codelegate",
+  "category": "agent-workspaces",
+  "tags": [
+   "orchestrator",
+   "git-worktrees",
+   "desktop",
+   "keyboard",
+   "tauri"
+  ],
+  "openSource": true,
+  "license": "GPL-3.0",
+  "gitNative": false,
+  "maker": "brucehsu",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47357070"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "chatml",
+  "name": "ChatML",
+  "tagline": "macOS app running parallel Claude Code sessions in isolated worktrees",
+  "summary": "ChatML gives each task its own Git worktree and branch and runs a Claude Agent SDK session in it, with built-in review, GitHub pull request creation and CI status tracking.",
+  "watching": "It ties parallel agent sessions to branches, reviews and pull requests.",
+  "url": "https://chatml.com/",
+  "repo": "https://github.com/chatml/chatml",
+  "category": "agent-workspaces",
+  "tags": [
+   "claude-code",
+   "git-worktrees",
+   "desktop",
+   "pull-requests",
+   "macos"
+  ],
+  "openSource": true,
+  "license": "GPL-3.0",
+  "gitNative": false,
+  "maker": "ChatML",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47303711"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "optio",
+  "name": "Optio",
+  "tagline": "Self-hosted orchestration of coding-agent sessions on Kubernetes or local machines",
+  "summary": "Optio runs agent sessions such as Claude Code, Codex or Gemini in Kubernetes pods or on team laptops, triggered by tickets, schedules, webhooks or messages, and can carry a ticket through to a merged pull request. Sessions can be chained into workflows and agent swarms.",
+  "watching": "It automates the ticket-to-pull-request path that repository collaboration tools also serve.",
+  "url": "https://optio.host/",
+  "repo": "https://github.com/jonwiggins/optio",
+  "category": "software-factories",
+  "tags": [
+   "orchestration",
+   "kubernetes",
+   "ticket-to-pr",
+   "workflows",
+   "self-hosted"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "Jon Wiggins",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47520220"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "superhq",
+  "name": "SuperHQ",
+  "tagline": "macOS app running coding agents in microVM sandboxes behind a credential gateway",
+  "summary": "SuperHQ is a Rust/GPUI desktop app that runs Claude Code, Codex and other agents in isolated VM workspaces, injecting API credentials through a host-side proxy so agents never see real keys, with port forwarding and a diff review panel. It is an early alpha for Apple silicon.",
+  "watching": "It isolates agents working on local repositories and surfaces their changes for review.",
+  "url": "https://superhq.ai/",
+  "repo": "https://github.com/superhq-ai/superhq",
+  "category": "agent-workspaces",
+  "tags": [
+   "sandbox",
+   "microvm",
+   "orchestrator",
+   "macos",
+   "rust"
+  ],
+  "openSource": true,
+  "license": "AGPL-3.0",
+  "gitNative": false,
+  "maker": "superhq-ai",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47877726"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "auto-co",
+  "name": "Auto-Co",
+  "tagline": "Bash loop that runs a team of role-playing Claude Code agents as a company",
+  "summary": "Auto-Co calls Claude Code on a timer, picking a few of 14 role-based agents (CEO, CTO, engineer, QA and others) each cycle to decide, build and deploy software, with state kept in Markdown files. Templates bootstrap SaaS, docs-site and API projects.",
+  "watching": "It is an example of fully autonomous agent loops producing and shipping code.",
+  "url": "https://github.com/NikitaDmitrieff/auto-co-meta",
+  "repo": "https://github.com/NikitaDmitrieff/auto-co-meta",
+  "category": "software-factories",
+  "tags": [
+   "autonomous-agents",
+   "claude-code",
+   "multi-agent",
+   "bash",
+   "startup"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "Nikita Dmitrieff",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47281538"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "sgai",
+  "name": "Sgai",
+  "tagline": "Goal-driven local multi-agent software factory with a supervision dashboard",
+  "summary": "Sgai takes a goal written in GOAL.md, has a coordinator agent delegate to developer, reviewer and other specialist agents, and uses tests or linting to decide when work is done, while the user answers questions from a web dashboard. It runs locally on top of opencode.",
+  "watching": "It turns goals into code changes in a repository under human supervision.",
+  "url": "https://github.com/sandgardenhq/sgai",
+  "repo": "https://github.com/sandgardenhq/sgai",
+  "category": "software-factories",
+  "tags": [
+   "multi-agent",
+   "goal-driven",
+   "dashboard",
+   "opencode",
+   "go"
+  ],
+  "openSource": false,
+  "license": "MIT with a no-competing-SaaS clause",
+  "gitNative": false,
+  "maker": "Sandgarden",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47153941"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "wt",
+  "name": "wt",
+  "tagline": "Rust CLI that wraps Git worktrees and tmux sessions for parallel coding agents",
+  "summary": "wt creates a worktree and branch per task under the repository, drops the user into it, and tracks agent sessions in tmux, showing which agents are active or idle. A Claude Code skill can turn a GitHub issue into a worktree and seeded agent session.",
+  "watching": "It is a lightweight worktree manager for running multiple agents on one repository.",
+  "url": "https://github.com/pld/wt",
+  "repo": "https://github.com/pld/wt",
+  "category": "agent-workspaces",
+  "tags": [
+   "git-worktrees",
+   "cli",
+   "tmux",
+   "parallel-agents",
+   "rust"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "pld",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=46765489"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "gitagent",
+  "name": "GitAgent",
+  "tagline": "Open standard and CLI that define an AI agent as files in a Git repository",
+  "summary": "GitAgent specifies an agent as version-controlled files (agent.yaml, SOUL.md, rules, skills, memory) in a Git repo and provides a CLI that runs or exports such agents to frameworks like Claude Code, OpenAI Agents SDK and CrewAI. Branches, pull requests and history are used for agent versioning and review.",
+  "watching": "It stores agent definitions and memory in Git and uses pull requests to review agent changes.",
+  "url": "https://www.gitagent.sh/",
+  "repo": "https://github.com/open-gitagent/gitagent",
+  "category": "ai-agents",
+  "tags": [
+   "agent-definition",
+   "open-standard",
+   "git-native",
+   "cli",
+   "skills"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": true,
+  "maker": "open-gitagent",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47376584"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "foolery",
+  "name": "Foolery",
+  "tagline": "Keyboard-first web UI for staging, dispatching and reviewing agent work",
+  "summary": "Foolery is a local orchestration app that sits on memory-manager backends such as Knots and Beads, letting users queue work, break it down, dispatch agent CLIs across repositories and review results and session history.",
+  "watching": "It builds agent dispatch on Beads-style repository-local issue tracking.",
+  "url": "https://github.com/acartine/foolery",
+  "repo": "https://github.com/acartine/foolery",
+  "category": "software-factories",
+  "tags": [
+   "orchestration",
+   "beads",
+   "web-ui",
+   "task-queue",
+   "review"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "acartine",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47075901"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "zeroshot",
+  "name": "ZeroShot",
+  "tagline": "Monitors team coding-agent sessions and turns them into reusable skills",
+  "summary": "ZeroShot is a Mac app and CLI from BuildBetter that records coding-agent sessions across a team, derives reusable skills from sessions and PR reviews, supports handing sessions to teammates, and can block pull requests that skip required skills.",
+  "watching": "It treats agent sessions and PR reviews as shared team artifacts.",
+  "url": "https://tryzeroshot.com/",
+  "repo": null,
+  "category": "agent-infrastructure",
+  "tags": [
+   "session-monitoring",
+   "skills",
+   "observability",
+   "code-review",
+   "handoff"
+  ],
+  "openSource": false,
+  "license": null,
+  "gitNative": false,
+  "maker": "BuildBetter",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49113279"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "orc",
+  "name": "Orc",
+  "tagline": "Bash framework that fans work out to orchestrator and engineer agents in worktrees",
+  "summary": "Orc turns a request into goals, each on its own Git branch, which orchestrator agents split into work items handled by engineer agents in isolated worktrees, followed by review, merge and delivery hooks. It runs on the user's existing agent CLIs with no daemon or server.",
+  "watching": "It maps agent work onto branches, worktrees and reviews in a repository.",
+  "url": "https://github.com/spencermarx/orc",
+  "repo": "https://github.com/spencermarx/orc",
+  "category": "software-factories",
+  "tags": [
+   "orchestration",
+   "bash",
+   "git-worktrees",
+   "multi-agent",
+   "review"
+  ],
+  "openSource": null,
+  "license": null,
+  "gitNative": false,
+  "maker": "spencermarx",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47441323"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "sandbox-agent",
+  "name": "Sandbox Agent SDK",
+  "tagline": "HTTP server and SDK for controlling coding agents running inside sandboxes",
+  "summary": "Sandbox Agent is a static Rust binary that runs inside a sandbox (E2B, Daytona, Modal, Docker and others) and exposes one HTTP/SSE API and TypeScript SDK to drive Claude Code, Codex, OpenCode, Cursor, Amp or Pi, normalizing their events into a universal session schema for storage and replay.",
+  "watching": "It standardizes remote control and session capture for agents that operate on repositories in sandboxes.",
+  "url": "https://sandboxagent.dev/",
+  "repo": "https://github.com/rivet-dev/sandbox-agent",
+  "category": "agent-infrastructure",
+  "tags": [
+   "sandbox",
+   "sdk",
+   "http-api",
+   "session-schema",
+   "rust"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "Rivet",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=46795584"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "shikigami",
+  "name": "Shikigami",
+  "tagline": "Desktop app that runs coding agents in parallel, each in its own worktree",
+  "summary": "Shikigami runs Claude, Codex or opencode sessions side by side, each in a separate Git worktree with a real PTY and resumable sessions, plus an editor mode with diffs, Git history, blame and database and Docker views. It is free for macOS, Linux and Windows.",
+  "watching": "It is a worktree-per-agent workspace for parallel work on one repository.",
+  "url": "https://shikigami.dev/",
+  "repo": null,
+  "category": "agent-workspaces",
+  "tags": [
+   "git-worktrees",
+   "parallel-agents",
+   "desktop",
+   "editor",
+   "sessions"
+  ],
+  "openSource": null,
+  "license": null,
+  "gitNative": false,
+  "maker": "igornast",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=48966140"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "metaswarm",
+  "name": "metaswarm",
+  "tagline": "Multi-agent orchestration framework taking work from issue to merged PR",
+  "summary": "metaswarm provides agent personas, skills and commands for Claude Code, Gemini CLI and Codex CLI that run a phased workflow with design review gates, TDD, adversarial review and PR shepherding. Tasks are tracked with Beads and learnings are kept in a JSONL knowledge base in the repository.",
+  "watching": "It keeps issues, specs and agent knowledge in version control alongside the code.",
+  "url": "https://github.com/dsifry/metaswarm",
+  "repo": "https://github.com/dsifry/metaswarm",
+  "category": "software-factories",
+  "tags": [
+   "multi-agent",
+   "claude-code",
+   "beads",
+   "tdd",
+   "code-review"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": true,
+  "maker": "dsifry",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=46864977"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "clawk",
+  "name": "clawk",
+  "tagline": "Gives each coding agent a disposable Linux VM instead of the host machine",
+  "summary": "clawk starts Claude Code, Codex, pi or a shell inside a disposable Linux VM with the current repo mounted, a network allow-list and a forwarded ssh-agent, so the agent can run without permission prompts while host files and keys stay outside. Sessions can be reattached and VMs recreated.",
+  "watching": "It isolates agents that work on repositories and push to Git remotes.",
+  "url": "https://github.com/clawkwork/clawk",
+  "repo": "https://github.com/clawkwork/clawk",
+  "category": "agent-infrastructure",
+  "tags": [
+   "sandbox",
+   "vm",
+   "coding-agents",
+   "network-allowlist",
+   "go"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "clawkwork",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=48892859"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "md2",
+  "name": "md²",
+  "tagline": "Desktop app organizing agent coding work as Markdown feature cards with worktrees",
+  "summary": "md² stores each feature or bug request as a Markdown card in the repository and attaches a Git worktree, a coding agent, chat history, commits and notes to it. The Electron app handles merging worktree branches and agent-assisted conflict resolution.",
+  "watching": "It keeps planning data as Markdown files in the repository next to the code.",
+  "url": "https://jan-bogaerts.github.io/md2/",
+  "repo": "https://github.com/jan-bogaerts/md2",
+  "category": "agent-workspaces",
+  "tags": [
+   "markdown",
+   "feature-cards",
+   "git-worktrees",
+   "electron",
+   "planning"
+  ],
+  "openSource": true,
+  "license": "AGPL-3.0",
+  "gitNative": true,
+  "maker": "jan-bogaerts",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49258045"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "mindflock",
+  "name": "MindFlock",
+  "tagline": "Turns assigned tickets into local agent sessions in their own Git worktrees",
+  "summary": "MindFlock watches GitHub Issues, Jira, Linear, Shortcut or Asana and creates a worktree, installed environment and seeded agent session for each ticket assigned to the user, then lets the user review the diff and commit, push, open and merge the PR. PR review comments can also become sessions.",
+  "watching": "It links issue trackers, worktrees and pull requests for agent work on local repositories.",
+  "url": "https://mindflock.ai/",
+  "repo": "https://github.com/MindFlock/MindFlock",
+  "category": "agent-workspaces",
+  "tags": [
+   "git-worktrees",
+   "issue-tracking",
+   "parallel-agents",
+   "pull-requests",
+   "python"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "MindFlock",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49102636"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "trunks",
+  "name": "Trunks",
+  "tagline": "Git remote helper that stores repositories in S3, Postgres, SFTP or local disk",
+  "summary": "Trunks provides a git-remote-trunks helper and filesystem mount that store Git objects and refs directly in object storage, Postgres, SFTP, file shares or local disk, with compare-and-swap ref updates, so any backend acts as a Git remote without a Git server.",
+  "watching": "It is a serverless way to host and replicate Git repositories on user-owned storage.",
+  "url": "https://github.com/aaronkazah/trunks",
+  "repo": "https://github.com/aaronkazah/trunks",
+  "category": "version-control",
+  "tags": [
+   "git-remote",
+   "object-storage",
+   "s3",
+   "serverless",
+   "python"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": true,
+  "maker": "aaronkazah",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=47933429"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "docker-sandboxes",
+  "name": "Docker Sandboxes",
+  "tagline": "Docker's microVM sandboxes for running coding agents locally or in the cloud",
+  "summary": "Docker Sandboxes is a Docker product with an sbx CLI that runs Claude Code, Codex and other agents in microVMs with network and filesystem policies and proxied credentials, and can move a sandbox between the local machine and Docker's cloud.",
+  "watching": "It is a widely available isolation option for agents working on repositories.",
+  "url": "https://www.docker.com/products/docker-sandboxes/",
+  "repo": null,
+  "category": "agent-infrastructure",
+  "tags": [
+   "sandbox",
+   "microvm",
+   "docker",
+   "coding-agents",
+   "cloud"
+  ],
+  "openSource": null,
+  "license": null,
+  "gitNative": false,
+  "maker": "Docker Inc.",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49239751"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ },
+ {
+  "slug": "lean-collab",
+  "name": "lean-collab",
+  "tagline": "Many Claude Code agents cooperating on Lean 4 proofs over a shared memory service",
+  "summary": "lean-collab is a Rust CLI and Claude Code plugin in which many agents decompose and prove Lean 4 theorems in parallel, claiming goals and sharing state through the hosted Ensue Memory Network.",
+  "watching": "It demonstrates claim-based coordination among many concurrent agents on one piece of work.",
+  "url": "https://github.com/mutable-state-inc/lean-collab",
+  "repo": "https://github.com/mutable-state-inc/lean-collab",
+  "category": "ai-agents",
+  "tags": [
+   "multi-agent",
+   "lean4",
+   "theorem-proving",
+   "coordination",
+   "rust"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "mutable-state-inc",
+  "integration": "watching",
+  "reviewed": "2026-09-30",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=46990733"
+   ],
+   "notes": "Found in the Y Combinator News launch research, 2026-09-30."
+  }
+ }
+]

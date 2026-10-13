@@ -1,0 +1,31 @@
+{
+  "schema": "forkmesh-governance-record-v1",
+  "id": "FMP-0000",
+  "process": "proposal",
+  "adoptedUnder": null,
+  "title": "Protocol certification program with expiring, evidence-derived badges",
+  "summary": "Pre-charter record of issue #512: certification profiles, a language-neutral adapter protocol, retained attested reports, and badges that expire when vectors or profiles change or after 90 days.",
+  "breaking": false,
+  "affects": ["certification", "protocol"],
+  "protectedRights": ["free-protocol"],
+  "authors": ["forkmesh-maintainers"],
+  "disclosures": ["DISC-0001"],
+  "links": [
+    {"label": "Issue #512", "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/512"},
+    {"label": "Certification program", "href": "www/docs/protocol/certification.md"}
+  ],
+  "timeline": {
+    "opened": "2026-09-14",
+    "reviewCloses": null,
+    "lastCallCloses": null,
+    "decided": "2026-09-14",
+    "implemented": "2026-09-14"
+  },
+  "stage": "implemented",
+  "outcome": "accepted",
+  "decidingBody": null,
+  "votes": [],
+  "dissent": [],
+  "dissentSolicited": false,
+  "note": "Recorded retroactively from commit 1652ac060. It landed through the issue and pull request workflow before this charter existed, with no review window, vote, or dissent solicitation, so it does not count as a completed charter process."
+}

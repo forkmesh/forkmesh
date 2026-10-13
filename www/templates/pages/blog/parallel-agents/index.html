@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Parallel agents" %}
+{% set slug = "parallel-agents" %}
+{% set image = "/assets/blog/features/parallel-agents.webp" %}
+{% set description = "Run as many agents as you like across your issues at once, with live activity indicators showing who&#x27;s working right now." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">AI agents</p>
+            <h1>Parallel agents</h1>
+            <p class="lede">Run as many agents as you like across your issues at once, with live activity indicators showing who's working right now.</p>
+            <div class="meta"><span class="pill">Feature 32 of 72</span><span>Feature</span><span>AI agents, built in</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/parallel-agents.webp" alt="Abstract ForkMesh artwork for Parallel agents">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Parallel agents gives ForkMesh a concrete mechanism for multiple supervised coding agents working across separate issues at once. Run as many agents as you like across your issues at once, with live activity indicators showing who's working right now.</p>
+          <p>AI coding only helps when the agent can work in a real repository without trampling human state or hiding what it did. In ForkMesh, parallel agents addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles parallel agents through the same split it uses across the product: ForkMesh runs agents beside the repository, capturing transcripts, branches, diffs, prompts, usage, questions, and handoffs in the desktop app.</p>
+          <p>The behavior is intentionally narrow: Run as many agents as you like across your issues at once, with live activity indicators showing who's working right now. Humans keep control of instructions, answers, review, and merge decisions.</p>
+          <h2>Where it fits</h2>
+          <p>Use parallel agents when agent work should be reviewable, resumable, and connected to the same repo UI humans use.</p>
+          <p>It pairs with the rest of AI agents, built in because Parallel agents keeps multiple supervised coding agents working across separate issues at once connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/dedicated-agent-worktrees/">← Dedicated agent worktrees</a>
+          <a href="/blog/resumable-sessions/">Resumable sessions →</a>
+        </nav>
+{% endblock %}

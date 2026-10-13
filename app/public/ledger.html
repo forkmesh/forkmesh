@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Public financial ledger · ForkMesh</title>
+    <meta
+      name="description"
+      content="A public system of record for ForkMesh financial activity, with exact SOL amounts, USD estimates, transaction IDs, and links to the people and work behind each record."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <script src="/ledger.js?v=${version}" defer></script>
+    <style>
+      .ledger-page {
+        width: min(1280px, calc(100% - 32px));
+        max-width: none;
+        margin: 0 auto;
+        padding: 0 0 96px;
+      }
+
+      .ledger-hero .kit-hero {
+        width: auto;
+        margin: 0;
+        padding: clamp(40px, 6vw, 72px) 0 0;
+      }
+
+      .ledger-hero .kit-title {
+        max-width: 17ch;
+      }
+
+      .ledger-overview {
+        display: grid;
+        gap: 14px;
+        margin-top: 48px;
+      }
+
+      .ledger-wallets {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+        gap: 14px;
+      }
+
+      .ledger-wallets[hidden] {
+        display: none;
+      }
+
+      .ledger-wallets > .ledger-empty {
+        grid-column: 1 / -1;
+      }
+
+      .ledger-wallet {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        padding: 18px 20px;
+        border-radius: 16px;
+        background: var(--kit-surface);
+        box-shadow: var(--kit-card-shadow);
+      }
+
+      .ledger-wallet-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .ledger-wallet-tile {
+        display: inline-grid;
+        width: 30px;
+        height: 30px;
+        flex: none;
+        place-items: center;
+        border: 1px solid var(--kit-tile-border);
+        border-radius: 9px;
+        background: var(--kit-tile-fill);
+        box-shadow: var(--kit-tile-shadow);
+        color: #ffffff;
+      }
+
+      .ledger-wallet-tile svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .ledger-wallet-label {
+        color: var(--kit-body);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .ledger-wallet-amount {
+        display: block;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(22px, 2.4vw, 28px);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.1;
+        overflow-wrap: anywhere;
+      }
+
+      .ledger-wallet-address {
+        display: block;
+        width: fit-content;
+        max-width: 100%;
+        margin-top: 8px;
+        color: var(--kit-body);
+        font: 500 12px/1.4 var(--mono);
+        overflow-wrap: anywhere;
+        text-decoration: none;
+      }
+
+      a.ledger-wallet-address:hover,
+      a.ledger-wallet-address:focus-visible {
+        color: var(--link);
+        text-decoration: underline;
+      }
+
+      .ledger-wallet-note {
+        display: block;
+        margin-top: auto;
+        padding-top: 12px;
+        color: var(--kit-faint);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .ledger-totals {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .ledger-total {
+        min-width: 0;
+        padding: 20px 22px;
+      }
+
+      .ledger-total + .ledger-total {
+        border-left: 1px solid var(--kit-line);
+      }
+
+      .ledger-total span {
+        display: block;
+        color: var(--kit-body);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .ledger-total strong {
+        display: block;
+        margin-top: 10px;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(26px, 3vw, 34px);
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        line-height: 1.05;
+        overflow-wrap: anywhere;
+      }
+
+      .ledger-total small {
+        display: block;
+        margin-top: 10px;
+        color: var(--kit-faint);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .ledger-records {
+        margin-top: 64px;
+        scroll-margin-top: 24px;
+      }
+
+      .ledger-section-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        justify-content: space-between;
+        gap: 10px 24px;
+        margin-bottom: 16px;
+      }
+
+      .ledger-section-head h2,
+      .ledger-guide h2 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(28px, 3.4vw, 38px);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1.08;
+      }
+
+      .ledger-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 13px;
+      }
+
+      .ledger-meta span:empty {
+        display: none;
+      }
+
+      .ledger-meta a {
+        color: var(--kit-ink);
+      }
+
+      .ledger-expected {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 12px 14px;
+        margin-bottom: 14px;
+        padding: 14px 16px;
+        border-color: color-mix(in srgb, var(--warning) 45%, var(--kit-line));
+        background: color-mix(in srgb, var(--warning) 7%, var(--kit-surface));
+      }
+
+      .ledger-expected[hidden] {
+        display: none;
+      }
+
+      .ledger-expected > svg {
+        width: 20px;
+        height: 20px;
+        margin-top: 2px;
+        color: var(--warning);
+      }
+
+      .ledger-expected strong {
+        display: block;
+        color: var(--kit-ink);
+        font-size: 14.5px;
+      }
+
+      .ledger-expected p {
+        margin: 3px 0 0;
+        color: var(--kit-body);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .ledger-expected ul {
+        display: grid;
+        gap: 2px;
+        margin: 8px 0 0;
+        padding-left: 18px;
+        color: var(--kit-ink);
+        font-size: 13px;
+      }
+
+      @media (max-width: 640px) {
+        .ledger-expected {
+          grid-template-columns: auto minmax(0, 1fr);
+        }
+
+        .ledger-expected .kit-btn {
+          grid-column: 2;
+          justify-self: start;
+        }
+      }
+
+      .ledger-toolbar {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 14px;
+        padding: 12px;
+      }
+
+      .ledger-tabs {
+        display: flex;
+        gap: 4px;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .ledger-tabs::-webkit-scrollbar {
+        display: none;
+      }
+
+      .ledger-tab {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        gap: 7px;
+        height: 34px;
+        padding: 0 13px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--kit-body);
+        font: inherit;
+        font-size: 13.5px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 150ms ease, color 150ms ease;
+      }
+
+      .ledger-tab:hover {
+        background: var(--kit-surface-soft);
+        color: var(--kit-ink);
+      }
+
+      .ledger-tab[aria-selected="true"] {
+        border-color: var(--button-border);
+        background: var(--button-fill);
+        box-shadow: var(--button-shadow);
+        color: var(--button-foreground);
+      }
+
+      .ledger-tab-count {
+        min-width: 18px;
+        color: inherit;
+        font: 600 11px/1 var(--mono);
+        opacity: 0.6;
+      }
+
+      .ledger-filters {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) auto auto auto;
+        gap: 8px;
+        padding-top: 12px;
+        border-top: 1px solid var(--kit-line);
+      }
+
+      .ledger-search {
+        position: relative;
+        display: block;
+        min-width: 0;
+      }
+
+      .ledger-search svg {
+        position: absolute;
+        top: 50%;
+        left: 12px;
+        width: 16px;
+        height: 16px;
+        color: var(--kit-faint);
+        pointer-events: none;
+        transform: translateY(-50%);
+      }
+
+      .ledger-control {
+        width: 100%;
+        height: 38px;
+        border: 1px solid var(--kit-line);
+        border-radius: 10px;
+        background: var(--kit-surface);
+        color: var(--kit-ink);
+        padding: 0 12px;
+        font: inherit;
+        font-size: 14px;
+      }
+
+      .ledger-search .ledger-control {
+        padding-left: 36px;
+      }
+
+      .ledger-control:focus-visible {
+        border-color: var(--kit-accent);
+        outline: 3px solid var(--kit-accent-ring);
+        outline-offset: 0;
+      }
+
+      select.ledger-control {
+        min-width: 176px;
+        cursor: pointer;
+      }
+
+      .ledger-refresh {
+        height: 38px;
+        border-radius: 10px;
+        font-size: 14px;
+      }
+
+      .ledger-refresh:disabled,
+      .ledger-load-more:disabled {
+        cursor: wait;
+        opacity: 0.55;
+      }
+
+      .ledger-list {
+        overflow: hidden;
+      }
+
+      .ledger-list-head,
+      .ledger-row-main {
+        display: grid;
+        grid-template-columns: 112px minmax(0, 1fr) 138px 176px 150px 32px;
+        gap: 18px;
+      }
+
+      .ledger-list-head {
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--kit-line);
+        background: var(--kit-surface-soft);
+        color: var(--kit-body);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .ledger-list-head span:nth-child(4) {
+        text-align: right;
+      }
+
+      .ledger-row + .ledger-row {
+        border-top: 1px solid var(--kit-line);
+      }
+
+      .ledger-row-main {
+        grid-template-areas: "date record status amount receipt toggle";
+        align-items: start;
+        padding: 16px 20px;
+        cursor: pointer;
+        transition: background 120ms ease;
+      }
+
+      .ledger-row-main:hover,
+      .ledger-row.is-open .ledger-row-main {
+        background: var(--kit-surface-soft);
+      }
+
+      .ledger-row-meta {
+        display: contents;
+      }
+
+      .ledger-date {
+        grid-area: date;
+        min-width: 0;
+      }
+
+      .ledger-date time {
+        display: block;
+        color: var(--kit-ink);
+        font-size: 13.5px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+
+      .ledger-date small {
+        display: block;
+        margin-top: 2px;
+        color: var(--kit-faint);
+        font-size: 12px;
+      }
+
+      .ledger-record {
+        grid-area: record;
+        display: grid;
+        min-width: 0;
+        gap: 7px;
+      }
+
+      .ledger-record-title {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+      }
+
+      .ledger-record-title strong {
+        color: var(--kit-ink);
+        font-size: 14.5px;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+
+      .ledger-category {
+        display: inline-flex;
+        align-items: center;
+        height: 22px;
+        padding: 0 8px;
+        border: 1px solid var(--kit-line);
+        border-radius: 6px;
+        background: var(--kit-surface);
+        color: var(--kit-body);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .ledger-parties {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .ledger-parties-role {
+        color: var(--kit-faint);
+        font-size: 12.5px;
+      }
+
+      .ledger-parties-arrow {
+        width: 14px;
+        height: 14px;
+        color: var(--kit-faint);
+      }
+
+      .ledger-link,
+      .ledger-link-static {
+        display: inline-flex;
+        min-width: 0;
+        max-width: 100%;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 9px;
+        border: 1px solid var(--kit-line);
+        border-radius: 999px;
+        background: var(--kit-surface);
+        color: var(--kit-ink);
+        font-size: 12.5px;
+        font-weight: 600;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      .ledger-link-person {
+        padding-left: 3px;
+      }
+
+      .ledger-link:hover,
+      .ledger-link:focus-visible {
+        border-color: color-mix(in srgb, var(--link) 45%, var(--kit-line));
+        color: var(--link);
+      }
+
+      .ledger-link-role {
+        color: var(--kit-faint);
+        font-weight: 500;
+      }
+
+      .ledger-link-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ledger-link code,
+      .ledger-link-static code {
+        font: 500 11.5px/1 var(--mono);
+      }
+
+      .ledger-avatar {
+        display: inline-flex;
+        overflow: hidden;
+        flex: none;
+        width: 20px;
+        height: 20px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: hsl(var(--avatar-hue, 210) 45% 42%);
+        color: #ffffff;
+        font: 700 10px/1 var(--sans);
+      }
+
+      .ledger-avatar img {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+
+      .ledger-subjects {
+        display: grid;
+        min-width: 0;
+        gap: 4px;
+      }
+
+      .ledger-subject {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 7px;
+        color: var(--kit-body);
+        font-size: 13px;
+        line-height: 1.45;
+        text-decoration: none;
+      }
+
+      .ledger-subject svg {
+        width: 15px;
+        height: 15px;
+        flex: none;
+        color: var(--kit-faint);
+      }
+
+      .ledger-subject-key {
+        flex: none;
+        color: var(--kit-body);
+        font-weight: 600;
+      }
+
+      .ledger-subject-title {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--kit-ink);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      a.ledger-subject:hover .ledger-subject-title,
+      a.ledger-subject:focus-visible .ledger-subject-title {
+        color: var(--link);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      .ledger-note {
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 13px;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+
+      .ledger-status {
+        grid-area: status;
+        display: grid;
+        justify-items: start;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .ledger-status-pill {
+        display: inline-flex;
+        align-items: center;
+        height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--kit-ink) 7%, transparent);
+        color: var(--kit-ink);
+        font-size: 12.5px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .ledger-status-pill[data-tone="settled"] {
+        background: color-mix(in srgb, var(--accent-bright) 14%, transparent);
+        color: var(--accent-bright);
+      }
+
+      .ledger-status-pill[data-tone="pending"] {
+        background: color-mix(in srgb, var(--warning) 15%, transparent);
+        color: var(--warning);
+      }
+
+      .ledger-status-pill[data-tone="failed"] {
+        background: color-mix(in srgb, var(--danger) 13%, transparent);
+        color: var(--danger);
+      }
+
+      .ledger-direction {
+        color: var(--kit-faint);
+        font-size: 12px;
+      }
+
+      .ledger-amount {
+        grid-area: amount;
+        min-width: 0;
+        text-align: right;
+      }
+
+      .ledger-amount strong {
+        display: block;
+        color: var(--kit-ink);
+        font: 600 14px/1.35 var(--mono);
+        overflow-wrap: anywhere;
+      }
+
+      .ledger-amount small {
+        display: block;
+        margin-top: 3px;
+        color: var(--kit-faint);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ledger-receipt {
+        grid-area: receipt;
+        min-width: 0;
+      }
+
+      .ledger-receipt-link {
+        display: inline-flex;
+        max-width: 100%;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+        color: var(--link);
+        font: 500 12.5px/1.4 var(--mono);
+        text-decoration: none;
+      }
+
+      .ledger-receipt-link:hover,
+      .ledger-receipt-link:focus-visible {
+        text-decoration: underline;
+      }
+
+      .ledger-receipt-link svg {
+        width: 13px;
+        height: 13px;
+        flex: none;
+      }
+
+      .ledger-receipt small,
+      .ledger-no-transaction {
+        display: block;
+        margin-top: 3px;
+        color: var(--kit-faint);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .ledger-no-transaction {
+        margin-top: 0;
+        color: var(--kit-body);
+        font-size: 12.5px;
+      }
+
+      .ledger-toggle {
+        grid-area: toggle;
+        display: inline-grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--kit-body);
+        cursor: pointer;
+      }
+
+      .ledger-toggle:hover,
+      .ledger-toggle:focus-visible {
+        border-color: var(--kit-line);
+        background: var(--kit-surface);
+        color: var(--kit-ink);
+      }
+
+      .ledger-toggle svg {
+        width: 16px;
+        height: 16px;
+        transition: transform 150ms ease;
+      }
+
+      .ledger-row.is-open .ledger-toggle svg {
+        transform: rotate(180deg);
+      }
+
+      .ledger-details {
+        padding: 4px 20px 20px 150px;
+        background: var(--kit-surface-soft);
+      }
+
+      .ledger-details-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+        gap: 16px 28px;
+        margin: 0;
+        padding-top: 16px;
+        border-top: 1px dashed var(--kit-line);
+      }
+
+      .ledger-detail {
+        min-width: 0;
+      }
+
+      .ledger-detail.is-wide {
+        grid-column: 1 / -1;
+      }
+
+      .ledger-detail dt {
+        margin-bottom: 6px;
+        color: var(--kit-body);
+        font-size: 12.5px;
+        font-weight: 600;
+      }
+
+      .ledger-detail dd {
+        display: grid;
+        gap: 6px;
+        justify-items: start;
+        margin: 0;
+        color: var(--kit-ink);
+        font-size: 13px;
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+      }
+
+      .ledger-detail p {
+        margin: 0;
+      }
+
+      .ledger-detail dd .ledger-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .ledger-detail code,
+      .ledger-signature code {
+        font: 500 12px/1.55 var(--mono);
+        overflow-wrap: anywhere;
+      }
+
+      .ledger-signature {
+        display: grid;
+        gap: 4px;
+        color: var(--link);
+        text-decoration: none;
+      }
+
+      .ledger-signature:hover code,
+      .ledger-signature:focus-visible code {
+        text-decoration: underline;
+      }
+
+      .ledger-signature small,
+      .ledger-detail small {
+        color: var(--kit-faint);
+        font-size: 12px;
+      }
+
+      .ledger-empty {
+        margin: 0;
+        padding: 44px 22px;
+        color: var(--kit-body);
+        line-height: 1.6;
+        text-align: center;
+      }
+
+      .ledger-pagination {
+        display: grid;
+        place-items: center;
+        margin-top: 20px;
+      }
+
+      .ledger-load-more[hidden] {
+        display: none;
+      }
+
+      .ledger-guide {
+        margin-top: 88px;
+        scroll-margin-top: 24px;
+      }
+
+      .ledger-guide-lede {
+        max-width: 62ch;
+        margin: 12px 0 0;
+        color: var(--kit-body);
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      .ledger-principles {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 28px;
+      }
+
+      .ledger-principle {
+        padding: 22px;
+      }
+
+      .ledger-principle .kit-tile {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+      }
+
+      .ledger-principle .kit-tile svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .ledger-principle h3 {
+        margin: 18px 0 8px;
+        color: var(--kit-ink);
+        font-size: 15.5px;
+        font-weight: 600;
+      }
+
+      .ledger-principle p {
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 13.5px;
+        line-height: 1.6;
+      }
+
+      .ledger-notes {
+        display: grid;
+        grid-template-columns: minmax(0, 0.8fr) minmax(0, 2fr);
+        gap: 28px;
+        margin-top: 14px;
+        padding: 26px 28px;
+      }
+
+      .ledger-notes h3 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .ledger-notes-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px 28px;
+      }
+
+      .ledger-notes-list p {
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 13.5px;
+        line-height: 1.65;
+      }
+
+      .ledger-notes-list strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--kit-ink);
+        font-weight: 600;
+      }
+
+      @media (max-width: 1100px) {
+        .ledger-list-head,
+        .ledger-row-main {
+          grid-template-columns: 100px minmax(0, 1fr) 124px 160px 32px;
+        }
+
+        .ledger-row-main {
+          grid-template-areas: "date record status amount toggle";
+        }
+
+        .ledger-list-head span:nth-child(5),
+        .ledger-receipt {
+          display: none;
+        }
+
+        .ledger-details {
+          padding-left: 138px;
+        }
+
+        .ledger-principles {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 860px) {
+        .ledger-filters {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .ledger-search {
+          grid-column: 1 / -1;
+        }
+
+        select.ledger-control {
+          min-width: 0;
+        }
+
+        .ledger-notes {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .ledger-page {
+          width: calc(100% - 24px);
+        }
+
+        .ledger-totals {
+          grid-template-columns: 1fr;
+        }
+
+        .ledger-total + .ledger-total {
+          border-top: 1px solid var(--kit-line);
+          border-left: 0;
+        }
+
+        .ledger-list-head {
+          display: none;
+        }
+
+        .ledger-row-main {
+          grid-template-columns: minmax(0, 1fr) auto;
+          grid-template-areas:
+            "title amount"
+            "parties parties"
+            "subjects subjects"
+            "meta meta";
+          column-gap: 12px;
+          row-gap: 0;
+          align-items: start;
+          padding: 16px;
+        }
+
+        .ledger-row-meta {
+          grid-area: meta;
+          display: flex;
+          min-width: 0;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 6px 12px;
+          margin-top: 14px;
+          padding-right: 40px;
+        }
+
+        .ledger-toggle {
+          grid-area: meta;
+          justify-self: end;
+          align-self: end;
+        }
+
+        .ledger-record {
+          display: contents;
+        }
+
+        .ledger-record-title {
+          grid-area: title;
+          align-self: start;
+        }
+
+        .ledger-amount {
+          align-self: start;
+        }
+
+        .ledger-parties {
+          grid-area: parties;
+          margin-top: 10px;
+        }
+
+        .ledger-subjects,
+        .ledger-note {
+          grid-area: subjects;
+          margin-top: 8px;
+        }
+
+        .ledger-subject {
+          flex-wrap: wrap;
+          row-gap: 2px;
+        }
+
+        .ledger-subject-title {
+          flex: 1 1 100%;
+          display: -webkit-box;
+          white-space: normal;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+        }
+
+        .ledger-receipt {
+          display: block;
+        }
+
+        .ledger-receipt small,
+        .ledger-direction {
+          display: none;
+        }
+
+        .ledger-date time,
+        .ledger-date small {
+          display: inline;
+          font-size: 12px;
+        }
+
+        .ledger-date small::before {
+          content: " · ";
+        }
+
+        .ledger-details {
+          padding: 0 16px 16px;
+        }
+
+        .ledger-principles,
+        .ledger-notes-list {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .ledger-date small {
+          display: none;
+        }
+
+        .ledger-filters {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="ledger-page">
+      <section class="ledger-hero" aria-labelledby="ledger-title">
+        <div class="kit-hero">
+          <span class="kit-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z"></path><path d="M9 8h6M9 12h6M9 16h3"></path></svg>
+            Public ledger
+          </span>
+          <h1 class="kit-title" id="ledger-title">Follow every record to its source.</h1>
+          <p class="kit-lede">
+            One transparent list of ForkMesh financial activity: the exact SOL
+            amount, a USD value, the Solana receipt when one exists, and the
+            people, issues and pull requests behind every record.
+          </p>
+          <div class="kit-actions">
+            <a class="kit-btn is-primary" href="#records">Browse records <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+            <a class="kit-btn" href="#how-to-read">How to read it <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"></path></svg></a>
+          </div>
+        </div>
+      </section>
+
+      <div class="ledger-overview">
+        <section
+          class="ledger-wallets"
+          aria-label="Wallet balances"
+          aria-live="polite"
+          data-ledger-wallets
+        >
+          <p class="ledger-empty kit-card" data-ledger-wallets-empty>Reading wallet balances…</p>
+        </section>
+
+        <section class="ledger-totals kit-card" aria-label="Loaded ledger summary" aria-live="polite">
+          <article class="ledger-total">
+            <span>Expenses</span>
+            <strong data-ledger-expenses-total>—</strong>
+            <small>Finalized payouts and recorded operating costs; unvalued SOL stays exact</small>
+          </article>
+          <article class="ledger-total">
+            <span>Income</span>
+            <strong data-ledger-income-total>—</strong>
+            <small>Finalized receipts and recorded external revenue</small>
+          </article>
+          <article class="ledger-total">
+            <span>Debt</span>
+            <strong data-ledger-debt-total>—</strong>
+            <small>Outstanding reimbursements and committed payouts; unvalued SOL stays exact</small>
+          </article>
+        </section>
+      </div>
+
+      <section class="ledger-records" id="records" aria-labelledby="ledger-records-title">
+        <div class="ledger-section-head">
+          <h2 id="ledger-records-title">Records</h2>
+          <p class="ledger-meta">
+            <span role="status" aria-live="polite" data-ledger-status>Loading public records…</span>
+            <span data-ledger-quote-summary>Waiting for SOL/USD quote</span>
+            <span data-ledger-price-note></span>
+            <span data-ledger-backfill-note>Loading historical scan coverage…</span>
+          </p>
+        </div>
+
+        <aside class="ledger-expected kit-card" aria-live="polite" data-ledger-expected-reminder hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z"></path><path d="M12 8v4"></path><path d="M12 15.5h.01"></path></svg>
+          <div>
+            <strong data-ledger-expected-title>Monthly expenses need receipts</strong>
+            <p>These estimates come from past monthly charges. Record each receipt to replace its estimate; until then it is not counted in expenses or debt.</p>
+            <ul data-ledger-expected-list></ul>
+          </div>
+          <button class="kit-btn" type="button" data-ledger-expected-show>Show expected</button>
+        </aside>
+
+        <div class="ledger-toolbar kit-card" aria-label="Ledger controls" role="group">
+          <div class="ledger-tabs" role="tablist" aria-label="Ledger views">
+            <button class="ledger-tab" type="button" role="tab" aria-selected="true" data-ledger-view="all">All activity</button>
+            <button class="ledger-tab" type="button" role="tab" aria-selected="false" data-ledger-view="expenses">Expenses <span class="ledger-tab-count" data-ledger-expense-count>0</span></button>
+            <button class="ledger-tab" type="button" role="tab" aria-selected="false" data-ledger-view="income">Income <span class="ledger-tab-count" data-ledger-income-count>0</span></button>
+            <button class="ledger-tab" type="button" role="tab" aria-selected="false" data-ledger-view="debt">Debt <span class="ledger-tab-count" data-ledger-debt-count>0</span></button>
+            <button class="ledger-tab" type="button" role="tab" aria-selected="false" data-ledger-view="expected">Expected <span class="ledger-tab-count" data-ledger-expected-count>0</span></button>
+            <button class="ledger-tab" type="button" role="tab" aria-selected="false" data-ledger-view="pending">Pending payments <span class="ledger-tab-count" data-ledger-pending-count>0</span></button>
+            <button class="ledger-tab" type="button" role="tab" aria-selected="false" data-ledger-view="paid">Paid <span class="ledger-tab-count" data-ledger-paid-count>0</span></button>
+          </div>
+          <div class="ledger-filters">
+            <label class="ledger-search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4.2-4.2"></path></svg>
+              <input
+                class="ledger-control"
+                type="search"
+                placeholder="Search a user, issue, PR, wallet, or transaction ID"
+                aria-label="Search loaded financial records"
+                data-ledger-search
+              />
+            </label>
+            <select class="ledger-control" aria-label="Filter by record type" data-ledger-category>
+              <option value="all">All record types</option>
+              <option value="tips">Member tips</option>
+              <option value="rewards">Rewards &amp; contributions</option>
+              <option value="microjobs">Microjobs</option>
+              <option value="contributor-rewards">Issue &amp; PR rewards</option>
+              <option value="world">World purchases</option>
+              <option value="revenue">Advertising revenue</option>
+              <option value="operations">Operating expenses &amp; debt</option>
+              <option value="historical">Historical on-chain</option>
+            </select>
+            <select class="ledger-control" aria-label="Filter by receipt state" data-ledger-receipt>
+              <option value="all">All receipt states</option>
+              <option value="onchain">On-chain receipt</option>
+              <option value="pending">No transaction yet</option>
+              <option value="external">External accounting</option>
+            </select>
+            <button class="kit-btn ledger-refresh" type="button" data-ledger-refresh>Refresh</button>
+          </div>
+        </div>
+
+        <div class="ledger-list kit-card" role="region" aria-label="Financial records" aria-busy="true" data-ledger-list>
+          <div class="ledger-list-head" aria-hidden="true">
+            <span>Date</span>
+            <span>Record &amp; linked subjects</span>
+            <span>Status</span>
+            <span>Amount</span>
+            <span>Transaction ID</span>
+            <span></span>
+          </div>
+          <div data-ledger-rows>
+            <p class="ledger-empty"><span class="fm-spinner" aria-hidden="true"></span> Loading the public ledger…</p>
+          </div>
+        </div>
+
+        <div class="ledger-pagination">
+          <button class="kit-btn ledger-load-more" type="button" data-ledger-load-more hidden>Load older records</button>
+        </div>
+      </section>
+
+      <section class="ledger-guide" id="how-to-read" aria-labelledby="ledger-guide-title">
+        <h2 id="ledger-guide-title">How to read this ledger</h2>
+        <p class="ledger-guide-lede">
+          Four rules decide what appears here and what each row can prove.
+        </p>
+        <div class="ledger-principles">
+          <article class="ledger-principle kit-card">
+            <span class="kit-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"></path></svg></span>
+            <h3>Canonical records</h3>
+            <p>The API projects the tables that own each state change; it does not copy them into a second ledger.</p>
+          </article>
+          <article class="ledger-principle kit-card">
+            <span class="kit-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z"></path><path d="m9 11 2 2 4-4"></path></svg></span>
+            <h3>Receipt beats status</h3>
+            <p>A settled Solana row links its full signature to Solana Explorer. Pending rows explicitly have no on-chain receipt.</p>
+          </article>
+          <article class="ledger-principle kit-card">
+            <span class="kit-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="m10.8 12.2 8.2-8.2"></path><path d="m16 7 2.5 2.5"></path><path d="m13.5 9.5 2 2"></path></svg></span>
+            <h3>No payout-key custody</h3>
+            <p>Payout keys stay on owner devices. An optional World deposit checkout may hold one encrypted per-purchase key only until its sweep; this ledger never exposes it.</p>
+          </article>
+          <article class="ledger-principle kit-card">
+            <span class="kit-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"></path><path d="M3.5 4.5v4h4"></path><path d="M12 8v4l2.8 1.8"></path></svg></span>
+            <h3>Historical reconciliation</h3>
+            <p>A bounded read-only scan walks known public system wallets back to their oldest available Solana receipt. Personal member-wallet histories are never scanned.</p>
+          </article>
+        </div>
+
+        <div class="ledger-notes kit-card">
+          <h3>What the numbers mean</h3>
+          <div class="ledger-notes-list">
+            <p><strong>USD is an estimate.</strong>SOL rows use the current public spot quote, not the exchange rate at transaction time. Recorded USD advertising receipts remain exact fiat amounts.</p>
+            <p><strong>Expected expenses are estimates.</strong>When a vendor billed in consecutive months and a later month has no recorded receipt, the ledger shows that month's expected charge, sized from the last recorded month. It stays out of every total until the receipt is recorded.</p>
+            <p><strong>Plans are not payments.</strong>A prepared, approved, queued, expired, or rejected row can document an allocation or intent. Only a linked transaction ID is an on-chain receipt.</p>
+            <p><strong>One transaction can have many rows.</strong>A distribution transaction may pay several recipients. Each transfer is listed separately with the same transaction ID so its recipient and purpose stay visible.</p>
+            <p><strong>Earlier receipts are reconciled.</strong>The background backfill scans only configured community-pool, temporary World deposit, and retained legacy system addresses. It records finalized SOL transfers and suppresses duplicates already owned by a canonical ForkMesh record.</p>
+            <p><strong>Public subjects only.</strong>Links identify public accounts, wallets, repositories, issues, pull requests, claims, World elements, and accounting references. Private repository details are never published here. Billing providers keep their own invoices and payment methods; ForkMesh membership authorization is not presented as a payment receipt.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

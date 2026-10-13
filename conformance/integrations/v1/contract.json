@@ -1,0 +1,403 @@
+{
+  "schemaVersion": 1,
+  "suite": {
+    "id": "forkmesh-integration-contract",
+    "version": "1.0.0",
+    "updated": "2026-09-13",
+    "reportSchema": "forkmesh-integration-contract-report-v1",
+    "eventSchema": "forkmesh-event-v1",
+    "cliSchema": "forkmesh-cli-v1",
+    "tool": "tools/forkmesh_integration.py",
+    "documentation": "www/docs/integrations.md"
+  },
+  "services": [
+    {
+      "id": "hosted",
+      "label": "Hosted ForkMesh application API",
+      "defaultBaseUrl": "https://app.forkmesh.com"
+    },
+    {
+      "id": "self-hosted",
+      "label": "Self-hosted forkmesh-mirror-node daemon (loopback control API)",
+      "defaultBaseUrl": "http://127.0.0.1:8791"
+    }
+  ],
+  "versioning": {
+    "scheme": "semver",
+    "contractMajor": 1,
+    "serviceMinimum": "0.8.0",
+    "skewProfiles": ["previous", "current", "next"],
+    "rules": [
+      "A contract major (v1) never removes a resource, required field, event type, header, CLI command, or exit code listed here.",
+      "Services may add fields, resources, event types, and error codes at any time; consumers must ignore what they do not recognize.",
+      "A service reporting a version below serviceMinimum is unsupported; an unparseable version such as \"dev\" is reported as unknown, not failed.",
+      "Every contract run records the service version so upgrade breakage is attributable to a specific release."
+    ]
+  },
+  "authentication": [
+    {
+      "id": "anonymous",
+      "summary": "Public reads. No credentials; responses may be edge cached."
+    },
+    {
+      "id": "loopback-operator",
+      "summary": "The mirror-node control API binds 127.0.0.1 only; reaching the socket is the operator authorization. Never expose it publicly."
+    },
+    {
+      "id": "catalog-view-token",
+      "summary": "Owner-signed forkmesh-catalog-view-v1 token (viewer, ts, sig query parameters) that adds the viewer's private and shared repositories to GET /api/repositories. Responses are no-store and carry a weak ETag."
+    },
+    {
+      "id": "account-bearer",
+      "summary": "Bearer token minted by POST /api/accounts/login for account-scoped automation. Send as Authorization: Bearer; never place it in a URL."
+    },
+    {
+      "id": "webhook-capability-url",
+      "summary": "Inbound chat webhook URLs embed a random 256-bit token; the URL itself is the credential. Rotate it to revoke."
+    },
+    {
+      "id": "webhook-hmac",
+      "summary": "Outbound webhook deliveries are signed with HMAC-SHA256 over the forkmesh-webhook-v1 message using a secret shared out of band."
+    }
+  ],
+  "policies": {
+    "discovery": {
+      "summary": "GET /api/version reports the service version; GET /api/openapi.json and GET /api/metrics/endpoints enumerate every route; the discover command probes each contract resource and prints a capability map with a version-skew verdict."
+    },
+    "authentication": {
+      "summary": "Each HTTP resource names exactly one authentication scheme from the authentication list. Credentials never travel in query strings except the signed, short-lived catalog view token."
+    },
+    "pagination": {
+      "summary": "Contract collections are bounded rather than paged: GET /api/repositories returns at most maxItems newest-first records. GET /api/repositories/search is the one keyset-paged collection: pass its nextCursor back as cursor with the same filters until nextCursor is null. Time-ordered feeds resume with a since cursor set to the previous latestTs; entries at the boundary may repeat and must be deduplicated.",
+      "maxItems": {"hosted:repositories": 200},
+      "cursorParameter": "since",
+      "cursorResponseField": "latestTs"
+    },
+    "filtering": {
+      "summary": "Contract collections have no server-side filters except GET /api/repositories/search (q, view, language, topic, owner, cloneable; ranking rules at /docs/repository-index/). Otherwise filter client-side on documented fields (owner, name, visibility, liveHost, cloneOnline, termsFlagged); undocumented query parameters are not part of the contract and may change."
+    },
+    "idempotency": {
+      "summary": "GET and HEAD are safe to repeat. POST /v1/control/sync is idempotent: a repeat while a sync is pending answers 202 with queued=false. Inbound chat webhook POSTs are not deduplicated by the service, so a sender retries only when no response was received. Outbound webhook events carry a stable id that receivers use as the idempotency key."
+    },
+    "ordering": {
+      "summary": "Events are ordered per subject by an integer sequence that increases by exactly one per observed change. There is no global order. Every event carries the subject's full current state, so a consumer that skips a gap after gapTimeoutSeconds still converges.",
+      "gapTimeoutSeconds": 120
+    },
+    "retries": {
+      "summary": "Retry idempotent requests on transport errors and the retryStatuses below with capped exponential backoff and jitter, honoring Retry-After (seconds) or a retryAfterMs body field when present. Non-idempotent requests retry only on 429. Never retry other 4xx responses.",
+      "retryStatuses": [408, 425, 429, 500, 502, 503, 504],
+      "maxAttempts": 6,
+      "baseDelaySeconds": 0.5,
+      "maxDelaySeconds": 30
+    },
+    "signatures": {
+      "summary": "Outbound webhooks carry ForkMesh-Webhook-Signature: v1=<hex HMAC-SHA256(secret, \"forkmesh-webhook-v1\\n\" + timestamp + \"\\n\" + id + \"\\n\" + body)>. Several comma-separated v1 values may appear during secret rotation. Receivers reject timestamps outside toleranceSeconds. Repository, issue, and pull records keep their own Ed25519 signatures (forkmesh-<kind>-v1 canonical strings) and X-ForkMesh-Signature on node requests.",
+      "toleranceSeconds": 300
+    },
+    "rateLimits": {
+      "summary": "Throttled requests answer 429 with Retry-After in seconds and usually a retryAfterMs body field. Hosted public reads are edge cached, so polling faster than minimumPollSeconds returns identical data and spends the shared daily request budget.",
+      "status": 429,
+      "headers": ["Retry-After"],
+      "bodyFields": ["retryAfterMs"],
+      "minimumPollSeconds": {"hosted": 30, "self-hosted": 5}
+    },
+    "errors": {
+      "summary": "Hosted errors are JSON objects with a stable snake_case error code ({\"error\": \"rate_limited\"}). The mirror-node daemon answers {\"ok\": false, \"error\": \"<message>\"}. Branch on HTTP status class first and on the error code second; treat unknown codes by status class.",
+      "envelopes": {
+        "hosted": {"error": "string"},
+        "self-hosted": {"ok": "boolean", "error": "string"}
+      }
+    },
+    "deprecation": {
+      "summary": "A contract entry is deprecated by adding it to deprecations with a replacement and a sunset date at least noticeDays after the announcement, and by marking its stability deprecated. It keeps working until the sunset, the contract runner warns while it is in use, and removal requires the next contract major.",
+      "noticeDays": 180
+    }
+  },
+  "interfaces": {
+    "http": [
+      {
+        "id": "version",
+        "kind": "resource",
+        "service": "hosted",
+        "method": "GET",
+        "path": "/api/version",
+        "auth": "anonymous",
+        "stability": "stable",
+        "expectStatus": [200],
+        "requiredFields": {"ok": "boolean", "rev": "string", "worker": "string", "version": "string", "now": "number"},
+        "versionField": "version"
+      },
+      {
+        "id": "openapi",
+        "kind": "resource",
+        "service": "hosted",
+        "method": "GET",
+        "path": "/api/openapi.json",
+        "auth": "anonymous",
+        "stability": "stable",
+        "expectStatus": [200],
+        "requiredFields": {"openapi": "string", "info": "object", "paths": "object"}
+      },
+      {
+        "id": "endpoint-catalog",
+        "kind": "resource",
+        "service": "hosted",
+        "method": "GET",
+        "path": "/api/metrics/endpoints",
+        "auth": "anonymous",
+        "stability": "stable",
+        "expectStatus": [200],
+        "requiredFields": {"ok": "boolean", "endpoints": "array"},
+        "itemsField": "endpoints",
+        "itemFields": {"method": "string", "template": "string"}
+      },
+      {
+        "id": "repositories",
+        "kind": "resource",
+        "service": "hosted",
+        "method": "GET",
+        "path": "/api/repositories",
+        "auth": "anonymous",
+        "stability": "stable",
+        "expectStatus": [200],
+        "requiredFields": {"ok": "boolean", "repositories": "array"},
+        "itemsField": "repositories",
+        "itemFields": {"owner": "string", "name": "string", "visibility": "string"}
+      },
+      {
+        "id": "repository-search",
+        "kind": "resource",
+        "service": "hosted",
+        "method": "GET",
+        "path": "/api/repositories/search",
+        "auth": "anonymous",
+        "stability": "beta",
+        "expectStatus": [200],
+        "requiredFields": {"ok": "boolean", "results": "array", "total": "number"},
+        "itemsField": "results",
+        "itemFields": {"owner": "string", "name": "string", "clone": "object"}
+      },
+      {
+        "id": "status",
+        "kind": "resource",
+        "service": "hosted",
+        "method": "GET",
+        "path": "/api/status",
+        "auth": "anonymous",
+        "stability": "stable",
+        "expectStatus": [200],
+        "requiredFields": {"ok": "boolean", "now": "number", "systems": "array"},
+        "itemsField": "systems",
+        "itemFields": {"id": "string", "status": "string"}
+      },
+      {
+        "id": "mirror-identity",
+        "kind": "resource",
+        "service": "hosted",
+        "method": "GET",
+        "path": "/api/mirrors/https",
+        "auth": "anonymous",
+        "stability": "stable",
+        "expectStatus": [200],
+        "requiredFields": {"ok": "boolean", "protocol": "string", "registration": "string"}
+      },
+      {
+        "id": "error-method-not-allowed",
+        "kind": "error",
+        "service": "hosted",
+        "method": "GET",
+        "path": "/api/chat/webhooks/0000000000000000000000000000000000000000000000000000000000000000",
+        "auth": "webhook-capability-url",
+        "stability": "stable",
+        "expectStatus": [405],
+        "requiredFields": {"error": "string"},
+        "expectHeaders": {"allow": "POST"}
+      },
+      {
+        "id": "health",
+        "kind": "resource",
+        "service": "self-hosted",
+        "method": "GET",
+        "path": "/healthz",
+        "auth": "loopback-operator",
+        "stability": "stable",
+        "expectStatus": [200],
+        "requiredFields": {"ok": "boolean", "node": "string"}
+      },
+      {
+        "id": "readiness",
+        "kind": "resource",
+        "service": "self-hosted",
+        "method": "GET",
+        "path": "/readyz",
+        "auth": "loopback-operator",
+        "stability": "stable",
+        "expectStatus": [200, 503],
+        "requiredFields": {"ok": "boolean", "ready": "boolean", "version": "string"}
+      },
+      {
+        "id": "node-status",
+        "kind": "resource",
+        "service": "self-hosted",
+        "method": "GET",
+        "path": "/v1/status",
+        "auth": "loopback-operator",
+        "stability": "stable",
+        "expectStatus": [200],
+        "requiredFields": {
+          "ok": "boolean",
+          "ready": "boolean",
+          "node": "string",
+          "version": "string",
+          "uptimeSeconds": "integer",
+          "repositories": "object",
+          "lastSyncOk": "boolean",
+          "syncCount": "integer"
+        },
+        "versionField": "version"
+      },
+      {
+        "id": "request-sync",
+        "kind": "resource",
+        "service": "self-hosted",
+        "method": "POST",
+        "path": "/v1/control/sync",
+        "auth": "loopback-operator",
+        "stability": "stable",
+        "mutating": true,
+        "idempotent": true,
+        "expectStatus": [202],
+        "requiredFields": {"ok": "boolean", "queued": "boolean"}
+      },
+      {
+        "id": "error-sync-method",
+        "kind": "error",
+        "service": "self-hosted",
+        "method": "GET",
+        "path": "/v1/control/sync",
+        "auth": "loopback-operator",
+        "stability": "stable",
+        "expectStatus": [405],
+        "requiredFields": {"ok": "boolean", "error": "string"},
+        "expectHeaders": {"allow": "POST"}
+      }
+    ],
+    "events": {
+      "schema": "forkmesh-event-v1",
+      "delivery": "at-least-once",
+      "producer": "tools/forkmesh_integration.py watch",
+      "requiredFields": {
+        "schema": "string",
+        "id": "string",
+        "type": "string",
+        "subject": "string",
+        "sequence": "integer",
+        "digest": "string",
+        "occurredAt": "integer",
+        "source": "string"
+      },
+      "types": [
+        {"type": "repository.changed", "service": "hosted", "subject": "owner/name (lowercase)", "dataFields": ["owner", "name", "description", "visibility", "updatedAt", "commit", "stateHash", "cloneUrl", "liveHost", "cloneOnline", "termsFlagged"]},
+        {"type": "repository.removed", "service": "hosted", "subject": "owner/name (lowercase)", "dataFields": []},
+        {"type": "repository.push", "service": "hosted", "subject": "owner/name (lowercase)", "dataFields": ["defaultBranch", "before", "after", "refsDigest", "defaultBranchMoved"]},
+        {"type": "branch.push", "service": "hosted", "subject": "owner/name (lowercase)", "dataFields": ["ref", "branch", "before", "after", "refsDigest"]},
+        {"type": "pull.merged", "service": "hosted", "subject": "owner/name (lowercase)", "dataFields": ["pullNumber", "mergedBy", "base", "head", "baseBefore", "overrideReview", "refsDigest"]},
+        {"type": "release.published", "service": "hosted", "subject": "owner/name (lowercase)", "dataFields": ["tag", "name", "notes", "author"]},
+        {"type": "mirror.node.changed", "service": "self-hosted", "subject": "node:<name>", "dataFields": ["node", "version", "ready", "lastSyncOk"]},
+        {"type": "mirror.repository.changed", "service": "self-hosted", "subject": "<owner>/<name> as keyed by the daemon", "dataFields": ["repository", "state"]},
+        {"type": "mirror.repository.removed", "service": "self-hosted", "subject": "<owner>/<name> as keyed by the daemon", "dataFields": []}
+      ],
+      "internalChannels": [
+        {
+          "id": "owner-node-event-socket",
+          "summary": "The relay's authenticated owner WebSocket carries payload-free {\"type\":\"event\",\"topic\",\"repo\",\"state\",\"generation\"} doorbells to an account's own nodes. It is owner-signed and not a third-party interface; integrations consume forkmesh-event-v1 instead."
+        }
+      ]
+    },
+    "cli": {
+      "schema": "forkmesh-cli-v1",
+      "commands": [
+        {"id": "validate", "summary": "Validate a contract manifest."},
+        {"id": "discover", "summary": "Probe a service and print one capability line."},
+        {"id": "contract", "summary": "Run the executable contract and print a report."},
+        {"id": "watch", "summary": "Emit forkmesh-event-v1 NDJSON for observed changes."},
+        {"id": "deliver", "summary": "Sign and POST events to a webhook; print one result line per event."},
+        {"id": "fixture", "summary": "Serve an offline hosted and self-hosted stand-in with skew profiles."}
+      ],
+      "stdout": "One JSON object per line. Command lines carry schema forkmesh-cli-v1 and command; watch lines are forkmesh-event-v1 events. Diagnostics go to stderr.",
+      "exitCodes": {
+        "0": "success",
+        "1": "contract failure or undeliverable events",
+        "2": "usage or configuration error",
+        "3": "unsupported service version skew"
+      },
+      "mirrorNode": {
+        "binary": "forkmesh-mirror-node",
+        "flags": ["config", "init", "check", "public-key", "set-version", "register-link-code", "version"],
+        "stdout": {
+          "check": "mirror-node configuration OK",
+          "set-version": "mirror-node version updated",
+          "register-link-code": "node account registered"
+        },
+        "exitCodes": {"0": "success", "1": "failure; the reason is printed on stderr"}
+      }
+    },
+    "webhooks": {
+      "outbound": {
+        "schema": "forkmesh-webhook-v1",
+        "method": "POST",
+        "contentType": "application/json",
+        "body": "One forkmesh-event-v1 event as canonical JSON (sorted keys, no insignificant whitespace).",
+        "headers": [
+          "ForkMesh-Webhook-Id",
+          "ForkMesh-Webhook-Timestamp",
+          "ForkMesh-Webhook-Signature",
+          "ForkMesh-Webhook-Attempt",
+          "ForkMesh-Event-Type"
+        ],
+        "success": "Any 2xx acknowledges the event. Receivers must answer 2xx for duplicates too.",
+        "gone": 410,
+        "deadLetter": "Other 4xx responses and exhausted retries append the event to the dead-letter file; replay it later with deliver --input <file>."
+      },
+      "inbound": [
+        {
+          "id": "chat-channel-webhook",
+          "method": "POST",
+          "path": "/api/chat/webhooks/{token}",
+          "auth": "webhook-capability-url",
+          "acceptedStatus": 202,
+          "bodyFields": ["text", "content", "message"],
+          "idempotent": false,
+          "errors": {"400": "empty_webhook", "404": "not_found", "405": "method_not_allowed", "409": "public_channel_required"}
+        }
+      ]
+    }
+  },
+  "deprecations": [],
+  "examples": [
+    {
+      "id": "discovery-catalog",
+      "categories": ["discovery", "analytics"],
+      "path": "conformance/integrations/v1/examples/discovery_catalog.py",
+      "summary": "List and summarize public repositories, filtered client-side."
+    },
+    {
+      "id": "migration-export",
+      "categories": ["migration"],
+      "path": "conformance/integrations/v1/examples/migration_export.py",
+      "summary": "Resumable export manifest with mirror clone commands."
+    },
+    {
+      "id": "webhook-moderation",
+      "categories": ["automation", "moderation"],
+      "path": "conformance/integrations/v1/examples/webhook_moderation.py",
+      "summary": "Signed webhook receiver that survives duplicate, delayed, missing, and reordered deliveries and flags terms-flagged repositories."
+    },
+    {
+      "id": "deployment-gate",
+      "categories": ["deployment"],
+      "path": "conformance/integrations/v1/examples/deployment_gate.py",
+      "summary": "Block a rollout until a self-hosted node is ready at the expected version."
+    }
+  ]
+}

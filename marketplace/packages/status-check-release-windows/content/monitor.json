@@ -1,0 +1,7 @@
+{
+  "label": "Windows Release",
+  "systems": [
+    "release_windows"
+  ],
+  "prefixes": []
+}

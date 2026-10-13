@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Fork with intent" %}
+{% set slug = "fork-with-intent" %}
+{% set image = "/assets/blog/features/fork-with-intent.webp" %}
+{% set description = "Fork any repository in the mesh and choose exactly where the copy lands in your working tree." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>Fork with intent</h1>
+            <p class="lede">Fork any repository in the mesh and choose exactly where the copy lands in your working tree.</p>
+            <div class="meta"><span class="pill">Feature 59 of 72</span><span>Feature</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/fork-with-intent.webp" alt="Abstract ForkMesh artwork for Fork with intent">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Fork with intent gives ForkMesh a concrete mechanism for choosing the exact local destination when forking a mesh repository. Fork any repository in the mesh and choose exactly where the copy lands in your working tree.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, fork with intent addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles fork with intent through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: Fork any repository in the mesh and choose exactly where the copy lands in your working tree. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use fork with intent when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because Fork with intent keeps choosing the exact local destination when forking a mesh repository connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/keyboard-first-navigation/">← Keyboard-first navigation</a>
+          <a href="/blog/built-to-stay-up/">Built to stay up →</a>
+        </nav>
+{% endblock %}

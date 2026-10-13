@@ -1,0 +1,12 @@
+[Unit]
+Description=Publish the newest Mac ad hoc iPhone build and email its install link
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/forkmesh/src
+ExecStart=/usr/bin/python3 %h/projects/forkmesh/src/tools/mac_adhoc_publish.py --execute
+TimeoutStartSec=30min
+Nice=10
+NoNewPrivileges=true

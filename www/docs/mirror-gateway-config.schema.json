@@ -1,0 +1,308 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/mirror-gateway-config-v1.json",
+  "title": "ForkMesh local mirror gateway configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "node",
+    "routerPublicKey",
+    "publicOrigin",
+    "listen",
+    "manifestPath",
+    "requestVerifierCommand",
+    "healthSignerCommand",
+    "repositories"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "publicKey"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "publicKey": {
+          "type": "string",
+          "description": "32-byte Ed25519 public key, base64url without padding",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      }
+    },
+    "routerPublicKey": {
+      "type": "string",
+      "description": "32-byte routing-Worker Ed25519 public key, base64url without padding",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "publicOrigin": {
+      "type": "string",
+      "pattern": "^https://[A-Za-z0-9.-]+$"
+    },
+    "listen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "port"],
+      "properties": {
+        "host": {"enum": ["127.0.0.1", "::1", "localhost"]},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+      }
+    },
+    "manifestPath": {"type": "string", "minLength": 1},
+    "requestVerifierCommand": {"$ref": "#/$defs/command"},
+    "healthSignerCommand": {"$ref": "#/$defs/command"},
+    "mergeExecutorCommand": {
+      "$ref": "#/$defs/command",
+      "description": "Required when a public repository explicitly enables merge-pull; receives only typed bounded JSON on stdin."
+    },
+    "actionsSummaryPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute normalized path to the short-lived redacted Actions summary in the gateway account's mode-0700 directory. Same-account files are mode 0600; the packaged fixed path also accepts root:gateway-group mode 0640. Required when a repository explicitly enables actions-status."
+    },
+    "actionsControlPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^/(?:.*/)?actions-control$",
+      "description": "Absolute normalized path to the gateway-owned control queue: a real (non-symlink) directory named actions-control, owned by the gateway's effective UID/GID with mode 0700. The gateway stores router-signed Actions control envelopes there for the executor to verify and consume. Required when a repository explicitly enables actions-control, which in turn requires actions-status. See operations/mirror-actions-control.md."
+    },
+    "privateReplicaStore": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Owner-only directory containing only 64-hex .fm-private ciphertext envelopes"
+    },
+    "dynamicRepositoriesPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute normalized path to the node-owned fork registry (type forkmesh.dynamic-repositories). Its validated entries are merged as pin-less public repositories; an invalid registry or entry is skipped, never fatal."
+    },
+    "dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "assetsRepository"],
+      "description": "Serve the same-codebase web dashboard from the mirrored assets repository's build-output blobs, plus the read-only /api subset the logged-out UI needs.",
+      "properties": {
+        "enabled": {"const": true},
+        "assetsRepository": {
+          "type": "string",
+          "description": "owner/name of an enabled public repository whose app/public and www/public build outputs are served (normally forkmesh/forkmesh).",
+          "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?/[A-Za-z0-9._-]{1,100}$"
+        },
+        "canonicalOrigin": {
+          "type": "string",
+          "description": "Optional canonical control-plane origin that /login and /signup redirect to.",
+          "pattern": "^https://[A-Za-z0-9.-]+$"
+        },
+        "sshOrigin": {
+          "type": "string",
+          "description": "Optional ssh://git@host[:port] origin advertised as each repository's sshUrl.",
+          "pattern": "^ssh://git@[A-Za-z0-9.:\\[\\]-]+$"
+        },
+        "replicaPath": {
+          "type": "string",
+          "description": "Optional absolute service-owned path for the validated last-good public dashboard projection bundle. Requires canonicalOrigin.",
+          "pattern": "^/"
+        }
+      },
+      "allOf": [
+        {
+          "if": {"required": ["replicaPath"]},
+          "then": {"required": ["canonicalOrigin"]}
+        }
+      ]
+    },
+    "writableRepositoryRoot": {
+      "type": "string",
+      "pattern": "^/",
+      "minLength": 2,
+      "description": "Owner-controlled absolute real directory under which an authorized first push may create <owner>/<repo>.git for owners listed in writableOwners."
+    },
+    "writableOwners": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(?:\\*|[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)$"
+      },
+      "description": "Owners whose repositories may be created on first capability-authorized push; requires writableRepositoryRoot. The single entry \"*\" accepts every owner the control plane authorized, which is what a node hosting website-created repositories needs; it may not be mixed with named owners."
+    },
+    "operatorPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyPath", "stateDirectory"],
+      "properties": {
+        "policyPath": {
+          "type": "string",
+          "pattern": "^/",
+          "minLength": 2,
+          "description": "Owner-only node operator policy file (see docs/operations/node-operator-policy.md); validated at load and re-read by the pre-receive hook on every push."
+        },
+        "stateDirectory": {
+          "type": "string",
+          "pattern": "^/",
+          "minLength": 2,
+          "description": "Owner-only directory holding the policy hook, quarantine markers, evidence metadata, cases, archived policies and the hash-chained audit log."
+        }
+      },
+      "description": "Opt-in node-local storage and legal-response policy. Pushes are checked by a gateway-owned pre-receive hook (repository hooks still never run), quarantined repositories are unavailable on this node only, and private replicas follow seeding.privateReplicas. Requires node_operator_policy.py beside the gateway."
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxReleaseBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 17179869184
+        },
+        "maxPrivateReplicaBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483648
+        },
+        "receiveMaxInputBytes": {
+          "type": "integer",
+          "minimum": 1048576,
+          "maximum": 4294967296,
+          "description": "receive.maxInputSize applied to git receive-pack --stateless-rpc, and the largest receive-pack POST body the gateway reads under a verified router capability. Defaults to 268435456 (256 MiB)."
+        }
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/privateRepository"},
+          {"$ref": "#/$defs/disabledPublicRepository"},
+          {"$ref": "#/$defs/publicRepository"}
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "identity": {
+      "type": "object",
+      "required": ["owner", "name", "visibility", "enabled"],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,100}$"
+        },
+        "visibility": {"enum": ["public", "private"]},
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expectedRefsSha256"],
+      "properties": {
+        "expectedRefsSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "git-info-refs",
+          "git-upload-pack",
+          "git-receive-pack",
+          "tree",
+          "blobs",
+          "blob",
+          "raw",
+          "history",
+          "commit",
+          "compare",
+          "branches",
+          "search",
+          "stats",
+          "sizes",
+          "release-blob",
+          "merge-pull",
+          "merge-preview",
+          "update-pull-branch",
+          "merge-agent-branch",
+          "delete-agent-branch",
+          "actions-status",
+          "actions-control"
+        ]
+      }
+    },
+    "privateRepository": {
+      "allOf": [
+        {"$ref": "#/$defs/identity"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["owner", "name", "visibility", "enabled"],
+          "properties": {
+            "owner": true,
+            "name": true,
+            "visibility": {"const": "private"},
+            "enabled": {"const": false}
+          }
+        }
+      ]
+    },
+    "disabledPublicRepository": {
+      "allOf": [
+        {"$ref": "#/$defs/identity"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["owner", "name", "visibility", "enabled"],
+          "properties": {
+            "owner": true,
+            "name": true,
+            "visibility": {"const": "public"},
+            "enabled": {"const": false}
+          }
+        }
+      ]
+    },
+    "publicRepository": {
+      "allOf": [
+        {"$ref": "#/$defs/identity"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "owner",
+            "name",
+            "visibility",
+            "enabled",
+            "gitDir",
+            "integrity"
+          ],
+          "properties": {
+            "owner": true,
+            "name": true,
+            "visibility": {"const": "public"},
+            "enabled": {"const": true},
+            "releaseStore": {"type": "string", "minLength": 1},
+            "integrity": {"$ref": "#/$defs/integrity"},
+            "operations": {"$ref": "#/$defs/operations"},
+            "gitDir": {"type": "string", "pattern": "^/", "minLength": 2}
+          }
+        }
+      ]
+    }
+  }
+}

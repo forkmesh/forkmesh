@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="dark" />
+    <title>ForkMesh · Investor deck</title>
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <!-- Served only through /pitch-deck/<token> (pitch_deck_runtime.py), which
+         stamps the reader's name and token into the block below. -->
+    <script id="deck-config" type="application/json">{}</script>
+    <style>
+      :root {
+        --ink: #0a0f1f;
+        --ink-2: #0f1630;
+        --panel: rgba(255, 255, 255, 0.035);
+        --line: rgba(160, 172, 220, 0.16);
+        --line-strong: rgba(160, 172, 220, 0.34);
+        --text: #e7eaf5;
+        --muted: #9aa4c4;
+        --faint: #6b7597;
+        --accent: #8b7cf6;
+        --accent-2: #c4b5fd;
+        --accent-ink: #1a1240;
+        --mint: #5eead4;
+        --amber: #fbbf77;
+        --sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+        --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        --gutter: clamp(20px, 6vw, 88px);
+      }
+      * { box-sizing: border-box; }
+      html { background: var(--ink); color: var(--text); }
+      body { margin: 0; font: 400 16px/1.55 var(--sans); background: var(--ink); -webkit-font-smoothing: antialiased; }
+      a { color: var(--accent-2); }
+      ::selection { background: rgba(139, 124, 246, 0.35); }
+
+      /* --- chrome ---------------------------------------------------------- */
+      .bar {
+        position: fixed; inset: 0 0 auto 0; z-index: 5; height: 52px;
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        padding: 0 var(--gutter);
+        background: linear-gradient(180deg, rgba(10, 15, 31, 0.92), rgba(10, 15, 31, 0.6) 70%, rgba(10, 15, 31, 0));
+        pointer-events: none;
+      }
+      .bar > * { pointer-events: auto; }
+      .wordmark { display: flex; align-items: center; gap: 10px; font: 600 12px/1 var(--mono); letter-spacing: 0.26em; color: var(--text); text-decoration: none; }
+      .wordmark svg { width: 22px; height: 22px; }
+      .for { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; color: var(--muted); padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(10, 15, 31, 0.6); white-space: nowrap; }
+      .for b { color: var(--accent-2); font-weight: 600; }
+      .progress { position: fixed; left: 0; top: 0; height: 2px; width: 0; background: linear-gradient(90deg, var(--accent), var(--mint)); z-index: 6; transition: width 240ms ease; }
+      .nav {
+        position: fixed; right: var(--gutter); bottom: 22px; z-index: 5;
+        display: flex; align-items: center; gap: 6px;
+        font: 500 12px/1 var(--mono); color: var(--muted);
+      }
+      .nav .count { padding: 0 10px; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; }
+      .nav button {
+        width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line-strong);
+        background: rgba(15, 22, 48, 0.85); color: var(--text); cursor: pointer; display: grid; place-items: center;
+      }
+      .nav button:hover { border-color: var(--accent); }
+      .nav button:focus-visible, .wordmark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .nav button svg { width: 14px; height: 14px; }
+      .hint { position: fixed; left: var(--gutter); bottom: 26px; z-index: 5; font: 500 11px/1 var(--mono); letter-spacing: 0.14em; color: var(--faint); }
+
+      /* --- slides ---------------------------------------------------------- */
+      .deck { scroll-snap-type: y mandatory; height: 100dvh; overflow-y: auto; scroll-behavior: smooth; }
+      @media (prefers-reduced-motion: reduce) { .deck { scroll-behavior: auto; } .progress { transition: none; } }
+      .slide {
+        scroll-snap-align: start; min-height: 100dvh; position: relative;
+        display: grid; grid-template-rows: auto 1fr auto; gap: 24px;
+        padding: 72px var(--gutter) 64px;
+        border-bottom: 1px solid var(--line);
+        overflow: hidden;
+      }
+      .slide::before {
+        content: ""; position: absolute; inset: 0; pointer-events: none;
+        background-image:
+          linear-gradient(rgba(160, 172, 220, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(160, 172, 220, 0.045) 1px, transparent 1px);
+        background-size: 64px 64px;
+        mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 20%, transparent 100%);
+      }
+      .slide > * { position: relative; }
+      .eyebrow { display: flex; align-items: center; gap: 14px; font: 600 11px/1 var(--mono); letter-spacing: 0.26em; color: var(--accent-2); text-transform: uppercase; }
+      .eyebrow::after { content: ""; flex: 0 0 48px; height: 1px; background: var(--line-strong); }
+      .eyebrow .n { color: var(--faint); letter-spacing: 0.1em; }
+      h1, h2 { margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+      h1 { font-size: clamp(38px, 5.4vw, 74px); line-height: 1.04; font-weight: 700; }
+      h2 { font-size: clamp(28px, 3.6vw, 46px); line-height: 1.12; font-weight: 700; max-width: 22ch; }
+      .lede { margin: 12px 0 0; max-width: 62ch; font-size: clamp(16px, 1.45vw, 19px); color: var(--muted); }
+      .body { display: grid; gap: 28px; align-content: start; }
+      .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font: 500 11px/1.6 var(--mono); letter-spacing: 0.1em; color: var(--faint); text-transform: uppercase; }
+      .foot .tag { color: var(--mint); }
+      .foot .src { text-transform: none; letter-spacing: 0; color: var(--faint); }
+
+      .cols { display: grid; gap: 18px; }
+      .cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+      @media (max-width: 900px) { .cols-3, .cols-4, .cols-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 560px) { .cols-2, .cols-3, .cols-4, .cols-6 { grid-template-columns: minmax(0, 1fr); } }
+
+      .card { padding: 20px 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+      .card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
+      .card p { margin: 0; color: var(--muted); font-size: 14px; }
+      .card .k { display: inline-block; margin-bottom: 12px; font: 600 11px/1 var(--mono); letter-spacing: 0.18em; color: var(--accent-2); }
+      .num { font: 700 clamp(34px, 4.2vw, 56px)/1 var(--mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text); }
+      .num small { display: block; margin-top: 10px; font: 600 11px/1.5 var(--mono); letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
+      .stat-mint .num { color: var(--mint); }
+      .stat-accent .num { color: var(--accent-2); }
+
+      .list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+      .list li { position: relative; padding-left: 24px; color: var(--muted); font-size: 15px; }
+      .list li::before { content: "▸"; position: absolute; left: 2px; top: 0; color: var(--accent); font-size: 14px; line-height: 1.6; }
+      .list li b { color: var(--text); font-weight: 600; }
+      .band { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 12px 18px; border: 1px solid var(--line-strong); border-radius: 10px; font: 600 11px/1.6 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-2); background: rgba(139, 124, 246, 0.07); }
+      .band .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--mint); }
+
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { padding: 12px 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+      th { font: 600 11px/1.4 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+      td:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
+      td { color: var(--muted); }
+      td.role { color: var(--accent-2); font-weight: 600; }
+      .scroll { overflow-x: auto; }
+
+      .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+      .flow > div { padding: 18px 20px; border-right: 1px solid var(--line); background: var(--panel); }
+      .flow > div:last-child { border-right: 0; }
+      .flow .k { display: block; margin-bottom: 8px; font: 600 11px/1 var(--mono); letter-spacing: 0.18em; color: var(--accent-2); }
+      .flow h3 { margin: 0 0 6px; font-size: 17px; }
+      .flow p { margin: 0; color: var(--muted); font-size: 13.5px; }
+      @media (max-width: 900px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } .flow > div:nth-child(2) { border-right: 0; } .flow > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); } }
+      @media (max-width: 560px) { .flow { grid-template-columns: minmax(0, 1fr); } .flow > div { border-right: 0; border-bottom: 1px solid var(--line); } }
+
+      .bars { display: grid; gap: 14px; }
+      .bar-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) auto; gap: 14px; align-items: center; font-size: 14px; }
+      .bar-row .lbl { color: var(--text); font-weight: 600; }
+      .bar-row .track { display: block; height: 12px; border-radius: 999px; background: rgba(160, 172, 220, 0.12); overflow: hidden; }
+      .bar-row .fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+      .bar-row .val { font: 600 13px/1 var(--mono); color: var(--accent-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+      @media (max-width: 560px) { .bar-row { grid-template-columns: minmax(0, 1fr) auto; } .bar-row .track { grid-column: 1 / -1; } }
+
+      .ladder { display: grid; gap: 12px; }
+      .rung { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+      .rung .n { font: 700 22px/1 var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
+      .rung .t { color: var(--muted); font-size: 14px; }
+      .rung .r { font: 700 16px/1 var(--mono); color: var(--mint); white-space: nowrap; }
+      .rung .r small { display: block; margin-top: 6px; font: 600 10px/1 var(--mono); letter-spacing: 0.16em; color: var(--faint); text-transform: uppercase; }
+      @media (max-width: 560px) { .rung { grid-template-columns: 72px minmax(0, 1fr); } .rung .r { grid-column: 2; } }
+
+      .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font: 600 12px/1.4 var(--mono); letter-spacing: 0.04em; color: var(--muted); }
+      .chain span { padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+      .chain i { color: var(--accent); font-style: normal; }
+
+      .person { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 18px; align-items: start; }
+      .person .av { width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center; font: 700 22px/1 var(--mono); color: var(--accent-ink); background: linear-gradient(135deg, var(--accent-2), var(--accent)); }
+      .person h3 { margin: 0; font-size: 20px; }
+      .person .role { margin: 4px 0 12px; font: 600 11px/1 var(--mono); letter-spacing: 0.18em; color: var(--accent-2); text-transform: uppercase; }
+
+      .cover { background: radial-gradient(ellipse 60% 50% at 78% 38%, rgba(139, 124, 246, 0.22), transparent 70%), var(--ink); }
+      .cover .body { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; gap: 48px; }
+      @media (max-width: 900px) { .cover .body { grid-template-columns: minmax(0, 1fr); } .cover .mark { display: none; } }
+      .cover .chip { display: inline-flex; align-items: center; gap: 12px; margin-top: 28px; padding: 12px 18px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font: 700 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; }
+      .cover .greet { margin-top: 18px; color: var(--muted); font-size: 15px; }
+      .cover .greet b { color: var(--text); }
+      .mark { position: relative; justify-self: center; width: min(360px, 90%); aspect-ratio: 1; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 24px; background: linear-gradient(160deg, rgba(139, 124, 246, 0.16), rgba(94, 234, 212, 0.05)); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45); }
+      .mark svg { width: 62%; height: auto; }
+      .mark .wm { position: absolute; bottom: 26px; font: 600 12px/1 var(--mono); letter-spacing: 0.3em; color: var(--muted); }
+
+      .close .body { align-content: center; }
+      .close h1 { font-size: clamp(34px, 5.6vw, 72px); }
+      .cta { display: inline-flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+      .cta a { display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 10px; font: 600 13px/1 var(--sans); text-decoration: none; border: 1px solid var(--line-strong); color: var(--text); }
+      .cta a.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+      .sources { display: grid; gap: 8px; }
+      .sources div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+      .sources div b { color: var(--text); font-weight: 600; }
+      @media (max-width: 560px) { .sources div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+
+      @media print {
+        .bar, .nav, .hint, .progress { display: none !important; }
+        .deck { height: auto; overflow: visible; }
+        .slide { min-height: 0; break-after: page; padding: 40px; border: 0; }
+        html, body { background: #fff; color: #111; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="progress" id="progress" aria-hidden="true"></div>
+    <header class="bar">
+      <a class="wordmark" href="#p1" aria-label="ForkMesh, back to the cover">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.5 21 7.5v9L12 21.5 3 16.5v-9z" stroke="#c4b5fd" stroke-width="1.5"/><path d="M12 2.5v19M3 7.5l9 5 9-5" stroke="#8b7cf6" stroke-width="1.5"/></svg>
+        FORKMESH
+      </a>
+      <span class="for" id="for" hidden>Prepared for <b id="viewer"></b></span>
+    </header>
+
+    <main class="deck" id="deck" tabindex="-1">
+
+      <!-- 1 · Cover -->
+      <section class="slide cover" id="p1" data-page="1" aria-label="Cover">
+        <div class="eyebrow">ForkMesh <span class="n">·</span> Investor deck <span class="n">·</span> September 2026</div>
+        <div class="body">
+          <div>
+            <h1>Code with agents.<br />Own the forge.</h1>
+            <p class="lede">ForkMesh turns Claude Code and Codex into attributable contributors on a local-first Git platform you control.</p>
+            <span class="chip">Raising $1.0M · 18-month plan</span>
+            <p class="greet" id="greet" hidden>Prepared for <b id="viewer-long"></b>. This copy is yours alone.</p>
+          </div>
+          <div class="mark" aria-hidden="true">
+            <svg viewBox="0 0 120 120" fill="none">
+              <path d="M60 10 104 35v50L60 110 16 85V35z" stroke="#c4b5fd" stroke-width="2.5"/>
+              <path d="M60 10v100M16 35l44 25 44-25" stroke="#8b7cf6" stroke-width="2.5"/>
+              <path d="M38 47v26M38 47c0-6 10-6 10 0v6c0 6-10 6-10 12M82 47v26M82 47c0-6-10-6-10 0v6c0 6 10 6 10 12" stroke="#5eead4" stroke-width="2.5" stroke-linecap="round"/>
+              <circle cx="38" cy="47" r="3.5" fill="#5eead4"/><circle cx="82" cy="47" r="3.5" fill="#5eead4"/><circle cx="38" cy="73" r="3.5" fill="#5eead4"/><circle cx="82" cy="73" r="3.5" fill="#5eead4"/>
+            </svg>
+            <span class="wm">OWN YOUR CODE</span>
+          </div>
+        </div>
+        <div class="foot"><span>forkmesh.com · founders@forkmesh.com</span><span>Confidential</span></div>
+      </section>
+
+      <!-- 2 · Problem -->
+      <section class="slide" id="p2" data-page="2" aria-label="Problem">
+        <div class="eyebrow">Problem <span class="n">02</span></div>
+        <div class="body">
+          <div>
+            <h2>Agents work differently. The forge does not.</h2>
+            <p class="lede">Coding is shifting from autocomplete to delegated work, but orchestration, accountability and ownership remain fragmented across three control planes.</p>
+          </div>
+          <div class="cols cols-3">
+            <div class="card"><span class="k">01</span><h3>Work is fragmented</h3><p>Tasks, transcripts, branches, pull requests and reviews live across disconnected tools.</p></div>
+            <div class="card"><span class="k">02</span><h3>Accountability is shallow</h3><p>Teams need model, cost, tool-use, authorship and approval evidence for every delegated change.</p></div>
+            <div class="card"><span class="k">03</span><h3>Control is rented</h3><p>Code, identity, collaboration, and often the agent experience, stay bound to a central platform.</p></div>
+          </div>
+          <div class="chain" aria-label="Three control planes"><span>IDE / CLI</span><i>→</i><span>Hosted forge</span><i>→</i><span>Model vendor</span><i>=</i><span>Three control planes, one overloaded reviewer</span></div>
+        </div>
+        <div class="foot"><span class="tag">More code is cheap. Trusted merges are scarce.</span><span>Confidential · September 2026</span></div>
+      </section>
+
+      <!-- 3 · Why now -->
+      <section class="slide" id="p3" data-page="3" aria-label="Why now">
+        <div class="eyebrow">Why now <span class="n">03</span></div>
+        <div class="body">
+          <div>
+            <h2>AI coding is already a budget line. Agent governance is next.</h2>
+            <p class="lede">The winning platform will coordinate many models, preserve provenance and keep the system of record under customer control.</p>
+          </div>
+          <div class="cols cols-3">
+            <div class="card stat-accent"><div class="num">180M+<small>Developers building on GitHub</small></div></div>
+            <div class="card stat-accent"><div class="num">4.7M<small>Paid GitHub Copilot subscribers</small></div></div>
+            <div class="card stat-mint"><div class="num">+75%<small>Paid Copilot growth, year over year</small></div></div>
+          </div>
+          <div class="flow" style="grid-template-columns: repeat(3, minmax(0, 1fr))">
+            <div><span class="k">Model choice</span><h3>Teams use multiple coding agents</h3><p>Claude, Codex and the next one. No single vendor wins every task.</p></div>
+            <div><span class="k">Macro delegation</span><h3>Agents own tasks, not just autocomplete</h3><p>Issues in, reviewed pull requests out.</p></div>
+            <div><span class="k">Control plane</span><h3>Provenance, policy and trusted merges become mandatory</h3><p>Someone has to own the record of who did what, with which model, at what cost.</p></div>
+          </div>
+        </div>
+        <div class="foot"><span class="src">GitHub Octoverse 2025 · Microsoft FY26 Q2</span><span>Confidential · September 2026</span></div>
+      </section>
+
+      <!-- 4 · Product -->
+      <section class="slide" id="p4" data-page="4" aria-label="Product">
+        <div class="eyebrow">Product <span class="n">04</span></div>
+        <div class="body">
+          <div>
+            <h2>One prompt becomes a reviewed, attributable pull request.</h2>
+            <p class="lede">ForkMesh is the orchestration and system-of-record layer around the coding agents teams already choose.</p>
+          </div>
+          <div class="cols cols-3">
+            <div class="card"><span class="k">01 · Assign</span><h3>Start from an issue or a task</h3><p>In the desktop app or on the web.</p></div>
+            <div class="card"><span class="k">02 · Choose</span><h3>Run Claude Code or Codex</h3><p>Keep provider and model choice.</p></div>
+            <div class="card"><span class="k">03 · Isolate</span><h3>A worktree and branch per session</h3><p>Agents never share a checkout.</p></div>
+            <div class="card"><span class="k">04 · Orchestrate</span><h3>Sessions in parallel</h3><p>Stream, steer, stop and resume.</p></div>
+            <div class="card"><span class="k">05 · Prove</span><h3>Capture metadata and patch</h3><p>Then open a real, signed pull request.</p></div>
+            <div class="card"><span class="k">06 · Gate</span><h3>A human inspects and merges</h3><p>AI findings attached; the merge is deliberate.</p></div>
+          </div>
+          <div class="band"><span class="dot"></span>Replace the Copilot-bound workflow<span class="dot"></span>Keep model choice<span class="dot"></span>Keep forge ownership</div>
+        </div>
+        <div class="foot"><span>forkmesh.com/docs</span><span>Confidential · September 2026</span></div>
+      </section>
+
+      <!-- 5 · Proof -->
+      <section class="slide" id="p5" data-page="5" aria-label="Proof">
+        <div class="eyebrow">Product proof <span class="n">05</span></div>
+        <div class="body">
+          <div>
+            <h2>ForkMesh is already building ForkMesh.</h2>
+            <p class="lede">Dogfooding proves the issue → agent → pull request → merge loop, and shows the velocity it produces. Numbers are from the repository's own Git history and the live network on 13 September 2026.</p>
+          </div>
+          <div class="cols cols-3">
+            <div class="card stat-accent"><div class="num">7,416<small>Agent branches merged into main</small></div></div>
+            <div class="card stat-accent"><div class="num">51,457<small>Commits in the repository</small></div></div>
+            <div class="card stat-mint"><div class="num">90<small>Days since the first commit</small></div></div>
+            <div class="card"><div class="num">24<small>Contributors, human and agent</small></div></div>
+            <div class="card"><div class="num">63<small>Community pull requests through the ledger</small></div></div>
+            <div class="card"><div class="num">54<small>Repositories on the live network</small></div></div>
+          </div>
+          <ul class="list">
+            <li><b>Verified in source and Git history.</b> Agent branches are merged into main continuously; every merge carries the session's model, cost and patch.</li>
+            <li><b>Live in production.</b> Desktop nodes host repositories, mirrors serve clones, and this deck is itself served by the platform.</li>
+          </ul>
+        </div>
+        <div class="foot"><span class="tag">Dogfooding proof, not customer traction · Round objective: repeatable paid adoption</span><span>Confidential</span></div>
+      </section>
+
+      <!-- 6 · Roadmap -->
+      <section class="slide" id="p6" data-page="6" aria-label="Roadmap">
+        <div class="eyebrow">Roadmap <span class="n">06</span></div>
+        <div class="body">
+          <div>
+            <h2>The agent loop works. This round hardens it.</h2>
+            <p class="lede">Exactly what is live today, and what the capital is designed to unlock.</p>
+          </div>
+          <div class="cols cols-2">
+            <div class="card">
+              <span class="k">Live in production</span>
+              <h3>Agent-native forge shipped</h3>
+              <ul class="list" style="margin-top: 12px">
+                <li>Issue or prompt → Claude Code / Codex session</li>
+                <li>Isolated worktree and branch for every agent run</li>
+                <li>Parallel sessions with stream, steer, stop and resume</li>
+                <li>Patch capture, session metadata and a reviewable pull request</li>
+                <li>Signed collaboration events and a deliberate human merge</li>
+              </ul>
+            </div>
+            <div class="card" style="border-color: rgba(139, 124, 246, 0.5)">
+              <span class="k">Funded roadmap</span>
+              <h3>Enterprise control plane</h3>
+              <ul class="list" style="margin-top: 12px">
+                <li>Per-agent cryptographic identity, policy and cost controls</li>
+                <li>Universal sandbox enforcement for every runtime</li>
+                <li>SSO, RBAC, audit exports and admin controls</li>
+                <li>Multiple mainnodes with measured failover reliability</li>
+                <li>Security hardening, independent review and a SOC 2 program</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>Milestones are targets, not current traction</span><span>Confidential · September 2026</span></div>
+      </section>
+
+      <!-- 7 · Customer & GTM -->
+      <section class="slide" id="p7" data-page="7" aria-label="Customer and go-to-market">
+        <div class="eyebrow">Customer &amp; go-to-market <span class="n">07</span></div>
+        <div class="body">
+          <div>
+            <h2>Agent-first teams are the wedge. Sovereign infrastructure expands the deal.</h2>
+            <p class="lede">A founder-led motion where every step has an observable conversion event.</p>
+          </div>
+          <div class="cols cols-2">
+            <div class="card">
+              <span class="k">Initial ICP hypothesis</span>
+              <h3>20 to 200 person software teams</h3>
+              <p>Using multiple coding agents on private code, and feeling the review, provenance and platform-control gap.</p>
+              <ul class="list" style="margin-top: 14px">
+                <li><b>Buyer:</b> CTO, VP Engineering, Security</li>
+                <li><b>Trigger:</b> agent throughput rises faster than reviewer trust and control</li>
+                <li><b>Land:</b> one agent workflow, no big-bang migration</li>
+              </ul>
+            </div>
+            <div class="flow" style="grid-template-columns: minmax(0, 1fr); border-radius: 12px">
+              <div style="border-right: 0; border-bottom: 1px solid var(--line)"><span class="k">Prove</span><p>Dogfooding plus a live issue-to-agent-to-PR demo.</p></div>
+              <div style="border-right: 0; border-bottom: 1px solid var(--line)"><span class="k">Pilot</span><p>A design partner delegates one real issue queue.</p></div>
+              <div style="border-right: 0; border-bottom: 1px solid var(--line)"><span class="k">Convert</span><p>The team buys orchestration, governance and support.</p></div>
+              <div style="border-right: 0"><span class="k">Expand</span><p>More agents, repositories, policies and nodes.</p></div>
+            </div>
+          </div>
+          <div class="chain" aria-label="Leading indicators"><span>Prompt</span><i>→</i><span>Agent PR</span><i>→</i><span>Human-approved merge</span><i>→</i><span>Paid pilot</span><i>→</i><span>ARR</span><i>→</i><span>Expansion</span></div>
+        </div>
+        <div class="foot"><span class="tag">Founder-led until 20 paid organizations</span><span>Confidential · September 2026</span></div>
+      </section>
+
+      <!-- 8 · Market -->
+      <section class="slide" id="p8" data-page="8" aria-label="Market">
+        <div class="eyebrow">Market <span class="n">08</span></div>
+        <div class="body">
+          <div>
+            <h2>Paid AI coding is proven. ForkMesh sells the control layer around it.</h2>
+            <p class="lede">A bottom-up model is more credible than an untraceable TAM / SAM / SOM stack. The wedge is the growing spend around delegated code and trusted merges.</p>
+          </div>
+          <div class="cols cols-2" style="align-items: start">
+            <div class="cols" style="gap: 14px">
+              <div class="card stat-accent"><div class="num">4.7M<small>Paid Copilot subscribers today</small></div></div>
+              <div class="card stat-mint"><div class="num">$25K<small>Blended ACV hypothesis per organization</small></div></div>
+            </div>
+            <div class="ladder" aria-label="Illustrative bottom-up path">
+              <div class="rung"><span class="n">20</span><span class="t">Paid organizations</span><span class="r">$0.5M ARR<small>Round milestone</small></span></div>
+              <div class="rung"><span class="n">400</span><span class="t">Paid organizations</span><span class="r">$10M ARR<small>Scale proof</small></span></div>
+              <div class="rung"><span class="n">4,000</span><span class="t">Paid organizations</span><span class="r">$100M ARR<small>Venture outcome</small></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span class="src">Microsoft FY26 Q2 · Illustrative model: price and conversion are validated in the design-partner phase</span><span>Confidential</span></div>
+      </section>
+
+      <!-- 9 · Business model -->
+      <section class="slide" id="p9" data-page="9" aria-label="Business model">
+        <div class="eyebrow">Business model <span class="n">09</span></div>
+        <div class="body">
+          <div>
+            <h2>Monetize orchestration and governance, not model lock-in.</h2>
+            <p class="lede">Teams bring the agents they choose. ForkMesh charges for the shared workflow, the control plane and the forge.</p>
+          </div>
+          <div class="cols cols-3">
+            <div class="card"><span class="k">Community</span><h3>Free, open source</h3><ul class="list" style="margin-top: 12px"><li>Local-first Git forge</li><li>Claude and Codex sessions</li><li>Signed issues and pull requests</li></ul></div>
+            <div class="card" style="border-color: rgba(139, 124, 246, 0.5)"><span class="k">Agent team</span><h3>Subscription plus usage</h3><ul class="list" style="margin-top: 12px"><li>Multi-agent orchestration</li><li>Sessions, usage and provenance</li><li>Managed collaboration and support</li></ul></div>
+            <div class="card"><span class="k">Enterprise</span><h3>Annual contract</h3><ul class="list" style="margin-top: 12px"><li>Policy, RBAC and audit controls</li><li>Self-hosted and federated options</li><li>Security, SLA and support</li></ul></div>
+          </div>
+          <div class="chain"><span>Land one workflow</span><i>→</i><span>Expand agents and repositories</span><i>→</i><span>Standardize organization-wide</span></div>
+        </div>
+        <div class="foot"><span class="tag">Usage-priced components protect margin as agent workloads scale</span><span>Confidential</span></div>
+      </section>
+
+      <!-- 10 · Competition -->
+      <section class="slide" id="p10" data-page="10" aria-label="Competition">
+        <div class="eyebrow">Competition <span class="n">10</span></div>
+        <div class="body">
+          <div>
+            <h2>ForkMesh owns the intersection others optimize separately.</h2>
+            <p class="lede">The alternatives are strong. The wedge is model-flexible agents, the full forge workflow and local-first ownership, together.</p>
+          </div>
+          <div class="scroll">
+            <table>
+              <thead><tr><th>Category</th><th>Examples</th><th>Best at</th><th>Trade-off for our ICP</th><th>ForkMesh role</th></tr></thead>
+              <tbody>
+                <tr><td>Hosted AI forges</td><td>Copilot · GitLab Duo</td><td>Integrated forge and agents</td><td>Platform-controlled code and control plane</td><td class="role">Sovereign alternative</td></tr>
+                <tr><td>Coding agents</td><td>Claude · Codex · Cursor</td><td>Best-in-class coding</td><td>Not a shared Git system of record</td><td class="role">Orchestrate</td></tr>
+                <tr><td>Peer-to-peer Git</td><td>Radicle</td><td>Sovereign collaboration</td><td>Agent orchestration is not the core</td><td class="role">Closest infrastructure peer</td></tr>
+                <tr><td>Self-hosted forges</td><td>Forgejo · Gitea</td><td>Instance deployment control</td><td>Agent workflow remains fragmented</td><td class="role">Agent-native evolution</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="foot"><span class="src">GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle</span><span>Confidential</span></div>
+      </section>
+
+      <!-- 11 · Team -->
+      <section class="slide" id="p11" data-page="11" aria-label="Team">
+        <div class="eyebrow">Team <span class="n">11</span></div>
+        <div class="body">
+          <div>
+            <h2>Company-building experience meets founder-problem fit.</h2>
+            <p class="lede">Operating experience on one side, protocol, Git and distributed-systems execution on the other. The pain became the protocol.</p>
+          </div>
+          <div class="cols cols-2">
+            <div class="card person">
+              <div class="av" aria-hidden="true">JV</div>
+              <div>
+                <h3>Jett Vale</h3>
+                <p class="role">CEO · Founder</p>
+                <ul class="list"><li>10+ years across software, startups and hardware</li><li>Built and exited a prior company</li><li>Leads product, company and the developer community</li></ul>
+              </div>
+            </div>
+            <div class="card person">
+              <div class="av" aria-hidden="true">MK</div>
+              <div>
+                <h3>Md. Kaif</h3>
+                <p class="role">CTO · Co-founder</p>
+                <ul class="list"><li>Distributed systems and Git workflow builder</li><li>65+ merged open-source contributions informed the problem</li><li>Leads protocol, product architecture and engineering</li></ul>
+              </div>
+            </div>
+          </div>
+          <div class="band"><span class="dot"></span>Founder-market fit<span class="dot"></span>Company-building + distributed systems + open-source contributor experience</div>
+        </div>
+        <div class="foot"><span>founders@forkmesh.com</span><span>Confidential · September 2026</span></div>
+      </section>
+
+      <!-- 12 · The round -->
+      <section class="slide" id="p12" data-page="12" aria-label="The round">
+        <div class="eyebrow">The round <span class="n">12</span></div>
+        <div class="body">
+          <div>
+            <h2>$1M turns product proof into enterprise pull.</h2>
+            <p class="lede">An 18-month plan to win 20 paid teams and harden the control plane. Average budget envelope: about $55.6K per month.</p>
+          </div>
+          <div class="cols cols-2" style="align-items: start">
+            <div class="card">
+              <span class="k">Use of funds</span>
+              <div class="bars" style="margin-top: 6px">
+                <div class="bar-row"><span class="lbl">Product &amp; engineering</span><span class="track"><span class="fill" style="width: 55%"></span></span><span class="val">$550K · 55%</span></div>
+                <div class="bar-row"><span class="lbl">Infrastructure &amp; security</span><span class="track"><span class="fill" style="width: 20%"></span></span><span class="val">$200K · 20%</span></div>
+                <div class="bar-row"><span class="lbl">GTM &amp; developer ecosystem</span><span class="track"><span class="fill" style="width: 15%"></span></span><span class="val">$150K · 15%</span></div>
+                <div class="bar-row"><span class="lbl">Legal, ops &amp; contingency</span><span class="track"><span class="fill" style="width: 10%"></span></span><span class="val">$100K · 10%</span></div>
+              </div>
+            </div>
+            <div class="card" style="border-color: rgba(94, 234, 212, 0.4)">
+              <span class="k" style="color: var(--mint)">Target · Q4 2027 · Series A readiness</span>
+              <ul class="list">
+                <li><b>20</b> paid organizations at a $25K blended ACV target</li>
+                <li><b>$500K ARR</b> plus referenceable deployment evidence</li>
+                <li><b>Proven</b> faster issue-to-accepted-PR cycles, with retention</li>
+                <li><b>Hardened</b> agent controls, multi-mainnode reliability and an independent security review</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>Milestones are targets, not current traction</span><span>Confidential · September 2026</span></div>
+      </section>
+
+      <!-- 13 · Sources and close -->
+      <section class="slide close" id="p13" data-page="13" aria-label="Sources and contact">
+        <div class="eyebrow">Sources &amp; contact <span class="n">13</span></div>
+        <div class="body">
+          <div class="cols cols-2" style="align-items: start; gap: 40px">
+            <div>
+              <h1>Let's build the forge teams own.</h1>
+              <p class="lede">The agent-native, local-first Git platform for teams that refuse to rent their system of record. Raising $1.0M.</p>
+              <div class="cta">
+                <a class="primary" href="mailto:founders@forkmesh.com?subject=ForkMesh%20round">Reply to the founders</a>
+                <a href="https://forkmesh.com" target="_blank" rel="noopener">Live product</a>
+                <a href="https://forkmesh.com/docs" target="_blank" rel="noopener">Docs</a>
+                <a href="https://forkmesh.com/status" target="_blank" rel="noopener">Network status</a>
+              </div>
+            </div>
+            <div class="sources" aria-label="Sources and definitions">
+              <div><b>ForkMesh Git history</b><span>Agent workflow and dogfooding snapshot through 13 Sep 2026</span></div>
+              <div><b>ForkMesh live network</b><span>Catalog and node counts from the public status API, 13 Sep 2026</span></div>
+              <div><b>GitHub Octoverse 2025</b><span>180M+ developers; AI-coding adoption context</span></div>
+              <div><b>Microsoft FY26 Q2</b><span>4.7M paid Copilot subscribers; +75% year over year; Agent HQ</span></div>
+              <div><b>GitLab Duo · Radicle</b><span>Incumbent agent capability and the peer-to-peer comparator</span></div>
+              <div><b>Definitions</b><span>Dogfooding metrics are internal Git history, not customer traction. ARR and ACV figures are forward-looking targets.</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>forkmesh.com · founders@forkmesh.com</span><span>Confidential · September 2026</span></div>
+      </section>
+    </main>
+
+    <div class="hint" aria-hidden="true">↑ ↓ · SPACE · SWIPE</div>
+    <nav class="nav" aria-label="Slides">
+      <button type="button" id="prev" aria-label="Previous slide"><svg viewBox="0 0 16 16" fill="none"><path d="M12 10 8 6l-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <span class="count" id="count">1 / 13</span>
+      <button type="button" id="next" aria-label="Next slide"><svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </nav>
+
+    <script>
+      (() => {
+        const config = (() => {
+          try { return JSON.parse(document.getElementById("deck-config").textContent || "{}") || {}; }
+          catch { return {}; }
+        })();
+        const deck = document.getElementById("deck");
+        const slides = Array.from(deck.querySelectorAll(".slide"));
+        const total = slides.length;
+        const count = document.getElementById("count");
+        const progress = document.getElementById("progress");
+
+        // --- reader's name ---------------------------------------------------
+        if (config.viewer) {
+          for (const id of ["viewer", "viewer-long"]) document.getElementById(id).textContent = config.viewer;
+          document.getElementById("for").hidden = false;
+          document.getElementById("greet").hidden = false;
+        }
+
+        // --- navigation ------------------------------------------------------
+        let current = 1;
+        const go = (page) => {
+          const target = slides[Math.min(total, Math.max(1, page)) - 1];
+          target?.scrollIntoView({ block: "start" });
+        };
+        document.getElementById("prev").addEventListener("click", () => go(current - 1));
+        document.getElementById("next").addEventListener("click", () => go(current + 1));
+        document.addEventListener("keydown", (event) => {
+          if (event.target.closest("input, textarea, [contenteditable]")) return;
+          if (["ArrowDown", "PageDown", " ", "ArrowRight"].includes(event.key)) { event.preventDefault(); go(current + 1); }
+          else if (["ArrowUp", "PageUp", "ArrowLeft"].includes(event.key)) { event.preventDefault(); go(current - 1); }
+          else if (event.key === "Home") { event.preventDefault(); go(1); }
+          else if (event.key === "End") { event.preventDefault(); go(total); }
+        });
+        const fromHash = Number((location.hash.match(/^#p(\d+)$/) || [])[1]);
+        if (fromHash > 1) requestAnimationFrame(() => go(fromHash));
+
+        // --- attention ledger -----------------------------------------------
+        // Seconds accumulate per page while the tab is visible, and reach the
+        // server on page change, every twenty seconds, when the tab hides and
+        // when it closes. The session id is this visit's only identity.
+        const token = String(config.token || "");
+        const session = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2))
+          .replace(/-/g, "").toLowerCase().slice(0, 24);
+        const startedAt = Date.now();
+        const pending = new Map();
+        let enteredAt = document.hidden ? 0 : performance.now();
+        const accrue = () => {
+          if (!enteredAt) return;
+          const seconds = Math.round((performance.now() - enteredAt) / 1000);
+          enteredAt = performance.now();
+          if (seconds > 0) pending.set(current, (pending.get(current) || 0) + seconds);
+        };
+        const flush = () => {
+          accrue();
+          if (!token || !pending.size) return;
+          const events = Array.from(pending, ([page, seconds]) => ({ page, seconds }));
+          pending.clear();
+          const body = JSON.stringify({ session, startedAt, events });
+          const url = `/api/pitch-deck/${encodeURIComponent(token)}/events`;
+          let sent = false;
+          try { sent = navigator.sendBeacon(url, new Blob([body], { type: "application/json" })); } catch { sent = false; }
+          if (!sent) fetch(url, { method: "POST", body, keepalive: true, headers: { "content-type": "application/json" } }).catch(() => {});
+        };
+        const setCurrent = (page) => {
+          if (page === current) return;
+          accrue();
+          current = page;
+          count.textContent = `${page} / ${total}`;
+          progress.style.width = `${(page / total) * 100}%`;
+          if (history.replaceState) history.replaceState(null, "", `#p${page}`);
+          flush();
+        };
+        progress.style.width = `${(1 / total) * 100}%`;
+        const observer = new IntersectionObserver((entries) => {
+          let best = null;
+          for (const entry of entries) if (entry.isIntersecting && (!best || entry.intersectionRatio > best.intersectionRatio)) best = entry;
+          if (best) setCurrent(Number(best.target.dataset.page));
+        }, { root: deck, threshold: [0.55, 0.75] });
+        slides.forEach((slide) => observer.observe(slide));
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) { flush(); enteredAt = 0; }
+          else enteredAt = performance.now();
+        });
+        window.addEventListener("pagehide", flush);
+        setInterval(() => { if (!document.hidden) flush(); }, 20000);
+        // A first, page-1 beacon marks the open even if the reader leaves at once.
+        setTimeout(() => { if (!document.hidden) { pending.set(current, (pending.get(current) || 0) + 0); accrue(); if (!pending.get(current)) pending.set(current, 1); flush(); } }, 1500);
+      })();
+    </script>
+  </body>
+</html>

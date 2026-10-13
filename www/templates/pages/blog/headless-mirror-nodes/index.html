@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Headless mirror nodes" %}
+{% set slug = "headless-mirror-nodes" %}
+{% set image = "/assets/blog/features/headless-mirror-nodes.webp" %}
+{% set description = "One command turns any Linux box or VM into a mirror node. The installer registers its account, syncs its repositories, and starts serving, no GUI required." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Headless mirror nodes</h1>
+            <p class="lede">One command turns any Linux box or VM into a mirror node. The installer registers its account, syncs its repositories, and starts serving, no GUI required.</p>
+            <div class="meta"><span class="pill">Feature 08 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/headless-mirror-nodes.webp" alt="Abstract ForkMesh artwork for Headless mirror nodes">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Headless mirror nodes give ForkMesh a concrete mechanism for turning servers and VMs into non-GUI preservation nodes. One command turns any Linux box or VM into a mirror node. The installer registers its account, syncs its repositories, and starts serving, no GUI required.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, headless mirror nodes addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles headless mirror nodes through the same split it uses across the product: nodes keep real Git mirrors, while the routing service coordinates signed HTTPS discovery, health, presence, account lookup, and clone routing.</p>
+          <p>The behavior is intentionally narrow: One command turns any Linux box or VM into a mirror node. The installer registers its account, syncs its repositories, and starts serving, no GUI required. The routing service helps find and route a live host, but it is not canonical Git storage.</p>
+          <h2>Where it fits</h2>
+          <p>Use headless mirror nodes when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Headless mirror nodes keeps turning servers and VMs into non-GUI preservation nodes connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/root-commit-identity/">← Root-commit identity</a>
+          <a href="/blog/public-network-map/">Public network map →</a>
+        </nav>
+{% endblock %}

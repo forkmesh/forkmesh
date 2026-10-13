@@ -1,0 +1,37 @@
+{
+    "cipher": {
+        "body": "3vXU/LcHNmYY4rTktjVegStvygPVxT0KX1UiG+J2C24VBDefg9R0qBCwSWXf8vUiHYp1TYrLPeJsvVfC1XDWQ3QPtPJOWuafllKf/wW4z1Lyky9B4V2nhlXTQUm5O+9rCymKRpFzNdGkc92bH7nQ8RKAzfpwpQ7lVmw5UAO22XoUBvXyIrO7B8ufBOJaQq4or7U9pOgKnZLCrUTrJbbzigGCKKG2n5+nakt1ZJt1hZYc2Qc3c0vF+tSsCzplSWvc91WMt4doxHtNon2ysEXuVCvN1YchdtQbJVmPjf/zaDYxd0UkmjG7NpUiBk6ZMGI=",
+        "nonce": "kQMPLEL60AgHldEi",
+        "tag": "Mzk9zm+r6OFFr1ymfY0C1w=="
+    },
+    "grants": [
+        {
+            "body": "FSSLuCiRFPXUes/wpJG3nQAXIa3MhPS3HFoaCcYZVCQ=",
+            "nonce": "9jGqqlUmPvvHIwhs",
+            "tag": "p2YZtRbJjyZ/kDHMLGDnTw=="
+        },
+        {
+            "body": "XtGAZUYoJdcia27YjTydQANntViaLutLeIhS4KqTXIw=",
+            "nonce": "mXcJvaFv5xujq0bW",
+            "tag": "FfECKLOJf6zL7CWIjxxUGg=="
+        },
+        {
+            "body": "1uCkK7kSgN8+jnxcryENqxaBWppPngY+rNvptVFrbcQ=",
+            "nonce": "l61yCn+5gbNm2ewn",
+            "tag": "QCa2ZnJ1Dedzt9D/rTAmbA=="
+        },
+        {
+            "body": "TntuZ8LYWE6m+RCsdzhXLmEGkfWj/4CBNngM61eti4g=",
+            "nonce": "fhsgMIqwFwFy0oqz",
+            "tag": "Vujo25XU5uGC/KzJR8jwTA=="
+        }
+    ],
+    "id": "b9639d69-0d48-4d33-ba66-20d0bdf48ca0",
+    "kdf": {
+        "algo": "pbkdf2-sha256",
+        "rounds": 600000,
+        "salt": "4hOPBbjB/CMnrW+V9kl5SA=="
+    },
+    "kind": "cove",
+    "v": 2
+}

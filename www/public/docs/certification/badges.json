@@ -1,0 +1,64 @@
+{
+  "schema": "forkmesh-certification-badges-v1",
+  "program": {
+    "version": "1.0.0",
+    "governance": "https://forkmesh.com/docs/library/protocol/certification/"
+  },
+  "suite": {
+    "id": "forkmesh-protocol",
+    "version": "1.0.0-rc.1",
+    "vectorsSha256": "335a25a9fb3c80e30d3ca111b35cf67c86974b2a7decd8df636140fa8101eacc"
+  },
+  "asOf": "2026-09-14",
+  "freshnessDays": 90,
+  "badges": [
+    {
+      "implementation": "forkmesh-clean-room-python",
+      "name": "ForkMesh clean-room Python verifier",
+      "profile": "core",
+      "independent": false,
+      "platforms": [
+        {
+          "platform": "linux",
+          "runId": "0f463340bf4d3c03",
+          "testedAt": "2026-09-14",
+          "result": "pass"
+        }
+      ],
+      "reproduce": "python3 tools/protocol_certification.py run --implementation forkmesh-clean-room-python --profile core",
+      "evidence": "/docs/certification/evidence/0f463340bf4d3c03.json",
+      "testedAt": "2026-09-14",
+      "suiteVersion": "1.0.0-rc.1",
+      "expiresAt": "2026-12-13",
+      "status": "certified",
+      "reason": ""
+    },
+    {
+      "implementation": "forkmesh-webcrypto-javascript",
+      "name": "ForkMesh WebCrypto JavaScript collaboration library",
+      "profile": "collaboration-fold",
+      "independent": false,
+      "platforms": [
+        {
+          "platform": "linux",
+          "runId": "47ee8e5f355c09c9",
+          "testedAt": "2026-09-14",
+          "result": "pass"
+        }
+      ],
+      "reproduce": "python3 tools/protocol_certification.py run --implementation forkmesh-webcrypto-javascript --profile collaboration-fold",
+      "evidence": "/docs/certification/evidence/47ee8e5f355c09c9.json",
+      "testedAt": "2026-09-14",
+      "suiteVersion": "1.0.0-rc.1",
+      "expiresAt": "2026-12-13",
+      "status": "certified",
+      "reason": ""
+    }
+  ],
+  "closureGate": {
+    "profile": "core",
+    "requiresIndependentImplementation": true,
+    "certified": [],
+    "met": false
+  }
+}

@@ -1,0 +1,89 @@
+          <section data-view="docs" data-docs-scroll class="view active h-full overflow-y-auto">
+          <style>
+            [data-view="docs"] { --dk-border: rgb(var(--dashboard-border-rgb)); --dk-soft: rgb(var(--dashboard-border-rgb) / .6); --dk-hover: rgb(var(--dashboard-foreground-rgb) / .06); --dk-muted: rgb(var(--dashboard-muted-foreground-rgb)); --dk-faint: rgb(var(--dashboard-muted-foreground-rgb) / .75); --dk-accent: rgb(var(--dashboard-accent-rgb)); --dk-primary: rgb(var(--dashboard-primary-rgb)); --dk-danger: rgb(var(--dashboard-destructive-rgb)); --dk-card: rgb(var(--dashboard-card-rgb)); --dk-bg: rgb(var(--dashboard-background-rgb)); --dk-fg: rgb(var(--dashboard-foreground-rgb)); }
+            [data-view="docs"] [hidden] { display: none !important; }
+            [data-view="docs"] svg.lucide { width: .875rem; height: .875rem; flex: none; }
+            .docs-page { max-width: 58rem; margin: 0 auto; padding: 1.25rem 1rem 6rem; }
+            .docs-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1rem; }
+            .docs-head h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--dk-fg); }
+            .docs-head p { margin: .25rem 0 0; font-size: .85rem; color: var(--dk-muted); }
+            .docs-meta { margin-top: .35rem; font-size: .75rem; color: var(--dk-faint); font-variant-numeric: tabular-nums; }
+            .docs-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+            .docs-filter { width: 14rem; max-width: 100%; border: 1px solid var(--dk-border); border-radius: .375rem; background: var(--dk-bg); padding: .3rem .6rem; font-size: .8rem; color: var(--dk-fg); outline: none; }
+            .docs-filter:focus { border-color: var(--dk-accent); box-shadow: 0 0 0 3px rgb(var(--dashboard-accent-rgb) / .15); }
+            .docs-btn { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--dk-border); border-radius: .375rem; background: var(--dk-card); padding: .25rem .7rem; font-size: .75rem; font-weight: 500; line-height: 1.25rem; color: var(--dk-fg); white-space: nowrap; }
+            .docs-btn:hover { background: var(--dk-hover); }
+            .docs-btn:disabled { opacity: .5; pointer-events: none; }
+            .docs-btn-primary { border-color: transparent; background: var(--dk-primary); color: rgb(var(--dashboard-primary-foreground-rgb)); }
+            .docs-btn-primary:hover { background: var(--dk-primary); filter: brightness(1.1); }
+            .docs-btn-danger { border-color: rgb(var(--dashboard-destructive-rgb) / .6); background: rgb(var(--dashboard-destructive-rgb) / .12); color: var(--dk-danger); }
+            .docs-notice { margin-top: .75rem; border: 1px solid var(--dk-border); border-radius: .375rem; padding: .45rem .75rem; font-size: .8rem; color: var(--dk-muted); }
+            .docs-notice[data-tone="bad"] { border-color: rgb(var(--dashboard-destructive-rgb) / .45); background: rgb(var(--dashboard-destructive-rgb) / .1); color: var(--dk-fg); }
+            .docs-notice[data-tone="good"] { border-color: rgb(var(--dashboard-accent-rgb) / .45); background: rgb(var(--dashboard-accent-rgb) / .08); color: var(--dk-fg); }
+            .docs-notice button { margin-left: .5rem; color: var(--dk-accent); font-weight: 500; }
+            .docs-contents { margin-top: .75rem; border: 1px solid var(--dk-border); border-radius: .5rem; background: var(--dk-card); }
+            .docs-contents > summary { cursor: pointer; padding: .45rem .75rem; font-size: .8rem; font-weight: 500; color: var(--dk-muted); }
+            .docs-contents ol { margin: 0; padding: .25rem .75rem .6rem; list-style: none; columns: 2 16rem; column-gap: 1.5rem; font-size: .78rem; }
+            .docs-contents li { break-inside: avoid; padding: .1rem 0; }
+            .docs-contents a { color: var(--dk-fg); text-decoration: none; }
+            .docs-contents a:hover { color: var(--dk-accent); text-decoration: underline; }
+            .docs-contents time { margin-left: .35rem; color: var(--dk-faint); font-size: .7rem; }
+            .docs-list { margin-top: 1rem; }
+            .docs-doc { scroll-margin-top: .5rem; }
+            .docs-sep { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: .6rem; margin: 2rem 0 .75rem; padding: .45rem 0; background: var(--dk-bg); font-size: .75rem; color: var(--dk-muted); }
+            .docs-doc:first-child .docs-sep { margin-top: 0; }
+            .docs-sep::before, .docs-sep::after { content: ""; height: 1px; background: var(--dk-border); }
+            .docs-sep::before { width: 1rem; flex: none; }
+            .docs-sep::after { flex: 1; min-width: 1rem; }
+            .docs-sep-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; font-weight: 600; color: var(--dk-fg); text-decoration: none; overflow-wrap: anywhere; }
+            .docs-sep-name:hover { color: var(--dk-accent); text-decoration: underline; }
+            .docs-sep-date { color: var(--dk-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+            .docs-icon { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: .375rem; color: var(--dk-muted); flex: none; }
+            .docs-icon:hover { background: var(--dk-hover); color: var(--dk-fg); }
+            .docs-icon[aria-pressed="true"] { background: var(--dk-hover); color: var(--dk-accent); }
+            .docs-body { padding: 0 .25rem; font-size: .875rem; line-height: 1.5rem; color: var(--dk-fg); overflow-wrap: anywhere; }
+            .docs-body pre { overflow-wrap: normal; }
+            .docs-block { border-radius: .25rem; }
+            .docs-block > :first-child { margin-top: 0; }
+            .docs-block + .docs-block { margin-top: .6rem; }
+            .docs-block[data-docs-marked] { background: rgb(var(--dashboard-destructive-rgb) / .12); box-shadow: 0 0 0 3px rgb(var(--dashboard-destructive-rgb) / .12); text-decoration: line-through; text-decoration-color: rgb(var(--dashboard-destructive-rgb) / .6); }
+            .docs-body h1, .docs-body h2, .docs-body h3, .docs-body h4 { scroll-margin-top: 2.75rem; }
+            .docs-missing { font-size: .8rem; color: var(--dk-faint); }
+            .docs-editor { display: grid; gap: .5rem; }
+            .docs-editor textarea { width: 100%; min-height: 16rem; resize: vertical; border: 1px solid var(--dk-border); border-radius: .375rem; background: var(--dk-bg); padding: .6rem .75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; line-height: 1.35rem; color: var(--dk-fg); outline: none; tab-size: 4; }
+            .docs-editor textarea:focus, .docs-editor input:focus { border-color: var(--dk-accent); box-shadow: 0 0 0 3px rgb(var(--dashboard-accent-rgb) / .15); }
+            .docs-editor input { width: 100%; border: 1px solid var(--dk-border); border-radius: .375rem; background: var(--dk-bg); padding: .3rem .6rem; font-size: .8rem; color: var(--dk-fg); outline: none; }
+            .docs-editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+            .docs-editor-status { flex: 1; min-width: 10rem; font-size: .75rem; color: var(--dk-muted); }
+            .docs-editor-status[data-tone="bad"] { color: var(--dk-danger); }
+            .docs-menu { position: fixed; z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: min(34rem, calc(100vw - 1rem)); border: 1px solid var(--dk-border); border-radius: .5rem; background: var(--dk-card); padding: 3px; box-shadow: 0 8px 24px rgb(0 0 0 / .22); font-size: .75rem; }
+            .docs-menu button { display: inline-flex; align-items: center; gap: .3rem; border-radius: .375rem; padding: .25rem .5rem; color: var(--dk-fg); white-space: nowrap; }
+            .docs-menu button:hover, .docs-menu button:focus-visible { background: var(--dk-hover); outline: none; }
+            .docs-menu button[data-danger] { color: var(--dk-danger); }
+            .docs-menu button[data-danger]:hover { background: rgb(var(--dashboard-destructive-rgb) / .12); }
+            .docs-menu-sep { width: 1px; align-self: stretch; margin: 2px 1px; background: var(--dk-border); }
+            .docs-menu-text { padding: .25rem .5rem; color: var(--dk-muted); }
+          </style>
+          <div class="docs-page">
+            <header class="docs-head">
+              <div class="min-w-0">
+                <h1>Developer docs</h1>
+                <p>Every Markdown file under <code>docs/</code> in forkmesh/forkmesh, read from <code>main</code>, as one page.</p>
+                <div data-docs-meta class="docs-meta">Loading...</div>
+              </div>
+              <div class="docs-tools">
+                <input data-docs-filter class="docs-filter" type="search" placeholder="Filter by file name" aria-label="Filter docs by file name" autocomplete="off" />
+                <button data-docs-refresh type="button" class="docs-btn"><i data-lucide="refresh-cw"></i>Refresh</button>
+              </div>
+            </header>
+            <div data-docs-notice class="docs-notice" role="status" aria-live="polite" hidden></div>
+            <details data-docs-contents class="docs-contents" hidden>
+              <summary>Contents</summary>
+              <ol data-docs-contents-list></ol>
+            </details>
+            <div data-docs-list class="docs-list">
+              <p class="docs-missing"><span class="fm-spinner" aria-hidden="true"></span>Loading the docs...</p>
+            </div>
+          </div>
+          <div data-docs-menu class="docs-menu" role="toolbar" aria-label="Selection tools" hidden></div>
+          </section>

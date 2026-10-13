@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "status": "Scan unavailable",
+  "scannedAt": "",
+  "scanner": "",
+  "model": "",
+  "modelVersion": "",
+  "policy": "forkmesh-public-redacted-v1",
+  "durationMs": "",
+  "commitHash": "",
+  "included": [],
+  "excluded": [],
+  "findings": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "informational": 0
+  },
+  "categories": "No completed scan artifact has been published.",
+  "recommendations": [
+    "Run the daily security workflow or inspect an authorized private report."
+  ],
+  "reviewStatus": "Not reviewed",
+  "falsePositiveStatus": {
+    "unreviewed": 0,
+    "confirmed": 0,
+    "dismissed": 0
+  },
+  "publicRedaction": {
+    "sourceCode": true,
+    "secrets": true,
+    "sensitivePrompts": true,
+    "exploitDetails": true
+  },
+  "limitations": [
+    "Automated scans may miss vulnerabilities.",
+    "Results apply only to the scanned commit.",
+    "A clean scan is not a guarantee of security.",
+    "Human review may still be required."
+  ]
+}

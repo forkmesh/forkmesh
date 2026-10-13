@@ -1,0 +1,48 @@
+#docsSection > QLabel#mutedLabel {
+    color: @fgMuted; font-size: 13px; background: transparent;
+}
+
+#docsNavigation {
+    background: transparent; border: none; outline: none;
+    color: @fgMuted; font-size: 13px;
+    show-decoration-selected: 0; selection-background-color: transparent;
+}
+#docsNavigation::item, #docsNavigation::item:hover, #docsNavigation::item:selected {
+    background: transparent; border: none;
+}
+#docsNavigation::branch, #docsNavigation::branch:hover, #docsNavigation::branch:selected {
+    background: transparent; border-image: none;
+}
+#docsNavigation::branch:has-children:closed { image: url(@chevronRightIcon); }
+#docsNavigation::branch:has-children:open { image: url(@chevronIcon); }
+
+#docsSplitter > QWidget[docsPane="reader"] {
+    background-color: @bg; border: 1px solid @border; border-radius: 12px;
+}
+QLabel#docsBreadcrumb {
+    background-color: @surface; color: @fgMuted; font-size: 12px;
+    border: none; border-bottom: 1px solid @border;
+    border-top-left-radius: 11px; border-top-right-radius: 11px;
+    padding: 9px 16px;
+}
+QTextBrowser#docsView {
+    background: transparent; color: @fgSecondary;
+    border: none; border-bottom: 1px solid @border;
+}
+QLabel#docsBacklinks {
+    background: transparent; color: @fgMuted; font-size: 12px;
+    padding: 12px 18px 2px 18px;
+}
+#docsSplitter QPushButton#ghostButton { font-size: 13px; }
+
+#docsSplitter QLabel#mutedLabel {
+    color: @fgMuted; font-size: 12px; font-weight: 500;
+    background: transparent; padding: 0px 8px 0px 5px;
+}
+#docsOutline {
+    background: transparent; border: none; outline: none;
+    color: @fgMuted; font-size: 13px;
+}
+#docsOutline::item, #docsOutline::item:hover, #docsOutline::item:selected {
+    background: transparent; border: none;
+}

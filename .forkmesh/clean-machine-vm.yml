@@ -1,0 +1,141 @@
+name: Clean-machine VM evidence
+on: [workflow_dispatch]
+# Issue #705: boot a disposable Debian 13 VM, run the published installer and
+# desktop client in it through tools/clean_machine_transcript.sh, and keep what
+# the VM's screen showed. Artifacts land in this node's Actions artifacts store
+# (the landed path is printed at the end of the run log):
+#
+#   screenshots/NN-<step>.png   one QMP screendump per harness step
+#   screenshots/NN-<step>.txt   what the observer read on that screen (OCR)
+#   clean-machine.mp4           the VM display from firmware to power-off
+#   guest/out/transcript.log    the dated transcript, every banner stamped with
+#                               the manifest checksums_sha256
+#   observer-exchange.log       every screen check and its verdict
+#   serial-console.log, summary.json, qemu-command.txt
+#
+# A step counts as observed only when the host observer read the phrases
+# tools/clean_machine_expectations.json requires on the VM's screen; otherwise
+# the transcript keeps it NOT OBSERVED. tesseract is unpacked from the signed
+# Debian archive when the runner has none.
+#
+# Everything the transcript does, including uninstall.sh (which stops every
+# process named forkmesh), happens inside the guest; nothing is installed on or
+# stopped on this node. Dispatch-only because a full run takes a long time and
+# the guest's first launch registers a throwaway node with the live network.
+#
+# Set the Actions variable CLEAN_MACHINE_MODE=verify to boot the VM and run only
+# the signed-manifest checks (no install). The default is the full `run`.
+#
+# The run is version-agnostic: it tests whatever the signed `latest` manifest
+# publishes, and stamps every transcript banner and the summary with the tag and
+# checksums_sha256 it verified. To re-test one particular release, set
+# CLEAN_MACHINE_TAG (for example v0.8.10) and/or CLEAN_MACHINE_CHECKSUMS; the
+# run then aborts if latest publishes anything else.
+#
+# Needs network access for Actions on this node (FORKMESH_ACTIONS_ALLOW_NETWORK
+# under Settings -> Secrets & Coves): the base image, QEMU, and the release all
+# come from the internet. The Actions sandbox exposes no /dev/kvm, so the VM
+# normally runs under TCG software emulation: minutes for `verify`, about an
+# hour or more for `run`.
+jobs:
+  clean-machine-vm:
+    steps:
+      - name: Check VM prerequisites
+        run: |
+          set -eu
+          for tool in python3 ffmpeg gpgv dpkg-deb; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "ERROR: $tool is not available to Actions on this node." >&2
+              exit 1
+            fi
+          done
+          probe=0
+          curl -fsS -o /dev/null --max-time 30 \
+            https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS || probe=$?
+          if [ "$probe" -ne 0 ]; then
+            echo "ERROR: no network egress from this Actions sandbox (curl exit $probe)." >&2
+            echo "The VM image, QEMU, and the ForkMesh release are downloaded during the run." >&2
+            echo "Allow network access for Actions on this node (set the" >&2
+            echo "FORKMESH_ACTIONS_ALLOW_NETWORK variable under Settings -> Secrets & Coves)." >&2
+            exit 1
+          fi
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo "KVM is available: the VM runs hardware-accelerated."
+          else
+            echo "No usable /dev/kvm in this sandbox: the VM runs under TCG software emulation."
+          fi
+          if command -v qemu-system-x86_64 >/dev/null 2>&1; then
+            qemu-system-x86_64 --version | head -1
+          else
+            echo "QEMU is not installed on this node; it will be unpacked from the signed Debian archive."
+          fi
+
+      - name: Boot the VM and capture screenshots and video
+        run: |
+          set -eu
+          mode="${CLEAN_MACHINE_MODE:-run}"
+          case "$mode" in run|verify) ;; *) echo "ERROR: CLEAN_MACHINE_MODE must be run or verify, not $mode" >&2; exit 1 ;; esac
+
+          # QEMU and the base image are large and unchanged between runs, so
+          # keep them on the persistent Actions cache mount when the node
+          # provides one; otherwise they land in the disposable home.
+          cache="${FORKMESH_ACTIONS_CACHE:-$HOME/.cache}/clean-machine-vm"
+          mkdir -p "$cache"
+
+          commit="$(git rev-parse --short HEAD)"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          dest="$HOME/forkmesh-artifacts/clean-machine/$commit-$mode-$stamp"
+          mkdir -p "$dest"
+
+          # Unpinned unless the node sets these, so the same workflow covers
+          # every release.
+          pin=""
+          if [ -n "${CLEAN_MACHINE_TAG:-}" ]; then
+            pin="$pin --expect-tag $CLEAN_MACHINE_TAG"
+          fi
+          if [ -n "${CLEAN_MACHINE_CHECKSUMS:-}" ]; then
+            pin="$pin --expect-checksums $CLEAN_MACHINE_CHECKSUMS"
+          fi
+          echo "Release under test: ${CLEAN_MACHINE_TAG:-whatever latest publishes}"
+
+          rc=0
+          python3 tools/clean_machine_vm.py run \
+            --mode "$mode" $pin \
+            --artifacts "$dest" \
+            --work "${TMPDIR:-/tmp}/clean-machine-vm" \
+            --image-cache "$cache/images" \
+            --provision-dir "$cache/qemu" \
+            --ocr-dir "$cache/ocr" \
+            --cpus 4 --memory 4096 --fps 2 \
+            --timeout-minutes 220 || rc=$?
+
+          # The runner lands forkmesh-artifacts only for a successful run, and a
+          # failed transcript is exactly when the screenshots and video matter.
+          # So the run fails only when the VM tooling captured nothing; the
+          # transcript's own verdict is RESULT.txt and summary.json's
+          # guest_exit_status, printed here.
+          if [ ! -f "$dest/summary.json" ]; then
+            echo "ERROR: the VM run produced no summary.json (exit $rc); nothing to keep." >&2
+            exit "${rc:-1}"
+          fi
+          # What the observer actually read on the VM's screen, step by step.
+          python3 - "$dest/summary.json" <<'PY'
+import json, sys
+summary = json.load(open(sys.argv[1]))
+counts = summary.get("observer", {})
+release = summary.get("release_under_test") or {}
+print("Release under test: %s (checksums_sha256 %s)"
+      % (release.get("tag", "unknown"), release.get("checksums_sha256", "unknown")))
+print("Screen checks: %d observed, %d not observed, %d unchecked"
+      % (counts.get("observed", 0), counts.get("not_observed", 0), counts.get("unchecked", 0)))
+for observation in summary.get("observations", []):
+    print("  %-13s %s: %s" % (observation["verdict"], observation["step"], observation["detail"]))
+PY
+
+          if [ "$rc" -eq 0 ]; then
+            verdict="PASSED: clean_machine_transcript.sh $mode exited 0 (see release_under_test in summary.json)"
+          else
+            verdict="FAILED: clean_machine_transcript.sh $mode did not finish cleanly (exit $rc); the screenshots, video, and serial-console.log show where it stopped"
+          fi
+          echo "$verdict" | tee "$dest/RESULT.txt"
+          echo "Artifacts: $dest"

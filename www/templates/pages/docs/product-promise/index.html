@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Prove the ForkMesh product promise{% endblock %}
+{% block meta %}
+    <meta name="description" content="ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider." />
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .proof-wrap { max-width: 980px; margin: 0 auto; padding: 42px 20px 80px; }
+      .proof-wrap h1 { max-width: 17ch; margin: 0 0 18px; font-size: clamp(36px, 6vw, 58px); line-height: 1.04; }
+      .proof-promise { max-width: 78ch; margin: 0; color: var(--foreground); font-size: 18px; line-height: 1.65; }
+      .proof-crumbs, .proof-note, .proof-step p, .proof-detail li { color: var(--muted); }
+      .proof-crumbs { margin: 0 0 20px; font-size: 13px; }
+      .proof-wrap a { color: var(--link); }
+      .proof-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin: 30px 0; }
+      .proof-step { padding: 20px; border: 1px solid var(--border); border-radius: 13px; background: color-mix(in srgb,var(--card) 84%,transparent); }
+      .proof-step span { color: var(--muted); font-family: "ForkMesh Mono",ui-monospace,monospace; font-size: 12px; }
+      .proof-step h2 { margin: 8px 0; font-size: 22px; }
+      .proof-step p { margin: 0; line-height: 1.6; }
+      .proof-detail { margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--border); }
+      .proof-detail h2 { margin: 0 0 12px; font-size: 27px; }
+      .proof-detail li { margin: 8px 0; line-height: 1.6; }
+      .proof-command { display: flex; gap: 10px; align-items: center; margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: rgba(127,127,127,.08); }
+      .proof-command code { min-width: 0; flex: 1; overflow-x: auto; font-family: "ForkMesh Mono",ui-monospace,monospace; }
+      .proof-command button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--foreground); background: var(--card); cursor: pointer; }
+      .proof-note { padding: 16px 18px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; line-height: 1.6; }
+      @media (max-width: 700px) { .proof-grid { grid-template-columns: 1fr; } .proof-command { align-items: stretch; flex-direction: column; } }
+    </style>
+{% endblock %}
+{% block body %}
+    <div data-forkmesh-header="simple"></div>
+    <main class="proof-wrap">
+      <p class="proof-crumbs"><a href="/docs">Docs</a> / Product promise</p>
+      <p class="eyebrow">A reversible four-step proof</p>
+      <h1>See the promise work.</h1>
+      <p class="proof-promise"><strong>ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.</strong></p>
+
+      <div class="proof-grid">
+        <article class="proof-step"><span>01 / COLLABORATE</span><h2>Work together</h2><p>Open a public repository and create or review a signed issue, discussion, or pull request. <a href="https://app.forkmesh.com/forkmesh/forkmesh/issues">Open the live repository</a>.</p></article>
+        <article class="proof-step"><span>02 / MIRROR</span><h2>Add an independent copy</h2><p>Use the repository Mirrors tab to ask another node, or add a separate machine from <a href="https://app.forkmesh.com/dashboard/network">Network</a>. Wait for fresh signed health, matching refs, and integrity <code>ok</code>.</p></article>
+        <article class="proof-step"><span>03 / TAKE SOURCE OFFLINE</span><h2>Stop the source safely</h2><p>Stop <code>forkmesh-mirror-node</code> on the managed source host. The desktop remains online as a client and is not part of the serving path.</p></article>
+        <article class="proof-step"><span>04 / CLONE AGAIN</span><h2>Use the same URL</h2><p>Clone into a new directory and compare <code>HEAD</code> with the commit recorded before the source stopped.</p><div class="proof-command"><code>git clone https://forkmesh.com/OWNER/REPOSITORY</code><button id="proof-clone-copy" type="button">Copy</button></div></article>
+      </div>
+
+      <p class="proof-note"><strong>Use a disposable public repository.</strong> Confirm an independent mirror is eligible before stopping the source. A configured, stale, unhealthy, or integrity-mismatched host is not proof.</p>
+
+      <section class="proof-detail">
+        <h2>Failure and recovery are part of the proof</h2>
+        <ul>
+          <li>With no eligible mirror, clone must report unavailable rather than claim success.</li>
+          <li>Routing excludes a stale, unhealthy, or integrity-mismatched mirror.</li>
+          <li>The public drill does not cover private repositories, which use authorized opaque replicas.</li>
+          <li>To roll back, restart <code>forkmesh-mirror-node</code> on the managed source host and wait for fresh signed health before retrying.</li>
+        </ul>
+        <p><a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/operations/desktop-control-node.md">Read the operator controls</a> or <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/operations/mirror-node.md">review mirror-node recovery</a>.</p>
+      </section>
+
+      <section class="proof-detail">
+        <h2>Current proof coverage</h2>
+        <ul>
+          <li>Web collaboration and clone use a current browser and standard Git client.</li>
+          <li>The signed latest release manifest is authoritative; it lists the desktop builds for Linux x86_64, macOS (Apple silicon and Intel), and Windows x86_64, plus the Android app.</li>
+          <li>Managed independent server mirrors use the Linux headless service.</li>
+          <li>Optional, consented telemetry records only coarse proof and clone actions—never repository names, URLs, commands, refs, or form values.</li>
+        </ul>
+        <p>Maintainers, contributors, and operators use the <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/product-promise.md">measurement and comprehension protocol</a> before release closure.</p>
+      </section>
+    </main>
+    <div data-forkmesh-footer="standard"></div>
+    <script>
+      document.getElementById("proof-clone-copy")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        const command = "git clone https://forkmesh.com/OWNER/REPOSITORY";
+        try {
+          await navigator.clipboard.writeText(command);
+          window.ForkMeshAnalytics?.recordProductAction?.("proof-clone-copied");
+          button.textContent = "Copied";
+          window.setTimeout(() => { button.textContent = "Copy"; }, 1600);
+        } catch (_) {
+          button.textContent = "Select command";
+        }
+      });
+    </script>
+{% endblock %}

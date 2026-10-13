@@ -1,0 +1,75 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "competitor",
+  "name": "Competitor Watch",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.0.0",
+  "summary": "Keep an organization-private watchlist of competitors, positioning, strengths, weaknesses, and review status.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Competitor Watch dashboard with watchlist totals and private competitor profiles"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": {
+    "worker": "content/worker/competitor.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/competitors",
+        "title": "Competitors",
+        "description": "An organization-private competitor watchlist and positioning record.",
+        "script": "dashboard-script",
+        "navigation": { "label": "Competitors", "icon": "radar", "order": 42 }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "organization.competitors.read",
+      "label": "Read competitor profiles for organizations you belong to",
+      "risk": "sensitive"
+    },
+    {
+      "id": "organization.competitors.write",
+      "label": "Create, update, archive, and remove shared competitor profiles",
+      "risk": "sensitive"
+    },
+    {
+      "id": "external.link.open",
+      "label": "Open a competitor website after an explicit click",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": { "bundled": true, "default": false },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "organization" },
+  "worker": { "module": "competitor", "api": "/api/competitors" }
+}

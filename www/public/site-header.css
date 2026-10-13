@@ -1,0 +1,928 @@
+/* Universal site header (see site-header.js), styled to match the dashboard
+   chrome: a 56px bar with a bottom border, bordered square controls, and a
+   hamburger menu holding every site link grouped and fully expanded.
+   Self-contained: private tokens (not the host page's own --background /
+   --foreground vars) drive the navigation chrome, but site-header.js still
+   stamps html.light / html.dark on every page, and the light-mode block
+   below repoints those private tokens so the header follows the visitor's
+   chosen theme instead of staying dark forever. */
+
+.forkmesh-simple-header {
+  --fm-header-bg: #090909;
+  --fm-header-surface: #141416;
+  --fm-header-fg: #f5f5f5;
+  --fm-header-muted: #a3a3a3;
+  --fm-header-border: #313134;
+  --fm-header-accent: #2ea043;
+  --fm-header-active: #58a6ff;
+  --fm-btn-primary-fg: #111113;
+  --fm-btn-primary-fill: linear-gradient(180deg, #ffffff 0%, #e8e8ea 100%);
+  --fm-btn-primary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f1f1f2 100%);
+  --fm-btn-primary-border: #f4f4f5;
+  --fm-btn-primary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --fm-btn-secondary-fg: #f5f5f5;
+  --fm-btn-secondary-fill: linear-gradient(180deg, #222225 0%, #19191b 100%);
+  --fm-btn-secondary-fill-hover: linear-gradient(180deg, #29292c 0%, #1f1f22 100%);
+  --fm-btn-secondary-border: #34343a;
+  --fm-btn-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.4);
+  position: relative;
+  z-index: 40;
+  display: flex;
+  width: 100%;
+  height: 3.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--fm-header-border);
+  background: var(--fm-header-bg);
+  color: var(--fm-header-fg);
+}
+
+html.light .forkmesh-simple-header {
+  --fm-header-bg: #ffffff;
+  --fm-header-surface: #f6f6f7;
+  --fm-header-fg: #111113;
+  --fm-header-muted: #5c5c66;
+  --fm-header-border: #d9d9de;
+  --fm-header-accent: #1a7f37;
+  --fm-header-active: #0969da;
+  --fm-btn-primary-fg: #ffffff;
+  --fm-btn-primary-fill: linear-gradient(180deg, #2c2c2c 0%, #222222 100%);
+  --fm-btn-primary-fill-hover: linear-gradient(180deg, #363636 0%, #2a2a2a 100%);
+  --fm-btn-primary-border: #161616;
+  --fm-btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.17), 0 1px 2px rgba(0, 0, 0, 0.16);
+  --fm-btn-secondary-fg: #292929;
+  --fm-btn-secondary-fill: linear-gradient(180deg, #ffffff 0%, #fcfcfc 100%);
+  --fm-btn-secondary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f5f5f6 100%);
+  --fm-btn-secondary-border: #e1e2e3;
+  --fm-btn-secondary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.forkmesh-simple-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--fm-header-fg);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.forkmesh-simple-brand:hover {
+  text-decoration: none;
+}
+
+.forkmesh-simple-brand-mark {
+  width: 2rem;
+  height: 2rem;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 0 22px rgba(63, 185, 80, 0.16));
+}
+
+.fm-header-version {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 999px;
+  color: var(--fm-header-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.fm-header-version[hidden] { display: none; }
+
+.fm-header-context {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fm-header-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* ── hamburger (all pages, all widths — it holds the full site menu) ── */
+.fm-header-burger {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.fm-header-burger span {
+  display: block;
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--fm-header-muted);
+}
+
+.fm-header-burger:hover span,
+.fm-header-burger.is-open span {
+  background: var(--fm-header-fg);
+}
+
+/* The three bars fold into a close mark while the menu is open. */
+.fm-header-burger span {
+  transition: transform 180ms ease, opacity 120ms ease, background-color 150ms ease;
+}
+
+.fm-header-burger.is-open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.fm-header-burger.is-open span:nth-child(2) { opacity: 0; }
+.fm-header-burger.is-open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+/* ── grouped, fully-expanded site menu ──
+   One solid popover: flat link columns with an icon tile per link, the
+   account block and a quiet legal row underneath. No card-inside-a-card, so
+   a short group leaves whitespace instead of a half-empty box. */
+.fm-header-mobile {
+  --fm-menu-shadow: 0 8px 24px rgba(1, 4, 9, 0.6);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0.75rem;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: min(400px, calc(100vw - 1.5rem));
+  max-height: min(calc(100dvh - 4.5rem), 46rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 12px;
+  background: var(--fm-header-surface);
+  box-shadow: var(--fm-menu-shadow);
+  transform-origin: top left;
+  animation: fm-menu-in 140ms ease-out;
+}
+
+html.light .fm-header-mobile {
+  --fm-menu-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+}
+
+.fm-header-mobile[hidden] { display: none; }
+
+@keyframes fm-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-header-mobile,
+  .fm-header-burger span { animation: none; transition: none; }
+}
+
+.forkmesh-simple-header-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 6px;
+}
+
+.fm-nav-group {
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.fm-nav-group-title {
+  padding: 4px 8px 6px;
+  color: var(--fm-header-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.forkmesh-simple-header-nav a,
+.fm-header-mobile-account a,
+.fm-header-mobile-account button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fm-header-fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 1.25;
+  text-align: left;
+  text-decoration: none;
+  white-space: normal;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.forkmesh-simple-header-nav a:hover,
+.forkmesh-simple-header-nav a:focus-visible,
+.fm-header-mobile-account a:not(.fm-header-signup):hover,
+.fm-header-mobile-account button:hover {
+  background: rgba(127, 127, 127, 0.14);
+  text-decoration: none;
+}
+
+.fm-nav-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 7px;
+  background: var(--fm-header-bg);
+  color: var(--fm-header-muted);
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.fm-nav-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.forkmesh-simple-header-nav a:hover .fm-nav-icon,
+.forkmesh-simple-header-nav a:focus-visible .fm-nav-icon {
+  color: var(--fm-header-fg);
+  border-color: color-mix(in srgb, var(--fm-header-muted) 60%, var(--fm-header-border));
+}
+
+.forkmesh-simple-header-nav a[aria-current="page"] {
+  background: color-mix(in srgb, var(--fm-header-active) 14%, transparent);
+  font-weight: 600;
+}
+
+.forkmesh-simple-header-nav a[aria-current="page"] .fm-nav-icon {
+  color: var(--fm-header-active);
+  border-color: color-mix(in srgb, var(--fm-header-active) 50%, var(--fm-header-border));
+  background: color-mix(in srgb, var(--fm-header-active) 12%, var(--fm-header-bg));
+}
+
+.fm-nav-external {
+  width: 13px;
+  height: 13px;
+  margin-left: -4px;
+  flex: 0 0 auto;
+  color: var(--fm-header-muted);
+}
+
+/* Account block: only needed below 640px, where the bar hides its own
+   account area; wider screens already show the chip beside the menu. */
+.fm-nav-account {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--fm-header-border);
+}
+
+@media (min-width: 640px) {
+  .fm-nav-account { display: none; }
+}
+
+/* Legal row: small inline links, not a fifth column. */
+.fm-nav-legal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 14px;
+  margin-top: 12px;
+  padding: 10px 8px 2px;
+  border-top: 1px solid var(--fm-header-border);
+}
+
+.fm-nav-legal .fm-nav-group-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.fm-nav-legal a {
+  color: var(--fm-header-muted);
+  font-size: 12px;
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.fm-nav-legal a:hover,
+.fm-nav-legal a[aria-current="page"] {
+  color: var(--fm-header-fg);
+  text-decoration: none;
+}
+
+/* Wide screens: the groups sit side by side as a short mega menu. */
+@media (min-width: 768px) {
+  .fm-header-mobile {
+    width: min(760px, calc(100vw - 1.5rem));
+    padding: 12px;
+  }
+
+  .forkmesh-simple-header-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 6px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .fm-header-mobile {
+    width: min(940px, calc(100vw - 1.5rem));
+  }
+
+  .forkmesh-simple-header-nav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+}
+
+/* ── dropdown menus (account chip) ── */
+.fm-header-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.fm-header-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 10px;
+  background: var(--fm-header-surface);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+}
+
+.fm-header-dropdown[hidden] { display: none; }
+
+.fm-header-dropdown-right {
+  left: auto;
+  right: 0;
+}
+
+.fm-header-dropdown a,
+.fm-header-dropdown button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fm-header-fg);
+  font-size: 0.85rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.fm-header-dropdown a:hover,
+.fm-header-dropdown button:hover {
+  background: rgba(127, 127, 127, 0.14);
+}
+
+/* ── right side: payout shortcut, theme toggle, account ── */
+.fm-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.fm-header-payout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fm-header-muted);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.fm-header-app {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fm-header-fg);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.fm-header-app:hover {
+  border-color: color-mix(in srgb, var(--fm-header-accent) 72%, var(--fm-header-border));
+  background: color-mix(in srgb, var(--fm-header-accent) 12%, transparent);
+  text-decoration: none;
+}
+
+.fm-header-world {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fm-header-fg);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.fm-header-world:hover {
+  background: rgba(127, 127, 127, 0.1);
+  text-decoration: none;
+}
+
+.fm-header-world-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.fm-header-payout:hover {
+  background: rgba(127, 127, 127, 0.1);
+  color: var(--fm-header-fg);
+  text-decoration: none;
+}
+
+.fm-header-payout img {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.fm-header-theme {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fm-header-fg);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.fm-header-theme:hover {
+  border-color: var(--fm-header-muted);
+}
+
+.fm-header-theme svg {
+  width: 17px;
+  height: 17px;
+}
+
+.fm-header-theme svg[hidden] {
+  display: none;
+}
+
+/* ── chat icon + unread badge ── */
+.fm-header-chat {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fm-header-fg);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.fm-header-chat:hover {
+  border-color: var(--fm-header-muted);
+  text-decoration: none;
+}
+
+.fm-header-chat svg {
+  width: 17px;
+  height: 17px;
+}
+
+.fm-header-chat-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #cf222e;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+/* ── account area ── */
+.fm-header-account {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.fm-header-login {
+  color: var(--fm-header-muted);
+  text-decoration: none;
+}
+
+.fm-header-login:hover { color: var(--fm-header-fg); }
+
+.fm-header-signup {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 13px;
+  border: 1px solid var(--fm-btn-primary-border);
+  border-radius: 0.375rem;
+  background: var(--fm-btn-primary-fill);
+  box-shadow: var(--fm-btn-primary-shadow);
+  color: var(--fm-btn-primary-fg);
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 150ms ease;
+}
+
+.fm-header-signup:hover {
+  background: var(--fm-btn-primary-fill-hover);
+  color: var(--fm-btn-primary-fg);
+  text-decoration: none;
+}
+
+.fm-header-mobile-account .fm-header-signup {
+  border: 1px solid var(--fm-btn-primary-border);
+  border-radius: 0.375rem;
+  background: var(--fm-btn-primary-fill);
+  box-shadow: var(--fm-btn-primary-shadow);
+  color: var(--fm-btn-primary-fg);
+}
+
+.fm-header-account-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 4px 9px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fm-header-fg);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fm-header-account-chip:hover { border-color: var(--fm-header-accent); }
+
+.fm-header-session-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #3bd671;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #3bd671 15%, transparent);
+}
+
+.fm-header-session-dot.is-away {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px #d4a72c;
+}
+
+.fm-header-account-menu {
+  align-items: center;
+  gap: 4px;
+}
+
+.fm-header-account-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 50%;
+  color: var(--fm-header-fg);
+  text-decoration: none;
+}
+
+.fm-header-account-settings:hover {
+  border-color: var(--fm-header-accent);
+  text-decoration: none;
+}
+
+.fm-header-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #4f7ddb;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.fm-header-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.fm-header-account-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-header-account-chevron {
+  color: var(--fm-header-muted);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.fm-header-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+  padding: 1px 6px;
+  border: 1px solid var(--fm-header-border);
+  border-radius: 0.25rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  color: var(--fm-header-muted);
+}
+
+.fm-header-plan-badge[data-plan="pro"] {
+  border-color: color-mix(in oklab, var(--fm-header-accent), transparent 35%);
+  color: var(--fm-header-accent);
+}
+
+.fm-header-plan-badge[data-plan="supporter"] {
+  border-color: color-mix(in oklab, #4f7ddb, transparent 35%);
+  color: #8eb0ef;
+}
+
+.fm-header-mobile-account {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+/* Signed out: Login and Sign Up as a pair of equal buttons. */
+.fm-header-mobile-account .fm-header-login,
+.fm-header-mobile-account .fm-header-signup {
+  justify-content: center;
+  min-height: 38px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.fm-header-mobile-account .fm-header-login {
+  border: 1px solid var(--fm-btn-secondary-border);
+  background: var(--fm-btn-secondary-fill);
+  box-shadow: var(--fm-btn-secondary-shadow);
+  color: var(--fm-btn-secondary-fg);
+}
+
+.fm-header-mobile-account a.fm-header-login:hover {
+  background: var(--fm-btn-secondary-fill-hover);
+}
+
+.fm-header-mobile-session {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 9px 8px;
+  color: var(--fm-header-muted);
+  font-size: 12px;
+}
+
+.fm-header-mobile-account .fm-header-plan-badge {
+  grid-column: 1 / -1;
+  align-self: flex-start;
+  margin: 0 0 0.35rem;
+}
+
+@media (max-width: 359.9px) {
+  .forkmesh-simple-header-nav,
+  .fm-header-mobile-account {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── responsive: mirror the dashboard header's breakpoints ── */
+@media (max-width: 899.9px) {
+  .fm-header-account .fm-header-account-name { display: none; }
+}
+
+@media (max-width: 639.9px) {
+  .fm-header-context { display: none; }
+  .fm-header-payout { display: none; }
+  .fm-header-account { display: none; }
+  .fm-header-world strong { display: none; }
+  .fm-header-world { padding: 0 8px; }
+}
+
+@media (max-width: 479.9px) {
+  /* App, World, and account remain available in the grouped hamburger menu. */
+  .fm-header-app,
+  .fm-header-world { display: none; }
+}
+
+/* Mild paid-plan accent — display only, no feature gates. */
+html[data-fm-plan="supporter"] .fm-header-account,
+html[data-fm-plan="pro"] .fm-header-account {
+  border-color: color-mix(in srgb, var(--fm-header-accent) 55%, var(--fm-header-border));
+}
+
+html[data-fm-plan="pro"] .fm-header-account {
+  border-color: color-mix(in srgb, #2f81f7 50%, var(--fm-header-border));
+}
+
+/* ── Density ──────────────────────────────────────────────────────────────
+   The bar used to draw a 1px box around every single control, so a row of six
+   shortcuts read as six boxes rather than as one header. Only the Sign Up
+   call to action keeps a filled shape now: everything else is a plain link or
+   a bare icon that grows a hover wash, and one hairline divider separates the
+   site shortcuts from the account cluster. */
+
+.forkmesh-simple-header {
+  height: 3.5rem;
+  gap: 0.5rem;
+  padding: 0 1.25rem;
+  border-bottom-color: color-mix(in srgb, var(--fm-header-border) 55%, transparent);
+}
+
+.fm-header-burger,
+.fm-header-theme,
+.fm-header-chat {
+  border-color: transparent;
+  border-radius: 9px;
+  color: var(--fm-header-muted);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.fm-header-burger:hover,
+.fm-header-burger.is-open,
+.fm-header-theme:hover,
+.fm-header-chat:hover {
+  border-color: transparent;
+  background: rgba(127, 127, 127, 0.16);
+  color: var(--fm-header-fg);
+}
+
+/* A breadcrumb rather than a second title: mark, slash, page. */
+.fm-header-context {
+  position: relative;
+  padding-left: 0.85rem;
+  color: var(--fm-header-muted);
+  font-weight: 500;
+}
+
+.fm-header-context::before {
+  content: "/";
+  position: absolute;
+  left: 0;
+  color: color-mix(in srgb, var(--fm-header-muted) 55%, transparent);
+}
+
+.fm-header-context:empty { display: none; }
+
+.fm-header-version {
+  border-color: transparent;
+  padding: 3px 0 3px 2px;
+  opacity: 0.7;
+}
+
+.fm-header-right { gap: 0.15rem; }
+
+.fm-header-app,
+.fm-header-payout,
+.fm-header-world {
+  height: 32px;
+  padding: 0 9px;
+  border-color: transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fm-header-muted);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.fm-header-app:hover,
+.fm-header-payout:hover,
+.fm-header-world:hover {
+  border-color: transparent;
+  background: rgba(127, 127, 127, 0.16);
+  color: var(--fm-header-fg);
+}
+
+.fm-header-world strong {
+  font-weight: 500;
+}
+
+.fm-header-payout img { opacity: 0.8; }
+
+/* One divider, not six borders. */
+.fm-header-account {
+  position: relative;
+  gap: 0.6rem;
+  margin-left: 0.6rem;
+  padding-left: 0.85rem;
+}
+
+.fm-header-account::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 20px;
+  background: var(--fm-header-border);
+  transform: translateY(-50%);
+}
+
+.fm-header-login {
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.fm-header-signup {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.fm-header-account-chip,
+.fm-header-account-settings {
+  border-color: transparent;
+}
+
+.fm-header-account-chip:hover {
+  border-color: transparent;
+  background: rgba(127, 127, 127, 0.16);
+}
+
+@media (max-width: 1023.9px) {
+  .fm-header-payout { display: none; }
+}
+
+/* Below the phone breakpoint the base sheet already drops the World label,
+   which would leave this variant showing a lone globe with nothing to
+   read; both shortcuts stay one tap away in the hamburger menu. */
+@media (max-width: 639.9px) {
+  .fm-header-world,
+  .fm-header-app {
+    display: none;
+  }
+}

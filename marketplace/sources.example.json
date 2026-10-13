@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "marketplaces": [
+    {
+      "id": "forkmesh",
+      "locations": [
+        {
+          "transport": "git",
+          "url": "https://app.forkmesh.com/forkmesh/forkmesh.git",
+          "ref": "main",
+          "catalog": "marketplace/catalog.json",
+          "provider": "forkmesh"
+        },
+        {
+          "transport": "git",
+          "url": "https://github.com/example/forkmesh-market.git",
+          "ref": "main",
+          "catalog": "marketplace/catalog.json",
+          "provider": "github"
+        },
+        {
+          "transport": "git",
+          "url": "https://gitlab.com/example/forkmesh-market.git",
+          "ref": "main",
+          "catalog": "marketplace/catalog.json",
+          "provider": "gitlab"
+        }
+      ]
+    }
+  ]
+}

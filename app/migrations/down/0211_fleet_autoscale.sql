@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS host_metrics;
+DROP TABLE IF EXISTS autoscale_nonces;
+DROP TABLE IF EXISTS autoscale_commands;
+DROP INDEX IF EXISTS idx_autoscale_audit_ts;
+DROP TABLE IF EXISTS autoscale_audit;
+DROP TABLE IF EXISTS autoscale_lease;
+DROP TABLE IF EXISTS autoscale_nodes;
+DROP TABLE IF EXISTS autoscale_state;
+DROP TABLE IF EXISTS autoscale_settings;

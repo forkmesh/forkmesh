@@ -1,0 +1,7 @@
+{
+  "label": "Android Release",
+  "systems": [
+    "release_android"
+  ],
+  "prefixes": []
+}

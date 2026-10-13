@@ -1,0 +1,445 @@
+// Frame timings and lifecycle changes are inputs the app target feeds (`FrameTimingSource`,
+// `appLifecycleChanged`); this module does the stall and latency accounting.
+
+import FMBase
+import Foundation
+import Observation
+
+public enum PerformanceEventKind: String, Sendable {
+    /// An awaited operation (network call, background job) that took long. The UI stays
+    /// responsive while it runs; it is recorded as context, not as a stall.
+    case operation
+    /// A rendered frame whose build-to-present span blew the stall budget.
+    case frame
+    /// The main thread's run loop was blocked: the heartbeat fired late. This catches synchronous
+    /// work between frames, which frame timings miss.
+    case eventLoop
+    /// A named synchronous section (`timeSync`) that blocked the main thread itself.
+    case sync
+}
+
+public struct PerformanceEvent: Sendable, Identifiable {
+    public let id: Int
+    public let kind: PerformanceEventKind
+    public let name: String
+    public let duration: Duration
+    public let timestamp: Date
+    public let details: JSONObject
+    public let stackTrace: String
+
+    public var durationMs: Int { Int(PerformanceMonitorService.micros(duration) / 1_000) }
+
+    /// True for events that froze the UI, as opposed to slow awaited work.
+    public var isStall: Bool { kind != .operation }
+}
+
+/// One rendered frame, as the app target measures it.
+public struct FrameTiming: Sendable {
+    public var buildDuration: Duration
+    public var rasterDuration: Duration
+    public var vsyncOverhead: Duration
+    public var totalSpan: Duration?
+
+    public init(buildDuration: Duration, rasterDuration: Duration, vsyncOverhead: Duration = .zero, totalSpan: Duration? = nil) {
+        self.buildDuration = buildDuration
+        self.rasterDuration = rasterDuration
+        self.vsyncOverhead = vsyncOverhead
+        self.totalSpan = totalSpan
+    }
+}
+
+/// What feeds frame timings to the monitor (`addTimingsCallback`). The app target implements it
+/// over a CADisplayLink or MetricKit; the core only consumes the batches.
+public protocol FrameTimingSource: AnyObject {
+    func startReporting(_ handler: @escaping ([FrameTiming]) -> Void)
+    func stopReporting()
+}
+
+/// The app's lifecycle state, which the app target maps from SwiftUI's `ScenePhase`
+/// (active -> resumed, inactive -> inactive, background -> paused).
+public enum AppLifecycleState: String, Sendable {
+    case resumed, inactive, hidden, paused, detached
+}
+
+/// Watches for anything that makes the app feel laggy and records it.
+///
+/// Runs in every build mode. Each record is written to `logSink` (default: `Log`, tag `perf`,
+/// prefixed `[stall]` or `[perf]`) and, when a `stallLog` is attached, appended to
+/// `diagnostics/stalls.log` on the device. The in-app HUD that lists the same events is debug-only.
+///
+/// Thread-safe: `track` may be awaited from any context. The heartbeat and `timeSync` measure the
+/// main thread. Observation sees `revision`, bumped on the main thread after every change.
+@Observable
+public final class PerformanceMonitorService: @unchecked Sendable {
+    public let enabled: Bool
+    /// Awaited operations at or over this are recorded as slow.
+    public let threshold: Duration
+    /// Frames, blocked run-loop turns and sync sections at or over this are recorded as stalls.
+    /// 200 ms is where a hitch reads as the app hanging.
+    public let stallThreshold: Duration
+    /// How often the main-thread heartbeat checks in while the app is visible.
+    public let heartbeatInterval: Duration
+    public let maxEvents: Int
+    @ObservationIgnored public let logSink: (@Sendable (String) -> Void)?
+    @ObservationIgnored public let stallLog: StallLogFile?
+    @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored private let elapsedForTest: (@Sendable () -> Duration)?
+    @ObservationIgnored private let heartbeatQueue: DispatchQueue
+
+    /// Every heartbeat's lag behind schedule, stall or not. The telemetry strip charts the worst of
+    /// each second from this. Called on the heartbeat queue.
+    public var onHeartbeatLag: ((Duration) -> Void)? {
+        get { locked { heartbeatLagHandler } }
+        set { locked { heartbeatLagHandler = newValue } }
+    }
+
+    /// Bumped (on the main thread) whenever `events` or `stallCount` changes.
+    public private(set) var revision = 0
+    @ObservationIgnored public let listeners = Listeners()
+
+    @ObservationIgnored private let lock = NSLock()
+    @ObservationIgnored private var eventStore: [PerformanceEvent] = []
+    @ObservationIgnored private var stallTotal = 0
+    @ObservationIgnored private var nextEventId = 0
+    @ObservationIgnored private var heartbeatLagHandler: ((Duration) -> Void)?
+    // Monotonic clock; wall-clock time can jump and would fake (or hide) a stall.
+    @ObservationIgnored private let origin = DispatchTime.now().uptimeNanoseconds
+    @ObservationIgnored private var heartbeatGeneration = 0
+    @ObservationIgnored private var heartbeatRunning = false
+    @ObservationIgnored private var lastBeatUs: Int64 = 0
+    @ObservationIgnored private var heartbeatStartedUs: Int64 = 0
+    @ObservationIgnored private var lastAttributedStallUs: Int64 = -1
+    // Awaited operations currently running and the ones that just finished. A blocked run loop
+    // cannot say what blocked it, but the continuation of an operation that finished inside the
+    // stalled window (decoding its response, rebuilding for it) is almost always the culprit.
+    @ObservationIgnored private var inFlight: [(Int, String)] = []
+    @ObservationIgnored private var nextOperationId = 0
+    @ObservationIgnored private var recentlyFinished: [(String, Int64)] = []
+    private static let recentLimit = 16
+    @ObservationIgnored private weak var frameSource: FrameTimingSource?
+    @ObservationIgnored private var installed = false
+
+    public init(
+        enabled: Bool = true,
+        threshold: Duration = .milliseconds(500),
+        stallThreshold: Duration = .milliseconds(200),
+        heartbeatInterval: Duration = .milliseconds(100),
+        maxEvents: Int = 100,
+        logSink: (@Sendable (String) -> Void)? = nil,
+        stallLog: StallLogFile? = nil,
+        now: (@Sendable () -> Date)? = nil,
+        elapsedForTest: (@Sendable () -> Duration)? = nil,
+        heartbeatQueue: DispatchQueue = .main
+    ) {
+        self.enabled = enabled
+        self.threshold = threshold
+        self.stallThreshold = stallThreshold
+        self.heartbeatInterval = heartbeatInterval
+        self.maxEvents = maxEvents
+        self.logSink = logSink
+        self.stallLog = stallLog
+        self.now = now ?? { Date() }
+        self.elapsedForTest = elapsedForTest
+        self.heartbeatQueue = heartbeatQueue
+    }
+
+    // MARK: Reading
+
+    /// Newest first, at most `maxEvents`.
+    public var events: [PerformanceEvent] {
+        if Thread.isMainThread { _ = revision }
+        return locked { eventStore }
+    }
+
+    public var hasEvents: Bool { !events.isEmpty }
+    public var latestEvent: PerformanceEvent? { events.first }
+
+    /// Stalls recorded since launch; unlike `events` this is never trimmed.
+    public var stallCount: Int {
+        if Thread.isMainThread { _ = revision }
+        return locked { stallTotal }
+    }
+
+    /// Where stalls are being written on this device, once known.
+    public var stallLogPath: String? { stallLog?.path }
+
+    @discardableResult
+    public func addListener(_ listener: @escaping @Sendable () -> Void) -> ListenerToken { listeners.add(listener) }
+
+    public func removeListener(_ token: ListenerToken) { listeners.remove(token) }
+
+    // MARK: Measuring
+
+    /// Run `action` and record it as a slow operation when it takes `threshold` or longer. A
+    /// thrown error is recorded in the details (`error`) and rethrown.
+    public func track<T>(
+        _ name: String,
+        details: JSONObject = [:],
+        _ action: () async throws -> T
+    ) async rethrows -> T {
+        guard enabled else { return try await action() }
+        let callStack = PerformanceMonitorService.captureStack()
+        let startUs = elapsedMicros()
+        let id: Int = locked {
+            let id = nextOperationId
+            nextOperationId += 1
+            inFlight.append((id, name))
+            return id
+        }
+        do {
+            let result = try await action()
+            finishOperation(id: id, name: name, startUs: startUs, details: details, error: nil, stack: callStack)
+            return result
+        } catch {
+            finishOperation(id: id, name: name, startUs: startUs, details: details, error: error, stack: callStack)
+            throw error
+        }
+    }
+
+    private func finishOperation(id: Int, name: String, startUs: Int64, details: JSONObject, error: Error?, stack: String) {
+        let endUs = elapsedMicros()
+        locked {
+            inFlight.removeAll { $0.0 == id }
+            recentlyFinished.append((name, endUs))
+            if recentlyFinished.count > PerformanceMonitorService.recentLimit { recentlyFinished.removeFirst() }
+        }
+        let elapsed = elapsedForTest?() ?? .microseconds(endUs - startUs)
+        guard elapsed >= threshold else { return }
+        var merged = details
+        if let error { merged["error"] = .string(String(describing: error)) }
+        recordSlowEvent(kind: .operation, name: name, duration: elapsed, details: merged, stackTrace: stack)
+    }
+
+    /// Run synchronous `action` and record a named stall when it blocks for `stallThreshold` or
+    /// longer. Wrap work known to be heavy (big decodes, crypto, list rebuilds) so the log names
+    /// it instead of reporting an anonymous blocked run loop.
+    public func timeSync<T>(_ name: String, details: JSONObject = [:], _ action: () throws -> T) rethrows -> T {
+        guard enabled else { return try action() }
+        let startUs = elapsedMicros()
+        defer {
+            let endUs = elapsedMicros()
+            let elapsed = Duration.microseconds(endUs - startUs)
+            if elapsed >= stallThreshold {
+                locked { lastAttributedStallUs = endUs }
+                recordSlowEvent(
+                    kind: .sync, name: name, duration: elapsed, details: details,
+                    stackTrace: PerformanceMonitorService.captureStack())
+            }
+        }
+        return try action()
+    }
+
+    // MARK: Stall monitors
+
+    /// Start every stall detector: frame timings from `frameSource`, the main-thread heartbeat,
+    /// and lifecycle-driven parking of the heartbeat (a suspended process would otherwise look
+    /// like one giant stall). Idempotent. Feed later lifecycle changes to `appLifecycleChanged`.
+    public func installStallMonitors(frameSource: FrameTimingSource?, lifecycleState: AppLifecycleState? = nil) {
+        let proceed: Bool = locked {
+            if !enabled || installed { return false }
+            installed = true
+            self.frameSource = frameSource
+            return true
+        }
+        guard proceed else { return }
+        frameSource?.startReporting { [weak self] timings in self?.handleFrameTimings(timings) }
+        if lifecycleState == nil || lifecycleState == .resumed || lifecycleState == .inactive {
+            startHeartbeat()
+        }
+    }
+
+    public func uninstallStallMonitors() {
+        let source: FrameTimingSource? = locked {
+            guard installed else { return nil }
+            installed = false
+            let source = frameSource
+            frameSource = nil
+            return source
+        }
+        source?.stopReporting()
+        stopHeartbeat()
+    }
+
+    /// The `AppLifecycleListener` hook: run the heartbeat only while the app is visible.
+    public func appLifecycleChanged(_ state: AppLifecycleState) {
+        guard locked({ installed }) else { return }
+        if state == .resumed || state == .inactive {
+            startHeartbeat()
+        } else {
+            stopHeartbeat()
+        }
+    }
+
+    /// Begin watching the main thread's run loop. Exposed for tests; the app goes through
+    /// `installStallMonitors`.
+    public func startHeartbeat() {
+        let generation: Int? = locked {
+            if !enabled || heartbeatRunning { return nil }
+            heartbeatRunning = true
+            heartbeatGeneration += 1
+            lastBeatUs = elapsedMicros()
+            heartbeatStartedUs = lastBeatUs
+            return heartbeatGeneration
+        }
+        if let generation { scheduleBeat(generation) }
+    }
+
+    public func stopHeartbeat() {
+        locked {
+            heartbeatRunning = false
+            heartbeatGeneration += 1
+        }
+    }
+
+    public func dispose() { uninstallStallMonitors() }
+
+    private func scheduleBeat(_ generation: Int) {
+        let delay = DispatchTimeInterval.microseconds(Int(PerformanceMonitorService.micros(heartbeatInterval)))
+        heartbeatQueue.asyncAfter(deadline: .now() + delay) { [weak self] in self?.beat(generation) }
+    }
+
+    private func beat(_ generation: Int) {
+        let nowUs = elapsedMicros()
+        let intervalUs = PerformanceMonitorService.micros(heartbeatInterval)
+        let snapshot: (windowStart: Int64, attributed: Int64, inFlight: [String], recent: [String], lagHandler: ((Duration) -> Void)?)? = locked {
+            guard heartbeatRunning, generation == heartbeatGeneration else { return nil }
+            let windowStart = lastBeatUs
+            lastBeatUs = nowUs
+            return (
+                windowStart, lastAttributedStallUs, inFlight.map(\.1),
+                recentlyFinished.filter { $0.1 >= windowStart }.map(\.0), heartbeatLagHandler
+            )
+        }
+        guard let snapshot else { return }
+        scheduleBeat(generation)
+        let lagUs = max(0, nowUs - snapshot.windowStart - intervalUs)
+        let lag = Duration.microseconds(lagUs)
+        snapshot.lagHandler?(lag)
+        // A timeSync section already named this stall; don't log it twice.
+        if lag < stallThreshold || snapshot.attributed >= snapshot.windowStart { return }
+        var details = JSONObject()
+        if !snapshot.inFlight.isEmpty { details["inFlight"] = .string(PerformanceMonitorService.uniqueJoined(snapshot.inFlight)) }
+        if !snapshot.recent.isEmpty { details["finishedDuring"] = .string(PerformanceMonitorService.uniqueJoined(snapshot.recent)) }
+        recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: lag, details: details)
+    }
+
+    private func handleFrameTimings(_ timings: [FrameTiming]) {
+        let nowUs = elapsedMicros()
+        guard let visibleSinceUs: Int64 = locked({ heartbeatRunning ? heartbeatStartedUs : nil }) else { return }
+        for timing in timings {
+            let span = timing.totalSpan ?? timing.buildDuration + timing.rasterDuration
+            if nowUs - PerformanceMonitorService.micros(span) < visibleSinceUs { continue }
+            recordFrameDelay(
+                buildDuration: timing.buildDuration,
+                rasterDuration: timing.rasterDuration,
+                vsyncOverhead: timing.vsyncOverhead,
+                totalSpan: timing.totalSpan)
+        }
+    }
+
+    public func recordFrameDelay(
+        buildDuration: Duration,
+        rasterDuration: Duration,
+        vsyncOverhead: Duration = .zero,
+        totalSpan: Duration? = nil
+    ) {
+        guard enabled else { return }
+        let total = totalSpan ?? buildDuration + rasterDuration
+        if total < stallThreshold { return }
+        var details: JSONObject = [
+            "buildMs": .int(PerformanceMonitorService.micros(buildDuration) / 1_000),
+            "rasterMs": .int(PerformanceMonitorService.micros(rasterDuration) / 1_000),
+        ]
+        let vsyncMs = PerformanceMonitorService.micros(vsyncOverhead) / 1_000
+        if vsyncMs > 0 { details["vsyncMs"] = .int(vsyncMs) }
+        let running = locked { inFlight.map(\.1) }
+        if !running.isEmpty { details["inFlight"] = .string(PerformanceMonitorService.uniqueJoined(running)) }
+        recordSlowEvent(kind: .frame, name: "frame", duration: total, details: details)
+    }
+
+    public func recordSlowEvent(
+        kind: PerformanceEventKind,
+        name: String,
+        duration: Duration,
+        details: JSONObject = [:],
+        stackTrace: String = ""
+    ) {
+        let floor = kind == .operation ? threshold : stallThreshold
+        guard enabled, duration >= floor else { return }
+        let event: PerformanceEvent = locked {
+            let event = PerformanceEvent(
+                id: nextEventId, kind: kind, name: name, duration: duration, timestamp: now(),
+                details: details, stackTrace: stackTrace)
+            nextEventId += 1
+            if event.isStall { stallTotal += 1 }
+            eventStore.insert(event, at: 0)
+            if eventStore.count > maxEvents { eventStore.removeLast(eventStore.count - maxEvents) }
+            return event
+        }
+        log(event)
+        changed()
+    }
+
+    public func clear() {
+        let hadEvents: Bool = locked {
+            if eventStore.isEmpty { return false }
+            eventStore.removeAll()
+            return true
+        }
+        if hadEvents { changed() }
+    }
+
+    // MARK: Helpers
+
+    private func changed() {
+        if Thread.isMainThread {
+            revision &+= 1
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.revision &+= 1 }
+        }
+        listeners.notify()
+    }
+
+    private func log(_ event: PerformanceEvent) {
+        let details = event.details.map { "\($0.key)=\(PerformanceMonitorService.quote($0.value.text))" }.joined(separator: " ")
+        let detailSuffix = details.isEmpty ? "" : " \(details)"
+        let line = "\(event.isStall ? "[stall]" : "[perf]") \(event.kind.rawValue) \(event.name) \(event.durationMs)ms\(detailSuffix)"
+        if let logSink {
+            logSink(line)
+        } else {
+            Log.info("perf", line)
+        }
+        guard let stallLog else { return }
+        let stack = event.stackTrace.isEmpty
+            ? ""
+            : "\n" + event.stackTrace.split(separator: "\n", omittingEmptySubsequences: false).map { "    \($0)" }.joined(separator: "\n")
+        stallLog.append("\(DartDateFormat.iso8601(event.timestamp)) \(line)\(stack)")
+    }
+
+    private static func quote(_ text: String) -> String { text.contains(" ") ? "\"\(text)\"" : text }
+
+    /// `values.toSet().join(', ')`: first occurrence order.
+    private static func uniqueJoined(_ values: [String]) -> String {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }.joined(separator: ", ")
+    }
+
+    private static func captureStack() -> String {
+        Thread.callStackSymbols.dropFirst(2).prefix(8).joined(separator: "\n")
+    }
+
+    private func elapsedMicros() -> Int64 {
+        Int64((DispatchTime.now().uptimeNanoseconds - origin) / 1_000)
+    }
+
+    static func micros(_ duration: Duration) -> Int64 {
+        let parts = duration.components
+        return parts.seconds * 1_000_000 + parts.attoseconds / 1_000_000_000_000
+    }
+
+    private func locked<R>(_ body: () throws -> R) rethrows -> R {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "forkmesh-incentive-independence-conformance-v1",
+  "issue": 516,
+  "documentation": "www/docs/incentive-independence.md",
+  "invariant": "Repository access, identity, contribution, governance, and essential network participation work fully without a token, blockchain, reward system, or speculative asset.",
+  "requirements": [
+    {
+      "id": "INC-1",
+      "level": "MUST",
+      "statement": "Canonical repository, identity, authorization, discovery, and governance modules do not import an incentive or payment adapter.",
+      "evidence": ["app/tests/test_incentive_independence.py::test_canonical_modules_never_import_incentive_adapters"]
+    },
+    {
+      "id": "INC-2",
+      "level": "MUST",
+      "statement": "Adapter hooks invoked from canonical writes are optional and cannot fail the canonical write.",
+      "evidence": ["app/tests/test_incentive_independence.py::test_incentive_hooks_are_best_effort_and_cannot_fail_canonical_writes"]
+    },
+    {
+      "id": "INC-3",
+      "level": "MUST",
+      "statement": "Removing every adapter table leaves canonical tables and their foreign keys unchanged.",
+      "evidence": ["app/tests/test_incentive_independence.py::test_removing_adapter_tables_leaves_canonical_schema_unchanged"]
+    },
+    {
+      "id": "INC-4",
+      "level": "MUST",
+      "statement": "Canonical tables carry no wallet, balance, token, stake, tip, bounty, or reward column other than documented retired blanks.",
+      "evidence": ["app/tests/test_incentive_independence.py::test_canonical_tables_carry_no_asset_columns"]
+    },
+    {
+      "id": "INC-5",
+      "level": "MUST",
+      "statement": "Identity, authorization, ranking, moderation, and governance decisions do not read asset ownership or transaction history.",
+      "evidence": [
+        "app/tests/test_incentive_independence.py::test_decision_modules_read_no_asset_signal",
+        "app/tests/test_marketplace_governance.py::test_five_active_members_without_wallets_then_a_distinct_owner_publish"
+      ]
+    },
+    {
+      "id": "INC-6",
+      "level": "MUST",
+      "statement": "An unconfigured payment adapter answers an explicit not-configured result instead of blocking a canonical response.",
+      "evidence": ["app/tests/test_incentive_independence.py::test_unconfigured_adapters_answer_explicitly"]
+    },
+    {
+      "id": "INC-7",
+      "level": "MUST",
+      "statement": "The commercial contract and protocol specification publish the invariant, and every optional incentive documents a no-payment path.",
+      "evidence": ["app/tests/test_incentive_independence.py::test_commercial_and_protocol_commitments_are_published"]
+    }
+  ]
+}

@@ -1,0 +1,364 @@
+name: Native iOS ad hoc build on the local Mac
+on:
+  push:
+    paths:
+      - "native/ios/*"
+      - "native/ios/*/*"
+      - "native/ios/*/*/*"
+      - "native/ios/*/*/*/*"
+      - "native/ios/*/*/*/*/*"
+      - "native/ios/*/*/*/*/*/*"
+      - "native/ios/*/*/*/*/*/*/*"
+      - "native/ios/*/*/*/*/*/*/*/*"
+      - "native/ios/*/*/*/*/*/*/*/*/*"
+      - "native/ios/*/*/*/*/*/*/*/*/*/*"
+      - "codemagic.yaml"
+      - ".forkmesh/mac-native-build.yml"
+  workflow_dispatch:
+runs-on: forkmesh
+checkout: false
+jobs:
+  mac:
+    steps:
+      - name: Find the build Mac
+        run: |
+          set -euo pipefail
+          key_b64="$(cat <<'EOF'
+          ${{ vars.MAC_BUILD_SSH_KEY_B64 }}
+          EOF
+          )"
+          known_host="$(cat <<'EOF'
+          ${{ vars.MAC_BUILD_KNOWN_HOSTS }}
+          EOF
+          )"
+          hint="$(cat <<'EOF'
+          ${{ vars.MAC_BUILD_HOST }}
+          EOF
+          )"
+          url="$(cat <<'EOF'
+          ${{ vars.MAC_BUILD_GIT_URL }}
+          EOF
+          )"
+          key_b64="$(printf '%s' "$key_b64" | tr -d '[:space:]')"
+          hint="$(printf '%s' "$hint" | tr -d '[:space:]')"
+          url="$(printf '%s' "$url" | tr -d '[:space:]')"
+          if [ -z "$key_b64" ] || [ -z "$(printf '%s' "$known_host" | tr -d '[:space:]')" ]; then
+            echo "ERROR: set MAC_BUILD_SSH_KEY_B64 and MAC_BUILD_KNOWN_HOSTS under Settings -> Secrets & Coves" >&2
+            echo "       (docs/native/MAC_BUILD.md)." >&2
+            exit 1
+          fi
+          m="$HOME/mac"
+          mkdir -p "$m"
+          (umask 077; printf '%s' "$key_b64" | base64 -d > "$m/key"; printf '%s\n' "$known_host" > "$m/known_hosts")
+          commit_full="${FORKMESH_COMMIT:-$(git rev-parse HEAD)}"
+          {
+            printf 'started_at=%q\n' "$(date +%s)"
+            printf 'commit_full=%q\n' "$commit_full"
+            printf 'commit=%q\n' "${commit_full:0:12}"
+            printf 'url=%q\n' "${url:-https://app.forkmesh.com/forkmesh/forkmesh}"
+            printf 'owner=%q\n' "${FORKMESH_RUN_ID:+actions-run-$FORKMESH_RUN_ID-$commit_full}"
+          } > "$m/state.sh"
+          cat > "$m/lib.sh" <<'EOF'
+          set -euo pipefail
+          m="$HOME/mac"
+          . "$m/state.sh"
+          ssh_opts=(-i "$m/key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15
+                    -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$m/known_hosts"
+                    -o HostKeyAlias=forkmesh-mac
+                    -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
+          mac() { ssh -n "${ssh_opts[@]}" "$target" "$@"; }
+          mac_in() { ssh "${ssh_opts[@]}" "$target" "$@"; }
+          superseded() { [ "$(mac 'cat ci/ios-latest' 2>/dev/null)" != "$run" ]; }
+          release_lock() { mac "[ \"\$(cat ci/lock/run 2>/dev/null)\" = '$run' ] && rm -rf ci/lock" || true; }
+          release_on_failure() { trap 'status=$?; [ "$status" -eq 0 ] || release_lock' EXIT; }
+          stop_if_cancelled() {
+            if [ -f "$m/cancelled" ]; then
+              echo "Skipped: $(cat "$m/cancelled")"
+              exit 0
+            fi
+          }
+          cancel() {
+            echo "$1" | tee "$m/cancelled"
+            release_lock
+            exit 0
+          }
+          owned() { printf '[ "$(cat ci/lock/run 2>/dev/null)" = %q ] && echo $$ > ci/lock/pid && exec' "$run"; }
+          owns() { printf '[ "$(cat ci/lock/run 2>/dev/null)" = %q ] && exec' "$run"; }
+          mac_build() {
+            stop_if_cancelled
+            if [ -n "$1" ] && ! cut -f2 "$m/steps/index.tsv" | grep -Fxq -- "$1"; then
+              echo "Skipped: \"$1\" is not in this build's steps."
+              return 0
+            fi
+            release_on_failure
+            local status tries=0
+            until status=0; mac "$(owns) bash ci/tree/native/ios/tools/mac_adhoc_job.sh $(printf '%q %q' "$run" "$1")" || status=$?; [ "$status" != 255 ] || [ "$tries" -ge 20 ]; do
+              tries=$((tries + 1))
+              echo "Lost the connection to the Mac; the build keeps running there. Reconnecting in 30 s."
+              sleep 30
+            done
+            if [ "$status" != 0 ]; then
+              if superseded; then
+                cancel "Cancelled: a newer iOS build ($(mac 'cat ci/ios-latest' 2>/dev/null || true)) replaced $commit."
+              fi
+              exit 1
+            fi
+          }
+          EOF
+
+          ssh_opts=(-i "$m/key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5
+                    -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$m/known_hosts"
+                    -o HostKeyAlias=forkmesh-mac)
+          is_mac() { ssh -n "${ssh_opts[@]}" "build@$1" true >/dev/null 2>&1; }
+          hint="${hint:-192.168.1.201}"
+          address=""
+          echo "Trying $hint"
+          if is_mac "$hint"; then
+            address="$hint"
+          else
+            own="$(ip -4 -o route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
+            prefix="${own%.*}"
+            echo "The Mac is not at $hint; scanning $prefix.0/24 for its pinned SSH host key."
+            open="$(for i in $(seq 1 254); do
+                      [ "$prefix.$i" = "$own" ] && continue
+                      (timeout 2 bash -c "exec 3<>/dev/tcp/$prefix.$i/22" 2>/dev/null && echo "$prefix.$i") &
+                      [ $((i % 24)) -ne 0 ] || wait
+                    done; wait)"
+            for candidate in $open; do
+              if is_mac "$candidate"; then
+                address="$candidate"
+                break
+              fi
+            done
+          fi
+          if [ -z "$address" ]; then
+            echo "ERROR: the build Mac is not on the local network (is it on?)." >&2
+            echo "       FORKMESH_ACTIONS_ALLOW_NETWORK must be set for the scan to see the LAN." >&2
+            exit 1
+          fi
+          printf 'target=%q\n' "build@$address" >> "$m/state.sh"
+          echo "Build Mac found at $address"
+
+      - name: Take the Mac's build lock
+        run: |
+          . "$HOME/mac/lib.sh"
+          held=""
+          if [ -n "$owner" ]; then
+            held="$(mac "[ \"\$(cat ci/lock/owner 2>/dev/null)\" = '$owner' ] && cat ci/lock/run" 2>/dev/null || true)"
+          fi
+          if [ -n "$held" ]; then
+            printf 'run=%q\nresumed=1\n' "$held" >> "$m/state.sh"
+            mac "cat '$held/times'" 2>/dev/null | grep -E '^(started_at|locked_at)=[0-9]+$' >> "$m/state.sh" || true
+            echo "Reconnecting to $held on the Mac: this run started it before the desktop stopped, and it kept building."
+            exit 0
+          fi
+          run="ci/$commit-$(date +%Y%m%d%H%M%S)"
+          printf 'run=%q\n' "$run" >> "$m/state.sh"
+          mac "mkdir -p ci && echo '$run' > ci/ios-latest"
+          waited=0
+          until mac "mkdir ci/lock 2>/dev/null && echo '$run' > ci/lock/run && echo '$owner' > ci/lock/owner"; do
+            if superseded; then
+              cancel "A newer iOS build started ($(mac 'cat ci/ios-latest' 2>/dev/null || true)); skipping $commit."
+            fi
+            holder="$(mac 'cat ci/lock/run' 2>/dev/null || true)"
+            case "$holder" in
+              ci/*)
+                echo "Cancelling the older iOS build $holder."
+                mac 'killtree() { for c in $(pgrep -P "$1"); do killtree "$c"; done; kill -TERM "$1" 2>/dev/null; }
+                     pid="$(cat ci/lock/pid 2>/dev/null)"; [ -z "$pid" ] || killtree "$pid"; sleep 5; rm -rf ci/lock' || sleep 10
+                continue
+                ;;
+            esac
+            if mac 'test -n "$(find ci/lock -maxdepth 0 -mmin +240 2>/dev/null)"'; then
+              echo "Removing a build lock older than four hours."
+              mac 'rm -rf ci/lock'
+              continue
+            fi
+            if [ "$waited" -ge 7200 ]; then
+              echo "ERROR: another Mac build held the lock for two hours." >&2
+              exit 1
+            fi
+            [ "$waited" = "0" ] && echo "Waiting for another Mac build to finish: $holder"
+            sleep 60
+            waited=$((waited + 60))
+          done
+          locked_at="$(date +%s)"
+          printf 'locked_at=%q\n' "$locked_at" >> "$m/state.sh"
+          mac "mkdir -p '$run' && printf 'started_at=%s\nlocked_at=%s\n' '$started_at' '$locked_at' > '$run/times'"
+          echo "Holding ~/ci/lock on the Mac as $run"
+
+      - name: Fetch the commit on the Mac
+        run: |
+          . "$HOME/mac/lib.sh"
+          stop_if_cancelled
+          release_on_failure
+          if [ "${resumed:-0}" = 1 ]; then
+            if mac "test -f '$run/fetched'"; then
+              echo "Keeping the Mac's checkout of $commit: $run already has it."
+              mac 'git -C ci/tree log -1 --format=%s' > "$m/subject"
+              mac "tar -C '$run' -c steps" | tar -x -C "$m"
+              exit 0
+            fi
+            mac 'killtree() { for c in $(pgrep -P "$1"); do killtree "$c"; done; kill -TERM "$1" 2>/dev/null; }
+                 pid="$(cat ci/lock/pid 2>/dev/null)"; [ -z "$pid" ] || killtree "$pid"; sleep 2' || true
+          fi
+          echo "Fetching $commit_full from $url into ~/ci/tree on the Mac (native/ios and codemagic.yaml only)"
+          if ! mac_in "$(owned) bash -s $(printf '%q %q' "$url" "$commit_full")" <<'EOF'
+          set -euo pipefail
+          cd ci
+          if [ ! -d tree/.git ]; then
+            rm -rf tree
+            git init -q tree
+          fi
+          cd tree
+          git config remote.origin.url "$1"
+          git config remote.origin.promisor true
+          git config remote.origin.partialclonefilter blob:none
+          git config extensions.partialClone origin
+          git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml'
+          attempt=1
+          until git fetch -q --depth=1 --no-tags --filter=blob:none origin "$2"; do
+            if [ "$attempt" -ge 6 ]; then
+              echo "ERROR: could not fetch $2 from $1." >&2
+              exit 1
+            fi
+            echo "Could not fetch $2 from $1 (attempt $attempt of 6); retrying in 20 s."
+            attempt=$((attempt + 1))
+            sleep 20
+          done
+          attempt=1
+          until git -c advice.detachedHead=false checkout -q --force --detach FETCH_HEAD; do
+            if [ "$attempt" -ge 6 ]; then
+              echo "ERROR: could not check out $2: its files did not come from $1." >&2
+              exit 1
+            fi
+            echo "Some files of $2 are not on $1 yet; retrying the checkout in 20 s."
+            attempt=$((attempt + 1))
+            sleep 20
+          done
+          git clean -ffdxq
+          git log -1 --format='Checked out %h: %s'
+          EOF
+          then
+            if superseded; then
+              cancel "Cancelled: a newer iOS build ($(mac 'cat ci/ios-latest' 2>/dev/null || true)) replaced $commit."
+            fi
+            if served="$(timeout 60 git ls-remote "$url" refs/heads/main 2>&1)"; then
+              served="$(printf '%s\n' "$served" | awk '$2 == "refs/heads/main" { print $1 }')"
+              if [ "$served" = "$commit_full" ]; then
+                echo "ERROR: $url serves $commit as main, so the fetch broke on the Mac's side (its network, proxy or git; see the git errors above)." >&2
+              else
+                echo "ERROR: $commit is not published: $url serves main at ${served:-nothing}." >&2
+                echo "       The desktop's source publisher pushes main to the cores; on the desktop check" >&2
+                echo "       ~/projects/forkmesh/state/publisher/status.json and" >&2
+                echo "       journalctl --user -u forkmesh-mirror-fanout.service -u forkmesh-source-publish.service" >&2
+                echo "       (docs/tools/source-publisher.md), then run this workflow again." >&2
+              fi
+            else
+              echo "ERROR: this machine cannot read $url either: $(printf '%s\n' "$served" | tail -n 1)" >&2
+            fi
+            exit 1
+          fi
+          mac 'git -C ci/tree log -1 --format=%s' > "$m/subject"
+          mac 'cat ci/tree/codemagic.yaml' > "$m/codemagic.yaml"
+          mac 'cat ci/tree/native/ios/tools/codemagic_steps.py' > "$m/codemagic_steps.py"
+          watch="$(python3 -c 'import sys, yaml; w = yaml.safe_load(open(sys.argv[1]))["workflows"]["ios-native-adhoc"]; print((w.get("environment") or {}).get("vars", {}).get("FORKMESH_NATIVE_WATCH", "1"))' "$m/codemagic.yaml")"
+          skip=()
+          if [ "$watch" = "0" ]; then
+            skip=(--skip "watchOS platform")
+          fi
+          echo "Steps from codemagic.yaml (ios-native-adhoc):"
+          python3 "$m/codemagic_steps.py" ios-native-adhoc "$m/steps" --config "$m/codemagic.yaml" "${skip[@]}" | cut -f2 | sed 's/^/  /'
+          tar -C "$m" -c steps | mac_in "mkdir -p '$run' && tar -x -C '$run' && touch '$run/fetched'"
+
+      - name: Check the App Store Connect credentials
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Check the App Store Connect credentials"
+
+      - name: Register the bundle ids
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Register the bundle ids"
+
+      - name: Registered devices
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Registered devices"
+
+      - name: Pick the ad hoc build number
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Pick the ad hoc build number"
+
+      - name: Generate the Xcode project
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Generate the Xcode project"
+
+      - name: watchOS platform
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "watchOS platform"
+
+      - name: Metal toolchain and Swift packages
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Metal toolchain and Swift packages"
+
+      - name: Archive (signing per FORKMESH_NATIVE_SIGNING)
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Archive (signing per FORKMESH_NATIVE_SIGNING)"
+
+      - name: Embed the release entitlements (manual signing only)
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Embed the release entitlements (manual signing only)"
+
+      - name: Export for ad hoc distribution
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Export for ad hoc distribution"
+
+      - name: Refuse a build that cannot receive push
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Refuse a build that cannot receive push"
+
+      - name: Refuse a build whose widgets or watch app cannot share their data
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Refuse a build whose widgets or watch app cannot share their data"
+
+      - name: Show each bundle's profile and entitlements
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Show each bundle's profile and entitlements"
+
+      - name: Name the ad hoc IPA
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Name the ad hoc IPA"
+
+      - name: Bring the IPA and logs back
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build ""
+          dest="$HOME/forkmesh-artifacts/mac-adhoc/$commit"
+          mkdir -p "$dest"
+          mac "bash -O nullglob -c 'cd \"\$HOME/$run/out\" && tar -c ipa/*.ipa *.log'" | tar -x -C "$dest"
+          python3 - "$dest/build.json" "$commit_full" "$m/subject" "$started_at" "$locked_at" <<'EOF'
+          import json, sys, time
+          path, commit, subject, started, locked = sys.argv[1:6]
+          built = int(time.time())
+          json.dump({"commit": commit, "subject": open(subject).read().strip(),
+                     "startedAt": int(started), "buildStartedAt": int(locked), "builtAt": built,
+                     "waitSeconds": int(locked) - int(started), "buildSeconds": built - int(locked)},
+                    open(path, "w"), indent=2)
+          EOF
+          python3 -c 'import json, sys; b = json.load(open(sys.argv[1])); print("Built in %d min %02d s on the Mac" % divmod(b["buildSeconds"], 60) + (" (waited %d min %02d s for it first)" % divmod(b["waitSeconds"], 60) if b["waitSeconds"] >= 60 else ""))' "$dest/build.json"
+          release_lock
+          mac 'cd ci && ls -1dt */ | grep -v -E "^(lock|tree)/" | tail -n +3 | xargs rm -rf'
+          ls -l "$dest/ipa"
+          echo "Artifacts: $dest"

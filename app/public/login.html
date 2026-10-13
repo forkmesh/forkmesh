@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Log in · ForkMesh</title>
+    <meta name="description" content="Log in to ForkMesh with your node identity to manage mirrors, repositories, and signed collaboration." />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#0f0f0f" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/login.js?v=${version}" defer></script>
+    <style>
+      body[data-fm-auth] {
+        --auth-page-bg: #0f0f0f;
+        --auth-glow: none;
+        --auth-card-bg: #1f1f1f;
+        --auth-panel-bg: #181818;
+        --auth-panel-edge: 0 1px 0 0 #262626, inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+        --auth-border: #282828;
+        --auth-shadow: 0 24px 64px -24px rgba(0, 0, 0, 0.8);
+        --auth-text: #f5f5f5;
+        --auth-label: #f5f5f5;
+        --auth-text-secondary: #858585;
+        --auth-text-quiet: #8a8a8a;
+        --auth-muted: #a3a3a3;
+        --auth-icon: #8a8a8a;
+        --auth-field-bg: #1e1e1e;
+        --auth-placeholder: #5c5c5c;
+        --auth-focus: #4d4d4d;
+        --auth-focus-ring: rgba(255, 255, 255, 0.07);
+        --auth-action-bg: #f5f5f5;
+        --auth-action-text: #171717;
+        --auth-action-hover: #ffffff;
+        --auth-action-disabled: #cfcfcf;
+        --auth-action-line: #f5f5f5;
+        --auth-action-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+        --auth-link: #f5f5f5;
+        --auth-link-hover: #ffffff;
+        --auth-surface: #1e1e1e;
+        --auth-surface-strong: rgba(255, 255, 255, 0.06);
+        min-height: 100vh;
+        background: var(--auth-page-bg);
+        color: var(--auth-text);
+      }
+
+      html.light body[data-fm-auth] {
+        --auth-page-bg: #f6f6f6;
+        --auth-card-bg: #fafafa;
+        --auth-panel-bg: #ffffff;
+        --auth-panel-edge: 0 1px 0 0 #e8e8e8, 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+        --auth-border: #e3e3e3;
+        --auth-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 18px 44px -20px rgba(0, 0, 0, 0.16);
+        --auth-text: #171717;
+        --auth-label: #1f1f1f;
+        --auth-text-secondary: #737373;
+        --auth-text-quiet: #737373;
+        --auth-muted: #737373;
+        --auth-icon: #8a8a8a;
+        --auth-field-bg: #ffffff;
+        --auth-placeholder: #a3a3a3;
+        --auth-focus: #a3a3a3;
+        --auth-focus-ring: rgba(0, 0, 0, 0.06);
+        --auth-action-bg: #222222;
+        --auth-action-text: #ffffff;
+        --auth-action-hover: #333333;
+        --auth-action-disabled: #6b6b6b;
+        --auth-action-line: #161616;
+        --auth-action-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.16);
+        --auth-link: #171717;
+        --auth-link-hover: #000000;
+        --auth-surface: #f5f5f5;
+        --auth-surface-strong: rgba(0, 0, 0, 0.05);
+      }
+
+      .auth-shell {
+        position: relative;
+        z-index: 1;
+        min-height: calc(100vh - 3.5rem);
+        display: grid;
+        place-items: center;
+        padding: 28px 16px;
+        background-image: none;
+      }
+
+      .auth-card {
+        position: relative;
+        width: min(100%, 480px);
+        overflow: hidden;
+        padding: 0;
+        border: 1px solid var(--auth-border);
+        border-radius: 16px;
+        background: var(--auth-card-bg);
+        box-shadow: var(--auth-shadow);
+      }
+
+      .auth-card-body {
+        position: relative;
+        padding: 40px 44px 36px;
+        border-radius: 15px;
+        background: var(--auth-panel-bg);
+        box-shadow: var(--auth-panel-edge);
+      }
+
+      .auth-card-foot {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        padding: 22px 24px 23px;
+        font-size: 15px;
+      }
+
+      .auth-card-foot .sep {
+        color: var(--auth-text-secondary);
+      }
+
+      .brand {
+        display: flex;
+        width: fit-content;
+        margin: 0 auto 18px;
+      }
+
+      .brand-mark {
+        width: 2.25rem;
+        height: 2.25rem;
+      }
+
+      .auth-card h1 {
+        margin: 0 0 8px;
+        color: var(--auth-text);
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+        line-height: 1.25;
+        text-align: center;
+      }
+
+      .auth-sub {
+        max-width: 34ch;
+        margin: 0 auto 28px;
+        color: var(--auth-text-secondary);
+        font-size: 15px;
+        line-height: 1.5;
+        text-align: center;
+        text-wrap: balance;
+      }
+
+      .instance-login-expiry {
+        margin: -12px auto 24px;
+        padding: 10px 12px;
+        border: 1px solid #a16207;
+        border-radius: 8px;
+        color: var(--auth-text);
+        font-size: 13px;
+        line-height: 1.45;
+        text-align: center;
+      }
+
+      .field {
+        --auth-text-secondary: var(--auth-label);
+        margin: 0 0 20px;
+      }
+
+      .field label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--auth-label);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+
+      .field-label-row {
+        --auth-link: var(--auth-muted);
+        --auth-link-hover: var(--auth-text);
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .field-label-row label {
+        margin-bottom: 0;
+      }
+
+      .field-label-row a {
+        color: var(--auth-link);
+        font-size: 14px;
+        text-decoration: none;
+        transition: color 150ms ease;
+      }
+
+      .field-label-row a:hover {
+        color: var(--auth-link-hover);
+        text-decoration: none;
+      }
+
+      .field input {
+        width: 100%;
+        height: 2.5rem;
+        padding: 0 0.875rem;
+        border: 1px solid var(--auth-border);
+        border-radius: 0.625rem;
+        background: var(--auth-field-bg);
+        color: var(--auth-text);
+        font: inherit;
+        font-size: 15px;
+        transition: border-color 150ms ease, box-shadow 150ms ease;
+      }
+
+      .field input::placeholder {
+        color: var(--auth-placeholder);
+        opacity: 1;
+      }
+
+      .field input:focus {
+        outline: 0;
+        border-color: var(--auth-focus);
+        box-shadow: 0 0 0 3px var(--auth-focus-ring);
+      }
+
+      .field input:-webkit-autofill,
+      .field input:-webkit-autofill:hover {
+        -webkit-text-fill-color: var(--auth-text);
+        caret-color: var(--auth-text);
+        box-shadow: 0 0 0 2.5rem var(--auth-field-bg) inset;
+        transition: background-color 600000s 0s, color 600000s 0s;
+      }
+
+      .field input:-webkit-autofill:focus {
+        -webkit-text-fill-color: var(--auth-text);
+        box-shadow: 0 0 0 2.5rem var(--auth-field-bg) inset, 0 0 0 3px var(--auth-focus-ring);
+      }
+
+      .field input:autofill {
+        filter: none;
+      }
+
+      .password-field {
+        position: relative;
+      }
+
+      .password-field input {
+        padding-right: 2.75rem;
+      }
+
+      .password-toggle {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2rem;
+        height: 2rem;
+        padding: 0;
+        border: 0;
+        border-radius: 0.5rem;
+        background: transparent;
+        color: var(--auth-icon);
+        cursor: pointer;
+        transition: color 150ms ease, background-color 150ms ease;
+      }
+
+      .password-toggle:hover {
+        color: var(--auth-text);
+        background: var(--auth-surface-strong);
+      }
+
+      .password-toggle:focus-visible {
+        outline: 0;
+        box-shadow: 0 0 0 2px var(--auth-focus);
+      }
+
+      .password-toggle svg {
+        width: 1.125rem;
+        height: 1.125rem;
+      }
+
+      .password-field input::-ms-reveal {
+        display: none;
+      }
+
+      .auth-button-primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 2.5rem;
+        padding: 0 1rem;
+        border: 1px solid var(--auth-action-line);
+        border-radius: 0.625rem;
+        background: var(--auth-action-bg);
+        box-shadow: var(--auth-action-shadow);
+        color: var(--auth-action-text);
+        font: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 150ms ease, background-color 150ms ease, color 150ms ease;
+      }
+
+      .auth-button-primary:hover {
+        background: var(--auth-action-hover);
+        color: var(--auth-action-text);
+      }
+
+      .auth-button-primary:active {
+        transform: translateY(1px);
+      }
+
+      .auth-button-primary:focus-visible {
+        outline: 0;
+        box-shadow: var(--auth-action-shadow), 0 0 0 3px var(--auth-focus-ring);
+      }
+
+      .auth-button-primary:disabled {
+        border-color: var(--auth-action-disabled);
+        background: var(--auth-action-disabled);
+        color: var(--auth-action-text);
+        cursor: not-allowed;
+      }
+
+      .auth-input-sm {}
+
+      .hint {
+        min-height: 18px;
+        margin: -8px 0 8px;
+        color: var(--auth-text-quiet);
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .hint.bad {
+        color: var(--danger);
+      }
+
+      .hint.good {
+        color: var(--auth-text);
+      }
+
+      .row-links {
+        margin: 0;
+        color: var(--auth-text-quiet);
+        font-size: 15px;
+        text-align: center;
+      }
+
+      .row-links a {
+        color: var(--auth-link);
+        font-weight: 400;
+        text-decoration: none;
+        transition: color 150ms ease;
+      }
+
+      .row-links a:hover {
+        color: var(--auth-link-hover);
+        text-decoration: none;
+      }
+
+      .demo-credentials {
+        display: none;
+        margin: 0 0 20px;
+        padding: 12px 14px;
+        border: 1px solid var(--auth-border);
+        border-radius: 12px;
+        background: var(--auth-surface);
+        color: var(--auth-text-secondary);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .demo-credentials strong,
+      .demo-credentials code {
+        color: var(--auth-text);
+      }
+
+      .demo-credentials button {
+        width: 100%;
+        height: 2rem;
+        margin-top: 8px;
+        border: 1px solid var(--auth-border);
+        border-radius: 8px;
+        background: var(--auth-field-bg);
+        color: var(--auth-text);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      #totp-field {
+        display: none;
+      }
+
+      #totp-setup-qr {
+        display: inline-block;
+        margin: 4px 0 8px;
+        padding: 10px;
+        background: #fff;
+        border-radius: 8px;
+        line-height: 0;
+      }
+
+      #totp-setup-qr:empty {
+        display: none;
+      }
+
+      #totp-setup code {
+        word-break: break-all;
+        user-select: all;
+      }
+    </style>
+    <link rel="stylesheet" href="/auth-page-theme.css" />
+    <link rel="stylesheet" href="/auth-mesh.css" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/auth-mesh.js?v=${version}" defer></script>
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body data-fm-auth>
+    <div data-forkmesh-auth-mesh></div>
+    <div data-forkmesh-header="simple"></div>
+    <main class="auth-shell">
+      <section class="auth-card" aria-labelledby="login-title">
+        <div class="auth-card-body">
+          <a class="brand" href="/" aria-label="ForkMesh home">
+            <img class="brand-mark" src="/assets/logo.svg" alt="" aria-hidden="true" />
+          </a>
+
+          <h1 id="login-title">Welcome back</h1>
+          <p class="auth-sub">Sign in to manage repositories, mirrors, and signed collaboration.</p>
+          <p class="instance-login-expiry" data-instance-login-expiry hidden></p>
+          <!-- The credential fields live in a real form element with named
+               inputs. A password manager looks for a username/current-password
+               pair inside a form to offer autofill on focus and to save the login
+               afterwards; Chrome pools form-less inputs into one synthetic form
+               and then declines to fill it, so clicking Email brought up nothing
+               (the defect the dashboard password fields were fixed for in #671). -->
+          <form id="login-form" novalidate>
+            <div class="field">
+              <label for="email">Email</label>
+              <input class="auth-input-sm" id="email" name="email" type="email" autocomplete="username" inputmode="email" placeholder="you@example.com" />
+            </div>
+            <div class="field">
+              <div class="field-label-row">
+                <label for="password">Password</label>
+                <a href="/forgot-password">Forgot?</a>
+              </div>
+              <div class="password-field">
+                <input class="auth-input-sm" id="password" name="password" type="password" autocomplete="current-password" placeholder="Your password" />
+                <button class="password-toggle" id="password-toggle" type="button" aria-label="Show password" aria-controls="password" aria-pressed="false" title="Show password">
+                  <svg class="password-toggle-show" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                    <circle cx="12" cy="12" r="2.5"></circle>
+                  </svg>
+                  <svg class="password-toggle-hide" viewBox="0 0 24 24" aria-hidden="true" focusable="false" hidden>
+                    <path d="m3 3 18 18"></path>
+                    <path d="M10.6 6.2A10.6 10.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17.5 17.5 0 0 1-3.1 3.8M6.2 6.2C3.8 7.9 2.5 12 2.5 12s3.5 6 9.5 6a10.7 10.7 0 0 0 3.1-.5"></path>
+                    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="field" id="totp-field">
+              <div id="totp-setup" hidden>
+                <p>Administrator accounts need two-factor authentication. Scan this QR code with your authenticator app (or enter the key below), then enter the 6-digit code it shows.</p>
+                <div id="totp-setup-qr" role="img" aria-label="QR code to add ForkMesh to your authenticator app"></div>
+                <p><code id="totp-setup-secret"></code></p>
+                <p><a id="totp-setup-link" href="#">Open in authenticator app</a></p>
+              </div>
+              <label for="totp">Authenticator code</label>
+              <input class="auth-input-sm" id="totp" name="totp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" maxlength="6" />
+            </div>
+            <div class="demo-credentials" id="demo-credentials">
+              <strong>Local demo login</strong><br />
+              Email: <code>demo@forkmesh.local</code><br />
+              Password: <code>forkmesh-demo</code>
+              <button type="button" id="demo-fill-btn">Use demo credentials</button>
+            </div>
+            <div class="hint" id="login-hint"></div>
+            <button class="auth-button-primary btn-primary" id="login-btn" type="submit">Log in</button>
+          </form>
+        </div>
+        <div class="auth-card-foot">
+          <p class="row-links"><a href="/signup">Create an account</a></p>
+          <span class="sep" aria-hidden="true">·</span>
+          <p class="row-links"><a href="/desktop">Get the desktop app</a></p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

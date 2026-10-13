@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Direct messages" %}
+{% set slug = "direct-messages" %}
+{% set image = "/assets/blog/features/direct-messages.webp" %}
+{% set description = "Direct messages automatically add device-to-device encryption beyond the ForkMesh controller room key." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Chat &amp; private sharing</p>
+            <h1>Direct messages</h1>
+            <p class="lede">Direct messages automatically add device-to-device encryption beyond the controller's room key.</p>
+            <div class="meta"><span class="pill">Feature 48 of 72</span><span>Feature</span><span>Chat &amp; private sharing</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/direct-messages.webp" alt="Abstract ForkMesh artwork for Direct messages">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Direct messages give ForkMesh a concrete mechanism for node-to-node coordination inside a repository room. Their content is automatically encrypted to known participant devices before the relay's ordinary room cipher is applied.</p>
+          <p>Project conversations often carry design, access, and coordination context, so private messages exclude the controller's room key as a passive decryption key.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>Each installation keeps a local X25519 private key and advertises only its public key. Each direct-message frame gets a fresh AES-256-GCM content key wrapped for known room devices, then the result is encrypted by the relay-derived room key. Up to 500 persisted frames per room remain for 7 days.</p>
+          <p>A new device can read messages sent after peers learn its public key, but cannot retroactively open messages that were not addressed to it.</p>
+          <div class="note">Public-key discovery is automatic but not independently authenticated. An active controller can inject a recipient key; the protection excludes passive controller decryption, not an actively malicious key directory.</div>
+          <h2>Where it fits</h2>
+          <p>Use direct messages for protected repository-aware coordination. Use public channels when ForkBot, MCP, or incoming webhooks need controller access.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/encrypted-repo-rooms/">← Encrypted repo rooms</a>
+          <a href="/blog/coves/">Coves →</a>
+        </nav>
+{% endblock %}

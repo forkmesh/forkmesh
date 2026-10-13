@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg version="1.2" baseProfile="tiny-ps" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1350 1350">
+<title>ForkMesh</title>
+<rect width="1350" height="1350" fill="#090909"/>
+<path d="M0 -100L86.6 -50L86.6 50L0 100L-86.6 50L-86.6 -50Z" transform="matrix(5 0 0 5 675 675)" fill="#ffffff" stroke="#ffffff" stroke-width="26" stroke-linejoin="round"/>
+<path d="M0 -100L86.6 -50L86.6 50L0 100L-86.6 50L-86.6 -50Z" transform="matrix(5 0 0 5 675 675)" fill="#131316" stroke="#131316" stroke-width="10" stroke-linejoin="round"/>
+<rect x="5" y="5" width="90" height="90" rx="7" transform="matrix(4.33 -2.5 4.33 2.5 242 425)" fill="#ffffff"/>
+<path d="M78 22 L22 78 M40 20 L40 60 M60 80 L60 40" transform="matrix(4.33 -2.5 4.33 2.5 242 425)" fill="none" stroke="#131316" stroke-width="7" stroke-linecap="round"/>
+<path d="M85.5 22C85.5 26.142 82.142 29.5 78 29.5C73.858 29.5 70.5 26.142 70.5 22C70.5 17.858 73.858 14.5 78 14.5C82.142 14.5 85.5 17.858 85.5 22Z" transform="matrix(4.33 -2.5 4.33 2.5 242 425)" fill="#131316" stroke="#131316" stroke-width="7" stroke-linecap="round"/>
+<path d="M29.5 78C29.5 82.142 26.142 85.5 22 85.5C17.858 85.5 14.5 82.142 14.5 78C14.5 73.858 17.858 70.5 22 70.5C26.142 70.5 29.5 73.858 29.5 78Z" transform="matrix(4.33 -2.5 4.33 2.5 242 425)" fill="#131316" stroke="#131316" stroke-width="7" stroke-linecap="round"/>
+<path d="M47.5 20C47.5 24.142 44.142 27.5 40 27.5C35.858 27.5 32.5 24.142 32.5 20C32.5 15.858 35.858 12.5 40 12.5C44.142 12.5 47.5 15.858 47.5 20Z" transform="matrix(4.33 -2.5 4.33 2.5 242 425)" fill="#131316" stroke="#131316" stroke-width="7" stroke-linecap="round"/>
+<path d="M67.5 80C67.5 84.142 64.142 87.5 60 87.5C55.858 87.5 52.5 84.142 52.5 80C52.5 75.858 55.858 72.5 60 72.5C64.142 72.5 67.5 75.858 67.5 80Z" transform="matrix(4.33 -2.5 4.33 2.5 242 425)" fill="#131316" stroke="#131316" stroke-width="7" stroke-linecap="round"/>
+<path d="M7 9 H93 V31 H31 V45 H76 V65 H31 V93 H7 Z" transform="matrix(4.33 2.5 0 5 242 425)" fill="#ffffff" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+<path d="M7 93 V9 H28 L50 42 L72 9 H93 V93 H72 V44 L50 77 L28 44 V93 Z" transform="matrix(4.33 -2.5 0 5 675 675)" fill="#ffffff" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+</svg>

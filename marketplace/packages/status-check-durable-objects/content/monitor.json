@@ -1,0 +1,7 @@
+{
+  "label": "Durable Objects",
+  "systems": [
+    "durable_objects"
+  ],
+  "prefixes": []
+}

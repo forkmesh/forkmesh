@@ -1,0 +1,86 @@
+name: ForkMesh World browser E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forkmesh-world-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  world-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Configure Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            world/browser_tests/package-lock.json
+            app/browser_tests/package-lock.json
+          package-manager-cache: true
+
+      - name: Install pinned browser test dependencies
+        working-directory: world/browser_tests
+        run: npm ci
+
+      - name: Install pinned App browser test dependencies
+        working-directory: app/browser_tests
+        run: npm ci
+
+      - name: Restore the cached Chromium headless shell
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('world/browser_tests/package-lock.json', 'app/browser_tests/package-lock.json') }}
+
+      - name: Install the pinned Chromium headless shell
+        working-directory: world/browser_tests
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Exercise WebGL, keyboard, touch, and two-client privacy
+        working-directory: world/browser_tests
+        run: npm test
+
+      - name: Measure adaptive World device tiers
+        working-directory: world/browser_tests
+        run: npm run test:device-tiers
+
+      - name: Retain device-tier frame and input evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: world-device-tiers-${{ github.run_id }}
+          path: world/browser_tests/test-results
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Enforce daily interaction and accessibility budgets
+        working-directory: app/browser_tests
+        run: npm run test:daily-interface
+
+      - name: Exercise App chat, dashboard, and repository browser contracts
+        working-directory: app/browser_tests
+        run: npm test
+
+      - name: Retain daily-interface report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: daily-interface-report-${{ github.run_id }}
+          path: app/browser_tests/test-results
+          if-no-files-found: warn
+          retention-days: 30

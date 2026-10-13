@@ -1,0 +1,25 @@
+#!/bin/sh
+# Managed by deploy/core/render.py. Run a one-off `forkmesh_host ops` command
+# with exactly the app's user, environment files and encrypted credentials:
+# the settings are read from the installed forkmesh-app unit, so this sees
+# what the running app sees.
+#   fmnext-app-ops verify-email <account>
+#   fmnext-app-ops show-account <account>
+# With the vault on, a second process would have no key (and must not get
+# one): the action runs inside the running, unsealed app over its socket.
+set -eu
+if [ "@@VAULT@@" = 1 ]; then
+  exec /usr/local/sbin/fmnext-unseal --ops "$@"
+fi
+unit=/etc/systemd/system/forkmesh-app.service
+set --  "$@"
+props=""
+while IFS= read -r line; do
+  case "$line" in
+    User=*|WorkingDirectory=*|EnvironmentFile=*|Environment=*|LoadCredentialEncrypted=*)
+      props="$props -p $line" ;;
+  esac
+done < "$unit"
+# shellcheck disable=SC2086 # the unit's values carry no spaces
+exec systemd-run --wait --pipe --collect --quiet $props \
+  @@CURRENT@@/.venv/bin/python -OO -m forkmesh_host ops "$@"

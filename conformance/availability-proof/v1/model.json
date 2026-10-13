@@ -1,0 +1,58 @@
+{
+  "schema": "forkmesh-availability-proof-model-v1",
+  "outputSchema": "forkmesh-availability-proof-v1",
+  "version": "1.0.0",
+  "updated": "2026-09-14",
+  "documentation": "www/docs/availability-proof.md",
+  "fixture": "conformance/availability-proof/v1/fixture.json",
+  "referenceImplementation": "app/src/availability_proof.py",
+  "implementations": [
+    {"client": "api", "path": "app/src/availability_proof.py", "test": "app/tests/test_availability_proof.py"},
+    {"client": "cli", "path": "tools/forkmesh_availability_proof.py", "test": "app/tests/test_availability_proof.py"},
+    {"client": "web", "path": "app/public/dashboard/js/07-repo-compose-branch.js", "test": "app/tests/test_availability_proof.py"}
+  ],
+  "policy": {
+    "freshnessObjectiveMs": 600000,
+    "probeFreshMs": 86400000,
+    "quorumTarget": 2,
+    "maxScore": 100,
+    "privacy": "Operator accounts are never echoed. Copies run by the same operator share an opaque operator number. Endpoints, mirror URLs, and free-form probe reasons in the evidence are never echoed; node names and operator-declared regions are already public on the mirrors payload."
+  },
+  "copyClasses": [
+    {"id": "failing", "precedence": 1, "meaning": "Integrity gate rejected the copy, the node is abuse-blocked, or its clone probe from the last day failed."},
+    {"id": "verified", "precedence": 2, "meaning": "Online, current, integrity ok, and either a signed endpoint receipt within the freshness objective or a clone probe from the last day that passed."},
+    {"id": "declared", "precedence": 3, "meaning": "Only a catalog record exists; nothing ever observed the copy."},
+    {"id": "stale", "precedence": 4, "meaning": "Observed before, but now offline, behind, or with no evidence within the freshness objective."},
+    {"id": "observed", "precedence": 5, "meaning": "Online and seen within the freshness objective, but not yet backed by a signed receipt or passing probe, or a filtered, metadata-only, or deferred-object replica (replicaScope other than full) that never counts as verified."}
+  ],
+  "reasons": [
+    "integrity_rejected", "abuse_blocked", "probe_failed", "offline",
+    "behind", "evidence_expired", "awaiting_receipt", "never_observed",
+    "limited_replica"
+  ],
+  "proofStates": [
+    {"id": "quorum", "label": "Quorum proven", "headline": "Independent operators hold the same verified copy"},
+    {"id": "partial", "label": "Below quorum", "headline": "Verified, but not by enough independent operators"},
+    {"id": "none", "label": "Not proven", "headline": "No copy has fresh signed evidence"}
+  ],
+  "levels": [
+    {"id": "critical", "label": "Critical", "minScore": 60},
+    {"id": "high", "label": "High", "minScore": 30},
+    {"id": "moderate", "label": "Moderate", "minScore": 10},
+    {"id": "low", "label": "Low", "minScore": 0}
+  ],
+  "risks": [
+    {"code": "no_verified_copy", "severity": "critical", "weight": 50, "when": "verified copies = 0", "action": "request-mirror"},
+    {"code": "quorum_not_met", "severity": "high", "weight": 25, "when": "distinct operators holding the counted verified state < quorumTarget", "action": "request-mirror"},
+    {"code": "state_disagreement", "severity": "high", "weight": 20, "when": "passing clone probes on verified copies returned more than one refs digest", "action": "check-direct-url"},
+    {"code": "single_operator", "severity": "medium", "weight": 10, "when": "verified copies >= 2 and all share one operator", "action": "request-mirror"},
+    {"code": "failing_copy", "severity": "medium", "weight": 10, "when": "failing copies > 0", "action": "resync-mirror"},
+    {"code": "source_offline", "severity": "medium", "weight": 10, "when": "the working-copy source is known and offline", "action": "start-source"},
+    {"code": "no_direct_clone_url", "severity": "medium", "weight": 10, "when": "verified copies > 0 and none passed a clone probe in probeFreshMs", "action": "check-direct-url"},
+    {"code": "partial_ref_coverage", "severity": "medium", "weight": 10, "when": "verified copies with the reference branch count < min(quorumTarget, verified copies)", "action": "resync-mirror"},
+    {"code": "stale_copy", "severity": "low", "weight": 5, "when": "stale copies > 0", "action": "resync-mirror"},
+    {"code": "partial_artifact_coverage", "severity": "low", "weight": 5, "when": "verified copies with the reference artifact count < min(quorumTarget, verified copies)", "action": "resync-mirror"},
+    {"code": "single_region", "severity": "low", "weight": 5, "when": "verified copies >= 2, every one declared a region, and all declared the same one", "action": "request-mirror"},
+    {"code": "declared_only_copy", "severity": "low", "weight": 3, "when": "declared copies > 0", "action": "check-direct-url"}
+  ]
+}

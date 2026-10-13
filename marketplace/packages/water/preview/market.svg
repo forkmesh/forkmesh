@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">Water Intake page with a glass filling toward a 2 litre goal, quick add buttons, today's drinks, and a 30-day chart</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <text x="64" y="84" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f4f5f7">Water Intake</text>
+  <text x="64" y="114" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#9aa3b2">Log every glass · daily goal and streak · shared with Apple Health on iPhone</text>
+  <g transform="translate(64,150)">
+    <rect width="320" height="380" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <clipPath id="g"><path d="M100 40 L220 40 L205 240 L115 240 Z"/></clipPath>
+    <rect x="90" y="115" width="140" height="125" fill="#3aa7e0" opacity=".85" clip-path="url(#g)"/>
+    <path d="M100 40 L220 40 L205 240 L115 240 Z" fill="none" stroke="#2a2f3a" stroke-width="5" stroke-linejoin="round"/>
+    <text x="160" y="280" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#f4f5f7">1.25 L</text>
+    <text x="160" y="306" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">750 ml to go of 2 L</text>
+    <rect x="30" y="330" width="80" height="32" rx="6" fill="#262b35" stroke="#2a2f3a"/><text x="70" y="351" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#f4f5f7">+ 250 ml</text>
+    <rect x="120" y="330" width="80" height="32" rx="6" fill="#262b35" stroke="#2a2f3a"/><text x="160" y="351" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#f4f5f7">+ 500 ml</text>
+    <rect x="210" y="330" width="80" height="32" rx="6" fill="#262b35" stroke="#2a2f3a"/><text x="250" y="351" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#f4f5f7">+ 750 ml</text>
+  </g>
+  <g transform="translate(420,150)">
+    <rect width="796" height="380" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="310.0" y2="310.0" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="240.0" y2="240.0" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="170.0" y2="170.0" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="100.0" y2="100.0" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="30.0" y2="30.0" stroke="#2a2f3a"/>
+    <rect x="44.3" y="150.2" width="16" height="159.8" rx="3" fill="#3aa7e0"/>
+    <rect x="68.8" y="216.6" width="16" height="93.4" rx="3" fill="#3aa7e0"/>
+    <rect x="93.3" y="183.8" width="16" height="126.2" rx="3" fill="#3aa7e0"/>
+    <rect x="117.9" y="217.1" width="16" height="92.9" rx="3" fill="#3aa7e0"/>
+    <rect x="142.4" y="119.6" width="16" height="190.4" rx="3" fill="#199e70"/>
+    <rect x="166.9" y="61.9" width="16" height="248.1" rx="3" fill="#199e70"/>
+    <rect x="191.5" y="200.6" width="16" height="109.4" rx="3" fill="#3aa7e0"/>
+    <rect x="216.0" y="170.7" width="16" height="139.3" rx="3" fill="#3aa7e0"/>
+    <rect x="240.5" y="145.9" width="16" height="164.1" rx="3" fill="#3aa7e0"/>
+    <rect x="265.1" y="198.5" width="16" height="111.5" rx="3" fill="#3aa7e0"/>
+    <rect x="289.6" y="122.7" width="16" height="187.3" rx="3" fill="#199e70"/>
+    <rect x="314.1" y="203.5" width="16" height="106.5" rx="3" fill="#3aa7e0"/>
+    <rect x="338.7" y="116.9" width="16" height="193.1" rx="3" fill="#199e70"/>
+    <rect x="363.2" y="167.1" width="16" height="142.9" rx="3" fill="#3aa7e0"/>
+    <rect x="387.7" y="118.9" width="16" height="191.1" rx="3" fill="#199e70"/>
+    <rect x="412.3" y="70.0" width="16" height="240.0" rx="3" fill="#199e70"/>
+    <rect x="436.8" y="95.7" width="16" height="214.3" rx="3" fill="#199e70"/>
+    <rect x="461.3" y="191.5" width="16" height="118.5" rx="3" fill="#3aa7e0"/>
+    <rect x="485.9" y="206.3" width="16" height="103.7" rx="3" fill="#3aa7e0"/>
+    <rect x="510.4" y="114.8" width="16" height="195.2" rx="3" fill="#199e70"/>
+    <rect x="534.9" y="116.9" width="16" height="193.1" rx="3" fill="#199e70"/>
+    <rect x="559.5" y="103.9" width="16" height="206.1" rx="3" fill="#199e70"/>
+    <rect x="584.0" y="190.2" width="16" height="119.8" rx="3" fill="#3aa7e0"/>
+    <rect x="608.5" y="154.9" width="16" height="155.1" rx="3" fill="#3aa7e0"/>
+    <rect x="633.1" y="207.4" width="16" height="102.6" rx="3" fill="#3aa7e0"/>
+    <rect x="657.6" y="121.4" width="16" height="188.6" rx="3" fill="#199e70"/>
+    <rect x="682.1" y="89.9" width="16" height="220.1" rx="3" fill="#199e70"/>
+    <rect x="706.7" y="214.1" width="16" height="95.9" rx="3" fill="#3aa7e0"/>
+    <rect x="731.2" y="118.2" width="16" height="191.8" rx="3" fill="#199e70"/>
+    <rect x="755.7" y="193.3" width="16" height="116.7" rx="3" fill="#3aa7e0"/>
+    <line x1="40" x2="776" y1="123.3" y2="123.3" stroke="#c98500" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="40" y="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">Last 30 days</text>
+  </g>
+</svg>

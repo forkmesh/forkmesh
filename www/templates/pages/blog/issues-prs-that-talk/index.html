@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Issues ↔ PRs that talk" %}
+{% set slug = "issues-prs-that-talk" %}
+{% set image = "/assets/blog/features/issues-prs-that-talk.webp" %}
+{% set description = "Merge a pull request and its linked issue closes itself. One checkbox syncs the merge straight to main." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Issues &amp; planning</p>
+            <h1>Issues ↔ PRs that talk</h1>
+            <p class="lede">Merge a pull request and its linked issue closes itself. One checkbox syncs the merge straight to main.</p>
+            <div class="meta"><span class="pill">Feature 23 of 72</span><span>Feature</span><span>Issues &amp; planning</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/issues-prs-that-talk.webp" alt="Abstract ForkMesh artwork for Issues ↔ PRs that talk">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Issues ↔ PRs that talk gives ForkMesh a concrete mechanism for linked issues and pull requests updating each other as work lands. Merge a pull request and its linked issue closes itself. One checkbox syncs the merge straight to main.</p>
+          <p>Planning loses force when it drifts away from the code history and pull requests it is supposed to guide. In ForkMesh, issues ↔ PRs that talk addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles issues ↔ PRs that talk through the same split it uses across the product: issues are repository-linked records surfaced in desktop and web views beside branches, pull requests, milestones, and agent sessions.</p>
+          <p>The behavior is intentionally narrow: Merge a pull request and its linked issue closes itself. One checkbox syncs the merge straight to main. State changes stay portable because the planning layer follows the repository instead of one private dashboard.</p>
+          <h2>Where it fits</h2>
+          <p>Use issues ↔ PRs that talk when triage and progress tracking should live beside the repository and remain portable.</p>
+          <p>It pairs with the rest of Issues &amp; planning because Issues ↔ PRs that talk keeps linked issues and pull requests updating each other as work lands connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/quick-add-from-anywhere/">← Quick-add from anywhere</a>
+          <a href="/blog/rich-diffs/">Rich diffs →</a>
+        </nav>
+{% endblock %}

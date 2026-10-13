@@ -1,0 +1,41 @@
+{
+  "schema": "forkmesh-public-interest-funding-round-v1",
+  "id": "PIF-0001",
+  "programVersion": "1.0.0-rc.1",
+  "pilot": true,
+  "title": "Pilot round: volunteer mirrors, accessibility, and documentation",
+  "summary": "Milestone grants and matching for people who run public mirrors, make ForkMesh-compatible clients and documents accessible, and write open documentation. Recipients choose their own payment rail.",
+  "stage": "draft",
+  "areas": ["volunteer-mirrors", "accessibility", "documentation"],
+  "offers": ["targeted-grant", "matching"],
+  "paymentRails": ["bank-transfer", "open-collective", "liberapay", "solana"],
+  "applicationChannels": [
+    {"kind": "public-issue", "description": "An issue labelled funding-application on any forge mirror of forkmesh/forkmesh.", "forkmeshAccountRequired": false},
+    {"kind": "email", "description": "Email to the address in the round announcement, for applicants who cannot apply in public.", "forkmeshAccountRequired": false}
+  ],
+  "timeline": {
+    "announced": null,
+    "applicationsOpen": null,
+    "applicationsClose": null,
+    "selectionsPublished": null,
+    "finalReportDue": null,
+    "reported": null
+  },
+  "budget": {"currency": "USD", "committed": null, "administrativeCost": null},
+  "funders": [],
+  "reviewers": [],
+  "applications": [],
+  "conflicts": [],
+  "reviews": [],
+  "awards": [],
+  "disbursements": [],
+  "communityReview": {"opened": null, "closes": null, "findings": []},
+  "outcomeReport": null,
+  "opensWhen": [
+    "A funder commits the pool and publishes the amount, source, conflicts, and any area restriction.",
+    "Administrative cost is published and stays within 10% of the pool.",
+    "At least three reviewers with current governance disclosures are seated, and at least one is not a ForkMesh maintainer.",
+    "The application window is announced with at least 21 days to apply."
+  ],
+  "note": "No funder has committed a pool and no reviewer is seated, so the round has not opened. It has no applications, selections, or disbursements to report."
+}

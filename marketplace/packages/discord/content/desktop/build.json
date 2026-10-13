@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "DiscordClient.h",
+    "DiscordClient.cpp"
+  ],
+  "mocHeaders": [
+    "DiscordClient.h"
+  ]
+}

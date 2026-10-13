@@ -1,0 +1,101 @@
+name = "forkmesh-www"
+main = "worker.js"
+compatibility_date = "2026-09-22"
+
+[build]
+command = "python3 ../app/tools/build_site_assets.py www"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "none"
+run_worker_first = [
+  "/api",
+  "/api/*",
+  "/.well-known/*",
+  "/nodeinfo/*",
+  "/ap/*",
+  "/@*",
+  "/%40*",
+  "/rss.xml",
+  "/feed.xml",
+  "/blog/rss.xml",
+  "/blog/feed.xml",
+  "/health",
+  "/mcp",
+  "/mcp/*",
+  "/dashboard.js",
+  "/dashboard/tailwind.css",
+  "/dashboard-composer.css",
+  "/dashboard-composer.js",
+  "/dashboard-plugin-host.js",
+  "/user-status.js",
+  "/qr.js",
+  # Marketing landing pages pass through the Worker so acquisition
+  # attribution can observe them server-side (docs/attribution.md). The
+  # Worker still serves the static asset; it only adds the fm_attr cookie
+  # and forwards one observation to App inside waitUntil. Blog posts and
+  # docs stay pure static assets and are not captured.
+  "/",
+  "/about",
+  "/careers",
+  "/changelog",
+  "/desktop",
+  "/mobile",
+  "/features",
+  # The hackathon landing page is a marketing page like the others, so it is
+  # observed for acquisition attribution. Its two personalised documents are
+  # rendered by the App and proxied here (worker.js), so they must reach the
+  # Worker rather than 404 against this origin's own assets.
+  "/hackathon",
+  "/hackathon/join/*",
+  "/hackathon/squad/*",
+  "/hackathon/challenge/*",
+  "/hackathon/projects/*",
+  # Investor deck links: rendered by the App and proxied here (worker.js).
+  "/pitch-deck/*",
+  # Certification badges re-check expiry per request (worker.js).
+  "/docs/certification/badges/*",
+  "/market",
+  "/ecosystem",
+  "/ecosystem/*",
+  "/press",
+  "/privacy",
+  "/security-report",
+  "/terms",
+]
+
+[vars]
+APP_ORIGIN = "https://app.forkmesh.com"
+WORLD_ORIGIN = "https://world.forkmesh.com"
+# Acquisition attribution. Empty ATTRIBUTION_SKIP_COUNTRIES means the built-in
+# EU-27 + EEA list (no cookie, session or event until a consent banner exists);
+# the App Worker applies the same list to what it stores.
+ATTRIBUTION_SKIP_COUNTRIES = ""
+ATTRIBUTION_COOKIE_DOMAIN = "forkmesh.com"
+
+APP_UPSTREAM = "origin"
+APP_FALLBACK_ORIGINS = "https://n1.next.forkmesh.com,https://n2.next.forkmesh.com,https://n3.next.forkmesh.com"
+
+[[routes]]
+pattern = "forkmesh.com"
+custom_domain = true
+
+[[routes]]
+pattern = "www.forkmesh.com"
+custom_domain = true
+
+[observability]
+enabled = true
+head_sampling_rate = 0.05
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 0.05
+invocation_logs = false
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
+persist = true

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "authorizationSocket": "/run/forkmesh-ssh-auth/authorize.sock",
+  "authorizationBrokerUser": "forkmesh-ssh-auth",
+  "gatewayExecutable": "/opt/forkmesh-mirror/ssh-gateway-entrypoint",
+  "refreshNotifier": "/opt/forkmesh-mirror/ssh-refresh-notify",
+  "repositoryRoot": "/srv/forkmesh-git",
+  "limits": {
+    "capacityDirectory": "/run/forkmesh-ssh-gateway",
+    "maxConcurrentSessions": 16,
+    "reservedReceiveSessions": 4,
+    "maxConcurrentProcesses": 12,
+    "reservedReceiveProcesses": 3,
+    "uploadPackDeadlineSeconds": 900,
+    "receivePackDeadlineSeconds": 600,
+    "terminationGraceSeconds": 3,
+    "receiveMaxInputBytes": 268435456,
+    "defaultRepositoryMaxBytes": 17179869184,
+    "storageScanDeadlineSeconds": 10,
+    "cleanupDeadlineSeconds": 5,
+    "maxPackThreads": 2
+  },
+  "repositories": [
+    {
+      "owner": "forkmesh",
+      "name": "forkmesh",
+      "path": "forkmesh-forkmesh.git",
+      "access": "read-only",
+      "maxStorageBytes": 17179869184
+    }
+  ]
+}

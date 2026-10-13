@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS attribution_clone_snapshots;
+DROP TABLE IF EXISTS attribution_filtered_hits;
+DROP TABLE IF EXISTS attribution_ip_hourly;
+DROP INDEX IF EXISTS idx_attribution_events_time;
+DROP INDEX IF EXISTS idx_attribution_events_session;
+DROP INDEX IF EXISTS idx_attribution_events_name_time;
+DROP TABLE IF EXISTS attribution_events;
+DROP INDEX IF EXISTS idx_attribution_sessions_user;
+DROP INDEX IF EXISTS idx_attribution_sessions_first_seen;
+DROP TABLE IF EXISTS attribution_sessions;

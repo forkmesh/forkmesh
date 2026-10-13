@@ -1,0 +1,5672 @@
+{
+  "schema": "forkmesh-availability-proof-fixture-v1",
+  "model": "conformance/availability-proof/v1/model.json",
+  "privateStrings": [
+    "account-alpha-private",
+    "account-bravo-private",
+    "account-charlie-private",
+    "203.0.113.7",
+    "git.private.example",
+    "ECONNRESET"
+  ],
+  "cases": [
+    {
+      "id": "quorum-two-operators",
+      "note": "Two operators hold the same probed state in two regions.",
+      "expectProof": "quorum",
+      "expectRisks": [],
+      "expectClasses": [
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "quorum",
+        "label": "Quorum proven",
+        "score": 0,
+        "level": "low",
+        "levelLabel": "Low",
+        "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 0 of 100 (low).",
+        "quorum": {
+          "met": true,
+          "target": 2,
+          "operators": 2,
+          "copies": 2
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 2,
+          "independentOperators": 1,
+          "regions": 2,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 2,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 2,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 2,
+            "unknown": 0
+          }
+        },
+        "risks": [],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "single-operator-no-false-quorum",
+      "note": "Two nodes run by one operator never make a quorum.",
+      "expectProof": "partial",
+      "expectRisks": [
+        "quorum_not_met",
+        "single_operator"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-a2",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a2",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "partial",
+        "label": "Below quorum",
+        "score": 35,
+        "level": "high",
+        "levelLabel": "High",
+        "summary": "Verified, but not by enough independent operators. 2 of 2 copies verified by 1 independent operator (target 2). Risk 35 of 100 (high). Top risk: Below trusted quorum.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 1,
+          "copies": 2
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 1,
+          "independentOperators": 0,
+          "regions": 2,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 2,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 2,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 2,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          },
+          {
+            "code": "single_operator",
+            "severity": "medium",
+            "weight": 10,
+            "title": "One operator runs every verified copy",
+            "detail": "Several verified copies exist, but one operator runs all of them, so they fail together.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask a different operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#single_operator"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-a2",
+            "class": "verified",
+            "operator": 1,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "digest-disagreement-majority-holds",
+      "note": "Only the digest two operators agree on counts.",
+      "expectProof": "quorum",
+      "expectRisks": [
+        "state_disagreement"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-c",
+            "ownerUser": "account-charlie-private",
+            "owner": "mirror-c",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "ap-south",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "quorum",
+        "label": "Quorum proven",
+        "score": 20,
+        "level": "moderate",
+        "levelLabel": "Moderate",
+        "summary": "Independent operators hold the same verified copy. 3 of 3 copies verified by 2 independent operators (target 2). Risk 20 of 100 (moderate). Top risk: Verified copies disagree.",
+        "quorum": {
+          "met": true,
+          "target": 2,
+          "operators": 2,
+          "copies": 2
+        },
+        "counts": {
+          "total": 3,
+          "active": 3,
+          "declared": 0,
+          "observed": 0,
+          "verified": 3,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 3,
+          "independentOperators": 1,
+          "regions": 3,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 3,
+          "passing": 3,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 3,
+          "directHttps": 3,
+          "smartHttp": 3
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 3,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 3,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "state_disagreement",
+            "severity": "high",
+            "weight": 20,
+            "title": "Verified copies disagree",
+            "detail": "Clone probes returned different refs digests; only copies matching the best-supported digest count toward quorum.",
+            "action": {
+              "kind": "check-direct-url",
+              "label": "Re-run the direct URL checks",
+              "href": "https://forkmesh.com/docs/availability-proof/#state_disagreement"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-c",
+            "class": "verified",
+            "operator": 3,
+            "region": "ap-south",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "digest-disagreement-no-quorum",
+      "note": "A one-to-one digest split is not a quorum.",
+      "expectProof": "partial",
+      "expectRisks": [
+        "quorum_not_met",
+        "state_disagreement"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "partial",
+        "label": "Below quorum",
+        "score": 45,
+        "level": "high",
+        "levelLabel": "High",
+        "summary": "Verified, but not by enough independent operators. 2 of 2 copies verified by 1 independent operator (target 2). Risk 45 of 100 (high). Top risk: Below trusted quorum.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 1,
+          "copies": 1
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 2,
+          "independentOperators": 0,
+          "regions": 2,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 2,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 2,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 2,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          },
+          {
+            "code": "state_disagreement",
+            "severity": "high",
+            "weight": 20,
+            "title": "Verified copies disagree",
+            "detail": "Clone probes returned different refs digests; only copies matching the best-supported digest count toward quorum.",
+            "action": {
+              "kind": "check-direct-url",
+              "label": "Re-run the direct URL checks",
+              "href": "https://forkmesh.com/docs/availability-proof/#state_disagreement"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "source-offline-mirrors-hold-quorum",
+      "note": "A source outage raises risk but does not remove a verified quorum.",
+      "expectProof": "quorum",
+      "expectRisks": [
+        "source_offline"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "offline",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "quorum",
+        "label": "Quorum proven",
+        "score": 10,
+        "level": "moderate",
+        "levelLabel": "Moderate",
+        "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 10 of 100 (moderate). Top risk: Source is offline.",
+        "quorum": {
+          "met": true,
+          "target": 2,
+          "operators": 2,
+          "copies": 2
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 2,
+          "independentOperators": 1,
+          "regions": 2,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": false,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 2,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 2,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 2,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "source_offline",
+            "severity": "medium",
+            "weight": 10,
+            "title": "Source is offline",
+            "detail": "The working-copy source is not online, so mirrors that fall behind cannot re-sync until it returns.",
+            "action": {
+              "kind": "start-source",
+              "label": "Start the source node",
+              "href": "https://forkmesh.com/docs/availability-proof/#source_offline"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "source-offline-declared-only",
+      "note": "Only a self-published catalog record, with the source offline.",
+      "expectProof": "none",
+      "expectRisks": [
+        "no_verified_copy",
+        "quorum_not_met",
+        "source_offline",
+        "declared_only_copy"
+      ],
+      "expectClasses": [
+        "declared"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "alice-laptop",
+            "ownerUser": "account-alpha-private",
+            "source": "local-node",
+            "status": "offline",
+            "integrity": "unknown",
+            "lastSync": 1799740800000
+          }
+        ]
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "none",
+        "label": "Not proven",
+        "score": 88,
+        "level": "critical",
+        "levelLabel": "Critical",
+        "summary": "No copy has fresh signed evidence. 0 of 1 copy verified by 0 independent operators (target 2). Risk 88 of 100 (critical). Top risk: No verified copy.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 0,
+          "copies": 0
+        },
+        "counts": {
+          "total": 1,
+          "active": 0,
+          "declared": 1,
+          "observed": 0,
+          "verified": 0,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 0,
+          "independentOperators": 0,
+          "regions": 0,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": false,
+        "probes": {
+          "probed": 0,
+          "passing": 0,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": null
+        },
+        "transports": {
+          "router": 0,
+          "directHttps": 0,
+          "smartHttp": 0
+        },
+        "coverage": {
+          "branches": {
+            "reference": null,
+            "complete": 0,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": null,
+            "complete": 0,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "no_verified_copy",
+            "severity": "critical",
+            "weight": 50,
+            "title": "No verified copy",
+            "detail": "No copy has a fresh signed endpoint receipt or a passing clone probe, so nothing proves the repository can be served.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask a node to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#no_verified_copy"
+            }
+          },
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          },
+          {
+            "code": "source_offline",
+            "severity": "medium",
+            "weight": 10,
+            "title": "Source is offline",
+            "detail": "The working-copy source is not online, so mirrors that fall behind cannot re-sync until it returns.",
+            "action": {
+              "kind": "start-source",
+              "label": "Start the source node",
+              "href": "https://forkmesh.com/docs/availability-proof/#source_offline"
+            }
+          },
+          {
+            "code": "declared_only_copy",
+            "severity": "low",
+            "weight": 3,
+            "title": "A copy was never observed",
+            "detail": "A node published a catalog record for this repository, but nothing has independently observed it serving.",
+            "action": {
+              "kind": "check-direct-url",
+              "label": "Check the node's endpoint",
+              "href": "https://forkmesh.com/docs/availability-proof/#declared_only_copy"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "alice-laptop",
+            "class": "declared",
+            "operator": 1,
+            "region": null,
+            "online": false,
+            "observedAt": null,
+            "evidenceAgeMs": null,
+            "receiptFresh": false,
+            "probe": "none",
+            "cloneAvailable": false,
+            "branchCount": null,
+            "artifactCount": null,
+            "replicaScope": "full",
+            "reasons": [
+              "never_observed"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "mirror-integrity-rejected",
+      "note": "A rejected copy never counts toward quorum.",
+      "expectProof": "partial",
+      "expectRisks": [
+        "quorum_not_met",
+        "failing_copy"
+      ],
+      "expectClasses": [
+        "verified",
+        "failing"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "rejected",
+            "behind": false,
+            "cloneAvailable": false,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "partial",
+        "label": "Below quorum",
+        "score": 35,
+        "level": "high",
+        "levelLabel": "High",
+        "summary": "Verified, but not by enough independent operators. 1 of 2 copies verified by 1 independent operator (target 2). Risk 35 of 100 (high). Top risk: Below trusted quorum.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 1,
+          "copies": 1
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 1,
+          "stale": 0,
+          "failing": 1
+        },
+        "diversity": {
+          "operators": 1,
+          "independentOperators": 0,
+          "regions": 1,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 1,
+          "directHttps": 1,
+          "smartHttp": 1
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 1,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 1,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          },
+          {
+            "code": "failing_copy",
+            "severity": "medium",
+            "weight": 10,
+            "title": "A copy is failing",
+            "detail": "At least one copy was rejected by the integrity gate, blocked for abuse, or failed its latest clone probe.",
+            "action": {
+              "kind": "resync-mirror",
+              "label": "Re-sync the failing mirror, then re-check it",
+              "href": "https://forkmesh.com/docs/availability-proof/#failing_copy"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "failing",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": false,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": [
+              "integrity_rejected"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "clone-probe-failed",
+      "note": "A fresh receipt does not outweigh a failing clone probe.",
+      "expectProof": "partial",
+      "expectRisks": [
+        "quorum_not_met",
+        "failing_copy"
+      ],
+      "expectClasses": [
+        "verified",
+        "failing"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": false,
+            "directReachable": false,
+            "directIntegrity": "failed",
+            "directRefsSha256": "",
+            "directCheckedAt": 1799999700000,
+            "directReason": "ECONNRESET"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "partial",
+        "label": "Below quorum",
+        "score": 35,
+        "level": "high",
+        "levelLabel": "High",
+        "summary": "Verified, but not by enough independent operators. 1 of 2 copies verified by 1 independent operator (target 2). Risk 35 of 100 (high). Top risk: Below trusted quorum.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 1,
+          "copies": 1
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 1,
+          "stale": 0,
+          "failing": 1
+        },
+        "diversity": {
+          "operators": 1,
+          "independentOperators": 0,
+          "regions": 1,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 1,
+          "failing": 1,
+          "stale": 0,
+          "lastProbeAt": 1799999700000
+        },
+        "transports": {
+          "router": 1,
+          "directHttps": 1,
+          "smartHttp": 1
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 1,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 1,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          },
+          {
+            "code": "failing_copy",
+            "severity": "medium",
+            "weight": 10,
+            "title": "A copy is failing",
+            "detail": "At least one copy was rejected by the integrity gate, blocked for abuse, or failed its latest clone probe.",
+            "action": {
+              "kind": "resync-mirror",
+              "label": "Re-sync the failing mirror, then re-check it",
+              "href": "https://forkmesh.com/docs/availability-proof/#failing_copy"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "failing",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "fail",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": [
+              "probe_failed"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "abuse-blocked",
+      "note": "An abuse-blocked node is failing.",
+      "expectProof": "partial",
+      "expectRisks": [
+        "quorum_not_met",
+        "failing_copy"
+      ],
+      "expectClasses": [
+        "verified",
+        "failing"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": true,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "partial",
+        "label": "Below quorum",
+        "score": 35,
+        "level": "high",
+        "levelLabel": "High",
+        "summary": "Verified, but not by enough independent operators. 1 of 2 copies verified by 1 independent operator (target 2). Risk 35 of 100 (high). Top risk: Below trusted quorum.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 1,
+          "copies": 1
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 1,
+          "stale": 0,
+          "failing": 1
+        },
+        "diversity": {
+          "operators": 1,
+          "independentOperators": 0,
+          "regions": 1,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 1,
+          "directHttps": 1,
+          "smartHttp": 1
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 1,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 1,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          },
+          {
+            "code": "failing_copy",
+            "severity": "medium",
+            "weight": 10,
+            "title": "A copy is failing",
+            "detail": "At least one copy was rejected by the integrity gate, blocked for abuse, or failed its latest clone probe.",
+            "action": {
+              "kind": "resync-mirror",
+              "label": "Re-sync the failing mirror, then re-check it",
+              "href": "https://forkmesh.com/docs/availability-proof/#failing_copy"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "failing",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": [
+              "abuse_blocked"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "receipts-expired",
+      "note": "Evidence older than the freshness objective proves nothing.",
+      "expectProof": "none",
+      "expectRisks": [
+        "no_verified_copy",
+        "quorum_not_met",
+        "stale_copy"
+      ],
+      "expectClasses": [
+        "stale",
+        "stale"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799998800000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799998800000,
+            "directVerified": false,
+            "directReachable": false,
+            "directIntegrity": "unknown",
+            "directRefsSha256": "",
+            "directCheckedAt": 0,
+            "directReason": "unchecked"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "offline",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": false,
+            "lastSync": 1799999880000,
+            "lastSeen": null,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": false,
+            "endpointHealthy": false,
+            "endpointIntegrity": "unknown",
+            "checkedAt": 1799992800000,
+            "directVerified": false,
+            "directReachable": false,
+            "directIntegrity": "unknown",
+            "directRefsSha256": "",
+            "directCheckedAt": 0,
+            "directReason": "unchecked"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "none",
+        "label": "Not proven",
+        "score": 80,
+        "level": "critical",
+        "levelLabel": "Critical",
+        "summary": "No copy has fresh signed evidence. 0 of 2 copies verified by 0 independent operators (target 2). Risk 80 of 100 (critical). Top risk: No verified copy.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 0,
+          "copies": 0
+        },
+        "counts": {
+          "total": 2,
+          "active": 1,
+          "declared": 0,
+          "observed": 0,
+          "verified": 0,
+          "stale": 2,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 0,
+          "independentOperators": 0,
+          "regions": 0,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 0,
+          "passing": 0,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": null
+        },
+        "transports": {
+          "router": 0,
+          "directHttps": 0,
+          "smartHttp": 0
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 0,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 0,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "no_verified_copy",
+            "severity": "critical",
+            "weight": 50,
+            "title": "No verified copy",
+            "detail": "No copy has a fresh signed endpoint receipt or a passing clone probe, so nothing proves the repository can be served.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask a node to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#no_verified_copy"
+            }
+          },
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          },
+          {
+            "code": "stale_copy",
+            "severity": "low",
+            "weight": 5,
+            "title": "A copy has stale evidence",
+            "detail": "At least one copy is offline, behind, or has no evidence newer than the freshness objective.",
+            "action": {
+              "kind": "resync-mirror",
+              "label": "Bring the stale mirror back online",
+              "href": "https://forkmesh.com/docs/availability-proof/#stale_copy"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "stale",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799998800000,
+            "evidenceAgeMs": 1200000,
+            "receiptFresh": false,
+            "probe": "none",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": [
+              "evidence_expired"
+            ]
+          },
+          {
+            "node": "mirror-b",
+            "class": "stale",
+            "operator": 2,
+            "region": "us-east",
+            "online": false,
+            "observedAt": 1799992800000,
+            "evidenceAgeMs": 7200000,
+            "receiptFresh": false,
+            "probe": "none",
+            "cloneAvailable": false,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": [
+              "offline",
+              "evidence_expired"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "observed-awaiting-receipt",
+      "note": "Online and recently seen, but no signed receipt yet.",
+      "expectProof": "none",
+      "expectRisks": [
+        "no_verified_copy",
+        "quorum_not_met"
+      ],
+      "expectClasses": [
+        "observed"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "healing",
+            "behind": false,
+            "cloneAvailable": false,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": false,
+            "endpointHealthy": false,
+            "endpointIntegrity": "unknown",
+            "checkedAt": 0,
+            "directVerified": false,
+            "directReachable": false,
+            "directIntegrity": "unknown",
+            "directRefsSha256": "",
+            "directCheckedAt": 0,
+            "directReason": "unchecked"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "none",
+        "label": "Not proven",
+        "score": 75,
+        "level": "critical",
+        "levelLabel": "Critical",
+        "summary": "No copy has fresh signed evidence. 0 of 1 copy verified by 0 independent operators (target 2). Risk 75 of 100 (critical). Top risk: No verified copy.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 0,
+          "copies": 0
+        },
+        "counts": {
+          "total": 1,
+          "active": 1,
+          "declared": 0,
+          "observed": 1,
+          "verified": 0,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 0,
+          "independentOperators": 0,
+          "regions": 0,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 0,
+          "passing": 0,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": null
+        },
+        "transports": {
+          "router": 0,
+          "directHttps": 0,
+          "smartHttp": 0
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 0,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 0,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "no_verified_copy",
+            "severity": "critical",
+            "weight": 50,
+            "title": "No verified copy",
+            "detail": "No copy has a fresh signed endpoint receipt or a passing clone probe, so nothing proves the repository can be served.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask a node to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#no_verified_copy"
+            }
+          },
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "observed",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": false,
+            "probe": "none",
+            "cloneAvailable": false,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": [
+              "awaiting_receipt"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "limited-replicas-never-verified",
+      "note": "A filtered and a metadata-only replica with fresh receipts and passing probes never count as verified, so one full mirror cannot reach quorum.",
+      "expectProof": "partial",
+      "expectRisks": [
+        "quorum_not_met"
+      ],
+      "expectClasses": [
+        "verified",
+        "observed",
+        "observed"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok",
+            "replicaScope": "filtered"
+          },
+          {
+            "node": "mirror-c",
+            "ownerUser": "account-charlie-private",
+            "owner": "mirror-c",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "ap-south",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok",
+            "replicaScope": "metadata-only"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "partial",
+        "label": "Below quorum",
+        "score": 25,
+        "level": "moderate",
+        "levelLabel": "Moderate",
+        "summary": "Verified, but not by enough independent operators. 1 of 3 copies verified by 1 independent operator (target 2). Risk 25 of 100 (moderate). Top risk: Below trusted quorum.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 1,
+          "copies": 1
+        },
+        "counts": {
+          "total": 3,
+          "active": 3,
+          "declared": 0,
+          "observed": 2,
+          "verified": 1,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 1,
+          "independentOperators": 0,
+          "regions": 1,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 3,
+          "passing": 3,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 1,
+          "directHttps": 1,
+          "smartHttp": 1
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 1,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 1,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "observed",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "filtered",
+            "reasons": [
+              "limited_replica"
+            ]
+          },
+          {
+            "node": "mirror-c",
+            "class": "observed",
+            "operator": 3,
+            "region": "ap-south",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "metadata-only",
+            "reasons": [
+              "limited_replica"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "probe-stale-no-direct-url",
+      "note": "Receipts prove quorum, but no direct clone probe passed in the last day.",
+      "expectProof": "quorum",
+      "expectRisks": [
+        "no_direct_clone_url"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799892000000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": false,
+            "directReachable": false,
+            "directIntegrity": "unknown",
+            "directRefsSha256": "",
+            "directCheckedAt": 0,
+            "directReason": "unchecked"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "quorum",
+        "label": "Quorum proven",
+        "score": 10,
+        "level": "moderate",
+        "levelLabel": "Moderate",
+        "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 10 of 100 (moderate). Top risk: No verified direct clone URL.",
+        "quorum": {
+          "met": true,
+          "target": 2,
+          "operators": 2,
+          "copies": 2
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 2,
+          "independentOperators": 1,
+          "regions": 2,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 1,
+          "passing": 0,
+          "failing": 0,
+          "stale": 1,
+          "lastProbeAt": 1799892000000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 0,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 2,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 2,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "no_direct_clone_url",
+            "severity": "medium",
+            "weight": 10,
+            "title": "No verified direct clone URL",
+            "detail": "No verified copy has passed a direct clone probe in the last day, so clones depend on the ForkMesh router.",
+            "action": {
+              "kind": "check-direct-url",
+              "label": "Register a direct mirror URL and check it",
+              "href": "https://forkmesh.com/docs/availability-proof/#no_direct_clone_url"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "stale",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "none",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "partial-ref-coverage",
+      "note": "One verified copy is missing a branch.",
+      "expectProof": "quorum",
+      "expectRisks": [
+        "partial_ref_coverage"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 3,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "quorum",
+        "label": "Quorum proven",
+        "score": 10,
+        "level": "moderate",
+        "levelLabel": "Moderate",
+        "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 10 of 100 (moderate). Top risk: Branches are not fully replicated.",
+        "quorum": {
+          "met": true,
+          "target": 2,
+          "operators": 2,
+          "copies": 2
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 2,
+          "independentOperators": 1,
+          "regions": 2,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 2,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 1,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 2,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "partial_ref_coverage",
+            "severity": "medium",
+            "weight": 10,
+            "title": "Branches are not fully replicated",
+            "detail": "Fewer verified copies carry every branch than the quorum target requires.",
+            "action": {
+              "kind": "resync-mirror",
+              "label": "Re-sync mirrors with every branch",
+              "href": "https://forkmesh.com/docs/availability-proof/#partial_ref_coverage"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 3,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "partial-artifact-coverage",
+      "note": "The source has a release artifact no mirror carries.",
+      "expectProof": "quorum",
+      "expectRisks": [
+        "partial_artifact_coverage"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 3,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "quorum",
+        "label": "Quorum proven",
+        "score": 5,
+        "level": "low",
+        "levelLabel": "Low",
+        "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 5 of 100 (low). Top risk: Artifacts are not fully replicated.",
+        "quorum": {
+          "met": true,
+          "target": 2,
+          "operators": 2,
+          "copies": 2
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 2,
+          "independentOperators": 1,
+          "regions": 2,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 2,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 2,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 3,
+            "complete": 0,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "partial_artifact_coverage",
+            "severity": "low",
+            "weight": 5,
+            "title": "Artifacts are not fully replicated",
+            "detail": "Fewer verified copies carry every release artifact than the quorum target requires.",
+            "action": {
+              "kind": "resync-mirror",
+              "label": "Re-sync release artifacts to the mirrors",
+              "href": "https://forkmesh.com/docs/availability-proof/#partial_artifact_coverage"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "single-region",
+      "note": "Both verified copies declared the same region.",
+      "expectProof": "quorum",
+      "expectRisks": [
+        "single_region"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "quorum",
+        "label": "Quorum proven",
+        "score": 5,
+        "level": "low",
+        "levelLabel": "Low",
+        "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 5 of 100 (low). Top risk: Every verified copy is in one region.",
+        "quorum": {
+          "met": true,
+          "target": 2,
+          "operators": 2,
+          "copies": 2
+        },
+        "counts": {
+          "total": 2,
+          "active": 2,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 2,
+          "independentOperators": 1,
+          "regions": 1,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 2,
+          "passing": 2,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 2,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 2,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 2,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "single_region",
+            "severity": "low",
+            "weight": 5,
+            "title": "Every verified copy is in one region",
+            "detail": "All verified copies declared the same region, so a regional outage affects all of them.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask a node in another region to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#single_region"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "behind-copy",
+      "note": "A copy that is behind is stale, not verified.",
+      "expectProof": "quorum",
+      "expectRisks": [
+        "stale_copy"
+      ],
+      "expectClasses": [
+        "verified",
+        "verified",
+        "stale"
+      ],
+      "payload": {
+        "ok": true,
+        "owner": "alice",
+        "repo": "secret-roadmap",
+        "generatedAt": 1800000000000,
+        "mirrors": [
+          {
+            "node": "mirror-a",
+            "ownerUser": "account-alpha-private",
+            "owner": "mirror-a",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "eu-west",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-b",
+            "ownerUser": "account-bravo-private",
+            "owner": "mirror-b",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": false,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "us-east",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          },
+          {
+            "node": "mirror-c",
+            "ownerUser": "account-charlie-private",
+            "owner": "mirror-c",
+            "source": "remote-clone",
+            "status": "online",
+            "integrity": "ok",
+            "behind": true,
+            "cloneAvailable": true,
+            "lastSync": 1799999880000,
+            "lastSeen": 1799999940000,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "region": "ap-south",
+            "endpoint": "https://203.0.113.7:8443",
+            "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+            "operations": [
+              "tree",
+              "blob",
+              "git-upload-pack"
+            ],
+            "abuseBlocked": false,
+            "endpointFresh": true,
+            "endpointHealthy": true,
+            "endpointIntegrity": "ok",
+            "checkedAt": 1799999940000,
+            "directVerified": true,
+            "directReachable": true,
+            "directIntegrity": "ok",
+            "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "directCheckedAt": 1799996400000,
+            "directReason": "ok"
+          }
+        ],
+        "sourceOfTruth": {
+          "owner": "alice",
+          "repo": "secret-roadmap",
+          "kind": "working-copy",
+          "isSourceOfTruth": true,
+          "status": "online",
+          "branchCount": 4,
+          "artifactCount": 2,
+          "ownerUser": "account-alpha-private"
+        }
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 1800000000000,
+        "freshnessObjectiveMs": 600000,
+        "proof": "quorum",
+        "label": "Quorum proven",
+        "score": 5,
+        "level": "low",
+        "levelLabel": "Low",
+        "summary": "Independent operators hold the same verified copy. 2 of 3 copies verified by 2 independent operators (target 2). Risk 5 of 100 (low). Top risk: A copy has stale evidence.",
+        "quorum": {
+          "met": true,
+          "target": 2,
+          "operators": 2,
+          "copies": 2
+        },
+        "counts": {
+          "total": 3,
+          "active": 3,
+          "declared": 0,
+          "observed": 0,
+          "verified": 2,
+          "stale": 1,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 2,
+          "independentOperators": 1,
+          "regions": 2,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": true,
+        "probes": {
+          "probed": 3,
+          "passing": 3,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": 1799996400000
+        },
+        "transports": {
+          "router": 2,
+          "directHttps": 2,
+          "smartHttp": 2
+        },
+        "coverage": {
+          "branches": {
+            "reference": 4,
+            "complete": 2,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": 2,
+            "complete": 2,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "stale_copy",
+            "severity": "low",
+            "weight": 5,
+            "title": "A copy has stale evidence",
+            "detail": "At least one copy is offline, behind, or has no evidence newer than the freshness objective.",
+            "action": {
+              "kind": "resync-mirror",
+              "label": "Bring the stale mirror back online",
+              "href": "https://forkmesh.com/docs/availability-proof/#stale_copy"
+            }
+          }
+        ],
+        "copies": [
+          {
+            "node": "mirror-a",
+            "class": "verified",
+            "operator": 1,
+            "region": "eu-west",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-b",
+            "class": "verified",
+            "operator": 2,
+            "region": "us-east",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": []
+          },
+          {
+            "node": "mirror-c",
+            "class": "stale",
+            "operator": 3,
+            "region": "ap-south",
+            "online": true,
+            "observedAt": 1799999940000,
+            "evidenceAgeMs": 60000,
+            "receiptFresh": true,
+            "probe": "pass",
+            "cloneAvailable": true,
+            "branchCount": 4,
+            "artifactCount": 2,
+            "replicaScope": "full",
+            "reasons": [
+              "behind"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "malformed",
+      "note": "Malformed evidence fails closed.",
+      "expectProof": "none",
+      "expectRisks": [
+        "no_verified_copy",
+        "quorum_not_met"
+      ],
+      "expectClasses": [],
+      "payload": {
+        "generatedAt": true,
+        "mirrors": "x",
+        "sourceOfTruth": []
+      },
+      "expect": {
+        "schema": "forkmesh-availability-proof-v1",
+        "generatedAt": 0,
+        "freshnessObjectiveMs": 600000,
+        "proof": "none",
+        "label": "Not proven",
+        "score": 75,
+        "level": "critical",
+        "levelLabel": "Critical",
+        "summary": "No copy has fresh signed evidence. 0 of 0 copies verified by 0 independent operators (target 2). Risk 75 of 100 (critical). Top risk: No verified copy.",
+        "quorum": {
+          "met": false,
+          "target": 2,
+          "operators": 0,
+          "copies": 0
+        },
+        "counts": {
+          "total": 0,
+          "active": 0,
+          "declared": 0,
+          "observed": 0,
+          "verified": 0,
+          "stale": 0,
+          "failing": 0
+        },
+        "diversity": {
+          "operators": 0,
+          "independentOperators": 0,
+          "regions": 0,
+          "regionsUndeclared": 0
+        },
+        "sourceOnline": null,
+        "probes": {
+          "probed": 0,
+          "passing": 0,
+          "failing": 0,
+          "stale": 0,
+          "lastProbeAt": null
+        },
+        "transports": {
+          "router": 0,
+          "directHttps": 0,
+          "smartHttp": 0
+        },
+        "coverage": {
+          "branches": {
+            "reference": null,
+            "complete": 0,
+            "unknown": 0
+          },
+          "artifacts": {
+            "reference": null,
+            "complete": 0,
+            "unknown": 0
+          }
+        },
+        "risks": [
+          {
+            "code": "no_verified_copy",
+            "severity": "critical",
+            "weight": 50,
+            "title": "No verified copy",
+            "detail": "No copy has a fresh signed endpoint receipt or a passing clone probe, so nothing proves the repository can be served.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask a node to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#no_verified_copy"
+            }
+          },
+          {
+            "code": "quorum_not_met",
+            "severity": "high",
+            "weight": 25,
+            "title": "Below trusted quorum",
+            "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+            "action": {
+              "kind": "request-mirror",
+              "label": "Ask another operator to mirror this repository",
+              "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+            }
+          }
+        ],
+        "copies": []
+      }
+    }
+  ],
+  "sequences": [
+    {
+      "id": "mirror-outage-recovers",
+      "steps": [
+        {
+          "expectProof": "quorum",
+          "expectRisks": [],
+          "expectClasses": [
+            "verified",
+            "verified"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800000000000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1799999880000,
+                "lastSeen": 1799999940000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1799999940000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799996400000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1799999880000,
+                "lastSeen": 1799999940000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1799999940000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799996400000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "online",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800000000000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "quorum",
+            "label": "Quorum proven",
+            "score": 0,
+            "level": "low",
+            "levelLabel": "Low",
+            "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 0 of 100 (low).",
+            "quorum": {
+              "met": true,
+              "target": 2,
+              "operators": 2,
+              "copies": 2
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 2,
+              "stale": 0,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 2,
+              "independentOperators": 1,
+              "regions": 2,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": true,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1799996400000
+            },
+            "transports": {
+              "router": 2,
+              "directHttps": 2,
+              "smartHttp": 2
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 2,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 2,
+                "unknown": 0
+              }
+            },
+            "risks": [],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1799999940000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "verified",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1799999940000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              }
+            ]
+          }
+        },
+        {
+          "expectProof": "partial",
+          "expectRisks": [
+            "quorum_not_met",
+            "stale_copy"
+          ],
+          "expectClasses": [
+            "verified",
+            "stale"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800001800000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800001680000,
+                "lastSeen": 1800001740000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800001740000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799998200000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "offline",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": false,
+                "lastSync": 1800001680000,
+                "lastSeen": null,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": false,
+                "endpointHealthy": false,
+                "endpointIntegrity": "unknown",
+                "checkedAt": 1800000000000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799996400000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "online",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800001800000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "partial",
+            "label": "Below quorum",
+            "score": 30,
+            "level": "high",
+            "levelLabel": "High",
+            "summary": "Verified, but not by enough independent operators. 1 of 2 copies verified by 1 independent operator (target 2). Risk 30 of 100 (high). Top risk: Below trusted quorum.",
+            "quorum": {
+              "met": false,
+              "target": 2,
+              "operators": 1,
+              "copies": 1
+            },
+            "counts": {
+              "total": 2,
+              "active": 1,
+              "declared": 0,
+              "observed": 0,
+              "verified": 1,
+              "stale": 1,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 1,
+              "independentOperators": 0,
+              "regions": 1,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": true,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1799998200000
+            },
+            "transports": {
+              "router": 1,
+              "directHttps": 1,
+              "smartHttp": 1
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 1,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 1,
+                "unknown": 0
+              }
+            },
+            "risks": [
+              {
+                "code": "quorum_not_met",
+                "severity": "high",
+                "weight": 25,
+                "title": "Below trusted quorum",
+                "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+                "action": {
+                  "kind": "request-mirror",
+                  "label": "Ask another operator to mirror this repository",
+                  "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+                }
+              },
+              {
+                "code": "stale_copy",
+                "severity": "low",
+                "weight": 5,
+                "title": "A copy has stale evidence",
+                "detail": "At least one copy is offline, behind, or has no evidence newer than the freshness objective.",
+                "action": {
+                  "kind": "resync-mirror",
+                  "label": "Bring the stale mirror back online",
+                  "href": "https://forkmesh.com/docs/availability-proof/#stale_copy"
+                }
+              }
+            ],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1800001740000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "stale",
+                "operator": 2,
+                "region": "us-east",
+                "online": false,
+                "observedAt": 1800000000000,
+                "evidenceAgeMs": 1800000,
+                "receiptFresh": false,
+                "probe": "pass",
+                "cloneAvailable": false,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": [
+                  "offline",
+                  "evidence_expired"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "expectProof": "quorum",
+          "expectRisks": [],
+          "expectClasses": [
+            "verified",
+            "verified"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800003600000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800003480000,
+                "lastSeen": 1800003540000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800003540000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1800000000000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800003480000,
+                "lastSeen": 1800003540000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800003540000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1800000000000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "online",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800003600000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "quorum",
+            "label": "Quorum proven",
+            "score": 0,
+            "level": "low",
+            "levelLabel": "Low",
+            "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 0 of 100 (low).",
+            "quorum": {
+              "met": true,
+              "target": 2,
+              "operators": 2,
+              "copies": 2
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 2,
+              "stale": 0,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 2,
+              "independentOperators": 1,
+              "regions": 2,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": true,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1800000000000
+            },
+            "transports": {
+              "router": 2,
+              "directHttps": 2,
+              "smartHttp": 2
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 2,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 2,
+                "unknown": 0
+              }
+            },
+            "risks": [],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1800003540000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "verified",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1800003540000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "source-host-outage-recovers",
+      "steps": [
+        {
+          "expectProof": "quorum",
+          "expectRisks": [],
+          "expectClasses": [
+            "verified",
+            "verified"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800000000000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1799999880000,
+                "lastSeen": 1799999940000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1799999940000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799996400000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1799999880000,
+                "lastSeen": 1799999940000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1799999940000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799996400000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "online",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800000000000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "quorum",
+            "label": "Quorum proven",
+            "score": 0,
+            "level": "low",
+            "levelLabel": "Low",
+            "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 0 of 100 (low).",
+            "quorum": {
+              "met": true,
+              "target": 2,
+              "operators": 2,
+              "copies": 2
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 2,
+              "stale": 0,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 2,
+              "independentOperators": 1,
+              "regions": 2,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": true,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1799996400000
+            },
+            "transports": {
+              "router": 2,
+              "directHttps": 2,
+              "smartHttp": 2
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 2,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 2,
+                "unknown": 0
+              }
+            },
+            "risks": [],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1799999940000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "verified",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1799999940000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              }
+            ]
+          }
+        },
+        {
+          "expectProof": "quorum",
+          "expectRisks": [
+            "source_offline"
+          ],
+          "expectClasses": [
+            "verified",
+            "verified"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800001800000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800001680000,
+                "lastSeen": 1800001740000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800001740000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799998200000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800001680000,
+                "lastSeen": 1800001740000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800001740000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799998200000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "offline",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800001800000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "quorum",
+            "label": "Quorum proven",
+            "score": 10,
+            "level": "moderate",
+            "levelLabel": "Moderate",
+            "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 10 of 100 (moderate). Top risk: Source is offline.",
+            "quorum": {
+              "met": true,
+              "target": 2,
+              "operators": 2,
+              "copies": 2
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 2,
+              "stale": 0,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 2,
+              "independentOperators": 1,
+              "regions": 2,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": false,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1799998200000
+            },
+            "transports": {
+              "router": 2,
+              "directHttps": 2,
+              "smartHttp": 2
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 2,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 2,
+                "unknown": 0
+              }
+            },
+            "risks": [
+              {
+                "code": "source_offline",
+                "severity": "medium",
+                "weight": 10,
+                "title": "Source is offline",
+                "detail": "The working-copy source is not online, so mirrors that fall behind cannot re-sync until it returns.",
+                "action": {
+                  "kind": "start-source",
+                  "label": "Start the source node",
+                  "href": "https://forkmesh.com/docs/availability-proof/#source_offline"
+                }
+              }
+            ],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1800001740000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "verified",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1800001740000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              }
+            ]
+          }
+        },
+        {
+          "expectProof": "partial",
+          "expectRisks": [
+            "quorum_not_met",
+            "source_offline",
+            "stale_copy"
+          ],
+          "expectClasses": [
+            "verified",
+            "stale"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800003600000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800003480000,
+                "lastSeen": 1800003540000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800003540000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1800000000000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": true,
+                "cloneAvailable": true,
+                "lastSync": 1800003480000,
+                "lastSeen": 1800003540000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800003540000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1800000000000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "offline",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800003600000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "partial",
+            "label": "Below quorum",
+            "score": 40,
+            "level": "high",
+            "levelLabel": "High",
+            "summary": "Verified, but not by enough independent operators. 1 of 2 copies verified by 1 independent operator (target 2). Risk 40 of 100 (high). Top risk: Below trusted quorum.",
+            "quorum": {
+              "met": false,
+              "target": 2,
+              "operators": 1,
+              "copies": 1
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 1,
+              "stale": 1,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 1,
+              "independentOperators": 0,
+              "regions": 1,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": false,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1800000000000
+            },
+            "transports": {
+              "router": 1,
+              "directHttps": 1,
+              "smartHttp": 1
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 1,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 1,
+                "unknown": 0
+              }
+            },
+            "risks": [
+              {
+                "code": "quorum_not_met",
+                "severity": "high",
+                "weight": 25,
+                "title": "Below trusted quorum",
+                "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+                "action": {
+                  "kind": "request-mirror",
+                  "label": "Ask another operator to mirror this repository",
+                  "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+                }
+              },
+              {
+                "code": "source_offline",
+                "severity": "medium",
+                "weight": 10,
+                "title": "Source is offline",
+                "detail": "The working-copy source is not online, so mirrors that fall behind cannot re-sync until it returns.",
+                "action": {
+                  "kind": "start-source",
+                  "label": "Start the source node",
+                  "href": "https://forkmesh.com/docs/availability-proof/#source_offline"
+                }
+              },
+              {
+                "code": "stale_copy",
+                "severity": "low",
+                "weight": 5,
+                "title": "A copy has stale evidence",
+                "detail": "At least one copy is offline, behind, or has no evidence newer than the freshness objective.",
+                "action": {
+                  "kind": "resync-mirror",
+                  "label": "Bring the stale mirror back online",
+                  "href": "https://forkmesh.com/docs/availability-proof/#stale_copy"
+                }
+              }
+            ],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1800003540000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "stale",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1800003540000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": [
+                  "behind"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "expectProof": "quorum",
+          "expectRisks": [],
+          "expectClasses": [
+            "verified",
+            "verified"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800005400000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800005280000,
+                "lastSeen": 1800005340000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800005340000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1800001800000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800005280000,
+                "lastSeen": 1800005340000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800005340000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1800001800000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "online",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800005400000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "quorum",
+            "label": "Quorum proven",
+            "score": 0,
+            "level": "low",
+            "levelLabel": "Low",
+            "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 0 of 100 (low).",
+            "quorum": {
+              "met": true,
+              "target": 2,
+              "operators": 2,
+              "copies": 2
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 2,
+              "stale": 0,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 2,
+              "independentOperators": 1,
+              "regions": 2,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": true,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1800001800000
+            },
+            "transports": {
+              "router": 2,
+              "directHttps": 2,
+              "smartHttp": 2
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 2,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 2,
+                "unknown": 0
+              }
+            },
+            "risks": [],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1800005340000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "verified",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1800005340000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "integrity-failure-recovers",
+      "steps": [
+        {
+          "expectProof": "quorum",
+          "expectRisks": [],
+          "expectClasses": [
+            "verified",
+            "verified"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800000000000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1799999880000,
+                "lastSeen": 1799999940000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1799999940000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799996400000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1799999880000,
+                "lastSeen": 1799999940000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1799999940000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799996400000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "online",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800000000000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "quorum",
+            "label": "Quorum proven",
+            "score": 0,
+            "level": "low",
+            "levelLabel": "Low",
+            "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 0 of 100 (low).",
+            "quorum": {
+              "met": true,
+              "target": 2,
+              "operators": 2,
+              "copies": 2
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 2,
+              "stale": 0,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 2,
+              "independentOperators": 1,
+              "regions": 2,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": true,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1799996400000
+            },
+            "transports": {
+              "router": 2,
+              "directHttps": 2,
+              "smartHttp": 2
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 2,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 2,
+                "unknown": 0
+              }
+            },
+            "risks": [],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1799999940000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "verified",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1799999940000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              }
+            ]
+          }
+        },
+        {
+          "expectProof": "partial",
+          "expectRisks": [
+            "quorum_not_met",
+            "failing_copy"
+          ],
+          "expectClasses": [
+            "verified",
+            "failing"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800001800000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800001680000,
+                "lastSeen": 1800001740000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800001740000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799998200000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "rejected",
+                "behind": false,
+                "cloneAvailable": false,
+                "lastSync": 1800001680000,
+                "lastSeen": 1800001740000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800001740000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1799998200000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "online",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800001800000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "partial",
+            "label": "Below quorum",
+            "score": 35,
+            "level": "high",
+            "levelLabel": "High",
+            "summary": "Verified, but not by enough independent operators. 1 of 2 copies verified by 1 independent operator (target 2). Risk 35 of 100 (high). Top risk: Below trusted quorum.",
+            "quorum": {
+              "met": false,
+              "target": 2,
+              "operators": 1,
+              "copies": 1
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 1,
+              "stale": 0,
+              "failing": 1
+            },
+            "diversity": {
+              "operators": 1,
+              "independentOperators": 0,
+              "regions": 1,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": true,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1799998200000
+            },
+            "transports": {
+              "router": 1,
+              "directHttps": 1,
+              "smartHttp": 1
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 1,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 1,
+                "unknown": 0
+              }
+            },
+            "risks": [
+              {
+                "code": "quorum_not_met",
+                "severity": "high",
+                "weight": 25,
+                "title": "Below trusted quorum",
+                "detail": "Fewer independent operators than the target hold the same verified state; losing one operator could lose the repository.",
+                "action": {
+                  "kind": "request-mirror",
+                  "label": "Ask another operator to mirror this repository",
+                  "href": "https://forkmesh.com/docs/availability-proof/#quorum_not_met"
+                }
+              },
+              {
+                "code": "failing_copy",
+                "severity": "medium",
+                "weight": 10,
+                "title": "A copy is failing",
+                "detail": "At least one copy was rejected by the integrity gate, blocked for abuse, or failed its latest clone probe.",
+                "action": {
+                  "kind": "resync-mirror",
+                  "label": "Re-sync the failing mirror, then re-check it",
+                  "href": "https://forkmesh.com/docs/availability-proof/#failing_copy"
+                }
+              }
+            ],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1800001740000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "failing",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1800001740000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": false,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": [
+                  "integrity_rejected"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "expectProof": "quorum",
+          "expectRisks": [],
+          "expectClasses": [
+            "verified",
+            "verified"
+          ],
+          "payload": {
+            "ok": true,
+            "owner": "alice",
+            "repo": "secret-roadmap",
+            "generatedAt": 1800003600000,
+            "mirrors": [
+              {
+                "node": "mirror-a",
+                "ownerUser": "account-alpha-private",
+                "owner": "mirror-a",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800003480000,
+                "lastSeen": 1800003540000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "eu-west",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800003540000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1800000000000,
+                "directReason": "ok"
+              },
+              {
+                "node": "mirror-b",
+                "ownerUser": "account-bravo-private",
+                "owner": "mirror-b",
+                "source": "remote-clone",
+                "status": "online",
+                "integrity": "ok",
+                "behind": false,
+                "cloneAvailable": true,
+                "lastSync": 1800003480000,
+                "lastSeen": 1800003540000,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "region": "us-east",
+                "endpoint": "https://203.0.113.7:8443",
+                "mirrorUrl": "https://git.private.example/alice/secret-roadmap.git",
+                "operations": [
+                  "tree",
+                  "blob",
+                  "git-upload-pack"
+                ],
+                "abuseBlocked": false,
+                "endpointFresh": true,
+                "endpointHealthy": true,
+                "endpointIntegrity": "ok",
+                "checkedAt": 1800003540000,
+                "directVerified": true,
+                "directReachable": true,
+                "directIntegrity": "ok",
+                "directRefsSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "directCheckedAt": 1800000000000,
+                "directReason": "ok"
+              }
+            ],
+            "sourceOfTruth": {
+              "owner": "alice",
+              "repo": "secret-roadmap",
+              "kind": "working-copy",
+              "isSourceOfTruth": true,
+              "status": "online",
+              "branchCount": 4,
+              "artifactCount": 2,
+              "ownerUser": "account-alpha-private"
+            }
+          },
+          "expect": {
+            "schema": "forkmesh-availability-proof-v1",
+            "generatedAt": 1800003600000,
+            "freshnessObjectiveMs": 600000,
+            "proof": "quorum",
+            "label": "Quorum proven",
+            "score": 0,
+            "level": "low",
+            "levelLabel": "Low",
+            "summary": "Independent operators hold the same verified copy. 2 of 2 copies verified by 2 independent operators (target 2). Risk 0 of 100 (low).",
+            "quorum": {
+              "met": true,
+              "target": 2,
+              "operators": 2,
+              "copies": 2
+            },
+            "counts": {
+              "total": 2,
+              "active": 2,
+              "declared": 0,
+              "observed": 0,
+              "verified": 2,
+              "stale": 0,
+              "failing": 0
+            },
+            "diversity": {
+              "operators": 2,
+              "independentOperators": 1,
+              "regions": 2,
+              "regionsUndeclared": 0
+            },
+            "sourceOnline": true,
+            "probes": {
+              "probed": 2,
+              "passing": 2,
+              "failing": 0,
+              "stale": 0,
+              "lastProbeAt": 1800000000000
+            },
+            "transports": {
+              "router": 2,
+              "directHttps": 2,
+              "smartHttp": 2
+            },
+            "coverage": {
+              "branches": {
+                "reference": 4,
+                "complete": 2,
+                "unknown": 0
+              },
+              "artifacts": {
+                "reference": 2,
+                "complete": 2,
+                "unknown": 0
+              }
+            },
+            "risks": [],
+            "copies": [
+              {
+                "node": "mirror-a",
+                "class": "verified",
+                "operator": 1,
+                "region": "eu-west",
+                "online": true,
+                "observedAt": 1800003540000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              },
+              {
+                "node": "mirror-b",
+                "class": "verified",
+                "operator": 2,
+                "region": "us-east",
+                "online": true,
+                "observedAt": 1800003540000,
+                "evidenceAgeMs": 60000,
+                "receiptFresh": true,
+                "probe": "pass",
+                "cloneAvailable": true,
+                "branchCount": 4,
+                "artifactCount": 2,
+                "replicaScope": "full",
+                "reasons": []
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

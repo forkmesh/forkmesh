@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Assign any issue to an agent" %}
+{% set slug = "assign-any-issue-to-an-agent" %}
+{% set image = "/assets/blog/features/assign-any-issue-to-an-agent.webp" %}
+{% set description = "From the issue detail, the quick-add box, or even the website&#x27;s new-issue form: one click sends the issue to Claude Code or Codex, which works the issue and opens a PR when it&#x27;s done." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">AI agents</p>
+            <h1>Assign any issue to an agent</h1>
+            <p class="lede">From the issue detail, the quick-add box, or even the website's new-issue form: one click sends the issue to Claude Code or Codex, which works the issue and opens a PR when it's done.</p>
+            <div class="meta"><span class="pill">Feature 30 of 72</span><span>Claude Code · Codex</span><span>AI agents, built in</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/assign-any-issue-to-an-agent.webp" alt="Abstract ForkMesh artwork for Assign any issue to an agent">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Assign any issue to an agent gives ForkMesh a concrete mechanism for turning an issue into an agent task with one supervised handoff. From the issue detail, the quick-add box, or even the website's new-issue form: one click sends the issue to Claude Code or Codex, which works the issue and opens a PR when it's done.</p>
+          <p>AI coding only helps when the agent can work in a real repository without trampling human state or hiding what it did. In ForkMesh, assign any issue to an agent addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles assign any issue to an agent through the same split it uses across the product: ForkMesh runs agents beside the repository, capturing transcripts, branches, diffs, prompts, usage, questions, and handoffs in the desktop app.</p>
+          <p>The behavior is intentionally narrow: From the issue detail, the quick-add box, or even the website's new-issue form: one click sends the issue to Claude Code or Codex, which works the issue and opens a PR when it's done. Humans keep control of instructions, answers, review, and merge decisions.</p>
+          <h2>Where it fits</h2>
+          <p>Use assign any issue to an agent when agent work should be reviewable, resumable, and connected to the same repo UI humans use.</p>
+          <p>It pairs with the rest of AI agents, built in because Assign any issue to an agent keeps turning an issue into an agent task with one supervised handoff connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/merge-from-anywhere/">← Merge from anywhere</a>
+          <a href="/blog/dedicated-agent-worktrees/">Dedicated agent worktrees →</a>
+        </nav>
+{% endblock %}

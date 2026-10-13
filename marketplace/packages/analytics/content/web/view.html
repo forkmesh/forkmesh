@@ -1,0 +1,679 @@
+          <style>
+            /* Analytics package styles. Everything is scoped under the view and
+               drawn from the shell's theme variables, so both themes work. The
+               categorical palette is a fixed order (never cycled); each mode has
+               its own steps, checked against the card surface of that mode. */
+            [data-view="analytics"] {
+              --an-s1: #3987e5; --an-s2: #d95926; --an-s3: #199e70; --an-s4: #c98500;
+              --an-s5: #d55181; --an-s6: #008300; --an-s7: #9085e9; --an-s8: #e66767;
+              --an-seq-rgb: 57 135 229;
+              --an-good: #3fb950; --an-warn: #d29922; --an-bad: #f85149;
+              --an-fg: rgb(var(--dashboard-foreground-rgb));
+              --an-muted: rgb(var(--dashboard-muted-foreground-rgb));
+              --an-line: rgb(var(--dashboard-border-rgb));
+              --an-line-soft: rgb(var(--dashboard-border-rgb) / .55);
+              --an-card: rgb(var(--dashboard-card-rgb));
+              --an-raised: rgb(var(--dashboard-subtle-rgb));
+              --an-bg: rgb(var(--dashboard-background-rgb));
+              --an-accent: rgb(var(--dashboard-accent-rgb));
+              --an-danger: rgb(var(--dashboard-destructive-rgb));
+              --an-mono: "ForkMesh Dashboard Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+            }
+            [data-dashboard-theme="light"] [data-view="analytics"] {
+              --an-s1: #2a78d6; --an-s2: #eb6834; --an-s3: #1baf7a; --an-s4: #eda100;
+              --an-s5: #e87ba4; --an-s6: #008300; --an-s7: #4a3aa7; --an-s8: #e34948;
+              --an-seq-rgb: 42 120 214;
+              --an-good: #1a7f37; --an-warn: #9a6700; --an-bad: #cf222e;
+              --an-muted: #59636e;
+            }
+            [data-view="analytics"] [hidden] { display: none !important; }
+            [data-view="analytics"] *, [data-view="analytics"] *::before, [data-view="analytics"] *::after { box-sizing: border-box; }
+            [data-view="analytics"] .an-wrap { display: grid; gap: .75rem; padding: .6rem; min-width: 0; }
+            @media (min-width: 640px) { [data-view="analytics"] .an-wrap { padding: 1rem 1.1rem; } }
+            .an-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+            .an-head h1 { margin: 0; font-size: 1.125rem; font-weight: 600; color: var(--an-fg); }
+            .an-sub { margin: .2rem 0 0; font-size: .8125rem; color: var(--an-muted); }
+            .an-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
+            .an-input, .an-select, .an-textarea { border: 1px solid var(--an-line); border-radius: 6px; background: var(--an-bg); color: var(--an-fg); padding: .4rem .6rem; font-size: .8125rem; min-width: 0; max-width: 100%; }
+            .an-textarea { width: 100%; font-family: var(--an-mono); font-size: .75rem; line-height: 1.5; }
+            .an-input:focus-visible, .an-select:focus-visible, .an-textarea:focus-visible, .an-btn:focus-visible, .an-tab:focus-visible, .an-link:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 1px; }
+            .an-btn { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; border: 1px solid var(--an-line); border-radius: 6px; background: var(--an-card); color: var(--an-fg); padding: .4rem .7rem; font-size: .78rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+            .an-btn:hover { background: var(--an-raised); }
+            .an-btn:disabled { opacity: .5; cursor: default; }
+            .an-btn-primary { background: rgb(var(--dashboard-primary-rgb)); border-color: transparent; color: rgb(var(--dashboard-primary-foreground-rgb)); }
+            .an-btn-primary:hover { background: rgb(var(--dashboard-primary-rgb)); filter: brightness(1.08); }
+            .an-btn-danger { border-color: var(--an-danger); color: var(--an-danger); }
+            .an-btn-small { padding: .2rem .5rem; font-size: .72rem; }
+            .an-btn svg, .an-tab svg { width: 14px; height: 14px; flex: none; }
+            .an-link { border: 0; background: none; padding: 0; color: var(--dashboard-link, var(--an-accent)); font: inherit; text-align: left; cursor: pointer; min-height: 0; }
+            .an-link:hover { text-decoration: underline; }
+            .an-check { display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; color: var(--an-fg); }
+            .an-check input { min-height: 0; width: 1rem; height: 1rem; }
+            .an-banner { border: 1px solid var(--an-line); border-radius: 6px; background: var(--an-raised); padding: .5rem .75rem; font-size: .8125rem; color: var(--an-fg); }
+            .an-banner-error { border-color: var(--an-danger); color: var(--an-danger); }
+            .an-banner-notice { border-color: rgb(var(--dashboard-primary-rgb)); }
+            .an-banner-quiet { border-style: dashed; color: var(--an-muted); font-size: .75rem; }
+            .an-card { border: 1px solid var(--an-line); border-radius: 8px; background: var(--an-card); min-width: 0; }
+            .an-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem .5rem; padding: .4rem .7rem; min-height: 2.25rem; border-bottom: 1px solid var(--an-line-soft); }
+            .an-card-head h2, .an-card-head h3 { margin: 0; font-size: .8rem; font-weight: 600; color: var(--an-fg); }
+            .an-pad { padding: .6rem .7rem; }
+            .an-center { padding: 2rem 1rem; text-align: center; }
+            .an-center h2 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--an-fg); }
+            .an-hint { font-size: .75rem; color: var(--an-muted); }
+            .an-empty { padding: 1rem .75rem; text-align: center; font-size: .8125rem; color: var(--an-muted); }
+            .an-stack { display: grid; gap: .75rem; min-width: 0; }
+            .an-stack-tight { display: grid; gap: .5rem; min-width: 0; }
+            .an-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
+            .an-row-end { justify-content: flex-end; }
+            .an-grow { flex: 1 1 10rem; min-width: 0; }
+            .an-mono { font-family: var(--an-mono); font-size: .75rem; }
+            .an-break { overflow-wrap: anywhere; word-break: break-word; }
+
+            .an-tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--an-line); scrollbar-width: thin; }
+            .an-tab { display: inline-flex; align-items: center; gap: .35rem; border: 0; border-bottom: 2px solid transparent; background: none; padding: .4rem .6rem; white-space: nowrap; font-size: .8125rem; color: var(--an-muted); cursor: pointer; }
+            .an-tab:hover { color: var(--an-fg); }
+            .an-tab[aria-selected="true"] { color: var(--an-fg); font-weight: 600; border-bottom-color: rgb(var(--dashboard-primary-rgb)); }
+            .an-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--an-line); border-radius: 8px; padding: 2px; background: var(--an-raised); gap: 2px; max-width: 100%; }
+            .an-seg button { border: 0; background: none; padding: .15rem .5rem; border-radius: 6px; font-size: .75rem; font-weight: 500; color: var(--an-muted); cursor: pointer; }
+            .an-seg button[aria-selected="true"], .an-seg button[aria-pressed="true"] { background: var(--an-card); color: var(--an-fg); box-shadow: 0 0 0 1px var(--an-line); font-weight: 600; }
+
+            .an-kpis { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+            .an-kpi { border: 1px solid var(--an-line); border-radius: 8px; background: var(--an-card); padding: .5rem .65rem .45rem; min-width: 0; }
+            .an-kpi-label { font-size: .7rem; color: var(--an-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .an-kpi-value { margin-top: .05rem; font-size: 1.2rem; font-weight: 600; line-height: 1.2; color: var(--an-fg); }
+            .an-kpi-delta { margin-top: .1rem; font-size: .68rem; color: var(--an-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .an-delta-good { color: var(--an-good); font-weight: 600; }
+            .an-delta-bad { color: var(--an-bad); font-weight: 600; }
+            .an-grid-2 { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+            .an-grid-3 { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); }
+            .an-split { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
+            @media (min-width: 1000px) { .an-split { grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); } .an-grid-3.an-grid-fixed { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+            .an-form-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); }
+            .an-field { display: grid; gap: .25rem; font-size: .75rem; color: var(--an-muted); min-width: 0; align-content: start; }
+            .an-field > .an-input, .an-field > .an-select { width: 100%; }
+            .an-field-wide { grid-column: 1 / -1; }
+            .an-fieldset { border: 1px solid var(--an-line-soft); border-radius: 8px; padding: .75rem; margin: 0; min-width: 0; display: grid; gap: .6rem; }
+            .an-fieldset > legend { padding: 0 .35rem; font-size: .75rem; font-weight: 600; color: var(--an-fg); }
+
+            .an-table-wrap { overflow-x: auto; }
+            .an-table { width: 100%; border-collapse: collapse; font-size: .8125rem; color: var(--an-fg); }
+            .an-table th { padding: .3rem .6rem; border-bottom: 1px solid var(--an-line-soft); text-align: left; white-space: nowrap; font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--an-muted); }
+            .an-table td { padding: .3rem .6rem; border-bottom: 1px solid var(--an-line-soft); vertical-align: top; }
+            .an-table tbody tr:last-child td { border-bottom: 0; }
+            .an-table tbody th { text-transform: none; letter-spacing: 0; font-size: .78rem; font-weight: 500; color: var(--an-fg); border-bottom: 1px solid var(--an-line-soft); white-space: normal; }
+            .an-table .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+            .an-table .an-clip { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .an-bar-cell { position: relative; }
+            .an-bar-cell > span { position: relative; }
+            .an-bar-cell::before { content: ""; position: absolute; inset: 3px auto 3px 0; width: var(--an-share, 0%); border-radius: 3px; background: rgb(var(--an-seq-rgb) / .16); }
+            .an-badge { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--an-line); border-radius: 999px; padding: .05rem .5rem; font-size: .7rem; color: var(--an-fg); white-space: nowrap; }
+            .an-badge-good { border-color: var(--an-good); }
+            .an-badge-bad { border-color: var(--an-bad); }
+            .an-badge-warn { border-color: var(--an-warn); }
+            .an-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--an-muted); flex: none; }
+            .an-dot-good { background: var(--an-good); } .an-dot-warn { background: var(--an-warn); } .an-dot-bad { background: var(--an-bad); }
+            .an-pre { margin: 0; border: 1px solid var(--an-line-soft); border-radius: 6px; background: var(--an-raised); padding: .6rem .75rem; font-family: var(--an-mono); font-size: .72rem; line-height: 1.55; color: var(--an-fg); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; }
+            .an-kv { display: grid; grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr); gap: .25rem .75rem; font-size: .78rem; margin: 0; }
+            .an-kv dt { color: var(--an-muted); overflow-wrap: anywhere; }
+            .an-kv dd { margin: 0; color: var(--an-fg); overflow-wrap: anywhere; }
+
+            /* Charts */
+            .an-chart { position: relative; min-width: 0; }
+            .an-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+            .an-chart text { font-size: 11px; fill: var(--an-muted); font-variant-numeric: tabular-nums; }
+            .an-chart .an-grid-line { stroke: var(--an-line-soft); stroke-width: 1; }
+            .an-chart .an-axis-line { stroke: var(--an-line); stroke-width: 1; }
+            .an-chart .an-cross { stroke: var(--an-muted); stroke-width: 1; }
+            .an-chart .an-note-line { stroke: var(--an-muted); stroke-width: 1; stroke-dasharray: 2 3; }
+            .an-chart .an-note-flag { fill: var(--an-muted); }
+            .an-tip { position: absolute; z-index: 5; pointer-events: none; min-width: 9rem; max-width: 18rem; border: 1px solid var(--an-line); border-radius: 6px; background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 8px 24px -10px rgb(0 0 0 / .5); padding: .45rem .6rem; font-size: .72rem; color: var(--an-fg); }
+            .an-tip-title { margin-bottom: .25rem; color: var(--an-muted); }
+            .an-tip-row { display: flex; align-items: center; gap: .4rem; }
+            .an-tip-row b { margin-left: auto; padding-left: .75rem; font-variant-numeric: tabular-nums; }
+            .an-tip-key { width: 12px; height: 0; border-top: 2px solid var(--an-muted); flex: none; }
+            .an-tip-key-dashed { border-top-style: dashed; }
+            .an-tip-note { margin-top: .3rem; padding-top: .3rem; border-top: 1px solid var(--an-line-soft); color: var(--an-muted); overflow-wrap: anywhere; }
+            .an-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; margin-top: .5rem; font-size: .75rem; color: var(--an-fg); }
+            .an-legend-item { display: inline-flex; align-items: center; gap: .4rem; min-width: 0; }
+            .an-legend-item span:last-child { color: var(--an-muted); font-variant-numeric: tabular-nums; }
+            .an-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+            .an-swatch-line { height: 0; width: 14px; border-radius: 0; border-top: 2px solid; background: none !important; }
+            .an-swatch-dashed { border-top-style: dashed; }
+            .an-spark { display: block; width: 100%; height: 22px; margin-top: .3rem; }
+            .an-spark-line { fill: none; stroke: var(--an-s1); stroke-width: 1.5; stroke-linejoin: round; }
+            .an-spark-fill { fill: rgb(var(--an-seq-rgb) / .1); }
+            .an-scroll { max-height: 16.5rem; overflow: auto; }
+            .an-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--an-card); }
+            .an-split-bar { display: flex; gap: 2px; height: 12px; border-radius: 4px; overflow: hidden; }
+            .an-split-bar > span { min-width: 2px; }
+            .an-share-list { display: grid; gap: .1rem; margin-top: .55rem; }
+            .an-share-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) max-content 3.2rem; gap: .5rem; align-items: center; padding: .15rem 0; font-size: .78rem; color: var(--an-fg); }
+            .an-share-row b { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+            .an-share-row .an-hint { text-align: right; font-variant-numeric: tabular-nums; }
+            .an-big-pair { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-bottom: .6rem; }
+            .an-big-pair > div { display: grid; gap: .05rem; }
+            .an-big-pair b { font-size: 1.2rem; font-weight: 600; color: var(--an-fg); font-variant-numeric: tabular-nums; }
+            .an-hours { display: grid; grid-template-columns: 2rem repeat(24, minmax(0, 1fr)); gap: 2px; font-size: .65rem; color: var(--an-muted); }
+            .an-hours-day { align-self: center; }
+            .an-hours-cell { height: 1.05rem; border-radius: 2px; background: rgb(var(--an-seq-rgb) / var(--an-heat, 0)); box-shadow: inset 0 0 0 1px var(--an-line-soft); }
+            .an-hours-cell:hover { box-shadow: inset 0 0 0 1px var(--an-fg); }
+            .an-hours-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem .75rem; margin-top: .45rem; font-size: .7rem; color: var(--an-muted); }
+            .an-hours-ramp { display: inline-block; width: 5rem; height: .5rem; margin: 0 .3rem; border-radius: 2px; vertical-align: middle; background: linear-gradient(90deg, rgb(var(--an-seq-rgb) / .12), rgb(var(--an-seq-rgb) / 1)); }
+            .an-scroll-meter { display: inline-block; width: 3rem; height: 6px; margin-right: .35rem; border-radius: 3px; vertical-align: middle; background: rgb(var(--an-seq-rgb) / .16); overflow: hidden; }
+            .an-scroll-meter > span { display: block; height: 100%; background: var(--an-s1); }
+            .an-number-tiles { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
+
+            /* Funnel */
+            .an-funnel { display: grid; gap: .9rem; }
+            .an-funnel-step { display: grid; gap: .3rem; }
+            .an-funnel-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem .75rem; font-size: .8125rem; color: var(--an-fg); }
+            .an-funnel-track { position: relative; height: 22px; border-radius: 4px; background: rgb(var(--an-seq-rgb) / .12); overflow: hidden; }
+            .an-funnel-fill { position: absolute; inset: 0 auto 0 0; border-radius: 0 4px 4px 0; background: var(--an-s1); min-width: 2px; }
+            .an-funnel-meta { display: flex; flex-wrap: wrap; gap: .2rem 1rem; font-size: .72rem; color: var(--an-muted); }
+
+            /* Retention heat table */
+            .an-heat td { text-align: center; font-variant-numeric: tabular-nums; min-width: 3.4rem; border-bottom: 2px solid var(--an-card); border-right: 2px solid var(--an-card); background: rgb(var(--an-seq-rgb) / var(--an-heat, 0)); }
+
+            /* Paths */
+            .an-paths svg text { font-size: 11px; fill: var(--an-fg); }
+            .an-paths .an-path-link { fill: none; stroke: var(--an-s1); stroke-opacity: .28; }
+            .an-paths .an-path-link:hover { stroke-opacity: .6; }
+            .an-paths .an-path-node { fill: var(--an-s1); }
+            .an-paths .an-path-step { fill: var(--an-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+
+            /* Builder */
+            .an-builder { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+            @media (min-width: 1100px) { .an-builder { grid-template-columns: minmax(19rem, 24rem) minmax(0, 1fr); align-items: start; } }
+            .an-series { border: 1px solid var(--an-line-soft); border-radius: 8px; padding: .6rem; display: grid; gap: .5rem; background: var(--an-raised); }
+            .an-series-head { display: flex; align-items: center; gap: .5rem; font-size: .72rem; font-weight: 600; color: var(--an-muted); }
+            .an-series-head .an-swatch { width: 12px; height: 12px; }
+            .an-filter { display: grid; gap: .35rem; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); align-items: center; border-left: 2px solid var(--an-line); padding-left: .5rem; }
+            .an-filter .an-input, .an-filter .an-select { width: 100%; }
+
+            /* Dashboards */
+            .an-tiles { display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .an-tile { grid-column: span var(--an-tile-span, 2); }
+            @media (max-width: 1099px) { .an-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .an-tile { grid-column: span min(var(--an-tile-span, 2), 2); } }
+            @media (max-width: 699px) { .an-tiles { grid-template-columns: minmax(0, 1fr); } .an-tile { grid-column: auto; } }
+
+            /* Replay */
+            .an-replay { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+            @media (min-width: 1100px) { .an-replay { grid-template-columns: minmax(0, 1fr) 20rem; align-items: start; } }
+            .an-stage { position: relative; min-height: 14rem; border: 1px solid var(--an-line); border-radius: 8px; background: var(--an-raised); overflow: hidden; }
+            .an-stage-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; text-align: center; font-size: .8125rem; color: var(--an-muted); }
+            .an-scrub { position: relative; height: 28px; }
+            .an-scrub-track { position: absolute; left: 0; right: 0; top: 11px; height: 6px; border-radius: 3px; background: var(--an-line); overflow: hidden; }
+            .an-scrub-idle { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--an-card) 0 3px, transparent 3px 6px); }
+            .an-scrub-mark { position: absolute; top: 4px; width: 3px; height: 20px; margin-left: -1px; border-radius: 1px; background: var(--an-s1); pointer-events: none; }
+            .an-scrub-mark[data-kind="error"] { background: var(--an-bad); top: 0; height: 28px; }
+            .an-scrub-mark[data-kind="click"] { background: var(--an-s4); }
+            .an-scrub-mark[data-kind="navigation"], .an-scrub-mark[data-kind="pageview"] { background: var(--an-s3); }
+            .an-scrub input[type="range"] { position: absolute; inset: 0; width: 100%; height: 28px; min-height: 0; margin: 0; background: transparent; accent-color: rgb(var(--dashboard-primary-rgb)); }
+            .an-event-list { max-height: 30rem; overflow-y: auto; display: grid; }
+            .an-event-item { display: grid; gap: .1rem; border: 0; border-bottom: 1px solid var(--an-line-soft); background: none; padding: .45rem .9rem; text-align: left; font-size: .78rem; color: var(--an-fg); cursor: pointer; }
+            .an-event-item:hover { background: var(--an-raised); }
+            .an-event-item > .an-clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+            /* Heatmap */
+            .an-heatmap-scroll { max-height: 70vh; overflow: auto; border: 1px solid var(--an-line); border-radius: 8px; background: var(--an-raised); padding: .75rem; }
+            .an-heatmap-scroll canvas { display: block; margin: 0 auto; max-width: 100%; border: 1px solid var(--an-line); background: var(--an-card); }
+            .an-ramp { display: inline-block; width: 8rem; height: .6rem; border-radius: 3px; border: 1px solid var(--an-line-soft); vertical-align: middle; }
+
+            /* Meter and usage bars */
+            .an-meter { height: 8px; border-radius: 4px; background: rgb(var(--an-seq-rgb) / .16); overflow: hidden; }
+            .an-meter > span { display: block; height: 100%; border-radius: 4px; background: var(--an-s1); }
+            .an-meter[data-level="warn"] > span { background: var(--an-warn); }
+            .an-meter[data-level="bad"] > span { background: var(--an-bad); }
+            .an-hbar { display: grid; grid-template-columns: minmax(5rem, 14rem) minmax(0, 1fr) max-content; gap: .6rem; align-items: center; font-size: .78rem; color: var(--an-fg); }
+            .an-hbar-track { height: 14px; border-radius: 0 4px 4px 0; background: rgb(var(--an-seq-rgb) / .1); }
+            .an-hbar-track > span { display: block; height: 100%; border-radius: 0 4px 4px 0; background: var(--an-s1); min-width: 2px; }
+            .an-hbar b { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+            /* Dialogs */
+            .an-dialog { width: calc(100% - 1.5rem); max-width: 44rem; max-height: calc(100dvh - 2rem); border: 1px solid var(--an-line); border-radius: 10px; background: var(--an-card); color: var(--an-fg); padding: 0; box-shadow: 0 24px 60px -20px rgb(0 0 0 / .6); }
+            .an-dialog::backdrop { background: rgb(var(--dashboard-background-rgb) / .8); }
+            .an-dialog-narrow { max-width: 30rem; }
+            .an-dialog form, .an-dialog-body { display: grid; gap: 1rem; padding: 1.1rem; }
+            .an-dialog h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+            .an-dialog-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+            .an-drawer { margin: 0 0 0 auto; width: min(100%, 38rem); max-width: none; height: 100dvh; max-height: none; border-radius: 0; border-width: 0 0 0 1px; overflow-y: auto; }
+          </style>
+
+          <section data-view="analytics" class="view active h-full overflow-y-auto">
+            <div class="an-wrap">
+              <div class="an-head">
+                <div>
+                  <h1>Analytics</h1>
+                  <p class="an-sub">First-party product analytics. Nothing leaves this instance.</p>
+                </div>
+                <div class="an-controls">
+                  <select data-analytics-organization aria-label="Organization" class="an-select"></select>
+                  <select data-analytics-project data-analytics-requires-project aria-label="Project" class="an-select" hidden></select>
+                  <button data-analytics-new-project type="button" class="an-btn" hidden><i data-lucide="plus"></i>New project</button>
+                  <select data-analytics-range data-analytics-requires-project aria-label="Date range" class="an-select" hidden>
+                    <option value="24h">Last 24 hours</option>
+                    <option value="7d" selected>Last 7 days</option>
+                    <option value="14d">Last 14 days</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="90d">Last 90 days</option>
+                    <option value="custom">Custom range…</option>
+                  </select>
+                  <span data-analytics-custom-range class="an-row" hidden>
+                    <label class="an-hint">From <input data-analytics-from type="date" class="an-input" /></label>
+                    <label class="an-hint">To <input data-analytics-to type="date" class="an-input" /></label>
+                  </span>
+                  <label data-analytics-requires-project class="an-check" hidden><input data-analytics-filter-test type="checkbox" /> Filter test accounts</label>
+                  <button data-analytics-refresh data-analytics-requires-project type="button" class="an-btn" hidden><i data-lucide="refresh-cw"></i>Refresh</button>
+                </div>
+              </div>
+
+              <div data-analytics-error role="alert" class="an-banner an-banner-error" hidden></div>
+              <div data-analytics-notice role="status" class="an-banner an-banner-notice" hidden></div>
+
+              <section data-analytics-install-panel class="an-card an-center" hidden>
+                <h2>Analytics is not installed for <span data-analytics-install-org class="an-mono"></span></h2>
+                <p class="an-sub">Install first-party analytics, session replay, feature flags, and surveys for this organization. Data is sealed with this instance's key and never sent to a third party.</p>
+                <p style="margin-top:1rem"><button data-analytics-install type="button" class="an-btn an-btn-primary" hidden>Install for this organization</button></p>
+                <p data-analytics-install-denied class="an-sub" hidden>Ask an organization owner or admin to install Analytics.</p>
+              </section>
+
+              <section data-analytics-no-project class="an-card an-center" hidden>
+                <h2>No analytics project yet</h2>
+                <p class="an-sub">A project holds one site or app: its write key, events, replays, flags, and surveys.</p>
+                <p style="margin-top:1rem"><button data-analytics-create-first type="button" class="an-btn an-btn-primary" hidden>Create the first project</button></p>
+                <p data-analytics-create-denied class="an-sub" hidden>Ask an organization owner or admin to create a project.</p>
+              </section>
+
+              <div data-analytics-app class="an-stack" hidden>
+                <nav data-analytics-tabs class="an-tabs" role="tablist" aria-label="Analytics sections">
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="overview" aria-selected="true"><i data-lucide="layout-dashboard"></i>Overview</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="insights" aria-selected="false"><i data-lucide="line-chart"></i>Insights</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="dashboards" aria-selected="false"><i data-lucide="layout-grid"></i>Dashboards</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="events" aria-selected="false"><i data-lucide="list"></i>Events</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="people" aria-selected="false"><i data-lucide="users"></i>People</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="replay" aria-selected="false"><i data-lucide="play-circle"></i>Replay</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="heatmaps" aria-selected="false"><i data-lucide="flame"></i>Heatmaps</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="flags" aria-selected="false"><i data-lucide="flag"></i>Flags</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="surveys" aria-selected="false"><i data-lucide="message-square"></i>Surveys</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="errors" aria-selected="false"><i data-lucide="bug"></i>Errors</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="settings" aria-selected="false"><i data-lucide="settings"></i>Settings</button>
+                </nav>
+                <div data-analytics-truncated role="status" class="an-banner an-banner-quiet" hidden></div>
+
+                <!-- Overview -->
+                <div data-analytics-page="overview" role="tabpanel" class="an-stack" hidden>
+                  <section data-analytics-onboarding class="an-card" hidden>
+                    <div class="an-card-head"><h2>Waiting for the first event</h2><span class="an-hint">This card goes away once data arrives. Press Refresh after installing.</span></div>
+                    <div class="an-pad an-stack-tight">
+                      <p class="an-sub" style="margin:0">Paste this before <code class="an-mono">&lt;/head&gt;</code> on every page you want to measure:</p>
+                      <pre data-analytics-onboarding-snippet class="an-pre"></pre>
+                      <div class="an-row"><button data-analytics-onboarding-copy type="button" class="an-btn"><i data-lucide="copy"></i>Copy snippet</button><button data-analytics-onboarding-settings type="button" class="an-btn">Open settings</button></div>
+                    </div>
+                  </section>
+                  <div data-analytics-overview-body class="an-stack">
+                    <div data-analytics-kpis class="an-kpis"></div>
+                    <div class="an-split">
+                      <section class="an-card">
+                        <div class="an-card-head"><h2>Traffic</h2><span data-analytics-overview-interval class="an-hint"></span></div>
+                        <div class="an-pad"><div data-analytics-overview-chart class="an-chart"></div></div>
+                      </section>
+                      <section class="an-card">
+                        <div class="an-card-head"><h2>Channels</h2><span class="an-hint">Sessions by first touch</span></div>
+                        <div data-analytics-channels class="an-pad"></div>
+                      </section>
+                    </div>
+                    <div data-analytics-breakdowns class="an-grid-3 an-grid-fixed"></div>
+                    <div class="an-split">
+                      <section class="an-card">
+                        <div class="an-card-head"><h2>When visitors come</h2><span class="an-hint">Pageviews by weekday and hour, your time</span></div>
+                        <div data-analytics-hours class="an-pad"></div>
+                      </section>
+                      <section class="an-card">
+                        <div class="an-card-head"><h2>New and returning</h2><span class="an-hint">Returning: seen in the previous period</span></div>
+                        <div data-analytics-visitor-kinds class="an-pad"></div>
+                      </section>
+                    </div>
+                    <div class="an-grid-3">
+                      <section class="an-card">
+                        <div class="an-card-head"><h2>Pages per session</h2></div>
+                        <div class="an-pad"><div data-analytics-session-depth class="an-chart"></div></div>
+                      </section>
+                      <section class="an-card">
+                        <div class="an-card-head"><h2>Session length</h2></div>
+                        <div class="an-pad"><div data-analytics-session-length class="an-chart"></div></div>
+                      </section>
+                      <section class="an-card">
+                        <div class="an-card-head"><h2>Page engagement</h2><span class="an-hint">Median time, average scroll</span></div>
+                        <div data-analytics-engagement></div>
+                      </section>
+                    </div>
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>Web vitals</h2><span class="an-hint">75th percentile of real visits</span></div>
+                      <div data-analytics-vitals class="an-pad"></div>
+                    </section>
+                  </div>
+                </div>
+
+                <!-- Insights -->
+                <div data-analytics-page="insights" role="tabpanel" class="an-stack" hidden>
+                  <div class="an-seg" role="tablist" aria-label="Insights sections">
+                    <button type="button" role="tab" data-analytics-sub="insights:builder" aria-selected="true">Builder</button>
+                    <button type="button" role="tab" data-analytics-sub="insights:saved" aria-selected="false">Saved insights</button>
+                    <button type="button" role="tab" data-analytics-sub="insights:actions" aria-selected="false">Actions</button>
+                    <button type="button" role="tab" data-analytics-sub="insights:annotations" aria-selected="false">Annotations</button>
+                  </div>
+                  <div data-analytics-subpage="insights:builder" class="an-stack" hidden>
+                    <div class="an-row" style="justify-content:space-between">
+                      <div data-analytics-insight-types class="an-seg" role="tablist" aria-label="Insight type">
+                        <button type="button" role="tab" data-analytics-insight-type="trends">Trends</button>
+                        <button type="button" role="tab" data-analytics-insight-type="funnel">Funnels</button>
+                        <button type="button" role="tab" data-analytics-insight-type="retention">Retention</button>
+                        <button type="button" role="tab" data-analytics-insight-type="paths">Paths</button>
+                        <button type="button" role="tab" data-analytics-insight-type="stickiness">Stickiness</button>
+                        <button type="button" role="tab" data-analytics-insight-type="lifecycle">Lifecycle</button>
+                      </div>
+                      <div class="an-row">
+                        <button data-analytics-insight-new type="button" class="an-btn">New</button>
+                        <button data-analytics-insight-add-dashboard type="button" class="an-btn" hidden>Add to dashboard</button>
+                        <button data-analytics-insight-save type="button" class="an-btn an-btn-primary"><i data-lucide="save"></i>Save insight</button>
+                      </div>
+                    </div>
+                    <div class="an-builder">
+                      <section class="an-card">
+                        <div class="an-card-head"><h2>Query</h2><span data-analytics-insight-name class="an-hint an-break"></span></div>
+                        <div data-analytics-insight-builder class="an-pad an-stack"></div>
+                      </section>
+                      <section class="an-card">
+                        <div class="an-card-head"><h2 data-analytics-insight-result-title>Result</h2><div data-analytics-insight-display class="an-row"></div></div>
+                        <div data-analytics-insight-result class="an-pad"></div>
+                      </section>
+                    </div>
+                  </div>
+                  <div data-analytics-subpage="insights:saved" hidden>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Insight</th><th scope="col">Type</th><th scope="col">Updated</th><th scope="col">By</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-saved-list></tbody></table></div><div data-analytics-saved-empty class="an-empty" hidden>No saved insights yet. Build a query and press “Save insight”.</div></section>
+                  </div>
+                  <div data-analytics-subpage="insights:actions" class="an-stack" hidden>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">An action names an autocaptured element or page by URL, text, or selector, so it can be used anywhere an event can.</p><button data-analytics-action-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New action</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Action</th><th scope="col">Matches</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-actions-list></tbody></table></div><div data-analytics-actions-empty class="an-empty" hidden>No actions yet.</div></section>
+                  </div>
+                  <div data-analytics-subpage="insights:annotations" class="an-stack" hidden>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Annotations mark a moment (a release, a campaign) on every time chart.</p><button data-analytics-annotation-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New annotation</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Date</th><th scope="col">Note</th><th scope="col">By</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-annotations-list></tbody></table></div><div data-analytics-annotations-empty class="an-empty" hidden>No annotations yet.</div></section>
+                  </div>
+                </div>
+
+                <!-- Dashboards -->
+                <div data-analytics-page="dashboards" role="tabpanel" class="an-stack" hidden>
+                  <div class="an-row" style="justify-content:space-between">
+                    <div class="an-row">
+                      <label class="an-hint" for="an-dashboard-select">Dashboard</label>
+                      <select id="an-dashboard-select" data-analytics-dashboard-select class="an-select"></select>
+                      <button data-analytics-dashboard-edit type="button" class="an-btn" hidden>Edit…</button>
+                    </div>
+                    <button data-analytics-dashboard-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New dashboard</button>
+                  </div>
+                  <p data-analytics-dashboard-description class="an-sub an-break" style="margin:0" hidden></p>
+                  <div data-analytics-dashboard-tiles class="an-tiles"></div>
+                  <div data-analytics-dashboard-empty class="an-card an-empty" hidden></div>
+                </div>
+
+                <!-- Events -->
+                <div data-analytics-page="events" role="tabpanel" class="an-stack" hidden>
+                  <section class="an-card">
+                    <div class="an-pad an-stack-tight">
+                      <div class="an-row">
+                        <label class="an-field an-grow">Event name<input data-analytics-events-name list="an-events-list" class="an-input" placeholder="Any event" autocomplete="off" /></label>
+                        <button data-analytics-events-apply type="button" class="an-btn an-btn-primary" style="align-self:end">Apply</button>
+                      </div>
+                      <div data-analytics-events-filters></div>
+                    </div>
+                  </section>
+                  <section class="an-card">
+                    <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Event</th><th scope="col">Person</th><th scope="col">URL or screen</th><th scope="col">Time</th><th scope="col"><span class="sr-only">Details</span></th></tr></thead><tbody data-analytics-events-list></tbody></table></div>
+                    <div data-analytics-events-empty class="an-empty" hidden>No events match in this range.</div>
+                    <div class="an-pad" data-analytics-events-more-wrap hidden><button data-analytics-events-more type="button" class="an-btn">Load more</button></div>
+                  </section>
+                </div>
+
+                <!-- People -->
+                <div data-analytics-page="people" role="tabpanel" class="an-stack" hidden>
+                  <div class="an-seg" role="tablist" aria-label="People sections">
+                    <button type="button" role="tab" data-analytics-sub="people:persons" aria-selected="true">People</button>
+                    <button type="button" role="tab" data-analytics-sub="people:groups" aria-selected="false">Groups</button>
+                    <button type="button" role="tab" data-analytics-sub="people:cohorts" aria-selected="false">Cohorts</button>
+                  </div>
+                  <div data-analytics-subpage="people:persons" class="an-stack" hidden>
+                    <form data-analytics-people-form class="an-row">
+                      <input data-analytics-people-search type="search" aria-label="Search people" placeholder="Search distinct ids and properties" class="an-input an-grow" />
+                      <label class="an-check"><input data-analytics-people-identified type="checkbox" /> Identified only</label>
+                      <button type="submit" class="an-btn">Search</button>
+                      <span data-analytics-people-total class="an-hint"></span>
+                    </form>
+                    <section class="an-card">
+                      <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Person</th><th scope="col">Properties</th><th scope="col">First seen</th><th scope="col">Last seen</th><th scope="col" class="r">Events</th></tr></thead><tbody data-analytics-people-list></tbody></table></div>
+                      <div data-analytics-people-empty class="an-empty" hidden>No people match.</div>
+                      <div class="an-pad" data-analytics-people-more-wrap hidden><button data-analytics-people-more type="button" class="an-btn">Load more</button></div>
+                    </section>
+                  </div>
+                  <div data-analytics-subpage="people:groups" class="an-stack" hidden>
+                    <div class="an-row"><label class="an-hint" for="an-group-type">Group type</label><select id="an-group-type" data-analytics-group-type class="an-select"><option value="">All types</option></select></div>
+                    <section class="an-card">
+                      <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Type</th><th scope="col">Key</th><th scope="col">Properties</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead><tbody data-analytics-groups-list></tbody></table></div>
+                      <div data-analytics-groups-empty class="an-empty" hidden>No groups yet. Call <code class="an-mono">analytics.group(type, key, properties)</code> to create one.</div>
+                    </section>
+                  </div>
+                  <div data-analytics-subpage="people:cohorts" class="an-stack" hidden>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">A cohort is a reusable set of people: a pasted list, or everyone matching conditions.</p><button data-analytics-cohort-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New cohort</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Cohort</th><th scope="col">Kind</th><th scope="col">Definition</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-cohorts-list></tbody></table></div><div data-analytics-cohorts-empty class="an-empty" hidden>No cohorts yet.</div></section>
+                  </div>
+                </div>
+
+                <!-- Replay -->
+                <div data-analytics-page="replay" role="tabpanel" class="an-stack" hidden>
+                  <div data-analytics-replay-list-view class="an-stack">
+                    <div class="an-row">
+                      <label class="an-hint" for="an-replay-duration">Minimum duration</label>
+                      <select id="an-replay-duration" data-analytics-replay-duration class="an-select"><option value="0">Any</option><option value="10000">10 seconds</option><option value="30000">30 seconds</option><option value="60000">1 minute</option><option value="300000">5 minutes</option></select>
+                      <label class="an-check"><input data-analytics-replay-errors type="checkbox" /> Has errors</label>
+                      <span data-analytics-replay-person class="an-badge" hidden></span>
+                      <button data-analytics-replay-person-clear type="button" class="an-btn an-btn-small" hidden>Show everyone</button>
+                    </div>
+                    <div data-analytics-replay-disabled class="an-banner an-banner-quiet" hidden>Session replay is off for this project. Turn it on under Settings → Session replay.</div>
+                    <section class="an-card">
+                      <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Session</th><th scope="col">Started</th><th scope="col" class="r">Duration</th><th scope="col" class="r">Active</th><th scope="col" class="r">Clicks</th><th scope="col" class="r">Keys</th><th scope="col" class="r">Errors</th><th scope="col">Device</th></tr></thead><tbody data-analytics-replay-list></tbody></table></div>
+                      <div data-analytics-replay-empty class="an-empty" hidden>No recordings match.</div>
+                      <div class="an-pad" data-analytics-replay-more-wrap hidden><button data-analytics-replay-more type="button" class="an-btn">Load more</button></div>
+                    </section>
+                  </div>
+                  <div data-analytics-replay-player-view class="an-stack" hidden>
+                    <div class="an-row" style="justify-content:space-between">
+                      <button data-analytics-replay-back type="button" class="an-btn"><i data-lucide="arrow-left"></i>All recordings</button>
+                      <button data-analytics-replay-delete type="button" class="an-btn an-btn-danger">Delete recording</button>
+                    </div>
+                    <div data-analytics-replay-meta class="an-row an-hint"></div>
+                    <div class="an-replay">
+                      <div class="an-stack-tight">
+                        <div class="an-stage"><div data-analytics-replay-stage></div><div data-analytics-replay-note class="an-stage-note"></div></div>
+                        <div class="an-scrub"><div class="an-scrub-track" data-analytics-replay-track></div><div data-analytics-replay-marks></div><input data-analytics-replay-seek type="range" min="0" max="0" value="0" step="100" aria-label="Seek" disabled /></div>
+                        <div class="an-row">
+                          <button data-analytics-replay-toggle type="button" class="an-btn an-btn-primary" disabled>Play</button>
+                          <span data-analytics-replay-time class="an-mono" aria-live="off">0:00 / 0:00</span>
+                          <label class="an-hint" for="an-replay-speed">Speed</label>
+                          <select id="an-replay-speed" data-analytics-replay-speed class="an-select"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
+                          <label class="an-check"><input data-analytics-replay-skip type="checkbox" checked /> Skip inactivity</label>
+                        </div>
+                        <p class="an-hint" style="margin:0">Marks on the timeline are clicks, page changes, and errors; hatched stretches are inactivity. Typed text is always masked.</p>
+                      </div>
+                      <section class="an-card">
+                        <div class="an-card-head"><h3>Events in this session</h3></div>
+                        <div data-analytics-replay-events class="an-event-list"></div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Heatmaps -->
+                <div data-analytics-page="heatmaps" role="tabpanel" class="an-stack" hidden>
+                  <form data-analytics-heatmap-form class="an-row">
+                    <label class="an-field an-grow">Page path<input data-analytics-heatmap-path list="an-paths-list" class="an-input" placeholder="/pricing" autocomplete="off" /></label>
+                    <label class="an-field">Type<select data-analytics-heatmap-type class="an-select"><option value="click">Clicks</option><option value="rageclick">Rage clicks</option><option value="move">Mouse movement</option><option value="scroll">Scroll depth</option></select></label>
+                    <label class="an-field">Viewport width<select data-analytics-heatmap-viewport class="an-select"><option value="all">All widths</option><option value="mobile">Mobile (under 768 px)</option><option value="tablet">Tablet (768–1023 px)</option><option value="desktop">Desktop (1024 px and up)</option></select></label>
+                    <button type="submit" class="an-btn an-btn-primary" style="align-self:end">Show</button>
+                  </form>
+                  <p class="an-banner an-banner-quiet" style="margin:0">The map is drawn on a blank outline of the page, scaled to its recorded height. ForkMesh never screenshots or copies the page itself, so compare positions against the live page side by side.</p>
+                  <div class="an-replay">
+                    <div class="an-heatmap-scroll"><canvas data-analytics-heatmap-canvas width="600" height="300" role="img" aria-label="Heatmap"></canvas></div>
+                    <section class="an-card">
+                      <div class="an-card-head"><h3>Summary</h3></div>
+                      <div data-analytics-heatmap-summary class="an-pad an-stack-tight"></div>
+                    </section>
+                  </div>
+                </div>
+
+                <!-- Flags and experiments -->
+                <div data-analytics-page="flags" role="tabpanel" class="an-stack" hidden>
+                  <div class="an-seg" role="tablist" aria-label="Flags sections">
+                    <button type="button" role="tab" data-analytics-sub="flags:flags" aria-selected="true">Feature flags</button>
+                    <button type="button" role="tab" data-analytics-sub="flags:experiments" aria-selected="false">Experiments</button>
+                  </div>
+                  <div data-analytics-subpage="flags:flags" class="an-stack" hidden>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Flags are evaluated on this instance; the SDK fetches them with <code class="an-mono">/_/decide</code>.</p><button data-analytics-flag-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New flag</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Flag</th><th scope="col">Type</th><th scope="col">Release</th><th scope="col">Updated</th><th scope="col">Active</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-flags-list></tbody></table></div><div data-analytics-flags-empty class="an-empty" hidden>No feature flags yet.</div></section>
+                  </div>
+                  <div data-analytics-subpage="flags:experiments" class="an-stack" hidden>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">An experiment compares the variants of a multivariate flag against one goal.</p><button data-analytics-experiment-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New experiment</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Experiment</th><th scope="col">Flag</th><th scope="col">Goal</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-experiments-list></tbody></table></div><div data-analytics-experiments-empty class="an-empty" hidden>No experiments yet.</div></section>
+                    <section data-analytics-experiment-results class="an-card" hidden></section>
+                  </div>
+                </div>
+
+                <!-- Surveys -->
+                <div data-analytics-page="surveys" role="tabpanel" class="an-stack" hidden>
+                  <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Surveys are shown by the SDK to visitors who match the targeting.</p><button data-analytics-survey-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New survey</button></div>
+                  <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Survey</th><th scope="col">Questions</th><th scope="col">Targeting</th><th scope="col">Updated</th><th scope="col">Active</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-surveys-list></tbody></table></div><div data-analytics-surveys-empty class="an-empty" hidden>No surveys yet.</div></section>
+                  <section data-analytics-survey-results class="an-card" hidden></section>
+                </div>
+
+                <!-- Errors -->
+                <div data-analytics-page="errors" role="tabpanel" class="an-stack" hidden>
+                  <section class="an-card">
+                    <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Error</th><th scope="col" class="r">Events</th><th scope="col" class="r">Users</th><th scope="col" class="r">Sessions</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead><tbody data-analytics-errors-list></tbody></table></div>
+                    <div data-analytics-errors-empty class="an-empty" hidden>No uncaught exceptions in this range.</div>
+                  </section>
+                  <section data-analytics-error-detail class="an-card" hidden></section>
+                </div>
+
+                <!-- Settings -->
+                <div data-analytics-page="settings" role="tabpanel" class="an-stack" hidden>
+                  <div data-analytics-settings-readonly class="an-banner an-banner-quiet" hidden>Only organization owners and admins can change project settings.</div>
+                  <form data-analytics-settings-form class="an-stack">
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>Project</h2></div>
+                      <div class="an-pad an-form-grid">
+                        <label class="an-field">Project name<input data-analytics-set-name maxlength="80" required class="an-input" /></label>
+                        <label class="an-field">Timezone offset (minutes from UTC)<input data-analytics-set-timezone type="number" min="-840" max="840" step="15" class="an-input" /></label>
+                        <label class="an-field an-field-wide">Allowed origins (one per line; empty allows any origin)<textarea data-analytics-set-origins rows="3" class="an-textarea" placeholder="https://example.com"></textarea></label>
+                        <label class="an-field an-field-wide">Group types (comma separated, up to 5)<input data-analytics-set-group-types class="an-input" placeholder="company, team" /></label>
+                        <label data-analytics-set-site-default-wrap class="an-check an-field-wide" hidden><input data-analytics-set-site-default type="checkbox" /> Use for this instance's own pages (the <code class="an-mono">site</code> key)</label>
+                      </div>
+                    </section>
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>Capture</h2></div>
+                      <div class="an-pad an-form-grid">
+                        <label class="an-check"><input data-analytics-set-autocapture type="checkbox" /> Autocapture clicks, changes, submits</label>
+                        <label class="an-check"><input data-analytics-set-heatmaps type="checkbox" /> Heatmaps (mouse movement)</label>
+                        <label class="an-check"><input data-analytics-set-errors type="checkbox" /> Uncaught exceptions</label>
+                        <label class="an-check"><input data-analytics-set-performance type="checkbox" /> Web vitals</label>
+                      </div>
+                    </section>
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>Session replay</h2></div>
+                      <div class="an-pad an-form-grid">
+                        <label class="an-check"><input data-analytics-set-replay-enabled type="checkbox" /> Record sessions</label>
+                        <label class="an-check"><input data-analytics-set-replay-mask-text type="checkbox" /> Mask all text</label>
+                        <label class="an-check"><input data-analytics-set-replay-mask-inputs type="checkbox" /> Mask all inputs</label>
+                        <label class="an-field">Sample rate (% of sessions)<input data-analytics-set-replay-sample type="number" min="0" max="100" class="an-input" /></label>
+                        <label class="an-field">Minimum duration (ms)<input data-analytics-set-replay-min type="number" min="0" max="60000" step="500" class="an-input" /></label>
+                      </div>
+                    </section>
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>Quotas and retention</h2></div>
+                      <div class="an-pad an-form-grid">
+                        <label class="an-field">Events per day<input data-analytics-set-event-quota type="number" min="0" max="200000" class="an-input" /></label>
+                        <label class="an-field">Replay megabytes per day<input data-analytics-set-replay-quota type="number" min="0" max="400" class="an-input" /></label>
+                        <label class="an-field">Keep events (days)<input data-analytics-set-retention type="number" min="1" max="400" class="an-input" /></label>
+                        <label class="an-field">Keep replays (days)<input data-analytics-set-replay-retention type="number" min="1" max="90" class="an-input" /></label>
+                      </div>
+                    </section>
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>Test account filters</h2><span class="an-hint">Applied when “Filter test accounts” is on. An event must pass every filter to be kept.</span></div>
+                      <div data-analytics-set-test-filters class="an-pad"></div>
+                    </section>
+                    <div class="an-row an-row-end"><button data-analytics-settings-save type="submit" class="an-btn an-btn-primary">Save settings</button></div>
+                  </form>
+
+                  <section class="an-card">
+                    <div class="an-card-head"><h2>Install</h2></div>
+                    <div class="an-pad an-stack-tight">
+                      <div class="an-row"><span class="an-hint">Write key</span><code data-analytics-write-key class="an-mono an-break"></code><button data-analytics-key-copy type="button" class="an-btn an-btn-small">Copy</button><button data-analytics-key-rotate type="button" class="an-btn an-btn-small an-btn-danger" hidden>Rotate…</button></div>
+                      <p class="an-hint" style="margin:0">Browser snippet</p>
+                      <pre data-analytics-snippet class="an-pre"></pre>
+                      <div class="an-row"><button data-analytics-snippet-copy type="button" class="an-btn an-btn-small">Copy snippet</button></div>
+                      <p class="an-hint" style="margin:0">From a server or script</p>
+                      <pre data-analytics-curl class="an-pre"></pre>
+                      <div class="an-row"><button data-analytics-curl-copy type="button" class="an-btn an-btn-small">Copy curl</button></div>
+                    </div>
+                  </section>
+
+                  <section class="an-card">
+                    <div class="an-card-head"><h2>Usage</h2><span class="an-hint">Quotas reset at 00:00 UTC</span></div>
+                    <div class="an-pad an-stack">
+                      <div data-analytics-usage-today class="an-grid-2"></div>
+                      <div data-analytics-usage-chart class="an-chart"></div>
+                    </div>
+                  </section>
+
+                  <section class="an-card">
+                    <div class="an-card-head"><h2>Data</h2></div>
+                    <div class="an-pad an-row">
+                      <button data-analytics-export-events type="button" class="an-btn"><i data-lucide="download"></i>Export events (JSON)</button>
+                      <button data-analytics-manage type="button" class="an-btn" hidden>Plugin data…</button>
+                      <button data-analytics-project-delete type="button" class="an-btn an-btn-danger" hidden>Delete project…</button>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+
+            <datalist id="an-events-list"></datalist>
+            <datalist id="an-props-list"></datalist>
+            <datalist id="an-person-props-list"></datalist>
+            <datalist id="an-paths-list"></datalist>
+
+            <dialog data-analytics-dialog class="an-dialog" aria-labelledby="an-dialog-title">
+              <form data-analytics-dialog-form method="dialog">
+                <div class="an-row" style="justify-content:space-between"><h2 id="an-dialog-title" data-analytics-dialog-title></h2><button data-analytics-dialog-close type="button" class="an-btn an-btn-small" aria-label="Close">✕</button></div>
+                <div data-analytics-dialog-error role="alert" class="an-banner an-banner-error" hidden></div>
+                <div data-analytics-dialog-body class="an-stack"></div>
+                <div class="an-dialog-foot">
+                  <button data-analytics-dialog-delete type="button" class="an-btn an-btn-danger" hidden>Delete</button>
+                  <div class="an-row" style="margin-left:auto"><button data-analytics-dialog-close type="button" class="an-btn">Cancel</button><button data-analytics-dialog-save type="submit" class="an-btn an-btn-primary">Save</button></div>
+                </div>
+              </form>
+            </dialog>
+
+            <dialog data-analytics-drawer class="an-dialog an-drawer" aria-labelledby="an-drawer-title">
+              <div class="an-dialog-body">
+                <div class="an-row" style="justify-content:space-between"><h2 id="an-drawer-title" data-analytics-drawer-title>Person</h2><button data-analytics-dialog-close type="button" class="an-btn an-btn-small" aria-label="Close">✕</button></div>
+                <div data-analytics-drawer-body class="an-stack"></div>
+              </div>
+            </dialog>
+
+            <dialog data-analytics-manage-dialog class="an-dialog an-dialog-narrow" aria-labelledby="an-manage-title">
+              <div class="an-dialog-body">
+                <h2 id="an-manage-title">Analytics data</h2>
+                <p class="an-sub" style="margin:0">Export everything Analytics stores for this organization, or uninstall the plugin and remove its stored data. Snippets still deployed on your sites will be refused after an uninstall.</p>
+                <div class="an-row an-row-end"><button data-analytics-export-all type="button" class="an-btn">Export JSON</button><button data-analytics-uninstall type="button" class="an-btn an-btn-danger">Uninstall…</button><button data-analytics-dialog-close type="button" class="an-btn">Close</button></div>
+              </div>
+            </dialog>
+          </section>

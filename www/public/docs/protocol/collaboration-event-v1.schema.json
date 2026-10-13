@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/docs/protocol/collaboration-event-v1.schema.json",
+  "title": "ForkMesh conflict-safe collaboration event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "repository",
+    "policy",
+    "family",
+    "object",
+    "action",
+    "author",
+    "sequence",
+    "clock",
+    "issuedAt",
+    "parents",
+    "references",
+    "payload",
+    "signature",
+    "eventId"
+  ],
+  "properties": {
+    "schema": {"const": "forkmesh-collaboration-event-v1"},
+    "repository": {
+      "type": "string",
+      "pattern": "^urn:forkmesh:repository:sha256:[0-9a-f]{64}$"
+    },
+    "policy": {"$ref": "#/$defs/digest"},
+    "family": {
+      "enum": [
+        "issue",
+        "pull_request",
+        "comment",
+        "label",
+        "reaction",
+        "review",
+        "milestone",
+        "board",
+        "notification",
+        "moderation"
+      ]
+    },
+    "object": {
+      "type": "string",
+      "pattern": "^urn:forkmesh:collaboration:[a-z_]+:sha256:[0-9a-f]{64}$"
+    },
+    "action": {
+      "enum": [
+        "create",
+        "update",
+        "add",
+        "remove",
+        "tombstone",
+        "restore",
+        "decide",
+        "appeal",
+        "resolve"
+      ]
+    },
+    "author": {"$ref": "#/$defs/ed25519PublicKey"},
+    "sequence": {"$ref": "#/$defs/safeInteger"},
+    "clock": {"$ref": "#/$defs/safeInteger"},
+    "issuedAt": {"$ref": "#/$defs/safeInteger"},
+    "parents": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/digest"}
+    },
+    "references": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/reference"}
+    },
+    "payload": {
+      "type": "object",
+      "description": "Action-specific payload; semantic field allowlists are normative in the protocol specification."
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "eventId": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "safeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "ed25519PublicKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation", "family", "object"],
+      "properties": {
+        "relation": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+        },
+        "family": {
+          "enum": [
+            "issue",
+            "pull_request",
+            "comment",
+            "label",
+            "reaction",
+            "review",
+            "milestone",
+            "board",
+            "notification",
+            "moderation"
+          ]
+        },
+        "object": {
+          "type": "string",
+          "pattern": "^urn:forkmesh:collaboration:[a-z_]+:sha256:[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

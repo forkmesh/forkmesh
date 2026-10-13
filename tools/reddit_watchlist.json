@@ -1,0 +1,71 @@
+{
+    "subreddits": [
+        {"name": "selfhosted", "stance": "answer"},
+        {"name": "git", "stance": "answer"},
+        {"name": "github", "stance": "answer"},
+        {"name": "opensource", "stance": "answer"},
+        {"name": "devops", "stance": "answer"},
+        {"name": "homelab", "stance": "answer"},
+        {"name": "DataHoarder", "stance": "answer"},
+        {"name": "ClaudeCode", "stance": "answer"},
+        {"name": "ChatGPTCoding", "stance": "answer"},
+        {"name": "coolgithubprojects", "stance": "showcase"},
+        {"name": "SideProject", "stance": "showcase"},
+        {"name": "gitlab", "stance": "listen"},
+        {"name": "programming", "stance": "listen"},
+        {"name": "ExperiencedDevs", "stance": "listen"},
+        {"name": "linux", "stance": "listen"}
+    ],
+    "topics": [
+        {
+            "id": "forge-alternative",
+            "label": "Leaving or replacing a hosted forge",
+            "pattern": "\\b(github|gitlab) alternatives?\\b|\\b(leav(e|ing)|quit(ting)?|mov(e|ing) (off|away from)) (github|gitlab)\\b|\\bself[- ]?host(ed|ing)? (a |my |our )?(git|forge|code hosting)\\b|\\b(gitea|forgejo|codeberg|sourcehut|gogs)\\b",
+            "evidence": "/docs/category-comparisons/"
+        },
+        {
+            "id": "outage-preservation",
+            "label": "Outages, takedowns and losing code",
+            "pattern": "\\bgithub (is |was )?(down|outage)\\b|\\b(repo|repository|account) (got |was |is )?(deleted|suspended|banned|taken down|disabled|flagged)\\b|\\bdmca\\b|\\b(back ?up|archiv\\w*|preserv\\w*) (my |all |our |of )?(git |github |gitlab )?(repos|repositories|code)\\b|\\b(github|gitlab|git|repo|repository) (repo |repository )?back ?ups?\\b|\\bback(ing)? ?up (my |all |our |your )?(github|gitlab|git)\\b|\\blost (all )?(my |our )?(code|repos?|repository|commits)\\b",
+            "evidence": "/docs/launch/github-outage-survival-kit/"
+        },
+        {
+            "id": "mirroring",
+            "label": "Mirroring repositories across hosts",
+            "pattern": "\\bmirror(ing|ed|s)? (a |my |our |the )?(git |github |gitlab )?(repo|repos|repository|repositories)\\b|\\bgit mirror\\b|\\bpush(ing)? to (two|multiple|several|both) remotes\\b|\\bmultiple remotes\\b|\\bredundan(t|cy) (for )?(git|repos?)\\b|\\bclone --mirror\\b",
+            "evidence": "/docs/availability-proof/"
+        },
+        {
+            "id": "decentralized",
+            "label": "Decentralized or peer-to-peer Git",
+            "pattern": "\\b(decentrali[sz]ed|p2p|peer[- ]to[- ]peer|federated) (git|forge|code hosting|github)\\b|\\bradicle\\b|\\bforgefed\\b|\\blocal[- ]first (git|forge|issues)\\b",
+            "evidence": "/docs/protocol/"
+        },
+        {
+            "id": "portable-collaboration",
+            "label": "Issues and reviews that travel with the code",
+            "pattern": "\\b(issues?|pull requests?|prs|code reviews?) (in|inside|stored in|that live in|with) (the |my |our )?(repo|repository|git)\\b|\\bgit[- ]native (issues|reviews?|pull requests)\\b|\\bgit-bug\\b|\\b(export|migrate|keep|move) (my |our |all )?(issues|pull requests|prs)\\b|\\boffline (issues|code review)\\b",
+            "evidence": "/docs/offline-sync/"
+        },
+        {
+            "id": "agent-orchestration",
+            "label": "Running several coding agents on one repository",
+            "pattern": "\\b(run(ning)?|manag(e|ing)|orchestrat\\w+|coordinat\\w+) (multiple|several|parallel|many|two|three) (ai |coding |claude |codex )?agents\\b|\\bparallel (claude|codex|coding agents|agents)\\b|\\b(git )?worktrees? (for|with|per) (agents?|claude|codex)\\b|\\bagents? (in|on|per) (separate |their own )?worktrees?\\b|\\bworktrees?\\b[^.?!\\n]{0,80}\\bagents?\\b|\\bagents?\\b[^.?!\\n]{0,80}\\bworktrees?\\b|\\b(manag\\w*|juggl\\w*|track\\w*|clean\\w*( up)?) (my |your |git |all )*worktrees?\\b|\\b\\d+\\+? (parallel )?(claude( code)?|codex|coding) (sessions|agents)\\b|\\b(sessions|agents) in parallel\\b",
+            "evidence": "/docs/qt-client/"
+        },
+        {
+            "id": "forge-sync",
+            "label": "Keeping GitHub or GitLab in sync with another host",
+            "pattern": "\\bsync(ing|ed)? (my |our |a )?(repos? |repositories )?(between|from|to|with) (github|gitlab)\\b|\\bkeep (github|gitlab|both) (in sync|synced)\\b|\\btwo[- ]way (git |repo )?sync\\b",
+            "evidence": "/docs/github-sync/"
+        }
+    ],
+    "queries": [
+        "github alternative",
+        "self-hosted git",
+        "mirror git repository",
+        "decentralized git",
+        "backup github repos",
+        "multiple coding agents worktrees"
+    ]
+}

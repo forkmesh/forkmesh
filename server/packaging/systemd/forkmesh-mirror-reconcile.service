@@ -1,0 +1,33 @@
+[Unit]
+Description=Reconcile and retry ForkMesh mirror publication
+Documentation=https://forkmesh.com/docs/operations/git-ssh-gateway
+Wants=network-online.target
+After=network-online.target forkmesh-ssh-authorization-broker.service
+
+[Service]
+Type=oneshot
+UMask=0077
+Environment=TMPDIR=/var/lib/forkmesh-mirror/runtime-tmp
+ExecStart=/usr/bin/python3 -I /opt/forkmesh-mirror/ssh_post_receive_refresh.py --config /etc/forkmesh/ssh-refresh.json reconcile
+TimeoutStartSec=40min
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/run/forkmesh-mirror-refresh /var/lib/forkmesh-mirror
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SETGID CAP_SETUID
+SystemCallArchitectures=native
+TasksMax=16

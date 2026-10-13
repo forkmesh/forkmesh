@@ -1,0 +1,59 @@
+# Managed by deploy/core/render.py for node r1 (role runner).
+# Based on server/packaging/systemd/forkmesh-mirror-node.service.
+[Unit]
+Description=ForkMesh Next daemon (role runner, node r1)
+Wants=network-online.target
+After=network-online.target 
+
+[Service]
+Type=simple
+User=root
+Group=root
+# No journal-reader group: the daemon never reads the journal.
+# Owner-only files: the node key, connector token and state are never
+# readable by another local uid (the runner's job user included).
+UMask=0077
+Environment=TZ=UTC
+Environment=HOME=/var/lib/forkmesh
+Environment=XDG_DATA_HOME=/var/lib/forkmesh/.local/share
+Environment=TMPDIR=/var/lib/forkmesh/tmp
+EnvironmentFile=-/etc/forkmesh/node.env
+ExecStartPre=-/usr/bin/python3 -I /usr/local/share/forkmesh/tools/mirror_gateway.py --cleanup-runtime /var/lib/forkmesh/tmp
+ExecStartPre=/usr/local/bin/forkmesh-mirror-node --config /etc/forkmesh/mirror-node.json --check
+ExecStart=/usr/local/bin/forkmesh-mirror-node --config /etc/forkmesh/mirror-node.json
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+# Jobs run in their own transient units of the system manager
+# (MemoryMax=jobMemoryMax), so these limits cover the daemon only.
+MemoryHigh=150M
+MemoryMax=250M
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=false
+BindPaths=/var/lib/forkmesh-runner/tmp:/tmp /var/lib/forkmesh-runner/tmp:/var/tmp
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/forkmesh /var/lib/forkmesh-runner /var/lib/forkmesh-job
+# The cloud metadata service (instance secrets, user-data) is never needed.
+IPAddressDeny=169.254.0.0/16
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_KILL CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SETUID CAP_SETGID
+SystemCallArchitectures=native
+TasksMax=128
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

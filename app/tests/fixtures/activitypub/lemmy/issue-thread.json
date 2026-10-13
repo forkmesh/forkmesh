@@ -1,0 +1,50 @@
+{
+  "remoteActor": {
+    "id": "https://lemmy.example/u/alice",
+    "url": "https://lemmy.example/u/alice",
+    "preferredUsername": "alice",
+    "name": "Alice",
+    "software": "lemmy"
+  },
+  "context": {
+    "owner": "forkmesh",
+    "repo": "forkmesh",
+    "kind": "issue",
+    "ref": "42"
+  },
+  "activities": [
+    {
+      "@context": ["https://www.w3.org/ns/activitystreams", "https://join-lemmy.org/context.json"],
+      "id": "https://lemmy.example/activities/create/issue-reply-1",
+      "type": "Create",
+      "actor": "https://lemmy.example/u/alice",
+      "object": {
+        "id": "https://lemmy.example/comment/901",
+        "type": "Note",
+        "attributedTo": "https://lemmy.example/u/alice",
+        "content": "<p>This reproduces on Linux.</p>",
+        "inReplyTo": "https://forkmesh.test/ap/o/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "context": "https://lemmy.example/post/88",
+        "url": "https://lemmy.example/comment/901",
+        "published": "2026-07-22T12:00:00Z"
+      }
+    },
+    {
+      "@context": ["https://www.w3.org/ns/activitystreams", "https://join-lemmy.org/context.json"],
+      "id": "https://lemmy.example/activities/update/issue-reply-1",
+      "type": "Update",
+      "actor": "https://lemmy.example/u/alice",
+      "object": {
+        "id": "https://lemmy.example/comment/901",
+        "type": "Note",
+        "attributedTo": "https://lemmy.example/u/alice",
+        "content": "<p>This reproduces on Linux and FreeBSD.</p>",
+        "inReplyTo": "https://forkmesh.test/ap/o/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "context": "https://lemmy.example/post/88",
+        "url": "https://lemmy.example/comment/901",
+        "published": "2026-07-22T12:00:00Z",
+        "updated": "2026-07-22T12:05:00Z"
+      }
+    }
+  ]
+}

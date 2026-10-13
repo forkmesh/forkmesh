@@ -1,0 +1,57 @@
+{
+  "remoteActor": {
+    "id": "https://community.example/u/carol",
+    "url": "https://community.example/u/carol",
+    "preferredUsername": "carol",
+    "name": "Carol",
+    "software": "lemmy"
+  },
+  "context": {
+    "owner": "forkmesh",
+    "repo": "forkmesh",
+    "kind": "discussion",
+    "ref": "9"
+  },
+  "activities": [
+    {
+      "@context": ["https://www.w3.org/ns/activitystreams", "https://join-lemmy.org/context.json"],
+      "id": "https://community.example/activities/create/discussion-reply-1",
+      "type": "Create",
+      "actor": "https://community.example/u/carol",
+      "object": {
+        "id": "https://community.example/comment/501",
+        "type": "Note",
+        "attributedTo": "https://community.example/u/carol",
+        "content": "<p>A top-level Lemmy reply.</p>",
+        "inReplyTo": "https://forkmesh.test/ap/o/cccccccccccccccccccccccccccccccc",
+        "context": "https://community.example/post/55",
+        "url": "https://community.example/comment/501",
+        "published": "2026-07-22T14:00:00Z"
+      }
+    },
+    {
+      "@context": ["https://www.w3.org/ns/activitystreams", "https://join-lemmy.org/context.json"],
+      "id": "https://community.example/activities/create/discussion-reply-2",
+      "type": "Create",
+      "actor": "https://community.example/u/carol",
+      "object": {
+        "id": "https://community.example/comment/502",
+        "type": "Note",
+        "attributedTo": "https://community.example/u/carol",
+        "content": "<p>A nested Lemmy reply.</p>",
+        "inReplyTo": "https://community.example/comment/501",
+        "context": "https://community.example/post/55",
+        "url": "https://community.example/comment/502",
+        "published": "2026-07-22T14:01:00Z"
+      }
+    },
+    {
+      "@context": ["https://www.w3.org/ns/activitystreams", "https://join-lemmy.org/context.json"],
+      "id": "https://community.example/activities/remove/discussion-reply-2",
+      "type": "Remove",
+      "actor": "https://community.example/c/moderators",
+      "object": "https://community.example/comment/502",
+      "summary": "Removed by community moderation policy"
+    }
+  ]
+}

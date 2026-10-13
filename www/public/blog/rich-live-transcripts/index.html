@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rich live transcripts · ForkMesh Blog</title>
+    <meta name="description" content="Agent sessions render as a live, structured transcript: tool calls, diffs, and results as cards, with a raw-output toggle for the curious.">
+    <link rel="canonical" href="https://forkmesh.com/blog/rich-live-transcripts/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/rich-live-transcripts/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Rich live transcripts">
+    <meta property="og:description" content="Agent sessions render as a live, structured transcript: tool calls, diffs, and results as cards, with a raw-output toggle for the curious.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/rich-live-transcripts.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/rich-live-transcripts.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">AI agents</p>
+            <h1>Rich live transcripts</h1>
+            <p class="lede">Agent sessions render as a live, structured transcript: tool calls, diffs, and results as cards, with a raw-output toggle for the curious.</p>
+            <div class="meta"><span class="pill">Feature 34 of 72</span><span>Feature</span><span>AI agents, built in</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/rich-live-transcripts.webp" alt="Abstract ForkMesh artwork for Rich live transcripts">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Rich live transcripts gives ForkMesh a concrete mechanism for structured live agent transcripts with tool calls, diffs, and raw output when needed. Agent sessions render as a live, structured transcript: tool calls, diffs, and results as cards, with a raw-output toggle for the curious.</p>
+          <p>AI coding only helps when the agent can work in a real repository without trampling human state or hiding what it did. In ForkMesh, rich live transcripts addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles rich live transcripts through the same split it uses across the product: ForkMesh runs agents beside the repository, capturing transcripts, branches, diffs, prompts, usage, questions, and handoffs in the desktop app.</p>
+          <p>The behavior is intentionally narrow: Agent sessions render as a live, structured transcript: tool calls, diffs, and results as cards, with a raw-output toggle for the curious. Humans keep control of instructions, answers, review, and merge decisions.</p>
+          <h2>Where it fits</h2>
+          <p>Use rich live transcripts when agent work should be reviewable, resumable, and connected to the same repo UI humans use.</p>
+          <p>It pairs with the rest of AI agents, built in because Rich live transcripts keeps structured live agent transcripts with tool calls, diffs, and raw output when needed connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/resumable-sessions/">← Resumable sessions</a>
+          <a href="/blog/agents-can-ask-you-questions/">Agents can ask you questions →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

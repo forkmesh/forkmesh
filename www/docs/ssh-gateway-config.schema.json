@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/ssh-gateway-config-v1.json",
+  "title": "ForkMesh node-side Git SSH gateway configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authorizationSocket",
+    "authorizationBrokerUser",
+    "gatewayExecutable",
+    "refreshNotifier",
+    "repositoryRoot",
+    "repositories"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "authorizationSocket": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$"
+    },
+    "authorizationBrokerUser": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,62}$"
+    },
+    "gatewayExecutable": {
+      "type": "string",
+      "pattern": "^/(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))[A-Za-z0-9_./+-]+$"
+    },
+    "refreshNotifier": {
+      "type": "string",
+      "pattern": "^/(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))[A-Za-z0-9_./+-]+$"
+    },
+    "repositoryRoot": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$"
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capacityDirectory",
+        "maxConcurrentSessions",
+        "reservedReceiveSessions",
+        "maxConcurrentProcesses",
+        "reservedReceiveProcesses",
+        "uploadPackDeadlineSeconds",
+        "receivePackDeadlineSeconds",
+        "terminationGraceSeconds",
+        "receiveMaxInputBytes",
+        "defaultRepositoryMaxBytes",
+        "storageScanDeadlineSeconds",
+        "cleanupDeadlineSeconds",
+        "maxPackThreads"
+      ],
+      "properties": {
+        "capacityDirectory": {
+          "type": "string",
+          "pattern": "^/[^\\r\\n\\u0000]+$"
+        },
+        "maxConcurrentSessions": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 256
+        },
+        "reservedReceiveSessions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255
+        },
+        "maxConcurrentProcesses": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 256
+        },
+        "reservedReceiveProcesses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255
+        },
+        "uploadPackDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 3600
+        },
+        "receivePackDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 3600
+        },
+        "terminationGraceSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "receiveMaxInputBytes": {
+          "type": "integer",
+          "minimum": 1048576,
+          "maximum": 4294967296
+        },
+        "defaultRepositoryMaxBytes": {
+          "type": "integer",
+          "minimum": 16777216,
+          "maximum": 1099511627776
+        },
+        "storageScanDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "cleanupDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "maxPackThreads": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["owner", "name", "path", "access"],
+        "properties": {
+          "owner": {
+            "type": "string",
+            "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,100}$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\r\\n\\u0000]+$"
+          },
+          "access": {"enum": ["read-only", "read-write"]},
+          "maxStorageBytes": {
+            "type": "integer",
+            "minimum": 16777216,
+            "maximum": 1099511627776
+          }
+        }
+      }
+    },
+    "dynamicRepositoriesFile": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$",
+      "description": "Absolute path to the node-owned forkmesh.dynamic-repositories fork registry; its validated entries are merged as additional read-write repositories and enable the forkmesh-fork verb."
+    },
+    "pullSubmissionSpool": {
+      "type": "string",
+      "pattern": "^/(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))[^\\r\\n\\u0000]+$",
+      "description": "Owner-only mode-0700 directory where forkmesh-pull-submit spools signed pull requests for later replay to the controller."
+    },
+    "pullSubmissionMaxBytes": {
+      "type": "integer",
+      "minimum": 65536,
+      "maximum": 104857600,
+      "description": "Maximum spooled submission size; requires pullSubmissionSpool."
+    },
+    "operatorPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyPath", "stateDirectory"],
+      "description": "Node operator policy (protected branches, signed commits, push limits) enforced by a gateway-owned pre-receive hook. Both paths belong to the git account; the state directory is mode 0700.",
+      "properties": {
+        "policyPath": {
+          "type": "string",
+          "pattern": "^/(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))[^\\r\\n\\u0000]+$"
+        },
+        "stateDirectory": {
+          "type": "string",
+          "pattern": "^/(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))[^\\r\\n\\u0000]+$"
+        }
+      }
+    }
+  }
+}

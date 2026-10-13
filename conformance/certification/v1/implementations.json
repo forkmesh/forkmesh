@@ -1,0 +1,29 @@
+{
+  "schema": "forkmesh-certification-registry-v1",
+  "implementations": [
+    {
+      "id": "forkmesh-clean-room-python",
+      "name": "ForkMesh clean-room Python verifier",
+      "maintainer": "ForkMesh maintainers",
+      "source": "conformance/protocol/v1/verify_suite.py",
+      "language": "Python",
+      "independent": false,
+      "independenceNote": "Written from the suite documents without importing ForkMesh source, but by ForkMesh maintainers, so it does not satisfy the independent-implementation closure gate.",
+      "adapter": ["{python}", "conformance/certification/v1/adapters/clean_room_python.py"],
+      "platforms": ["linux"],
+      "profiles": ["core"]
+    },
+    {
+      "id": "forkmesh-webcrypto-javascript",
+      "name": "ForkMesh WebCrypto JavaScript collaboration library",
+      "maintainer": "ForkMesh maintainers",
+      "source": "app/public/collaboration.js",
+      "language": "JavaScript",
+      "independent": false,
+      "independenceNote": "Ships in the ForkMesh dashboard; a second-language pass, not an independent implementation.",
+      "adapter": ["node", "conformance/certification/v1/adapters/webcrypto_javascript.js"],
+      "platforms": ["linux"],
+      "profiles": ["collaboration-fold"]
+    }
+  ]
+}

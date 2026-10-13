@@ -1,0 +1,112 @@
+#appWindowFrame { background-color: @border; }
+#windowChromeBar { background-color: @bgSubtle; border-bottom: 1px solid @border; }
+#serverRail, #navRail { background-color: @bgSubtle; border-right: 1px solid @border; }
+#appNavigationRail, #appNavigationRailContent {
+    background-color: @bgSubtle; border-right: 1px solid @border;
+}
+#debugBar { background-color: @bgSubtle; border-top: 1px solid @border; }
+#footerLogPanel { background-color: @bg; border: 1px solid @border; border-radius: 8px; }
+
+QPushButton#topNavButton { font-weight: 500; }
+QPushButton#topNavButton:hover { background-color: @surfaceRaised; color: @fg; }
+QPushButton#topNavButton:checked {
+    background-color: @surfaceActive; color: @fg; border-color: transparent;
+}
+QPushButton#windowChromeButton:hover {
+    background-color: @surfaceRaised; color: @fg; border-color: transparent;
+}
+
+#repoTabBar { border-bottom: 1px solid @border; }
+QPushButton#repoTab { font-weight: 500; }
+QPushButton#repoTab:checked {
+    color: @fg; border-bottom: 2px solid @accentFg; border-radius: 0; background: transparent;
+}
+
+#globalSearch {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    padding: 4px 8px; color: @fg;
+}
+#globalSearch:focus { border-color: @accent; }
+#globalSearchPopup {
+    background-color: @surface; border: 1px solid @borderStrong;
+    border-radius: 10px; padding: 4px; outline: none;
+    selection-background-color: @surfaceActive; selection-color: @fg;
+}
+#globalSearchPopup::item:selected { background-color: @surfaceActive; color: @fg; }
+
+#sidebar QListWidget::item:selected {
+    background-color: @surfaceActive; color: @fg;
+    border-radius: 6px; padding: 5px 8px; margin: 1px 0;
+}
+#sidebar QTreeWidget::item:selected {
+    background-color: @surfaceActive; color: @fg;
+    border-radius: 6px; padding: 5px 8px; margin: 1px 0;
+}
+#sidebar QListWidget::item:hover, #sidebar QTreeWidget::item:hover {
+    background-color: @surfaceRaised; border-radius: 6px; padding: 5px 8px; margin: 1px 0;
+}
+
+#fileTabs QTabBar::tab:selected, #repoSettingsTabs QTabBar::tab:selected {
+    background: @surface; color: @fg; border-color: @border; border-bottom-color: @surface;
+}
+#networkTabs QTabBar::tab {
+    background-color: transparent; color: @fgMuted; border: 1px solid transparent;
+    border-radius: 6px; font-weight: 500;
+}
+#networkTabs QTabBar::tab:hover { background-color: @surfaceRaised; color: @fg; }
+#networkTabs QTabBar::tab:selected {
+    background-color: @surfaceActive; border-color: transparent; color: @fg;
+}
+
+#onboardingBrand { color: @fgMuted; font-weight: 600; letter-spacing: 1px; }
+#onboardingKicker { color: @fgMuted; font-weight: 600; letter-spacing: 0px; }
+#onboardingTitle { color: @fg; font-size: 24px; font-weight: 600; }
+#onboardingCard { background-color: @surface; border: 1px solid @borderStrong; border-radius: 16px; }
+#onboardingFeatureBadge { background-color: @surfaceActive; color: @fg; }
+QProgressBar#onboardingProgress::chunk { background-color: @accent; border-radius: 2px; }
+
+QPushButton#agentsMagicButton {
+    background: @accent; border: 1px solid @accent; border-radius: 8px;
+    color: @onAccent; font-weight: 600;
+}
+QPushButton#agentsMagicButton:hover { background: @accentHover; border-color: @accentHover; }
+QPushButton#agentsMagicButton:checked { background: @accentPressed; border-color: @accentPressed; }
+QPushButton#quickAddGenieButton {
+    background: @surfaceRaised; border: 1px solid @borderStrong; color: @fgSecondary;
+    border-radius: 6px; font-weight: 500;
+}
+QPushButton#quickAddGenieButton:hover {
+    background: @surfaceActive; border-color: @borderStrong; color: @fg;
+}
+QPushButton#teammateBriefingGenerate, QPushButton#teammateBriefingRunAgain {
+    color: @onAccent; background-color: @accent; border: 1px solid @accent;
+    border-radius: 8px; font-weight: 600;
+}
+QPushButton#teammateBriefingGenerate:hover, QPushButton#teammateBriefingRunAgain:hover {
+    background-color: @accentHover; border-color: @accentHover;
+}
+
+#welcomeScrim { background-color: rgba(0, 0, 0, 0.62); }
+#welcomeCard {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 16px;
+}
+#welcomeCard QLabel { background: transparent; }
+#welcomeBrand { color: @fgMuted; font-size: 11px; font-weight: 600; letter-spacing: 2px; }
+#welcomeTitle { color: @fg; font-size: 24px; font-weight: 600; }
+#welcomeLede { color: @fgMuted; font-size: 14px; }
+#welcomeFootnote {
+    background-color: @bgSubtle; border: 1px solid @border; border-radius: 8px;
+}
+#welcomeFootnote QLabel { color: @fgMuted; font-size: 12px; }
+QPushButton#welcomeLink {
+    background: transparent; border: none; color: @accentFg;
+    font-weight: 500; padding: 2px 0; text-align: left;
+}
+QPushButton#welcomeLink:hover { color: @accentHover; }
+
+#railToggleButton { background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 0; }
+#railToggleButton:hover { background-color: @surfaceRaised; }
+#railGroupHeading {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; background: transparent;
+    padding: 8px 10px 2px 10px;
+}

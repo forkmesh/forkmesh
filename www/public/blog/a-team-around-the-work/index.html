@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A team around the work · ForkMesh Blog</title>
+    <meta name="description" content="ForkMesh's current main branch introduces persistent AI teammates, an embedded Discord bridge, clearer review state, and more precise mirror authority.">
+    <link rel="canonical" href="https://forkmesh.com/blog/a-team-around-the-work/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/a-team-around-the-work/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="A team around the work">
+    <meta property="og:description" content="Persistent AI teammates, embedded Discord, clearer review progress, and stricter mirror authority bring more of the work into one place.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/a-team-around-the-work.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="Three coding-assistant robots work around a luminous repository crystal as a glass review arc, violet chat signal, and three mirror pods connect through a moonlit forest">
+    <meta property="article:published_time" content="2026-08-18T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="A team around the work">
+    <meta name="twitter:description" content="Repository-backed teammates, embedded Discord, visible review progress, and mirrors that say where authority lives.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/a-team-around-the-work.webp">
+    <meta name="twitter:image:alt" content="Three coding-assistant robots work around a luminous repository crystal as a glass review arc, violet chat signal, and three mirror pods connect through a moonlit forest">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>A team around the work</h1>
+            <p class="lede">ForkMesh's current main branch is turning agent sessions, review panes, mirror records, and chat rooms into one steadier workbench—without blurring the line between merged code and a released desktop.</p>
+            <div class="meta"><span class="pill">August 18, 2026</span><span>Product update</span><span>8 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/a-team-around-the-work.webp" alt="Three coding-assistant robots work around a luminous repository crystal as a glass review arc, violet chat signal, and three mirror pods connect through a moonlit forest">
+        </section>
+        <article class="body">
+          <p><a href="/blog/shorter-loops-stronger-proof/">Shorter loops, stronger proof</a> followed work from a report through review, mirrors, and a public receipt. Since that post landed, the center of gravity has shifted toward the people—and agents—who keep those loops moving. Roles can now live with a repository, review progress stays visible, and another conversation system can meet the desktop where the code already is.</p>
+          <p>This is a current-<code>main</code> update. The newest signed desktop artifact remains v0.7.23, so the desktop work below is not being presented as something already available from the download page. App, website, server, and World changes can deploy on their own cadence; a merged commit is still not proof that a hosted surface is live.</p>
+
+          <h2>Teammates move into the repository</h2>
+          <p>A new <strong>Your Team</strong> beta surface gives each repository a roster of persistent AI teammates. A teammate has a name and specialty, a model, working instructions, selected skills, an optional repository shortcut, a human-readable schedule, and an explicit action boundary. The desktop shows who is working, queued, scheduled, or idle; a detail page keeps the current session, recent activity, linked capabilities, and permission choices together.</p>
+          <p>The durable definition is ordinary JSON under <code>.forkmesh/teammates/</code>, not an opaque hosted profile. That makes a role inspectable and reviewable with the rest of the project. Identity stays stable if the selected model changes, and removing a teammate leaves its prior agent sessions and branches intact. The repository now carries Quality and Marketing definitions, while the editor includes a Quality Assurance starting template for another project to adapt.</p>
+          <p>Work can start on demand, hourly, daily, weekly, on selected days, continuously when repository work appears, or on new issues, pull requests, assignments, and mentions. Automatic runs are opt-in and driven by the open desktop client, not a promise of hosted background execution. A teammate cannot start without repository-read access; a teammate without modify access starts in Plan mode; and opening a pull requires modify, branch, and pull-request permissions together. The rest of the boundary is written into every assignment. That is useful scope control, but it is not a new operating-system sandbox.</p>
+
+          <h2>Review keeps a visible finish line</h2>
+          <p>The desktop diff now opens with one narrow review bar: files viewed, total additions and deletions, the kinds of changes in the branch, and how many files remain. Each file row follows the same reading order as the Changes tree—status, file type, name, then directory—with exact churn beside the small change meter and a properly bounded Viewed control. The result is less decoding between the tree and the patch, especially after reviewed files collapse.</p>
+          <p>Branch history no longer means “since midnight.” The landing view starts with the last 24 hours and can widen to 7 days, 30 days, or 6 months; expensive churn totals stay bounded to the newest rows instead of pretending to summarize a window they only partly scanned. Pull refreshes also avoid overlapping work, and stall diagnostics now record more context without re-entering the interface while it is trying to recover.</p>
+          <p>Agent scheduling is more honest under pressure, too. If someone lowers the concurrent-agent limit below the number already running, newer sessions park at the front of the queue while preserving their CLI conversation and worktree. They resume as the longer-running sessions release slots. The purple activity fireball is only a status cue, but it now carries its phase forward as speed changes instead of jumping backward or resetting when a row redraws.</p>
+
+          <h2>Discord can join the same workbench</h2>
+          <p>Desktop Chat can now connect an optional Discord bot and place server text channels, active threads, and bot direct messages beside native ForkMesh conversations. Recent history and live messages use the existing transcript. Replies, typing, reactions, edits, deletes, avatars, and attachments follow the same interaction patterns, and a channel can still open in Discord when its native context is useful.</p>
+          <p>The bridge deliberately accepts bot credentials, not normal Discord user tokens. Discord's server permissions remain authoritative, and messages sent from ForkMesh appear under the bot's identity. The token stays in device-local app settings rather than action variables, process arguments, logs, or chat history; disconnecting removes it and the cached Discord conversations from that device. This is an integration with Discord's bot API, not a claim that the two systems share identity or storage.</p>
+          <p>Native channel creation became easier to find at the same time. The desktop now labels the channel list and gives <strong>New channel</strong> a real button. In the World Office, organization members—not only administrators—can open the existing channel-creation flow, with membership read from the authoritative organization record rather than inferred from team rows.</p>
+
+          <h2>Repository surfaces trade ceremony for signal</h2>
+          <p>The web repository list now shows up to 100 projects per page instead of five. Language, visibility, mirror state, update time, issues, commits, pulls, and discussions share one wrapping metadata row, so a larger mesh takes less paging and each card takes less vertical space. Repository pages use a full-width tab strip over a bounded content column, move Releases and Size map into direct actions in the About rail, and can show the faces behind fediverse watcher counts.</p>
+          <p>Issue, pull-request, and discussion rows are links again. A normal click still uses in-app navigation, while middle-click, modifier-click, and Copy link address work like they do elsewhere on the web. Repository art follows the same principle of showing real project state: a committed root <code>logo.png</code> or an owner-uploaded logo wins, and a project without either keeps the neutral repository icon instead of receiving a generated mark.</p>
+          <p>The Calendar work from the previous update also received its scaling pass. Web activity is fetched and cached by repository and month, rendered as each result arrives, and bucketed once per day. The desktop reads repository activity in timed slices after first paint. Gateway history now answers nested activity windows with one commit walk. These changes make the existing all-ref calendar practical on a repository with a long history; they do not introduce a new calendar data source.</p>
+
+          <h2>Mirrors say where authority actually lives</h2>
+          <p>A serving mirror is no longer promoted to “source of truth” merely because it is the freshest node online. The mirrors API and its public snapshot contract now name the logical working-copy authority separately, while the page lists independent serving nodes on their own terms. When a mirror advertises the same commit, the UI can use the canonical content size while still comparing that node's published counts; physical Git pack sizes may differ without implying different repository contents.</p>
+          <p>Several recovery edges reinforce that distinction. Retired nodes are filtered from current mirror results. A short catalog sweep merges the evidence it did observe instead of blanking node statistics it could not re-read. Deleted issue records remain in Git as audit history without inflating the visible open count. Organization aliases must hand off to another fresh mirror in the same signed repository group before their backing node can be retired.</p>
+          <p>Operational state is tightening around the same source-of-truth rule. The status page can confirm an accepted email against the mail provider's delivery record when a delivery callback never arrives, so a missing callback no longer reads as an indefinite outage while a real delivery failure is still reported. A same-browser App session can also restore in World through the revocable account cookie without putting a bearer token in a URL.</p>
+
+          <h2>The release line has not moved</h2>
+          <p>No desktop tag was added in this reporting window. <strong>v0.7.23 remains the newest signed desktop release</strong>; persistent teammates, the Discord bridge, the new review bar, branch windows, queue parking, and the later desktop fixes described here are current-<code>main</code> work. The teammate surface also labels itself Beta. Testing a source build is not the same thing as receiving a signed update.</p>
+          <p>There were no new merged repository-native pull records after the previous post's publication commit. The evidence here comes from the commits that reached <code>main</code>, their diffs and tests, the unchanged release record, the repository's issue and pull ledgers, and the updated operating and desktop documentation.</p>
+          <p><a href="/desktop">Watch the desktop release page</a> for the next signed artifact, <a href="/docs/qt-client/">read the desktop and Discord guide</a>, or <a href="/status">check current service health</a>.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/a-wider-door-a-clearer-trail/">← A wider door, a clearer trail</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/shorter-loops-stronger-proof/">Shorter loops, stronger proof →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

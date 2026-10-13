@@ -1,0 +1,76 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "aquarium",
+  "name": "Aquarium",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Fun",
+  "version": "1.4.0",
+  "summary": "Your agents become fish. On the desktop every agent swims while ForkMesh is in the background, shaped by its status, changed files and conflicts; on the iPhone running agents swim over the app. They play with buttons and the Genie spider.",
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "The ForkMesh window under water, with agent fish reading a heading, booping a button and swimming rings around the Genie spider"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:aquarium",
+    "ios": "builtin:aquarium",
+    "settings": "builtin:package"
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  },
+  "permissions": [
+    {
+      "id": "chrome.rail.button",
+      "label": "Add an Aquarium button to the desktop rail",
+      "risk": "low"
+    },
+    {
+      "id": "ui.overlay",
+      "label": "Cover the window with the aquarium while ForkMesh is in the background, drawn over a picture of the window",
+      "risk": "low"
+    },
+    {
+      "id": "agents.activity.read",
+      "label": "See your agents, their status, changed files and merge conflicts, to give each one a fish",
+      "risk": "low"
+    },
+    {
+      "id": "ui.overlay.phone",
+      "label": "On the iPhone, swim over the app in a layer that lets every touch through and keeps off buttons and logos",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

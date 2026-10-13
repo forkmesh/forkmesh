@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Three small servers and a long September · ForkMesh Blog</title>
+    <meta name="description" content="Everything that changed in ForkMesh since September 1: ForkMesh Next on three servers of our own, a much faster repository page, agents on separate runners, phone updates, ten desktop releases, and what we fixed along the way.">
+    <link rel="canonical" href="https://forkmesh.com/blog/three-small-servers/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/three-small-servers/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Three small servers and a long September">
+    <meta property="og:description" content="ForkMesh Next on three small servers of our own, a repository page that went from seconds to a couple hundred milliseconds, agents on separate runners, and ten desktop releases since September 1.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/three-small-servers.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="The forkmesh/forkmesh repository page on ForkMesh Next, with the file list on the left and the About rail on the right">
+    <meta property="article:published_time" content="2026-09-24T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Three small servers and a long September">
+    <meta name="twitter:description" content="What changed in ForkMesh since September 1, and what we fixed along the way.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/three-small-servers.webp">
+    <meta name="twitter:image:alt" content="The forkmesh/forkmesh repository page on ForkMesh Next, with the file list on the left and the About rail on the right">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <style>
+      .body table { width:100%; margin:24px 0; border-collapse:collapse; font-size:15px; line-height:1.5; }
+      .body th, .body td { border-bottom:1px solid var(--line); padding:9px 10px 9px 0; text-align:left; vertical-align:top; color:var(--paragraph); }
+      .body th { color:var(--muted); font-weight:700; }
+      .body td:nth-child(n+2), .body th:nth-child(n+2) { white-space:nowrap; }
+      .body h3 { margin:30px 0 4px; font-size:21px; line-height:1.25; }
+      @media (max-width:760px) { .body td:nth-child(n+2), .body th:nth-child(n+2) { white-space:normal; } }
+    </style>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Three small servers and a long September</h1>
+            <p class="lede">Since the last post we shipped ten desktop releases, got the repository page from seconds down to a couple hundred milliseconds, and started running ForkMesh on three small servers of our own. Here is the full picture.</p>
+            <div class="meta"><span class="pill">September 24, 2026</span><span>Product update</span><span>12 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/three-small-servers.webp" alt="The forkmesh/forkmesh repository page on ForkMesh Next, with the file list on the left and the About rail on the right">
+        </section>
+        <article class="body">
+          <p>The last post here went up on September 1. A lot has happened since, and most of it is easiest to explain plainly.</p>
+          <p>Some rough numbers first. Since September 1 the main branch of <code>forkmesh/forkmesh</code> took about 1,340 commits (merges counted once). Ten versions went out on the <code>latest</code> release channel, from 0.8.0 on September 3 to 1.2.3 on September 22. And yesterday we started a second repository, ForkMesh Next, which is already 59 commits deep. Most of this post is about Next, because it's the biggest change to how ForkMesh runs since we started.</p>
+
+          <h2>Why Next exists</h2>
+          <p>Production ForkMesh runs on Cloudflare. One large Python Worker, D1 for the database, Durable Objects for chat and the World, a queue and a cron trigger. It got us a long way for very little money.</p>
+          <p>It also meant we spent a real part of August and September working around platform limits instead of building features: startup memory, CPU time on cold routes, and deploys that were hard to predict. That comes from running a very large Python app on a platform designed for small ones, so we decided to give the app a home that fits it.</p>
+          <p>So ForkMesh Next is a completely separate deployment, with its own repository, its own servers and its own keys. The app lives at <code>app.forkmesh.com</code>. (This blog page is still a static file served by Cloudflare, and we're keeping it that way. The app behind it is the part that moved.)</p>
+
+          <h2>What it runs on</h2>
+          <p>Three small self-hosted servers. Every one of them runs the same stack: a web server in front, the ForkMesh app, a replicated copy of the database, and a Git gateway, so a write lands on all three.</p>
+          <p>The part we're happiest about is what we <em>didn't</em> do, which is rewrite the app. Porting it to Go came up, but the app is about 150,000 lines. Instead there's a thin layer that pretends to be the Cloudflare runtime on plain CPython (fetch, WebCrypto, the D1 database API, Durable Objects, WebSockets), and the app runs on top of it mostly unchanged. When the app asks D1 for a row it gets the replicated database. When it opens a Durable Object, that object lives on whichever of the three nodes owns it at that moment.</p>
+          <p>We weren't sure small servers would be enough. They were. These were measured on the first node on September 23, from the node itself, so there's no network in them:</p>
+          <table>
+            <thead><tr><th>What</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>App memory after a warm restart</td><td>50 MB</td></tr>
+              <tr><td>App memory on first start, with 300 open WebSockets</td><td>132–140 MB</td></tr>
+              <tr><td>Database memory</td><td>44–46 MB</td></tr>
+              <tr><td>Listing repositories, median</td><td>4.0 ms</td></tr>
+              <tr><td>Logging in, median (mostly password hashing)</td><td>128 ms</td></tr>
+              <tr><td>A single-row database write, median</td><td>1.7 ms</td></tr>
+            </tbody>
+          </table>
+          <p>That last one is on a single node. Write latency across all three is still on the to-measure list.</p>
+
+          <h3>Nobody is in charge</h3>
+          <p>A lot of three-node setups quietly have one special node that does the scheduled work or holds the certificates. When it dies you find out which things only it was doing. We tried hard not to have one. The job that runs every minute moves to a different node every minute. Each node writes only its own "I'm alive" row, and every node works out for itself who else is alive. TLS certificates are renewed by whichever node is available and shared with the others. If a node disappears, nothing has to be promoted. Deploys go out one node at a time, and a release that fails its health checks is rolled back automatically before the other nodes see it.</p>
+
+          <h2>The repository page got fast</h2>
+          <p>This is the one that had bugged us for months. On a cold visit to <code>forkmesh/forkmesh</code>, the file list showed up after 0.7 to 0.9 seconds, and right after a push it took 6.1 seconds. The cause was simple: our cache key didn't match the query the web page actually sent, so after every push each entry in the directory ran its own <code>git log</code> over roughly 53,000 commits of history. On a test machine, opening <code>desktop/src</code> took 64 seconds.</p>
+          <p>Three changes did most of the work:</p>
+          <p><strong>The gateway got smarter about history.</strong> It caches by commit, lets only one request compute a missing answer while the others wait for it, and writes a commit-graph file with the filters Git uses to skip commits that didn't touch a path. <code>desktop/src</code> went from 64 seconds to 0.3.</p>
+          <p><strong>The server renders the first view.</strong> Before, your browser downloaded 1.9 MB of JavaScript, then asked for the repository list, then the file tree, then the README, one after another. Now the HTML arrives with the file list, the latest commit and the README already inside it.</p>
+          <p><strong>And a small one.</strong> Every response from our Git gateway waited about 40 milliseconds for nothing. It wrote the headers and the body in two separate writes, and TCP held the second one back until an acknowledgement arrived that the other side was deliberately delaying. That's Nagle's algorithm meeting delayed ACKs, a well-known interaction, and the fix is one socket option. A cached read went from 43 ms to 1.4 ms.</p>
+          <p>Here's the time until the file list and README are both on screen, measured on a test copy of the stack with 30 ms of network delay added:</p>
+          <table>
+            <thead><tr><th>Load</th><th>Before</th><th>After</th></tr></thead>
+            <tbody>
+              <tr><td>First visit (cold)</td><td>566–628 ms</td><td>220–244 ms</td></tr>
+              <tr><td>Second visit</td><td>438–502 ms</td><td>168–220 ms</td></tr>
+              <tr><td>Third visit</td><td>397–441 ms</td><td>140–164 ms</td></tr>
+            </tbody>
+          </table>
+          <p>A first visit also downloads 1.49 MB now, down from 4.48 MB. We'll re-measure the live site once the latest round is deployed, and we'd rather wait for those numbers than guess at them.</p>
+          <p>It's not done. <code>dashboard.js</code> is still 1.9 MB and still costs around 150 ms of main-thread work before the full interface is interactive, more on phones. The file view and commit history don't get server rendering yet. Splitting that script up is the next big job.</p>
+          <p>Also, look at the screenshot at the top of this post. "Latest release: v0.7.95." That's wrong, the latest is 1.2.3. Our release files record when they were <em>created</em>, and the widget sorted them by when they were <em>published</em>, a field none of them have. Everything tied at zero and it showed whichever came first. The fix is committed and will be live with the next deploy. We left the screenshot as it is.</p>
+
+          <h2>Security</h2>
+          <p>This week we reviewed both Next's code and its servers, and the changes went in the same day. The short version: coding-agent jobs are kept apart from the runner's own tools, each job runs in its own isolated account, settings and secrets are encrypted at rest, database backups are encrypted before they're stored, and requests have size limits and host checks.</p>
+          <p>The mirror fleet got some attention too: mirror SSH accepts key logins only.</p>
+
+          <h2>Agents run on their own servers</h2>
+          <p>Here's the reasoning. A coding agent runs whatever a prompt tells it to run. If that happens on the same box as your database and your keys, one successful prompt injection is a very bad day. So on Next the three core nodes never run agent code at all.</p>
+          <p>Agents run on <em>runners</em>: separate servers that only make outgoing connections. A runner claims a job, clones that one repository, runs Claude Code or Codex inside a sandbox, pushes exactly one branch (<code>agent/&lt;session&gt;</code>), and wipes its working directory. The permission it gets for the push only covers that branch, and the gateway refuses anything else.</p>
+          <p>Signing a runner in to Claude used to mean logging into the box. Now you open <a href="https://app.forkmesh.com/dashboard/runners">Runners</a> on the website, and it relays the runner's <code>claude auth login</code> (or Codex's device login) to your browser. You paste the code and you're done. Only admins and whoever registered a personal runner can do this.</p>
+          <p>Claude Opus 5.5 is now the default model. A job that doesn't name a model runs on it, and "opus" in the picker means 5.5. The first version of that change broke one thing: the desktop checks model names on jobs queued from the website, didn't recognise the new one, and rejected those jobs as malformed. Fixed the same day.</p>
+          <p>Jobs queued from the website can also carry images now, up to five per prompt (5 MB each, 10 MB in total), and the agent sees them as files next to the code.</p>
+
+          <h2>The phone</h2>
+          <p>Everything in this section is merged on main but isn't in a published build yet. The Android APK in 1.2.3 is older than all of it.</p>
+          <p>Your phone can ping you when someone pushes code. There's a per-branch guard so a burst of pushes becomes one ping a minute rather than twenty, and a "Code pushes" switch if you don't want them at all. The app also has <em>projects</em> now. ForkMesh, ForkMesh Next, and any self-hosted instance you add each get their own login and their own data on the device, and a switcher moves between them. Pings are routed to the project they came from.</p>
+          <p>The prompt box got rebuilt. You can attach photos, dictate, pick the model, and use slash commands. That's how you send an agent a screenshot of the bug you're staring at. On a branch, not merged yet: pressing send starts the agent straight away with your usual settings, instead of taking you through a "Start an agent" screen first.</p>
+          <p>The iPhone build pipeline now goes all the way through to TestFlight.</p>
+
+          <h3>Native apps, and the end of Flutter</h3>
+          <p>We're moving the iPhone app from Flutter to Swift and SwiftUI. By our own tracking, 56 of the 74 features in the Flutter app are ported, including an on-device Gemma 4 model, and this week produced the first successful iOS build of it. There's still work left before it ships.</p>
+          <p>An Apple Watch app is designed but not started. The native Android app is further behind, at 19 of 71. The Flutter app stays until native catches up, and then it goes. There's no date.</p>
+
+          <h2>Desktop releases, and a Windows startup bug</h2>
+          <p>1.2.3 is the first release with a macOS download: a <code>.dmg</code> for Apple Silicon, built on Codemagic. It isn't notarized yet, so macOS will complain the first time you open it. Every release also carries the Android APK now. And the homepage used to hide every download button when a single file was missing from a release. It doesn't do that anymore.</p>
+          <p>Then there's Windows. Some people on Windows couldn't open the app at all. It stopped at startup with <code>configuration_lock_unavailable</code>, and reinstalling didn't help.</p>
+          <p>On Windows, Qt keeps app settings in the registry, so asking for the settings "file name" gives you <code>\HKEY_CURRENT_USER\Software\ForkMesh\ForkMesh</code>. That looks like a path from the root of a drive. We used its folder to decide where the mirror Actions lock file should go, so the app tried to create <code>C:\HKEY_CURRENT_USER\Software\ForkMesh</code>. Where a standard user isn't allowed to create folders at the root of <code>C:</code>, that failed. And the app treated failing to get that lock as fatal, on every launch.</p>
+          <p>The fix puts the lock in the app's own data folder, and a problem there now only pauses mirror Actions. You get a warning with Retry and "Reset Actions configuration" buttons, and the window opens as normal. The uninstaller also cleans up any stray <code>C:\HKEY_CURRENT_USER</code> folder left behind. That fix is in 1.2.4, which is out now.</p>
+
+          <h2>Smaller things</h2>
+          <p>We dropped the third-party analytics service we'd been using and wrote our own analytics package instead. ForkMesh's own pages now load a first-party script that asks for consent before anything gets sent, and the old provider is gone from the codebase entirely.</p>
+          <p>We took card payments out. Card checkout was one more payment system to keep secure, so Supporter and Pro go through Patreon only now. The Voice Changer desktop package launched the same day, and it's free.</p>
+          <p>There's a Password Vault package with end-to-end encryption, a desktop page, and a mobile version with Android autofill. The desktop plays interface sounds by default now. If that's not your thing, Settings has a Sound section that turns them off. Most of the other 650-odd merges were desktop fixes and polish: settings on one page, better agent views, lots of stalls chased down. We won't list them all.</p>
+
+          <h2>Coming next</h2>
+          <p>Two things from this list landed while we were writing it: signup and password reset on Next now sit behind a Cloudflare Turnstile check, and the Marketplace has star ratings (anything under five stars asks you to tell us what to fix). Still to come, in rough order: making "create a repository from the website" work on Next's own servers (you can already create an empty public repo on the web and push to it with plain Git on production), and the phone's straight-to-agent send.</p>
+          <p>Moving production users onto Next isn't on that list yet. Production stays on Cloudflare until Next has run cleanly for a while, and that move will get its own plan and its own post.</p>
+
+          <h2>Update: production moved after all</h2>
+          <p>That came sooner than planned. Later on September 24, forkmesh.com, app.forkmesh.com and world.forkmesh.com moved onto the same three servers. We'll still write it up properly, but here's the short version.</p>
+          <p>We did it the boring way. Production went read-only, we copied the last of its data across, checked that every account could still log in, and then pointed the names at the new servers. Writes were paused for about seven minutes. Nothing written before the pause was lost, and if you tried to change something during those minutes, it was turned away with a "try again shortly" rather than quietly dropped. Sessions carried over, so nobody was logged out.</p>
+          <p>forkmesh.com still sits behind Cloudflare and passes requests through to the servers, and next.forkmesh.com has been retired, since there's only one of them again. The old Cloudflare setup has since been removed.</p>
+          <p>That's it for now. If something here is broken for you, especially on Windows, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a>. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/open-collective/">← ForkMesh is on Open Collective</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/signals-that-lead-somewhere/">Signals that lead somewhere →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

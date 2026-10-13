@@ -1,0 +1,76 @@
+{
+    "assignees": [
+    ],
+    "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+    "authorName": "jett",
+    "bountyAddress": "",
+    "bountyStatus": "",
+    "bountyUsd": 0,
+    "createdAt": 1791838257275,
+    "endDate": 0,
+    "events": [
+        {
+            "attachments": [
+            ],
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "body": "add more computer security checks to the computer security plugin",
+            "id": "open-735",
+            "sig": "4MIp-v-zHg5boV-e_xT3mFm4G9he3lSh5tjzcOtZG9U40iANkqa5x896tvh93fCaWsYUdBOR-AIvktxf96_bDA",
+            "title": "Enhance computer security plugin with more checks added",
+            "ts": 1791838257275,
+            "type": "open"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "cloudflare-ai",
+            "agentSessionId": 1921,
+            "agentStatus": "failed",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "61b4d34a-9d2e-4032-a5b5-ef5ffc3be49a",
+            "sig": "c7E_hTyjCnWvGVgDYAfpREd1aZoLItUT_aGml5Ql7NdapK2hTD1zl4JWAkh-YCIXcqZ1TTUaqqZrbKcFgpHvBA",
+            "ts": 1791838257585,
+            "type": "agent"
+        },
+        {
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "47fca069-20e7-45f8-abfe-95e434d3f0a1",
+            "sig": "YkNaq0ByzxQflIwVr78SmVM8jKiqOgZ7H7xZVAmEHTkl7XTee14HcCQMsIGYD-JLWeCCRRF22nORHkBtWf5wDw",
+            "status": "closed",
+            "ts": 1791838278157,
+            "type": "status"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "",
+            "agentSessionId": 0,
+            "agentStatus": "cleared",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "e8e6735f-3662-4fea-bf87-ccc7063c6cf0",
+            "sig": "LJ_yugsUXwiwpnqh5hDbpPMt9kmovuj_GSTOz7U0yJx3vttNn1Mifut15Fb333Qy4kxHEkLsic40QHONwqOWDA",
+            "ts": 1791839891221,
+            "type": "agent"
+        }
+    ],
+    "labels": [
+    ],
+    "milestone": "",
+    "number": 735,
+    "priority": 0,
+    "progress": 0,
+    "rewardCondition": "",
+    "rewardEstimateLamports": 0,
+    "rewardId": "",
+    "rewardRecipient": "",
+    "rewardStatus": "",
+    "rewardTxSignature": "",
+    "schema": "forkmesh-issue-v1",
+    "startDate": 0,
+    "status": "closed",
+    "title": "Enhance computer security plugin with more checks added",
+    "updatedAt": 1791839891221,
+    "votes": 0
+}

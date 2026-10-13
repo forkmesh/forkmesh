@@ -1,0 +1,469 @@
+{
+  "suite": "forkmesh-protocol",
+  "suiteVersion": "1.0.0-rc.1",
+  "vectorSet": "canonical-json",
+  "procedure": "parse: decode rawHex, parse it as one canonical document (FM-ENC-004) and accept or reject; encode: parse the JSON value as written in this file and emit canonical bytes (FM-ENC-001..003) or reject.",
+  "parse": [
+    {
+      "id": "parse-minimal-object",
+      "requirements": [
+        "FM-ENC-001"
+      ],
+      "rawHex": "7b2261223a317d",
+      "rawText": "{\"a\":1}",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "parse-sorted-nested-values",
+      "requirements": [
+        "FM-ENC-001",
+        "FM-ENC-002"
+      ],
+      "rawHex": "7b2261223a5b747275652c66616c73652c6e756c6c5d2c2262223a7b2263223a2264227d2c227a223a2d357d",
+      "rawText": "{\"a\":[true,false,null],\"b\":{\"c\":\"d\"},\"z\":-5}",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "parse-short-and-control-escapes",
+      "requirements": [
+        "FM-ENC-003"
+      ],
+      "rawHex": "7b2261223a225c225c5c5c625c665c6e5c725c745c75303030305c75303031662f7f227d",
+      "rawText": "{\"a\":\"\\\"\\\\\\b\\f\\n\\r\\t\\u0000\\u001f/\u007f\"}",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "parse-literal-non-ascii",
+      "requirements": [
+        "FM-ENC-003"
+      ],
+      "rawHex": "7b2261223a22c3a9e280a8e280a9f09f9880227d",
+      "rawText": "{\"a\":\"\u00e9\u2028\u2029\ud83d\ude00\"}",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "parse-safe-integer-bounds",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "rawHex": "7b2261223a393030373139393235343734303939312c2262223a2d393030373139393235343734303939317d",
+      "rawText": "{\"a\":9007199254740991,\"b\":-9007199254740991}",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "parse-depth-32",
+      "requirements": [
+        "FM-ENC-005"
+      ],
+      "rawHex": "7b2261223a5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d7d",
+      "rawText": "{\"a\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "reject-insignificant-whitespace",
+      "requirements": [
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2261223a20317d",
+      "rawText": "{\"a\": 1}",
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_encoding"
+      }
+    },
+    {
+      "id": "reject-unsorted-keys",
+      "requirements": [
+        "FM-ENC-001",
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2262223a312c2261223a327d",
+      "rawText": "{\"b\":1,\"a\":2}",
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_encoding"
+      }
+    },
+    {
+      "id": "reject-trailing-newline",
+      "requirements": [
+        "FM-ENC-001",
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2261223a317d0a",
+      "rawText": "{\"a\":1}\n",
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_encoding"
+      }
+    },
+    {
+      "id": "reject-escaped-non-ascii",
+      "requirements": [
+        "FM-ENC-003",
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2261223a225c7530306539227d",
+      "rawText": "{\"a\":\"\\u00e9\"}",
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_encoding"
+      }
+    },
+    {
+      "id": "reject-escaped-solidus",
+      "requirements": [
+        "FM-ENC-003",
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2261223a225c2f227d",
+      "rawText": "{\"a\":\"\\/\"}",
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_encoding"
+      }
+    },
+    {
+      "id": "reject-uppercase-unicode-escape",
+      "requirements": [
+        "FM-ENC-003",
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2261223a225c7530303146227d",
+      "rawText": "{\"a\":\"\\u001F\"}",
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_encoding"
+      }
+    },
+    {
+      "id": "reject-non-nfc-string",
+      "requirements": [
+        "FM-ENC-003",
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2261223a2265cc81227d",
+      "rawText": "{\"a\":\"e\u0301\"}",
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_encoding"
+      }
+    },
+    {
+      "id": "reject-duplicate-key",
+      "requirements": [
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2261223a312c2261223a317d",
+      "rawText": "{\"a\":1,\"a\":1}",
+      "expect": {
+        "valid": false,
+        "error": "duplicate_key"
+      }
+    },
+    {
+      "id": "reject-fraction",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "rawHex": "7b2261223a312e357d",
+      "rawText": "{\"a\":1.5}",
+      "expect": {
+        "valid": false,
+        "error": "floating_point_forbidden"
+      }
+    },
+    {
+      "id": "reject-integral-fraction",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "rawHex": "7b2261223a312e307d",
+      "rawText": "{\"a\":1.0}",
+      "expect": {
+        "valid": false,
+        "error": "floating_point_forbidden"
+      }
+    },
+    {
+      "id": "reject-exponent",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "rawHex": "7b2261223a3165327d",
+      "rawText": "{\"a\":1e2}",
+      "expect": {
+        "valid": false,
+        "error": "floating_point_forbidden"
+      }
+    },
+    {
+      "id": "reject-negative-zero",
+      "requirements": [
+        "FM-ENC-002",
+        "FM-ENC-004"
+      ],
+      "rawHex": "7b2261223a2d307d",
+      "rawText": "{\"a\":-0}",
+      "expect": {
+        "valid": false,
+        "error": "noncanonical_encoding"
+      }
+    },
+    {
+      "id": "reject-leading-zero",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "rawHex": "7b2261223a30317d",
+      "rawText": "{\"a\":01}",
+      "expect": {
+        "valid": false,
+        "error": "invalid_json"
+      }
+    },
+    {
+      "id": "reject-unsafe-integer",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "rawHex": "7b2261223a393030373139393235343734303939327d",
+      "rawText": "{\"a\":9007199254740992}",
+      "expect": {
+        "valid": false,
+        "error": "unsafe_integer"
+      }
+    },
+    {
+      "id": "reject-nan",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "rawHex": "7b2261223a4e614e7d",
+      "rawText": "{\"a\":NaN}",
+      "expect": {
+        "valid": false,
+        "error": "invalid_number"
+      }
+    },
+    {
+      "id": "reject-lone-surrogate",
+      "requirements": [
+        "FM-ENC-003"
+      ],
+      "rawHex": "7b2261223a225c7564383030227d",
+      "rawText": "{\"a\":\"\\ud800\"}",
+      "expect": {
+        "valid": false,
+        "error": "invalid_unicode"
+      }
+    },
+    {
+      "id": "reject-invalid-key-character",
+      "requirements": [
+        "FM-ENC-001"
+      ],
+      "rawHex": "7b22612062223a317d",
+      "rawText": "{\"a b\":1}",
+      "expect": {
+        "valid": false,
+        "error": "invalid_key"
+      }
+    },
+    {
+      "id": "reject-byte-order-mark",
+      "requirements": [
+        "FM-ENC-001"
+      ],
+      "rawHex": "efbbbf7b2261223a317d",
+      "rawText": "\ufeff{\"a\":1}",
+      "expect": {
+        "valid": false,
+        "error": "invalid_json"
+      }
+    },
+    {
+      "id": "reject-invalid-utf8",
+      "requirements": [
+        "FM-ENC-001"
+      ],
+      "rawHex": "7b2261223a22ff227d",
+      "expect": {
+        "valid": false,
+        "error": "invalid_json"
+      }
+    },
+    {
+      "id": "reject-overlong-utf8",
+      "requirements": [
+        "FM-ENC-001"
+      ],
+      "rawHex": "7b2261223a22c0af227d",
+      "expect": {
+        "valid": false,
+        "error": "invalid_json"
+      }
+    },
+    {
+      "id": "reject-top-level-array",
+      "requirements": [
+        "FM-ENC-001"
+      ],
+      "rawHex": "5b315d",
+      "rawText": "[1]",
+      "expect": {
+        "valid": false,
+        "error": "event_not_object"
+      }
+    },
+    {
+      "id": "reject-empty",
+      "requirements": [
+        "FM-ENC-005"
+      ],
+      "rawHex": "",
+      "rawText": "",
+      "expect": {
+        "valid": false,
+        "error": "invalid_event_size"
+      }
+    },
+    {
+      "id": "reject-depth-33",
+      "requirements": [
+        "FM-ENC-005"
+      ],
+      "rawHex": "7b2261223a5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d7d",
+      "rawText": "{\"a\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+      "expect": {
+        "valid": false,
+        "error": "json_too_deep"
+      }
+    }
+  ],
+  "encode": [
+    {
+      "id": "encode-sorts-keys",
+      "requirements": [
+        "FM-ENC-001"
+      ],
+      "value": {
+        "b": 1,
+        "a": {
+          "d": [
+            3,
+            2
+          ],
+          "c": null
+        }
+      },
+      "expect": {
+        "valid": true,
+        "canonicalText": "{\"a\":{\"c\":null,\"d\":[3,2]},\"b\":1}"
+      }
+    },
+    {
+      "id": "encode-normalizes-nfc",
+      "requirements": [
+        "FM-ENC-003"
+      ],
+      "value": {
+        "t": "e\u0301"
+      },
+      "expect": {
+        "valid": true,
+        "canonicalText": "{\"t\":\"\u00e9\"}"
+      }
+    },
+    {
+      "id": "encode-escapes",
+      "requirements": [
+        "FM-ENC-003"
+      ],
+      "value": {
+        "t": "\b\f\n\r\t\"\\\u0001\u007f/\u2028"
+      },
+      "expect": {
+        "valid": true,
+        "canonicalText": "{\"t\":\"\\b\\f\\n\\r\\t\\\"\\\\\\u0001\u007f/\u2028\"}"
+      }
+    },
+    {
+      "id": "encode-negative-integer",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "value": {
+        "n": -9007199254740991
+      },
+      "expect": {
+        "valid": true,
+        "canonicalText": "{\"n\":-9007199254740991}"
+      }
+    },
+    {
+      "id": "encode-rejects-unsafe-integer",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "value": {
+        "n": 9007199254740992
+      },
+      "expect": {
+        "valid": false,
+        "error": "unsafe_integer"
+      }
+    },
+    {
+      "id": "encode-rejects-fraction",
+      "requirements": [
+        "FM-ENC-002"
+      ],
+      "value": {
+        "n": 0.5
+      },
+      "expect": {
+        "valid": false,
+        "error": "floating_point_forbidden"
+      }
+    },
+    {
+      "id": "encode-rejects-empty-key",
+      "requirements": [
+        "FM-ENC-001"
+      ],
+      "value": {
+        "": 1
+      },
+      "expect": {
+        "valid": false,
+        "error": "invalid_key"
+      }
+    },
+    {
+      "id": "encode-rejects-lone-surrogate",
+      "requirements": [
+        "FM-ENC-003"
+      ],
+      "value": {
+        "t": "\ud800"
+      },
+      "expect": {
+        "valid": false,
+        "error": "invalid_unicode"
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Voice dictation" %}
+{% set slug = "voice-dictation" %}
+{% set image = "/assets/blog/features/voice-dictation.webp" %}
+{% set description = "Dictate issues, comments, and prompts with built-in Whisper speech recognition, transcribed locally, streamed live as you speak." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>Voice dictation</h1>
+            <p class="lede">Dictate issues, comments, and prompts with built-in Whisper speech recognition, transcribed locally, streamed live as you speak.</p>
+            <div class="meta"><span class="pill">Feature 54 of 72</span><span>On-device</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/voice-dictation.webp" alt="Abstract ForkMesh artwork for Voice dictation">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Voice dictation gives ForkMesh a concrete mechanism for local speech-to-text for issues, comments, and prompts. Dictate issues, comments, and prompts with built-in Whisper speech recognition, transcribed locally, streamed live as you speak.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, voice dictation addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles voice dictation through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: Dictate issues, comments, and prompts with built-in Whisper speech recognition, transcribed locally, streamed live as you speak. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use voice dictation when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because Voice dictation keeps local speech-to-text for issues, comments, and prompts connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/source-control-and-worktrees/">← Source control &amp; worktrees</a>
+          <a href="/blog/screenshot-and-markup/">Screenshot &amp; markup →</a>
+        </nav>
+{% endblock %}

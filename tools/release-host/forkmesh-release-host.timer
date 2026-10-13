@@ -1,0 +1,10 @@
+[Unit]
+Description=Complete held-back ForkMesh releases (Android APK, Windows installer) every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

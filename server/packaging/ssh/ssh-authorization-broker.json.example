@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "type": "forkmesh.ssh-authorization-broker",
+  "apiOrigin": "https://app.forkmesh.com",
+  "gatewayTokenFile": "/etc/forkmesh/ssh-gateway.token",
+  "socketPath": "/run/forkmesh-ssh-auth/authorize.sock",
+  "socketGroup": "forkmesh-ssh-gateway",
+  "lookupUser": "forkmesh-ssh-lookup",
+  "gitUser": "git"
+}

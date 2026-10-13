@@ -1,0 +1,80 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "workflows-repository-files",
+  "name": "Workflows: Repository Files",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Workflow add-ons",
+  "version": "1.0.0",
+  "summary": "Edits a repository's ForkMesh actions, shortcuts, skills and special agents in the Workflows canvas, and saves each change as one commit.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Workflows: Repository Files"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "pack": "content/kinds.json",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "workflows.repository",
+      "entrypoint": "pack",
+      "config": {
+        "kinds": [
+          "action",
+          "shortcut",
+          "skill",
+          "agent"
+        ]
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "repository.files.write",
+      "label": "Read .forkmesh files and commit your edits to repositories you can write",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "workflows",
+      "version": "^1.0.0"
+    }
+  ],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

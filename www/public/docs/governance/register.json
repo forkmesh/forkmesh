@@ -1,0 +1,333 @@
+{
+  "schema": "forkmesh-governance-register-v1",
+  "charterVersion": "1.0.0-rc.1",
+  "charterStatus": "proposed",
+  "guide": "/docs/library/governance/",
+  "bodies": [
+    {
+      "id": "protocol-council",
+      "name": "Protocol council",
+      "decides": [
+        "protocol",
+        "compatibility",
+        "deprecation",
+        "certification",
+        "moderation-baseline",
+        "charter"
+      ],
+      "seats": [
+        {
+          "id": "maintainer-1",
+          "constituency": "forkmesh-maintainer",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "maintainer-2",
+          "constituency": "forkmesh-maintainer",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "implementer-1",
+          "constituency": "independent-implementer",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "implementer-2",
+          "constituency": "independent-implementer",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "operator-1",
+          "constituency": "community-operator",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "operator-2",
+          "constituency": "community-operator",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        }
+      ]
+    },
+    {
+      "id": "security-response-team",
+      "name": "Security response team",
+      "decides": [
+        "security"
+      ],
+      "seats": [
+        {
+          "id": "security-maintainer",
+          "constituency": "forkmesh-maintainer",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "security-independent",
+          "constituency": "independent-implementer",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "security-operator",
+          "constituency": "community-operator",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        }
+      ]
+    },
+    {
+      "id": "appeals-panel",
+      "name": "Appeals panel",
+      "decides": [
+        "appeal"
+      ],
+      "seats": [
+        {
+          "id": "appeal-implementer",
+          "constituency": "independent-implementer",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "appeal-operator",
+          "constituency": "community-operator",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        },
+        {
+          "id": "appeal-member",
+          "constituency": "community-member",
+          "holder": null,
+          "since": null,
+          "termEnds": null
+        }
+      ]
+    }
+  ],
+  "participants": [
+    {
+      "id": "forkmesh-maintainers",
+      "name": "ForkMesh maintainers",
+      "kind": "group",
+      "constituency": "forkmesh-maintainer",
+      "employerOrFunder": "forkmesh.com operator",
+      "source": "https://forkmesh.com/@forkmesh"
+    }
+  ],
+  "disclosures": [
+    {
+      "id": "DISC-0001",
+      "participant": "forkmesh-maintainers",
+      "filed": "2026-09-14",
+      "conflicts": [
+        "Maintain the reference Python, WebCrypto JavaScript, and clean-room Python implementations, and both registered certification adapters.",
+        "Operate forkmesh.com, which sells Supporter and Pro memberships. A protocol decision that moves work onto or off the hosted service changes the operator's revenue.",
+        "Maintain the desktop client and the headless mirror and gateway tools, which compete with independent implementations of the same roles."
+      ],
+      "funding": [
+        {
+          "kind": "membership",
+          "source": "Supporter and Pro memberships through Patreon",
+          "amountPublished": false,
+          "reference": "www/docs/business-model.md"
+        },
+        {
+          "kind": "donation",
+          "source": "Solana donation addresses published on profiles and repositories",
+          "amountPublished": false,
+          "reference": "SECURITY.md"
+        },
+        {
+          "kind": "reward-pool",
+          "source": "Community reward pool, bounties, and microjob payouts, which maintainers may also claim as contributors",
+          "amountPublished": false,
+          "reference": "www/docs/incentive-independence.md"
+        }
+      ],
+      "note": "Amounts are not yet published. A disclosure with an unpublished amount keeps the funding closure criterion open.",
+      "linkedRecords": [
+        "FMP-0000",
+        "FMP-0001",
+        "FMS-0001"
+      ]
+    }
+  ],
+  "records": [
+    {
+      "id": "FMP-0000",
+      "process": "proposal",
+      "adoptedUnder": null,
+      "title": "Protocol certification program with expiring, evidence-derived badges",
+      "summary": "Pre-charter record of issue #512: certification profiles, a language-neutral adapter protocol, retained attested reports, and badges that expire when vectors or profiles change or after 90 days.",
+      "breaking": false,
+      "affects": [
+        "certification",
+        "protocol"
+      ],
+      "protectedRights": [
+        "free-protocol"
+      ],
+      "authors": [
+        "forkmesh-maintainers"
+      ],
+      "disclosures": [
+        "DISC-0001"
+      ],
+      "links": [
+        {
+          "label": "Issue #512",
+          "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/512"
+        },
+        {
+          "label": "Certification program",
+          "href": "www/docs/protocol/certification.md"
+        }
+      ],
+      "timeline": {
+        "opened": "2026-09-14",
+        "reviewCloses": null,
+        "lastCallCloses": null,
+        "decided": "2026-09-14",
+        "implemented": "2026-09-14"
+      },
+      "stage": "implemented",
+      "outcome": "accepted",
+      "decidingBody": null,
+      "votes": [],
+      "dissent": [],
+      "dissentSolicited": false,
+      "note": "Recorded retroactively from commit 1652ac060. It landed through the issue and pull request workflow before this charter existed, with no review window, vote, or dissent solicitation, so it does not count as a completed charter process.",
+      "countsForCharter": false,
+      "disclosedParticipants": [
+        "forkmesh-maintainers"
+      ]
+    },
+    {
+      "id": "FMP-0001",
+      "process": "proposal",
+      "adoptedUnder": "1.0.0-rc.1",
+      "title": "Adopt the protocol and ecosystem governance charter",
+      "summary": "Adopt charter 1.0.0-rc.1: a protocol council, security response team, and appeals panel with seats reserved for independent implementers and community operators; published timelines for proposals, security decisions, appeals, and deprecation; conflict and funding disclosures linked to every decision; and rights that no plan, token, or funder can remove.",
+      "breaking": false,
+      "affects": [
+        "charter",
+        "protocol",
+        "certification",
+        "security",
+        "moderation-baseline"
+      ],
+      "protectedRights": [
+        "free-protocol",
+        "portable-identity",
+        "portable-repositories",
+        "token-free-governance"
+      ],
+      "authors": [
+        "forkmesh-maintainers"
+      ],
+      "disclosures": [
+        "DISC-0001"
+      ],
+      "links": [
+        {
+          "label": "Issue #513",
+          "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/513"
+        },
+        {
+          "label": "Charter guide",
+          "href": "www/docs/governance/README.md"
+        }
+      ],
+      "timeline": {
+        "opened": "2026-09-14",
+        "reviewCloses": "2026-10-14",
+        "lastCallCloses": null,
+        "decided": null,
+        "implemented": null
+      },
+      "stage": "review",
+      "outcome": null,
+      "decidingBody": "protocol-council",
+      "votes": [],
+      "dissent": [],
+      "dissentSolicited": true,
+      "note": "The charter sets its own adoption review at the 30-day breaking-change minimum. It cannot be decided while the council has no independent-implementer or community-operator seat holder, because the quorum requires both.",
+      "countsForCharter": true,
+      "disclosedParticipants": [
+        "forkmesh-maintainers"
+      ]
+    },
+    {
+      "id": "FMS-0001",
+      "process": "security",
+      "adoptedUnder": null,
+      "title": "Block a stable protocol suite while any critical or high threat is open",
+      "summary": "Pre-charter record of the stable release rule in the threat register: the suite stays a candidate until each critical or high threat is mitigated by a numbered requirement or accepted with a reviewer, date, and rationale. Open high threats at the time of recording: TM-004, TM-006, TM-008, TM-014, TM-018.",
+      "breaking": false,
+      "affects": [
+        "security",
+        "protocol",
+        "compatibility"
+      ],
+      "protectedRights": [],
+      "authors": [
+        "forkmesh-maintainers"
+      ],
+      "disclosures": [
+        "DISC-0001"
+      ],
+      "threats": [
+        "TM-004",
+        "TM-006",
+        "TM-008",
+        "TM-014",
+        "TM-018"
+      ],
+      "links": [
+        {
+          "label": "Issue #511",
+          "href": "https://app.forkmesh.com/forkmesh/forkmesh/issues/511"
+        },
+        {
+          "label": "Threat model",
+          "href": "www/docs/protocol/threat-model.md"
+        }
+      ],
+      "timeline": {
+        "opened": "2026-09-13",
+        "disclosed": "2026-09-13",
+        "embargoEnds": null,
+        "decided": "2026-09-13",
+        "ratified": null
+      },
+      "stage": "decided",
+      "outcome": "deferred",
+      "decidingBody": null,
+      "votes": [],
+      "dissent": [],
+      "dissentSolicited": false,
+      "note": "Recorded retroactively from commit b949407a0. The rule predates this charter and was never ratified by a security response team, so it does not count as a completed charter process. TM-004 and TM-014 come from the 2026-07 security audit.",
+      "countsForCharter": false,
+      "disclosedParticipants": [
+        "forkmesh-maintainers"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,176 @@
+.auth-mesh {
+  --auth-mesh-dot: #616161;
+  --auth-mesh-node: #3fb950;
+  --auth-mesh-halo: rgba(63, 185, 80, 0.55);
+  --auth-mesh-ring: var(--auth-page-bg, #0f0f0f);
+  --auth-mesh-pin: #1c1c1c;
+  --auth-mesh-pin-line: rgba(255, 255, 255, 0.14);
+  --auth-mesh-pin-shadow: rgba(0, 0, 0, 0.55);
+  --auth-mesh-disc: #111111;
+  position: fixed;
+  inset: 3.5rem 0 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(
+    110% 95% at 50% 50%,
+    #000 45%,
+    rgba(0, 0, 0, 0.6) 72%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    110% 95% at 50% 50%,
+    #000 45%,
+    rgba(0, 0, 0, 0.6) 72%,
+    transparent 100%
+  );
+}
+
+html.light .auth-mesh {
+  --auth-mesh-dot: #b3b3b3;
+  --auth-mesh-node: #1a7f37;
+  --auth-mesh-halo: rgba(26, 127, 55, 0.45);
+  --auth-mesh-pin: #ffffff;
+  --auth-mesh-pin-line: rgba(0, 0, 0, 0.1);
+  --auth-mesh-pin-shadow: rgba(0, 0, 0, 0.14);
+  --auth-mesh-disc: #1c1c1c;
+}
+
+.auth-mesh-map {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+
+.auth-mesh-map.is-drawn {
+  opacity: 1;
+}
+
+.auth-mesh-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, (100vh - 3.5rem) * var(--auth-mesh-aspect, 1.81), 80rem);
+  aspect-ratio: var(--auth-mesh-aspect, 1.81);
+  transform: translate(-50%, -50%);
+}
+
+.auth-mesh-node {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 999px;
+  background: var(--auth-mesh-node);
+  box-shadow: 0 0 0 2px var(--auth-mesh-ring);
+}
+
+.auth-mesh-node-ping::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--auth-mesh-halo);
+  border-radius: 999px;
+  opacity: 0;
+  animation: auth-mesh-ping 4.8s ease-out infinite;
+  animation-delay: var(--auth-mesh-delay, 0s);
+}
+
+@keyframes auth-mesh-ping {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(4.2);
+  }
+}
+
+.auth-mesh-pin {
+  position: absolute;
+  width: 2.5rem;
+  aspect-ratio: 24 / 32;
+  margin: -6px 0 0 -1.25rem;
+  transform: translateY(-100%);
+  filter: drop-shadow(0 6px 10px var(--auth-mesh-pin-shadow));
+}
+
+.auth-mesh-pin svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.auth-mesh-pin svg path {
+  fill: var(--auth-mesh-pin);
+  stroke: var(--auth-mesh-pin-line);
+  stroke-width: 1;
+}
+
+.auth-mesh-avatar {
+  position: absolute;
+  left: 50%;
+  top: 37.5%;
+  display: block;
+  overflow: hidden;
+  width: 76%;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--auth-mesh-disc);
+  transform: translate(-50%, -50%);
+}
+
+.auth-mesh-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.auth-mesh-avatar-mark img {
+  padding: 16%;
+  object-fit: contain;
+}
+
+.auth-mesh [data-wide] {
+  display: none;
+}
+
+@media (min-width: 1180px) {
+  .auth-mesh [data-wide] {
+    display: revert;
+  }
+}
+
+@media (max-width: 760px) {
+  .auth-mesh-pin {
+    width: 2rem;
+    margin-left: -1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-mesh-map {
+    transition: none;
+  }
+
+  .auth-mesh-node-ping::after {
+    animation: none;
+  }
+}
+
+html.light [data-fm-auth] .brand-mark {
+  filter: drop-shadow(0 1px 1px rgba(31, 35, 40, 0.4));
+}
+
+[data-fm-auth] .auth-shell,
+html.light [data-fm-auth] .auth-shell {
+  background-color: transparent;
+}

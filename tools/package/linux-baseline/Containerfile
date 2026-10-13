@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1
+FROM docker.io/library/debian:bookworm-20260918@sha256:704583dbf243593da87cf949fc0543ffeca24a28d36c2760dc9545410cb8ed02
+ARG FORKMESH_BASELINE_JOBS=8
+ENV FORKMESH_BASELINE_DOWNLOADS=/var/cache/forkmesh-downloads
+COPY image.env fetch.sh stage-packages.sh /opt/forkmesh/recipe/
+RUN /opt/forkmesh/recipe/stage-packages.sh
+COPY stage-openssl.sh /opt/forkmesh/recipe/
+RUN --mount=type=cache,target=/var/cache/forkmesh-downloads /opt/forkmesh/recipe/stage-openssl.sh
+COPY stage-qt.sh /opt/forkmesh/recipe/
+RUN --mount=type=cache,target=/var/cache/forkmesh-downloads /opt/forkmesh/recipe/stage-qt.sh
+COPY stage-nghttp3.sh /opt/forkmesh/recipe/
+RUN --mount=type=cache,target=/var/cache/forkmesh-downloads /opt/forkmesh/recipe/stage-nghttp3.sh
+COPY stage-appimage-tools.sh /opt/forkmesh/recipe/
+RUN --mount=type=cache,target=/var/cache/forkmesh-downloads /opt/forkmesh/recipe/stage-appimage-tools.sh

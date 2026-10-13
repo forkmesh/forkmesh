@@ -1,0 +1,494 @@
+.forkmesh-footer {
+  --fm-footer-panel: #000;
+  --fm-footer-fg: #f5f5f5;
+  --fm-footer-muted: #a3a3a3;
+  --fm-footer-border: #3b3b3b;
+  --fm-footer-social-border: var(--border, #313131);
+  --fm-footer-social-hover-border: rgba(232, 232, 232, 0.3);
+  --fm-footer-wordmark: #0d0d0d;
+  --fm-footer-glow: rgba(232, 232, 232, 0.74);
+  --fm-footer-glow-filter: rgba(255, 255, 255, 0.18);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin-top: 0;
+  color: var(--fm-footer-fg);
+  background: transparent;
+}
+
+html.light .forkmesh-footer {
+  --fm-footer-panel: #ffffff;
+  --fm-footer-fg: #1f2328;
+  --fm-footer-muted: #656d76;
+  --fm-footer-border: #d0d7de;
+  --fm-footer-social-border: #d0d7de;
+  --fm-footer-social-hover-border: #8c959f;
+  --fm-footer-wordmark: #eef2f7;
+  --fm-footer-glow: color-mix(in srgb, #1f2328 72%, #ffffff);
+  --fm-footer-glow-filter: rgba(31, 35, 40, 0.18);
+}
+
+.forkmesh-footer-standard {
+  margin-top: 4rem;
+}
+
+.site-footer-word-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  height: clamp(6rem, 23vw, 22rem);
+  margin-bottom: -7.5rem;
+  overflow: hidden;
+  user-select: none;
+}
+
+.site-footer-glow {
+  position: relative;
+  display: inline-block;
+}
+
+.site-footer-word {
+  display: block;
+  font-size: 23vw;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.footer-glow-base {
+  color: var(--fm-footer-wordmark);
+}
+
+.footer-glow-text {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: var(--fm-footer-glow);
+  filter: drop-shadow(0 0 24px var(--fm-footer-glow-filter));
+  mask-image: radial-gradient(
+    7.5rem 7.5rem at var(--footer-glow-x, 50%) var(--footer-glow-y, 50%),
+    black 0%,
+    black 34%,
+    rgba(0, 0, 0, 0.7) 62%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    7.5rem 7.5rem at var(--footer-glow-x, 50%) var(--footer-glow-y, 50%),
+    black 0%,
+    black 34%,
+    rgba(0, 0, 0, 0.7) 62%,
+    transparent 100%
+  );
+  opacity: var(--footer-glow-opacity, 0);
+  transition: opacity 200ms ease-out;
+  will-change: opacity, mask-image;
+}
+
+/* The footer sits directly on the page: no rule above it, generous air,
+   the brand at the left and the link columns to its right, then one
+   hairline before the copyright row. */
+.site-footer-panel {
+  position: relative;
+  z-index: 10;
+  background: var(--fm-footer-panel);
+}
+
+.site-footer-links-grid {
+  display: grid;
+  width: 100%;
+  max-width: 80rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 3rem 2rem;
+  margin: 0 auto;
+  padding: clamp(4.5rem, 7vw, 6.5rem) 1.25rem clamp(2.75rem, 4vw, 3.75rem);
+}
+
+.site-footer-brand {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.site-footer-home-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.site-footer-home-link:hover {
+  text-decoration: none;
+}
+
+.site-footer-logo {
+  display: block;
+  width: auto;
+  height: 1.75rem;
+}
+
+.site-footer-wordmark {
+  color: var(--fm-footer-fg);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.site-footer-brand-copy {
+  max-width: 15rem;
+  margin: 1.25rem 0 0;
+  color: var(--fm-footer-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.site-footer-socials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.site-footer-social-link {
+  display: flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--fm-footer-social-border);
+  border-radius: 0.5rem;
+  color: var(--fm-footer-muted);
+  transition:
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.site-footer-social-link:hover {
+  border-color: var(--fm-footer-social-hover-border);
+  color: var(--fm-footer-fg);
+  text-decoration: none;
+}
+
+.site-footer-social-link svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+  stroke: none;
+}
+
+.site-footer-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--fm-footer-border);
+  border-radius: 0.5rem;
+  color: var(--fm-footer-muted);
+  font-size: 0.875rem;
+  line-height: 1.25;
+}
+
+.site-footer-status-pill:hover {
+  color: var(--fm-footer-fg);
+  text-decoration: none;
+}
+
+.site-footer-genie {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--fm-footer-border);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--fm-footer-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.site-footer-genie:hover {
+  color: var(--fm-footer-fg);
+}
+
+.site-footer-genie[hidden] {
+  display: none;
+}
+
+.site-footer-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: var(--green, var(--accent-bright, #28c878));
+  box-shadow: 0 0 18px rgba(63, 185, 80, 0.48);
+}
+
+/* Quiet column titles over strong link text. */
+.site-footer-column-title {
+  margin: 0;
+  color: var(--fm-footer-muted);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.site-footer-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-footer-column-link {
+  display: inline-flex;
+  min-width: 0;
+  color: var(--fm-footer-fg);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.3;
+  transition: color 180ms ease;
+}
+
+.site-footer-column-link:hover {
+  color: var(--fm-footer-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Copyright on the left, status and socials on the right. */
+.site-footer-bottom {
+  display: flex;
+  max-width: 80rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  margin: 0 auto;
+  padding: 1.75rem 1.25rem clamp(3rem, 5vw, 4.5rem);
+  border-top: 1px solid var(--fm-footer-border);
+}
+
+.site-footer-copyright {
+  margin: 0;
+  color: var(--fm-footer-muted);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+.site-footer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* ForkMesh World band: the last thing on every page. The intro strip carries
+   the blurb; the iframe below it runs the full viewport width and sits flush
+   with the bottom of the page — no bottom border, no rounding. */
+.site-footer-world {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  border-top: 1px solid var(--fm-footer-border);
+  background: var(--fm-footer-panel);
+}
+
+/* Mounted on its own (auth pages), the band sits outside .forkmesh-footer, so
+   it has to carry the same palette variables itself. */
+.site-footer-world-standalone {
+  --fm-footer-panel: #000;
+  --fm-footer-fg: #f5f5f5;
+  --fm-footer-muted: #a3a3a3;
+  --fm-footer-border: #3b3b3b;
+  --fm-footer-social-hover-border: rgba(232, 232, 232, 0.3);
+}
+
+html.light .site-footer-world-standalone {
+  --fm-footer-panel: #ffffff;
+  --fm-footer-fg: #1f2328;
+  --fm-footer-muted: #656d76;
+  --fm-footer-border: #d0d7de;
+  --fm-footer-social-hover-border: #8c959f;
+}
+
+.site-footer-world-intro {
+  display: flex;
+  max-width: 80rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 1.75rem;
+}
+
+.site-footer-world-heading {
+  min-width: 0;
+  max-width: 46rem;
+}
+
+.site-footer-world-title {
+  margin: 0;
+  color: var(--fm-footer-fg);
+  font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.site-footer-world-copy {
+  margin: 1rem 0 0;
+  color: var(--fm-footer-muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.site-footer-world-open {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid var(--fm-footer-border);
+  border-radius: 0.5rem;
+  color: var(--fm-footer-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition:
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.site-footer-world-open:hover {
+  border-color: var(--fm-footer-social-hover-border);
+  text-decoration: none;
+}
+
+/* The stage owns the band's geometry so the frame can be absent, arriving, or
+   present without the page reflowing around it. Containing its layout and
+   paint also keeps the last section on the page — a live 3D surface — out of
+   the work the browser does for the content a visitor is still reading. */
+.site-footer-world-stage {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 72vh;
+  min-height: 28rem;
+  overflow: hidden;
+  background: #000;
+  contain: layout paint;
+}
+.site-footer-world-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+  /* Until the visitor asks for the world, the frame is not a hit-test target.
+     A WebGL canvas cancels the wheel to drive its camera and the touchmove to
+     drive its avatar, which would otherwise stop the page dead at this band.
+     Skipping the frame leaves both gestures with the document that owns the
+     scroll. */
+  pointer-events: none;
+}
+.site-footer-world-stage[data-world-phase="engaged"] .site-footer-world-frame {
+  pointer-events: auto;
+}
+.site-footer-world-status {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 1.25rem;
+  color: var(--fm-footer-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+.site-footer-world-stage[data-world-phase="loading"] .site-footer-world-status,
+.site-footer-world-stage[data-world-phase="deferred"] .site-footer-world-status {
+  display: flex;
+}
+.site-footer-world-spinner {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  border: 2px solid var(--fm-footer-border);
+  border-top-color: var(--green, var(--accent-bright, #28c878));
+  border-radius: 50%;
+  animation: site-footer-world-spin 900ms linear infinite;
+}
+.site-footer-world-stage[data-world-phase="deferred"] .site-footer-world-spinner {
+  display: none;
+}
+@keyframes site-footer-world-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-footer-world-spinner {
+    animation: none;
+  }
+}
+.site-footer-world-shield {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 1.25rem 1.5rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.site-footer-world-shield[hidden] {
+  display: none;
+}
+.site-footer-world-shield-label {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--fm-footer-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fm-footer-panel) 78%, transparent);
+  color: var(--fm-footer-fg);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: border-color 180ms ease;
+}
+.site-footer-world-shield:hover .site-footer-world-shield-label,
+.site-footer-world-shield:focus-visible .site-footer-world-shield-label {
+  border-color: var(--fm-footer-social-hover-border);
+}
+
+@media (max-width: 768px) {
+  .site-footer-word-wrap {
+    margin-bottom: -3rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .site-footer-links-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .site-footer-links-grid {
+    grid-template-columns: minmax(13rem, 1.4fr) repeat(5, minmax(0, 1fr));
+    padding-right: 2rem;
+    padding-left: 2rem;
+  }
+
+  .site-footer-brand {
+    grid-column: auto;
+  }
+
+  .site-footer-bottom {
+    padding-right: 2rem;
+    padding-left: 2rem;
+  }
+}

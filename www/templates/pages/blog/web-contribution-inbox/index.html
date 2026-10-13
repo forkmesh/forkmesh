@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Web contribution inbox" %}
+{% set slug = "web-contribution-inbox" %}
+{% set image = "/assets/blog/features/web-contribution-inbox.webp" %}
+{% set description = "Visitors can file issues and pull requests from the website even while the owner is offline. Signed submissions wait in an inbox; the owner reviews, commits, and the mesh syncs back." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Signed collaboration</p>
+            <h1>Web contribution inbox</h1>
+            <p class="lede">Visitors can file issues and pull requests from the website even while the owner is offline. Signed submissions wait in an inbox; the owner reviews, commits, and the mesh syncs back.</p>
+            <div class="meta"><span class="pill">Feature 15 of 72</span><span>Feature</span><span>Signed, portable collaboration</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/web-contribution-inbox.webp" alt="Abstract ForkMesh artwork for Web contribution inbox">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Web contribution inbox gives ForkMesh a concrete mechanism for offline owners receiving signed web submissions for later review. Visitors can file issues and pull requests from the website even while the owner is offline. Signed submissions wait in an inbox; the owner reviews, commits, and the mesh syncs back.</p>
+          <p>Collaboration data becomes fragile when issues, reviews, and authorship only exist inside one hosted database. In ForkMesh, web contribution inbox addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles web contribution inbox through the same split it uses across the product: local identities sign issue events, patch PRs, catalog records, and contribution inbox items before they travel through mirrors.</p>
+          <p>The behavior is intentionally narrow: Visitors can file issues and pull requests from the website even while the owner is offline. Signed submissions wait in an inbox; the owner reviews, commits, and the mesh syncs back. Mirrors can verify provenance before accepting or displaying collaboration records.</p>
+          <h2>Where it fits</h2>
+          <p>Use web contribution inbox when project context needs to survive migrations, forks, offline work, and mirror failover.</p>
+          <p>It pairs with the rest of Signed, portable collaboration because Web contribution inbox keeps offline owners receiving signed web submissions for later review connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/everything-lives-in-git/">← Everything lives in Git</a>
+          <a href="/blog/branch-backed-and-patch-backed-prs/">Branch-backed &amp; patch-backed PRs →</a>
+        </nav>
+{% endblock %}

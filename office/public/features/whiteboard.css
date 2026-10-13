@@ -1,0 +1,49 @@
+.wb { position: fixed; inset: 0; z-index: 60; background: rgba(20, 22, 30, .32); display: grid; place-items: center; padding: 20px; }
+.wb-card { width: min(1280px, 100%); height: min(860px, 100%); background: var(--panel); border-radius: 14px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.wb-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--line); background: var(--card); min-width: 0; }
+.wb-ic { color: var(--ink-2); }
+.wb-title { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-ro { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-2); background: var(--hover); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wb-people { margin-left: auto; display: flex; align-items: center; gap: 0; padding-right: 4px; }
+.wb-av { position: relative; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: 600; color: var(--ink); border: 2px solid var(--card); margin-left: -6px; }
+.wb-av:first-child { margin-left: 0; }
+.wb-av.drawing { box-shadow: 0 0 0 2px var(--brand); }
+.wb-av i { position: absolute; right: -4px; bottom: -3px; width: 14px; height: 14px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; }
+.wb-more { font-size: 11.5px; color: var(--muted); margin-left: 6px; }
+.wb-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--card); }
+.wb-note { padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--card); }
+.wb.ro .wb-bar { display: none; }
+.wb-group { display: flex; align-items: center; gap: 2px; }
+.wb-group[hidden] { display: none !important; }
+.wb-btn { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink-2); }
+.wb-btn:hover { background: var(--hover); color: var(--ink); }
+.wb-btn.on { background: var(--brand-soft); color: var(--brand); border-color: rgba(59, 69, 224, .25); }
+.wb-btn:disabled { opacity: .35; cursor: default; background: transparent; }
+.wb-btn i { display: block; border-radius: 50%; background: currentColor; }
+.wb-sw { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(20, 22, 35, .18); background: var(--sw); margin: 0 2px; padding: 0; }
+.wb-sw.on { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--brand); }
+.wb-stage { flex: 1; min-height: 0; display: grid; place-items: center; background: var(--bg); position: relative; overflow: hidden; }
+.wb-sheet { position: relative; background: #fff; border-radius: 6px; box-shadow: var(--shadow); }
+.wb-sheet canvas { position: absolute; inset: 0; border-radius: 6px; }
+.wb-top { touch-action: none; }
+.wb-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12.5px; }
+.wb-editor { position: absolute; z-index: 2; border: 1px dashed var(--brand); outline: none; background: transparent; font-family: var(--font); font-weight: 500; line-height: 1.2; padding: 0 2px; border-radius: 4px; }
+.wb-editor-n { resize: none; color: var(--ink); font-weight: 400; line-height: 1.18; border-radius: 6px; box-shadow: 0 3px 10px rgba(20, 22, 35, .16); }
+.wb-confirm { position: absolute; inset: 0; background: rgba(20, 22, 30, .28); display: grid; place-items: center; z-index: 3; padding: 16px; }
+.wb-confirm-box { background: var(--card); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 16px; width: min(320px, 100%); }
+.wb-confirm-box b { font-size: 13.5px; }
+.wb-confirm-box p { margin: 6px 0 14px; color: var(--ink-2); font-size: 12.5px; }
+.wb-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.wb-danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+.wb-danger:hover { filter: brightness(.94); }
+.wb-badge { display: inline-flex; vertical-align: -1px; margin-left: 4px; color: var(--brand); }
+@media (max-width: 720px) {
+  .wb { padding: 0; }
+  .wb-card { width: 100%; height: 100%; border-radius: 0; }
+  .wb-head { padding: 8px 8px 8px 12px; }
+  .wb-bar { gap: 4px 8px; padding: 6px 8px; overflow-x: auto; flex-wrap: nowrap; }
+  .wb-btn { width: 30px; height: 30px; flex: none; }
+  .wb-sw { width: 20px; height: 20px; flex: none; }
+  .wb-ro span { overflow: hidden; text-overflow: ellipsis; }
+  .wb [data-tip]:hover::after { display: none; }
+}

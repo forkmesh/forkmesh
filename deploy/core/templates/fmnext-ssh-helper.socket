@@ -1,0 +1,13 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=ForkMesh runner SSH setup helper socket (docs/RUNNERS.md, "Set up a runner")
+
+[Socket]
+ListenStream=@@SSH_HELPER_SOCKET@@
+SocketUser=forkmesh-app
+SocketGroup=forkmesh-app
+SocketMode=0600
+Accept=no
+
+[Install]
+WantedBy=sockets.target

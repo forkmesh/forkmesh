@@ -1,0 +1,210 @@
+{
+  "schema": "forkmesh-public-interest-funding-program-v1",
+  "programVersion": "1.0.0-rc.1",
+  "status": "proposed",
+  "issue": 515,
+  "guide": "www/docs/funding/README.md",
+  "currency": "USD",
+  "versions": [
+    {"version": "1.0.0-rc.1", "published": "2026-09-14", "change": "First published eligibility, selection, conflict, rail, independence, and reporting rules."}
+  ],
+  "changePolicy": "A change to eligibility, selection criteria, payment rails, independence rules, or reporting publishes a new version. It applies only to rounds announced at least 14 days after it is published. A round keeps the version it was announced under.",
+  "areas": [
+    {
+      "id": "public-repositories",
+      "name": "Public repositories",
+      "eligibility": [
+        "The repository is public, and anyone can read and clone it without an account.",
+        "The code or content is under an OSI-approved or Creative Commons license.",
+        "Where it is hosted does not matter: forkmesh.com, a self-hosted mirror, or another forge."
+      ]
+    },
+    {
+      "id": "volunteer-mirrors",
+      "name": "Volunteer mirrors",
+      "eligibility": [
+        "The applicant operates a public mirror, relay, or gateway that people other than the operator have used for at least 60 days.",
+        "The service publishes a health endpoint or status page."
+      ]
+    },
+    {
+      "id": "accessibility",
+      "name": "Accessibility",
+      "eligibility": [
+        "The work improves a ForkMesh-compatible client, website, or document against WCAG 2.2 AA or the platform's accessibility guidelines.",
+        "The plan includes testing with at least one person who uses assistive technology."
+      ]
+    },
+    {
+      "id": "documentation",
+      "name": "Documentation",
+      "eligibility": [
+        "Public documentation, translations, or tutorials under an open license."
+      ]
+    },
+    {
+      "id": "education",
+      "name": "Education",
+      "eligibility": [
+        "Courses, workshops, or learning materials about decentralized collaboration, under an open license and free to attend or read."
+      ]
+    },
+    {
+      "id": "ecosystem-tooling",
+      "name": "Ecosystem tooling",
+      "eligibility": [
+        "An independent client, relay, index, verifier, or library with a public https source under an OSI-approved license.",
+        "A certification badge is welcome but not required."
+      ]
+    }
+  ],
+  "generalEligibility": [
+    "Individuals, informal groups, and organizations in any jurisdiction the funder can lawfully pay may apply.",
+    "Applying, being reviewed, and being paid need no ForkMesh account, plan, client, wallet, or token.",
+    "The operator of forkmesh.com and people it pays are not eligible for awards.",
+    "A round's funders and reviewers are not eligible in that round.",
+    "Work whose use requires a paid plan on any ForkMesh-operated service is not eligible."
+  ],
+  "offers": [
+    {
+      "id": "donation",
+      "kind": "donation",
+      "name": "Donation",
+      "status": "planned",
+      "description": "A one-off gift to the public-interest pool. A donor may restrict a gift to an area, but never to a named recipient.",
+      "eligibility": "Anyone may donate. Gifts that carry conditions beyond an area restriction are declined.",
+      "selection": "Donations join the pool of the next announced round in their area."
+    },
+    {
+      "id": "recurring-sponsorship",
+      "kind": "recurring-sponsorship",
+      "name": "Recurring sponsorship",
+      "status": "planned",
+      "description": "Monthly or yearly support for the pool or one area. A sponsor can stop at any time.",
+      "eligibility": "Anyone may sponsor. Sponsorship buys no placement, ranking, seat, vote, or say in selection.",
+      "selection": "Sponsorship funds rounds in the sponsored area. Sponsors are listed as funders of the rounds they fund."
+    },
+    {
+      "id": "targeted-grant",
+      "kind": "targeted-grant",
+      "name": "Targeted grant",
+      "status": "planned",
+      "description": "A milestone-based award chosen in a published round for work in one area.",
+      "eligibility": "The area eligibility and general eligibility rules.",
+      "selection": "Disclosed reviewers score the published selection criteria. Awards go to eligible applications above the minimum score, in score order, within the pool and the concentration limits."
+    },
+    {
+      "id": "matching",
+      "kind": "matching",
+      "name": "Matching",
+      "status": "planned",
+      "maximumMatchRatio": 2,
+      "description": "The pool matches public contributions a recipient raised on their own portable rail, up to a published ratio and cap.",
+      "eligibility": "The area eligibility and general eligibility rules. Matched contributions need public receipts.",
+      "selection": "Scored like a targeted grant. The award may not exceed the matched contributions times the ratio."
+    }
+  ],
+  "selectionCriteria": [
+    {"id": "public-benefit", "weight": 30, "description": "How many people outside the applicant benefit, and how directly."},
+    {"id": "feasibility", "weight": 20, "description": "Whether the milestones, budget, and schedule are realistic for the applicant."},
+    {"id": "accessibility-inclusion", "weight": 20, "description": "Whether the work serves people with disabilities, low bandwidth, or languages the ecosystem under-serves."},
+    {"id": "sustainability", "weight": 15, "description": "Whether the result keeps working, or is handed on, after the award ends."},
+    {"id": "decentralization", "weight": 15, "description": "Whether the work adds a new operator, region, implementation, or maintainer, and so reduces concentration."}
+  ],
+  "scoreScale": {"minimum": 0, "maximum": 5},
+  "minimumScore": 60,
+  "minimumApplicationDays": 21,
+  "review": {
+    "minimumScoringReviewers": 3,
+    "minimumIndependentReviewers": 1,
+    "reviewerPool": "Reviewers are participants with a current disclosure in conformance/governance/v1/participants.json. An independent reviewer is not a ForkMesh maintainer."
+  },
+  "conflicts": {
+    "recusal": "A reviewer who is the applicant, or who shares an employer or funder with the applicant, must record a recusal and must not score that application. Any other conflict a reviewer declares is recorded and recused the same way.",
+    "funders": "A funder never reviews, never chooses a recipient, and may restrict a gift only to an area."
+  },
+  "concentration": {
+    "maximumRecipientShareOfRound": 0.25,
+    "maximumAreaShareOfRound": 0.5,
+    "maximumFunderShareOfRound": 0.5
+  },
+  "administrativeCost": {
+    "maximumShareOfPool": 0.1,
+    "statement": "Administrative cost covers payment fees, accounting, and reviewer stipends. It is published per round before applications open."
+  },
+  "paymentRails": [
+    {"id": "bank-transfer", "name": "Bank transfer (SEPA, ACH, or international wire)", "kind": "conventional", "recurringSupported": true, "forkmeshAccountRequired": false, "forkmeshPlanRequired": false, "recipientControlled": true},
+    {"id": "open-collective", "name": "Open Collective, through the recipient's own fiscal host", "kind": "conventional", "recurringSupported": true, "forkmeshAccountRequired": false, "forkmeshPlanRequired": false, "recipientControlled": true},
+    {"id": "liberapay", "name": "Liberapay", "kind": "conventional", "recurringSupported": true, "forkmeshAccountRequired": false, "forkmeshPlanRequired": false, "recipientControlled": true},
+    {"id": "solana", "name": "Solana transfer to an address the recipient controls", "kind": "on-chain", "recurringSupported": false, "forkmeshAccountRequired": false, "forkmeshPlanRequired": false, "recipientControlled": true, "note": "Optional. Never the only rail a round offers."}
+  ],
+  "independence": {
+    "statement": "An award, donation, or sponsorship pays for work. It never changes who can reach a repository, what an identity may do, who votes, or what the network requires.",
+    "awardsNeverGrant": [
+      "repository-access",
+      "identity-rights",
+      "protocol-votes",
+      "governance-seats",
+      "ranking-or-discovery",
+      "moderation-outcomes",
+      "required-network-behavior",
+      "hosted-product-use"
+    ],
+    "allowedObligations": [
+      "milestone-report",
+      "outcome-report",
+      "open-license",
+      "accessibility-statement",
+      "public-receipt",
+      "conflict-disclosure"
+    ],
+    "commitments": [
+      "protocolUseRequiresPayment",
+      "publicReadAndCloneRequirePaidPlan",
+      "governanceRequiresPaidPlan",
+      "tokenOrBlockchainRequired",
+      "incentivesAffectIdentityPermissionsRankingModerationOrGovernance"
+    ],
+    "governanceRight": "token-free-governance"
+  },
+  "reporting": {
+    "milestoneReportGraceDays": 30,
+    "outcomeReport": "Every reported or cancelled round publishes funds raised, awarded, and disbursed; administrative cost; recipients; milestone completion; operators funded and retained; accessibility impact; and lessons. A cancelled round publishes why."
+  },
+  "communityReview": {
+    "requiredRisks": ["concentration", "accessibility", "conflict"],
+    "minimumCommentDays": 14,
+    "channels": "Anyone may comment through an issue on any forge mirror of forkmesh/forkmesh or by email. A maintainer records each finding with attribution."
+  },
+  "measures": [
+    "funds raised, awarded, and disbursed per round",
+    "administrative cost as a share of the pool",
+    "applications and distinct recipients",
+    "milestone completion",
+    "volunteer-mirror operators funded and still operating at the outcome report",
+    "accessibility awards and reported accessibility impact",
+    "largest recipient, area, and funder share of a round"
+  ],
+  "closureEvidence": {
+    "supported-platforms": [
+      "app/tests/test_public_interest_funding.py::test_rails_and_channels_never_require_forkmesh",
+      ".github/workflows/collaboration-conformance.yml"
+    ],
+    "failure-paths": [
+      "app/tests/test_public_interest_funding.py::test_conflicted_reviewer_must_recuse",
+      "app/tests/test_public_interest_funding.py::test_selection_requires_quorum_score_and_eligibility",
+      "app/tests/test_public_interest_funding.py::test_awards_never_grant_access_votes_or_network_behavior"
+    ],
+    "rollback-recovery": [
+      "app/tests/test_public_interest_funding.py::test_returned_payments_do_not_count_as_disbursed",
+      "app/tests/test_public_interest_funding.py::test_cancelled_round_publishes_lessons"
+    ],
+    "documentation": [
+      "www/docs/funding/README.md",
+      "app/tests/test_public_interest_funding.py::test_program_guide_documents_operations"
+    ],
+    "telemetry": [
+      "app/tests/test_public_interest_funding.py::test_completed_pilot_clears_closure_and_reports_measures"
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../agent.schema.json",
+  "schemaVersion": 1,
+  "provider": "local-llama",
+  "runtime": "ollama",
+  "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+  "defaultModel": "gemma4:e4b",
+  "avatar": "avatar.png",
+  "documentation": "https://ai.google.dev/gemma/docs/core",
+  "runtimeDownload": "https://ollama.com/download",
+  "models": [
+    {
+      "id": "gemma4:e2b",
+      "label": "Gemma 4 E2B",
+      "downloadBytes": 7200000000,
+      "contextTokens": 131072
+    },
+    {
+      "id": "gemma4:e4b",
+      "label": "Gemma 4 E4B",
+      "downloadBytes": 9600000000,
+      "contextTokens": 131072
+    },
+    {
+      "id": "gemma4:12b",
+      "label": "Gemma 4 12B",
+      "downloadBytes": 7600000000,
+      "contextTokens": 262144
+    },
+    {
+      "id": "gemma4:26b",
+      "label": "Gemma 4 26B",
+      "downloadBytes": 18000000000,
+      "contextTokens": 262144
+    },
+    {
+      "id": "gemma4:31b",
+      "label": "Gemma 4 31B",
+      "downloadBytes": 20000000000,
+      "contextTokens": 262144
+    }
+  ]
+}

@@ -1,0 +1,1677 @@
+{
+  "schema": "forkmesh-git-compatibility-published-v1",
+  "suite": {
+    "id": "forkmesh-stock-git",
+    "version": "1.0.0",
+    "freshnessDays": 30
+  },
+  "summary": {
+    "asOf": "2026-09-14",
+    "freshnessDays": 30,
+    "claims": 39,
+    "verified": 39,
+    "failing": 0,
+    "stale": 0,
+    "unverified": 0,
+    "unsupported": 6,
+    "passRate": 1.0,
+    "staleClients": []
+  },
+  "cells": [
+    {
+      "operation": "clone",
+      "operationLabel": "Clone",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "SSH upload-pack.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "clone",
+      "operationLabel": "Clone",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Smart-HTTP upload-pack under the stable URL.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "clone",
+      "operationLabel": "Clone",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Retries only before response bytes; the selected mirror must match the accepted refs.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "fetch",
+      "operationLabel": "Fetch",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Branches, tags, and deletes use stock ref negotiation.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "fetch",
+        "--prune",
+        "origin"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "fetch",
+      "operationLabel": "Fetch",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "The relay streams the selected mirror response without rewriting pack data.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "fetch",
+        "--prune",
+        "origin"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "fetch",
+      "operationLabel": "Fetch",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "A failed origin is skipped before streaming begins.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "fetch",
+        "--prune",
+        "origin"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "push",
+      "operationLabel": "Push",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Requires a registered SSH public key and repository write permission.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "origin",
+        "HEAD"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "push",
+      "operationLabel": "Push",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "unsupported",
+      "status": "unsupported",
+      "expected": "HTTPS receive-pack fails before reading a request body.",
+      "limitation": "https-receive-pack",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "origin",
+        "HEAD"
+      ],
+      "runs": [],
+      "lastRun": null
+    },
+    {
+      "operation": "push",
+      "operationLabel": "Push",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "unsupported",
+      "status": "unsupported",
+      "expected": "Writes never fan out through read mirrors.",
+      "limitation": "https-receive-pack",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "origin",
+        "HEAD"
+      ],
+      "runs": [],
+      "lastRun": null
+    },
+    {
+      "operation": "hooks",
+      "operationLabel": "Client hooks",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "local",
+      "status": "local",
+      "expected": "Normal checkout hooks run on the developer machine.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "commit",
+        "-m",
+        "exercise local hook"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "hooks",
+      "operationLabel": "Client hooks",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "local",
+      "status": "local",
+      "expected": "Normal checkout hooks run on the developer machine.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "commit",
+        "-m",
+        "exercise local hook"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "hooks",
+      "operationLabel": "Client hooks",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "local",
+      "status": "local",
+      "expected": "Normal checkout hooks run on the developer machine.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "commit",
+        "-m",
+        "exercise local hook"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "branches",
+      "operationLabel": "Branches",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Create, fetch, push, and delete through ordinary refspecs.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "switch",
+        "-c",
+        "topic/example"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "branches",
+      "operationLabel": "Branches",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "conditional",
+      "status": "conditional",
+      "expected": "Read and local branch operations work; publish the branch with the SSH URL.",
+      "limitation": "https-receive-pack",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "switch",
+        "-c",
+        "topic/example"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "branches",
+      "operationLabel": "Branches",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "conditional",
+      "status": "conditional",
+      "expected": "Read and local branch operations work; publish the branch with the SSH URL.",
+      "limitation": "https-receive-pack",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "switch",
+        "-c",
+        "topic/example"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "rebase",
+      "operationLabel": "Rebase",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "local",
+      "status": "local",
+      "expected": "Rebase is local; the resulting ref can be pushed over SSH.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "rebase",
+        "origin/main"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "rebase",
+      "operationLabel": "Rebase",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "local",
+      "status": "local",
+      "expected": "Fetch over HTTPS, rebase locally, then publish over SSH.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "rebase",
+        "origin/main"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "rebase",
+      "operationLabel": "Rebase",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "local",
+      "status": "local",
+      "expected": "Fetch over HTTPS, rebase locally, then publish over SSH.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "rebase",
+        "origin/main"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "force-with-lease",
+      "operationLabel": "Force with lease",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "A stale expected old object ID is rejected without changing the remote ref.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "--force-with-lease",
+        "origin",
+        "topic/example"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "force-with-lease",
+      "operationLabel": "Force with lease",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "unsupported",
+      "status": "unsupported",
+      "expected": "Use the repository SSH URL for writes.",
+      "limitation": "https-receive-pack",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "--force-with-lease",
+        "origin",
+        "topic/example"
+      ],
+      "runs": [],
+      "lastRun": null
+    },
+    {
+      "operation": "force-with-lease",
+      "operationLabel": "Force with lease",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "unsupported",
+      "status": "unsupported",
+      "expected": "Use the owner SSH URL; mirror reads are never a write quorum.",
+      "limitation": "https-receive-pack",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "--force-with-lease",
+        "origin",
+        "topic/example"
+      ],
+      "runs": [],
+      "lastRun": null
+    },
+    {
+      "operation": "force",
+      "operationLabel": "Explicit force update",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Accepted for an authorized writable repository; create a bundle or backup ref first.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "--force",
+        "origin",
+        "topic/example"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "force",
+      "operationLabel": "Explicit force update",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "unsupported",
+      "status": "unsupported",
+      "expected": "Use the repository SSH URL for writes.",
+      "limitation": "https-receive-pack",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "--force",
+        "origin",
+        "topic/example"
+      ],
+      "runs": [],
+      "lastRun": null
+    },
+    {
+      "operation": "force",
+      "operationLabel": "Explicit force update",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "unsupported",
+      "status": "unsupported",
+      "expected": "Use the owner SSH URL; mirrors remain read-only.",
+      "limitation": "https-receive-pack",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "--force",
+        "origin",
+        "topic/example"
+      ],
+      "runs": [],
+      "lastRun": null
+    },
+    {
+      "operation": "shallow-clone",
+      "operationLabel": "Shallow clone",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Shallow boundaries and later unshallow are checked.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "--depth=1",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "shallow-clone",
+      "operationLabel": "Shallow clone",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Standard deepen negotiation is passed through.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "--depth=1",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "shallow-clone",
+      "operationLabel": "Shallow clone",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "The initial request may fail over before streaming.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "--depth=1",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "partial-clone",
+      "operationLabel": "Partial clone",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "conditional",
+      "status": "conditional",
+      "expected": "Git protocol v2 advertises filters and lazy blob fetch preserves object IDs.",
+      "limitation": "partial-protocol-v2",
+      "reproduction": [
+        "git",
+        "-c",
+        "protocol.version=2",
+        "clone",
+        "--filter=blob:none",
+        "--no-checkout",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "partial-clone",
+      "operationLabel": "Partial clone",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "conditional",
+      "status": "conditional",
+      "expected": "The bounded Git-Protocol v2 hint and filter negotiation are streamed unchanged.",
+      "limitation": "partial-protocol-v2",
+      "reproduction": [
+        "git",
+        "-c",
+        "protocol.version=2",
+        "clone",
+        "--filter=blob:none",
+        "--no-checkout",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "partial-clone",
+      "operationLabel": "Partial clone",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "conditional",
+      "status": "conditional",
+      "expected": "With protocol v2, each promisor fetch may select another matching mirror before bytes start.",
+      "limitation": "partial-protocol-v2",
+      "reproduction": [
+        "git",
+        "-c",
+        "protocol.version=2",
+        "clone",
+        "--filter=blob:none",
+        "--no-checkout",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "bundle",
+      "operationLabel": "Bundles",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "local",
+      "status": "local",
+      "expected": "Bundle creation, verify, clone, and recovery use stock Git objects.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "bundle",
+        "create",
+        "recovery.bundle",
+        "--all"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "bundle",
+      "operationLabel": "Bundles",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "local",
+      "status": "local",
+      "expected": "Create a bundle from any complete local clone.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "bundle",
+        "create",
+        "recovery.bundle",
+        "--all"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "bundle",
+      "operationLabel": "Bundles",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "local",
+      "status": "local",
+      "expected": "Create a bundle from any complete local clone.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "bundle",
+        "create",
+        "recovery.bundle",
+        "--all"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "submodules",
+      "operationLabel": "Submodules",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "conditional",
+      "status": "conditional",
+      "expected": "Every submodule URL needs its own SSH authorization or public HTTPS route.",
+      "limitation": "submodule-authorization",
+      "reproduction": [
+        "git",
+        "clone",
+        "--recurse-submodules",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "submodules",
+      "operationLabel": "Submodules",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "conditional",
+      "status": "conditional",
+      "expected": "Public relative submodule URLs resolve through the same stable relay.",
+      "limitation": "submodule-authorization",
+      "reproduction": [
+        "git",
+        "clone",
+        "--recurse-submodules",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "submodules",
+      "operationLabel": "Submodules",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "conditional",
+      "status": "conditional",
+      "expected": "Each public submodule independently selects an integrity-matching mirror.",
+      "limitation": "submodule-authorization",
+      "reproduction": [
+        "git",
+        "clone",
+        "--recurse-submodules",
+        "{clone_url}",
+        "worktree"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "signed-commits",
+      "operationLabel": "Signed commits",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Commit bytes, signature header, and object ID are unchanged.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "verify-commit",
+        "HEAD"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "signed-commits",
+      "operationLabel": "Signed commits",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "The relay does not decode or rewrite Git objects.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "verify-commit",
+        "HEAD"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "signed-commits",
+      "operationLabel": "Signed commits",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Only mirrors with the accepted refs are eligible; exact signed object bytes are compared.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "verify-commit",
+        "HEAD"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "integrity",
+      "operationLabel": "Ref and object integrity",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Accepted pushes enable receive fsck and the suite checks refs plus object contents.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "fsck",
+        "--full",
+        "--strict"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "integrity",
+      "operationLabel": "Ref and object integrity",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Source-attested ref pins gate routing; the suite also injects bad refs and damaged packs.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "fsck",
+        "--full",
+        "--strict"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "integrity",
+      "operationLabel": "Ref and object integrity",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "Candidates must share the accepted ref digest; corruption fixtures must fail fsck.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "fsck",
+        "--full",
+        "--strict"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "rollback-recovery",
+      "operationLabel": "Rollback and recovery",
+      "path": "direct",
+      "pathLabel": "Direct owner SSH",
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "claim": "supported",
+      "status": "supported",
+      "expected": "A verified pre-force bundle restores the exact previous ref over authorized SSH.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "recovery.bundle",
+        "recovered"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "rollback-recovery",
+      "operationLabel": "Rollback and recovery",
+      "path": "relay",
+      "pathLabel": "Stable relay HTTPS",
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "claim": "local",
+      "status": "local",
+      "expected": "Recovery is prepared locally and published through the SSH write path.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "recovery.bundle",
+        "recovered"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    },
+    {
+      "operation": "rollback-recovery",
+      "operationLabel": "Rollback and recovery",
+      "path": "mirror-failover",
+      "pathLabel": "Relay mirror failover",
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "claim": "local",
+      "status": "local",
+      "expected": "A recovered owner ref is served only after mirrors refresh and attest the new state.",
+      "limitation": "",
+      "reproduction": [
+        "git",
+        "clone",
+        "recovery.bundle",
+        "recovered"
+      ],
+      "runs": [
+        "df83f9aadd86159a",
+        "f80323565e1c9af0"
+      ],
+      "lastRun": {
+        "run": "df83f9aadd86159a",
+        "date": "2026-09-14",
+        "result": "pass",
+        "detail": "stock Git behavior and integrity assertions passed",
+        "client": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "protocolVersion": "2",
+        "transportMode": "http",
+        "evidence": "evidence/df83f9aadd86159a.json"
+      }
+    }
+  ],
+  "clients": [
+    {
+      "id": "forkmesh-qt",
+      "name": "ForkMesh Qt desktop",
+      "platform": "Linux, macOS, Windows",
+      "version": "current main",
+      "status": "tested",
+      "lastTested": "2026-08-20",
+      "evidence": "desktop/tests/test_mesh_e2e.cpp",
+      "publishedStatus": "tested"
+    },
+    {
+      "id": "github-desktop",
+      "name": "GitHub Desktop",
+      "platform": "macOS, Windows",
+      "version": "not yet recorded",
+      "status": "pending",
+      "lastTested": "not yet tested",
+      "evidence": "desktop-client-validation",
+      "publishedStatus": "pending"
+    },
+    {
+      "id": "sourcetree",
+      "name": "Sourcetree",
+      "platform": "macOS, Windows",
+      "version": "not yet recorded",
+      "status": "pending",
+      "lastTested": "not yet tested",
+      "evidence": "desktop-client-validation",
+      "publishedStatus": "pending"
+    },
+    {
+      "id": "gitkraken",
+      "name": "GitKraken Desktop",
+      "platform": "Linux, macOS, Windows",
+      "version": "not yet recorded",
+      "status": "pending",
+      "lastTested": "not yet tested",
+      "evidence": "desktop-client-validation",
+      "publishedStatus": "pending"
+    }
+  ],
+  "runs": [
+    {
+      "id": "df83f9aadd86159a",
+      "evidence": "evidence/df83f9aadd86159a.json",
+      "finishedAt": "2026-09-14T15:58:35.903689+00:00",
+      "date": "2026-09-14",
+      "testedCommit": "c792b91e35e78b54871d6814d77d8fcfb7621591",
+      "client": {
+        "label": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "platformRelease": "6.12.107+deb13-amd64",
+        "machine": "x86_64",
+        "protocolVersion": "2",
+        "transportMode": "http"
+      },
+      "summary": {
+        "status": "pass",
+        "pass": 15,
+        "fail": 0,
+        "notRun": 0
+      },
+      "reproduction": {
+        "checkout": [
+          "git",
+          "checkout",
+          "c792b91e35e78b54871d6814d77d8fcfb7621591"
+        ],
+        "command": [
+          "python3",
+          "tools/git_conformance.py",
+          "run",
+          "--protocol-version",
+          "2",
+          "--transport",
+          "http",
+          "--client-label",
+          "Debian system Git",
+          "--output",
+          "artifacts/git-conformance-v2.json"
+        ]
+      }
+    },
+    {
+      "id": "f80323565e1c9af0",
+      "evidence": "evidence/f80323565e1c9af0.json",
+      "finishedAt": "2026-09-14T15:58:29.769295+00:00",
+      "date": "2026-09-14",
+      "testedCommit": "c792b91e35e78b54871d6814d77d8fcfb7621591",
+      "client": {
+        "label": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "platformRelease": "6.12.107+deb13-amd64",
+        "machine": "x86_64",
+        "protocolVersion": "0",
+        "transportMode": "http"
+      },
+      "summary": {
+        "status": "pass",
+        "pass": 15,
+        "fail": 0,
+        "notRun": 0
+      },
+      "reproduction": {
+        "checkout": [
+          "git",
+          "checkout",
+          "c792b91e35e78b54871d6814d77d8fcfb7621591"
+        ],
+        "command": [
+          "python3",
+          "tools/git_conformance.py",
+          "run",
+          "--protocol-version",
+          "0",
+          "--transport",
+          "http",
+          "--client-label",
+          "Debian system Git",
+          "--output",
+          "artifacts/git-conformance-v0.json"
+        ]
+      }
+    }
+  ]
+}

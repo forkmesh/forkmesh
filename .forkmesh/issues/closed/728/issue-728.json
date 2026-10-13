@@ -1,0 +1,54 @@
+{
+    "assignees": [
+    ],
+    "author": "spidertest",
+    "authorName": "spidertest",
+    "bountyAddress": "",
+    "bountyStatus": "",
+    "bountyUsd": 0,
+    "createdAt": 1790201658861,
+    "endDate": 0,
+    "events": [
+        {
+            "attachments": [
+            ],
+            "author": "spidertest",
+            "authorName": "spidertest",
+            "body": "Title: [Functional/Onboarding] No path exists to create a hosted repository without desktop app or external provider\n\nEnvironment: Web App + Desktop App (Windows)\n\nSteps to Reproduce:\n\nAs a new user with no GitHub/GitLab/Codeberg account and no ForkMesh desktop node installed, attempt to create a new repository from the web app\n\nExpected Result: A way to create and host a small repository directly through ForkMesh, without requiring desktop installation or an external provider.\n\nActual Result: No such path exists — repo creation from the web requires either the desktop node running locally, or importing from GitHub/GitLab/Codeberg (which itself doesn't complete real mirroring, per earlier reports).\n\nSuggested fix: Offer temporary/lightweight hosting by ForkMesh itself for new repos, with an option to migrate to a self-hosted mirror later — preserves the decentralization goal while removing the day-one onboarding wall.\n\n---\n_Reported by @LTelloM on Discord (ForkMesh user spidertest)._\n_Original message: https://discord.com/channels/1531610390574665809/1531718105124831304/1552442332115238935_\n_Filed by ForkBot from the Discord bug channel._",
+            "id": "forkbot-1790201658861",
+            "sig": "",
+            "title": "No direct repository creation on web app without desktop app or external provider",
+            "ts": 1790201658861,
+            "type": "open"
+        },
+        {
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "bebafc89-db03-43a7-9d2f-887d8b6fc19b",
+            "sig": "OijiETGAaV3pKVJcPfLh-P6T650Lt7uAvAcuPQj7Tshsou4GvewAPyEzkQPqbBauaeR5xPPdolqvqMTtTbA_AQ",
+            "status": "closed",
+            "ts": 1790571819072,
+            "type": "status"
+        }
+    ],
+    "labels": [
+        "bug",
+        "discord"
+    ],
+    "milestone": "",
+    "number": 728,
+    "priority": 0,
+    "progress": 0,
+    "rewardCondition": "accepted_report",
+    "rewardEstimateLamports": 2000000,
+    "rewardId": "reward-discord-b4fe97352ca51f4dab5e3f07",
+    "rewardRecipient": "spidertest",
+    "rewardStatus": "pending_wallet",
+    "rewardTxSignature": "",
+    "schema": "forkmesh-issue-v1",
+    "startDate": 0,
+    "status": "closed",
+    "title": "No direct repository creation on web app without desktop app or external provider",
+    "updatedAt": 1790571819072,
+    "votes": 0
+}

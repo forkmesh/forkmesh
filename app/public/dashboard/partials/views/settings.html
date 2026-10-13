@@ -1,0 +1,890 @@
+          <section data-view="profile" class="view active h-full overflow-y-auto bg-background">
+            <div data-settings-layout class="mx-auto w-full max-w-[1360px] px-6 py-8">
+              <div data-settings-account-header class="mb-7 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div class="flex min-w-0 items-center gap-4">
+                  <span
+                    data-profile-page-avatar
+                    class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary text-xl font-semibold text-foreground font-mono"
+                  >
+                    <img data-profile-page-avatar-image class="hidden h-full w-full object-cover" alt="" />
+                    <span data-avatar-initial>F</span>
+                  </span>
+                  <div class="min-w-0">
+                    <h1 class="truncate text-2xl font-semibold leading-7 text-foreground">
+                      <span data-profile-page-node-name>My Profile</span>
+                    </h1>
+                    <p data-profile-page-email class="mt-1 truncate text-base font-medium text-muted-foreground">Sign in to view email</p>
+                    <p class="mt-1 text-sm text-muted-foreground">Your personal account</p>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                  <a href="/dashboard/settings" class="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted">
+                    <i data-lucide="shuffle" class="h-4 w-4 text-muted-foreground"></i>
+                    Go to settings page
+                    <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-muted-foreground"></i>
+                  </a>
+                  <a href="/dashboard/profile" class="inline-flex h-9 items-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted">
+                    Go to your personal profile
+                  </a>
+                  <button
+                    data-logout-button
+                    type="button"
+                    class="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground hover:bg-secondary"
+                  >
+                    <i data-lucide="log-out" class="h-4 w-4 text-muted-foreground"></i>
+                    Logout
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid gap-8 lg:grid-cols-[23rem_minmax(0,1fr)]">
+                <aside data-settings-sidebar class="min-w-0">
+                  <nav class="grid gap-1 text-sm font-medium text-foreground" aria-label="Settings sections">
+                    <button data-settings-section-link="public-profile" type="button" aria-current="page" class="relative flex h-10 items-center gap-3 rounded-md bg-secondary px-3 pl-4 text-left font-semibold text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="user" class="h-5 w-5 text-muted-foreground"></i>
+                      Public profile
+                    </button>
+                    <button data-settings-section-link="account" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="settings" class="h-5 w-5"></i>
+                      Account
+                    </button>
+                    <button data-settings-section-link="ssh-keys" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="key-round" class="h-5 w-5"></i>
+                      SSH keys
+                    </button>
+                    <button data-settings-section-link="appearance" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="paintbrush" class="h-5 w-5"></i>
+                      Appearance
+                    </button>
+                    <button data-settings-section-link="notifications" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="bell" class="h-5 w-5"></i>
+                      Pings
+                    </button>
+                    <button data-settings-section-link="payout" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="wallet-cards" class="h-5 w-5"></i>
+                      Verification and payout
+                    </button>
+                    <button data-settings-section-link="nodes" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="radio-tower" class="h-5 w-5"></i>
+                      Nodes
+                    </button>
+                    <button data-settings-section-link="organizations" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="building-2" class="h-5 w-5"></i>
+                      Organizations
+                    </button>
+                    <button data-settings-section-link="agents" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="bot" class="h-5 w-5"></i>
+                      Agents &amp; runners
+                    </button>
+                    <button data-settings-section-link="apps" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="blocks" class="h-5 w-5"></i>
+                      Installed apps
+                    </button>
+                    <button data-settings-section-link="danger" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <i data-lucide="circle-alert" class="h-5 w-5"></i>
+                      Danger zone
+                    </button>
+                  </nav>
+                </aside>
+
+                <main data-settings-main class="min-w-0 pb-16">
+                  <section id="settings-public-profile" data-settings-section="public-profile" class="pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Public profile</h2>
+                    <div class="mt-5 grid gap-10 xl:grid-cols-[minmax(0,42rem)_20rem]">
+                      <div class="grid min-w-0 content-start gap-5">
+                        <div class="grid gap-2">
+                          <label class="grid gap-2 text-sm font-semibold text-foreground">
+                            Username
+                            <input data-profile-rename-input type="text" inputmode="latin" autocomplete="off" aria-describedby="profile-rename-status profile-rename-help" placeholder="new-username" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          </label>
+                          <p id="profile-rename-status" data-profile-rename-status class="min-h-4 text-xs text-muted-foreground">Enter a new username to check availability.</p>
+                          <span id="profile-rename-help" class="text-sm font-normal leading-5 text-muted-foreground">Your username is your node name and repository namespace. It appears around ForkMesh where you contribute or are mentioned; renaming moves owned repository URLs to the new namespace.</span>
+                          <form data-credential-scope class="contents"><input data-profile-rename-password type="password" autocomplete="current-password" placeholder="Current password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" /></form>
+                          <button data-profile-rename-save type="button" disabled class="inline-flex h-9 w-fit items-center justify-center rounded-md border border-border bg-secondary px-4 text-sm font-semibold text-foreground opacity-40 hover:bg-muted transition-colors">
+                            Update username
+                          </button>
+                        </div>
+
+                        <label id="settings-email" class="grid gap-2 text-sm font-semibold text-foreground">
+                          Public email
+                          <select data-profile-public-email disabled class="h-10 w-fit max-w-full cursor-not-allowed rounded-md border border-border bg-secondary px-3 text-sm font-normal text-muted-foreground">
+                            <option value="">Select a verified email to display</option>
+                          </select>
+                          <span class="text-sm font-normal leading-5 text-muted-foreground">Email privacy is managed by account verification. Only a confirmed address can be shown on your public profile.</span>
+                        </label>
+
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Bio
+                          <textarea data-profile-page-bio maxlength="500" rows="4" placeholder="Short bio" class="min-h-24 resize-y rounded-md border border-border bg-card px-3 py-2 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></textarea>
+                          <span class="text-sm font-normal leading-5 text-muted-foreground">You can @mention other users and organizations to link to them.</span>
+                        </label>
+
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          URL
+                          <span data-profile-public-url class="flex h-10 items-center rounded-md border border-border bg-secondary px-3 font-mono text-sm font-normal text-muted-foreground">/@username</span>
+                        </label>
+
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Location
+                          <input data-profile-page-location type="text" maxlength="120" autocomplete="off" placeholder="City, country, or region" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        </label>
+
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Time zone
+                          <select data-profile-page-timezone class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]">
+                            <option value="">Use browser time zone</option>
+                          </select>
+                        </label>
+
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Mastodon handle
+                          <input data-profile-page-mastodon type="text" inputmode="latin" autocomplete="off" placeholder="@you@mastodon.social" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        </label>
+
+                        <div class="grid gap-2">
+                          <div class="flex items-center justify-between gap-3">
+                            <label class="text-sm font-semibold text-foreground">Social accounts</label>
+                            <p class="text-xs text-muted-foreground">TXT: <span data-profile-txt-value class="font-mono">forkmesh-profile=username</span></p>
+                          </div>
+                          <div data-profile-links-editor class="grid gap-2">
+                            <div data-profile-link-row class="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Label" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <p data-profile-link-status class="sm:col-span-2 text-xs text-muted-foreground"></p>
+                            </div>
+                            <div data-profile-link-row class="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 2" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <p data-profile-link-status class="sm:col-span-2 text-xs text-muted-foreground"></p>
+                            </div>
+                            <div data-profile-link-row class="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 3" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <p data-profile-link-status class="sm:col-span-2 text-xs text-muted-foreground"></p>
+                            </div>
+                            <div data-profile-link-row class="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 4" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <p data-profile-link-status class="sm:col-span-2 text-xs text-muted-foreground"></p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <label class="flex items-start gap-2 rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
+                          <input data-profile-page-private type="checkbox" class="mt-0.5 h-4 w-4 rounded border-border bg-background" />
+                          <span>
+                            <span class="block font-semibold text-foreground">Private profile</span>
+                            <span class="mt-1 block leading-5">When enabled, your <span class="font-mono">/@username</span> page returns 404.</span>
+                          </span>
+                        </label>
+
+                        <label class="flex items-start gap-2 rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
+                          <input data-profile-page-followers-public type="checkbox" class="mt-0.5 h-4 w-4 rounded border-border bg-background" />
+                          <span>
+                            <span class="block font-semibold text-foreground">Show my followers list</span>
+                            <span class="mt-1 block leading-5">When off (default), fediverse apps like Mastodon show "This user has chosen to not make their other followers visible" instead of your follower list.</span>
+                          </span>
+                        </label>
+
+                        <p data-profile-public-hint class="min-h-4 text-xs text-muted-foreground"></p>
+                        <button data-profile-public-save type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                          Save public profile
+                        </button>
+                      </div>
+
+                      <aside data-settings-profile-picture class="min-w-0">
+                        <h3 class="mb-4 text-sm font-semibold text-foreground">Profile picture</h3>
+                        <div class="relative w-64 max-w-full">
+                          <span
+                            data-profile-page-avatar
+                            class="flex aspect-square w-full items-center justify-center overflow-hidden rounded-full border border-border bg-secondary text-6xl font-semibold text-foreground font-mono"
+                          >
+                            <img data-profile-page-avatar-image class="hidden h-full w-full object-cover" alt="" />
+                            <span data-avatar-initial>F</span>
+                          </span>
+                          <button data-profile-avatar-edit type="button" aria-haspopup="dialog" class="absolute bottom-6 left-4 inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground shadow-sm hover:bg-secondary">
+                            <i data-lucide="pencil" class="h-4 w-4"></i>
+                            Edit
+                          </button>
+                          <input data-profile-avatar-input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" tabindex="-1" aria-hidden="true" />
+                        </div>
+                        <p data-profile-avatar-hint aria-live="polite" class="mt-3 min-h-4 text-xs text-muted-foreground">PNG, JPEG, or WebP. The saved picture is cropped to a square.</p>
+                      </aside>
+                    </div>
+                  </section>
+
+                  <section id="settings-payout" data-settings-section="payout" class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Verification and payout</h2>
+                    <div class="mt-5 grid gap-5 xl:grid-cols-[minmax(0,42rem)_20rem]">
+                      <div class="grid gap-4">
+                        <div class="rounded-md border border-border bg-card p-4">
+                          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div class="min-w-0">
+                              <p class="text-sm font-semibold text-foreground">Email verification</p>
+                              <p data-profile-page-email-status class="mt-1 text-sm text-muted-foreground">Sign in to view email status.</p>
+                            </div>
+                            <button data-profile-page-verify-email type="button" class="shrink-0 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                              Send link
+                            </button>
+                          </div>
+                        </div>
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Solana payout address
+                          <input data-profile-page-solana type="text" inputmode="latin" autocomplete="off" placeholder="Your public Solana address" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <span class="text-sm font-normal leading-5 text-muted-foreground">Used for optional mirror rewards and direct community donations. Legacy bounty custody is disabled. Leave it empty until you choose to receive a transfer.</span>
+                          <span class="text-xs font-normal leading-5 text-amber-300">Non-custodial: ForkMesh stores only this public address. Wallet keys and recovery phrases remain on your device; never enter them here. User-owned funds, community-pool funds, pending rewards, and completed on-chain transfers are separate states.</span>
+                        </label>
+                        <form data-credential-scope class="contents">
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Current password
+                          <input data-profile-page-password type="password" autocomplete="current-password" placeholder="Required for payout changes" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        </label>
+                        </form>
+                        <p data-profile-page-hint class="min-h-4 text-xs text-muted-foreground"></p>
+                        <button data-profile-page-save type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                          Save payout address
+                        </button>
+                      </div>
+                      <div class="grid content-start gap-3 text-sm">
+                        <div class="rounded-md border border-border bg-card px-4 py-3">
+                          <p class="text-muted-foreground">Account status</p>
+                          <p data-profile-page-account-status class="mt-1 font-mono text-foreground">active</p>
+                        </div>
+                        <div class="rounded-md border border-border bg-card px-4 py-3">
+                          <p class="text-muted-foreground">Payout address</p>
+                          <p data-profile-page-payout-status class="mt-1 font-mono text-foreground">Not configured</p>
+                        </div>
+                        <div class="rounded-md border border-border bg-card px-4 py-3">
+                          <p class="text-muted-foreground">Admin access</p>
+                          <p data-profile-page-admin-status class="mt-1 font-mono text-foreground">No</p>
+                          <div data-admin-test-email-row class="mt-3 hidden">
+                            <button data-admin-test-email type="button" class="rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                              Send test email
+                            </button>
+                            <p data-admin-test-email-status role="status" class="mt-2 min-h-4 text-xs text-muted-foreground"></p>
+                          </div>
+                        </div>
+                        <div class="rounded-md border border-border bg-card px-4 py-3">
+                          <p class="text-muted-foreground">Last seen</p>
+                          <p data-account-last-seen class="mt-1 font-mono text-foreground">-</p>
+                        </div>
+                        <div class="rounded-md border border-border bg-card px-4 py-3">
+                          <p class="text-muted-foreground">Last email</p>
+                          <p data-account-last-email class="mt-1 font-mono text-foreground">-</p>
+                          <p data-account-last-email-detail class="mt-1 text-xs text-muted-foreground"></p>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section id="settings-notifications" data-settings-section="notifications" data-ping-settings class="hidden pb-8">
+                    <style>
+                      [data-ping-settings], [data-genie-setting] { --ps-border: rgb(var(--dashboard-border-rgb)); --ps-muted: rgb(var(--dashboard-muted-foreground-rgb)); --ps-accent: rgb(var(--dashboard-accent-rgb)); --ps-on: #2f81f7; }
+                      .ping-switch { position: relative; flex-shrink: 0; width: 2.25rem; height: 1.3rem; border-radius: 999px; background: var(--ps-border); transition: background .15s; }
+                      .ping-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1.3rem - 4px); height: calc(1.3rem - 4px); border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: translate .15s; }
+                      .ping-switch[aria-checked="true"] { background: var(--ps-on); }
+                      .ping-switch[aria-checked="true"]::after { translate: .95rem 0; }
+                      .ping-switch:disabled { cursor: not-allowed; opacity: .4; }
+                      .ping-switch:focus-visible { outline: 2px solid var(--ps-on); outline-offset: 2px; }
+                      .ping-day { min-width: 2.75rem; height: 2rem; border: 1px solid var(--ps-border); border-radius: .375rem; padding: 0 .5rem; font-size: .8rem; font-weight: 600; color: var(--ps-muted); transition: background .15s, color .15s, border-color .15s; }
+                      .ping-day[aria-pressed="true"] { border-color: var(--ps-on); background: rgb(47 129 247 / .14); color: rgb(var(--dashboard-foreground-rgb)); }
+                      .ping-day:disabled { opacity: .45; cursor: not-allowed; }
+                      .ping-kind-row { display: grid; grid-template-columns: minmax(0, 1fr) 4rem 4rem; align-items: center; gap: .75rem; padding: .7rem 1rem; border-top: 1px solid var(--ps-border); transition: background .6s; }
+                      .ping-kind-head { display: grid; grid-template-columns: minmax(0, 1fr) 4rem 4rem; gap: .75rem; padding: .6rem 1rem; font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ps-muted); }
+                      .ping-kind-row > .ping-cell, .ping-kind-head > .ping-cell { display: flex; justify-content: center; }
+                      .ping-kind-row[data-ping-muted="true"] .ping-kind-label { color: var(--ps-muted); text-decoration: line-through; text-decoration-color: rgb(var(--dashboard-muted-foreground-rgb) / .5); }
+                      .ping-highlight { background: rgb(47 129 247 / .16) !important; box-shadow: inset 3px 0 0 var(--ps-on); }
+                      .ping-save-status { min-height: 1rem; font-size: .75rem; color: var(--ps-muted); }
+                      .ping-save-status[data-tone="good"] { color: #3fb950; }
+                      .ping-save-status[data-tone="bad"] { color: rgb(var(--dashboard-destructive-rgb)); }
+                      .ping-admin-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+                      .ping-admin-table th { padding: .6rem 1rem; font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ps-muted); text-align: center; }
+                      .ping-admin-table th:first-child, .ping-admin-table td:first-child { text-align: left; }
+                      .ping-admin-table td { padding: .65rem 1rem; border-top: 1px solid var(--ps-border); text-align: center; }
+                      .ping-admin-table td .ping-switch { display: inline-block; vertical-align: middle; }
+                    </style>
+                    <div class="flex flex-wrap items-end justify-between gap-3">
+                      <div class="min-w-0">
+                        <h2 class="text-2xl font-semibold tracking-normal text-foreground">Pings</h2>
+                        <p class="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Every ping setting for this account and its linked nodes, in one place. Changes save as you make them and apply on the web, desktop and phone.</p>
+                      </div>
+                      <p data-ping-settings-status class="ping-save-status" role="status" aria-live="polite"></p>
+                    </div>
+                    <div class="mt-5 grid max-w-4xl gap-4">
+                      <div data-ping-pause-form class="grid gap-3 rounded-md border border-border bg-card p-4">
+                        <div class="flex items-start gap-3">
+                          <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="bell-off" class="h-4 w-4"></i></span>
+                          <div class="min-w-0">
+                            <h3 class="text-base font-semibold text-foreground">Pause notifications</h3>
+                            <p class="mt-1 text-sm leading-6 text-muted-foreground">Stop ping notifications, emails, and desktop pop-ups until a deadline you pick. Pings still arrive in your inbox and on the bell, so nothing is lost — and the pause lifts itself.</p>
+                          </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                          <p data-ping-pause-state class="text-sm font-semibold text-foreground">Notifications are on</p>
+                          <button data-ping-pause-resume type="button" hidden class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                            Resume notifications
+                          </button>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <button data-ping-pause-preset="3600000" type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">For 1 hour</button>
+                          <button data-ping-pause-preset="86400000" type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">For 1 day</button>
+                          <button data-ping-pause-preset="604800000" type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">Until next week</button>
+                          <span class="text-sm text-muted-foreground">or until</span>
+                          <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <button data-ping-pause-custom-apply type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">Set</button>
+                        </div>
+                      </div>
+
+                      <div id="ping-quiet-hours" data-ping-quiet-hours class="grid gap-4 rounded-md border border-border bg-card p-4">
+                        <div class="flex items-start justify-between gap-4">
+                          <div class="flex min-w-0 items-start gap-3">
+                            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="moon" class="h-4 w-4"></i></span>
+                            <div class="min-w-0">
+                              <h3 class="text-base font-semibold text-foreground">Quiet hours</h3>
+                              <p class="mt-1 text-sm leading-6 text-muted-foreground">A daily window with no emails, phone banners or desktop pop-ups. Pings that arrive meanwhile wait in your inbox for the morning.</p>
+                              <p data-ping-quiet-state class="mt-2 text-sm font-semibold text-foreground">Quiet hours are off</p>
+                            </div>
+                          </div>
+                          <button data-ping-quiet-enabled type="button" role="switch" aria-checked="false" aria-label="Quiet hours" class="ping-switch mt-1"></button>
+                        </div>
+                        <div data-ping-quiet-fields class="grid gap-4 border-t border-border pt-4">
+                          <div class="flex flex-wrap items-end gap-4">
+                            <label class="grid gap-1.5 text-xs font-semibold text-muted-foreground">
+                              From
+                              <input data-ping-quiet-start type="time" value="22:00" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                            </label>
+                            <label class="grid gap-1.5 text-xs font-semibold text-muted-foreground">
+                              Until
+                              <input data-ping-quiet-end type="time" value="07:00" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                            </label>
+                            <label class="grid min-w-[14rem] flex-1 gap-1.5 text-xs font-semibold text-muted-foreground">
+                              Time zone
+                              <select data-ping-quiet-timezone class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></select>
+                            </label>
+                          </div>
+                          <div class="grid gap-1.5">
+                            <p class="text-xs font-semibold text-muted-foreground">Starts on</p>
+                            <div class="flex flex-wrap gap-1.5" role="group" aria-label="Quiet hours days">
+                              <button data-ping-quiet-day="0" type="button" aria-pressed="true" class="ping-day">Mon</button>
+                              <button data-ping-quiet-day="1" type="button" aria-pressed="true" class="ping-day">Tue</button>
+                              <button data-ping-quiet-day="2" type="button" aria-pressed="true" class="ping-day">Wed</button>
+                              <button data-ping-quiet-day="3" type="button" aria-pressed="true" class="ping-day">Thu</button>
+                              <button data-ping-quiet-day="4" type="button" aria-pressed="true" class="ping-day">Fri</button>
+                              <button data-ping-quiet-day="5" type="button" aria-pressed="true" class="ping-day">Sat</button>
+                              <button data-ping-quiet-day="6" type="button" aria-pressed="true" class="ping-day">Sun</button>
+                            </div>
+                            <p class="text-xs text-muted-foreground">A window that ends at or before it starts runs past midnight into the next day.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div id="ping-kinds" data-ping-kinds class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex items-start gap-3 p-4">
+                          <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="list-checks" class="h-4 w-4"></i></span>
+                          <div class="min-w-0">
+                            <h3 class="text-base font-semibold text-foreground">Ping types</h3>
+                            <p class="mt-1 text-sm leading-6 text-muted-foreground">Switch off a type and it is never delivered anywhere: not to the inbox, the bell, email or phone banners. Email follows the ping: a type that is off is never emailed.</p>
+                          </div>
+                        </div>
+                        <div data-ping-kind-list></div>
+                      </div>
+
+                      <div id="ping-email" data-ping-email class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex items-start justify-between gap-4 p-4">
+                          <div class="flex min-w-0 items-start gap-3">
+                            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="mail" class="h-4 w-4"></i></span>
+                            <div class="min-w-0">
+                              <h3 class="text-base font-semibold text-foreground">Email me about pings</h3>
+                              <p class="mt-1 text-sm leading-6 text-muted-foreground">Sent to your verified account email. The Email column above picks which types; this decides whether any are sent at all, and how they are paced.</p>
+                            </div>
+                          </div>
+                          <button data-ping-email-master type="button" role="switch" aria-checked="true" aria-label="Email me about pings" class="ping-switch mt-1"></button>
+                        </div>
+                        <div data-notification-delivery class="grid border-t border-border">
+                          <p class="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email delivery</p>
+                          <label class="flex items-start gap-3 px-4 py-3 text-sm text-muted-foreground">
+                            <input data-notification-delivery-mode="digest" name="notification-delivery" type="radio" class="mt-0.5 h-4 w-4 border-border" />
+                            <span><span class="block font-semibold text-foreground">Periodic digest</span><span class="mt-1 block leading-5">Roll other unread pings into one email, at most one per hour; ones you read in the app first are never emailed. Issues, pull requests and discussions are always emailed right away.</span></span>
+                          </label>
+                          <label class="flex items-start gap-3 px-4 pb-4 pt-1 text-sm text-muted-foreground">
+                            <input data-notification-delivery-mode="instant" name="notification-delivery" type="radio" class="mt-0.5 h-4 w-4 border-border" />
+                            <span><span class="block font-semibold text-foreground">Instant</span><span class="mt-1 block leading-5">Send each ping as its own email as soon as it arrives, with the event in the subject line. No hourly wait, and no grace period to read it in the app first.</span></span>
+                          </label>
+                        </div>
+                        <div class="flex items-center justify-between gap-4 border-t border-border p-4">
+                          <div class="min-w-0 text-sm">
+                            <p class="font-semibold text-foreground">Daily #general digest</p>
+                            <p class="mt-1 leading-5 text-muted-foreground">Email a daily count of encrypted #general messages. The messages themselves are never emailed.</p>
+                          </div>
+                          <button data-notification-pref="general_chat" type="button" role="switch" aria-checked="true" aria-label="Daily #general digest email" class="ping-switch"></button>
+                        </div>
+                      </div>
+
+                      <div id="marketing-email" data-marketing-email-card class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex items-start justify-between gap-4 p-4">
+                          <div class="flex min-w-0 items-start gap-3">
+                            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="megaphone" class="h-4 w-4"></i></span>
+                            <div class="min-w-0">
+                              <h3 class="text-base font-semibold text-foreground">Product updates and offers</h3>
+                              <p class="mt-1 text-sm leading-6 text-muted-foreground">Occasional email from ForkMesh about new features, release notes, events and promotions, at most a few a month. Off unless you turn it on. Every one has an unsubscribe link, and turning it off here never stops your ping emails.</p>
+                              <p data-marketing-email-since class="mt-1 text-xs text-muted-foreground"></p>
+                            </div>
+                          </div>
+                          <button data-marketing-email type="button" role="switch" aria-checked="false" aria-label="Email me product updates and offers" class="ping-switch mt-1"></button>
+                        </div>
+                      </div>
+
+                      <div id="admin-alerts" data-ping-admin-alerts hidden class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex items-start gap-3 p-4">
+                          <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="shield-alert" class="h-4 w-4"></i></span>
+                          <div class="min-w-0">
+                            <h3 class="text-base font-semibold text-foreground">Administrator alerts</h3>
+                            <p class="mt-1 text-sm leading-6 text-muted-foreground">How /status monitor outages reach administrators. These switches are platform-wide: they apply to every administrator, not just you. <span class="font-semibold text-foreground">Continual ping</span> repeats a still-down alert every five minutes until the monitor recovers.</p>
+                          </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                          <table class="ping-admin-table">
+                            <thead><tr><th scope="col">Monitor</th><th scope="col">Ping</th><th scope="col">Email</th><th scope="col">Continual ping</th></tr></thead>
+                            <tbody data-ping-admin-alert-rows></tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section id="settings-account" data-settings-section="account" class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Account</h2>
+                    <p class="mt-1 text-sm leading-6 text-muted-foreground">Your node name is your public account and repository namespace. Change your username from the <button data-settings-section-link="public-profile" type="button" class="inline-flex h-6 align-middle items-center rounded-sm border border-[#2f81f7]/40 bg-[#2f81f7]/10 px-1 font-semibold leading-5 text-[#2f81f7] transition-colors hover:border-[#2f81f7]/70 hover:bg-[#2f81f7]/10 hover:underline focus:outline-none focus:ring-1 focus:ring-[#2f81f7]">Public profile</button> settings — renaming it moves owned repository URLs to the new namespace.</p>
+                    <div class="mt-6 grid max-w-3xl gap-3 rounded-md border border-border bg-card p-4" data-patreon-connection>
+                      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0">
+                          <h3 class="text-base font-semibold text-foreground">Patreon membership</h3>
+                          <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                            Link your Patreon account to sync Pro and Supporter access. Membership roles come from the server, not from browser storage.
+                          </p>
+                          <p data-patreon-connection-state class="mt-2 text-sm text-muted-foreground">Checking connection…</p>
+                        </div>
+                        <button
+                          data-patreon-connect
+                          type="button"
+                          class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted"
+                        >
+                          Connect Patreon
+                        </button>
+                      </div>
+                      <p data-patreon-connection-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
+                      <p class="text-xs text-muted-foreground">
+                        Prefer checkout first?
+                        <a class="font-semibold text-[#2f81f7] hover:underline" href="https://www.patreon.com/16434219/join" target="_blank" rel="noopener">Open Patreon memberships</a>
+                        or compare plans on
+                        <a class="font-semibold text-[#2f81f7] hover:underline" href="https://forkmesh.com/#pricing">Pricing</a>.
+                      </p>
+                    </div>
+                    <div class="mt-6 grid max-w-3xl gap-3">
+                      <div class="rounded-md border border-border bg-card p-4">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h3 class="text-base font-semibold text-foreground">ForkMesh membership</h3>
+                            <p data-membership-summary class="mt-1 text-sm leading-6 text-muted-foreground">Loading membership…</p>
+                          </div>
+                          <div class="flex shrink-0 flex-wrap gap-2">
+                            <a data-membership-choose data-forkmesh-membership href="https://www.patreon.com/16434219/join" target="_blank" rel="noopener" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">Choose membership</a>
+                            <a data-membership-invite href="/referral" hidden class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">Invite a friend</a>
+                          </div>
+                        </div>
+                        <p data-membership-status role="status" class="mt-2 min-h-4 text-xs text-muted-foreground"></p>
+                      </div>
+                      <div class="rounded-md border border-border bg-card p-4">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h3 class="text-base font-semibold text-foreground">Plan usage</h3>
+                            <p data-plan-usage-summary class="mt-1 text-sm leading-6 text-muted-foreground">Loading usage…</p>
+                          </div>
+                          <div class="flex shrink-0 flex-wrap gap-2">
+                            <button data-plan-trial-start type="button" hidden class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">Start 14-day Supporter trial</button>
+                          </div>
+                        </div>
+                        <dl data-plan-usage-meters hidden class="mt-3 grid gap-2 sm:grid-cols-2"></dl>
+                        <p data-plan-usage-status role="status" class="mt-2 min-h-4 text-xs text-muted-foreground"></p>
+                      </div>
+                      <div class="rounded-md border border-border bg-card p-4">
+                        <h3 class="text-base font-semibold text-foreground">Password</h3>
+                        <p class="mt-1 text-sm leading-6 text-muted-foreground">Change the password you sign in with. Your current password is checked again here, and every other signed-in device is signed out — this one stays signed in.</p>
+                        <form data-credential-scope class="mt-4 grid gap-3">
+                          <label class="grid gap-2 text-sm font-semibold text-foreground">
+                            Current password
+                            <input data-account-password-current type="password" autocomplete="current-password" aria-describedby="account-password-status" placeholder="Current password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          </label>
+                          <label class="grid gap-2 text-sm font-semibold text-foreground">
+                            New password
+                            <input data-account-password-new type="password" autocomplete="new-password" minlength="8" aria-describedby="account-password-status" placeholder="At least 8 characters" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          </label>
+                          <label class="grid gap-2 text-sm font-semibold text-foreground">
+                            Confirm new password
+                            <input data-account-password-confirm type="password" autocomplete="new-password" minlength="8" aria-describedby="account-password-status" placeholder="Repeat the new password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          </label>
+                          <button data-account-password-save type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md border border-border bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                            Update password
+                          </button>
+                          <p id="account-password-status" data-account-password-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
+                          <p class="text-xs text-muted-foreground">Forgot your current password? <a class="font-semibold text-[#2f81f7] hover:underline" href="/forgot-password">Reset it by email</a> instead.</p>
+                        </form>
+                      </div>
+                      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <h3 class="text-base font-semibold text-foreground">Nodes &amp; devices</h3>
+                          <p class="mt-1 text-sm leading-6 text-muted-foreground">Desktop and mobile nodes bound to this account. Each node holds its own signing key; revoking one signs out every session it opened and rejects anything it publishes or signs as you from the next request on. Revoking asks for your password again, even while signed in.</p>
+                        </div>
+                        <button data-account-devices-revoke-others type="button" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">
+                          Sign out all other nodes
+                        </button>
+                      </div>
+                      <p data-account-devices-status role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground"></p>
+                      <form data-account-devices-reauth hidden class="grid gap-3 rounded-md border border-amber-400/40 bg-amber-400/5 p-4">
+                        <div>
+                          <p data-account-devices-reauth-title class="text-sm font-semibold text-foreground">Confirm it's you</p>
+                          <p class="mt-1 text-xs leading-5 text-muted-foreground">Re-enter your password to revoke. Add your authenticator code if two-factor is enabled on this account.</p>
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                          <label class="grid gap-2 text-sm font-semibold text-foreground">
+                            Current password
+                            <input data-account-devices-reauth-password type="password" autocomplete="current-password" required placeholder="Required to revoke" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          </label>
+                          <label class="grid gap-2 text-sm font-semibold text-foreground">
+                            Authenticator code
+                            <input data-account-devices-reauth-totp type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Optional" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          </label>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                          <button data-account-devices-reauth-confirm type="submit" class="inline-flex h-9 items-center justify-center rounded-md border border-red-500/50 px-4 text-sm font-semibold text-red-300 hover:bg-red-500/10">
+                            Revoke
+                          </button>
+                          <button data-account-devices-reauth-cancel type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:bg-secondary">
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                      <div data-account-devices-list class="grid overflow-hidden rounded-md border border-border bg-card">
+                        <p class="p-4 text-sm text-muted-foreground">Loading nodes and devices…</p>
+                      </div>
+                      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <h3 class="text-base font-semibold text-foreground">Active sessions</h3>
+                          <p class="mt-1 text-sm leading-6 text-muted-foreground">Review signed-in browsers and desktop clients. A sign-in lasts five years unless you sign it out here. Each row shows a broad device category, the address the sign-in came from, and timestamps. Only you can see this list; raw browser details are never stored.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                          <button data-account-sessions-revoke-others type="button" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">
+                            Sign out other devices
+                          </button>
+                          <button data-account-sessions-revoke-all type="button" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-red-500/50 px-3 text-sm font-semibold text-red-300 hover:bg-red-500/10">
+                            Sign out all devices
+                          </button>
+                        </div>
+                      </div>
+                      <p data-account-session-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
+                      <div data-account-session-list class="grid overflow-hidden rounded-md border border-border bg-card">
+                        <p class="p-4 text-sm text-muted-foreground">Loading active sessions…</p>
+                      </div>
+                      <div data-email-footer class="grid gap-3 border-t border-border pt-6">
+                        <div>
+                          <h3 class="text-base font-semibold text-foreground">Tracked email footer</h3>
+                          <p class="mt-1 text-sm leading-6 text-muted-foreground">Add this footer to your signature in Zoho Mail or any other mail app. It shows the ForkMesh logo, and each time a recipient's mail app loads the logo, the open is counted here and noted in the #email-log channel. The footer is the same in every email, so it tells you that one of your emails was opened, not which one or by whom. Mail apps that block images do not count.</p>
+                        </div>
+                        <div data-email-footer-preview class="rounded-md border border-border bg-white p-4 text-sm text-zinc-900">Loading your footer…</div>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <button data-email-footer-copy type="button" disabled class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">
+                            Copy footer
+                          </button>
+                          <button data-email-footer-copy-html type="button" disabled class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">
+                            Copy HTML
+                          </button>
+                          <span data-email-footer-opens class="text-sm text-muted-foreground"></span>
+                        </div>
+                        <p class="text-xs leading-5 text-muted-foreground">In Zoho Mail: Settings, Signature, edit your signature, then paste with Copy footer (or use the editor's HTML view with Copy HTML).</p>
+                        <p data-email-footer-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section id="settings-ssh-keys" data-settings-section="ssh-keys" class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">SSH keys</h2>
+                    <p class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Register a public key to clone or push through a configured ForkMesh SSH gateway. Repository owner and organization-team write permissions are checked again for every push.</p>
+                    <div class="mt-5 grid max-w-3xl gap-5">
+                      <div class="rounded-md border border-amber-400/40 bg-amber-400/5 p-4 text-sm leading-6 text-amber-200">
+                        ForkMesh stores encrypted public keys only. Your private key and passphrase stay on your device. Never paste a private key, recovery phrase, or password here. Adding a public key reserves it to this account; possession is proven later by OpenSSH when you connect, not by this form.
+                      </div>
+                      <form data-ssh-key-form class="grid gap-3 rounded-md border border-border bg-card p-4">
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Title
+                          <input data-ssh-key-label type="text" maxlength="80" autocomplete="off" placeholder="Work laptop" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        </label>
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Public key
+                          <textarea data-ssh-public-key rows="4" maxlength="16384" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@example" class="min-h-28 resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-xs font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></textarea>
+                        </label>
+                        <p data-ssh-key-status class="min-h-4 text-xs text-muted-foreground"></p>
+                        <button data-ssh-key-add type="submit" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                          Add SSH key
+                        </button>
+                      </form>
+                      <div>
+                        <div class="flex items-center justify-between gap-3">
+                          <h3 class="text-sm font-semibold text-foreground">Registered keys</h3>
+                          <span data-ssh-gateway-status class="text-xs text-muted-foreground">Checking gateway…</span>
+                        </div>
+                        <div data-ssh-key-list class="mt-3 grid overflow-hidden rounded-md border border-border bg-card">
+                          <p class="p-4 text-sm text-muted-foreground">Loading SSH keys…</p>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section id="settings-nodes" data-settings-section="nodes" class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Nodes</h2>
+                    <p class="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">A node is one ForkMesh install - the desktop app on your machine, or a headless node you deployed on a server. Nodes hold the repositories and drain this account's issues, comments, chats and pull requests off the relay, so linking at least one is what makes anything you write on the web actually sync.</p>
+                    <div class="mt-5 grid max-w-2xl gap-4">
+                      <div data-node-reconnect-callout class="hidden grid gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm leading-6 text-foreground">
+                        <p class="font-semibold text-amber-600 dark:text-amber-400">No node is linked to this account yet</p>
+                        <p>That is what "Reconnect node" in the header is about: until a node links, everything you write on the web is parked on the relay and no machine of yours is serving your repositories. Nothing is lost - it drains as soon as a node comes online. Claim a node you already run below, or start one from "No node yet?" at the bottom of this page.</p>
+                      </div>
+                      <div data-link-grant-row class="hidden grid gap-3 rounded-md border border-[#2f81f7]/50 bg-[#2f81f7]/10 p-4">
+                        <p data-link-grant-text class="text-sm leading-6 text-foreground"></p>
+                        <button data-link-grant-confirm type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                          Authenticate &amp; link
+                        </button>
+                      </div>
+                      <p class="text-sm font-semibold text-foreground">Linked nodes</p>
+                      <ul data-claim-node-list class="grid gap-1.5 text-sm text-foreground">
+                        <li class="text-muted-foreground">No linked nodes yet.</li>
+                      </ul>
+                      <p class="text-sm leading-6 text-muted-foreground">
+                        Claim ownership of a node you already run (e.g. a headless mirror you installed) by entering its node ID below. A confirmation code will appear on that node - enter it here to finish linking it to your account. Tip: clicking "Link this node to your account" in a node's own app links it here with no code at all.
+                      </p>
+                      <div id="claim-node-id-help" class="grid gap-2 rounded-md border border-border bg-card p-4 text-sm leading-6 text-muted-foreground">
+                        <p class="font-semibold text-foreground">What is a node ID?</p>
+                        <p>It names the node you want to claim - not your ForkMesh username, email or password. Either form is accepted:</p>
+                        <ul class="grid gap-2 list-disc pl-5">
+                          <li>the node's <span class="font-semibold text-foreground">name</span>: lowercase letters, digits and hyphens, starting with a letter, e.g. <span class="font-mono text-foreground">mirror-01</span></li>
+                          <li>the node's <span class="font-semibold text-foreground">public key</span>: exactly 43 characters of letters, digits, <span class="font-mono text-foreground">-</span> and <span class="font-mono text-foreground">_</span>, e.g. <span class="font-mono break-all text-foreground">J2MJT8PgCi665wAlfuHdmpl-WDH2xB6z3Tp6T0OPsOs</span></li>
+                        </ul>
+                        <p>Both live on the node itself: open ForkMesh on that machine, go to Profile, and use "Copy node ID" under NODE ID (PUBLIC KEY). For a headless node, it is the name you gave it when you ran the installer.</p>
+                      </div>
+                      <label class="grid gap-2 text-sm font-semibold text-foreground">
+                        Node ID
+                        <input data-claim-node-input type="text" inputmode="latin" autocomplete="off" placeholder="mirror-01" aria-describedby="claim-node-id-help" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                      </label>
+                      <form data-credential-scope class="contents">
+                      <label class="grid gap-2 text-sm font-semibold text-foreground">
+                        Current password
+                        <input data-claim-node-password type="password" autocomplete="current-password" placeholder="Required to claim a node" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                      </label>
+                      </form>
+                      <p data-claim-node-status class="min-h-4 text-xs text-muted-foreground"></p>
+                      <button data-claim-node-send type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md border border-border bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                        Send claim code
+                      </button>
+                      <div data-claim-code-row class="hidden grid gap-3 border-t border-border pt-4">
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Confirmation code (shown on the node)
+                          <input data-claim-code-input type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="123456" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        </label>
+                        <button data-claim-code-confirm type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                          Link node
+                        </button>
+                      </div>
+                      <div data-no-node-help class="grid gap-2 rounded-md border border-border bg-card p-4 text-sm leading-6 text-muted-foreground">
+                        <p class="font-semibold text-foreground">No node yet? (browsing from the web only)</p>
+                        <p>You do not need one to read, sign in or write - but you do need one for your account to own repositories and to drain what you write off the relay. Two ways to get one, both of which link themselves to this account:</p>
+                        <ul class="grid gap-2 list-disc pl-5">
+                          <li>Install the desktop app from <a href="/desktop" class="text-[#2f81f7] underline">the downloads page</a>, then click "Link this machine to your account" on its Profile page. No node ID and no confirmation code to type.</li>
+                          <li>Or run a headless node on any always-on machine with <span class="font-mono break-all text-foreground">curl -fsSL https://forkmesh.com/install.sh | bash</span>, then claim it above by the node name you gave it.</li>
+                        </ul>
+                        <p>Repositories you cannot open in the meantime are waiting on a host: their owner's node or a mirror has to be online to serve them, and linking your own node is what puts yours back online.</p>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section id="settings-organizations" data-settings-section="organizations" class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Organizations</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">Create organizations to serve your repos at <span class="font-mono">/&lt;org&gt;/&lt;repo&gt;</span>, invite members, group them into permission teams, and link the repos an org fronts.</p>
+                    <div data-orgs-root class="mt-5 max-w-3xl">
+                      <p class="text-sm text-muted-foreground">Loading organizations…</p>
+                    </div>
+                  </section>
+
+                  <section id="settings-apps" data-settings-section="apps" class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Installed apps</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">Apps you installed, and the apps installed for organizations you run: what each may do, when it last acted, and a Revoke button that deletes its tokens at once. Organization owners and admins also approve members' app requests and set which apps members may request there.</p>
+                    <div class="mt-5 flex flex-wrap gap-2">
+                      <a href="/dashboard/apps" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-secondary">Manage installed apps</a>
+                      <a href="/dashboard/apps/build" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:bg-secondary">Build an app</a>
+                    </div>
+                  </section>
+
+                  <section id="settings-agents" data-settings-section="agents" class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Agents &amp; runners</h2>
+                    <p class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">The Claude Code and Codex accounts your desktops and runners sign agents in with. Choose the account new agents use, add one, log in or out in a terminal streamed from the machine, open an agent terminal, and see how much of each account's limits is used.</p>
+                    <div class="mt-5 grid max-w-4xl gap-8">
+                      <div data-agent-profiles-panel class="grid gap-3">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <h3 class="text-lg font-semibold text-foreground">Desktops</h3>
+                          <button data-agent-profiles-refresh type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
+                        </div>
+                        <p class="text-sm text-muted-foreground">Read live from each ForkMesh desktop app on your account over an encrypted channel. A desktop answers only while the app is running and signed in.</p>
+                        <p data-agent-profiles-notice hidden class="text-sm" role="status" aria-live="polite"></p>
+                        <div data-agent-profiles-desktops class="grid gap-3">
+                          <p class="text-sm text-muted-foreground">Loading desktops…</p>
+                        </div>
+                      </div>
+
+                      <div class="grid gap-3">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <h3 class="text-lg font-semibold text-foreground">Runners</h3>
+                          <button data-settings-runners-refresh type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
+                          <a href="/dashboard/runners?setup=1" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Set up a runner</a>
+                        </div>
+                        <p class="text-sm text-muted-foreground">Runners you registered (every runner, for administrators). Each provider can hold several accounts; the active one runs the jobs.</p>
+                        <div class="rounded-md border border-border bg-card">
+                          <div data-runners-auth-banner hidden class="px-4 py-3 border-b border-border grid gap-2 text-sm" role="alert"></div>
+                          <div data-runners-notice hidden class="px-4 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
+                          <div data-runners-list class="px-4 py-4 grid gap-3">
+                            <p class="text-sm text-muted-foreground">Loading runners…</p>
+                          </div>
+                          <div data-runner-login hidden class="px-4 py-4 border-t border-border">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                              <div class="min-w-0">
+                                <h4 data-runner-login-title class="text-sm font-semibold text-foreground">Sign in</h4>
+                                <p data-runner-login-status class="mt-1 text-xs text-muted-foreground" role="status" aria-live="polite"></p>
+                              </div>
+                              <div class="shrink-0 flex items-center gap-2">
+                                <button data-runner-login-cancel type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel sign-in</button>
+                                <button data-runner-login-close type="button" hidden class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Close</button>
+                              </div>
+                            </div>
+                            <div data-runner-login-links class="mt-3 grid gap-1"></div>
+                            <pre data-runner-login-output class="mt-3 rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground overflow-auto whitespace-pre-wrap" style="max-height: 24rem; min-height: 8rem; word-break: break-all;"></pre>
+                            <form data-runner-login-form class="mt-3 flex flex-col sm:flex-row gap-2" autocomplete="off">
+                              <label class="sr-only" for="settingsRunnerLoginInput">Code from the sign-in page</label>
+                              <input id="settingsRunnerLoginInput" data-runner-login-input type="text" maxlength="4000" spellcheck="false" autocomplete="off" placeholder="Paste the code the sign-in page shows you" class="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" />
+                              <button data-runner-login-send type="submit" class="inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity">Send to runner</button>
+                            </form>
+                            <p class="mt-2 text-xs text-muted-foreground">Open the link, approve the sign-in, then paste the code here. It goes to the runner once and is deleted as soon as the runner has read it. The session ends after 10 minutes.</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section id="settings-appearance" data-settings-section="appearance" data-profile-appearance-panel class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Appearance</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">Choose the dashboard theme for this device.</p>
+                    <div class="mt-5 grid max-w-3xl gap-4">
+                      <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Dashboard theme">
+                        <button
+                          data-appearance-theme="dark"
+                          type="button"
+                          role="radio"
+                          aria-checked="true"
+                          class="grid min-h-24 gap-3 rounded-md border border-border bg-card p-3 text-left transition-colors hover:bg-secondary"
+                        >
+                          <span class="flex items-center justify-between gap-2">
+                            <span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                              <i data-lucide="moon" class="h-4 w-4"></i>
+                              Dark
+                            </span>
+                            <i data-lucide="check" class="hidden h-4 w-4 text-[#2f81f7]" data-appearance-check></i>
+                          </span>
+                          <span class="grid gap-1.5">
+                            <span class="h-2 rounded-full bg-secondary"></span>
+                            <span class="h-2 w-4/5 rounded-full bg-muted-foreground/40"></span>
+                            <span class="h-6 rounded-md border border-border bg-background"></span>
+                          </span>
+                        </button>
+                        <button
+                          data-appearance-theme="light"
+                          type="button"
+                          role="radio"
+                          aria-checked="false"
+                          class="grid min-h-24 gap-3 rounded-md border border-border bg-card p-3 text-left transition-colors hover:bg-secondary"
+                        >
+                          <span class="flex items-center justify-between gap-2">
+                            <span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                              <i data-lucide="sun" class="h-4 w-4"></i>
+                              Light
+                            </span>
+                            <i data-lucide="check" class="hidden h-4 w-4 text-[#2f81f7]" data-appearance-check></i>
+                          </span>
+                          <span class="grid gap-1.5">
+                            <span class="h-2 rounded-full bg-secondary"></span>
+                            <span class="h-2 w-4/5 rounded-full bg-muted-foreground/40"></span>
+                            <span class="h-6 rounded-md border border-border bg-background"></span>
+                          </span>
+                        </button>
+                      </div>
+                      <p data-appearance-theme-status aria-live="polite" class="min-h-4 text-xs text-muted-foreground">Dark mode is active.</p>
+                      <div data-genie-setting data-instance-plugin="genie" class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex items-start justify-between gap-4 p-4">
+                          <div class="flex min-w-0 items-start gap-3">
+                            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="sparkles" class="h-4 w-4"></i></span>
+                            <div class="min-w-0">
+                              <h3 class="text-base font-semibold text-foreground">Show the Genie spider</h3>
+                              <p class="mt-1 text-sm leading-6 text-muted-foreground">The little spider that walks along the bottom of ForkMesh pages and gives a tip when clicked. Turning it off hides it on forkmesh.com and app.forkmesh.com in this browser until you turn it back on here.</p>
+                            </div>
+                          </div>
+                          <button data-genie-visible type="button" role="switch" aria-checked="true" aria-label="Show the Genie spider" class="ping-switch mt-1"></button>
+                        </div>
+                      </div>
+                      <div data-home-redirect-setting class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex items-start justify-between gap-4 p-4">
+                          <div class="flex min-w-0 items-start gap-3">
+                            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="layout-dashboard" class="h-4 w-4"></i></span>
+                            <div class="min-w-0">
+                              <h3 class="text-base font-semibold text-foreground">Open the dashboard from forkmesh.com</h3>
+                              <p class="mt-1 text-sm leading-6 text-muted-foreground">When you are signed in and open forkmesh.com, go straight to your dashboard. Links to the home page from other ForkMesh pages still show it. Applies to this browser.</p>
+                            </div>
+                          </div>
+                          <button data-home-redirect type="button" role="switch" aria-checked="true" aria-label="Open the dashboard from forkmesh.com" class="ping-switch mt-1"></button>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section id="settings-danger" data-settings-section="danger" class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-[#f85149]">Danger zone</h2>
+                    <div class="mt-5 grid max-w-2xl overflow-hidden rounded-md border border-destructive/40 bg-card">
+                      <div class="grid gap-4 border-b border-destructive/30 p-4">
+                        <p class="text-sm leading-6 text-muted-foreground">Deleting your account removes your login, public profile, owned repository records, and active dashboard session. You can register again later with the same node name or email.</p>
+                        <form data-credential-scope class="contents">
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Current password
+                          <input data-profile-delete-password type="password" autocomplete="current-password" placeholder="Required to delete account" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        </label>
+                        </form>
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Confirmation
+                          <input data-profile-delete-confirm type="text" autocomplete="off" placeholder="Type DELETE" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        </label>
+                        <p data-profile-delete-hint class="min-h-4 text-xs text-muted-foreground"></p>
+                      </div>
+                      <div class="flex justify-end bg-background px-4 py-3">
+                        <button data-profile-delete-account type="button" disabled class="inline-flex h-9 items-center justify-center rounded-md border border-destructive/40 px-4 text-sm font-semibold text-destructive opacity-40 hover:bg-destructive/10 transition-colors">
+                          Delete account
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                </main>
+              </div>
+            </div>
+          </section>

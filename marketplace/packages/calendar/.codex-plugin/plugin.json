@@ -1,0 +1,23 @@
+{
+  "name": "calendar",
+  "version": "1.0.0",
+  "description": "Personal and organization calendars for ForkMesh.",
+  "author": { "name": "ForkMesh", "url": "https://forkmesh.com" },
+  "homepage": "https://forkmesh.com",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["calendar", "events", "reminders", "repositories"],
+  "interface": {
+    "displayName": "Calendar",
+    "shortDescription": "Plan events alongside repository activity.",
+    "longDescription": "Private personal and organization calendars with invitations, recurrence, time zones, reminders, and repository activity.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": ["Show my upcoming events.", "Draft a calendar event for this project milestone."],
+    "brandColor": "#8250DF"
+  }
+}

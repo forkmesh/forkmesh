@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Screenshot &amp; markup" %}
+{% set slug = "screenshot-and-markup" %}
+{% set image = "/assets/blog/features/screenshot-and-markup.webp" %}
+{% set description = "Capture any region of the screen, annotate it with built-in drawing tools, and drop it straight into an issue, PR, or chat." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>Screenshot &amp; markup</h1>
+            <p class="lede">Capture any region of the screen, annotate it with built-in drawing tools, and drop it straight into an issue, PR, or chat.</p>
+            <div class="meta"><span class="pill">Feature 55 of 72</span><span>Feature</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/screenshot-and-markup.webp" alt="Abstract ForkMesh artwork for Screenshot &amp; markup">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Screenshot &amp; markup gives ForkMesh a concrete mechanism for visual captures annotated and attached to repo conversation. Capture any region of the screen, annotate it with built-in drawing tools, and drop it straight into an issue, PR, or chat.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, screenshot &amp; markup addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles screenshot &amp; markup through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: Capture any region of the screen, annotate it with built-in drawing tools, and drop it straight into an issue, PR, or chat. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use screenshot &amp; markup when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because Screenshot &amp; markup keeps visual captures annotated and attached to repo conversation connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/voice-dictation/">← Voice dictation</a>
+          <a href="/blog/markdown-everywhere/">Markdown everywhere →</a>
+        </nav>
+{% endblock %}

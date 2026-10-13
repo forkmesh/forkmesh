@@ -1,0 +1,33 @@
+{
+  "suite": "forkmesh-protocol",
+  "suiteVersion": "1.0.0-rc.1",
+  "severityScale": {
+    "critical": "Remote compromise of keys or arbitrary repository/state forgery without user interaction.",
+    "high": "Forged or replayed authority, integrity loss of history or collaboration state, or undetectable data loss.",
+    "medium": "Bounded replay, metadata disclosure, or availability loss with a recovery path.",
+    "low": "Hardening gaps without a demonstrated impact."
+  },
+  "stableReleaseRule": "No critical or high threat may be open; each is mitigated by a numbered requirement or accepted with reviewer, date, and rationale.",
+  "threats": [
+    {"id": "TM-001", "title": "Forged authorship of signed objects", "boundaries": ["B2", "B5"], "attackers": ["A2", "A4"], "severity": "high", "status": "mitigated", "requirements": ["FM-SIG-001", "FM-SIG-003", "FM-SIG-004"]},
+    {"id": "TM-002", "title": "Signature or encoding malleability that aliases event identities", "boundaries": ["B2"], "attackers": ["A2", "A4"], "severity": "high", "status": "mitigated", "requirements": ["FM-SIG-001", "FM-ENC-004", "FM-ENC-006", "FM-ID-004"]},
+    {"id": "TM-003", "title": "Replay of collaboration events into another repository or policy epoch", "boundaries": ["B2", "B5"], "attackers": ["A2", "A4"], "severity": "high", "status": "mitigated", "requirements": ["FM-ID-003", "FM-SIG-004"]},
+    {"id": "TM-004", "title": "Replay of legacy issue/discussion/pull records whose canonical strings omit owner and repository", "boundaries": ["B2"], "attackers": ["A2", "A4"], "severity": "high", "status": "open", "requirements": ["FM-SIG-002", "FM-MIG-002"], "origin": "2026-07 security audit: signed-content replay"},
+    {"id": "TM-005", "title": "Cross-scheme or cross-version signature confusion", "boundaries": ["B2"], "attackers": ["A2"], "severity": "high", "status": "mitigated", "requirements": ["FM-SIG-002", "FM-VER-001", "FM-VER-002"]},
+    {"id": "TM-006", "title": "Catalog v1 signatures, which do not bind visibility or descriptive fields, replayed for public records", "boundaries": ["B2", "B5"], "attackers": ["A2"], "severity": "high", "status": "open", "requirements": ["FM-AUTH-004", "FM-VER-002"]},
+    {"id": "TM-007", "title": "Tampered or rolled-back history served to cloners", "boundaries": ["B3", "B4"], "attackers": ["A3"], "severity": "high", "status": "mitigated", "requirements": ["FM-REL-001", "FM-REL-002", "FM-ID-005"]},
+    {"id": "TM-008", "title": "Relay or mirror withholds collaboration events", "boundaries": ["B2", "B3"], "attackers": ["A2", "A3"], "severity": "high", "status": "open", "requirements": ["FM-SYNC-003"]},
+    {"id": "TM-009", "title": "Signing-key equivocation", "boundaries": ["B2"], "attackers": ["A4", "A5"], "severity": "high", "status": "mitigated", "requirements": ["FM-SYNC-003"]},
+    {"id": "TM-010", "title": "Clock or timestamp manipulation to win conflicts or extend tokens", "boundaries": ["B2"], "attackers": ["A4"], "severity": "medium", "status": "mitigated", "requirements": ["FM-SYNC-002", "FM-SYNC-003", "FM-AUTH-001", "FM-AUTH-003"]},
+    {"id": "TM-011", "title": "Unauthorized moderation or role escalation", "boundaries": ["B2", "B5"], "attackers": ["A4"], "severity": "high", "status": "mitigated", "requirements": ["FM-ID-002", "FM-SYNC-003"]},
+    {"id": "TM-012", "title": "Replay of view, rotate, or push proofs within the freshness window", "boundaries": ["B2"], "attackers": ["A1", "A2"], "severity": "medium", "status": "open", "requirements": ["FM-AUTH-001", "FM-AUTH-002"]},
+    {"id": "TM-013", "title": "Theft and replay of portable session bearer tokens", "boundaries": ["B7"], "attackers": ["A1", "A3"], "severity": "medium", "status": "open", "requirements": ["FM-AUTH-003"]},
+    {"id": "TM-014", "title": "Tunnelled node traffic trusts the relay as an authenticated intermediary", "boundaries": ["B2", "B3"], "attackers": ["A2"], "severity": "high", "status": "open", "requirements": ["FM-SIG-002"], "origin": "2026-07 security audit: tunnel trusts relay"},
+    {"id": "TM-015", "title": "Relay operator reads the outer room layer, including public channel plaintext and presence", "boundaries": ["B2", "B5"], "attackers": ["A2"], "severity": "medium", "status": "open", "requirements": ["FM-SIG-002"]},
+    {"id": "TM-016", "title": "Metadata leakage through the catalog, presence, routing, and timing", "boundaries": ["B2", "B5"], "attackers": ["A1", "A2"], "severity": "medium", "status": "open", "requirements": ["FM-REL-001"]},
+    {"id": "TM-017", "title": "Parser, verifier, or fold resource exhaustion", "boundaries": ["B2"], "attackers": ["A7", "A4"], "severity": "medium", "status": "mitigated", "requirements": ["FM-ENC-005", "FM-SIG-004"]},
+    {"id": "TM-018", "title": "Account key compromise or loss without a specified recovery protocol", "boundaries": ["B1"], "attackers": ["A5"], "severity": "high", "status": "open", "requirements": ["FM-AUTH-004"]},
+    {"id": "TM-019", "title": "Data loss through lossy migration, down-conversion, or snapshot trust", "boundaries": ["B5", "B6"], "attackers": ["A2", "A6"], "severity": "high", "status": "mitigated", "requirements": ["FM-MIG-001", "FM-MIG-002", "FM-MIG-003", "FM-SYNC-001"]},
+    {"id": "TM-020", "title": "Substituting the pack body of an authorized HTTPS push", "boundaries": ["B2", "B3"], "attackers": ["A2"], "severity": "high", "status": "mitigated", "requirements": ["FM-AUTH-002", "FM-REL-003"]}
+  ]
+}

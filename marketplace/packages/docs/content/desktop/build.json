@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "DocsLibrary.h",
+    "DocsLibrary.cpp",
+    "DocsFeature.h",
+    "DocsFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "repositoryResources": [
+    "www/docs"
+  ],
+  "testSources": [
+    "tests/test_docs_library.cpp",
+    "DocsLibrary.h",
+    "DocsLibrary.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
+}

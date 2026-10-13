@@ -1,0 +1,59 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "analytics",
+  "name": "Analytics",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.4.0",
+  "summary": "First-party product analytics: events, funnels, cohorts, session replay, heatmaps, flags, experiments, and surveys.",
+  "screenshots": [
+    { "path": "preview/market.svg", "alt": "Analytics overview with visitor, pageview, and session totals, a traffic trend chart, and top pages and referrers" }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": {
+    "desktop": "builtin:analytics",
+    "worker": "content/worker/analytics.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "sdk": "content/sdk/analytics-sdk.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/analytics",
+        "title": "Analytics",
+        "description": "Events, funnels, cohorts, session replay, heatmaps, feature flags, experiments, and surveys for your organization's sites.",
+        "script": "dashboard-script",
+        "navigation": { "label": "Analytics", "icon": "chart-line", "order": 43 }
+      }
+    }
+  ],
+  "permissions": [
+    { "id": "organization.analytics.read", "label": "Read visitor events, people, session replays, and insights for organizations you belong to", "risk": "sensitive" },
+    { "id": "organization.analytics.write", "label": "Create projects, feature flags, surveys, cohorts, and saved insights; delete people and replays", "risk": "sensitive" },
+    { "id": "public.analytics.ingest", "label": "Accept events and session-replay chunks from any site that holds a project's public write key", "risk": "high" },
+    { "id": "location.country.coarse", "label": "Attach the visitor's approximate two-letter country to an event; no address is stored", "risk": "sensitive" }
+  ],
+  "dependencies": [],
+  "trust": { "sourceAvailable": true, "reproducibleBuild": true, "signature": "verified-bundle" },
+  "install": { "bundled": true, "default": true },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "organization" },
+  "worker": { "module": "analytics", "api": "/api/analytics", "outboundOrigins": [] }
+}

@@ -1,0 +1,40 @@
+#overviewList, #fileTree, #commitsList, #coveSharedWithList, #searchResultsTree,
+#savedSearchList {
+    selection-background-color: @surfaceActive; selection-color: @fg;
+}
+#commitsList::item:hover, #savedSearchList::item:hover { background-color: @surfaceRaised; }
+#overviewList::item:selected, #fileTree::item:selected, #commitsList::item:selected,
+#coveSharedWithList::item:selected, #searchResultsTree::item:selected,
+#savedSearchList::item:selected {
+    background-color: @surfaceActive; color: @fg;
+}
+
+#overviewList QHeaderView::section {
+    color: @fgMuted; border-right: none; border-bottom: 1px solid @border; font-weight: 500;
+}
+
+#overviewMetricFill { background-color: @fgMuted; }
+#savedSearchNewBadge { background-color: @accentSubtle; color: @accentFg; }
+
+QPushButton#navHistoryButton:hover, QPushButton#projectMenuButton:hover {
+    background-color: @surfaceRaised;
+}
+#navCaption { font-weight: 500; }
+
+#commitBar { background-color: @surface; border: 1px solid @border; border-radius: 10px; }
+#overviewList {
+    background: transparent; border: 1px solid @border; border-radius: 12px; padding: 4px;
+}
+#readmeCard { background: transparent; border: none; }
+#readmeCard[framed="true"] {
+    background-color: @bg; border: 1px solid @border; border-radius: 12px;
+}
+#readmeCardHeader {
+    background-color: @surface; border: none; border-bottom: 1px solid @border;
+    border-top-left-radius: 11px; border-top-right-radius: 11px;
+}
+#readmeCardHeader QLabel { background: transparent; }
+#readmeCardTitle { color: @fg; font-size: 13px; font-weight: 600; }
+#readmeCard[framed="true"] #readmeView {
+    background: transparent; border: none; padding: 20px; color: @fg;
+}

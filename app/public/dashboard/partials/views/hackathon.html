@@ -1,0 +1,27 @@
+          <section data-view="hackathon" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full">
+              <div data-hackathon-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 data-hackathon-title class="text-base font-semibold text-foreground">Hackathon</h1>
+                    <p data-hackathon-theme class="mt-1 text-sm text-muted-foreground">Build something that outlives its host. Points come from what you build and who you bring; sharing is measured but never paid.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-3 self-start">
+                    <span data-hackathon-rank class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <button
+                      data-hackathon-refresh
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div data-hackathon-body>
+                  <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading your hackathon standing...</div>
+                </div>
+              </div>
+            </div>
+          </section>

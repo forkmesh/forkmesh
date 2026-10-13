@@ -1,0 +1,106 @@
+{
+  "dataLoss": {
+    "commitsLost": 0,
+    "policy": "none",
+    "refsLost": [],
+    "withinPolicy": true
+  },
+  "fault": null,
+  "missingPrerequisites": [],
+  "mode": "automated-live",
+  "objective": {
+    "automatedBudgetSeconds": 120,
+    "dataLoss": "none",
+    "recoveryMinutes": 60
+  },
+  "platform": {
+    "git": "2.47",
+    "os": "linux",
+    "python": "3.13.5"
+  },
+  "ranAt": "2026-09-14T21:34:34+00:00",
+  "recoveryMs": 1160,
+  "runbookSha256": "b93908faaa80a062ef68b76c01bb1d452bd93cc0b83b821c483e25f0212229ee",
+  "runbookVersion": "1.0.0",
+  "scenario": "origin-loss",
+  "schema": "forkmesh-disaster-drill-report-v1",
+  "steps": [
+    {
+      "action": "list refs of every surviving copy",
+      "ms": 0,
+      "ok": true,
+      "procedure": "inventory-surviving-copies"
+    },
+    {
+      "action": "verify the removable-media export against the pinned export key",
+      "ms": 1082,
+      "ok": true,
+      "procedure": "inventory-surviving-copies"
+    },
+    {
+      "action": "clone the new origin from the verified mirror",
+      "ms": 11,
+      "ok": true,
+      "procedure": "restore-origin-from-mirror"
+    },
+    {
+      "action": "push newer work from the local clone as fast-forwards",
+      "ms": 26,
+      "ok": true,
+      "procedure": "restore-origin-from-mirror"
+    },
+    {
+      "action": "push a stale mirror's main without --force",
+      "ms": 7,
+      "ok": true,
+      "procedure": "restore-origin-from-mirror"
+    },
+    {
+      "action": "verify the restored origin",
+      "ms": 19,
+      "ok": true,
+      "procedure": "restore-origin-from-mirror"
+    }
+  ],
+  "unsafeSteps": {
+    "refused": [
+      {
+        "reason": "non-fast-forward push rejected",
+        "step": "overwrite restored history with a stale copy"
+      }
+    ],
+    "taken": []
+  },
+  "verdict": "pass",
+  "verification": [
+    {
+      "check": "at least one copy survives",
+      "ok": true
+    },
+    {
+      "check": "the signed export verifies",
+      "ok": true
+    },
+    {
+      "check": "the surviving mirror contains every signed pin",
+      "ok": true
+    },
+    {
+      "check": "a stale copy cannot overwrite restored history",
+      "ok": true
+    },
+    {
+      "check": "connectivity check passes",
+      "ok": true
+    },
+    {
+      "check": "collaboration records survive",
+      "ok": true
+    },
+    {
+      "check": "every signed pin is contained",
+      "ok": true
+    }
+  ],
+  "withinObjective": true
+}

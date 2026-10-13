@@ -1,0 +1,95 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "sugar-break",
+  "name": "Sugar Break",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Health",
+  "version": "1.1.0",
+  "summary": "Take a break from sugar for a month or any length you choose, tap +1 each time you skip it, and watch your sugar-free days and streak on the web, desktop, or iPhone, with Apple Health sugar shown beside each day.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Sugar Break page on day 10 of a 30-day break with a +1 I skipped sugar button, 9 sugar-free days, a 4-day streak, and a day grid"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:sugar-break",
+    "worker": "content/worker/sugar_break.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/sugar-break",
+        "title": "Sugar Break",
+        "description": "Start a sugar break, one month by default, and tap +1 every time you skip sugar.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Sugar Break",
+          "icon": "candy-off",
+          "order": 48
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.sugarbreak.read",
+      "label": "Read your own sugar breaks, +1s, and slips, encrypted under your account's own key",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.sugarbreak.write",
+      "label": "Start, end, and delete sugar breaks and log each +1 or slip",
+      "risk": "sensitive"
+    },
+    {
+      "id": "health.sugar.read",
+      "label": "On iPhone, with your permission, read the dietary sugar logged in Apple Health",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account"
+  },
+  "worker": {
+    "module": "sugar_break",
+    "api": "/api/sugar-break",
+    "outboundOrigins": []
+  }
+}

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The teammate who asks what should leave · ForkMesh Blog</title>
+    <meta name="description" content="ForkMesh's new Reaper teammate makes evidence-backed feature-retirement cases while current main strengthens teams, mirrors, payments, and offline work.">
+    <link rel="canonical" href="https://forkmesh.com/blog/the-teammate-who-asks-what-should-leave/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/the-teammate-who-asks-what-should-leave/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="The teammate who asks what should leave">
+    <meta property="og:description" content="Meet Reaper, a read-only feature-pruning teammate, alongside current-main work that makes teams, mirrors, payments, and offline work easier to trust.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/the-teammate-who-asks-what-should-leave.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A hooded Reaper robot studies a transparent evidence ledger beside one intact amber feature capsule, while the official ForkMesh logo and its mirror reflection stand among cyan and green capsules in a moonlit forest">
+    <meta property="article:published_time" content="2026-08-25T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The teammate who asks what should leave">
+    <meta name="twitter:description" content="Meet Reaper, ForkMesh's evidence-first feature-pruning teammate, plus the current-main work making teams, mirrors, and payments easier to trust.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/the-teammate-who-asks-what-should-leave.webp">
+    <meta name="twitter:image:alt" content="A hooded Reaper robot studies a transparent evidence ledger beside one intact amber feature capsule, while the official ForkMesh logo and its mirror reflection stand among cyan and green capsules in a moonlit forest">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>The teammate who asks what should leave</h1>
+            <p class="lede">Meet Reaper: a repository-backed teammate that can make one evidence-backed case for retiring a feature—and cannot remove it. Around that guardrail, current <code>main</code> makes the team easier to evaluate, the mesh harder to misread, and optional tools easier to keep optional.</p>
+            <div class="meta"><span class="pill">August 25, 2026</span><span>Product update</span><span>9 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/the-teammate-who-asks-what-should-leave.webp" alt="A hooded Reaper robot studies a transparent evidence ledger beside one intact amber feature capsule, while the official ForkMesh logo and its mirror reflection stand among cyan and green capsules in a moonlit forest">
+        </section>
+        <article class="body">
+          <p><a href="/blog/a-wider-door-a-clearer-trail/">A wider door, a clearer trail</a> followed the route from migration to signed package to verified receipt. This update looks at the discipline around that route: who questions a feature's place, who may act, what evidence survives, and how the system behaves when a model, network, sampler, or mirror stops cooperating.</p>
+          <p>This update covers the work that landed on <code>main</code> from August 22 through August 25. No later desktop tag landed: <strong>v0.7.29 remains the newest signed desktop release</strong>. The work below is merged on current <code>main</code>; independently deployed App, website, and World surfaces can move on different schedules.</p>
+
+          <h2>Meet Reaper, the teammate that argues for less</h2>
+          <p>Reaper is a persistent teammate with one deliberately narrow job: identify the single product feature that no longer earns what it costs and file the retirement case. “Feature” is concrete here—a panel, menu action, setting, flag, command, endpoint, packaged extension, or documented capability. Dead helpers and unused dependencies still belong to Steward; defects belong to Quality; runtime costs in Qt code that is staying belong to Tempo.</p>
+          <p>Its definition lives in <code>.forkmesh/teammates/reaper.json</code>, with a weekly schedule and a linked <code>propose-feature-removal.md</code> shortcut. Reaper can read repositories and manage issues. It cannot delete code, open a branch, submit a pull request, close somebody else's issue, or make the retirement decision. It proposes; the owner or CEO decides; an engineering teammate performs any approved removal.</p>
+          <p>That boundary is already useful marketing truth. “AI feature pruning” could imply an autonomous cleanup pass. ForkMesh ships the opposite contract: a durable role, reviewable instructions, the least authority needed to present a case, and a human decision at the end. At the audited commit, Reaper's <code>lastRunAtMs</code> and <code>lastSessionId</code> are still zero. The teammate and schedule exist on <code>main</code>, but there is no claimed first nomination yet.</p>
+
+          <h2>The case has to survive its own cross-examination</h2>
+          <p>Each run starts by comparing the promises in the README and docs with the actual surfaces behind them. It then cross-reads issues and discussions for demand, Git history for neglect or unfinished work, tests and application logs for exercised behavior, and local <code>ActionTelemetry</code> records for actions that ran on that node. Dates and counts matter more than impressions.</p>
+          <p>The shortcut tells Reaper to attack its own evidence. “Nothing calls it” is not enough until dynamic invocation, named signals, generated code, resources, scripts, packaging, workflows, settings, migrations, wire formats, extensions, and public routes have been checked. One machine's telemetry describes one operator, not the fleet. A young, unannounced feature is unfinished rather than dead. Security, privacy, reliability, accessibility, observability, audit, ledger, migration, and compatibility paths do not become candidates just because a happy path rarely touches them.</p>
+          <p>Reaper nominates exactly one feature or none. A no-nomination run names the two closest candidates and the missing evidence that would settle them. A positive case must describe keeping cost, breakage, deprecation and data paths, compatibility, actual savings, alternatives short of removal, confidence, and evidence that would change the verdict. The issue is the argument, not a deletion ticket with a conclusion baked in.</p>
+
+          <h2>Optional tools move out of the base product</h2>
+          <p>A nearby change demonstrates the shape of careful pruning, but it was not Reaper's work: the runtime markers show Reaper had not run. The VS Code-compatible extension left the base <code>extensions/</code> tree and reappeared as the opt-in <strong>ForkMesh for VS Code</strong> Marketplace package. Its manifest declares the issue-reading, process-launch, handoff-file, and Claude-extension permissions; <code>install.default</code> is false; the base desktop neither installs nor activates it.</p>
+          <p>The current Marketplace host does not yet install VSIX files, so this is catalogued source with a manual development build path, not a claim that clicking Install provisions an editor. The old desktop handoff listener is gone from the base app, while the package retains the compatibility protocol in its own source. The feature post and docs now say that plainly. This is a move from “part of ForkMesh” to “available beside ForkMesh,” with the runtime boundary visible.</p>
+          <p>The same package line gained smaller, practical improvements. Capture can paste a clipboard image as a movable, resizable annotation layer. Public Market listings can show current package previews, while the desktop separates All and Installed packages with real local counts. A new Settings → Apps surface tests the local developer tools ForkMesh can use and prepares platform-specific install commands only when the user asks. These are current-<code>main</code> capabilities, not adoption claims.</p>
+
+          <h2>The team gets feedback and a fallback</h2>
+          <p>Reaper joins another new repository-defined role: an operations-focused COO that turns agreed priorities into owned, sequenced work without gaining merge, release, or spending authority. The desktop Team surface has been tightened around these roles, with the roster moved into its own sidebar, table-like rows, clearer status, and direct paths between an issue, its branch, and the teammate run handling it.</p>
+          <p>Finished teammate sessions can now receive an operator grade from one to five. The grade stays on that local session and feeds the Team performance view; it is not a public quality score. A separate skill chart reads the skills captured when each run started, so editing a teammate later does not rewrite its history. Together, those two signals answer more useful questions than a raw run count: what the teammate was equipped to do, and whether the operator thought the result met the task.</p>
+          <p>Teammates can also carry an ordered list of backup model routes. Failover is intentionally narrow: it activates only when the active provider explicitly reports exhausted credits, quota, or a billing limit—not for an arbitrary error. ForkMesh keeps the assignment on its current branch, records the handoff, and queues the same session on the next configured route. When a question card outlives the process that asked it, answering the card now resumes or restarts the session with that answer instead of leaving the work stranded in Waiting.</p>
+
+          <h2>Authority gets narrower while work gets easier to claim</h2>
+          <p>Public contributors can assign themselves to an issue without receiving maintainer authority. A new signed <code>claim</code> event names exactly one account and whether it is joining or leaving; the relay accepts it only when the signed-in account is the account named. Every browser, desktop, and Go projection folds that event as a delta, so claiming an issue cannot replace or silently remove the rest of the assignee list.</p>
+          <p>Organization work now has a fuller desktop path. Owners and admins can manage members, teams, permissions, and organization-backed repository links through per-operation signed proofs. Organization-private tasks carry private replies, assignee avatars, undo, QA return, and a control for deleting closed tasks. Repository owners can explicitly waive pull-request review, while merge certificates, one-hour velocity, branch health, and All/Archived pull views make the consequence of that choice easier to inspect.</p>
+          <p>Agents gained two deliberately bounded doors into the project. The MCP helper can read bounded text and search tracked Git objects, create signed repository or personal notes, and use one fixed public chat room; it exposes no shell, arbitrary filesystem, room keys, credentials, or administration. A separate rate-limited guestbook lets an unauthenticated visiting agent leave an ordinary public note in <code>#general</code>. Its destination is fixed, the optional user's name is returned only as a greeting for the agent to relay, and agent names are self-described rather than identity proofs.</p>
+
+          <h2>Unknown is no longer painted red</h2>
+          <p>The public status model now separates an observed service failure from a monitoring gap. Missing sampler minutes remain neutral, appear as coverage gaps, and stay out of uptime math; recorded failures remain red. Sampling claims prevent duplicate folds, later compaction backfills missing history, and a delayed sampler says that it is behind instead of turning every component into a synthetic outage. A new flagship failure also waits for an independent retry unless visitor-observed evidence already confirms it.</p>
+          <p>Mirror recovery follows the same rule. A deployed flagship revision can be pinned into the accepted set, and the routing state can self-heal toward it when catalogs recover. The Go node can construct a deterministic merge only for tightly bounded issue-intake divergence—at least one side must contain complete new issue directories, and conflicting ordinary changes still stop. Healthy repositories remain servable through a transient refresh failure rather than being replaced by an empty or partial state.</p>
+          <p>On the desktop, a real offline mode stops non-loopback network requests locally while leaving local repositories available. An explicit reachability probe can bring automatic offline mode back online; the control is separate from taking a mirror node offline. Background Git and network reads continue moving off the UI thread, stale worktree locks can be recovered or cleared with an explicit action, and a visible countdown now precedes a requested restart.</p>
+
+          <h2>A payment carries the work beside the receipt</h2>
+          <p>Ledger now supports a direct work payment as well as a general member tip. The sender's desktop signs and broadcasts from its own linked wallet. The notice binds the recipient, exact amount, chain signature, task description, output link, and recorded conversion; ForkMesh writes the public work receipt only after the finalized Solana transfer matches. A pending transaction remains pending, and a mismatch writes nothing.</p>
+          <p>The public Ledger adds a Paid view, while the desktop can autocomplete ForkMesh recipients and show Discord names for pending reporter rewards when that is the identity the queue actually knows. Reporter-credit projections now build from D1 rather than a checked-in generated file. A tip-recipient board ranks finalized mainnet tip receipts, not estimates or unverified notices. These additions make payment state easier to follow without changing the custody model: keys and transfers remain with users.</p>
+
+          <h2>What to inspect now</h2>
+          <p><strong>Reaper, teammate grading, model failover, the optional IDE package move, offline mode, the newer status and mirror recovery, and work payments are current-<code>main</code> work.</strong> They are not in the unchanged v0.7.29 signed desktop. The repository-native pull ledger did not add a merged pull record in this window; the audit instead follows the commits that reached <code>main</code>, their executable tests, closed issue records, manifests, and documentation.</p>
+          <p>Read <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/.forkmesh/teammates/reaper.json">Reaper's durable teammate definition</a> and <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/.forkmesh/shortcuts/propose-feature-removal.md">the full retirement-case shortcut</a>. Browse the <a href="/market">package catalog</a> to see how the IDE plugin declares its optional boundary, or <a href="/desktop">watch the desktop release page</a> for the first signed artifact that contains this work.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/the-mesh-keeps-moving/">← The mesh keeps moving</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/a-wider-door-a-clearer-trail/">A wider door, a clearer trail →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

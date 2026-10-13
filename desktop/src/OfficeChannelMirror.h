@@ -1,0 +1,290 @@
+#pragma once
+
+#include "ChatBackend.h"
+#include "RoomCrypto.h"
+#include "RoomSeal.h"
+
+#include <QByteArray>
+#include <QHash>
+#include <QMap>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QObject>
+#include <QPointer>
+#include <QQueue>
+#include <QSet>
+#include <QString>
+#include <QStringList>
+#include <QUrl>
+#include <QVector>
+
+#include <functional>
+
+class QNetworkAccessManager;
+class ServerNode;
+
+// Office channels are independently encrypted rooms admitted with 60-second
+// WebSocket tickets. The desktop authenticates with its Ed25519 identity,
+// fetches retained ciphertext at startup/reconnect, and otherwise receives
+// messages only through asynchronous socket pushes.
+namespace forkmesh::office {
+
+constexpr qsizetype kMaxDirectFileBytes = 1024 * 1024;
+
+QString conversationForChannel(const QString &channelName);
+bool isOfficeConversation(const QString &conversation);
+QString conversationForDirect(const QString &username);
+bool isDirectOfficeConversation(const QString &conversation);
+QString directPeerForConversation(const QString &conversation);
+QString roomForConversation(const QString &conversation);
+QString organizationForConversation(const QString &conversation);
+
+QByteArray channelListProof(const QString &account, const QString &ts);
+QByteArray channelAccessProof(const QString &account, const QString &channelId,
+                              const QString &ts);
+QByteArray channelHistoryProof(const QString &account, const QString &channelId,
+                               const QString &ts);
+QByteArray channelTopicProof(const QString &account, const QString &channelId,
+                             const QString &ts, const QString &topic);
+// Settings, deletion and webhooks each bind their own action to the exact
+// channel, so a proof signed for one can never authorize another.
+QByteArray channelSettingsProof(const QString &account,
+                                const QString &channelId, const QString &ts,
+                                const QString &name, const QString &visibility,
+                                const QString &topic);
+QByteArray channelDeleteProof(const QString &account, const QString &channelId,
+                              const QString &ts);
+QByteArray channelWebhooksProof(const QString &account,
+                                const QString &channelId, const QString &ts,
+                                const QString &method, const QString &name);
+QByteArray channelWebhookProof(const QString &account, const QString &channelId,
+                               const QString &webhookId, const QString &ts,
+                               const QString &method);
+QByteArray channelCreateProof(const QString &account, const QString &ts,
+                              const QString &name, const QString &visibility,
+                              const QStringList &members);
+QByteArray channelMembersProof(const QString &account, const QString &channelId,
+                               const QString &ts, const QString &method,
+                               const QString &username);
+QByteArray directListProof(const QString &account, const QString &ts);
+QByteArray directStartProof(const QString &account, const QString &ts,
+                            const QString &username);
+QByteArray directAccessProof(const QString &account,
+                             const QString &conversationId, const QString &ts);
+QByteArray readMarksListProof(const QString &account, const QString &ts);
+QString readMarksDigest(const QMap<QString, qint64> &marks);
+QByteArray readMarksPostProof(const QString &account, const QString &ts,
+                              const QMap<QString, qint64> &marks);
+
+// One incoming webhook of a channel, as the settings panel lists it. `url` is
+// filled only for a webhook this process just created or rotated: the relay
+// keeps no recoverable copy of the token.
+struct ChannelWebhook {
+    QString id;
+    QString name;
+    qint64 createdAt = 0;
+    qint64 lastUsedAt = 0;
+    QString url;
+};
+
+// Convert one decrypted office frame into a desktop chat message. Returns false
+// for anything that isn't a displayable chat frame (presence/typing/oversized).
+bool chatMessageFromPlain(const QJsonObject &plain, const QString &conversation,
+                          const QString &selfId, ChatMessage *out);
+
+} // namespace forkmesh::office
+
+class OfficeChannelMirror : public QObject
+{
+    Q_OBJECT
+public:
+    explicit OfficeChannelMirror(QNetworkAccessManager *network,
+                                 QObject *parent = nullptr);
+
+    // Signs a canonical string with this node's account identity key, in the
+    // same base64url form the relay's signed endpoints expect.
+    void setSigner(std::function<QString(const QByteArray &)> signer);
+    void setIdentity(const QString &account, const QString &selfId,
+                     const QString &displayName = QString());
+    void setConnectionAuthorizer(std::function<bool(const QUrl &)> authorizer);
+    void setApiBase(const QUrl &apiBase);
+    using MeshDirectSender = std::function<int(
+        const QString &channel, const QString &messageId, const QString &text,
+        const QStringList &keyIds)>;
+    void setMeshDirectSender(MeshDirectSender sender);
+
+    void start();
+    void stop();
+    bool isActive() const;
+    void refresh();
+
+    QStringList conversations() const;
+    QStringList membersForConversation(const QString &conversation) const;
+    bool isPrivateConversation(const QString &conversation) const;
+    bool isServerVisibleConversation(const QString &conversation) const;
+    bool isReadOnlyConversation(const QString &conversation) const;
+    QString topicForConversation(const QString &conversation) const;
+    QString channelNameForConversation(const QString &conversation) const;
+    QString channelIdFor(const QString &conversation) const;
+    bool canManageConversation(const QString &conversation) const;
+    bool canSend(const QString &conversation) const;
+    bool sendMessage(const QString &conversation, const QString &text);
+    bool canSendFile(const QString &conversation) const;
+    bool sendFile(const QString &conversation, const QString &fileName,
+                  const QString &mimeType, const QByteArray &data);
+    bool sendBotMessage(const QString &conversation, const QString &text);
+    bool setTopic(const QString &conversation, const QString &topic);
+
+    // Channel settings, all manager-only and all signed with the account key.
+    bool updateChannel(const QString &conversation, const QString &name,
+                       const QString &topic, bool privateRoom);
+    bool deleteChannel(const QString &conversation);
+    bool refreshWebhooks(const QString &conversation);
+    bool createWebhook(const QString &conversation, const QString &name);
+    bool rotateWebhook(const QString &conversation, const QString &webhookId);
+    bool deleteWebhook(const QString &conversation, const QString &webhookId);
+
+    bool createChannel(const QString &name, bool privateRoom,
+                       const QStringList &members);
+    bool addMember(const QString &conversation, const QString &username);
+    bool removeMember(const QString &conversation, const QString &username);
+
+    QStringList directConversations() const;
+    bool startDirectMessage(const QString &username);
+    void refreshDirectMessages();
+    void watchConversation(const QString &conversation);
+    QStringList directDeviceKeys(const QString &conversation) const;
+    bool acceptMeshDirect(const QString &channel, const QString &sealKeyId,
+                          const QJsonObject &plain);
+    QString readMarkKey(const QString &conversation) const;
+    void fetchReadMarks();
+    void postReadMarks(const QHash<QString, qint64> &marks);
+
+signals:
+    void conversationsChanged(const QStringList &conversations);
+    void roomMembersChanged(const QString &conversation,
+                            const QStringList &members);
+    void topicChanged(const QString &conversation, const QString &topic);
+    // A rename keeps the same room; only the name it is filed under changes.
+    void conversationRenamed(const QString &oldConversation,
+                             const QString &newConversation);
+    void channelSettingsSaved(const QString &conversation);
+    void channelDeleted(const QString &conversation);
+    void channelWebhooksChanged(const QString &conversation,
+                                const QVector<forkmesh::office::ChannelWebhook>
+                                    &webhooks);
+    void channelSettingsFailed(const QString &conversation,
+                               const QString &reason);
+    void messageArrived(const ChatMessage &message);
+    void messageRecipientsKnown(const QString &conversation,
+                                const QString &messageId, int recipients,
+                                const QStringList &names);
+    void directServerCopiesKnown(const QString &conversation, int stored);
+    void sendActivity(const QString &text);
+    void messageSendFailed(const QString &conversation, const QString &messageId,
+                           const QString &text, const QString &reason);
+    void channelCreated(const QString &conversation);
+    void channelCreateFailed(const QString &reason);
+    void directConversationsChanged(const QStringList &conversations);
+    void directConversationReady(const QString &conversation);
+    void directMessageFailed(const QString &username, const QString &reason);
+    void readMarksFetched(const QHash<QString, qint64> &marks);
+
+private:
+    struct PendingText {
+        QString id;
+        QString text;
+        QString fileName;
+        QString fileMime;
+        QByteArray fileData;
+    };
+
+    struct Room {
+        QString id;
+        QString name;
+        QString conversation;
+        bool privateRoom = false;
+        bool direct = false;
+        bool serverVisible = false;
+        bool readOnly = false;
+        bool canManage = false;
+        QString topic;
+        QStringList members;
+        qint64 lastTs = 0;
+        bool fetching = false;
+        QString room;
+        RoomCrypto crypto;
+        RoomSeal seal;
+        QSet<QString> seenIds;
+        QQueue<QString> seenOrder;
+        QQueue<PendingText> pendingTexts;
+        QStringList deviceKeys;
+        QSet<QString> meshDelivered;
+        QPointer<ServerNode> sender;
+        bool accessFetching = false;
+        bool senderConnected = false;
+        int order = 0;
+        bool wantsSocket = false;
+        bool watched = false;
+        int reconnectAttempts = 0;
+        bool reconnectPending = false;
+    };
+
+    void fetchChannels();
+    void fetchDirectMessages();
+    QString upsertDirectRoom(const QJsonObject &conversation, int order);
+    void sendMemberChange(const QString &conversation, const QString &username,
+                          const QByteArray &method);
+    QString wireChannel(const Room &room) const;
+    void ensureReceiver(const QString &channelId);
+    void scheduleReconnect(const QString &channelId);
+    void fetchHistory(const QString &channelId);
+    void fetchRoomAccess(const QString &channelId);
+    void openSender(const QString &channelId, const QJsonObject &payload);
+    bool reservePendingSlot(Room &room);
+    void flushPending(Room &room);
+    void failPending(Room &room, const QString &reason);
+    void rememberSeen(Room &room, const QString &messageId);
+    void rememberDeviceKeys(Room &room, const QStringList &keyIds);
+    void saveDirectDirectory() const;
+    void restoreDirectDirectory();
+    void discardSender(Room &room);
+    void applyHistory(Room &room, const QJsonObject &payload);
+    void applyChannelRecord(const QString &channelId,
+                            const QJsonObject &channel);
+    void applyWebhookList(const QString &channelId, const QString &conversation,
+                          const QJsonArray &records);
+    void rememberWebhookUrl(const QString &channelId, const QString &webhookId,
+                            const QString &url);
+    QUrl signedUrl(const QString &path, const QString &ts,
+                   const QByteArray &canonical) const;
+    bool ready() const;
+    QString channelIdForConversation(const QString &conversation,
+                                     bool requireManager) const;
+    void reportSettingsFailure(const QString &conversation,
+                               const QString &action,
+                               const QString &transportError,
+                               const QByteArray &body);
+
+    QNetworkAccessManager *m_network = nullptr;
+    bool m_active = false;
+    bool m_socketBudgetNoted = false;
+    qint64 m_lastListMs = 0;
+    std::function<QString(const QByteArray &)> m_signer;
+    std::function<bool(const QUrl &)> m_connectionAuthorizer;
+    MeshDirectSender m_meshDirectSender;
+    QString m_account;
+    QString m_selfId;
+    QString m_displayName;
+    QUrl m_apiBase;
+    bool m_listing = false;
+    bool m_relistPending = false;
+    bool m_listingDirect = false;
+    bool m_relistDirectPending = false;
+    QStringList m_directConversations;
+    QHash<QString, Room> m_rooms; // channel id -> room
+    QStringList m_conversations;  // stable display order
+    // channel id -> webhooks last listed, with a URL kept only for the ones
+    // this process created or rotated (the relay cannot re-issue it).
+    QHash<QString, QVector<forkmesh::office::ChannelWebhook>> m_webhooks;
+};

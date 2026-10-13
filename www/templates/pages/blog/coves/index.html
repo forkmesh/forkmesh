@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Coves" %}
+{% set slug = "coves" %}
+{% set image = "/assets/blog/features/coves.webp" %}
+{% set description = "Encrypted vaults for the things that don&#x27;t belong in a repo: notes, credentials, plans. Documents live inside authenticated ciphertext, and every unlock is recorded in an access log the creator can audit." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Chat &amp; private sharing</p>
+            <h1>Coves</h1>
+            <p class="lede">Encrypted vaults for the things that don't belong in a repo: notes, credentials, plans. Documents live inside authenticated ciphertext, and every unlock is recorded in an access log the creator can audit.</p>
+            <div class="meta"><span class="pill">Feature 49 of 72</span><span>AES-256-GCM</span><span>Chat &amp; private sharing</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/coves.webp" alt="Abstract ForkMesh artwork for Coves">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Coves gives ForkMesh a concrete mechanism for encrypted vaults for sensitive project material that does not belong in Git. Encrypted vaults for the things that don't belong in a repo: notes, credentials, plans. Documents live inside authenticated ciphertext, and every unlock is recorded in an access log the creator can audit.</p>
+          <p>Project conversations often carry design, access, and coordination context that infrastructure should not read. In ForkMesh, coves addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles coves through the same split it uses across the product: ForkMesh attaches rooms, direct messages, discussions, and browser chat to repository identity while encrypting sensitive payloads before relay.</p>
+          <p>The behavior is intentionally narrow: Encrypted vaults protect the things that don't belong in a repo—notes, credentials, and plans—and every unlock is recorded in an access log the creator can audit. Chat uses a separate boundary: public channels are controller-readable for integrations, while private channels and direct messages automatically add recipient encryption beyond the controller room key.</p>
+          <h2>Where it fits</h2>
+          <p>Use coves for access-controlled project material that should not live in Git.</p>
+          <p>It pairs with the rest of Chat &amp; private sharing because Coves keeps encrypted vaults for sensitive project material that does not belong in Git connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/direct-messages/">← Direct messages</a>
+          <a href="/blog/discussions/">Discussions →</a>
+        </nav>
+{% endblock %}

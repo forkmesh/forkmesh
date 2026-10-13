@@ -1,0 +1,45 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Building ForkMesh in the open" %}
+{% set slug = "building-forkmesh-in-the-open" %}
+{% set image = "/assets/blog/features/building-forkmesh-in-the-open.webp" %}
+{% set description = "A field report on ForkMesh's smoother World and Office, stronger mirror workflows, clearer pull-request review, and organization-scoped coding agents." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Building ForkMesh in the open</h1>
+            <p class="lede">A field report from the current build round: a smoother World and Office, stronger mirror workflows, clearer pull-request review, and coding agents that work with the team.</p>
+            <div class="meta"><span class="pill">July 27, 2026</span><span>Product update</span><span>6 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/building-forkmesh-in-the-open.webp" alt="ForkMesh Office, task board, mirror node, and coding agents in a moonlit forest">
+        </section>
+        <article class="body">
+          <p>ForkMesh is being built in the same place it is meant to support: in public, across mirrors, with work moving between people and coding agents. This round has touched nearly every layer of that loop, from walking into the virtual Office to reviewing a pull request and handing a bounded task to a headless node.</p>
+
+          <h2>Making the World feel continuous</h2>
+          <p>The most visible work has been physical. The walkway and Office lobby now meet at one level, the doorway collider no longer leaves a hidden ledge, and entering the building does not wait for organization access to load. Team-floor authorization continues in the background while the person keeps moving.</p>
+          <p>We also tightened the less obvious transitions. Mobile movement no longer triggers a refresh, audio follows the sound button, compatible scene changes apply without reloading, and changes that genuinely require a new runtime ask before refreshing. The Office attendance board now uses bounded live heartbeats, expires abandoned visits, and shows the floor of each active occupant instead of treating an interrupted checkout as permanent presence.</p>
+          <div class="note">The goal is simple: walking, camera movement, live state, and network state should agree. A distributed system can be explicit about synchronization without making every doorway feel like an API call.</div>
+
+          <h2>Bringing repository work closer to the mirror</h2>
+          <p>ForkMesh already separates coordination from repository custody. The current work pushes that model further: when a source-of-truth node is offline, an eligible online mirror can materialize a signed issue immediately and sync it back later. The repository header is also gaining a complete mirror view with endpoint, health, integrity, last-check, and capability details.</p>
+          <p>Pull-request review is becoming more familiar without giving up portability. The page now has distinct conversation, commits, checks, and files sections; a changed-files rail; persistent viewed state; read progress that follows scrolling; approval; and an owner-only path to merge into an eligible mirror for later source synchronization.</p>
+
+          <h2>Agents that belong to the organization</h2>
+          <p>The next agent layer is deliberately organization-scoped. Members will be able to start Claude Code or Codex sessions on eligible headless mirrors, see those sessions in the repository's Agents list, and send revisions or follow-up prompts.</p>
+          <p>The World will make those sessions legible too. Claude and Codex will appear as moving bot presences and respond when mentioned in an authorized chat. When Codex completes a tracked task, its avatar will walk to the public task board and move that note into Done, tying the visible project state to the same audited completion event.</p>
+
+          <h2>Operational details still count</h2>
+          <p>Small operational fixes compound. Status histories now use consistent cell heights, taskboard controls remain readable in every theme, and completed or deleted work no longer clutters the live bulletin.</p>
+          <p>That combination—smooth local interaction, signed portable work, explicit mirror state, bounded automation, and visible progress—is the product direction. We will keep publishing these build notes as each piece lands.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog">← All posts</a>
+          <a href="/blog/desktop-node-mirrors/">Desktop-node mirrors →</a>
+        </nav>
+{% endblock %}

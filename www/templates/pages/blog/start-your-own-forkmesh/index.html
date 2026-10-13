@@ -1,0 +1,94 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Start your own ForkMesh · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="forkmesh.com/start sets up a ForkMesh of your own: your project's name, your server, your domain. Give it a VPS and an admin account and it installs Git hosting, your admin and your first repository while you watch each step. October 7, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/start-your-own-forkmesh/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/start-your-own-forkmesh/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Start your own ForkMesh">
+    <meta property="og:description" content="Your name, your server, your domain: give forkmesh.com/start a VPS and an admin account and it sets up Git hosting, repositories, chat and agents of your own, live.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/start-your-own-forkmesh.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="The Start your own instance page: a line saying it sets up Git hosting, repositories, chat and agents under your own name on your own server in about fifteen minutes, then step 1, Name your project, with an Acme Code preview marked Powered by ForkMesh, and step 2, Your server, asking for an IP address, SSH user and port">
+    <meta property="article:published_time" content="2026-10-07T21:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Start your own ForkMesh">
+    <meta name="twitter:description" content="Your name, your server, your domain: forkmesh.com/start sets up Git hosting, repositories, chat and agents of your own, live.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/start-your-own-forkmesh.webp">
+    <meta name="twitter:image:alt" content="The Start your own instance page: a line saying it sets up Git hosting, repositories, chat and agents under your own name on your own server in about fifteen minutes, then step 1, Name your project, with an Acme Code preview marked Powered by ForkMesh, and step 2, Your server, asking for an IP address, SSH user and port">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Announcement</p>
+            <h1>Start your own ForkMesh</h1>
+            <p class="lede">You can now run ForkMesh under your own name, on your own server. Give <a href="https://app.forkmesh.com/start?utm_source=blog&amp;utm_medium=referral&amp;utm_campaign=start_instance&amp;utm_content=start-your-own-forkmesh">forkmesh.com/start</a> a project name, a server and an admin account, and it sets up Git hosting, repositories, chat and agents of your own while you watch every step.</p>
+            <div class="meta"><span class="pill">October 7, 2026</span><span>Announcement</span><span>4 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/start-your-own-forkmesh.webp" alt="The Start your own instance page: a line saying it sets up Git hosting, repositories, chat and agents under your own name on your own server in about fifteen minutes, then step 1, Name your project, with an Acme Code preview marked Powered by ForkMesh, and step 2, Your server, asking for an IP address, SSH user and port">
+        </section>
+        <article class="body">
+          <p>The screenshot at the top is the page itself. There's no account to create first and nothing to install on your own computer: you fill in a form, press <strong>Start my instance</strong>, and when it's done the page takes you to the first repository on your new ForkMesh.</p>
+
+          <h2>What you need</h2>
+          <ul>
+            <li>A fresh server running Debian 13 or Ubuntu 24.04 (or newer), x86_64 or arm64, with at least 1 GB of memory, 6 GB of free disk and nothing else on ports 80 and 443. A small VPS is enough.</li>
+            <li>SSH access to it as root, or as a user who can use sudo, with a password or a private key.</li>
+            <li>A domain, if you want one. Without it, your instance starts on <code>&lt;your-ip-with-dashes&gt;.sslip.io</code>, which points at your server straight away, so HTTPS works without any DNS changes.</li>
+          </ul>
+
+          <h2>Five short sections</h2>
+          <ol>
+            <li><strong>Name your project.</strong> The name replaces "ForkMesh" across your instance, its emails and its pages. A live preview shows how it will look.</li>
+            <li><strong>Your server.</strong> Its address, SSH user and port, and a password or key. You can paste the server's host-key fingerprint to make sure ForkMesh talks to the right machine.</li>
+            <li><strong>Domain.</strong> Optional. If you give one, the page shows the A record to add, and setup waits for it.</li>
+            <li><strong>Admin account.</strong> Your username, email and password, and who owns the first repository: a new organization (named after your project by default) or your own user account.</li>
+            <li><strong>Email.</strong> Optional. Mailtrap, SendGrid or Mailgun, so your instance can send sign-in and notification mail.</li>
+          </ol>
+
+          <h2>What happens when you press Start</h2>
+          <p>ForkMesh's servers connect to yours over SSH and run our open installer, <a href="https://forkmesh.com/install-instance.sh">install-instance.sh</a>. It checks the system, installs what it needs, fetches the ForkMesh source, builds it, sets up the database, the web server and an HTTPS certificate, creates your admin account and a signed Git node, then waits until your first repository answers. The page shows each step as it runs, with a progress bar, a clock and the live log. The page says to allow about fifteen minutes.</p>
+          <p>You can reload the page and pick the run up again. When it finishes, you land on <code>&lt;owner&gt;/forkmesh</code> on your own domain: a copy of the ForkMesh source, served by your instance. If something goes wrong, the page tells you which step failed and why, and <strong>Change the details and try again</strong> takes you back to the form. Running setup again is safe, because each step checks what is already there and keeps your keys, your database and your admin.</p>
+
+          <h2>Your name on it</h2>
+          <p>Your project's name is in the page titles, the header, the emails and even the entry in your authenticator app. A small "Powered by ForkMesh" badge sits in the corner. It renames the product, not your work: code, READMEs, commit messages and repository contents are never touched.</p>
+          <p>The parts that only make sense on forkmesh.com, like the World, mirror rewards, the hackathon and ForkBot, are plugins that start switched off on your instance. Add the ones you want to <code>INSTANCE_PLUGINS</code> in <code>/etc/forkmesh-instance/app.env</code> and restart the service. When a new version of ForkMesh comes out, <code>bash install-instance.sh --update</code> on your server pulls it, rebuilds and restarts, and keeps your data.</p>
+
+          <h2>Your keys stay yours</h2>
+          <ul>
+            <li>Your SSH password or key is used once, to connect, and is never stored. It passes through ForkMesh's servers for that one run, inside the same locked-down helper we use to set up runners.</li>
+            <li>Your admin password and email key are written only to your own server. They travel over the SSH connection's input, never on a command line, and are hidden in the log.</li>
+            <li>We keep a short record of each setup run (the project name, the server address, the steps and the last lines of the log) and delete it after seven days. No password or key is in it.</li>
+          </ul>
+
+          <h2>Good to know</h2>
+          <ul>
+            <li>The first time you sign in as admin, you'll be asked to set up two-factor sign-in.</li>
+            <li>Sign-ups by other people stay closed until you add Cloudflare Turnstile keys to <code>app.env</code>. Your admin account works from the start.</li>
+            <li>If you don't paste a fingerprint, the first host key your server shows is trusted. It's shown on the page and in the log, so you can check it.</li>
+            <li>The "Start your world here" signs on the desert plots in the <a href="https://world.forkmesh.com/">ForkMesh World</a> open this page too. The plot isn't reserved, and a new instance doesn't appear in the World on its own.</li>
+          </ul>
+
+          <h2>Start yours</h2>
+          <p>Head to <a href="https://app.forkmesh.com/start?utm_source=blog&amp;utm_medium=referral&amp;utm_campaign=start_instance&amp;utm_content=start-your-own-forkmesh">forkmesh.com/start</a>, name your project and point it at a server. If a step fails or the page confuses you, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a> or tell us in the ForkMesh Discord. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog">All posts</a>
+          <a href="/blog/forkmesh-coaster/">Ride the ForkMesh coaster →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

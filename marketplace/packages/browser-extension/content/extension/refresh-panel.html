@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ForkMesh refresh</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; padding: 12px; font: 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111; background: #fff; }
+    h1 { margin: 0 0 10px; font-size: 13px; }
+    [data-refresh] { display: grid; gap: 8px; }
+    .refresh-title { margin: 0; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; }
+    .refresh-title span { font-weight: 400; color: #5f6b7a; font-variant-numeric: tabular-nums; }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    button { border-radius: 6px; padding: 7px 10px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid transparent; text-align: left; }
+    button.primary { background: #2f81f7; color: #fff; }
+    button.secondary { background: #f1f3f5; color: #111; border-color: #d7dbe0; }
+    button[disabled] { opacity: .5; cursor: not-allowed; }
+    ul.refresh-pages { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+    ul.refresh-pages button { width: 100%; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    li.refresh-page.done button { color: #1a7f37; }
+    li.refresh-page.current button { border-color: #2f81f7; box-shadow: inset 0 0 0 1px #2f81f7; font-weight: 600; }
+    p { margin: 0; font-size: 12px; }
+    .muted { color: #5f6b7a; }
+    .ok { color: #1a7f37; }
+    .error { color: #d1242f; white-space: pre-wrap; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e8eaed; background: #14171c; }
+      button.secondary { background: #1d2229; color: #e8eaed; border-color: #2c3239; }
+      .muted, .refresh-title span { color: #9aa3ad; }
+      li.refresh-page.done button { color: #4ade80; }
+    }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>ForkMesh refresh</h1>
+  <section data-refresh hidden></section>
+  <p data-refresh-empty class="muted">Nothing to update: every Marketing channel was updated in the last hour. Sign in to the extension with an organization that has Marketing to see the channel to update next here.</p>
+  <script src="refresh-view.js"></script>
+  <script src="refresh-panel.js"></script>
+</body>
+</html>

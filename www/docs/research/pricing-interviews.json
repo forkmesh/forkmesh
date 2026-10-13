@@ -1,0 +1,19 @@
+{
+  "schema": "forkmesh-pricing-research-v1",
+  "updatedAt": "2026-08-20",
+  "status": "not-validated",
+  "qualifyingInterviews": 0,
+  "qualifyingInterviewIds": [],
+  "minimumQualifyingInterviews": 5,
+  "organizationsRepresented": 0,
+  "minimumOrganizations": 3,
+  "organizationSizeBandsRepresented": 0,
+  "minimumOrganizationSizeBands": 2,
+  "buyerValidated": false,
+  "budgetValidated": false,
+  "topPaidJobsValidated": false,
+  "latestRevision": 1,
+  "validatedRevision": null,
+  "evidenceRegister": "www/docs/research/pricing-interviews.md",
+  "syntheticRecordsCount": 0
+}

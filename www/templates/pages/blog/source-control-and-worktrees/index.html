@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Source control &amp; worktrees" %}
+{% set slug = "source-control-and-worktrees" %}
+{% set image = "/assets/blog/features/source-control-and-worktrees.webp" %}
+{% set description = "Stage, commit, branch, and manage multiple worktrees from the app, including the worktrees your agents are working in." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>Source control &amp; worktrees</h1>
+            <p class="lede">Stage, commit, branch, and manage multiple worktrees from the app, including the worktrees your agents are working in.</p>
+            <div class="meta"><span class="pill">Feature 53 of 72</span><span>Feature</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/source-control-and-worktrees.webp" alt="Abstract ForkMesh artwork for Source control &amp; worktrees">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Source control &amp; worktrees gives ForkMesh a concrete mechanism for Git staging, branching, commits, and worktrees controlled from the desktop app. Stage, commit, branch, and manage multiple worktrees from the app, including the worktrees your agents are working in.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, source control &amp; worktrees addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles source control &amp; worktrees through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: Stage, commit, branch, and manage multiple worktrees from the app, including the worktrees your agents are working in. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use source control &amp; worktrees when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because Source control &amp; worktrees keeps Git staging, branching, commits, and worktrees controlled from the desktop app connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/complete-repository-workspace/">← Complete repository workspace</a>
+          <a href="/blog/voice-dictation/">Voice dictation →</a>
+        </nav>
+{% endblock %}

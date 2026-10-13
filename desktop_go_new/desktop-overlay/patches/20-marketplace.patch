@@ -1,0 +1,406 @@
+diff --git a/marketplace/catalog.json b/marketplace/catalog.json
+--- a/marketplace/catalog.json
++++ b/marketplace/catalog.json
+@@ -44,7 +44,7 @@
+     { "id": "tour", "version": "1.0.0", "manifest": "packages/tour/manifest.json" },
+     { "id": "backups", "version": "1.0.0", "manifest": "packages/backups/manifest.json" },
+     { "id": "docs", "version": "1.0.0", "manifest": "packages/docs/manifest.json" },
+-    { "id": "cleanup", "version": "1.0.0", "manifest": "packages/cleanup/manifest.json" },
++    { "id": "cleanup", "version": "1.1.0", "manifest": "packages/cleanup/manifest.json" },
+     { "id": "status-page", "version": "1.0.0", "manifest": "packages/status-page/manifest.json" },
+     { "id": "speech", "version": "1.0.0", "manifest": "packages/speech/manifest.json" },
+     { "id": "design-system", "version": "1.0.0", "manifest": "packages/design-system/manifest.json" },
+diff --git a/marketplace/packages/cleanup/content/desktop/CleanupFeature.cpp b/marketplace/packages/cleanup/content/desktop/CleanupFeature.cpp
+--- a/marketplace/packages/cleanup/content/desktop/CleanupFeature.cpp
++++ b/marketplace/packages/cleanup/content/desktop/CleanupFeature.cpp
+@@ -15,6 +15,8 @@
+ #include <QFutureWatcher>
+ #include <QHBoxLayout>
+ #include <QHeaderView>
++#include <QJsonArray>
++#include <QJsonObject>
+ #include <QLabel>
+ #include <QMenu>
+ #include <QMessageBox>
+@@ -107,6 +109,180 @@
+     QList<Outcome> outcomes;
+     ProcessSnapshot processes;
+ };
++
++QJsonArray stringArray(const QStringList &values)
++{
++    QJsonArray array;
++    for (const QString &value : values)
++        array.append(value);
++    return array;
++}
++
++QStringList stringList(const QJsonValue &value)
++{
++    QStringList list;
++    for (const QJsonValue &entry : value.toArray())
++        list << entry.toString();
++    return list;
++}
++
++QJsonObject contextJson(const Context &context)
++{
++    QJsonArray repositories;
++    for (const forkmesh::cleanupfeed::Repository &repo : context.repositories)
++        repositories.append(QJsonObject{{QStringLiteral("name"), repo.name}, {QStringLiteral("path"), repo.path}});
++    QJsonArray agents;
++    for (const forkmesh::cleanupfeed::Agent &agent : context.agents)
++        agents.append(QJsonObject{{QStringLiteral("id"), agent.id},
++                                  {QStringLiteral("issueNumber"), agent.issueNumber},
++                                  {QStringLiteral("title"), agent.title},
++                                  {QStringLiteral("status"), agent.status},
++                                  {QStringLiteral("repoPath"), agent.repoPath},
++                                  {QStringLiteral("branch"), agent.branch},
++                                  {QStringLiteral("worktree"), agent.worktree},
++                                  {QStringLiteral("live"), agent.live}});
++    QJsonArray tasks;
++    for (const forkmesh::cleanupfeed::TaskLink &task : context.tasks)
++        tasks.append(QJsonObject{{QStringLiteral("taskId"), task.taskId},
++                                 {QStringLiteral("title"), task.title},
++                                 {QStringLiteral("repository"), task.repository},
++                                 {QStringLiteral("branch"), task.branch},
++                                 {QStringLiteral("worktree"), task.worktree}});
++    QStringList claimed(context.claimedSandboxes.cbegin(), context.claimedSandboxes.cend());
++    claimed.sort();
++    return {{QStringLiteral("home"), context.home},
++            {QStringLiteral("tmpRoots"), stringArray(context.tmpRoots)},
++            {QStringLiteral("uid"), context.uid},
++            {QStringLiteral("projectHome"), context.projectHome},
++            {QStringLiteral("dataDir"), context.dataDir},
++            {QStringLiteral("buildsDir"), context.buildsDir},
++            {QStringLiteral("worktreesDir"), context.worktreesDir},
++            {QStringLiteral("sandboxDir"), context.sandboxDir},
++            {QStringLiteral("claudeBinary"), context.claudeBinary},
++            {QStringLiteral("ccacheDir"), context.ccacheDir},
++            {QStringLiteral("repositories"), repositories},
++            {QStringLiteral("agents"), agents},
++            {QStringLiteral("tasks"), tasks},
++            {QStringLiteral("claimedSandboxes"), stringArray(claimed)},
++            {QStringLiteral("liveMinutes"), context.liveMinutes},
++            {QStringLiteral("oldSessionDays"), context.oldSessionDays},
++            {QStringLiteral("runCcache"), context.runCcache}};
++}
++
++QJsonObject itemJson(const Item &item)
++{
++    QJsonArray members;
++    for (const Member &member : item.members)
++        members.append(QJsonObject{{QStringLiteral("path"), member.path}, {QStringLiteral("bytes"), member.bytes}});
++    return {{QStringLiteral("id"), item.id},
++            {QStringLiteral("category"), int(item.category)},
++            {QStringLiteral("kind"), int(item.kind)},
++            {QStringLiteral("title"), item.title},
++            {QStringLiteral("path"), item.path},
++            {QStringLiteral("parent"), item.parent},
++            {QStringLiteral("members"), members},
++            {QStringLiteral("bytes"), item.bytes},
++            {QStringLiteral("keptBytes"), item.keptBytes},
++            {QStringLiteral("files"), item.files},
++            {QStringLiteral("modifiedMs"), item.modifiedMs},
++            {QStringLiteral("status"), int(item.status)},
++            {QStringLiteral("reasons"), stringArray(item.reasons)},
++            {QStringLiteral("confirmEach"), item.confirmEach},
++            {QStringLiteral("repoPath"), item.repoPath},
++            {QStringLiteral("branch"), item.branch},
++            {QStringLiteral("baseBranch"), item.baseBranch},
++            {QStringLiteral("ahead"), item.ahead},
++            {QStringLiteral("behind"), item.behind},
++            {QStringLiteral("dirtyFiles"), item.dirtyFiles},
++            {QStringLiteral("locked"), item.locked},
++            {QStringLiteral("agents"), stringArray(item.agents)},
++            {QStringLiteral("tasks"), stringArray(item.tasks)}};
++}
++
++Item itemFromJson(const QJsonObject &object)
++{
++    Item item;
++    item.id = object.value(QStringLiteral("id")).toString();
++    const int category = object.value(QStringLiteral("category")).toInt(-1);
++    item.category = category >= 0 && category <= int(Category::OtherCaches) ? Category(category)
++                                                                            : Category::OtherCaches;
++    const int kind = object.value(QStringLiteral("kind")).toInt(-1);
++    item.kind = kind >= 0 && kind <= int(Kind::Report) ? Kind(kind) : Kind::Report;
++    const int status = object.value(QStringLiteral("status")).toInt(-1);
++    item.status = status >= 0 && status <= int(Status::Protected) ? Status(status) : Status::Protected;
++    item.title = object.value(QStringLiteral("title")).toString();
++    item.path = object.value(QStringLiteral("path")).toString();
++    item.parent = object.value(QStringLiteral("parent")).toString();
++    for (const QJsonValue &value : object.value(QStringLiteral("members")).toArray()) {
++        const QJsonObject member = value.toObject();
++        item.members.append({member.value(QStringLiteral("path")).toString(),
++                             member.value(QStringLiteral("bytes")).toInteger()});
++    }
++    item.bytes = object.value(QStringLiteral("bytes")).toInteger();
++    item.keptBytes = object.value(QStringLiteral("keptBytes")).toInteger();
++    item.files = object.value(QStringLiteral("files")).toInteger();
++    item.modifiedMs = object.value(QStringLiteral("modifiedMs")).toInteger();
++    item.reasons = stringList(object.value(QStringLiteral("reasons")));
++    item.confirmEach = object.value(QStringLiteral("confirmEach")).toBool();
++    item.repoPath = object.value(QStringLiteral("repoPath")).toString();
++    item.branch = object.value(QStringLiteral("branch")).toString();
++    item.baseBranch = object.value(QStringLiteral("baseBranch")).toString();
++    item.ahead = object.value(QStringLiteral("ahead")).toInt(-1);
++    item.behind = object.value(QStringLiteral("behind")).toInt(-1);
++    item.dirtyFiles = object.value(QStringLiteral("dirtyFiles")).toInt();
++    item.locked = object.value(QStringLiteral("locked")).toBool();
++    item.agents = stringList(object.value(QStringLiteral("agents")));
++    item.tasks = stringList(object.value(QStringLiteral("tasks")));
++    return item;
++}
++
++ScanResult scanFromJson(const QJsonObject &object)
++{
++    ScanResult result;
++    for (const QJsonValue &value : object.value(QStringLiteral("items")).toArray())
++        result.items.append(itemFromJson(value.toObject()));
++    result.notes = stringList(object.value(QStringLiteral("notes")));
++    result.cancelled = object.value(QStringLiteral("cancelled")).toBool();
++    return result;
++}
++
++QJsonArray stepsJson(const QList<Step> &steps)
++{
++    QJsonArray array;
++    for (const Step &step : steps)
++        array.append(QJsonObject{{QStringLiteral("item"), itemJson(step.item)},
++                                 {QStringLiteral("choice"),
++                                  QJsonObject{{QStringLiteral("confirmed"), step.choice.confirmed},
++                                              {QStringLiteral("discardChanges"), step.choice.discardChanges},
++                                              {QStringLiteral("retireBranch"), step.choice.retireBranch}}}});
++    return array;
++}
++
++QJsonArray outcomesJson(const QList<Outcome> &outcomes)
++{
++    QJsonArray array;
++    for (const Outcome &outcome : outcomes)
++        array.append(QJsonObject{{QStringLiteral("path"), outcome.path},
++                                 {QStringLiteral("bytes"), outcome.bytes},
++                                 {QStringLiteral("reason"), outcome.reason},
++                                 {QStringLiteral("removed"), outcome.removed},
++                                 {QStringLiteral("error"), outcome.error}});
++    return array;
++}
++
++Outcome outcomeFromJson(const QJsonObject &object)
++{
++    return {object.value(QStringLiteral("path")).toString(),
++            object.value(QStringLiteral("bytes")).toInteger(),
++            object.value(QStringLiteral("reason")).toString(),
++            object.value(QStringLiteral("removed")).toBool(),
++            object.value(QStringLiteral("error")).toString()};
++}
++
++QString cleanMemberPath(const QString &path)
++{
++    return path.isEmpty() ? QString() : QDir::cleanPath(QDir(path).absolutePath());
++}
+ 
+ } // namespace
+ 
+@@ -306,12 +482,39 @@
+     m_scanning = true;
+     const quint64 generation = ++m_generation;
+     m_cancel = std::make_shared<std::atomic_bool>(false);
+-    const CancelFlag cancel = m_cancel;
+-    Context context = desktopContext();
++    const Context context = desktopContext();
+     m_refreshButton->setEnabled(false);
+     m_cancelButton->show();
+     m_summary->setText(QStringLiteral("Scanning…"));
+     updateButtons();
++    if (forkmesh::cleanupfeed::hasHost() && forkmesh::cleanupfeed::host().coreScan) {
++        QPointer<CleanupFeature> self(this);
++        const auto progress = [self, generation](const QString &stage) {
++            if (self && generation == self->m_generation && self->m_scanning && !stage.isEmpty())
++                self->m_summary->setText(QStringLiteral("Scanning… %1").arg(stage));
++        };
++        const auto done = [self, generation, context](const QJsonObject &reply) {
++            if (!self || generation != self->m_generation)
++                return;
++            if (!reply.contains(QStringLiteral("items"))) {
++                self->startNativeScan(generation, context);
++                return;
++            }
++            self->m_scanning = false;
++            self->m_refreshButton->setEnabled(true);
++            self->m_cancelButton->hide();
++            self->applyScan(scanFromJson(reply));
++        };
++        if (forkmesh::cleanupfeed::host().coreScan(contextJson(context), progress, done))
++            return;
++    }
++    startNativeScan(generation, context);
++}
++
++void CleanupFeature::startNativeScan(quint64 generation, const Context &scanContext)
++{
++    const CancelFlag cancel = m_cancel;
++    Context context = scanContext;
+     auto *watcher = new QFutureWatcher<ScanResult>(this);
+     connect(watcher, &QFutureWatcher<ScanResult>::finished, this, [this, watcher, generation] {
+         watcher->deleteLater();
+@@ -333,6 +536,8 @@
+ {
+     if (m_cancel)
+         m_cancel->store(true);
++    if (m_scanning && forkmesh::cleanupfeed::hasHost() && forkmesh::cleanupfeed::host().coreCancelScan)
++        forkmesh::cleanupfeed::host().coreCancelScan();
+ }
+ 
+ void CleanupFeature::prepareSearch() {}
+@@ -742,6 +947,54 @@
+     Context context = desktopContext();
+     const QList<Step> files = plan.files;
+     const QList<Step> sandboxes = plan.sandboxes;
++    m_coreRecheck = false;
++    m_coreRefusals.clear();
++    m_coreLogged = -1;
++    m_coreLogOk = true;
++    if (forkmesh::cleanupfeed::hasHost() && forkmesh::cleanupfeed::host().coreDeleteFiles) {
++        QStringList claimed(context.claimedSandboxes.cbegin(), context.claimedSandboxes.cend());
++        claimed.sort();
++        const QJsonObject request{{QStringLiteral("files"), stepsJson(files)},
++                                  {QStringLiteral("sandboxes"), stepsJson(sandboxes)},
++                                  {QStringLiteral("worktrees"), stepsJson(plan.worktrees)},
++                                  {QStringLiteral("skipped"), outcomesJson(m_outcomes)},
++                                  {QStringLiteral("claimed"), stringArray(claimed)},
++                                  {QStringLiteral("context"), contextJson(context)},
++                                  {QStringLiteral("logPath"), logPath()}};
++        QPointer<CleanupFeature> self(this);
++        const QList<Step> worktrees = plan.worktrees;
++        const auto done = [self, files, sandboxes, worktrees](const QJsonObject &reply) {
++            if (!self)
++                return;
++            self->m_coreRecheck = true;
++            if (!reply.contains(QStringLiteral("outcomes"))) {
++                const QString why = QStringLiteral("the background engine could not finish it (%1)")
++                                        .arg(reply.value(QStringLiteral("error")).toString());
++                for (const Step &step : files) {
++                    for (const Member &member : step.item.members)
++                        self->m_outcomes.append({cleanMemberPath(member.path), member.bytes,
++                                                 step.item.reasonText(), false, why});
++                }
++                for (const Step &step : sandboxes)
++                    self->m_outcomes.append({cleanMemberPath(step.item.path), step.item.bytes,
++                                             step.item.reasonText(), false, why});
++                for (const Step &step : worktrees)
++                    self->m_coreRefusals.insert(step.item.id, why);
++                self->removeNextWorktree();
++                return;
++            }
++            for (const QJsonValue &value : reply.value(QStringLiteral("outcomes")).toArray())
++                self->m_outcomes.append(outcomeFromJson(value.toObject()));
++            const QJsonObject refusals = reply.value(QStringLiteral("worktreeRefusals")).toObject();
++            for (auto it = refusals.begin(); it != refusals.end(); ++it)
++                self->m_coreRefusals.insert(it.key(), it.value().toString());
++            self->m_coreLogged = self->m_outcomes.size();
++            self->m_coreLogOk = reply.value(QStringLiteral("logged")).toBool();
++            self->removeNextWorktree();
++        };
++        if (forkmesh::cleanupfeed::host().coreDeleteFiles(request, done))
++            return;
++    }
+     const SandboxRemover remover = forkmesh::cleanupfeed::hasHost()
+                                        ? forkmesh::cleanupfeed::host().removeActionSandbox
+                                        : SandboxRemover();
+@@ -778,7 +1031,8 @@
+     const Step step = m_pendingWorktrees.takeFirst();
+     Recheck recheck;
+     recheck.processes = m_deleteProcesses;
+-    const QString refusal = worktreeRefusal(step.item, recheck);
++    const QString refusal = m_coreRecheck ? m_coreRefusals.value(step.item.id)
++                                          : worktreeRefusal(step.item, recheck);
+     const bool hosted = forkmesh::cleanupfeed::hasHost() &&
+                         forkmesh::cleanupfeed::host().removeWorktree;
+     if (!refusal.isEmpty() || !hosted) {
+@@ -817,7 +1071,30 @@
+ void CleanupFeature::finishDeletion()
+ {
+     const qint64 now = QDateTime::currentMSecsSinceEpoch();
+-    const bool logged = appendLog(logPath(), m_outcomes, now);
++    const QList<Outcome> rest = m_coreLogged >= 0 ? m_outcomes.mid(m_coreLogged) : m_outcomes;
++    const bool coreLogOk = m_coreLogged < 0 || m_coreLogOk;
++    if (m_coreLogged >= 0 && !rest.isEmpty() && forkmesh::cleanupfeed::hasHost() &&
++        forkmesh::cleanupfeed::host().coreAppendLog) {
++        QPointer<CleanupFeature> self(this);
++        const QJsonObject request{{QStringLiteral("outcomes"), outcomesJson(rest)},
++                                  {QStringLiteral("logPath"), logPath()},
++                                  {QStringLiteral("nowMs"), now}};
++        const auto done = [self, coreLogOk, rest, now](const QJsonObject &reply) {
++            if (!self)
++                return;
++            const bool logged = reply.contains(QStringLiteral("logged"))
++                                    ? reply.value(QStringLiteral("logged")).toBool()
++                                    : appendLog(logPath(), rest, now);
++            self->completeDeletion(coreLogOk && logged);
++        };
++        if (forkmesh::cleanupfeed::host().coreAppendLog(request, done))
++            return;
++    }
++    completeDeletion(coreLogOk && appendLog(logPath(), rest, now));
++}
++
++void CleanupFeature::completeDeletion(bool logged)
++{
+     const qint64 freed = freedBytes(m_outcomes);
+     int removed = 0;
+     QStringList problems;
+@@ -844,6 +1121,10 @@
+     m_checked.clear();
+     m_outcomes.clear();
+     m_deleteProcesses = ProcessSnapshot();
++    m_coreRecheck = false;
++    m_coreRefusals.clear();
++    m_coreLogged = -1;
++    m_coreLogOk = true;
+     refresh();
+     setStatus(text, kept > 0 && removed == 0);
+ }
+diff --git a/marketplace/packages/cleanup/content/desktop/CleanupFeature.h b/marketplace/packages/cleanup/content/desktop/CleanupFeature.h
+--- a/marketplace/packages/cleanup/content/desktop/CleanupFeature.h
++++ b/marketplace/packages/cleanup/content/desktop/CleanupFeature.h
+@@ -42,6 +42,7 @@
+ private:
+     void buildPage();
+     void cancelScan();
++    void startNativeScan(quint64 generation, const Context &context);
+     void applyScan(const ScanResult &result);
+     void render();
+     bool visible(const Item &item) const;
+@@ -59,6 +60,7 @@
+     void runPlan(const Plan &plan);
+     void removeNextWorktree();
+     void finishDeletion();
++    void completeDeletion(bool logged);
+     void trimCcache();
+ 
+     QString m_packageId;
+@@ -78,6 +80,10 @@
+     QList<Outcome> m_outcomes;
+     ProcessSnapshot m_deleteProcesses;
+     int m_planSkipped = 0;
++    bool m_coreRecheck = false;
++    QHash<QString, QString> m_coreRefusals;
++    qsizetype m_coreLogged = -1;
++    bool m_coreLogOk = true;
+ 
+     QLabel *m_summary = nullptr;
+     QLabel *m_status = nullptr;
+diff --git a/marketplace/packages/cleanup/manifest.json b/marketplace/packages/cleanup/manifest.json
+--- a/marketplace/packages/cleanup/manifest.json
++++ b/marketplace/packages/cleanup/manifest.json
+@@ -11,7 +11,7 @@
+   },
+   "type": "extension.native",
+   "category": "Utilities",
+-  "version": "1.0.0",
++  "version": "1.1.0",
+   "summary": "See what Claude Code, Codex and agent runs left on disk: transcripts, scratchpads, worktrees, build trees, sandboxes and caches, what each is attached to, and delete what nothing uses through git and guarded deletes.",
+   "license": {
+     "model": "free-open-source",

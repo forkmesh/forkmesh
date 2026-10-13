@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Root-commit identity" %}
+{% set slug = "root-commit-identity" %}
+{% set image = "/assets/blog/features/root-commit-identity.webp" %}
+{% set description = "Reported mirrors can be grouped by a signed repository root commit, independent of the local name each host chose." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Root-commit identity</h1>
+            <p class="lede">Reported mirrors can be grouped by a signed repository root commit, independent of the local name each host chose.</p>
+            <div class="meta"><span class="pill">Feature 07 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/root-commit-identity.webp" alt="Abstract ForkMesh artwork for Root-commit identity">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Root-commit identity gives ForkMesh a concrete mechanism for grouping reported mirrors by repository ancestry rather than by whatever name a host chose. It identifies registered copies that supplied a valid attestation; it does not discover offline or unreported copies.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, root-commit identity addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles root-commit identity through the same split it uses across the product: nodes keep real Git mirrors, while the app service coordinates signed HTTPS discovery, health, presence, account lookup, and clone routing.</p>
+          <p>The behavior is intentionally narrow: matching signed root commits provide a grouping signal, while current health and content-integrity checks remain separate. The routing service helps find a live host, but it is not canonical Git storage.</p>
+          <h2>Where it fits</h2>
+          <p>Use root-commit identity when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Root-commit identity keeps grouping mirrors by repository ancestry rather than by whatever name a host chose connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/source-attested-integrity/">← Source-attested integrity</a>
+          <a href="/blog/headless-mirror-nodes/">Headless mirror nodes →</a>
+        </nav>
+{% endblock %}

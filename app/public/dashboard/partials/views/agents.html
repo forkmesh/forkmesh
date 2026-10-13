@@ -1,0 +1,62 @@
+          <section data-view="agents" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full">
+              <div data-agents-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 class="text-base font-semibold text-foreground">Agents</h1>
+                    <p class="mt-1 text-sm text-muted-foreground">Every agent session your account can see: cloud runs in all your repositories, agent runs in your organizations, and sessions your desktops report. Open a row to read its conversation.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-3 self-start">
+                    <span data-agents-count class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <button
+                      data-agents-refresh
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div data-runner-accounts-picker hidden class="px-4 sm:px-5 py-3 border-b border-border grid gap-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h2 class="text-sm font-semibold text-foreground">Runner accounts</h2>
+                    <span class="text-xs text-muted-foreground">Cloud agents on each runner run as the account chosen here.</span>
+                    <a href="/dashboard/runners" class="ml-auto text-xs font-semibold text-muted-foreground hover:text-foreground">Manage runners</a>
+                  </div>
+                  <div data-runner-accounts-picker-list class="grid gap-2"></div>
+                  <p data-runner-accounts-picker-notice hidden class="text-xs text-muted-foreground" role="status" aria-live="polite"></p>
+                </div>
+
+                <div data-agents-filters class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center gap-2">
+                  <label class="flex items-center gap-2 text-xs text-muted-foreground">Status
+                    <select data-agents-filter="status" class="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground">
+                      <option value="">All</option>
+                      <option value="active">Working</option>
+                      <option value="attention">Needs attention</option>
+                      <option value="completed">Completed</option>
+                      <option value="failed">Failed</option>
+                      <option value="desktop">On a desktop</option>
+                    </select>
+                  </label>
+                  <label class="flex items-center gap-2 text-xs text-muted-foreground">Repository
+                    <select data-agents-filter="repo" class="h-8 max-w-52 truncate rounded-md border border-border bg-background px-2 text-xs text-foreground">
+                      <option value="">All</option>
+                    </select>
+                  </label>
+                  <label class="flex items-center gap-2 text-xs text-muted-foreground">Node
+                    <select data-agents-filter="node" class="h-8 max-w-52 truncate rounded-md border border-border bg-background px-2 text-xs text-foreground">
+                      <option value="">All</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div data-agents-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
+
+                <div data-agents-list class="divide-y divide-border" aria-live="polite">
+                  <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading agents...</div>
+                </div>
+              </div>
+            </div>
+          </section>

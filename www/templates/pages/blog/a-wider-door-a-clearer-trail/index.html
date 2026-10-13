@@ -1,0 +1,88 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}A wider door, a clearer trail · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="ForkMesh v0.7.29 brings resumable repository migrations, a signed package lifecycle, published Git compatibility, and clearer live work.">
+    <link rel="canonical" href="https://forkmesh.com/blog/a-wider-door-a-clearer-trail/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/a-wider-door-a-clearer-trail/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="A wider door, a clearer trail">
+    <meta property="og:description" content="Resumable imports, signed packages, visible workflows, sturdier mirrors, and v0.7.29 make more of the route through ForkMesh explicit.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/a-wider-door-a-clearer-trail.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="The official ForkMesh FM cube stands in a glass mirror portal, reflected on wet stone as Git branches enter and package capsules, workflow checks, mirror nodes, and a signed release continue through a moonlit forest">
+    <meta property="article:published_time" content="2026-08-22T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="A wider door, a clearer trail">
+    <meta name="twitter:description" content="ForkMesh v0.7.29 opens a resumable way in, a signed package path, and a clearer trail from report to release.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/a-wider-door-a-clearer-trail.webp">
+    <meta name="twitter:image:alt" content="The official ForkMesh FM cube stands in a glass mirror portal, reflected on wet stone as Git branches enter and package capsules, workflow checks, mirror nodes, and a signed release continue through a moonlit forest">
+{% endblock %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>A wider door, a clearer trail</h1>
+            <p class="lede">ForkMesh v0.7.29 opens a resumable path for complete projects, puts extensions behind a signed lifecycle, and makes the route from report to release easier to follow.</p>
+            <div class="meta"><span class="pill">August 22, 2026</span><span>Product update</span><span>9 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/a-wider-door-a-clearer-trail.webp" alt="The official ForkMesh FM cube stands in a glass mirror portal, reflected on wet stone as Git branches enter and package capsules, workflow checks, mirror nodes, and a signed release continue through a moonlit forest">
+        </section>
+        <article class="body">
+          <p><a href="/blog/a-team-around-the-work/">A team around the work</a> described a main-branch workbench: persistent teammates, embedded Discord, visible review progress, and clearer mirror authority. Four days later, more of the path around that work has become explicit. A repository can arrive with its collaboration history, an extension can declare what it needs and how it leaves, a workflow can show where it is, and a completed payment can point back to the work it settled.</p>
+          <p>This report follows repository history from the previous post on August 18 through August 22. The signed release record moved from v0.7.23 to <strong>v0.7.29</strong> inside that window. Changes that landed after v0.7.29's build commit are called out as current-<code>main</code> work; the hosted App, website, and World still deploy on their own schedules.</p>
+
+          <h2>The release line catches up</h2>
+          <p>The latest signed manifest now names v0.7.29 and binds its checksums to one source revision. It lists a Linux x86_64 desktop binary, the AppDir bundle, and the native Linux mirror-node companion. That is a concrete change from the previous post, when the latest signed desktop was still v0.7.23 and much of the work existed only on <code>main</code>.</p>
+          <p>Version numbers alone are not the story, but the boundary matters. The first Market lifecycle, repository migrations, the stock-Git conformance contract, Cove file editing, multi-run Actions, issue planning work, Ledger, and the event-driven mirror path are all ancestors of the v0.7.29 build commit. Later changes—including per-step workflow progress, bounded terminal-style agent output, sending a failed Action to an agent, modular package build discovery, a startup and teardown crash guard, and the newest reward-credit repairs—remain main-only at publication time.</p>
+
+          <h2>A repository can arrive with its history intact</h2>
+          <p>ForkMesh now has a resumable migration path for GitHub, GitLab, and Codeberg. Starting an import creates a durable job after the initial repository lookup; transfer continues in provider-sized pages, and an interrupted or rate-limited job resumes from its checkpoint. Public imports can resume without a credential. A private import asks for a current read token again because provider tokens are request-scoped and are not written into the job, its report, logs, or browser storage.</p>
+          <p>The contract covers more than a repository card. It preserves branches and tags, issues, pull or merge requests, reviews and inline discussion, releases, the provider README, labels, users, and exposed collaboration history. Original provider payloads are encrypted beside a common projection, while deterministic object keys make a repeated page an update instead of a duplicate. Completion sorts the surviving object hashes into a reproducible state digest and authenticates it with the relay's migration key. Git objects still travel through the normal bare-mirror path; provider wikis, workflow logs, and artifact bytes are named as separate or out of scope rather than silently omitted.</p>
+          <p>The browser can also request a fork onto one of the account's managed mirrors. The relay durably records the job, and the target node drains it when it is online, so clicking <strong>Fork</strong> does not require both source and destination to be awake at that moment. This is an asynchronous managed-node path, not a promise that ForkMesh can mutate an arbitrary external repository.</p>
+
+          <h2>Normal Git gets a published contract</h2>
+          <p>A generated compatibility matrix now says exactly what an unmodified Git client can do. Direct owner SSH is the write path: clone, fetch, branch updates, deletes, and force-with-lease are covered there. The stable relay HTTPS URL remains read-only and streams clone and fetch from an integrity-matching mirror. Shallow clones are covered; partial clones are conditional on protocol v2 and filter support; submodules keep their own authorization boundaries. The matrix publishes the limits beside the supported rows instead of compressing all of that into “Git compatible.”</p>
+          <p>The repository's live pull ledger supplied one especially useful proof. Pull request #32 merged after the previous post and restored builds against the declared Qt 6.4 minimum by replacing newer-only list, colour-scheme, and time-zone APIs with guarded or compatible forms. Its record includes the contributor's verification on Qt 6.4.2 and keeps the reward at <code>pending_wallet</code>; merged code and money that has not moved are different states.</p>
+          <p>A separate <code>forkmesh-collaboration-event-v1</code> protocol and cross-runtime conformance suite also landed. It defines canonical signed envelopes, causal ordering, observed-remove sets, tombstones, moderation lineage, migration provenance, and replay defense across ten collaboration object families. That is protocol groundwork with executable reference folds—not a claim that every existing collaboration record has already migrated to the new envelope.</p>
+
+          <h2>The Market becomes a lifecycle</h2>
+          <p>The catalog now carries seven packages: Capture, Ledger, the X and Reddit World boards, Discord, Gemma 4, and a Winamp-inspired desktop theme. Capture moves region capture and annotation out of the application core. Discord can be removed with its token, local cache, avatars, unread state, and sidebar group cleared. Ledger contributes its own rail and data policy. Gemma 4 is opt-in and declares the Ollama download, process, storage, and repository permissions it needs. The World boards own their scene entry points instead of remaining hardcoded scenery.</p>
+          <p>The useful part is the envelope around those examples. A package manifest names its creator, version, type, licence, price model, permissions, entry points, previews, dependencies, provenance, and reversible migrations. External <code>.fmpkg</code> archives must sign the canonical manifest and every file digest; bundled packages inherit the signed release bundle. Installation and licence state stay separate, and uninstall must stop package work, detach its contributions, revoke capabilities, and remove package-owned state without deleting a purchase receipt or user-created output.</p>
+          <p>v0.7.29 includes the first catalog and install/remove experience. Current <code>main</code> goes further by letting each package own its desktop build descriptor and World module declaration, so adding one no longer means editing a central source or resource allowlist. The public <a href="/market">Market page</a> is generated from the same catalog, but this post makes no adoption claim: download and install counters exist precisely so future decisions can use observed demand.</p>
+
+          <h2>The workbench shows the work</h2>
+          <p>Encrypted Coves now hold working files, not only conversation. Ten quick-create templates open in a shared file editor; CSV becomes an editable spreadsheet, and a pipeline document gets stage, lead, history, and report views without asking someone to edit raw JSON. Cove share links carry repository and cove identifiers but no encryption material. The ordinary Files surface and Cove Explorer use the same editor path, which reduces the gap between a private draft and a repository file.</p>
+          <p>Actions can watch several queued, running, or held runs side by side while keeping one full detail pane for approval, controls, and logs. Agent rows expose a one-click start or stop control, and issue comments can address a configured model with an <code>@model</code> mention: a question returns a signed comment in the thread, while a clear request to make a change starts an agent on that issue. Those behaviors are in v0.7.29.</p>
+          <p>The newest work is still on <code>main</code>. Workflow cards now show each step moving through queued, running, passed, failed, or cancelled state. Long agent command output stays in a scrolling terminal-sized viewport rather than stretching the transcript indefinitely. A failed Action can be handed to the default agent with the complete local run log, and the desktop preserves enough run state to recover interrupted workflows. These are merged and tested, but they are not in the v0.7.29 binary.</p>
+
+          <h2>A report can become credited work</h2>
+          <p>An optional, operator-configured Discord bug-channel watcher can now separate a report from chat, check it against existing issues and reachable source, copy bounded attachments, and place a reviewed draft in the repository's issue inbox. Filing does not wait for the working-copy node to be online. A linked Discord identity receives reporter attribution; an unlinked person is credited by the displayed Discord name, with no guessed account match. This is a configured bot-and-cron path, not a listener on every server or channel.</p>
+          <p>Once a report is inside ForkMesh, web and desktop issue views can turn Markdown checkboxes into interactive tasks and link a checklist item to a sub-issue. The web can close, reopen, or delete an issue through the repository-backed issue path, and notification preferences can choose queued instant email instead of a digest. Current <code>main</code> also projects maintainer-reviewed reporter credits onto profile contribution graphs without double-counting reports already signed by that person.</p>
+
+          <h2>Mirrors move on events and keep their evidence</h2>
+          <p>The mirror path now wakes on change. A successful push emits a repository-scoped event, mirrors refresh immediately, and the native node drains collaboration intake over its event socket in bounded pages. Reconnect still performs catch-up, so “event driven” does not mean “drop anything missed while offline.” The v0.7.29 release also carries the native mirror companion beside the desktop artifact.</p>
+          <p>Provisioning received a harder safety pass. The desktop creates a bare repository and seeds its local heads and tags directly, so a new node can receive content even while public routing is degraded. An empty refs digest cannot count as healthy, and nodes that already hold published data are kept while replacements come online.</p>
+          <p>If the working-copy source disappears long enough for its last pin to age out, two distinct group nodes must independently publish the same signed state before that newer state can be admitted. One node is still only one claim, disagreement is not quorum, and a live source is never overridden. The recovery route widens the evidence only when the original authority is genuinely absent.</p>
+
+          <h2>The Ledger closes a loop without taking custody</h2>
+          <p>Ledger is now an in-app Market package rather than only a browser shortcut. It reads the public financial record and offers <strong>Send payment</strong> only when the ledger row and an owner-authored payout plan agree on the exact recipient and amount. The desktop signs one Solana transfer locally; ForkMesh marks the estimate paid only after verifying the finalized transfer, then writes the public transaction reference back to the issue or pull request it settled.</p>
+          <p>Personal expense and income rows, manually tracked addresses, wallet balances, and funding QR codes stay in that device's settings and are not published as ForkMesh ledger entries. The post-release main branch adds recovery for a finalized payment whose receipt could not reach the relay, keeps the notice queued instead of signing twice, and makes the transaction link explicit. Those fixes sharpen the distinction between money moving on-chain and ForkMesh successfully recording why it moved.</p>
+
+          <h2>What to try now</h2>
+          <p><strong>v0.7.29 is the newest signed desktop release in the repository.</strong> Its source revision contains the first package catalog, resumable migrations, the published stock-Git contract, Cove file editors, multi-run Actions, issue planning and Discord intake, Ledger, and the event-driven mirror work described above. The explicitly labelled current-<code>main</code> desktop changes need a later signed release, and repository evidence alone does not prove that an independently deployed hosted surface is already serving its matching worker revision.</p>
+          <p>The audit used the complete main-branch diff, the live <code>forkmesh/pulls</code> ledger, closed issue records, signed release metadata, generated compatibility and protocol artifacts, and the operating documentation. It found one merged repository-native pull record in the window: the Qt 6.4 compatibility change above.</p>
+          <p><a href="/desktop">Get the current signed desktop</a>, browse the <a href="/market">package catalog</a>, or read the exact <a href="/docs/git-compatibility/">stock Git compatibility matrix</a>.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/the-teammate-who-asks-what-should-leave/">← The teammate who asks what should leave</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/a-team-around-the-work/">A team around the work →</a>
+        </nav>
+{% endblock %}

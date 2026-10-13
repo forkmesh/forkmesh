@@ -1,0 +1,521 @@
+{
+  "schema": "forkmesh-crisis-preservation-fixture-input-v1",
+  "evidenceBlocks": {
+    "report_verified": {
+      "schema": "forkmesh-repository-migration-report-v1",
+      "jobId": "mig_fixture_verified",
+      "outcome": "verified",
+      "reconciliation": {
+        "rows": {
+          "git_refs": {"source": 2, "imported": 2, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "issues": {"source": 12, "imported": 11, "skipped": 1, "failed": 0, "external": 0, "unclassified": 0},
+          "pull_requests": {"source": 4, "imported": 4, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "reviews": {"source": 6, "imported": 6, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "releases": {"source": 3, "imported": 3, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "documentation": {"source": 1, "imported": 1, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "labels": {"source": 5, "imported": 5, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "users": {"source": 7, "imported": 7, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "collaboration_history": {"source": 30, "imported": 30, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "release_assets": {"source": 1, "imported": 0, "skipped": 0, "failed": 0, "external": 1, "unclassified": 0}
+        },
+        "unclassified": 0,
+        "reconciled": true,
+        "sourceTotalsExact": true,
+        "unmeasuredSources": []
+      }
+    },
+    "report_failures": {
+      "schema": "forkmesh-repository-migration-report-v1",
+      "jobId": "mig_fixture_failures",
+      "outcome": "completed_with_failures",
+      "reconciliation": {
+        "rows": {
+          "git_refs": {"source": 2, "imported": 2, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "issues": {"source": 12, "imported": 9, "skipped": 1, "failed": 2, "external": 0, "unclassified": 0},
+          "pull_requests": {"source": 4, "imported": 4, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "reviews": {"source": 6, "imported": 6, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "releases": {"source": 3, "imported": 3, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "documentation": {"source": 1, "imported": 1, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "labels": {"source": 5, "imported": 5, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "users": {"source": 7, "imported": 7, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "collaboration_history": {"source": 30, "imported": 30, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "release_assets": {"source": 1, "imported": 0, "skipped": 0, "failed": 0, "external": 1, "unclassified": 0}
+        },
+        "unclassified": 0,
+        "reconciled": true,
+        "sourceTotalsExact": true,
+        "unmeasuredSources": []
+      }
+    },
+    "report_unmeasured": {
+      "schema": "forkmesh-repository-migration-report-v1",
+      "jobId": "mig_fixture_unmeasured",
+      "outcome": "completed_with_unmeasured_sources",
+      "reconciliation": {
+        "rows": {
+          "git_refs": {"source": 2, "imported": 2, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "issues": {"source": 12, "imported": 11, "skipped": 1, "failed": 0, "external": 0, "unclassified": 0},
+          "pull_requests": {"source": 4, "imported": 4, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "reviews": {"source": 4, "imported": 4, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "releases": {"source": 3, "imported": 3, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "documentation": {"source": 1, "imported": 1, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "labels": {"source": 5, "imported": 5, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "users": {"source": 7, "imported": 7, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "collaboration_history": {"source": 30, "imported": 30, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "release_assets": {"source": 1, "imported": 0, "skipped": 0, "failed": 0, "external": 1, "unclassified": 0}
+        },
+        "unclassified": 0,
+        "reconciled": true,
+        "sourceTotalsExact": false,
+        "unmeasuredSources": [
+          {"phase": "reviews", "stream": "pull_reviews", "fromPage": 2, "reasons": ["provider_http_502"]}
+        ]
+      }
+    },
+    "report_tampered": {
+      "schema": "forkmesh-repository-migration-report-v1",
+      "jobId": "mig_fixture_tampered",
+      "outcome": "verified",
+      "reconciliation": {
+        "rows": {
+          "git_refs": {"source": 2, "imported": 2, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "issues": {"source": 12, "imported": 9, "skipped": 1, "failed": 0, "external": 0, "unclassified": 0},
+          "pull_requests": {"source": 4, "imported": 4, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "reviews": {"source": 6, "imported": 6, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "releases": {"source": 3, "imported": 3, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "documentation": {"source": 1, "imported": 1, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "labels": {"source": 5, "imported": 5, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "users": {"source": 7, "imported": 7, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "collaboration_history": {"source": 30, "imported": 30, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "release_assets": {"source": 1, "imported": 0, "skipped": 0, "failed": 0, "external": 1, "unclassified": 0}
+        },
+        "unclassified": 0,
+        "reconciled": true,
+        "sourceTotalsExact": true,
+        "unmeasuredSources": []
+      }
+    },
+    "report_in_progress": {
+      "schema": "forkmesh-repository-migration-report-v1",
+      "jobId": "mig_fixture_in_progress",
+      "outcome": "in_progress",
+      "reconciliation": {
+        "rows": {
+          "git_refs": {"source": 2, "imported": 2, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "issues": {"source": 40, "imported": 40, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "pull_requests": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "reviews": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "releases": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "documentation": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "labels": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "users": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "collaboration_history": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "release_assets": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0}
+        },
+        "unclassified": 0,
+        "reconciled": true,
+        "sourceTotalsExact": false,
+        "unmeasuredSources": []
+      }
+    },
+    "report_empty_releases": {
+      "schema": "forkmesh-repository-migration-report-v1",
+      "jobId": "mig_fixture_empty_releases",
+      "outcome": "verified",
+      "reconciliation": {
+        "rows": {
+          "git_refs": {"source": 1, "imported": 1, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "issues": {"source": 3, "imported": 3, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "pull_requests": {"source": 1, "imported": 1, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "reviews": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "releases": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "documentation": {"source": 1, "imported": 1, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "labels": {"source": 2, "imported": 2, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "users": {"source": 2, "imported": 2, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "collaboration_history": {"source": 4, "imported": 4, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0},
+          "release_assets": {"source": 0, "imported": 0, "skipped": 0, "failed": 0, "external": 0, "unclassified": 0}
+        },
+        "unclassified": 0,
+        "reconciled": true,
+        "sourceTotalsExact": true,
+        "unmeasuredSources": []
+      }
+    },
+    "report_wrong_schema": {
+      "schema": "forkmesh-repository-migration-report-v0",
+      "outcome": "verified"
+    },
+    "av_quorum": {
+      "schema": "forkmesh-availability-proof-v1",
+      "proof": "quorum",
+      "score": 0,
+      "level": "low",
+      "quorum": {"met": true, "target": 2, "operators": 2, "copies": 2},
+      "counts": {"total": 2, "active": 2, "declared": 0, "observed": 0, "verified": 2, "stale": 0, "failing": 0},
+      "coverage": {
+        "branches": {"reference": 4, "complete": 2, "unknown": 0},
+        "artifacts": {"reference": 1, "complete": 2, "unknown": 0}
+      },
+      "risks": []
+    },
+    "av_quorum_no_artifacts": {
+      "schema": "forkmesh-availability-proof-v1",
+      "proof": "quorum",
+      "score": 0,
+      "level": "low",
+      "quorum": {"met": true, "target": 2, "operators": 2, "copies": 2},
+      "counts": {"total": 2, "active": 2, "declared": 0, "observed": 0, "verified": 2, "stale": 0, "failing": 0},
+      "coverage": {
+        "branches": {"reference": 1, "complete": 2, "unknown": 0},
+        "artifacts": {"reference": 0, "complete": 2, "unknown": 0}
+      },
+      "risks": []
+    },
+    "av_partial": {
+      "schema": "forkmesh-availability-proof-v1",
+      "proof": "partial",
+      "score": 30,
+      "level": "high",
+      "quorum": {"met": false, "target": 2, "operators": 1, "copies": 1},
+      "counts": {"total": 2, "active": 1, "declared": 0, "observed": 0, "verified": 1, "stale": 1, "failing": 0},
+      "coverage": {
+        "branches": {"reference": 4, "complete": 1, "unknown": 0},
+        "artifacts": {"reference": 1, "complete": 0, "unknown": 0}
+      },
+      "risks": [{"code": "quorum_not_met"}, {"code": "stale_copy"}]
+    },
+    "av_branch_gap": {
+      "schema": "forkmesh-availability-proof-v1",
+      "proof": "partial",
+      "score": 35,
+      "level": "high",
+      "quorum": {"met": false, "target": 2, "operators": 1, "copies": 1},
+      "counts": {"total": 1, "active": 1, "declared": 0, "observed": 0, "verified": 1, "stale": 0, "failing": 0},
+      "coverage": {
+        "branches": {"reference": 6, "complete": 0, "unknown": 0},
+        "artifacts": {"reference": null, "complete": 0, "unknown": 1}
+      },
+      "risks": [{"code": "quorum_not_met"}, {"code": "partial_ref_coverage"}]
+    },
+    "av_failing": {
+      "schema": "forkmesh-availability-proof-v1",
+      "proof": "none",
+      "score": 85,
+      "level": "critical",
+      "quorum": {"met": false, "target": 2, "operators": 0, "copies": 0},
+      "counts": {"total": 1, "active": 1, "declared": 0, "observed": 0, "verified": 0, "stale": 0, "failing": 1},
+      "coverage": {
+        "branches": {"reference": null, "complete": 0, "unknown": 0},
+        "artifacts": {"reference": null, "complete": 0, "unknown": 0}
+      },
+      "risks": [{"code": "no_verified_copy"}, {"code": "quorum_not_met"}, {"code": "failing_copy"}]
+    },
+    "av_none": {
+      "schema": "forkmesh-availability-proof-v1",
+      "proof": "none",
+      "score": 75,
+      "level": "critical",
+      "quorum": {"met": false, "target": 2, "operators": 0, "copies": 0},
+      "counts": {"total": 0, "active": 0, "declared": 0, "observed": 0, "verified": 0, "stale": 0, "failing": 0},
+      "coverage": {
+        "branches": {"reference": null, "complete": 0, "unknown": 0},
+        "artifacts": {"reference": null, "complete": 0, "unknown": 0}
+      },
+      "risks": [{"code": "no_verified_copy"}, {"code": "quorum_not_met"}]
+    },
+    "av_wrong_schema": {
+      "schema": "forkmesh-availability-proof-v0",
+      "proof": "quorum"
+    },
+    "identity_both": {"recoveryKitVerified": true, "externalProofVerified": true},
+    "identity_external": {"externalProofVerified": true}
+  },
+  "plans": [
+    {
+      "id": "planned-shutdown-everything-fits",
+      "note": "A month of owner access holds every category.",
+      "request": {"scenario": "planned_shutdown", "repository": {"sizeMb": 800, "issues": 2500, "releases": 40, "assetsMb": 1500}},
+      "expectMode": "standard",
+      "expectDecisions": {"refs": "included", "releases": "included", "documentation": "included", "issues": "included", "artifacts": "included", "identity_proofs": "included", "trusted_mirrors": "included"}
+    },
+    {
+      "id": "urgent-takedown-tight-window",
+      "note": "Twenty minutes: the Git history, identity, and the import fit; a second operator and artifact files do not.",
+      "request": {"scenario": "urgent_takedown", "minutes": 20, "repository": {"sizeMb": 300, "issues": 4000, "releases": 20, "assetsMb": 200}},
+      "expectMode": "urgent",
+      "expectDecisions": {"refs": "included", "identity_proofs": "included", "trusted_mirrors": "deferred", "releases": "included", "documentation": "included", "issues": "included", "artifacts": "deferred"}
+    },
+    {
+      "id": "urgent-takedown-history-over-budget",
+      "note": "The Git history alone outruns five minutes: it is still started and flagged, and everything else is deferred.",
+      "request": {"scenario": "urgent_takedown", "minutes": 5, "repository": {"sizeMb": 2000, "issues": 100, "releases": 5, "assetsMb": 0}},
+      "expectMode": "urgent",
+      "expectDecisions": {"refs": "included", "identity_proofs": "deferred", "trusted_mirrors": "deferred", "releases": "deferred", "documentation": "deferred", "issues": "deferred", "artifacts": "deferred"}
+    },
+    {
+      "id": "lost-account-owner-access-lowered",
+      "note": "Owner access is impossible without the account; a private source is then unreachable.",
+      "request": {"scenario": "lost_account", "access": "owner", "repository": {"private": true, "sizeMb": 50, "issues": 200, "releases": 10, "assetsMb": 100}},
+      "expectMode": "standard",
+      "expectDecisions": {"refs": "unavailable", "identity_proofs": "included", "trusted_mirrors": "unavailable", "releases": "unavailable", "documentation": "unavailable", "issues": "unavailable", "artifacts": "unavailable"}
+    },
+    {
+      "id": "lost-account-private-local-clone",
+      "note": "A local clone still carries the history and in-repository documentation of a private source.",
+      "request": {"scenario": "lost_account", "repository": {"private": true, "localClone": true, "sizeMb": 50, "issues": 200, "releases": 10, "assetsMb": 100}},
+      "expectMode": "standard",
+      "expectDecisions": {"refs": "included", "identity_proofs": "included", "trusted_mirrors": "included", "releases": "unavailable", "documentation": "included", "issues": "unavailable", "artifacts": "unavailable"}
+    },
+    {
+      "id": "censorship-public-rate-limited",
+      "note": "Anonymous provider rate limits push the whole import past thirty minutes; later import parts are deferred by import order.",
+      "request": {"scenario": "censorship", "minutes": 30, "repository": {"sizeMb": 100, "issues": 3000, "releases": 20, "assetsMb": 100}},
+      "expectMode": "urgent",
+      "expectDecisions": {"refs": "included", "trusted_mirrors": "included", "identity_proofs": "included", "releases": "deferred", "documentation": "deferred", "artifacts": "included", "issues": "deferred"}
+    },
+    {
+      "id": "provider-eol-source-gone",
+      "note": "The provider is already gone and there is no local clone: only identity proofs can still be made.",
+      "request": {"scenario": "provider_eol", "access": "none"},
+      "expectMode": "standard",
+      "expectDecisions": {"refs": "unavailable", "releases": "unavailable", "documentation": "unavailable", "issues": "unavailable", "artifacts": "unavailable", "identity_proofs": "included", "trusted_mirrors": "unavailable"}
+    },
+    {
+      "id": "provider-eol-private-read-token",
+      "note": "A read-scoped token reaches a large private source; a week holds all of it.",
+      "request": {"scenario": "provider_eol", "access": "read", "repository": {"private": true, "sizeMb": 5000, "issues": 20000, "releases": 300, "assetsMb": 20000}},
+      "expectMode": "standard",
+      "expectDecisions": {"refs": "included", "releases": "included", "documentation": "included", "issues": "included", "artifacts": "included", "identity_proofs": "included", "trusted_mirrors": "included"}
+    },
+    {
+      "id": "censorship-defaults-fit-urgent-window",
+      "note": "Four hours is still urgent mode, but with default sizes nothing is traded off, so no acknowledgement is needed.",
+      "request": {"scenario": "censorship"},
+      "expectMode": "urgent",
+      "expectDecisions": {"refs": "included", "trusted_mirrors": "included", "identity_proofs": "included", "releases": "included", "documentation": "included", "artifacts": "included", "issues": "included"}
+    }
+  ],
+  "assessments": [
+    {
+      "id": "everything-preserved",
+      "note": "A verified report, a quorum carrying every branch and artifact, and both identity checks.",
+      "request": {"scenario": "planned_shutdown"},
+      "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_both"}},
+      "expectStatus": "preserved",
+      "expectStates": {"refs": "preserved", "identity_proofs": "preserved", "trusted_mirrors": "preserved", "issues": "preserved", "releases": "preserved", "documentation": "preserved", "artifacts": "preserved"}
+    },
+    {
+      "id": "urgent-deferred-categories-are-skipped",
+      "note": "Artifact files were deferred and nothing proves them: skipped, never preserved.",
+      "request": {"scenario": "urgent_takedown", "minutes": 20, "repository": {"sizeMb": 300, "issues": 4000, "releases": 20, "assetsMb": 200}},
+      "evidence": {"availability": {"$block": "av_partial"}},
+      "expectStatus": "partial",
+      "expectStates": {"refs": "preserved", "identity_proofs": "missing", "trusted_mirrors": "partial", "issues": "missing", "releases": "missing", "documentation": "missing", "artifacts": "skipped"}
+    },
+    {
+      "id": "urgent-report-without-mirror-is-not-a-copy",
+      "note": "A report captures ref names, not the Git history; the deferred mirror request stays skipped.",
+      "request": {"scenario": "urgent_takedown", "minutes": 20, "repository": {"sizeMb": 300, "issues": 4000, "releases": 20, "assetsMb": 200}},
+      "evidence": {"migrationReport": {"$block": "report_verified"}},
+      "expectStatus": "at_risk",
+      "expectStates": {"refs": "partial", "identity_proofs": "missing", "trusted_mirrors": "skipped", "issues": "preserved", "releases": "preserved", "documentation": "preserved", "artifacts": "skipped"}
+    },
+    {
+      "id": "lost-account-private-unavailable",
+      "note": "Without the account or a local clone nothing of a private source can be reached.",
+      "request": {"scenario": "lost_account", "access": "owner", "repository": {"private": true, "sizeMb": 50, "issues": 200, "releases": 10, "assetsMb": 100}},
+      "evidence": {},
+      "expectStatus": "at_risk",
+      "expectStates": {"refs": "unavailable", "identity_proofs": "missing", "trusted_mirrors": "unavailable", "issues": "unavailable", "releases": "unavailable", "documentation": "unavailable", "artifacts": "unavailable"}
+    },
+    {
+      "id": "source-gone-local-clone-mirror",
+      "note": "The source is gone, but a pushed local clone is held by a quorum that also carries the artifacts.",
+      "request": {"scenario": "provider_eol", "access": "none", "repository": {"localClone": true}},
+      "evidence": {"availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_external"}},
+      "expectStatus": "partial",
+      "expectStates": {"refs": "preserved", "identity_proofs": "partial", "trusted_mirrors": "preserved", "issues": "unavailable", "releases": "unavailable", "documentation": "missing", "artifacts": "preserved"}
+    },
+    {
+      "id": "tampered-report-is-not-trusted",
+      "note": "The report claims verified, but its issue rows do not add up.",
+      "request": {"scenario": "planned_shutdown"},
+      "evidence": {"migrationReport": {"$block": "report_tampered"}, "availability": {"$block": "av_quorum"}},
+      "expectStatus": "partial",
+      "expectStates": {"refs": "preserved", "identity_proofs": "missing", "trusted_mirrors": "preserved", "issues": "partial", "releases": "preserved", "documentation": "preserved", "artifacts": "preserved"}
+    },
+    {
+      "id": "unmeasured-reviews-are-partial",
+      "note": "A review stream could not be read, so discussion is only partly preserved.",
+      "request": {"scenario": "planned_shutdown"},
+      "evidence": {"migrationReport": {"$block": "report_unmeasured"}, "availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_both"}},
+      "expectStatus": "partial",
+      "expectStates": {"refs": "preserved", "identity_proofs": "preserved", "trusted_mirrors": "preserved", "issues": "partial", "releases": "preserved", "documentation": "preserved", "artifacts": "preserved"}
+    },
+    {
+      "id": "empty-releases-and-artifacts",
+      "note": "A source with no releases has nothing to lose there.",
+      "request": {"scenario": "planned_shutdown"},
+      "evidence": {"migrationReport": {"$block": "report_empty_releases"}, "availability": {"$block": "av_quorum_no_artifacts"}, "identity": {"$block": "identity_both"}},
+      "expectStatus": "preserved",
+      "expectStates": {"refs": "preserved", "identity_proofs": "preserved", "trusted_mirrors": "preserved", "issues": "preserved", "releases": "empty", "documentation": "preserved", "artifacts": "empty"}
+    },
+    {
+      "id": "unreadable-evidence",
+      "note": "Evidence with an unknown schema is ignored and reported.",
+      "request": {"scenario": "urgent_takedown"},
+      "evidence": {"migrationReport": {"$block": "report_wrong_schema"}, "availability": {"$block": "av_wrong_schema"}},
+      "expectStatus": "at_risk",
+      "expectStates": {"refs": "missing", "identity_proofs": "missing", "trusted_mirrors": "missing", "issues": "missing", "releases": "missing", "documentation": "missing", "artifacts": "missing"}
+    },
+    {
+      "id": "failing-mirrors",
+      "note": "Every observed copy fails its checks.",
+      "request": {"scenario": "censorship"},
+      "evidence": {"availability": {"$block": "av_failing"}},
+      "expectStatus": "at_risk",
+      "expectStates": {"refs": "failed", "identity_proofs": "missing", "trusted_mirrors": "failed", "issues": "missing", "releases": "missing", "documentation": "missing", "artifacts": "missing"}
+    },
+    {
+      "id": "in-progress-import",
+      "note": "An import still running proves only what it has already stored.",
+      "request": {"scenario": "urgent_takedown"},
+      "evidence": {"migrationReport": {"$block": "report_in_progress"}, "availability": {"$block": "av_partial"}},
+      "expectStatus": "partial",
+      "expectStates": {"refs": "preserved", "identity_proofs": "missing", "trusted_mirrors": "partial", "issues": "partial", "releases": "missing", "documentation": "missing", "artifacts": "missing"}
+    }
+  ],
+  "drills": [
+    {
+      "id": "planned-shutdown-drill-passes",
+      "drill": {"id": "planned-shutdown-drill-passes", "request": {"scenario": "planned_shutdown"}, "startedAt": 1800000000000, "verifiedAt": 1800005700000,
+                "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_both"}}},
+      "expectResult": "passed",
+      "expectFailures": []
+    },
+    {
+      "id": "urgent-takedown-drill-passes-with-skips",
+      "drill": {"id": "urgent-takedown-drill-passes-with-skips", "request": {"scenario": "urgent_takedown", "minutes": 20, "repository": {"sizeMb": 300, "issues": 4000, "releases": 20, "assetsMb": 200}}, "startedAt": 1800000000000, "verifiedAt": 1800001440000,
+                "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_partial"}}},
+      "expectResult": "passed",
+      "expectFailures": []
+    },
+    {
+      "id": "lost-account-drill-passes",
+      "drill": {"id": "lost-account-drill-passes", "request": {"scenario": "lost_account"}, "startedAt": 1800000000000, "verifiedAt": 1800003000000,
+                "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_external"}}},
+      "expectResult": "passed",
+      "expectFailures": []
+    },
+    {
+      "id": "censorship-drill-passes",
+      "drill": {"id": "censorship-drill-passes", "request": {"scenario": "censorship"}, "startedAt": 1800000000000, "verifiedAt": 1800002700000,
+                "evidence": {"migrationReport": {"$block": "report_failures"}, "availability": {"$block": "av_quorum"}}},
+      "expectResult": "passed",
+      "expectFailures": []
+    },
+    {
+      "id": "provider-eol-drill-passes",
+      "drill": {"id": "provider-eol-drill-passes", "request": {"scenario": "provider_eol"}, "startedAt": 1800000000000, "verifiedAt": 1800006600000,
+                "evidence": {"migrationReport": {"$block": "report_unmeasured"}, "availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_both"}}},
+      "expectResult": "passed",
+      "expectFailures": []
+    },
+    {
+      "id": "urgent-takedown-over-budget",
+      "drill": {"id": "urgent-takedown-over-budget", "request": {"scenario": "urgent_takedown"}, "startedAt": 1800000000000, "verifiedAt": 1800002460000,
+                "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}}},
+      "expectResult": "failed",
+      "expectFailures": ["over_time_budget"]
+    },
+    {
+      "id": "drill-without-report",
+      "drill": {"id": "drill-without-report", "request": {"scenario": "censorship"}, "startedAt": 1800000000000, "verifiedAt": 1800001800000,
+                "evidence": {"availability": {"$block": "av_quorum"}}},
+      "expectResult": "failed",
+      "expectFailures": ["no_migration_report"]
+    },
+    {
+      "id": "drill-tampered-report",
+      "drill": {"id": "drill-tampered-report", "request": {"scenario": "planned_shutdown"}, "startedAt": 1800000000000, "verifiedAt": 1800003600000,
+                "evidence": {"migrationReport": {"$block": "report_tampered"}, "availability": {"$block": "av_quorum"}}},
+      "expectResult": "failed",
+      "expectFailures": ["migration_report_unreconciled"]
+    },
+    {
+      "id": "drill-without-verified-mirror",
+      "drill": {"id": "drill-without-verified-mirror", "request": {"scenario": "lost_account"}, "startedAt": 1800000000000, "verifiedAt": 1800002400000,
+                "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_failing"}}},
+      "expectResult": "failed",
+      "expectFailures": ["no_verified_mirror"]
+    },
+    {
+      "id": "drill-branch-gap-is-not-a-usable-mirror",
+      "drill": {"id": "drill-branch-gap-is-not-a-usable-mirror", "request": {"scenario": "censorship"}, "startedAt": 1800000000000, "verifiedAt": 1800002400000,
+                "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_branch_gap"}}},
+      "expectResult": "failed",
+      "expectFailures": ["no_verified_mirror"]
+    },
+    {
+      "id": "drill-invalid-timing",
+      "drill": {"id": "drill-invalid-timing", "request": {"scenario": "provider_eol"}, "startedAt": 1800000000000, "verifiedAt": 1799999999000,
+                "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}}},
+      "expectResult": "failed",
+      "expectFailures": ["invalid_timing"]
+    },
+    {
+      "id": "drill-unreadable-report",
+      "drill": {"id": "drill-unreadable-report", "request": {"scenario": "urgent_takedown"}, "startedAt": 1800000000000, "verifiedAt": 1800000600000,
+                "evidence": {"migrationReport": {"$block": "report_wrong_schema"}, "availability": {"$block": "av_quorum"}}},
+      "expectResult": "failed",
+      "expectFailures": ["no_migration_report"]
+    }
+  ],
+  "sequences": [
+    {
+      "id": "urgent-takedown-retry-recovers",
+      "note": "The first check lands mid-import with no verified copy; retrying failed work and a second operator recover within the budget.",
+      "steps": [
+        {"drill": {"id": "urgent-takedown-retry-recovers#0", "request": {"scenario": "urgent_takedown"}, "startedAt": 1800000000000, "verifiedAt": 1800000720000,
+                   "evidence": {"migrationReport": {"$block": "report_in_progress"}, "availability": {"$block": "av_none"}}},
+         "expectResult": "failed", "expectFailures": ["migration_report_unreconciled", "no_verified_mirror"]},
+        {"drill": {"id": "urgent-takedown-retry-recovers#1", "request": {"scenario": "urgent_takedown"}, "startedAt": 1800000000000, "verifiedAt": 1800001200000,
+                   "evidence": {"migrationReport": {"$block": "report_failures"}, "availability": {"$block": "av_partial"}}},
+         "expectResult": "passed", "expectFailures": []},
+        {"drill": {"id": "urgent-takedown-retry-recovers#2", "request": {"scenario": "urgent_takedown"}, "startedAt": 1800000000000, "verifiedAt": 1800001680000,
+                   "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_both"}}},
+         "expectResult": "passed", "expectFailures": []}
+      ]
+    },
+    {
+      "id": "provider-eol-mirror-outage-recovers",
+      "note": "A verified copy fails mid-drill and the drill fails until the mirror re-syncs.",
+      "steps": [
+        {"drill": {"id": "provider-eol-mirror-outage-recovers#0", "request": {"scenario": "provider_eol"}, "startedAt": 1800000000000, "verifiedAt": 1800005400000,
+                   "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_both"}}},
+         "expectResult": "passed", "expectFailures": []},
+        {"drill": {"id": "provider-eol-mirror-outage-recovers#1", "request": {"scenario": "provider_eol"}, "startedAt": 1800000000000, "verifiedAt": 1800006000000,
+                   "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_failing"}}},
+         "expectResult": "failed", "expectFailures": ["no_verified_mirror"]},
+        {"drill": {"id": "provider-eol-mirror-outage-recovers#2", "request": {"scenario": "provider_eol"}, "startedAt": 1800000000000, "verifiedAt": 1800006900000,
+                   "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}, "identity": {"$block": "identity_both"}}},
+         "expectResult": "passed", "expectFailures": []}
+      ]
+    },
+    {
+      "id": "import-rollback-recovers",
+      "note": "Rolling back the import removes its report, so the drill fails until a new import reports again.",
+      "steps": [
+        {"drill": {"id": "import-rollback-recovers#0", "request": {"scenario": "planned_shutdown"}, "startedAt": 1800000000000, "verifiedAt": 1800003600000,
+                   "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}}},
+         "expectResult": "passed", "expectFailures": []},
+        {"drill": {"id": "import-rollback-recovers#1", "request": {"scenario": "planned_shutdown"}, "startedAt": 1800000000000, "verifiedAt": 1800004200000,
+                   "evidence": {"availability": {"$block": "av_quorum"}}},
+         "expectResult": "failed", "expectFailures": ["no_migration_report"]},
+        {"drill": {"id": "import-rollback-recovers#2", "request": {"scenario": "planned_shutdown"}, "startedAt": 1800000000000, "verifiedAt": 1800006000000,
+                   "evidence": {"migrationReport": {"$block": "report_verified"}, "availability": {"$block": "av_quorum"}}},
+         "expectResult": "passed", "expectFailures": []}
+      ]
+    }
+  ]
+}

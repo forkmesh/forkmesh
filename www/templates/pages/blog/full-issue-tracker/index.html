@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Full issue tracker" %}
+{% set slug = "full-issue-tracker" %}
+{% set image = "/assets/blog/features/full-issue-tracker.webp" %}
+{% set description = "Open and closed states, priorities, assignees, and custom fields, all stored as signed events in the repository and browsable on the web." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Issues &amp; planning</p>
+            <h1>Full issue tracker</h1>
+            <p class="lede">Open and closed states, priorities, assignees, and custom fields, all stored as signed events in the repository and browsable on the web.</p>
+            <div class="meta"><span class="pill">Feature 18 of 72</span><span>Feature</span><span>Issues &amp; planning</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/full-issue-tracker.webp" alt="Abstract ForkMesh artwork for Full issue tracker">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Full issue tracker gives ForkMesh a concrete mechanism for signed issue metadata with the fields teams expect. Open and closed states, priorities, assignees, and custom fields, all stored as signed events in the repository and browsable on the web.</p>
+          <p>Planning loses force when it drifts away from the code history and pull requests it is supposed to guide. In ForkMesh, full issue tracker addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles full issue tracker through the same split it uses across the product: issues are repository-linked records surfaced in desktop and web views beside branches, pull requests, milestones, and agent sessions.</p>
+          <p>The behavior is intentionally narrow: Open and closed states, priorities, assignees, and custom fields, all stored as signed events in the repository and browsable on the web. State changes stay portable because the planning layer follows the repository instead of one private dashboard.</p>
+          <h2>Where it fits</h2>
+          <p>Use full issue tracker when triage and progress tracking should live beside the repository and remain portable.</p>
+          <p>It pairs with the rest of Issues &amp; planning because Full issue tracker keeps signed issue metadata with the fields teams expect connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/binary-safe-patches/">← Binary-safe patches</a>
+          <a href="/blog/kanban-board/">Kanban board →</a>
+        </nav>
+{% endblock %}

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#0d1117"/>
+  <rect x="0" y="0" width="960" height="44" fill="#161b22"/>
+  <g font-family="sans-serif" font-size="14" fill="#c9d1d9">
+    <text x="20" y="28">Hear everything</text>
+    <text x="150" y="28">Speak</text>
+    <text x="210" y="28">Sounds</text>
+    <text x="280" y="28">Working only</text>
+    <text x="390" y="28">Network</text>
+    <text x="465" y="28">Processes</text>
+    <text x="555" y="28">Logs</text>
+    <text x="610" y="28">Visuals &amp; sounds</text>
+    <text x="760" y="28">Full screen</text>
+    <text x="860" y="28">Visitors</text>
+  </g>
+  <g font-family="sans-serif" font-size="12" fill="#8b949e">
+    <text x="140" y="84">api.anthropic.com</text>
+    <text x="380" y="84">github.com</text>
+    <text x="560" y="84">registry.npmjs.org</text>
+  </g>
+  <g stroke-width="2" fill="none" opacity="0.6">
+    <path d="M200 270 Q190 170 190 92" stroke="#f0883e"/>
+    <path d="M430 300 Q420 180 410 92" stroke="#58a6ff"/>
+    <path d="M620 250 Q610 160 610 92" stroke="#f0883e"/>
+    <path d="M200 270 Q320 320 430 300" stroke="#a371f7"/>
+  </g>
+  <g>
+    <circle cx="200" cy="270" r="40" fill="#2ea043" opacity="0.85"/>
+    <circle cx="200" cy="270" r="58" fill="none" stroke="#2ea043" opacity="0.35" stroke-width="3"/>
+    <circle cx="430" cy="300" r="34" fill="#1f6feb" opacity="0.85"/>
+    <circle cx="430" cy="300" r="50" fill="none" stroke="#1f6feb" opacity="0.3" stroke-width="3"/>
+    <circle cx="620" cy="250" r="30" fill="#d29922" opacity="0.85"/>
+    <circle cx="320" cy="420" r="22" fill="#8b949e" opacity="0.6"/>
+    <circle cx="540" cy="430" r="22" fill="#8b949e" opacity="0.6"/>
+  </g>
+  <rect x="440" y="492" width="80" height="26" rx="6" fill="#21262d"/>
+  <text x="452" y="510" font-family="sans-serif" font-size="12" fill="#c9d1d9">desktop</text>
+  <g font-family="sans-serif" font-size="12">
+    <rect x="780" y="70" width="160" height="440" rx="8" fill="#161b22"/>
+    <text x="796" y="96" fill="#c9d1d9">Sounds</text>
+    <circle cx="800" cy="122" r="5" fill="#2ea043"/><text x="814" y="126" fill="#c9d1d9">tool call</text>
+    <circle cx="800" cy="148" r="5" fill="#1f6feb"/><text x="814" y="152" fill="#c9d1d9">read</text>
+    <circle cx="800" cy="174" r="5" fill="#d29922"/><text x="814" y="178" fill="#8b949e">edit</text>
+    <circle cx="800" cy="200" r="5" fill="#a371f7"/><text x="814" y="204" fill="#8b949e">network</text>
+    <circle cx="800" cy="226" r="5" fill="#f85149"/><text x="814" y="230" fill="#8b949e">error</text>
+  </g>
+</svg>

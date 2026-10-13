@@ -1,0 +1,7 @@
+{
+  "label": "Linux Release",
+  "systems": [
+    "release_linux"
+  ],
+  "prefixes": []
+}

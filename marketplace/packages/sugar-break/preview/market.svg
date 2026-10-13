@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">Sugar Break page on day 10 of a 30-day break with a +1 I skipped sugar button, 9 sugar-free days, a 4-day streak, and a day grid</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <text x="64" y="84" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f4f5f7">Sugar Break</text>
+  <text x="64" y="114" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#9aa3b2">One month without sugar · tap +1 every time you skip it · Apple Health sugar on iPhone</text>
+  <g transform="translate(64,150)">
+    <rect width="360" height="480" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <text x="180" y="56" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18" fill="#9aa3b2">Day 10 of 30</text>
+    <circle cx="180" cy="170" r="84" fill="none" stroke="#262b35" stroke-width="16"/>
+    <circle cx="180" cy="170" r="84" fill="none" stroke="#199e70" stroke-width="16" stroke-linecap="round" stroke-dasharray="158.3 527.8" transform="rotate(-90 180 170)"/>
+    <text x="180" y="168" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="40" font-weight="600" fill="#f4f5f7">9</text>
+    <text x="180" y="196" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">sugar-free days</text>
+    <rect x="40" y="290" width="280" height="64" rx="32" fill="#199e70"/>
+    <text x="180" y="330" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#ffffff">+1  I skipped sugar</text>
+    <rect x="100" y="370" width="160" height="36" rx="18" fill="#262b35" stroke="#2a2f3a"/>
+    <text x="180" y="393" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#f4f5f7">I had sugar</text>
+    <text x="180" y="446" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#9aa3b2">3 skips today</text>
+  </g>
+  <g transform="translate(460,150)">
+    <rect width="756" height="480" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <rect x="40" y="32" width="160" height="96" rx="10" fill="#262b35"/>
+    <text x="120" y="80" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="32" font-weight="600" fill="#f4f5f7">27</text>
+    <text x="120" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">+1 total</text>
+    <rect x="216" y="32" width="160" height="96" rx="10" fill="#262b35"/>
+    <text x="296" y="80" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="32" font-weight="600" fill="#f4f5f7">2</text>
+    <text x="296" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">day streak</text>
+    <rect x="392" y="32" width="160" height="96" rx="10" fill="#262b35"/>
+    <text x="472" y="80" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="32" font-weight="600" fill="#f4f5f7">7</text>
+    <text x="472" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">best streak</text>
+    <rect x="568" y="32" width="160" height="96" rx="10" fill="#262b35"/>
+    <text x="648" y="80" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="32" font-weight="600" fill="#f4f5f7">20</text>
+    <text x="648" y="108" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">days left</text>
+    <rect x="40" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="68" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">1</text>
+    <rect x="108" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="136" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">2</text>
+    <rect x="176" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="204" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">3</text>
+    <rect x="244" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="272" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">4</text>
+    <rect x="312" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="340" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">5</text>
+    <rect x="380" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="408" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">6</text>
+    <rect x="448" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="476" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">7</text>
+    <rect x="516" y="168" width="56" height="56" rx="8" fill="#d1495b"/>
+    <text x="544" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">8</text>
+    <rect x="584" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="612" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">9</text>
+    <rect x="652" y="168" width="56" height="56" rx="8" fill="#199e70"/>
+    <text x="680" y="202" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">10</text>
+    <rect x="40" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="68" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">11</text>
+    <rect x="108" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="136" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">12</text>
+    <rect x="176" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="204" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">13</text>
+    <rect x="244" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="272" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">14</text>
+    <rect x="312" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="340" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">15</text>
+    <rect x="380" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="408" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">16</text>
+    <rect x="448" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="476" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">17</text>
+    <rect x="516" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="544" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">18</text>
+    <rect x="584" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="612" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">19</text>
+    <rect x="652" y="236" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="680" y="270" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">20</text>
+    <rect x="40" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="68" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">21</text>
+    <rect x="108" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="136" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">22</text>
+    <rect x="176" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="204" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">23</text>
+    <rect x="244" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="272" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">24</text>
+    <rect x="312" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="340" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">25</text>
+    <rect x="380" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="408" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">26</text>
+    <rect x="448" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="476" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">27</text>
+    <rect x="516" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="544" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">28</text>
+    <rect x="584" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="612" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">29</text>
+    <rect x="652" y="304" width="56" height="56" rx="8" fill="#262b35"/>
+    <text x="680" y="338" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#f4f5f7">30</text>
+    <text x="40" y="400" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">Sugar-free · Had sugar · To come</text>
+    <rect x="40" y="420" width="676" height="12" rx="6" fill="#262b35"/>
+    <rect x="40" y="420" width="203" height="12" rx="6" fill="#199e70"/>
+    <text x="716" y="400" text-anchor="end" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">30% of the month sugar-free</text>
+  </g>
+</svg>

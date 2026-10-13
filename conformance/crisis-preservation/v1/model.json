@@ -1,0 +1,67 @@
+{
+  "schema": "forkmesh-crisis-preservation-model-v1",
+  "outputSchemas": {
+    "plan": "forkmesh-crisis-preservation-plan-v1",
+    "assessment": "forkmesh-crisis-preservation-assessment-v1",
+    "drill": "forkmesh-crisis-preservation-drill-v1",
+    "catalog": "forkmesh-crisis-preservation-catalog-v1"
+  },
+  "evidenceSchemas": {
+    "migrationReport": "forkmesh-repository-migration-report-v1",
+    "availability": "forkmesh-availability-proof-v1"
+  },
+  "version": "1.0.0",
+  "updated": "2026-09-14",
+  "documentation": "www/docs/crisis-preservation.md",
+  "fixture": "conformance/crisis-preservation/v1/fixture.json",
+  "referenceImplementation": "app/src/crisis_preservation.py",
+  "implementations": [
+    {"client": "api", "path": "app/src/crisis_preservation.py", "test": "app/tests/test_crisis_preservation.py"},
+    {"client": "cli", "path": "tools/forkmesh_crisis_preservation.py", "test": "app/tests/test_crisis_preservation.py"}
+  ],
+  "policy": {
+    "urgentMinutes": 240,
+    "maxMinutes": 525600,
+    "transferMbPerMinute": 50,
+    "providerRecordsPerPage": 100,
+    "pagesPerMinute": {"owner": 30, "read": 30, "public": 1},
+    "issueEarlyPageFactor": 2,
+    "issueLatePageFactor": 1,
+    "mirrorReceiptMinutes": 10,
+    "assumedRepository": {"sizeMb": 100, "issues": 500, "releases": 20, "assetsMb": 200},
+    "importOrder": ["releases", "documentation", "issues"],
+    "preservedRequiresEvidence": "A category is preserved or empty only when a migration report, an availability proof, or verified identity evidence proves it. Without evidence the plan decision maps to missing (included), skipped (deferred), or unavailable, never to preserved."
+  },
+  "accessLevels": ["owner", "read", "public", "none"],
+  "decisions": ["included", "deferred", "unavailable"],
+  "reasons": ["time_budget", "requires_token", "source_unreachable", "import_order", "needs_refs", "over_budget"],
+  "categories": [
+    {"id": "refs", "required": true, "evidence": "availability verified copy with every branch; a report alone is partial"},
+    {"id": "identity_proofs", "required": false, "evidence": "identity.recoveryKitVerified and identity.externalProofVerified"},
+    {"id": "trusted_mirrors", "required": false, "evidence": "availability proof quorum"},
+    {"id": "issues", "required": false, "evidence": "report rows issues, pull_requests, reviews, labels, users, collaboration_history"},
+    {"id": "releases", "required": false, "evidence": "report row releases"},
+    {"id": "documentation", "required": false, "evidence": "report row documentation"},
+    {"id": "artifacts", "required": false, "evidence": "availability artifact coverage; report row release_assets only proves empty"}
+  ],
+  "scenarios": [
+    {"id": "planned_shutdown", "urgent": false, "defaultMinutes": 43200, "defaultAccess": "owner", "maxAccess": "owner", "drillBudgetMinutes": 120,
+     "priority": ["refs", "releases", "documentation", "issues", "artifacts", "identity_proofs", "trusted_mirrors"]},
+    {"id": "urgent_takedown", "urgent": true, "defaultMinutes": 60, "defaultAccess": "owner", "maxAccess": "owner", "drillBudgetMinutes": 30,
+     "priority": ["refs", "identity_proofs", "trusted_mirrors", "releases", "documentation", "issues", "artifacts"]},
+    {"id": "lost_account", "urgent": false, "defaultMinutes": 1440, "defaultAccess": "public", "maxAccess": "public", "drillBudgetMinutes": 60,
+     "priority": ["refs", "identity_proofs", "trusted_mirrors", "releases", "documentation", "issues", "artifacts"]},
+    {"id": "censorship", "urgent": false, "defaultMinutes": 240, "defaultAccess": "public", "maxAccess": "owner", "drillBudgetMinutes": 60,
+     "priority": ["refs", "trusted_mirrors", "identity_proofs", "releases", "documentation", "artifacts", "issues"]},
+    {"id": "provider_eol", "urgent": false, "defaultMinutes": 10080, "defaultAccess": "owner", "maxAccess": "owner", "drillBudgetMinutes": 120,
+     "priority": ["refs", "releases", "documentation", "issues", "artifacts", "identity_proofs", "trusted_mirrors"]}
+  ],
+  "coverageStates": ["preserved", "empty", "partial", "failed", "missing", "skipped", "unavailable"],
+  "riskTopics": ["ownership", "legal", "secrets", "verification", "external_dependencies", "emergency_contacts"],
+  "routes": [
+    {"id": "self_serve", "requiresPayment": false, "available": true},
+    {"id": "community_mirror", "requiresPayment": false, "available": true},
+    {"id": "managed_recovery", "requiresPayment": true, "available": false}
+  ],
+  "drillFailures": ["invalid_timing", "over_time_budget", "no_migration_report", "migration_report_unreconciled", "no_verified_mirror"]
+}

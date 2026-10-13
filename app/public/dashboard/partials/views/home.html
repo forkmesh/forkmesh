@@ -1,0 +1,62 @@
+          <section data-view="home" class="view active h-full overflow-y-auto">
+            <div class="grid min-h-full lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[18rem_minmax(0,48rem)_20rem] 2xl:grid-cols-[20rem_minmax(0,52rem)_22rem]">
+              <aside data-home-left-rail class="min-w-0 border-b border-border bg-card px-4 py-6 sm:px-6 lg:min-h-full lg:border-b-0 lg:border-r lg:px-8 lg:py-10">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                  <h2 class="text-sm font-semibold text-foreground">Top repositories</h2>
+                  <a
+                    data-home-new-repo
+                    href="/dashboard/repos/new"
+                    title="Create a new repository"
+                    class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                  >
+                    <i data-lucide="book-marked" class="h-3.5 w-3.5"></i>
+                    New
+                  </a>
+                </div>
+                <label data-home-repo-search-field class="mb-3 hidden h-9 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-ring focus-within:text-foreground">
+                  <i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i>
+                  <input data-home-repo-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a repository..." class="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+                </label>
+                <div data-home-top-repositories class="grid gap-1">
+                  <div class="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading repositories...</div>
+                </div>
+                <button data-home-repos-show-more type="button" class="mt-4 hidden text-xs font-medium text-muted-foreground hover:text-accent">Show more</button>
+
+                <div class="mt-8 mb-3 flex items-center justify-between gap-3">
+                  <h2 class="text-sm font-semibold text-foreground">Feed</h2>
+                  <i data-lucide="activity" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+                </div>
+                <div data-home-feed class="grid gap-2">
+                  <div class="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading activity...</div>
+                </div>
+              </aside>
+
+              <section data-home-content-column class="min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+                <h1 class="mb-5 text-2xl font-semibold tracking-normal text-foreground">Home</h1>
+
+                <div data-home-prompt data-composer-slot>
+                  <div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading prompt...</div>
+                </div>
+
+                <div data-plugin-entry="agents" class="mt-6 mb-3 flex items-center justify-between gap-3">
+                  <h2 class="text-sm font-semibold text-foreground">Agents</h2>
+                  <span data-home-agents-count class="text-xs text-muted-foreground"></span>
+                </div>
+                <div data-home-agents data-plugin-entry="agents" class="grid gap-2">
+                  <div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading agents...</div>
+                </div>
+              </section>
+
+              <aside data-home-right-rail class="min-w-0 px-4 pb-6 sm:px-6 xl:sticky xl:top-6 xl:self-start xl:px-0 xl:py-6">
+                <section data-home-blog-card data-instance-plugin="blog" class="rounded-lg border border-border bg-card p-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <h2 class="text-sm font-semibold text-foreground">Latest from the blog</h2>
+                    <a href="/blog" class="shrink-0 text-xs font-medium text-accent hover:underline">View all</a>
+                  </div>
+                  <div data-home-blog-list class="mt-4 grid gap-3">
+                    <div class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading blog posts...</div>
+                  </div>
+                </section>
+              </aside>
+            </div>
+          </section>

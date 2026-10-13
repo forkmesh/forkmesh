@@ -1,0 +1,1929 @@
+{% extends "base.html" %}
+{% block title %}ForkMesh Ecosystem{% endblock %}
+{% block meta %}
+    <meta
+      name="description"
+      content="A living map of the projects building around, alongside and on top of Git-native collaboration, and how each one relates to ForkMesh."
+    />
+    <link rel="canonical" href="https://forkmesh.com/ecosystem" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forkmesh.com/ecosystem" />
+    <meta property="og:site_name" content="ForkMesh" />
+    <meta property="og:title" content="ForkMesh Ecosystem" />
+    <meta
+      property="og:description"
+      content="A living map of the projects building around, alongside and on top of Git-native collaboration, and how each one relates to ForkMesh."
+    />
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      @font-face {
+        font-family: "ForkMesh Favorit";
+        src: url("/assets/fonts/ABCFavorit-Bold.woff2") format("woff2");
+        font-weight: 400 800;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "ForkMesh Geist";
+        src: url("/assets/fonts/Geist-Variable.woff2") format("woff2");
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: swap;
+      }
+      :root {
+        --fx-bg: #090909;
+        --fx-surface: #141416;
+        --fx-ink: #f5f5f5;
+        --fx-body: #9d9da5;
+        --fx-icon: #a1a1aa;
+        --fx-line: #2c2c31;
+        --fx-tile-a: #232326;
+        --fx-tile-b: #18181b;
+        --fx-tag-bg: #1b1b1e;
+        --fx-card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1px 5px -4px rgba(0, 0, 0, 0.9), 0 4px 8px rgba(0, 0, 0, 0.35);
+        --fx-card-shadow-hover: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 5px -4px rgba(0, 0, 0, 0.9), 0 10px 22px rgba(0, 0, 0, 0.5);
+        --fx-badge-bg: #141416;
+        --fx-badge-ink: #e4e4e7;
+        --fx-badge-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 8px rgba(0, 0, 0, 0.3);
+        --fx-btn-a: #fafafa;
+        --fx-btn-b: #e6e6e9;
+        --fx-btn-ink: #111113;
+        --fx-btn-inset: inset 0 2px 0 rgba(255, 255, 255, 0.6);
+        --fx-btn-hover-a: #ffffff;
+        --fx-btn-hover-b: #f0f0f2;
+        --fx-btn2-a: #1a1a1d;
+        --fx-btn2-b: #151517;
+        --fx-btn2-ink: #f5f5f5;
+        --fx-btn2-line: #2c2c31;
+        --fx-btn2-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        --fx-btn2-hover-a: #202024;
+        --fx-btn2-hover-b: #1a1a1d;
+        --fx-focus: #58a6ff;
+        --fx-display: "ForkMesh Favorit", "ForkMesh Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --fx-ui: "ForkMesh Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        --eco-mark-bg: #ececef;
+        --eco-mark-fg: #111113;
+        --eco-mark-bevel: inset 0 -1px 0 rgba(0, 0, 0, 0.14);
+        --eco-mark-drop: rgba(0, 0, 0, 0.5);
+      }
+      html.light {
+        --fx-bg: #f4f4f4;
+        --fx-surface: #ffffff;
+        --fx-ink: #242424;
+        --fx-body: #6f6f6f;
+        --fx-icon: #898989;
+        --fx-line: #e1e2e3;
+        --fx-tile-a: #ffffff;
+        --fx-tile-b: #eeeeee;
+        --fx-tag-bg: #f7f7f7;
+        --fx-card-shadow: 0 1px 5px -4px rgba(36, 36, 36, 0.7), 0 4px 8px rgba(36, 36, 36, 0.05);
+        --fx-card-shadow-hover: 0 1px 5px -4px rgba(36, 36, 36, 0.7), 0 10px 22px rgba(36, 36, 36, 0.1);
+        --fx-badge-bg: #ffffff;
+        --fx-badge-ink: #292929;
+        --fx-badge-shadow: 0 4px 8px rgba(34, 42, 53, 0.05);
+        --fx-btn-a: #292929;
+        --fx-btn-b: #242424;
+        --fx-btn-ink: #ffffff;
+        --fx-btn-inset: inset 0 2px 0 rgba(255, 255, 255, 0.15);
+        --fx-btn-hover-a: #363636;
+        --fx-btn-hover-b: #2e2e2e;
+        --fx-btn2-a: #fcfcfc;
+        --fx-btn2-b: #ffffff;
+        --fx-btn2-ink: #292929;
+        --fx-btn2-line: #e1e2e3;
+        --fx-btn2-inset: inset 0 2px 0 #ffffff;
+        --fx-btn2-hover-a: #f6f6f6;
+        --fx-btn2-hover-b: #fbfbfb;
+        --fx-focus: #0969da;
+        --eco-mark-bg: #1f1f21;
+        --eco-mark-fg: #ffffff;
+        --eco-mark-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        --eco-mark-drop: rgba(36, 36, 36, 0.22);
+      }
+      body.fx-page {
+        background: var(--fx-bg);
+      }
+      .eco-sprite {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+      }
+      .fx {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 0 16px 48px;
+        color: var(--fx-ink);
+        font-family: var(--fx-ui);
+        font-size: 16px;
+        line-height: 24px;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      .fx-sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      .eco-ico {
+        display: block;
+        flex: none;
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .fx-head {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      .fx-hero {
+        padding: 88px 0 0;
+      }
+      .fx-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 4px 12px 4px 8px;
+        border-radius: 9999px;
+        background: var(--fx-badge-bg);
+        box-shadow: var(--fx-badge-shadow);
+        color: var(--fx-badge-ink);
+        font-size: 12px;
+        font-weight: 450;
+        line-height: 12px;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      a.fx-badge:hover {
+        color: var(--fx-ink);
+        text-decoration: none;
+      }
+      .fx-badge-ico {
+        width: 14px;
+        height: 14px;
+        color: var(--fx-icon);
+      }
+      .fx-title {
+        max-width: 800px;
+        margin: 16px 0 0;
+        color: var(--fx-ink);
+        font-family: var(--fx-display);
+        font-size: 48px;
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        text-wrap: balance;
+      }
+      .fx-title-hero {
+        font-size: 64px;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+      .fx-lede {
+        max-width: 640px;
+        margin: 12px 0 0;
+        color: var(--fx-body);
+        font-size: 16px;
+        line-height: 24px;
+        text-wrap: balance;
+      }
+      .fx-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        margin-top: 24px;
+      }
+      .fx-btn {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
+        padding: 8px 12px;
+        border: 0;
+        border-radius: 12px;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 20px;
+        text-decoration: none;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .fx-btn:hover {
+        text-decoration: none;
+      }
+      .fx-btn .eco-ico {
+        width: 14px;
+        height: 14px;
+        margin-right: -2px;
+        opacity: 0.7;
+        transition: transform 0.15s ease;
+      }
+      .fx-btn:hover .eco-ico {
+        transform: translateX(2px);
+      }
+      .fx-btn-primary {
+        background: linear-gradient(var(--fx-btn-a), var(--fx-btn-b));
+        box-shadow: var(--fx-btn-inset);
+        color: var(--fx-btn-ink);
+      }
+      .fx-btn-primary:hover {
+        background: linear-gradient(var(--fx-btn-hover-a), var(--fx-btn-hover-b));
+        color: var(--fx-btn-ink);
+      }
+      .fx-btn-secondary {
+        background: linear-gradient(var(--fx-btn2-a), var(--fx-btn2-b));
+        box-shadow: var(--fx-btn2-inset);
+        color: var(--fx-btn2-ink);
+      }
+      .fx-btn-secondary::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid var(--fx-btn2-line);
+        border-radius: inherit;
+        pointer-events: none;
+      }
+      .fx-btn-secondary:hover {
+        background: linear-gradient(var(--fx-btn2-hover-a), var(--fx-btn2-hover-b));
+        color: var(--fx-btn2-ink);
+      }
+      .fx-tag {
+        display: inline-flex;
+        align-items: center;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 9999px;
+        background: var(--fx-tag-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+        color: var(--fx-body);
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .fx-tile {
+        position: relative;
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        background: linear-gradient(var(--fx-tile-a), var(--fx-tile-b));
+        color: var(--fx-icon);
+        transition: color 0.2s ease;
+      }
+      .fx-tile::before {
+        content: "";
+        position: absolute;
+        inset: 4px;
+        background:
+          radial-gradient(circle, var(--fx-line) 1.5px, transparent 2px) 0 0 / 4px 4px no-repeat,
+          radial-gradient(circle, var(--fx-line) 1.5px, transparent 2px) 100% 0 / 4px 4px no-repeat,
+          radial-gradient(circle, var(--fx-line) 1.5px, transparent 2px) 0 100% / 4px 4px no-repeat,
+          radial-gradient(circle, var(--fx-line) 1.5px, transparent 2px) 100% 100% / 4px 4px no-repeat;
+      }
+      .fx-tile::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid var(--fx-line);
+        border-radius: inherit;
+      }
+      .fx-btn:focus-visible,
+      a.fx-badge:focus-visible,
+      .eco-chip:focus-visible,
+      .eco-back:focus-visible,
+      .eco-fix a:focus-visible,
+      .eco-about a:focus-visible {
+        outline: 2px solid var(--fx-focus);
+        outline-offset: 2px;
+      }
+      .eco-letter {
+        position: relative;
+        font-family: var(--fx-display);
+        font-size: 20px;
+        line-height: 1;
+      }
+      .eco-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        max-width: 760px;
+        margin: 48px auto 0;
+      }
+      .eco-search {
+        display: flex;
+        flex: 1 1 320px;
+        align-items: center;
+        gap: 10px;
+        height: 44px;
+        padding: 0 14px;
+        border-radius: 12px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        color: var(--fx-icon);
+        cursor: text;
+        transition: box-shadow 0.15s ease;
+      }
+      .eco-search:focus-within {
+        box-shadow: var(--fx-card-shadow-hover), 0 0 0 2px var(--fx-focus);
+      }
+      .eco-search input {
+        flex: 1;
+        min-width: 0;
+        height: 42px;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--fx-ink);
+        font: inherit;
+        font-size: 15px;
+      }
+      .eco-search input::placeholder {
+        color: var(--fx-icon);
+      }
+      .eco-toggles {
+        display: flex;
+        gap: 8px;
+      }
+      .eco-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 44px;
+        padding: 0 14px 0 12px;
+        border-radius: 12px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        color: var(--fx-ink);
+        font-size: 14px;
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+        transition: box-shadow 0.15s ease;
+      }
+      .eco-toggle:hover {
+        box-shadow: var(--fx-card-shadow-hover);
+      }
+      .eco-toggle:has(input:focus-visible) {
+        outline: 2px solid var(--fx-focus);
+        outline-offset: 2px;
+      }
+      .eco-toggle input {
+        display: grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        border-radius: 5px;
+        background: var(--fx-tag-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+        appearance: none;
+        cursor: pointer;
+      }
+      .eco-toggle input::after {
+        content: "";
+        width: 8px;
+        height: 4px;
+        margin-top: -2px;
+        border: solid var(--fx-surface);
+        border-width: 0 0 2px 2px;
+        opacity: 0;
+        transform: rotate(-45deg);
+      }
+      .eco-toggle input:checked {
+        background: var(--fx-ink);
+        box-shadow: none;
+      }
+      .eco-toggle input:checked::after {
+        opacity: 1;
+      }
+      .eco-chips {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        max-width: 1000px;
+        margin: 16px auto 0;
+      }
+      .eco-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: 9999px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        color: var(--fx-ink);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: box-shadow 0.15s ease;
+      }
+      .eco-chip:hover {
+        box-shadow: var(--fx-card-shadow-hover);
+      }
+      .eco-chip-count {
+        color: var(--fx-icon);
+        font-variant-numeric: tabular-nums;
+      }
+      .eco-chip[aria-pressed="true"] {
+        background: var(--fx-ink);
+        color: var(--fx-surface);
+      }
+      .eco-chip[aria-pressed="true"] .eco-chip-count {
+        color: inherit;
+        opacity: 0.6;
+      }
+      .eco-results {
+        max-width: 1048px;
+        margin: 0 auto;
+      }
+      .eco-summary {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        max-width: 1048px;
+        margin: 40px auto 0;
+      }
+      .eco-count {
+        min-height: 20px;
+        margin: 0;
+        color: var(--fx-body);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .eco-summary-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .eco-views {
+        display: inline-flex;
+        padding: 3px;
+        border-radius: 10px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+      }
+      .eco-view,
+      .eco-csv {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--fx-body);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .eco-view .eco-ico,
+      .eco-csv .eco-ico {
+        width: 15px;
+        height: 15px;
+      }
+      .eco-view:hover,
+      .eco-csv:hover {
+        color: var(--fx-ink);
+      }
+      .eco-view[aria-pressed="true"] {
+        background: var(--fx-ink);
+        color: var(--fx-surface);
+      }
+      .eco-csv {
+        height: 36px;
+        padding: 0 12px;
+        border-radius: 10px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        color: var(--fx-ink);
+      }
+      .eco-view:focus-visible,
+      .eco-csv:focus-visible,
+      .eco-sort:focus-visible,
+      .eco-table a:focus-visible {
+        outline: 2px solid var(--fx-focus);
+        outline-offset: 2px;
+      }
+      .eco-is-list .eco-summary,
+      .eco-is-list .eco-results {
+        width: min(1400px, calc(100vw - 32px));
+        max-width: none;
+        margin-left: 50%;
+        translate: -50% 0;
+      }
+      .eco-sheet {
+        max-height: min(78vh, 960px);
+        margin-top: 20px;
+        overflow: auto;
+        border-radius: 14px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        overscroll-behavior: contain;
+      }
+      .eco-table {
+        width: 100%;
+        min-width: 1320px;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 13px;
+        line-height: 18px;
+        font-variant-numeric: tabular-nums;
+      }
+      .eco-table th,
+      .eco-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--fx-line);
+        border-right: 1px solid var(--fx-line);
+        text-align: left;
+        vertical-align: top;
+      }
+      .eco-table th:last-child,
+      .eco-table td:last-child {
+        border-right: 0;
+      }
+      .eco-table tbody tr:last-child td {
+        border-bottom: 0;
+      }
+      .eco-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding: 0;
+        background: var(--fx-tag-bg);
+        color: var(--fx-body);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .eco-table th:first-child,
+      .eco-table td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: var(--fx-surface);
+      }
+      .eco-table thead th:first-child {
+        z-index: 3;
+        background: var(--fx-tag-bg);
+      }
+      .eco-table tbody tr:hover > * {
+        background: var(--fx-tag-bg);
+      }
+      .eco-sort {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        width: 100%;
+        padding: 10px 12px;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .eco-sort:hover {
+        color: var(--fx-ink);
+      }
+      .eco-sort .eco-ico {
+        width: 13px;
+        height: 13px;
+        opacity: 0.45;
+      }
+      th[aria-sort] .eco-sort {
+        color: var(--fx-ink);
+      }
+      th[aria-sort] .eco-sort .eco-ico {
+        opacity: 1;
+      }
+      .eco-table td {
+        color: var(--fx-body);
+      }
+      .eco-table a {
+        color: var(--fx-ink);
+        text-decoration: none;
+      }
+      .eco-table a:hover {
+        text-decoration: underline;
+      }
+      .eco-cell-name {
+        min-width: 170px;
+        color: var(--fx-ink);
+        font-weight: 600;
+      }
+      .eco-cell-wide {
+        min-width: 260px;
+      }
+      .eco-cell-tight {
+        white-space: nowrap;
+      }
+      .eco-cell-mid {
+        min-width: 110px;
+        max-width: 180px;
+        overflow-wrap: anywhere;
+      }
+      .eco-clamp {
+        display: -webkit-box;
+        min-width: 280px;
+        max-width: 360px;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        line-clamp: 3;
+      }
+      .eco-yes {
+        color: var(--fx-ink);
+        font-weight: 500;
+      }
+      .eco-group {
+        margin-top: 20px;
+      }
+      .eco-group + .eco-group {
+        margin-top: 48px;
+      }
+      .eco-group-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 16px;
+      }
+      .eco-group-head::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--fx-line);
+      }
+      .eco-group-title {
+        margin: 0;
+        color: var(--fx-ink);
+        font-family: var(--fx-display);
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 28px;
+        letter-spacing: -0.01em;
+      }
+      .eco-group-count {
+        display: inline-grid;
+        place-items: center;
+        min-width: 24px;
+        height: 22px;
+        padding: 0 7px;
+        border-radius: 9999px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        color: var(--fx-body);
+        font-size: 12px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      .eco-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .eco-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        padding: 24px;
+        border-radius: 16px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        transition:
+          box-shadow 0.2s ease,
+          transform 0.2s ease;
+      }
+      .eco-card:hover {
+        box-shadow: var(--fx-card-shadow-hover);
+        transform: translateY(-2px);
+      }
+      .eco-card:hover .fx-tile {
+        color: var(--fx-ink);
+      }
+      .eco-card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .eco-card-tags {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+      .eco-card-title {
+        margin: 16px 0 0;
+        color: var(--fx-ink);
+        font-size: 18px;
+        font-weight: 560;
+        line-height: 23.4px;
+        letter-spacing: -0.2px;
+        overflow-wrap: anywhere;
+      }
+      .eco-card-link {
+        color: inherit;
+        text-decoration: none;
+      }
+      .eco-card-link:hover {
+        color: inherit;
+        text-decoration: none;
+      }
+      .eco-card-link::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+      }
+      .eco-card-link:focus-visible {
+        outline: none;
+      }
+      .eco-card-link:focus-visible::after {
+        outline: 2px solid var(--fx-focus);
+        outline-offset: 2px;
+      }
+      .eco-card-tagline {
+        margin: 2px 0 0;
+        color: var(--fx-body);
+        font-size: 16px;
+        line-height: 24px;
+      }
+      .eco-card-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: auto;
+        padding-top: 20px;
+        color: var(--fx-body);
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 20px;
+      }
+      .eco-byline {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        transition: color 0.15s ease;
+      }
+      .eco-card-arrow {
+        width: 14px;
+        height: 14px;
+        transition: transform 0.2s ease;
+      }
+      .eco-card:hover .eco-card-foot {
+        color: var(--fx-ink);
+      }
+      .eco-card:hover .eco-card-arrow {
+        transform: translateX(3px);
+      }
+      .eco-card.is-skeleton {
+        min-height: 212px;
+      }
+      .eco-card.is-skeleton:hover {
+        box-shadow: var(--fx-card-shadow);
+        transform: none;
+      }
+      .eco-bar {
+        display: block;
+        width: 55%;
+        height: 12px;
+        margin-top: 20px;
+        border-radius: 9999px;
+        background: var(--fx-tag-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+      }
+      .eco-bar + .eco-bar {
+        width: 85%;
+        margin-top: 10px;
+      }
+      .eco-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        max-width: 1048px;
+        margin: 20px auto 0;
+        padding: 48px 24px;
+        border-radius: 16px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        color: var(--fx-body);
+        text-align: center;
+      }
+      .eco-empty p {
+        margin: 0;
+      }
+      .eco-empty a {
+        color: var(--fx-ink);
+      }
+      .eco-empty-title {
+        margin: 0;
+        color: var(--fx-ink);
+        font-family: var(--fx-display);
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+      }
+      .eco-about {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        max-width: 1048px;
+        margin: 120px auto 0;
+        padding: 64px 24px;
+        border-radius: 24px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+        text-align: center;
+        scroll-margin-top: 24px;
+      }
+      .eco-about::before {
+        content: "";
+        position: absolute;
+        inset: 12px;
+        background:
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 0 0 / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 100% 0 / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 0 100% / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 100% 100% / 6px 6px no-repeat;
+        pointer-events: none;
+      }
+      .eco-about .fx-badge {
+        background: var(--fx-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+      }
+      .eco-about .fx-lede + .fx-lede {
+        margin-top: 8px;
+      }
+      .eco-about .fx-lede a {
+        color: var(--fx-ink);
+        text-decoration: underline;
+        text-decoration-color: var(--fx-line);
+        text-underline-offset: 3px;
+      }
+      .eco-glossary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        width: 100%;
+        max-width: 860px;
+        margin: 32px 0 0;
+        text-align: left;
+      }
+      .eco-glossary div {
+        padding: 16px 18px;
+        border-radius: 12px;
+        background: var(--fx-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+      }
+      .eco-glossary dt {
+        color: var(--fx-ink);
+        font-size: 15px;
+        font-weight: 560;
+      }
+      .eco-glossary dd {
+        margin: 4px 0 0;
+        color: var(--fx-body);
+        font-size: 14px;
+        line-height: 21px;
+      }
+      .eco-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 32px;
+        color: var(--fx-body);
+        font-size: 14px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: color 0.15s ease;
+      }
+      .eco-back:hover {
+        color: var(--fx-ink);
+        text-decoration: none;
+      }
+      .eco-back .eco-ico {
+        width: 14px;
+        height: 14px;
+        transition: transform 0.15s ease;
+      }
+      .eco-back:hover .eco-ico {
+        transform: translateX(-2px);
+      }
+      .eco-profile-hero {
+        padding-top: 24px;
+      }
+      .eco-emblem {
+        position: relative;
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 96px;
+        height: 96px;
+        border-radius: 20px;
+        background: linear-gradient(var(--fx-tile-a), var(--fx-tile-b));
+        box-shadow: var(--fx-card-shadow);
+      }
+      .eco-emblem::before {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        background:
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 0 0 / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 100% 0 / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 0 100% / 6px 6px no-repeat,
+          radial-gradient(circle, var(--fx-line) 2.5px, transparent 3px) 100% 100% / 6px 6px no-repeat;
+      }
+      .eco-emblem::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid var(--fx-line);
+        border-radius: inherit;
+      }
+      .eco-emblem-mark {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: var(--eco-mark-bg);
+        box-shadow:
+          var(--eco-mark-bevel),
+          0 1px 2px var(--eco-mark-drop);
+        color: var(--eco-mark-fg);
+        font-family: var(--fx-display);
+        font-size: 22px;
+        line-height: 1;
+      }
+      .eco-profile-hero .fx-badge {
+        margin-top: 24px;
+      }
+      .eco-profile-name {
+        overflow-wrap: anywhere;
+      }
+      .eco-profile-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 12px;
+        align-items: start;
+        max-width: 1048px;
+        margin: 56px auto 0;
+      }
+      .eco-panel {
+        min-width: 0;
+        padding: 32px;
+        border-radius: 16px;
+        background: var(--fx-surface);
+        box-shadow: var(--fx-card-shadow);
+      }
+      .eco-section + .eco-section {
+        margin-top: 32px;
+      }
+      .eco-section-title {
+        margin: 0;
+        color: var(--fx-ink);
+        font-size: 18px;
+        font-weight: 560;
+        line-height: 23.4px;
+        letter-spacing: -0.2px;
+      }
+      .eco-section p {
+        margin: 8px 0 0;
+        color: var(--fx-body);
+        font-size: 16px;
+        line-height: 26px;
+      }
+      .eco-status {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin: 12px 0 0;
+      }
+      .eco-status div {
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: var(--fx-tag-bg);
+        box-shadow: inset 0 0 0 1px var(--fx-line);
+      }
+      .eco-status dt {
+        color: var(--fx-body);
+        font-size: 13px;
+        line-height: 18px;
+      }
+      .eco-status dd {
+        margin: 2px 0 0;
+        color: var(--fx-ink);
+        font-size: 15px;
+        font-weight: 560;
+        line-height: 22px;
+      }
+      .eco-integrations {
+        display: grid;
+        gap: 8px;
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+        color: var(--fx-ink);
+        font-size: 15px;
+        line-height: 22px;
+      }
+      .eco-integrations li {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .eco-integrations .eco-ico {
+        width: 16px;
+        height: 16px;
+        margin-top: 3px;
+        color: var(--fx-icon);
+      }
+      .eco-integrations li.is-empty {
+        color: var(--fx-body);
+      }
+      .eco-reviewed {
+        margin: 32px 0 0;
+        padding-top: 20px;
+        border-top: 1px solid var(--fx-line);
+        color: var(--fx-body);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .eco-facts {
+        position: sticky;
+        top: 24px;
+        padding: 8px 24px 24px;
+      }
+      .eco-fact-list {
+        margin: 0;
+      }
+      .eco-fact-list div {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--fx-line);
+        font-size: 14px;
+        line-height: 20px;
+      }
+      .eco-fact-list dt {
+        flex: none;
+        color: var(--fx-body);
+      }
+      .eco-fact-list dd {
+        min-width: 0;
+        margin: 0;
+        color: var(--fx-ink);
+        font-weight: 500;
+        text-align: right;
+        overflow-wrap: anywhere;
+      }
+      .eco-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 20px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .eco-fix {
+        margin: 20px 0 0;
+        color: var(--fx-body);
+        font-size: 14px;
+        line-height: 21px;
+      }
+      .eco-fix a {
+        color: var(--fx-ink);
+        font-weight: 500;
+        text-decoration: underline;
+        text-decoration-color: var(--fx-line);
+        text-underline-offset: 3px;
+      }
+      .eco-related {
+        max-width: 1048px;
+        margin: 72px auto 0;
+      }
+      .eco-hero-skeleton {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 24px;
+      }
+      .eco-hero-skeleton .eco-bar {
+        width: 280px;
+        max-width: 70%;
+        height: 40px;
+        margin-top: 28px;
+      }
+      .eco-hero-skeleton .eco-bar + .eco-bar {
+        width: 360px;
+        height: 14px;
+        margin-top: 16px;
+      }
+      @media (max-width: 960px) {
+        .eco-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .eco-profile-layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .eco-facts {
+          position: static;
+        }
+      }
+      @media (max-width: 760px) {
+        .eco-glossary {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      @media (max-width: 640px) {
+        .fx {
+          padding-bottom: 80px;
+        }
+        .fx-hero {
+          padding-top: 56px;
+        }
+        .fx-title {
+          font-size: 34px;
+        }
+        .fx-title-hero {
+          font-size: 42px;
+        }
+        .eco-toolbar {
+          margin-top: 36px;
+        }
+        .eco-toggles {
+          flex: 1 1 100%;
+          flex-wrap: wrap;
+        }
+        .eco-toggle {
+          flex: 1;
+          justify-content: center;
+        }
+        .eco-sheet {
+          max-height: 70vh;
+        }
+        .eco-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .eco-about {
+          margin-top: 88px;
+          padding: 48px 20px;
+        }
+        .eco-panel {
+          padding: 24px 20px;
+        }
+        .eco-facts {
+          padding: 4px 20px 20px;
+        }
+        .eco-status {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .eco-card,
+        .eco-card-arrow,
+        .eco-back .eco-ico,
+        .fx-btn .eco-ico {
+          transition: none;
+        }
+        .eco-card:hover {
+          transform: none;
+        }
+      }
+    </style>
+    <noscript><style>.eco-skeleton-grid { display: none; }</style></noscript>
+{% endblock %}
+{% block body_attrs %} class="fx-page"{% endblock %}
+{% block body %}
+    <svg class="eco-sprite" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="eco-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></symbol>
+        <symbol id="eco-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" /></symbol>
+        <symbol id="eco-arrow" viewBox="0 0 24 24"><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></symbol>
+        <symbol id="eco-back" viewBox="0 0 24 24"><path d="M19 12H5" /><path d="m11 6-6 6 6 6" /></symbol>
+        <symbol id="eco-external" viewBox="0 0 24 24"><path d="M7 17 17 7" /><path d="M8 7h9v9" /></symbol>
+        <symbol id="eco-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></symbol>
+        <symbol id="eco-cube" viewBox="0 0 24 24"><path d="M12 2.8 20 7.4v9.2l-8 4.6-8-4.6V7.4Z" /><path d="m4 7.4 8 4.6 8-4.6M12 12v9.2" /></symbol>
+        <symbol id="eco-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.5h.01" /></symbol>
+        <symbol id="eco-cards" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></symbol>
+        <symbol id="eco-rows" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M3.5 9.5h17M3.5 14.5h17M9 4.5v15" /></symbol>
+        <symbol id="eco-download" viewBox="0 0 24 24"><path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M5 19h14" /></symbol>
+        <symbol id="eco-sort" viewBox="0 0 24 24"><path d="m8 10 4-4 4 4" /><path d="m8 14 4 4 4-4" /></symbol>
+      </defs>
+    </svg>
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="fx">
+      <section data-eco-directory aria-labelledby="eco-title">
+        <header class="fx-hero fx-head">
+          <span class="fx-badge"><svg class="eco-ico fx-badge-ico" aria-hidden="true"><use href="#eco-cube" /></svg>Ecosystem directory</span>
+          <h1 id="eco-title" class="fx-title fx-title-hero">ForkMesh Ecosystem</h1>
+          <p class="fx-lede">
+            A living map of the projects building around, alongside and on top
+            of Git-native collaboration, from decentralized Git and code review
+            to AI coding agents, and how each one relates to ForkMesh.
+          </p>
+          <div class="fx-actions">
+            <a class="fx-btn fx-btn-primary" href="mailto:founders@forkmesh.com?subject=ForkMesh%20Ecosystem%20listing">Add your project<svg class="eco-ico" aria-hidden="true"><use href="#eco-chevron" /></svg></a>
+            <a class="fx-btn fx-btn-secondary" href="#eco-about">How listings work<svg class="eco-ico" aria-hidden="true"><use href="#eco-chevron" /></svg></a>
+          </div>
+        </header>
+
+        <div class="eco-toolbar">
+          <label class="eco-search">
+            <svg class="eco-ico" aria-hidden="true"><use href="#eco-search" /></svg>
+            <span class="fx-sr">Search projects</span>
+            <input type="search" data-eco-search placeholder="Search projects, makers and tags" autocomplete="off" maxlength="80" />
+          </label>
+          <div class="eco-toggles">
+            <label class="eco-toggle"><input type="checkbox" data-eco-filter="openSource" />Open source</label>
+            <label class="eco-toggle"><input type="checkbox" data-eco-filter="gitNative" />Git-native</label>
+            <label class="eco-toggle"><input type="checkbox" data-eco-filter="usedBy" />Used by ForkMesh</label>
+          </div>
+        </div>
+        <div class="eco-chips" role="group" aria-label="Categories" data-eco-chips hidden></div>
+        <div class="eco-summary">
+          <p class="eco-count" data-eco-count aria-live="polite"></p>
+          <div class="eco-summary-actions">
+            <button type="button" class="eco-csv" data-eco-csv hidden><svg class="eco-ico" aria-hidden="true"><use href="#eco-download" /></svg>Download CSV</button>
+            <div class="eco-views" role="group" aria-label="View" data-eco-views hidden>
+              <button type="button" class="eco-view" data-eco-view="cards" aria-pressed="true"><svg class="eco-ico" aria-hidden="true"><use href="#eco-cards" /></svg>Cards</button>
+              <button type="button" class="eco-view" data-eco-view="list" aria-pressed="false"><svg class="eco-ico" aria-hidden="true"><use href="#eco-rows" /></svg>List</button>
+            </div>
+          </div>
+        </div>
+        <div class="eco-results" data-eco-results aria-busy="true">
+          <div class="eco-grid eco-skeleton-grid" aria-hidden="true">
+            <div class="eco-card is-skeleton"><span class="fx-tile"></span><span class="eco-bar"></span><span class="eco-bar"></span></div>
+            <div class="eco-card is-skeleton"><span class="fx-tile"></span><span class="eco-bar"></span><span class="eco-bar"></span></div>
+            <div class="eco-card is-skeleton"><span class="fx-tile"></span><span class="eco-bar"></span><span class="eco-bar"></span></div>
+            <div class="eco-card is-skeleton"><span class="fx-tile"></span><span class="eco-bar"></span><span class="eco-bar"></span></div>
+            <div class="eco-card is-skeleton"><span class="fx-tile"></span><span class="eco-bar"></span><span class="eco-bar"></span></div>
+            <div class="eco-card is-skeleton"><span class="fx-tile"></span><span class="eco-bar"></span><span class="eco-bar"></span></div>
+          </div>
+        </div>
+        <noscript>
+          <div class="eco-empty">
+            <p>The ecosystem map needs JavaScript. The same list is available as JSON at <a href="/api/ecosystem">/api/ecosystem</a>.</p>
+          </div>
+        </noscript>
+      </section>
+
+      <div data-eco-detail hidden></div>
+
+      <section class="eco-about" id="eco-about" aria-labelledby="eco-about-title">
+        <span class="fx-badge"><svg class="eco-ico fx-badge-ico" aria-hidden="true"><use href="#eco-info" /></svg>How listings work</span>
+        <h2 id="eco-about-title" class="fx-title">Descriptive, not a ranking</h2>
+        <p class="fx-lede">
+          Each listing says what a project does, why we follow it and how it
+          relates to ForkMesh today. The ForkMesh team reviews every listing,
+          and each project page says when we last checked it. Project names and
+          trademarks belong to their owners.
+        </p>
+        <p class="fx-lede">
+          Building something in this space, or spotted a mistake about your
+          project? Email
+          <a href="mailto:founders@forkmesh.com?subject=ForkMesh%20Ecosystem%20listing">founders@forkmesh.com</a>
+          and we will add or correct the listing.
+        </p>
+        <dl class="eco-glossary">
+          <div>
+            <dt>Compatible</dt>
+            <dd>Whether the project works with ForkMesh today: not yet assessed, not compatible, partial or full.</dd>
+          </div>
+          <div>
+            <dt>Integration</dt>
+            <dd>Where ForkMesh stands on connecting to it: watching, exploring, planned, in progress or available. Services, libraries and tools that ForkMesh itself runs on are marked used by ForkMesh.</dd>
+          </div>
+          <div>
+            <dt>Git-native</dt>
+            <dd>The project hosts, replicates or stores its collaboration data in Git.</dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+
+    <script>
+      (() => {
+        const API = "/api/ecosystem";
+        const LISTING = "ForkMesh Ecosystem listing";
+        const SVG = "http://www.w3.org/2000/svg";
+        const directory = document.querySelector("[data-eco-directory]");
+        const detail = document.querySelector("[data-eco-detail]");
+        const results = document.querySelector("[data-eco-results]");
+        const chips = document.querySelector("[data-eco-chips]");
+        const count = document.querySelector("[data-eco-count]");
+        const search = document.querySelector("[data-eco-search]");
+        const toggles = Array.from(document.querySelectorAll("[data-eco-filter]"));
+        const views = document.querySelector("[data-eco-views]");
+        const viewButtons = Array.from(document.querySelectorAll("[data-eco-view]"));
+        const csv = document.querySelector("[data-eco-csv]");
+        const description = document.querySelector('meta[name="description"]');
+        const route = /^\/ecosystem\/([a-z0-9][a-z0-9-]{0,63})\/?$/.exec(location.pathname);
+        const slug = route ? route[1] : "";
+        const params = new URLSearchParams(location.search);
+        const state = {
+          category: params.get("category") || "",
+          query: (params.get("q") || "").trim(),
+          openSource: params.get("open") === "1",
+          gitNative: params.get("git") === "1",
+          usedBy: params.get("uses") === "1",
+          view: params.get("view") === "list" ? "list" : "cards",
+          sort: (params.get("sort") || "").replace(/^-/, ""),
+          descending: (params.get("sort") || "").startsWith("-"),
+        };
+        let data = null;
+
+        const el = (tag, className, text) => {
+          const node = document.createElement(tag);
+          if (className) node.className = className;
+          if (text !== undefined && text !== null) node.textContent = String(text);
+          return node;
+        };
+        const icon = (name, className) => {
+          const svg = document.createElementNS(SVG, "svg");
+          svg.setAttribute("class", className ? "eco-ico " + className : "eco-ico");
+          svg.setAttribute("aria-hidden", "true");
+          const use = document.createElementNS(SVG, "use");
+          use.setAttribute("href", "#" + name);
+          svg.append(use);
+          return svg;
+        };
+        const safeUrl = (value) => {
+          try {
+            const url = new URL(String(value || ""));
+            return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+          } catch (error) {
+            return "";
+          }
+        };
+        const initial = (project) => String(project.name || "?").trim().charAt(0).toUpperCase() || "?";
+        const tile = (project) => {
+          const node = el("span", "fx-tile");
+          node.setAttribute("aria-hidden", "true");
+          node.append(el("span", "eco-letter", initial(project)));
+          return node;
+        };
+        const tags = (project, className) => {
+          const row = el("div", className);
+          if (project.openSource === true) row.append(el("span", "fx-tag", "Open source"));
+          if (project.gitNative) row.append(el("span", "fx-tag", "Git-native"));
+          return row;
+        };
+        const byline = (project) => {
+          if (project.maker && project.maker.toLowerCase() !== String(project.name || "").toLowerCase()) return project.maker;
+          const site = safeUrl(project.url);
+          return site ? new URL(site).hostname.replace(/^www\./, "") : project.categoryLabel;
+        };
+        const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+        const mailto = (subject) => "mailto:founders@forkmesh.com?subject=" + encodeURIComponent(subject);
+        const button = (label, className, name) => {
+          const node = el("button", "fx-btn " + className, label);
+          node.type = "button";
+          if (name) node.append(icon(name));
+          return node;
+        };
+
+        const card = (project) => {
+          const node = el("article", "eco-card");
+          const top = el("div", "eco-card-top");
+          top.append(tile(project));
+          const row = tags(project, "eco-card-tags");
+          if (row.childElementCount) top.append(row);
+          const title = el("h3", "eco-card-title");
+          const link = el("a", "eco-card-link", project.name);
+          link.href = "/ecosystem/" + encodeURIComponent(project.slug);
+          title.append(link);
+          const foot = el("div", "eco-card-foot");
+          foot.append(el("span", "eco-byline", byline(project)), icon("eco-arrow", "eco-card-arrow"));
+          node.append(top, title, el("p", "eco-card-tagline", project.tagline), foot);
+          return node;
+        };
+
+        const groupHead = (tag, title, total) => {
+          const head = el("div", "eco-group-head");
+          head.append(el(tag, "eco-group-title", title));
+          if (total !== undefined) head.append(el("span", "eco-group-count", total));
+          return head;
+        };
+
+        const yesNo = (value) => (value === true ? "Yes" : value === false ? "No" : "");
+        const hostname = (value) => {
+          const site = safeUrl(value);
+          return site ? new URL(site).hostname.replace(/^www\./, "") : "";
+        };
+        const uses = (project) => (Array.isArray(project.integrations) ? project.integrations : []);
+        const COLUMNS = [
+          { key: "name", label: "Name", value: (project) => project.name, cell: "eco-cell-name" },
+          { key: "tagline", label: "Description", value: (project) => project.tagline, cell: "eco-cell-wide" },
+          { key: "category", label: "Category", value: (project) => project.categoryLabel, cell: "eco-cell-tight" },
+          { key: "maker", label: "Maker", value: (project) => project.maker || "" },
+          { key: "license", label: "License", value: (project) => project.license || "", cell: "eco-cell-mid" },
+          { key: "open", label: "Open source", value: (project) => yesNo(project.openSource), cell: "eco-cell-tight" },
+          { key: "git", label: "Git-native", value: (project) => yesNo(Boolean(project.gitNative)), cell: "eco-cell-tight" },
+          { key: "relationship", label: "Relationship", value: (project) => project.integrationLabel || "Watching", cell: "eco-cell-tight" },
+          { key: "forkmesh", label: "In ForkMesh", value: (project) => uses(project).join("; ") },
+          { key: "compatible", label: "Compatible", value: (project) => project.compatibilityLabel || "Not yet assessed", cell: "eco-cell-tight" },
+          { key: "reviewed", label: "Reviewed", value: (project) => project.reviewedLabel || "", order: (project) => project.reviewed || "", cell: "eco-cell-tight" },
+          { key: "website", label: "Website", value: (project) => hostname(project.url), cell: "eco-cell-tight" },
+        ];
+        const column = (key) => COLUMNS.find((item) => item.key === key);
+
+        const matches = (project) => {
+          if (state.category && project.category !== state.category) return false;
+          if (state.openSource && project.openSource !== true) return false;
+          if (state.gitNative && !project.gitNative) return false;
+          if (state.usedBy && project.integration !== "uses") return false;
+          const query = state.query.toLowerCase();
+          if (!query) return true;
+          const haystack = [project.name, project.tagline, project.summary, project.maker, project.categoryLabel, project.license]
+            .concat(project.tags || [], uses(project))
+            .join(" ")
+            .toLowerCase();
+          return query.split(/\s+/).every((word) => haystack.includes(word));
+        };
+
+        const syncUrl = () => {
+          const next = new URLSearchParams();
+          if (state.category) next.set("category", state.category);
+          if (state.query) next.set("q", state.query);
+          if (state.openSource) next.set("open", "1");
+          if (state.gitNative) next.set("git", "1");
+          if (state.usedBy) next.set("uses", "1");
+          if (state.view === "list") next.set("view", "list");
+          if (state.view === "list" && state.sort) next.set("sort", (state.descending ? "-" : "") + state.sort);
+          const query = next.toString();
+          history.replaceState(null, "", "/ecosystem" + (query ? "?" + query : ""));
+        };
+
+        const update = () => {
+          renderChips();
+          renderResults();
+          syncUrl();
+        };
+
+        const renderChips = () => {
+          const all = [{ id: "", label: "All", count: data.projects.length }].concat(data.categories);
+          chips.replaceChildren(
+            ...all.map((category) => {
+              const chip = el("button", "eco-chip");
+              chip.type = "button";
+              chip.setAttribute("aria-pressed", String(state.category === category.id));
+              chip.append(el("span", "", category.label), el("span", "eco-chip-count", category.count));
+              chip.addEventListener("click", () => {
+                state.category = category.id;
+                update();
+              });
+              return chip;
+            }),
+          );
+          chips.hidden = false;
+        };
+
+        const renderResults = () => {
+          const total = data.projects.length;
+          const shown = data.projects.filter(matches);
+          count.textContent = shown.length === total ? plural(total, "project") : shown.length + " of " + plural(total, "project");
+          if (!shown.length) {
+            const empty = el("div", "eco-empty");
+            empty.append(el("p", "", "No projects match these filters."));
+            const reset = button("Clear filters", "fx-btn-secondary");
+            reset.addEventListener("click", () => {
+              Object.assign(state, { category: "", query: "", openSource: false, gitNative: false, usedBy: false });
+              search.value = "";
+              toggles.forEach((toggle) => {
+                toggle.checked = false;
+              });
+              update();
+            });
+            empty.append(reset);
+            results.replaceChildren(empty);
+            return;
+          }
+          directory.classList.toggle("eco-is-list", state.view === "list");
+          if (state.view === "list") {
+            results.replaceChildren(sheet(sorted(shown)));
+            return;
+          }
+          results.replaceChildren(
+            ...data.categories
+              .map((category) => ({ category, items: shown.filter((project) => project.category === category.id) }))
+              .filter((group) => group.items.length)
+              .map(({ category, items }) => {
+                const group = el("section", "eco-group");
+                const grid = el("div", "eco-grid");
+                grid.append(...items.map(card));
+                group.append(groupHead("h2", category.label, items.length), grid);
+                return group;
+              }),
+          );
+        };
+
+        const categoryOrder = (project) => {
+          const index = data.categories.findIndex((category) => category.id === project.category);
+          return index < 0 ? data.categories.length : index;
+        };
+
+        const sorted = (projects) => {
+          const byCategory = projects
+            .map((project, index) => ({ project, index }))
+            .sort((a, b) => categoryOrder(a.project) - categoryOrder(b.project) || a.index - b.index)
+            .map(({ project }) => project);
+          const active = column(state.sort);
+          if (!active) return byCategory;
+          const key = active.order || active.value;
+          const direction = state.descending ? -1 : 1;
+          return byCategory
+            .map((project, index) => ({ project, index, value: String(key(project) || "") }))
+            .sort((a, b) => {
+              if (!a.value || !b.value) return (a.value ? 0 : 1) - (b.value ? 0 : 1) || a.index - b.index;
+              return direction * a.value.localeCompare(b.value, undefined, { numeric: true, sensitivity: "base" }) || a.index - b.index;
+            })
+            .map(({ project }) => project);
+        };
+
+        const cellContent = (item, project) => {
+          if (item.key === "name") {
+            const link = el("a", "", project.name);
+            link.href = "/ecosystem/" + encodeURIComponent(project.slug);
+            return link;
+          }
+          if (item.key === "website") {
+            const site = safeUrl(project.url);
+            if (!site) return document.createTextNode("");
+            const link = el("a", "", hostname(site));
+            link.href = site;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            return link;
+          }
+          if (item.key === "forkmesh") {
+            const text = uses(project).join("; ");
+            const clamp = el("div", "eco-clamp", text || "—");
+            if (text) clamp.title = uses(project).join("\n");
+            return clamp;
+          }
+          const value = item.value(project);
+          if (value === "Yes") return el("span", "eco-yes", value);
+          return document.createTextNode(value || "—");
+        };
+
+        const sheet = (projects) => {
+          const wrap = el("div", "eco-sheet");
+          wrap.tabIndex = 0;
+          wrap.setAttribute("role", "region");
+          wrap.setAttribute("aria-label", "Ecosystem projects table");
+          const table = el("table", "eco-table");
+          const head = el("tr");
+          COLUMNS.forEach((item) => {
+            const th = el("th");
+            th.scope = "col";
+            if (state.sort === item.key) th.setAttribute("aria-sort", state.descending ? "descending" : "ascending");
+            const sort = el("button", "eco-sort");
+            sort.type = "button";
+            sort.append(el("span", "", item.label), icon("eco-sort"));
+            sort.addEventListener("click", () => {
+              if (state.sort === item.key) {
+                state.descending = !state.descending;
+              } else {
+                state.sort = item.key;
+                state.descending = false;
+              }
+              renderResults();
+              syncUrl();
+              const again = results.querySelectorAll(".eco-sort")[COLUMNS.indexOf(item)];
+              if (again) again.focus();
+            });
+            th.append(sort);
+            head.append(th);
+          });
+          const thead = el("thead");
+          thead.append(head);
+          const body = el("tbody");
+          projects.forEach((project) => {
+            const row = el("tr");
+            COLUMNS.forEach((item, index) => {
+              const td = el(index ? "td" : "th", item.cell || "");
+              if (!index) td.scope = "row";
+              td.append(cellContent(item, project));
+              row.append(td);
+            });
+            body.append(row);
+          });
+          table.append(thead, body);
+          wrap.append(table);
+          return wrap;
+        };
+
+        const csvCell = (value) => {
+          let text = String(value === undefined || value === null ? "" : value);
+          if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+          return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+        };
+
+        const downloadCsv = () => {
+          const fields = [
+            ["Name", (project) => project.name],
+            ["Slug", (project) => project.slug],
+            ["Description", (project) => project.tagline],
+            ["Category", (project) => project.categoryLabel],
+            ["Maker", (project) => project.maker],
+            ["License", (project) => project.license],
+            ["Open source", (project) => yesNo(project.openSource)],
+            ["Git-native", (project) => yesNo(Boolean(project.gitNative))],
+            ["Relationship", (project) => project.integrationLabel],
+            ["In ForkMesh", (project) => uses(project).join("; ")],
+            ["Compatible", (project) => project.compatibilityLabel],
+            ["Reviewed", (project) => project.reviewed],
+            ["Website", (project) => safeUrl(project.url)],
+            ["Source", (project) => safeUrl(project.repo)],
+            ["Tags", (project) => (project.tags || []).join("; ")],
+            ["What it does", (project) => project.summary],
+          ];
+          const rows = [fields.map(([label]) => label)].concat(
+            sorted(data.projects.filter(matches)).map((project) => fields.map(([, value]) => value(project))),
+          );
+          const text = rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+          const url = URL.createObjectURL(new Blob(["\ufeff" + text], { type: "text/csv;charset=utf-8" }));
+          const link = el("a");
+          link.href = url;
+          link.download = "forkmesh-ecosystem.csv";
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        };
+
+        const renderViews = () => {
+          viewButtons.forEach((item) => item.setAttribute("aria-pressed", String(item.dataset.ecoView === state.view)));
+          views.hidden = false;
+          csv.hidden = state.view !== "list";
+        };
+
+        const back = () => {
+          const link = el("a", "eco-back");
+          link.href = "/ecosystem";
+          link.append(icon("eco-back"), document.createTextNode("All projects"));
+          return link;
+        };
+
+        const section = (title, body) => {
+          const node = el("section", "eco-section");
+          node.append(el("h2", "eco-section-title", title), body);
+          return node;
+        };
+
+        const external = (href, label, className, name) => {
+          const link = el("a", "fx-btn " + className, label);
+          link.href = href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.append(icon(name));
+          return link;
+        };
+
+        const renderDetailSkeleton = () => {
+          const hero = el("div", "eco-hero-skeleton");
+          hero.setAttribute("aria-hidden", "true");
+          hero.append(el("span", "eco-emblem"), el("span", "eco-bar"), el("span", "eco-bar"));
+          detail.replaceChildren(back(), hero);
+        };
+
+        const renderDetail = () => {
+          const project = data.projects.find((item) => item.slug === slug);
+          if (!project) {
+            document.title = "Project not found · ForkMesh Ecosystem";
+            const missing = el("div", "eco-empty");
+            const browse = el("a", "fx-btn fx-btn-secondary", "Browse all projects");
+            browse.href = "/ecosystem";
+            browse.append(icon("eco-chevron"));
+            missing.append(
+              el("h1", "eco-empty-title", "We couldn't find that project"),
+              el("p", "", "It may have been renamed or removed from the ecosystem map."),
+              browse,
+            );
+            detail.replaceChildren(back(), missing);
+            return;
+          }
+          document.title = project.name + " · ForkMesh Ecosystem";
+          if (description) description.setAttribute("content", project.tagline);
+
+          const hero = el("header", "eco-profile-hero fx-head");
+          const emblem = el("span", "eco-emblem");
+          emblem.setAttribute("aria-hidden", "true");
+          emblem.append(el("span", "eco-emblem-mark", initial(project)));
+          hero.append(emblem);
+          if (project.categoryLabel) {
+            const category = el("a", "fx-badge");
+            category.href = "/ecosystem?category=" + encodeURIComponent(project.category);
+            category.append(icon("eco-cube", "fx-badge-ico"), document.createTextNode(project.categoryLabel));
+            hero.append(category);
+          }
+          hero.append(el("h1", "fx-title fx-title-hero eco-profile-name", project.name), el("p", "fx-lede", project.tagline));
+          const actions = el("div", "fx-actions");
+          const site = safeUrl(project.url);
+          const repo = safeUrl(project.repo);
+          if (site) actions.append(external(site, "Visit website", "fx-btn-primary", "eco-external"));
+          if (repo && repo !== site) actions.append(external(repo, "Source code", "fx-btn-secondary", "eco-external"));
+          if (actions.childElementCount) hero.append(actions);
+
+          const profile = el("article", "eco-panel");
+          profile.setAttribute("aria-label", "About " + project.name);
+          if (project.summary) profile.append(section("What it does", el("p", "", project.summary)));
+          const used = project.integration === "uses";
+          if (project.watching) profile.append(section(used ? "How ForkMesh uses it" : "Why we're watching", el("p", "", project.watching)));
+          const status = el("dl", "eco-status");
+          [
+            ["Compatible", project.compatibilityLabel || "Not yet assessed"],
+            ["Integration", project.integrationLabel || "Watching"],
+          ].forEach(([label, value]) => {
+            const item = el("div");
+            item.append(el("dt", "", label), el("dd", "", value));
+            status.append(item);
+          });
+          profile.append(section("ForkMesh relationship", status));
+          const integrations = el("ul", "eco-integrations");
+          const items = Array.isArray(project.integrations) ? project.integrations : [];
+          if (items.length) {
+            items.forEach((item) => {
+              const line = el("li");
+              line.append(icon("eco-check"), el("span", "", item));
+              integrations.append(line);
+            });
+          } else {
+            integrations.append(el("li", "is-empty", "None yet"));
+          }
+          profile.append(section(used ? "Where ForkMesh uses it" : "ForkMesh integrations", integrations));
+          if (project.reviewedLabel) profile.append(el("p", "eco-reviewed", "Last reviewed: " + project.reviewedLabel));
+
+          const facts = el("aside", "eco-panel eco-facts");
+          facts.setAttribute("aria-label", "Project facts");
+          const list = el("dl", "eco-fact-list");
+          [
+            ["Category", project.categoryLabel],
+            ["Maker", project.maker],
+            ["License", project.license],
+            ["Open source", project.openSource === true ? "Yes" : project.openSource === false ? "No" : "Not stated"],
+            ["Git-native", project.gitNative ? "Yes" : "No"],
+          ].forEach(([label, value]) => {
+            if (!value) return;
+            const item = el("div");
+            item.append(el("dt", "", label), el("dd", "", value));
+            list.append(item);
+          });
+          facts.append(list);
+          if (Array.isArray(project.tags) && project.tags.length) {
+            const tagList = el("ul", "eco-tags");
+            tagList.setAttribute("aria-label", "Tags");
+            project.tags.forEach((tag) => {
+              const item = el("li");
+              item.append(el("span", "fx-tag", tag));
+              tagList.append(item);
+            });
+            facts.append(tagList);
+          }
+          const fix = el("p", "eco-fix", "Is this your project? ");
+          const correction = el("a", "", "Suggest a correction");
+          correction.href = mailto(LISTING + ": " + project.name);
+          fix.append(correction);
+          facts.append(fix);
+
+          const layout = el("div", "eco-profile-layout");
+          layout.append(profile, facts);
+          const nodes = [back(), hero, layout];
+          const related = data.projects
+            .filter((item) => item.category === project.category && item.slug !== project.slug)
+            .slice(0, 3);
+          if (related.length) {
+            const more = el("section", "eco-related");
+            const grid = el("div", "eco-grid");
+            grid.append(...related.map(card));
+            more.append(groupHead("h2", "More in " + project.categoryLabel), grid);
+            nodes.push(more);
+          }
+          detail.replaceChildren(...nodes);
+        };
+
+        const fail = () => {
+          const box = el("div", "eco-empty");
+          box.append(el("p", "", "The ecosystem map could not be loaded right now."));
+          const retry = button("Try again", "fx-btn-secondary");
+          retry.addEventListener("click", () => location.reload());
+          box.append(retry);
+          results.setAttribute("aria-busy", "false");
+          if (slug) detail.replaceChildren(back(), box);
+          else results.replaceChildren(box);
+        };
+
+        search.value = state.query;
+        toggles.forEach((toggle) => {
+          toggle.checked = Boolean(state[toggle.dataset.ecoFilter]);
+          toggle.addEventListener("change", () => {
+            state[toggle.dataset.ecoFilter] = toggle.checked;
+            if (data) update();
+          });
+        });
+        viewButtons.forEach((item) => {
+          item.addEventListener("click", () => {
+            state.view = item.dataset.ecoView === "list" ? "list" : "cards";
+            renderViews();
+            if (data) {
+              renderResults();
+              syncUrl();
+            }
+          });
+        });
+        csv.addEventListener("click", () => {
+          if (data) downloadCsv();
+        });
+        search.addEventListener("input", () => {
+          state.query = search.value.trim();
+          if (data) {
+            renderResults();
+            syncUrl();
+          }
+        });
+        if (slug) {
+          directory.hidden = true;
+          detail.hidden = false;
+          renderDetailSkeleton();
+        }
+
+        fetch(API, { headers: { accept: "application/json" }, credentials: "omit" })
+          .then((response) => {
+            if (!response.ok) throw new Error(String(response.status));
+            return response.json();
+          })
+          .then((payload) => {
+            data = {
+              projects: Array.isArray(payload && payload.projects) ? payload.projects : [],
+              categories: Array.isArray(payload && payload.categories) ? payload.categories : [],
+            };
+            results.setAttribute("aria-busy", "false");
+            if (slug) {
+              renderDetail();
+              return;
+            }
+            if (!data.projects.length) {
+              const empty = el("div", "eco-empty");
+              empty.append(el("p", "", "The map is being drawn. Check back soon."));
+              results.replaceChildren(empty);
+              return;
+            }
+            if (!data.categories.some((category) => category.id === state.category)) state.category = "";
+            if (!column(state.sort)) state.sort = "";
+            renderViews();
+            renderChips();
+            renderResults();
+          })
+          .catch(fail);
+      })();
+    </script>
+{% endblock %}

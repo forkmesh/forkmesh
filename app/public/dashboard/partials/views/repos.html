@@ -1,0 +1,104 @@
+          <section data-view="repos" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full">
+              <div data-repo-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 class="text-base font-semibold text-foreground">Repositories</h1>
+                    <p class="mt-1 text-sm text-muted-foreground">Mirrors published by ForkMesh desktop nodes. Open a repo to browse files live from its host.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-3 self-start">
+                    <span data-repo-count class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <a
+                      data-new-repo-open
+                      href="/dashboard/repos/new"
+                      class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                    >
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                      New repository
+                    </a>
+                  </div>
+                </div>
+
+                <div data-repo-toolbar class="px-4 sm:px-5 py-3 border-b border-border flex items-center gap-3">
+                  <div class="relative flex-1 min-w-0">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground"></i>
+                    <input
+                      id="repoSearch"
+                      type="text"
+                      placeholder="Filter repositories..."
+                      aria-label="Filter repositories"
+                      class="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20 transition"
+                    />
+                  </div>
+                  <div data-repo-view-toggle class="shrink-0 flex items-center rounded-md border border-border overflow-hidden">
+                    <button
+                      data-view-mode="list"
+                      type="button"
+                      aria-label="Show repositories as a list"
+                      aria-pressed="true"
+                      class="repo-view-button bg-secondary text-foreground p-2 transition-colors"
+                    >
+                      <i data-lucide="list" class="w-4 h-4"></i>
+                    </button>
+                    <button
+                      data-view-mode="grid"
+                      type="button"
+                      aria-label="Show repositories as a grid"
+                      aria-pressed="false"
+                      class="repo-view-button text-muted-foreground hover:text-foreground p-2 border-l border-border transition-colors"
+                    >
+                      <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div id="repoList" class="repo-list divide-y divide-border" aria-live="polite">
+                  <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading repositories from an online node...</div>
+                </div>
+
+                <div data-repo-pagination class="border-t border-border px-4 sm:px-5 py-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div class="flex flex-col gap-1">
+                    <span data-repo-summary class="text-xs text-muted-foreground font-mono">Showing 1-5 of 12 mirrored repositories</span>
+                    <span data-repo-loading class="hidden text-xs text-muted-foreground">Fetching repositories...</span>
+                  </div>
+                  <div class="flex items-center gap-2 overflow-x-auto">
+                    <button data-repo-prev type="button" class="shrink-0 inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+                      <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+                      Previous
+                    </button>
+                    <div data-repo-pages class="flex items-center gap-1"></div>
+                    <button data-repo-next type="button" class="shrink-0 inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+                      Next
+                      <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div data-external-repo-panel class="mt-6 w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div class="min-w-0">
+                    <h2 class="text-base font-semibold text-foreground">External repositories &amp; stubs</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">Resumable imports and stubs from GitHub, GitLab, or Codeberg. Signed import state is separate from live mirrors and always links back to the provider.</p>
+                  </div>
+                  <span data-external-repo-count class="self-start text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                </div>
+                <div class="border-b border-border bg-background/50 px-4 sm:px-5 py-3 text-xs leading-5 text-muted-foreground">
+                  ForkMesh does not own or control external repositories. “Stub only” and “External repository” do not mean the repository is mirrored or available through ForkMesh. Interrupted imports keep their last checkpoint and can be continued here.
+                </div>
+                <div data-external-repo-actions class="hidden border-b border-border bg-background/70 px-4 sm:px-5 py-3 items-center justify-between gap-3">
+                  <label class="inline-flex items-center gap-2 text-xs font-medium text-foreground">
+                    <input data-external-repo-select-all type="checkbox" class="h-4 w-4 rounded border-border bg-card accent-accent" />
+                    Select all manageable imports
+                  </label>
+                  <button data-external-repo-delete-selected type="button" disabled class="inline-flex h-8 items-center gap-1.5 rounded-md border border-destructive/50 px-3 text-xs font-semibold text-destructive disabled:cursor-not-allowed disabled:opacity-40 hover:bg-destructive/10">
+                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                    Delete selected
+                  </button>
+                </div>
+                <div data-external-repo-list class="divide-y divide-border" aria-live="polite">
+                  <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading external repository metadata...</div>
+                </div>
+              </div>
+            </div>
+          </section>

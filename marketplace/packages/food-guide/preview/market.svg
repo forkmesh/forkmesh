@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0d1117"/>
+  <rect x="40" y="24" width="560" height="312" rx="24" fill="#161b22" stroke="#30363d"/>
+  <text x="68" y="62" fill="#e6edf3" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="24" font-weight="bold">Food Guide</text>
+  <text x="572" y="62" fill="#8b949e" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="14" text-anchor="end">1,800 kcal a day · 1,150 left</text>
+  <rect x="68" y="78" width="250" height="34" rx="17" fill="#3b2a12" stroke="#d29922"/>
+  <text x="86" y="100" fill="#e3b341" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="14">Low on iron · 52% of daily value</text>
+  <rect x="330" y="78" width="160" height="34" rx="17" fill="#3b2a12" stroke="#d29922"/>
+  <text x="348" y="100" fill="#e3b341" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="14">Low on fiber · 61%</text>
+  <text x="68" y="140" fill="#8b949e" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13" font-weight="bold">LUNCH · ABOUT 520 KCAL</text>
+  <rect x="68" y="150" width="504" height="82" rx="12" fill="#0d1117" stroke="#2ea043"/>
+  <text x="88" y="176" fill="#e6edf3" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="17" font-weight="bold">Quinoa Burrito Bowl</text>
+  <text x="552" y="176" fill="#8b949e" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="14" text-anchor="end">521 kcal · 30 min</text>
+  <text x="88" y="198" fill="#3fb950" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="14">✓ 6.1 mg iron, 34% of the daily value</text>
+  <text x="88" y="220" fill="#8b949e" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13">At ALDI: Simply Nature Organic Quinoa, Dakota's Pride Black Beans</text>
+  <rect x="68" y="242" width="504" height="82" rx="12" fill="#0d1117" stroke="#30363d"/>
+  <text x="88" y="268" fill="#e6edf3" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="17" font-weight="bold">Tomato Soup With Chickpeas and Lentils</text>
+  <text x="552" y="268" fill="#8b949e" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="14" text-anchor="end">274 kcal</text>
+  <text x="88" y="290" fill="#3fb950" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="14">✓ 4 mg iron · 8.6 g fiber</text>
+  <text x="88" y="312" fill="#8b949e" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="13">At ALDI: Happy Harvest Diced Tomatoes, Dakota's Pride Green Lentils</text>
+</svg>

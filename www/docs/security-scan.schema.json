@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/security-scan-v1.json",
+  "title": "ForkMesh public redacted security scan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "visibility",
+    "generatedAt",
+    "repository",
+    "scanner",
+    "policy",
+    "scan",
+    "status",
+    "summary",
+    "findings",
+    "recommendations",
+    "notices"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["public", "redacted", "containsSourceExcerpts", "containsSecretValues"],
+      "properties": {
+        "public": {"const": true},
+        "redacted": {"const": true},
+        "containsSourceExcerpts": {"const": false},
+        "containsSecretValues": {"const": false}
+      }
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "commit"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 161,
+          "pattern": "^[A-Za-z0-9._:-]{1,80}/[A-Za-z0-9._:-]{1,80}$"
+        },
+        "commit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|unknown)$"}
+      }
+    },
+    "scanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "model"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 100},
+        "version": {"type": "string", "minLength": 1, "maxLength": 80},
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["used", "name", "version"],
+          "properties": {
+            "used": {"const": false},
+            "name": {"type": "null"},
+            "version": {"type": "null"}
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "path", "sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 100},
+        "version": {"type": "string", "minLength": 1, "maxLength": 80},
+        "path": {"type": "string", "maxLength": 300},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startedAt",
+        "completedAt",
+        "durationMs",
+        "completion",
+        "areasIncluded",
+        "areasExcluded",
+        "filesInspected",
+        "filesExcluded",
+        "dependencyInventoryCount",
+        "dependencyAdvisorySource",
+        "scopeLimitations"
+      ],
+      "properties": {
+        "startedAt": {"type": "string", "format": "date-time"},
+        "completedAt": {"type": "string", "format": "date-time"},
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "completion": {
+          "enum": ["completed", "scope_limited", "failed"]
+        },
+        "areasIncluded": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {"type": "string", "maxLength": 300}
+        },
+        "areasExcluded": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {"type": "string", "maxLength": 500}
+        },
+        "filesInspected": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "filesExcluded": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "dependencyInventoryCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "dependencyAdvisorySource": {"enum": ["OSV", "offline"]},
+        "scopeLimitations": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {"type": "string", "maxLength": 500}
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "Daily scan completed",
+        "No known critical findings detected",
+        "Review required",
+        "Critical findings detected",
+        "Scan failed",
+        "Scan outdated",
+        "Scope limited",
+        "Human review completed"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "bySeverity", "byCategory"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0, "maximum": 500},
+        "bySeverity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["critical", "high", "medium", "low", "info"],
+          "properties": {
+            "critical": {"type": "integer", "minimum": 0, "maximum": 500},
+            "high": {"type": "integer", "minimum": 0, "maximum": 500},
+            "medium": {"type": "integer", "minimum": 0, "maximum": 500},
+            "low": {"type": "integer", "minimum": 0, "maximum": 500},
+            "info": {"type": "integer", "minimum": 0, "maximum": 500}
+          }
+        },
+        "byCategory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dependency", "secret", "static"],
+          "properties": {
+            "dependency": {"type": "integer", "minimum": 0, "maximum": 500},
+            "secret": {"type": "integer", "minimum": 0, "maximum": 500},
+            "static": {"type": "integer", "minimum": 0, "maximum": 500}
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "category",
+          "severity",
+          "ruleId",
+          "path",
+          "line",
+          "summary",
+          "recommendation",
+          "evidence",
+          "falsePositiveStatus"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+          "category": {"enum": ["dependency", "secret", "static"]},
+          "severity": {"enum": ["critical", "high", "medium", "low", "info"]},
+          "ruleId": {"type": "string", "minLength": 1, "maxLength": 120},
+          "path": {"type": "string", "maxLength": 500},
+          "line": {"type": ["integer", "null"], "minimum": 1},
+          "summary": {"type": "string", "maxLength": 300},
+          "recommendation": {"type": "string", "maxLength": 500},
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["redacted", "fingerprint"],
+            "properties": {
+              "redacted": {"const": true},
+              "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{16}$"}
+            }
+          },
+          "falsePositiveStatus": {
+            "const": "unreviewed"
+          },
+          "advisoryIds": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {"type": "string", "maxLength": 100}
+          }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"type": "string", "maxLength": 500}
+    },
+    "notices": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 20,
+      "items": {"type": "string", "maxLength": 500}
+    }
+  }
+}

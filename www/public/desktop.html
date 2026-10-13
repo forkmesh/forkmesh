@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Install ForkMesh Desktop · verified native releases</title>
+    <meta name="description" content="Install a native ForkMesh desktop package that is present in the signed latest release manifest, or use the source-build guide when a package is not published." />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .install-page { padding-bottom: 88px; }
+      .install-hero .kit-lede { max-width: 58ch; }
+
+      .install-cmd {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        max-width: 640px;
+        margin-top: 28px;
+        padding: 8px 8px 8px 18px;
+        border: 1px solid var(--kit-line);
+        border-radius: 14px;
+        background: var(--kit-surface);
+        box-shadow: var(--kit-card-shadow);
+      }
+      .install-cmd-prompt {
+        flex: 0 0 auto;
+        color: var(--kit-faint);
+        font-family: var(--mono);
+        font-size: 14px;
+        user-select: none;
+      }
+      .install-cmd-text {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow-x: auto;
+        color: var(--kit-ink);
+        font-family: var(--mono);
+        font-size: 14px;
+        white-space: nowrap;
+        scrollbar-width: none;
+      }
+      .install-cmd-text::-webkit-scrollbar { display: none; }
+      .install-copy {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 7px;
+        height: 36px;
+        padding: 0 13px;
+        border: 1px solid var(--button-secondary-border);
+        border-radius: 10px;
+        background: var(--button-secondary-fill);
+        box-shadow: var(--button-secondary-shadow);
+        color: var(--button-secondary-foreground);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 150ms ease, transform 150ms ease;
+      }
+      .install-copy:hover { background: var(--button-secondary-fill-hover); }
+      .install-copy:active { transform: translateY(1px); }
+      .install-copy svg { width: 15px; height: 15px; }
+      .install-copy[data-state="copied"] svg { color: var(--accent-bright); }
+      .install-note {
+        max-width: 640px;
+        margin: 12px 0 0;
+        color: var(--kit-body);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .install-platforms {
+        width: min(100%, 1120px);
+        margin: 0 auto;
+        padding: 56px 24px 0;
+      }
+      .install-platforms-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px 32px;
+        margin-bottom: 22px;
+      }
+      .install-platforms-head h2 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: clamp(26px, 3vw, 34px);
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        line-height: 1.1;
+      }
+      .install-platforms-head p {
+        max-width: 52ch;
+        margin: 0;
+        color: var(--kit-body);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .os-picker {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      .os-card {
+        display: flex;
+        flex-direction: column;
+        padding: 22px;
+        color: var(--kit-ink);
+      }
+      .os-card[data-current="true"] { box-shadow: 0 0 0 1.5px var(--kit-accent), 0 0 0 5px var(--kit-accent-ring); }
+      .os-card-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .os-card h3 {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+        margin: 0;
+        font-family: var(--display);
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+      }
+      .os-here {
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--kit-accent-soft);
+        color: var(--kit-accent);
+        font-family: var(--sans);
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+      .os-card p {
+        margin: 14px 0 0;
+        color: var(--kit-body);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .native-downloads {
+        display: grid;
+        gap: 8px;
+        margin: 18px 0 0;
+      }
+      .native-download {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 44px;
+        padding: 8px 12px;
+        border: 1px solid var(--button-secondary-border);
+        border-radius: 11px;
+        background: var(--button-secondary-fill);
+        box-shadow: var(--button-secondary-shadow);
+        color: var(--button-secondary-foreground);
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: background 150ms ease, transform 150ms ease;
+      }
+      a.native-download[href]:hover {
+        background: var(--button-secondary-fill-hover);
+        color: var(--button-secondary-foreground);
+        text-decoration: none;
+      }
+      a.native-download[href]:active { transform: translateY(1px); }
+      .os-card[data-current="true"] a.native-download[href] {
+        border-color: var(--button-border);
+        background: var(--button-fill);
+        box-shadow: var(--button-shadow);
+        color: var(--button-foreground);
+      }
+      .os-card[data-current="true"] a.native-download[href]:hover {
+        background: var(--button-fill-hover);
+        color: var(--button-foreground);
+      }
+      .native-download svg {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+      }
+      .native-download-label {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .native-download-meta {
+        flex: 0 0 auto;
+        color: inherit;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        opacity: 0.6;
+      }
+      .native-download[aria-disabled="true"] {
+        border-style: dashed;
+        border-color: var(--kit-line);
+        background: transparent;
+        box-shadow: none;
+        color: var(--kit-faint);
+        cursor: default;
+      }
+      .native-download.is-loading {
+        border-color: transparent;
+        background: var(--kit-surface-soft);
+        box-shadow: none;
+        color: var(--kit-faint);
+        font-weight: 500;
+      }
+      .os-go {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: auto;
+        padding-top: 18px;
+        color: var(--kit-ink);
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .os-go:hover { color: var(--kit-ink); text-decoration: underline; text-underline-offset: 3px; }
+      .os-go svg { width: 12px; height: 12px; opacity: 0.55; }
+
+      .install-steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+        width: min(100%, 1120px);
+        margin: 0 auto;
+        padding: 16px 24px 0;
+      }
+      .install-section {
+        padding: 26px;
+        scroll-margin-top: 96px;
+      }
+      .install-section h2 {
+        margin: 0;
+        color: var(--kit-ink);
+        font-family: var(--display);
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+      }
+      .install-section .sub {
+        margin: 6px 0 18px;
+        color: var(--kit-body);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .install-section ol {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+        color: var(--kit-body);
+        font-size: 14.5px;
+        line-height: 1.6;
+      }
+      .install-section ol li {
+        position: relative;
+        margin: 0 0 12px;
+        padding-left: 36px;
+        counter-increment: step;
+      }
+      .install-section ol li:last-child { margin-bottom: 0; }
+      .install-section ol li::before {
+        content: counter(step);
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: grid;
+        width: 24px;
+        height: 24px;
+        place-items: center;
+        border: 1px solid var(--kit-line);
+        border-radius: 8px;
+        background: var(--kit-surface-soft);
+        color: var(--kit-ink);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .install-section ol li strong { color: var(--kit-ink); font-weight: 600; }
+      .install-section code.inline {
+        padding: 1px 6px;
+        border: 1px solid var(--kit-line);
+        border-radius: 6px;
+        background: var(--kit-surface-soft);
+        color: var(--kit-ink);
+        font-family: var(--mono);
+        font-size: 12.5px;
+      }
+      @media (max-width: 640px) {
+        .install-cmd { padding-left: 14px; }
+        .install-copy span { display: none; }
+        .install-platforms { padding: 40px 18px 0; }
+        .install-steps { padding: 16px 18px 0; grid-template-columns: 1fr; }
+      }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body class="kit-page">
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="install-page" id="top">
+      <div class="kit-hero install-hero">
+        <span class="kit-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
+          Desktop app
+        </span>
+        <h1 class="kit-title">Install ForkMesh Desktop</h1>
+        <p class="kit-lede">
+          The desktop client manages local working copies and talks directly to
+          your mirror hosts. A compact Go mirror service, not the GUI, serves
+          clone traffic and publishes repository state.
+        </p>
+
+        <div class="install-cmd">
+          <span class="install-cmd-prompt" aria-hidden="true">$</span>
+          <code class="install-cmd-text" data-install-command>curl -fsSL https://forkmesh.com/install.sh | bash</code>
+          <button type="button" class="install-copy" data-install-copy aria-label="Copy install command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V6a2 2 0 0 1 2-2h8"></path></svg>
+            <span>Copy</span>
+          </button>
+        </div>
+        <p class="install-note">
+        The command-line installer uses authenticated prebuilt binaries and never
+        compiles as an implicit fallback. If your package is not published, follow
+        the <a href="/docs/qt-client">source-build prerequisites</a> instead.
+        </p>
+      </div>
+
+      <section class="install-platforms" aria-labelledby="platforms-title">
+        <div class="install-platforms-head">
+          <h2 id="platforms-title">Native downloads</h2>
+          <p>
+            The signed latest release manifest is authoritative:
+            each card below enables only packages that are actually published,
+            and names missing packages explicitly.
+          </p>
+        </div>
+        <div class="os-picker">
+          <article class="os-card kit-card" data-os-card="macos">
+            <div class="os-card-head">
+              <span class="kit-tile" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.9c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.8-3.5.8-.7 0-1.9-.8-3.1-.8-1.6 0-3 .9-3.8 2.4-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7 1.4 0 1.8.7 3 .7 1.2 0 2-1.1 2.8-2.2.9-1.3 1.2-2.5 1.3-2.6-.1 0-2.4-.9-2.4-3.6zM14.1 5.9c.6-.8 1.1-1.9.9-3-1 0-2.1.6-2.8 1.4-.6.7-1.1 1.8-1 2.9 1.1.1 2.2-.6 2.9-1.3z"/></svg>
+              </span>
+              <h3>macOS</h3>
+            </div>
+            <p>The Apple silicon and Intel DMGs are each listed when they are published.</p>
+            <div class="native-downloads" data-downloads="macos"><span class="native-download is-loading">Checking latest release…</span></div>
+            <a class="os-go" href="#macos">Setup steps <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></a>
+          </article>
+          <article class="os-card kit-card" data-os-card="windows">
+            <div class="os-card-head">
+              <span class="kit-tile" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.6 10.4 4.6v6.9H3V5.6zm0 12.8 7.4 1v-6.8H3v5.8zM11.3 4.5 21 3v8.5h-9.7V4.5zm0 8.1H21V21l-9.7-1.3v-7.1z"/></svg>
+              </span>
+              <h3>Windows</h3>
+            </div>
+            <p>The native per-user setup appears only when it is in the signed manifest.</p>
+            <div class="native-downloads" data-downloads="windows"><span class="native-download is-loading">Checking latest release…</span></div>
+            <a class="os-go" href="#windows">Setup steps <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></a>
+          </article>
+          <article class="os-card kit-card" data-os-card="linux">
+            <div class="os-card-head">
+              <span class="kit-tile" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12 1.8c-2.4 0-3.9 2-3.9 4.6 0 1.3.2 2.2.1 3.1-.1 1-.8 1.8-1.7 3-1.1 1.5-2.1 3.2-2.1 5 0 .7.2 1.2.5 1.6-.6.3-1.1.8-1.1 1.4 0 1.3 1.7 1.7 3.2 1.9 1 .1 1.9.5 2.6.9.7.4 1.5.6 2.4.6s1.7-.2 2.4-.6c.7-.4 1.6-.8 2.6-.9 1.5-.2 3.2-.6 3.2-1.9 0-.6-.5-1.1-1.1-1.4.3-.4.5-.9.5-1.6 0-1.8-1-3.5-2.1-5-.9-1.2-1.6-2-1.7-3-.1-.9.1-1.8.1-3.1 0-2.6-1.5-4.6-3.9-4.6ZM12 10.9c-1.9 0-3.4 2.3-3.4 5 0 2.2 1.5 3.5 3.4 3.5s3.4-1.3 3.4-3.5c0-2.7-1.5-5-3.4-5ZM10.45 5.35a.85 1 0 1 0 .01 0Zm3.1 0a.85 1 0 1 0 .01 0Z"/></svg>
+              </span>
+              <h3>Linux</h3>
+            </div>
+            <p>Each published binary, runtime bundle, or AppImage is listed independently.</p>
+            <div class="native-downloads" data-downloads="linux"><span class="native-download is-loading">Checking latest release…</span></div>
+            <a class="os-go" href="#linux">Setup steps <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></a>
+          </article>
+        </div>
+      </section>
+
+      <div class="install-steps">
+        <section class="install-section kit-card" id="macos">
+          <h2>macOS</h2>
+          <p class="sub">
+            Use a published DMG when shown above; otherwise this release has no verified native macOS package.
+            The DMG is not notarized yet, so macOS warns the first time you open ForkMesh.
+          </p>
+          <ol>
+            <li>Choose the Apple silicon or Intel DMG in the download card above.</li>
+            <li>Open the downloaded DMG and drag <strong>ForkMesh</strong> to Applications.</li>
+            <li>Open ForkMesh from Applications. If macOS blocks it, open System Settings, choose Privacy &amp; Security, and click Open Anyway.</li>
+            <li>Sign in and connect a mirror.</li>
+          </ol>
+        </section>
+
+        <section class="install-section kit-card" id="windows">
+          <h2>Windows</h2>
+          <p class="sub">
+            Use the setup executable when shown above; otherwise this release has no verified native Windows package.
+          </p>
+          <ol>
+            <li>Download the Windows setup executable from the card above.</li>
+            <li>Open it and follow the short per-user installation wizard.</li>
+            <li>Launch ForkMesh from the Start menu or desktop shortcut.</li>
+          </ol>
+        </section>
+
+        <section class="install-section kit-card" id="linux">
+          <h2>Linux</h2>
+          <p class="sub">
+            The card names the exact published format; package contents and setup differ.
+          </p>
+          <ol>
+            <li>Download the asset matching your CPU from the card above.</li>
+            <li>For a bare binary, run <code class="inline">chmod +x forkmesh-linux-x86_64</code>, then launch it from a terminal.</li>
+            <li>For an AppImage, mark it executable and run it; an <code class="inline">AppDir.tar.gz</code> archive must be unpacked first.</li>
+            <li>
+              <strong>Headless servers:</strong> when run as root on a machine with no display,
+              the installer prepares a background mirror service instead of a desktop
+              window, so your repositories stay online when your computer is off. It
+              needs a public hostname before it starts. See the
+              <a href="/docs/">docs</a> for hosting a mirror.
+            </li>
+          </ol>
+        </section>
+
+        <section class="install-section kit-card" id="next">
+          <h2>After installing</h2>
+          <p class="sub">
+            Sign in, connect a local repository, and it goes live on the network.
+          </p>
+          <ol>
+            <li><a href="/signup">Create an account or log in</a> from the app or the website.</li>
+            <li>Add a local Git repo as a mirror and bring it online.</li>
+            <li>Read the <a href="/docs/#quickstart">Quickstart</a> for hosting, tunnels, and issues.</li>
+          </ol>
+        </section>
+      </div>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+
+    <script>
+      const COPY_ICON = '<rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V6a2 2 0 0 1 2-2h8"></path>';
+      const CHECK_ICON = '<path d="m5 12.5 4.5 4.5L19 7.5"></path>';
+      const DOWNLOAD_ICON = '<path d="M12 4v10.5m0 0-4.2-4.2M12 14.5l4.2-4.2M5 19.5h14"></path>';
+      const MISSING_ICON = '<path d="M6 12h12"></path>';
+
+      function strokeIcon(paths) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("fill", "none");
+        svg.setAttribute("stroke", "currentColor");
+        svg.setAttribute("stroke-width", "1.9");
+        svg.setAttribute("stroke-linecap", "round");
+        svg.setAttribute("stroke-linejoin", "round");
+        svg.setAttribute("aria-hidden", "true");
+        svg.innerHTML = paths;
+        return svg;
+      }
+
+      document.querySelectorAll("[data-install-copy]").forEach((button) => {
+        const icon = button.querySelector("svg");
+        const caption = button.querySelector("span");
+        let timer = 0;
+        button.addEventListener("click", async () => {
+          const code = button.parentElement.querySelector("[data-install-command]");
+          const text = code ? code.textContent.trim() : "";
+          let copied = false;
+          try {
+            await navigator.clipboard.writeText(text);
+            copied = true;
+          } catch (_) {
+            const area = document.createElement("textarea");
+            area.value = text;
+            area.style.position = "fixed";
+            area.style.left = "-9999px";
+            document.body.append(area);
+            area.select();
+            try {
+              copied = document.execCommand("copy");
+            } catch (__) {
+              copied = false;
+            }
+            area.remove();
+          }
+          icon.innerHTML = copied ? CHECK_ICON : COPY_ICON;
+          caption.textContent = copied ? "Copied" : "Copy failed";
+          button.dataset.state = copied ? "copied" : "error";
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            icon.innerHTML = COPY_ICON;
+            caption.textContent = "Copy";
+            delete button.dataset.state;
+          }, 1800);
+        });
+      });
+
+      function visitorPlatform() {
+        const hint = (navigator.userAgentData && navigator.userAgentData.platform) || "";
+        const agent = `${hint} ${navigator.userAgent || ""}`;
+        if (/android|iphone|ipad|ipod/i.test(agent)) return "";
+        if (/mac/i.test(agent)) return navigator.maxTouchPoints > 1 ? "" : "macos";
+        if (/win/i.test(agent)) return "windows";
+        if (/linux|x11|cros/i.test(agent)) return "linux";
+        return "";
+      }
+
+      const currentPlatform = visitorPlatform();
+      const currentCard = currentPlatform && document.querySelector(`[data-os-card="${currentPlatform}"]`);
+      if (currentCard) {
+        currentCard.dataset.current = "true";
+        const here = document.createElement("span");
+        here.className = "os-here";
+        here.textContent = "This device";
+        currentCard.querySelector("h3").append(here);
+      }
+
+      const releasePublicKey =
+        "MCowBQYDK2VwAyEAHBYOCW4qnyZkYAnEoqUrYxPiDRszjfJa+xJUeyQPUS0=";
+      const releaseRoot = "/api/repo/forkmesh/forkmesh/raw?path=";
+      const expectedInstallers = {
+        windows: ["forkmesh-windows-x86_64-setup.exe"],
+        macos: ["forkmesh-macos-arm64.dmg", "forkmesh-macos-x86_64.dmg"],
+        linux: [
+          "forkmesh-linux-x86_64",
+          "forkmesh-linux-x86_64.AppDir.tar.gz",
+          "forkmesh-linux-x86_64.AppImage",
+          "forkmesh-linux-arm64.AppImage",
+        ],
+      };
+
+      function assetLabel(name) {
+        const arch = name.includes("arm64") ? "arm64" : "x86_64";
+        if (name.endsWith("-setup.exe")) return `Windows setup · ${arch}`;
+        if (name.endsWith(".dmg")) return `macOS DMG · ${arch}`;
+        if (name.endsWith(".AppImage")) return `Linux AppImage · ${arch}`;
+        if (name.endsWith(".AppDir.tar.gz")) return `Linux AppDir archive · ${arch}`;
+        return `Linux executable · ${arch}`;
+      }
+
+      function shortLabel(name) {
+        const arch = name.includes("arm64") ? "arm64" : "x86_64";
+        if (name.endsWith("-setup.exe")) return `Setup · ${arch}`;
+        if (name.endsWith(".dmg")) return `${arch === "arm64" ? "Apple silicon" : "Intel"} DMG`;
+        if (name.endsWith(".AppImage")) return `AppImage · ${arch}`;
+        if (name.endsWith(".AppDir.tar.gz")) return `AppDir archive · ${arch}`;
+        return `Executable · ${arch}`;
+      }
+
+      function formatSize(bytes) {
+        const size = Number(bytes);
+        if (!Number.isFinite(size) || size <= 0) return "";
+        if (size >= 1024 ** 3) return `${(size / 1024 ** 3).toFixed(1)} GB`;
+        return `${Math.max(0.1, size / 1024 ** 2).toFixed(1)} MB`;
+      }
+
+      function downloadRow(element, icon, label, meta) {
+        const text = document.createElement("span");
+        text.className = "native-download-label";
+        text.textContent = label;
+        const detail = document.createElement("span");
+        detail.className = "native-download-meta";
+        detail.textContent = meta;
+        element.append(strokeIcon(icon), text, detail);
+        return element;
+      }
+
+      function base64Bytes(value) {
+        return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+      }
+
+      async function verifiedReleaseManifest() {
+        if (!window.crypto || !crypto.subtle) throw new Error("WebCrypto unavailable");
+        const manifestUrl = releaseRoot + encodeURIComponent(".forkmesh/releases/latest/release.json") + "&ref=main";
+        const signatureUrl = releaseRoot + encodeURIComponent(".forkmesh/releases/latest/release.json.sig") + "&ref=main";
+        const [manifestResponse, signatureResponse] = await Promise.all([
+          fetch(manifestUrl, { cache: "no-store" }),
+          fetch(signatureUrl, { cache: "no-store" }),
+        ]);
+        if (!manifestResponse.ok || !signatureResponse.ok) throw new Error("Release metadata unavailable");
+        const manifestBytes = new Uint8Array(await manifestResponse.arrayBuffer());
+        const signature = new Uint8Array(await signatureResponse.arrayBuffer());
+        const key = await crypto.subtle.importKey(
+          "spki", base64Bytes(releasePublicKey), { name: "Ed25519" }, false, ["verify"]
+        );
+        if (signature.length !== 64 || !(await crypto.subtle.verify("Ed25519", key, signature, manifestBytes))) {
+          throw new Error("Release signature invalid");
+        }
+        const manifest = JSON.parse(new TextDecoder().decode(manifestBytes));
+        if (manifest.schema !== "forkmesh-release-v2" || manifest.repo !== "forkmesh/forkmesh" || !Array.isArray(manifest.assets)) {
+          throw new Error("Unsupported release manifest");
+        }
+        return manifest;
+      }
+
+      function showReleaseUnavailable(message = "Signed release metadata unavailable") {
+        document.querySelectorAll("[data-downloads]").forEach((slot) => {
+          const item = document.createElement("span");
+          item.className = "native-download";
+          item.setAttribute("aria-disabled", "true");
+          slot.replaceChildren(downloadRow(item, MISSING_ICON, message, ""));
+        });
+      }
+
+      verifiedReleaseManifest().then((manifest) => {
+        const assets = new Map(manifest.assets.map((asset) => [asset.name, asset]));
+        Object.entries(expectedInstallers).forEach(([os, names]) => {
+          const slot = document.querySelector(`[data-downloads="${os}"]`);
+          slot.replaceChildren(...names.map((name) => {
+            const asset = assets.get(name);
+            if (!asset || !/^[0-9a-f]{64}$/.test(asset.blob_sha256) || Number(asset.size) <= 0) {
+              const item = document.createElement("span");
+              item.className = "native-download";
+              item.setAttribute("aria-disabled", "true");
+              item.title = `Not published in ${manifest.tag}: ${name}`;
+              return downloadRow(item, MISSING_ICON, shortLabel(name), `Not in ${manifest.tag}`);
+            }
+            const link = document.createElement("a");
+            link.className = "native-download";
+            link.href = `/api/repo/forkmesh/forkmesh/releases/blob/sha256/${asset.blob_sha256}?filename=${encodeURIComponent(name)}`;
+            link.title = `Download ${manifest.tag} · ${assetLabel(name)}`;
+            link.setAttribute("download", name);
+            const size = formatSize(asset.size);
+            return downloadRow(link, DOWNLOAD_ICON, shortLabel(name), [manifest.tag, size].filter(Boolean).join(" · "));
+          }));
+        });
+      }).catch(() => showReleaseUnavailable());
+    </script>
+  </body>
+</html>

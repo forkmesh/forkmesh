@@ -1,0 +1,86 @@
+# CMake writes here when a worktree is configured with the conventional
+# `-B build`, or into a build-<purpose>/ directory beside it (build-forkmesh,
+# build-ci, build-release, build-tests, …). Either way its ~700 generated files
+# otherwise swamp the branch's diff. Matched at any depth, since a worktree may
+# be configured from the repository root or from inside desktop/.
+build/
+build-*/
+!app/public/dashboard/apps/build/
+app/python_modules/
+.wrangler/
+
+# Agent runs get their own worktree inside the project (adhoc #1624), at
+# .worktrees/agent-<session>-<description>. The app also drops a self-ignoring
+# .gitignore in there for projects that carry no rule of their own; this entry
+# is the same promise, written down where a contributor will see it.
+.worktrees/
+
+# The retired top-level editor extension was moved into the Marketplace.
+# Keep local leftovers from older checkouts or tools out of Git status.
+/extensions/
+
+# Local secrets / env files (the *.example templates stay tracked).
+.env
+.env.*
+!.env.*.example
+.venv/
+.git-rewrite/
+tools/__pycache__/
+__pycache__/
+*.py[cod]
+# Match the directory *and* the symlink form: agent worktrees link
+# node_modules at the primary checkout's install rather than reinstalling
+# it, and a trailing slash never matches a symlink, so `git add -A` used
+# to sweep that link into commits.
+node_modules
+app/browser_tests/test-results/
+app/test-results/
+app/browser_tests/playwright-report/
+app/dist/
+www/dist/
+world/dist/
+/artifacts/
+
+# Offline legacy-custody migration outputs. These may be encrypted, but remain
+# owner-only operational artifacts and must never enter repository history.
+*.fmcustody
+*custody-confirmation*.json
+*custody-scrub*.sql
+*d1-snapshot*.sqlite
+*d1-export*.sql
+
+# Release artifact bytes live in a per-node content-addressed blob store and are
+# NEVER committed (issue #304; see www/docs/design/release-binary-publishing.md).
+# Only the small signed release metadata under .forkmesh/releases/ is tracked.
+.forkmesh/release-blobs/
+# Release publisher private keys are local trust roots, never repository data.
+release-signing-key*.pem
+.forkmesh/*release*private*.pem
+forkmesh-variables.json
+forkmesh-hosts.md
+todo.md
+todo2.md
+improvements.md
+/marketing/
+/server/forkmesh-mirror-node
+
+# Local Claude working notes
+clot.md
+
+# Local planning note for the mobile independent-node work (remove to commit)
+
+# The retired Flutter app. Leftover build output in a checkout must not come back.
+/mobile/
+
+# Local editor/OS scratch, never repository data.
+.DS_Store
+.cursor/
+
+# Apple signing and push credentials. An APNs auth key (.p8) is a bearer
+# credential for every push to every ForkMesh install and cannot be rotated
+# without invalidating the old one, so it must never enter the repository —
+# it belongs in `wrangler secret put APNS_AUTH_KEY`.
+*.p8
+*.p12
+*.mobileprovision
+*.cer

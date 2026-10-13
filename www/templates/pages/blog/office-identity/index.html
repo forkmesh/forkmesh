@@ -1,0 +1,69 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Office identity · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="The Office now keeps developers signed in across reloads and switches, fixes the sign-in gate for members, and the desktop cleans up agent cloud runs on merge. October 1, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/office-identity/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/office-identity/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Office identity">
+    <meta property="og:description" content="The Office now keeps your developer identity across page reloads and team switches. Plus agent cleanup on the desktop.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/office-identity.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit office desk with a glowing green terminal, a developer's workspace with signed identity token visible, a mirror reflection on wet stone, and the official ForkMesh logo in the foreground">
+    <meta property="article:published_time" content="2026-10-01T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Office identity">
+    <meta name="twitter:description" content="Developers now stay signed in across Office reloads and team switches.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/office-identity.webp">
+    <meta name="twitter:image:alt" content="A moonlit office desk with a glowing green terminal, a developer's workspace with signed identity token visible, a mirror reflection on wet stone, and the official ForkMesh logo in the foreground">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Office identity</h1>
+            <p class="lede">The ForkMesh Office now keeps your developer identity persistent across page reloads and when you switch between your organization's teams. The sign-in gate no longer flashes for members. Desktop agents clean up their cloud runs when you merge them, and the network of related features got tighter.</p>
+            <div class="meta"><span class="pill">October 1, 2026</span><span>Product update</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/office-identity.webp" alt="A moonlit office desk with a glowing green terminal, a developer's workspace with signed identity token visible, a mirror reflection on wet stone, and the official ForkMesh logo in the foreground">
+        </section>
+        <article class="body">
+          <p>The Office is almost a week old now, and it's already gone through refinements that tie its identity, sign-in, and agent features together more carefully.</p>
+
+          <h2>Stay signed in</h2>
+          <p>The static Office page used to show "Let's get you in" to every signed-in developer on the first load, every reload, and whenever the page reconnected. The gate lived in the HTML as the default state, and the client only replaced the small dialog underneath it. Signed-in members with no organization remembered in that browser—maybe a new device, or the first visit since this change—also got stuck on that screen with an org picker.</p>
+          <p>All three paths are gone now. The page opens on a neutral loading heading. The sign-in gate only appears when someone is confirmed signed out, and only then. Every signed-in member with an organization enters the office straight away. When you switch between your teams inside the Office, you stay signed in the whole time—the room membership updates live without a reload or a blank screen.</p>
+          <p>Office chat now uses ForkMesh's main site chat instead of a separate channel system, so when you open the Office on a new device, your room subscriptions and direct message threads move with you. Chat history follows the site's chat retention policy, which keeps messages for up to seven days.</p>
+
+          <h2>Merge on the desktop, clean up in the cloud</h2>
+          <p>The desktop agent sessions listed on the website now stay there until you close or merge them. Before this, if you merged a branch from the desktop, its session could come back and clutter the Agents tab until you manually cleaned it up. The fix retires the cloud run right after the merge lands, and remembers its ID so a relay re-read can't bring it back. The delete goes to the relay in the background, so the UI is instant.</p>
+          <p>A small thing, but it turns a cleanup step into something that just happens, the way it should.</p>
+
+          <h2>Smaller changes</h2>
+          <p>The identity system in the Office got an audit pass to match the full account name everywhere—display names stay 24 characters, but the real name (the one that counts for task pings and agent ownership) is now consistent. A server's denial reason no longer gets replaced when a socket closes, so if the Office turned someone away, you see exactly why. Gated whiteboards (the ones in Engineering or Design rooms) only send their thumbnails to people who are allowed to see the room.</p>
+
+          <h2>What's next</h2>
+          <p>Desktop 1.2.6 is still in progress. It brings safer updates, Windows installer improvements, the native Android app, and more. We'll post here when it ships.</p>
+          <p>If something here isn't working as described, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a>. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/1-2-7-and-a-phone-that-listens/">← 1.2.7, and a phone that listens</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/the-week-after-the-move/">The week after the move →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

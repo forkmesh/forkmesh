@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ForkMesh Office</title>
+  <link rel="icon" href="/office/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/office/style.css">
+</head>
+<body>
+  <section id="join">
+    <div class="join-left">
+      <div class="brand"><img class="logo" src="/office/logo.svg" alt="">ForkMesh Office</div>
+      <form id="join-form">
+        <h1 id="join-title">Opening your office…</h1>
+        <p class="muted" id="join-lead">One moment.</p>
+      </form>
+      <p class="join-foot muted">Tip: walk up to people to talk. Rooms with a <i data-i="lock" data-s="12"></i> are private.</p>
+    </div>
+    <div class="join-right"><canvas id="preview"></canvas></div>
+  </section>
+
+  <main id="app" hidden>
+    <nav id="rail">
+      <button class="rail-logo" title="ForkMesh Office"><img src="/office/logo.svg" alt="ForkMesh"></button>
+      <button class="rail-btn" id="open-search" data-tip="Search"><i data-i="search" data-s="18"></i></button>
+      <span class="kbd-row"><kbd>⌘</kbd><kbd>K</kbd></span>
+      <hr>
+      <button class="rail-btn on" data-panel="people" data-tip="Office"><i data-i="map" data-s="18"></i></button>
+      <button class="rail-btn" data-panel="chat" data-tip="Chat"><i data-i="chat" data-s="18"></i><b class="badge" id="unread" hidden></b></button>
+    </nav>
+
+    <aside id="side">
+      <header class="side-head">
+        <h2>ForkMesh Office</h2>
+        <button class="icon-btn" id="collapse" data-tip="Hide sidebar"><i data-i="panel"></i></button>
+      </header>
+
+      <section id="panel-people" class="panel">
+        <div class="invite">
+          <strong>Experience ForkMesh Office together</strong>
+          <span>Invite your closest collaborators.</span>
+          <div class="stack"><b></b><b></b><b></b><b></b><b></b></div>
+          <div class="split-btn">
+            <button class="btn btn-primary btn-sm copy-link"><i data-i="user-plus" data-s="14"></i>Invite</button>
+            <button class="btn btn-primary btn-sm copy-link" data-tip="Copy link"><i data-i="link" data-s="14"></i></button>
+          </div>
+          <p id="invite-note" class="note" hidden></p>
+        </div>
+        <label class="search">
+          <input id="people-q" placeholder="Search people" autocomplete="off">
+          <kbd>⌘</kbd><kbd>F</kbd>
+        </label>
+        <button class="group-h" id="online-h"><span>Online (<span id="count">0</span>)</span><i data-i="chevron-down" data-s="12"></i></button>
+        <p id="people-note" class="note" hidden></p>
+        <ul id="people"></ul>
+      </section>
+
+      <section id="panel-chat" class="panel" hidden>
+        <div class="channel"><i data-i="hash" data-s="14"></i>general</div>
+        <div id="msgs"></div>
+        <form id="chat-form">
+          <input id="chat-input" class="input" maxlength="500" placeholder="Message #general" autocomplete="off">
+          <button class="icon-btn" data-tip="Send"><i data-i="send" data-s="14"></i></button>
+        </form>
+      </section>
+    </aside>
+
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <div id="videos"></div>
+      <div id="zone"></div>
+      <div id="banner" hidden>Reconnecting…</div>
+      <canvas id="minimap" hidden></canvas>
+
+      <div id="controls">
+        <div class="ctl"><button id="c-seat" data-tip="Take a seat"><i data-i="seat"></i></button></div>
+        <div class="ctl"><button id="c-locate" data-tip="Find me"><i data-i="locate"></i></button></div>
+        <div class="ctl">
+          <button data-z="1" data-tip="Zoom in"><i data-i="plus"></i></button>
+          <button data-z="-1" data-tip="Zoom out"><i data-i="minus"></i></button>
+          <button id="c-map" data-tip="Minimap"><i data-i="map"></i></button>
+          <button id="c-more" data-tip="Shortcuts"><i data-i="more"></i></button>
+        </div>
+      </div>
+
+      <div id="dock">
+        <div id="pop" hidden></div>
+        <div id="notes" role="region" aria-label="Status"></div>
+        <div id="bar">
+          <button id="b-me" class="me-btn" data-tip="You"><span></span><b class="dot"></b></button>
+          <span class="sep"></span>
+          <div class="split">
+            <button id="mic" class="tgl" data-tip="Unmute"><i data-i="mic-off" data-s="18"></i></button>
+            <button class="chev" data-dev="audioinput" data-tip="Microphone"><i data-i="chevron-up" data-s="12"></i></button>
+          </div>
+          <div class="split">
+            <button id="cam" class="tgl" data-tip="Start video"><i data-i="video-off" data-s="18"></i></button>
+            <button class="chev" data-dev="videoinput" data-tip="Camera"><i data-i="chevron-up" data-s="12"></i></button>
+          </div>
+          <button id="b-emo" class="tgl" data-tip="React"><i data-i="smile" data-s="18"></i></button>
+          <button id="b-say" class="tgl" data-tip="Message nearby"><i data-i="nearby" data-s="18"></i></button>
+          <span class="sep"></span>
+          <button id="leave" class="tgl danger" data-tip="Leave"><i data-i="leave" data-s="18"></i></button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div id="palette" hidden>
+    <div class="pal-card">
+      <input id="pal-q" placeholder="Find anything…" autocomplete="off">
+      <ul id="pal-list"></ul>
+      <footer><span>Close <kbd>Esc</kbd></span><span>Select <kbd>↵</kbd></span></footer>
+    </div>
+  </div>
+  <script type="module" src="/office/app.js"></script>
+</body>
+</html>

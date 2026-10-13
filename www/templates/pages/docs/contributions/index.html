@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}How contributions are counted · ForkMesh Docs{% endblock %}
+{% block meta %}
+    <meta
+      name="description"
+      content="How ForkMesh verifies and displays native public contributions, including commits, collaboration, repository publications, languages, mirrors, and coverage."
+    />
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .doc-wrap { max-width: 900px; margin: 0 auto; padding: 42px 20px 80px; }
+      .doc-wrap h1 { max-width: 16ch; font-size: clamp(32px, 5vw, 48px); line-height: 1.08; margin: 0 0 14px; }
+      .doc-intro { max-width: 70ch; color: var(--muted); font-size: 17px; line-height: 1.65; margin: 0 0 12px; }
+      .doc-crumbs { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+      .doc-crumbs a { color: var(--muted); }
+      .doc-crumbs a:hover { color: var(--foreground); }
+      .doc-toc { margin: 30px 0 8px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--card) 82%, transparent); }
+      .doc-toc h2 { margin: 0 0 10px; color: var(--muted); font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+      .doc-toc ol { margin: 0; padding-left: 18px; columns: 2; column-gap: 28px; }
+      .doc-toc li { margin: 5px 0; break-inside: avoid; }
+      .doc-toc a { color: var(--foreground); text-decoration: none; }
+      .doc-toc a:hover { text-decoration: underline; }
+      .doc-body { margin-top: 34px; }
+      .doc-body h2 { margin: 46px 0 14px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 26px; }
+      .doc-body h2:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+      .doc-body h3 { margin: 28px 0 10px; font-size: 19px; }
+      .doc-body p { margin: 0 0 14px; color: var(--muted); line-height: 1.68; }
+      .doc-body p strong, .doc-body li strong { color: var(--foreground); }
+      .doc-body a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+      .doc-body ul { margin: 0 0 16px; padding-left: 22px; color: var(--muted); }
+      .doc-body li { margin: 7px 0; line-height: 1.62; }
+      .doc-body code { padding: .12em .4em; border-radius: 4px; background: rgba(127,127,127,.14); font-family: "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; }
+      .counting-table-wrap { margin: 18px 0 24px; overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+      .counting-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: .93em; }
+      .counting-table th, .counting-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+      .counting-table tr:last-child td { border-bottom: 0; }
+      .counting-table th { color: var(--foreground); background: rgba(127,127,127,.07); font-weight: 700; }
+      .counting-table td { color: var(--muted); line-height: 1.5; }
+      .note { margin: 20px 0; padding: 16px 18px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; background: rgba(127,127,127,.06); }
+      .note p { margin: 0; }
+      .doc-siblings { margin-top: 46px; padding-top: 24px; border-top: 1px solid var(--border); }
+      .doc-siblings h2 { margin: 0 0 12px; color: var(--muted); font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+      .doc-siblings ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; color: var(--muted); }
+      .doc-siblings a { color: var(--foreground); font-weight: 600; text-decoration: none; }
+      .doc-siblings a:hover { text-decoration: underline; }
+      @media (max-width: 640px) { .doc-toc ol { columns: 1; } }
+    </style>
+{% endblock %}
+{% block body %}
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="doc-wrap">
+      <p class="doc-crumbs"><a href="/docs">Docs</a> / Contribution counting</p>
+      <p class="eyebrow">Profiles</p>
+      <h1>How ForkMesh counts contributions</h1>
+      <p class="doc-intro">
+        Every ForkMesh profile includes a native contribution card by default.
+        It is built from signed ForkMesh repository activity and does not depend on GitHub, a GitHub username, or a profile README embed.
+      </p>
+      <p class="doc-intro">
+        The card shows verified daily activity from public repositories only.
+        Exact counts remain available in the chart labels, keyboard descriptions, activity timeline, and public profile API.
+      </p>
+
+      <nav class="doc-toc" aria-label="Table of contents">
+        <h2>Contents</h2>
+        <ol>
+          <li><a href="#counted-events">What is counted</a></li>
+          <li><a href="#identity">Git identity and signatures</a></li>
+          <li><a href="#public-only">Public-only behavior</a></li>
+          <li><a href="#mirrors">Mirrors and repositories</a></li>
+          <li><a href="#languages">Languages</a></li>
+          <li><a href="#coverage">Periods and partial history</a></li>
+        </ol>
+      </nav>
+
+      <div class="doc-body">
+        <h2 id="counted-events">What is counted</h2>
+        <p>
+          ForkMesh counts five kinds of activity.
+          Each event is assigned to one UTC date so the same signed source produces the same profile result in every timezone.
+        </p>
+
+        <div class="counting-table-wrap">
+          <table class="counting-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Counted event</th>
+                <th>Date and identity source</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Commits</strong></td>
+                <td>A commit reachable from the repository's published default branch.</td>
+                <td>The Git author timestamp in UTC, matched to the repository's configured Git identity.</td>
+              </tr>
+              <tr>
+                <td><strong>Issues</strong></td>
+                <td>A verified canonical issue open event.</td>
+                <td>The signed event timestamp and the registered event author key.</td>
+              </tr>
+              <tr>
+                <td><strong>Pull requests</strong></td>
+                <td>A verified new pull request.</td>
+                <td>The signed pull timestamp and the registered pull author key.</td>
+              </tr>
+              <tr>
+                <td><strong>Reviews</strong></td>
+                <td>A verified pull conversation event whose type is review.</td>
+                <td>The signed review timestamp and the registered review author key.</td>
+              </tr>
+              <tr>
+                <td><strong>Repositories</strong></td>
+                <td>The first accepted public publication of a logical repository.</td>
+                <td>The first public publication day recorded by the ForkMesh relay.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note">
+          <p><strong>Not counted:</strong> private repository activity, pending inbox submissions, branch-only commits outside the published default branch, generated files, binary files, and unsupported language files.</p>
+        </div>
+
+        <h2 id="identity">Git identity and signed collaboration</h2>
+        <p>
+          Commit attribution uses the name and email in the repository's configured Git identity at publication time.
+          The desktop node matches those values exactly against default-branch commits before it creates the contribution snapshot.
+        </p>
+        <p>
+          Issue, pull request, and review attribution comes from their signed ForkMesh records.
+          The relay resolves each verified author key to its ForkMesh account rather than trusting a display name supplied by a browser or repository host.
+        </p>
+        <p>
+          The publishing node signs the bounded snapshot with its registered account key.
+          The relay verifies that signature, the repository state, the publishing account, the time range, and replay order before activating a new ledger generation.
+        </p>
+
+        <h2 id="public-only">Public repositories only</h2>
+        <p>
+          Profile contributions are a public read model, so private repositories and their activity never appear in totals, daily cells, languages, or recent activity.
+          A private or missing profile receives the same not-found response from the public endpoint.
+        </p>
+        <p>
+          Changing a repository from public to private removes it from the active public projection and invalidates affected profile periods.
+          Deleting a repository or account also removes its contribution sources.
+        </p>
+        <p>
+          Snapshots do not publish raw author names or email addresses.
+          They contain bounded daily totals, repository state bindings, coverage, and extension byte totals needed for the public card.
+        </p>
+
+        <h2 id="mirrors">Mirrors and repository publications</h2>
+        <p>
+          Mirrors do not multiply contributions.
+          ForkMesh groups mirrored copies into one logical project and selects the newest verified public source for that project, with a deterministic source key used to break equal-time ties.
+        </p>
+        <p>
+          A repository contribution is recorded once, on the first day the logical project is successfully published as public.
+          Moving service between mirrors does not create another repository event.
+        </p>
+        <p>
+          The repository count shown in the profile header is the number of distinct current public logical projects owned by that profile.
+          Contributions to another person's public project still count for the contributing profile when their signed identity is verified.
+        </p>
+
+        <h2 id="languages">Languages</h2>
+        <p>
+          Languages describe current public default branches, not historical activity.
+          ForkMesh totals supported source files by bytes and displays the five largest Languages plus an Other segment.
+        </p>
+        <p>
+          Unsupported extensions are grouped as Other only when they are eligible source files.
+          Generated, binary, extensionless, oversized, and unreadable files do not invent a language.
+        </p>
+
+        <h2 id="coverage">Periods and Partial history</h2>
+        <p>
+          The default period is the trailing 365 UTC days.
+          Historical controls request one full calendar year at a time, with an inclusive maximum of 366 days.
+        </p>
+        <p>
+          <strong>Complete</strong> means all required contribution dimensions are verified for the requested period.
+          <strong>Partial history</strong> means verified data is available but an older period or source dimension is missing.
+          <strong>Unavailable</strong> means no usable verified contribution source has been published yet.
+        </p>
+        <p>
+          Sparse dates are treated as exact zeros only inside verified coverage.
+          Dates before the first verified day remain visibly unverified instead of being presented as inactive days.
+        </p>
+        <p>
+          When the live endpoint is temporarily unavailable, the profile may show the last successful result saved for that exact account and period.
+          The card labels that result as saved data and provides a retry action.
+        </p>
+
+        <h2 id="native">Native by default</h2>
+        <p>
+          No README snippet, external image service, GitHub URL, or GitHub username is required.
+          Managed mirror nodes publish signed repository evidence during their catalog flow, and the ForkMesh profile loads one native contribution endpoint for the selected period. The desktop does not publish catalog records.
+        </p>
+        <p>
+          Open your <a href="/dashboard/profile">profile dashboard</a> to see the skyline, activity mix, language footprint, exact totals, and recent public activity.
+        </p>
+      </div>
+
+      <nav class="doc-siblings" aria-label="More ForkMesh docs">
+        <h2>More docs</h2>
+        <ul>
+          <li><a href="/docs">Documentation overview</a> - installation, repositories, APIs, and operations</li>
+          <li><a href="/docs/qt-client">Desktop client</a> - local workspaces and signed collaboration</li>
+          <li><a href="/docs/cloudflare-worker">Relay and website</a> - where the App and relay run, rooms, and the catalog</li>
+          <li><a href="/docs/protocol">Protocol spec</a> - identity, signatures, and catalog attestation</li>
+        </ul>
+      </nav>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+{% endblock %}

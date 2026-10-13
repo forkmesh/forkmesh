@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Complete repository workspace" %}
+{% set slug = "complete-repository-workspace" %}
+{% set image = "/assets/blog/features/complete-repository-workspace.webp" %}
+{% set description = "Code, Commits, Issues, Agents, Pull requests, Discussions, Actions, Security, Quality, Insights, Branches, Worktrees, Releases, Mirror nodes, Artifacts, Shortcuts, and Settings, every view one click apart." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>Complete repository workspace</h1>
+            <p class="lede">Code, Commits, Issues, Agents, Pull requests, Discussions, Actions, Security, Quality, Insights, Branches, Worktrees, Releases, Mirror nodes, Artifacts, Shortcuts, and Settings, every view one click apart.</p>
+            <div class="meta"><span class="pill">Feature 52 of 72</span><span>Feature</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/complete-repository-workspace.webp" alt="Abstract ForkMesh artwork for Complete repository workspace">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Complete repository workspace gives ForkMesh a concrete mechanism for one desktop workspace for code, reviews, agents, planning, releases, and node operations. Code, Commits, Issues, Agents, Pull requests, Discussions, Actions, Security, Quality, Insights, Branches, Worktrees, Releases, Mirror nodes, Artifacts, Shortcuts, and Settings, every view one click apart.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, complete repository workspace addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles complete repository workspace through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: Code, Commits, Issues, Agents, Pull requests, Discussions, Actions, Security, Quality, Insights, Branches, Worktrees, Releases, Mirror nodes, Artifacts, Shortcuts, and Settings, every view one click apart. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use complete repository workspace when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because Complete repository workspace keeps one desktop workspace for code, reviews, agents, planning, releases, and node operations connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/web-chat/">← Web chat</a>
+          <a href="/blog/source-control-and-worktrees/">Source control &amp; worktrees →</a>
+        </nav>
+{% endblock %}

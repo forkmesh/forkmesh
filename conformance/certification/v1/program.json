@@ -1,0 +1,149 @@
+{
+  "schema": "forkmesh-certification-program-v1",
+  "version": "1.0.0",
+  "governance": "www/docs/protocol/certification.md",
+  "protocolSuite": "conformance/protocol/v1/manifest.json",
+  "adapterProtocol": "forkmesh-conformance-adapter-v1",
+  "freshnessDays": 90,
+  "performance": {
+    "maxCaseMilliseconds": 2000,
+    "maxTotalSeconds": 120
+  },
+  "detectionClasses": [
+    {
+      "id": "malformed-signature",
+      "title": "Malformed or forged signatures are rejected",
+      "cases": [
+        "signatures:ed25519-tampered-message",
+        "signatures:ed25519-noncanonical-scalar-s-plus-l",
+        "signatures:ed25519-identity-public-key",
+        "signatures:ed25519-order-2-public-key",
+        "signatures:ed25519-order-4-public-key",
+        "signatures:ed25519-noncanonical-public-key-y",
+        "signatures:ed25519-short-signature",
+        "signatures:repostate-other-signer",
+        "events:event-alternate-signature-spelling",
+        "events:event-tampered-payload",
+        "events:event-signed-by-other-key",
+        "sessions:session-other-signer",
+        "sessions:session-alternate-signature-spelling"
+      ]
+    },
+    {
+      "id": "divergence",
+      "title": "Identical inputs derive identical identifiers and state",
+      "cases": [
+        "canonical-json:encode-normalizes-nfc",
+        "identifiers:repository-decomposed-root-normalizes",
+        "identifiers:policy-sorted-members",
+        "identifiers:refs-bytewise-refname-order",
+        "identifiers:migration-state-hash",
+        "events:event-id-mismatch",
+        "events:event-object-id-mismatch",
+        "fold:concurrent-scalar-conflict",
+        "fold:equivocation-excludes-both",
+        "fold:permuted-duplicated-delivery"
+      ]
+    },
+    {
+      "id": "downgrade",
+      "title": "A signature never verifies under another version or scheme",
+      "cases": [
+        "signatures:cross-version-view-signature",
+        "signatures:catalog-v1-signature-as-repostate"
+      ]
+    },
+    {
+      "id": "replay",
+      "title": "Stale, future, and redelivered authorizations are not reused",
+      "cases": [
+        "signatures:stale-past",
+        "signatures:stale-future",
+        "signatures:stale-non-numeric",
+        "sessions:session-expired",
+        "sessions:session-issued-in-future",
+        "sessions:session-lifetime-over-12h",
+        "fold:permuted-duplicated-delivery"
+      ]
+    },
+    {
+      "id": "data-loss",
+      "title": "Nothing is silently dropped, truncated, or rounded",
+      "cases": [
+        "canonical-json:parse-safe-integer-bounds",
+        "canonical-json:reject-unsafe-integer",
+        "identifiers:refs-heads-and-tags-sorted-by-refname",
+        "identifiers:refs-bytewise-refname-order",
+        "identifiers:migration-state-hash",
+        "fold:missing-parent-pending",
+        "fold:crlf-record-is-audited"
+      ]
+    },
+    {
+      "id": "incompatible-version",
+      "title": "Unknown or future version identifiers are rejected",
+      "cases": [
+        "identifiers:policy-future-schema",
+        "identifiers:object-unknown-family",
+        "events:event-future-schema",
+        "sessions:session-future-token-prefix",
+        "sessions:session-future-claim-version"
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "id": "core",
+      "title": "Core wire profile",
+      "roles": ["client", "relay", "index", "provider"],
+      "groups": [
+        "canonical-json:parse",
+        "canonical-json:encode",
+        "identifiers:repositories",
+        "identifiers:policies",
+        "identifiers:objects",
+        "identifiers:refsState",
+        "identifiers:migration",
+        "signatures:ed25519",
+        "signatures:canonicalStrings",
+        "signatures:gitPushMessages",
+        "signatures:freshness",
+        "events:cases",
+        "sessions:cases"
+      ],
+      "detectionClasses": [
+        "malformed-signature",
+        "divergence",
+        "downgrade",
+        "replay",
+        "data-loss",
+        "incompatible-version"
+      ]
+    },
+    {
+      "id": "collaboration-fold",
+      "title": "Collaboration log folding profile",
+      "roles": ["client", "relay"],
+      "groups": [
+        "canonical-json:parse",
+        "canonical-json:encode",
+        "identifiers:repositories",
+        "identifiers:policies",
+        "identifiers:objects",
+        "events:cases",
+        "fold:scenarios"
+      ],
+      "detectionClasses": [
+        "malformed-signature",
+        "divergence",
+        "replay",
+        "data-loss",
+        "incompatible-version"
+      ]
+    }
+  ],
+  "closureGate": {
+    "profile": "core",
+    "requiresIndependentImplementation": true
+  }
+}

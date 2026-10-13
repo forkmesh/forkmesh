@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ratings and reviews · ForkMesh Market</title>
+    <meta
+      name="description"
+      content="Star ratings and improvement reviews for ForkMesh Market packages. Ratings under five stars come with a short review of what to improve."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <script src="/market-review-form.js?v=${version}" defer></script>
+    <script src="/market-reviews.js?v=${version}" defer></script>
+    <style>
+      .mr-page {
+        width: min(1080px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: clamp(28px, 5vw, 64px) 0 80px;
+        color: var(--foreground);
+      }
+      .mr-kicker {
+        margin: 0 0 8px;
+        color: var(--muted);
+        font: 700 12px/1.3 var(--mono);
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+      }
+      .mr-kicker a { color: inherit; }
+      .mr-page h1 { margin: 0 0 6px; font-size: clamp(28px, 4vw, 40px); }
+      .mr-page h2 { margin: 0 0 14px; font-size: 20px; }
+      .mr-muted { color: var(--muted); }
+      .mr-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius, 12px);
+        background: var(--card);
+        padding: 20px;
+        margin: 0 0 20px;
+      }
+      .mr-overview {
+        display: grid;
+        grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+        gap: 24px;
+        align-items: center;
+      }
+      .mr-average { font-size: 44px; font-weight: 750; line-height: 1; }
+      .mr-stars {
+        position: relative;
+        display: inline-block;
+        color: var(--muted-2);
+        font-size: 20px;
+        letter-spacing: 2px;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .mr-stars-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        overflow: hidden;
+        width: calc(var(--rating, 0) / 5 * 100%);
+        color: #d29922;
+      }
+      .mr-histogram { display: grid; gap: 6px; }
+      .mr-histogram button {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1fr) 48px;
+        gap: 10px;
+        align-items: center;
+        width: 100%;
+        padding: 3px 6px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--foreground);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .mr-histogram button[aria-pressed="true"] { border-color: var(--accent-bright); }
+      .mr-histogram button:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; }
+      .mr-bar { height: 8px; border-radius: 4px; background: var(--border-subtle, var(--border)); overflow: hidden; }
+      .mr-bar > span { display: block; height: 100%; background: #d29922; }
+      .mr-star-group { display: inline-flex; gap: 4px; margin: 4px 0 6px; }
+      .mr-star {
+        appearance: none;
+        border: 0;
+        border-radius: 6px;
+        padding: 2px 4px;
+        background: transparent;
+        color: var(--muted-2);
+        font-size: 32px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .mr-star[data-filled="true"] { color: #d29922; }
+      .mr-star:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+      .mr-form label { display: block; margin: 14px 0 4px; font-weight: 650; }
+      .mr-form .mr-hint { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+      .mr-form textarea,
+      .mr-form select,
+      .mr-form input[type="text"],
+      .mr-reply textarea,
+      .mr-reply input,
+      .mr-report textarea,
+      .mr-toolbar select {
+        box-sizing: border-box;
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--background);
+        color: var(--foreground);
+        font: inherit;
+        padding: 9px 10px;
+      }
+      .mr-form textarea { min-height: 96px; resize: vertical; }
+      .mr-form [aria-invalid="true"] { border-color: var(--danger, #f85149); }
+      .mr-counter { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+      .mr-counter[data-met="false"] { color: var(--warning, #d29922); }
+      .mr-error { margin: 4px 0 0; color: var(--danger, #f85149); font-size: 13px; }
+      .mr-requirement { margin: 6px 0 0; font-weight: 600; }
+      .mr-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .mr-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+      .mr-button {
+        border: 1px solid var(--button-secondary-border);
+        border-radius: 10px;
+        background: var(--button-secondary-fill);
+        box-shadow: var(--button-secondary-shadow);
+        color: var(--button-secondary-foreground);
+        font: inherit;
+        font-weight: 600;
+        padding: 8px 14px;
+        cursor: pointer;
+        transition: background 150ms ease;
+      }
+      .mr-button:hover:not([disabled]) { background: var(--button-secondary-fill-hover); }
+      .mr-button-primary { border-color: var(--button-border); background: var(--button-fill); box-shadow: var(--button-shadow); color: var(--button-foreground); }
+      .mr-button-primary:hover:not([disabled]) { background: var(--button-fill-hover); }
+      .mr-button[disabled] { opacity: 0.55; cursor: not-allowed; }
+      .mr-button:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+      .mr-link-button { border: 0; background: none; color: var(--link, var(--accent-bright)); font: inherit; cursor: pointer; padding: 0; }
+      .mr-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
+      .mr-toolbar select { width: auto; }
+      .mr-reviews { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+      .mr-review { border-top: 1px solid var(--border); padding-top: 14px; }
+      .mr-review:first-child { border-top: 0; padding-top: 0; }
+      .mr-review-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
+      .mr-review h3 { margin: 10px 0 2px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+      .mr-review p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .mr-chip {
+        display: inline-block;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 1px 9px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .mr-chip-good { border-color: #2ea04366; color: #3fb950; }
+      .mr-chip-warn { border-color: #d2992266; color: #d29922; }
+      .mr-reply-block {
+        margin: 12px 0 0;
+        border-left: 3px solid var(--accent-bright);
+        padding: 6px 0 6px 12px;
+      }
+      .mr-review-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 13px; }
+      .mr-inline-form { margin-top: 10px; display: grid; gap: 8px; }
+      .mr-tabs { display: flex; gap: 6px; margin: 0 0 16px; border-bottom: 1px solid var(--border); }
+      .mr-tab {
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-weight: 650;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      .mr-tab[aria-selected="true"] { color: var(--foreground); border-bottom-color: var(--accent-bright); }
+      .mr-tab:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+      .mr-feedback-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      .mr-feedback-table th,
+      .mr-feedback-table td { text-align: left; vertical-align: top; padding: 10px 8px; border-top: 1px solid var(--border); }
+      .mr-feedback-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+      .mr-feedback-table td p { margin: 0 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .mr-category-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+      .mr-status { min-height: 1.2em; margin: 8px 0 0; color: var(--muted); }
+      .mr-status[data-error="true"] { color: var(--danger, #f85149); }
+      .mr-packages { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      .mr-packages a { color: var(--foreground); font-weight: 650; }
+      [hidden] { display: none !important; }
+      .visually-hidden {
+        position: absolute !important;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      @media (max-width: 720px) {
+        .mr-overview, .mr-row { grid-template-columns: minmax(0, 1fr); }
+        .mr-feedback-table thead { display: none; }
+        .mr-feedback-table td { display: block; border-top: 0; padding: 4px 0; }
+        .mr-feedback-table tr { display: block; border-top: 1px solid var(--border); padding: 8px 0; }
+      }
+    </style>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <main class="mr-page" id="main">
+      <p class="mr-kicker"><a href="https://forkmesh.com/market" data-market-link>Market</a> · Ratings and reviews</p>
+      <h1 data-package-title>Package reviews</h1>
+      <p class="mr-muted" data-package-subtitle>Loading…</p>
+
+      <!-- Package directory for maintainers (no ?package=). -->
+      <section class="mr-card" data-maintained hidden aria-labelledby="maintained-title">
+        <h2 id="maintained-title">Your packages</h2>
+        <ul class="mr-packages" data-maintained-list></ul>
+        <p class="mr-status" role="status" data-maintained-status></p>
+      </section>
+
+      <div data-package-view hidden>
+        <div class="mr-tabs" role="tablist" aria-label="Package review views" data-tabs>
+          <button class="mr-tab" type="button" role="tab" id="tab-reviews" aria-controls="panel-reviews" aria-selected="true" data-tab="reviews">Reviews</button>
+          <button class="mr-tab" type="button" role="tab" id="tab-feedback" aria-controls="panel-feedback" aria-selected="false" tabindex="-1" data-tab="feedback" hidden>How to improve</button>
+          <button class="mr-tab" type="button" role="tab" id="tab-reports" aria-controls="panel-reports" aria-selected="false" tabindex="-1" data-tab="reports" hidden>Reported</button>
+        </div>
+
+        <section id="panel-reviews" role="tabpanel" aria-labelledby="tab-reviews" data-panel="reviews">
+          <section class="mr-card mr-overview" aria-label="Rating summary">
+            <div>
+              <div class="mr-average" data-average>–</div>
+              <span class="mr-stars" role="img" aria-label="No ratings yet" data-average-stars>
+                <span aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</span>
+                <span class="mr-stars-fill" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</span>
+              </span>
+              <p class="mr-muted" data-count>No ratings yet</p>
+            </div>
+            <div class="mr-histogram" role="group" aria-label="Filter reviews by stars" data-histogram></div>
+          </section>
+
+          <section class="mr-card" aria-labelledby="rate-title" data-rate-card>
+            <h2 id="rate-title">Rate this package</h2>
+            <p class="mr-muted" data-rate-gate hidden></p>
+            <form class="mr-form" data-review-form novalidate hidden>
+              <div class="mr-star-group" role="radiogroup" aria-labelledby="rate-title" aria-describedby="star-error" data-star-group>
+                <button type="button" class="mr-star" role="radio" aria-checked="false" aria-label="1 star" data-star="1">&#9733;</button>
+                <button type="button" class="mr-star" role="radio" aria-checked="false" aria-label="2 stars" data-star="2">&#9733;</button>
+                <button type="button" class="mr-star" role="radio" aria-checked="false" aria-label="3 stars" data-star="3">&#9733;</button>
+                <button type="button" class="mr-star" role="radio" aria-checked="false" aria-label="4 stars" data-star="4">&#9733;</button>
+                <button type="button" class="mr-star" role="radio" aria-checked="false" aria-label="5 stars" data-star="5">&#9733;</button>
+              </div>
+              <p class="mr-muted" aria-live="polite" data-star-label>No rating selected</p>
+              <p class="mr-error" id="star-error" data-error-for="stars" hidden></p>
+              <p class="mr-requirement" aria-live="polite" data-review-requirement></p>
+
+              <div data-review-details hidden>
+                <label for="review-problem">What didn't work or was missing</label>
+                <p class="mr-hint" id="review-problem-hint">Be specific: what you tried, what happened, what you expected.</p>
+                <textarea id="review-problem" data-field="problem" maxlength="4000" aria-describedby="review-problem-hint review-problem-count review-problem-error"></textarea>
+                <p class="mr-counter" id="review-problem-count" data-counter-for="problem"></p>
+                <p class="mr-error" id="review-problem-error" data-error-for="problem" hidden></p>
+
+                <label for="review-improvement">How we can improve (what would make it 5 stars)</label>
+                <p class="mr-hint" id="review-improvement-hint">Describe the change that would earn five stars.</p>
+                <textarea id="review-improvement" data-field="improvement" maxlength="4000" aria-describedby="review-improvement-hint review-improvement-count review-improvement-error"></textarea>
+                <p class="mr-counter" id="review-improvement-count" data-counter-for="improvement"></p>
+                <p class="mr-error" id="review-improvement-error" data-error-for="improvement" hidden></p>
+
+                <label for="review-context">Steps to reproduce / context <span class="mr-muted">(optional)</span></label>
+                <textarea id="review-context" data-field="context" maxlength="4000" aria-describedby="review-context-count review-context-error"></textarea>
+                <p class="mr-counter" id="review-context-count" data-counter-for="context"></p>
+                <p class="mr-error" id="review-context-error" data-error-for="context" hidden></p>
+
+                <div class="mr-row">
+                  <div>
+                    <label for="review-category">Category <span class="mr-muted">(optional)</span></label>
+                    <select id="review-category" data-field="category">
+                      <option value="">Choose…</option>
+                      <option value="bug">Bug</option>
+                      <option value="missing-feature">Missing feature</option>
+                      <option value="docs">Docs</option>
+                      <option value="performance">Performance</option>
+                      <option value="ux">UX</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="review-version">Version you used <span class="mr-muted">(optional)</span></label>
+                    <input id="review-version" type="text" inputmode="decimal" placeholder="e.g. 1.3.0" maxlength="64" data-field="version" />
+                  </div>
+                </div>
+
+                <label for="review-comment">Anything else? <span class="mr-muted">(optional)</span></label>
+                <textarea id="review-comment" data-field="comment" maxlength="4000" aria-describedby="review-comment-count review-comment-error"></textarea>
+                <p class="mr-counter" id="review-comment-count" data-counter-for="comment"></p>
+                <p class="mr-error" id="review-comment-error" data-error-for="comment" hidden></p>
+              </div>
+
+              <div class="mr-actions">
+                <button class="mr-button mr-button-primary" type="submit" data-review-submit disabled>Submit rating</button>
+                <button class="mr-link-button" type="button" data-history-toggle hidden>Show my edit history</button>
+              </div>
+              <p class="mr-status" role="status" aria-live="polite" data-review-status></p>
+              <ol class="mr-muted" data-history hidden></ol>
+            </form>
+          </section>
+
+          <section class="mr-card" aria-labelledby="reviews-title">
+            <h2 id="reviews-title">Reviews</h2>
+            <div class="mr-toolbar">
+              <label for="review-sort">Sort by</label>
+              <select id="review-sort" data-sort>
+                <option value="newest">Newest</option>
+                <option value="helpful">Most helpful</option>
+              </select>
+              <button class="mr-link-button" type="button" data-clear-filter hidden>Show all stars</button>
+            </div>
+            <ol class="mr-reviews" aria-live="polite" data-reviews></ol>
+            <p class="mr-status" role="status" data-reviews-status></p>
+            <button class="mr-button" type="button" data-load-more hidden>Load more reviews</button>
+          </section>
+        </section>
+
+        <section id="panel-feedback" role="tabpanel" aria-labelledby="tab-feedback" data-panel="feedback" hidden>
+          <div class="mr-card">
+            <h2>How to improve</h2>
+            <p class="mr-muted">Every review under five stars, with what didn't work and what would make it five stars. Mark an item addressed when a release fixes it.</p>
+            <div class="mr-category-counts" data-category-counts></div>
+            <div class="mr-toolbar">
+              <label for="feedback-category">Category</label>
+              <select id="feedback-category" data-feedback-category>
+                <option value="">All categories</option>
+                <option value="bug">Bug</option>
+                <option value="missing-feature">Missing feature</option>
+                <option value="docs">Docs</option>
+                <option value="performance">Performance</option>
+                <option value="ux">UX</option>
+                <option value="other">Other</option>
+                <option value="uncategorized">Uncategorized</option>
+              </select>
+              <label for="feedback-status">Status</label>
+              <select id="feedback-status" data-feedback-status>
+                <option value="open">Open</option>
+                <option value="addressed">Addressed</option>
+                <option value="all">All</option>
+              </select>
+              <label for="feedback-sort">Sort</label>
+              <select id="feedback-sort" data-feedback-sort>
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="lowest">Lowest stars</option>
+                <option value="highest">Highest stars</option>
+                <option value="helpful">Most helpful</option>
+              </select>
+            </div>
+            <table class="mr-feedback-table">
+              <thead>
+                <tr><th scope="col">Stars</th><th scope="col">Feedback</th><th scope="col">Category</th><th scope="col">Status</th></tr>
+              </thead>
+              <tbody data-feedback-rows></tbody>
+            </table>
+            <p class="mr-status" role="status" data-feedback-status-text></p>
+          </div>
+        </section>
+
+        <section id="panel-reports" role="tabpanel" aria-labelledby="tab-reports" data-panel="reports" hidden>
+          <div class="mr-card">
+            <h2>Reported reviews</h2>
+            <ol class="mr-reviews" data-reports></ol>
+            <p class="mr-status" role="status" data-reports-status></p>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

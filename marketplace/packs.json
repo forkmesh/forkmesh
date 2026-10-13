@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "whole-cutlery-drawer",
+      "name": "The Whole Cutlery Drawer",
+      "tagline": "Every fork, spoon and spork in the Market, in one click.",
+      "summary": "Installs every package this device can install, so nothing is missing. Local AI models (multi-gigabyte downloads) and skins are left out; install those on their own.",
+      "packages": "*"
+    },
+    {
+      "id": "chat-essentials",
+      "name": "Chat & Essentials",
+      "tagline": "Talk to your team and keep the basics close.",
+      "summary": "Chat and Inbox for conversations, Agents for your AI helpers, and Notes, Tasks, Calendar and Timers to keep the day organised.",
+      "packages": ["chat", "inbox", "agents", "notes", "tasks", "calendar", "timers"]
+    },
+    {
+      "id": "site-mover",
+      "name": "Site Mover",
+      "tagline": "Everything you need to run a website's repository on ForkMesh.",
+      "summary": "Code, Commits, Branches and Pull requests for the repository, Issues for the to-do list, Actions and Workflows for builds and deploys, Releases for shipped versions, and Status Page to watch the live site.",
+      "packages": ["code", "commits", "branches", "pull-requests", "issues", "actions", "workflows", "releases", "status-page"]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "schema": "forkmesh-governance-participants-v1",
+  "participants": [
+    {
+      "id": "forkmesh-maintainers",
+      "name": "ForkMesh maintainers",
+      "kind": "group",
+      "constituency": "forkmesh-maintainer",
+      "employerOrFunder": "forkmesh.com operator",
+      "source": "https://forkmesh.com/@forkmesh"
+    }
+  ],
+  "seatHolders": [],
+  "disclosures": [
+    {
+      "id": "DISC-0001",
+      "participant": "forkmesh-maintainers",
+      "filed": "2026-09-14",
+      "conflicts": [
+        "Maintain the reference Python, WebCrypto JavaScript, and clean-room Python implementations, and both registered certification adapters.",
+        "Operate forkmesh.com, which sells Supporter and Pro memberships. A protocol decision that moves work onto or off the hosted service changes the operator's revenue.",
+        "Maintain the desktop client and the headless mirror and gateway tools, which compete with independent implementations of the same roles."
+      ],
+      "funding": [
+        {
+          "kind": "membership",
+          "source": "Supporter and Pro memberships through Patreon",
+          "amountPublished": false,
+          "reference": "www/docs/business-model.md"
+        },
+        {
+          "kind": "donation",
+          "source": "Solana donation addresses published on profiles and repositories",
+          "amountPublished": false,
+          "reference": "SECURITY.md"
+        },
+        {
+          "kind": "reward-pool",
+          "source": "Community reward pool, bounties, and microjob payouts, which maintainers may also claim as contributors",
+          "amountPublished": false,
+          "reference": "www/docs/incentive-independence.md"
+        }
+      ],
+      "note": "Amounts are not yet published. A disclosure with an unpublished amount keeps the funding closure criterion open."
+    }
+  ]
+}

@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/mirror-actions-control-v1.json",
+  "title": "ForkMesh mirror Actions control envelope",
+  "description": "One pending control request, written atomically (mode 0640) by the mirror gateway as {actionsControlPath}/{body requestId}.json and consumed by the Actions executor. The gateway is a courier: the executor recomputes sha256(body), rebuilds the canonical capability message and verifies the router's Ed25519 signature before it parses or applies body. Runtime policy bounds the file to 16 KiB and body to 4 KiB. See operations/mirror-actions-control.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "node",
+    "owner",
+    "repository",
+    "receivedAt",
+    "capability",
+    "body"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "type": {
+      "const": "forkmesh.mirror-actions-control"
+    },
+    "node": {
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "owner": {
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,100}$"
+    },
+    "receivedAt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "capability": {
+      "$ref": "#/$defs/capability"
+    },
+    "body": {
+      "description": "The exact request body bytes as a UTF-8 string; it parses to #/$defs/request. Never re-serialized: bodySha256 covers these bytes.",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 4096,
+      "contentMediaType": "application/json",
+      "contentSchema": {
+        "$ref": "#/$defs/request"
+      }
+    }
+  },
+  "$defs": {
+    "capability": {
+      "description": "The router capability headers the gateway verified for this request.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "path",
+        "requestId",
+        "issuedAt",
+        "bodySha256",
+        "signature"
+      ],
+      "properties": {
+        "method": {
+          "const": "POST"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/v1/repositories/[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?/[A-Za-z0-9._-]{1,100}/actions-control$"
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{12,80}$"
+        },
+        "issuedAt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bodySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{86}$"
+        }
+      }
+    },
+    "workflowPath": {
+      "type": "string",
+      "pattern": "^\\.forkmesh/[A-Za-z0-9._-]{1,96}\\.ya?ml$"
+    },
+    "runId": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "request": {
+      "description": "Worker-to-gateway request body (forkmesh.actions-control-v1). Exactly the common keys plus the keys of its action.",
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "type",
+        "requestId",
+        "action",
+        "actor",
+        "issuedAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "forkmesh.actions-control-v1"
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{16,64}$"
+        },
+        "action": {
+          "enum": [
+            "dispatch",
+            "rerun",
+            "cancel",
+            "approve",
+            "reject",
+            "set-workflow-enabled",
+            "set-repository-enabled"
+          ]
+        },
+        "actor": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "issuedAt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "workflow": {
+          "$ref": "#/$defs/workflowPath"
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^refs/heads/(?!.*(?:\\.\\.|//))[A-Za-z0-9._/-]{1,200}(?<!/)(?<!\\.lock)$"
+        },
+        "runId": {
+          "$ref": "#/$defs/runId"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "unevaluatedProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "action": {
+              "const": "dispatch"
+            },
+            "runId": false,
+            "enabled": false
+          },
+          "required": [
+            "workflow",
+            "ref"
+          ]
+        },
+        {
+          "properties": {
+            "action": {
+              "enum": [
+                "rerun",
+                "cancel",
+                "approve",
+                "reject"
+              ]
+            },
+            "workflow": false,
+            "ref": false,
+            "enabled": false
+          },
+          "required": [
+            "runId"
+          ]
+        },
+        {
+          "properties": {
+            "action": {
+              "const": "set-workflow-enabled"
+            },
+            "ref": false,
+            "runId": false
+          },
+          "required": [
+            "workflow",
+            "enabled"
+          ]
+        },
+        {
+          "properties": {
+            "action": {
+              "const": "set-repository-enabled"
+            },
+            "workflow": false,
+            "ref": false,
+            "runId": false
+          },
+          "required": [
+            "enabled"
+          ]
+        }
+      ]
+    }
+  }
+}

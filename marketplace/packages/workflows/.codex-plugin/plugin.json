@@ -1,0 +1,39 @@
+{
+  "name": "workflows",
+  "version": "1.0.0",
+  "description": "Visual automations with 100 integrations, and visual editing of ForkMesh actions, shortcuts, skills and special agents.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": [
+    "workflows",
+    "automation",
+    "integrations",
+    "n8n",
+    "actions",
+    "agents"
+  ],
+  "interface": {
+    "displayName": "Workflows",
+    "shortDescription": "Build automations and edit ForkMesh files on a visual canvas.",
+    "longDescription": "Connect triggers, logic and 100 integrations such as Slack, GitHub, Notion, Stripe and Claude, run them and read each step's output. Edit a repository's actions, shortcuts, skills and special agents as connected steps.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://forkmesh.com",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "Build a workflow that posts new GitHub issues to Slack.",
+      "Open this repository's special agents in Workflows."
+    ],
+    "brandColor": "#7C3AED"
+  }
+}

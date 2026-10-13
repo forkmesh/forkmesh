@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Beyond the room key · ForkMesh Blog</title>
+    <meta name="description" content="ForkMesh private channels and direct messages now add automatic device-recipient encryption beyond the controller room key—and the documentation and artwork finally show the full boundary.">
+    <link rel="canonical" href="https://forkmesh.com/blog/beyond-the-room-key/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/beyond-the-room-key/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Beyond the room key">
+    <meta property="og:description" content="A look back at ForkMesh's first encrypted-chat imagery, the trust boundary it oversimplified, and the recipient-encrypted layer now protecting private conversations.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/beyond-the-room-key.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A dark metallic ForkMesh node in a moonlit wetland sends a violet message capsule inside a cyan outer envelope along separate green and violet paths to shell-like device nodes">
+    <meta property="article:published_time" content="2026-08-28T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Beyond the room key">
+    <meta name="twitter:description" content="Private ForkMesh conversations now add automatic device-recipient encryption beyond the controller room key. Here is the exact boundary—and the first artwork that inspired its new picture.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/beyond-the-room-key.webp">
+    <meta name="twitter:image:alt" content="A dark metallic ForkMesh node in a moonlit wetland sends a violet message capsule inside a cyan outer envelope along separate green and violet paths to shell-like device nodes">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Security update</p>
+            <h1>Beyond the room key</h1>
+            <p class="lede">The first ForkMesh encryption artwork captured the feeling of a private path through a living mesh. It drew only one lock. Private channels and direct messages now carry a second layer: every message gets a fresh content key wrapped to known participant devices before the controller-readable room cipher is applied.</p>
+            <div class="meta"><span class="pill">August 28, 2026</span><span>Security update</span><span>7 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/beyond-the-room-key.webp" alt="A dark metallic ForkMesh node in a moonlit wetland sends a violet message capsule inside a cyan outer envelope along separate green and violet paths to shell-like device nodes">
+        </section>
+        <article class="body">
+          <p>ForkMesh has always encrypted chat frames before they cross the wire. That sentence was true and still left out the fact that mattered most: who could derive the key. The original room passphrase is derived from a secret held by the controller deployment. It protects traffic and retained storage from third parties, but the controller operator can derive it.</p>
+          <p>That remains the deliberate policy for public channels. ForkBot, MCP, and incoming webhooks run on or through the controller, so a room that admits those integrations must be readable there. A private channel or direct message has a different job. It now puts a recipient-encrypted envelope <em>inside</em> the room cipher, removing the controller room key as a passive content-decryption key.</p>
+
+          <div class="note"><strong>The short version:</strong> Public means controller-readable and integration-compatible. End-to-end means automatic device-recipient encryption with controller integrations unavailable. The label is a trust boundary, not decoration.</div>
+
+          <h2>The first generation got the mood right</h2>
+          <p>The July feature cards imagined ForkMesh as a nocturnal ecosystem: shell-like nodes, fireflies, dew-lit webs, and a dark metallic core. They made encryption feel like something carried by the mesh instead of hidden in a settings panel. They also compressed a two-party trust story into one glowing line.</p>
+
+          <figure class="body-figure">
+            <img src="/assets/blog/features/encrypted-repo-rooms.webp" alt="The first-generation encrypted repository rooms card, with luminous shell nodes surrounding a metallic ForkMesh core and a glass room diagram">
+            <figcaption>The first room card is preserved as historical artwork. Its baked-in copy overstated controller blindness and omitted bounded retained history; the current protocol and replacement artwork make both layers explicit.</figcaption>
+          </figure>
+
+          <figure class="body-figure">
+            <img src="/assets/blog/features/direct-messages.webp" alt="The first-generation direct messages card, with two fireflies carrying a glowing capsule above a metallic ForkMesh node">
+            <figcaption>The direct-message card already had the better metaphor: one capsule traveling between distinct endpoints. The shipped protocol now gives that capsule a fresh key wrapped separately to known devices.</figcaption>
+          </figure>
+
+          <figure class="body-figure">
+            <img src="/assets/blog/features/web-chat.webp" alt="The first-generation web chat card, with a dew-covered web connecting a metallic ForkMesh node to a dark chat panel">
+            <figcaption>The web card showed one protocol spanning clients. Browser, desktop, and mobile now share the same versioned recipient-envelope fixture, so protected rooms do not depend on which client sends the message.</figcaption>
+          </figure>
+
+          <h2>A fresh key for the message, a wrap for each device</h2>
+          <p>On first use, every installation creates an X25519 private key and keeps it locally: same-origin storage in the browser, application settings on desktop, and the platform secure store on mobile. Only the public key is announced in the room. There is no phrase to exchange and no encryption toggle to remember.</p>
+          <p>For each protected application frame, the sender creates a fresh 32-byte content key and encrypts the complete frame with AES-256-GCM. It derives a pairwise wrapping key for each known room device using X25519 and HKDF-SHA256, wraps the content key once per recipient—including the sender's device—and then applies the ordinary room cipher outside that envelope. Retention still works because the durable marker stays outside; protected content, sender details, attachments, edits, reactions, and thread replies stay inside.</p>
+          <p>A new device can read messages sent after other participants learn its public key. It cannot retroactively open retained messages whose content keys were never wrapped to it. ForkMesh reports that honestly instead of showing a mysteriously empty transcript or weakening the room to recover history.</p>
+
+          <h2>Two lanes, both intentionally useful</h2>
+          <p><strong>Public channels</strong> stop at the authenticated AES-256-GCM room cipher. The controller can read and author application frames, which is what lets ForkBot, MCP, and public-channel webhooks participate. The interface labels that state <strong>Public</strong>.</p>
+          <p><strong>Private channels and direct messages</strong> require the inner recipient envelope and fail closed on an unsealed application frame. Controller integrations are unavailable because they do not hold a participant device's private key. The interface labels that state <strong>End-to-end</strong>.</p>
+          <p>Changing a channel to Public is an explicit disclosure decision for new messages; it does not unwrap older protected history. Changing it to Private rotates the outer room key, revokes incoming webhooks, and requires recipient sealing for subsequent application frames.</p>
+
+          <h2>The limitation belongs beside the promise</h2>
+          <p>Public-key discovery is not independently authenticated; it is automatic rather than a separately verified membership directory. A controller that actively injects a new public key can make future senders treat it as another room device. A controller serving modified browser JavaScript can also read data available to that browser. The new layer protects against passive controller decryption with the room key, retained envelopes, or observed room traffic; it does not turn the controller into a harmless transport under every active attack.</p>
+          <p>Timing, message sizes, connection metadata, public device keys, and retention markers also remain visible. The protocol is not a double ratchet and does not claim post-compromise security. Compromise of one participant device exposes content keys wrapped to that device, while loss of its private key loses history addressed only to it.</p>
+
+          <h2>The documentation now carries the same boundary</h2>
+          <p>This update did more than add a new hero. The README, security policy, protocol guide, Cloudflare architecture, Flutter and Qt guidance, docs landing page, feature copy, privacy copy, historical launch post, Genesis changelog, and the original private-channel design records now point to the same two-lane model. Historical documents remain historical; prominent dated notes say when their relay-readable design was superseded.</p>
+          <p>The recipient-encryption implementation and its canonical documentation landed together on <code>main</code>. Browser, desktop, and mobile pin the same X25519/HKDF/AES-GCM fixture, and the public-claims tests reject the old blanket language. That is the standard we want for future security work: the protocol, labels, images, limitations, and tests should change as one reviewable unit.</p>
+          <p>Read the complete <a href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/www/docs/security/sealed-chat.md">sealed-chat protocol and threat boundary</a>, inspect the <a href="/docs/protocol/#rooms">room wire protocol</a>, or open <a href="https://app.forkmesh.com/chat">ForkMesh Chat</a> to see the Public and End-to-end labels in context.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog">All posts</a>
+          <a href="/blog/the-teammate-who-asks-what-should-leave/">The teammate who asks what should leave →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

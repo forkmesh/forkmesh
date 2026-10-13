@@ -1,0 +1,13 @@
+#!/bin/sh
+original_command=${SSH_ORIGINAL_COMMAND-}
+git_protocol=${GIT_PROTOCOL-}
+exec /usr/bin/env -i \
+  PATH=/usr/bin:/bin \
+  LANG=C \
+  LC_ALL=C \
+  SSH_ORIGINAL_COMMAND="$original_command" \
+  GIT_PROTOCOL="$git_protocol" \
+  /usr/bin/python3 -I \
+  /opt/forkmesh-mirror/ssh_gateway.py \
+  --config /etc/forkmesh/ssh-gateway.json \
+  "$@"

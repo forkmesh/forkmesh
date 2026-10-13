@@ -1,0 +1,3734 @@
+{
+ "invalidBundles": [
+  {
+   "emptySignals": 0,
+   "error": "invalid_bundle",
+   "id": "bundle-not-object",
+   "input": []
+  },
+  {
+   "emptySignals": 0,
+   "error": "unsupported_bundle_schema",
+   "id": "bundle-wrong-schema",
+   "input": {
+    "exportedAt": 1769817600000,
+    "revocations": [],
+    "schema": "forkmesh-stars-v1",
+    "signals": []
+   }
+  },
+  {
+   "emptySignals": 0,
+   "error": "invalid_bundle",
+   "id": "bundle-missing-revocations",
+   "input": {
+    "exportedAt": 1769817600000,
+    "schema": "forkmesh-social-signal-bundle-v1",
+    "signals": []
+   }
+  },
+  {
+   "emptySignals": 10001,
+   "error": "bundle_too_large",
+   "id": "bundle-too-large",
+   "input": null
+  }
+ ],
+ "invalidControls": [
+  {
+   "controls": {
+    "asOf": 1769817600000,
+    "enabled": true,
+    "limit": 10,
+    "mutedSigners": [],
+    "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+   },
+   "error": "invalid_controls",
+   "id": "controls-missing-key"
+  },
+  {
+   "controls": {
+    "asOf": 1769817600000,
+    "enabled": true,
+    "limit": 0,
+    "mutedSigners": [],
+    "mutedSubjects": [],
+    "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+   },
+   "error": "invalid_controls",
+   "id": "controls-limit-zero"
+  },
+  {
+   "controls": {
+    "asOf": 1769817600000,
+    "enabled": "no",
+    "limit": 10,
+    "mutedSigners": [],
+    "mutedSubjects": [],
+    "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+   },
+   "error": "invalid_controls",
+   "id": "controls-enabled-string"
+  },
+  {
+   "controls": {
+    "asOf": 1769817600000,
+    "enabled": true,
+    "limit": 10,
+    "mutedSigners": [],
+    "mutedSubjects": [],
+    "viewer": "alice"
+   },
+   "error": "invalid_controls",
+   "id": "controls-bad-viewer"
+  }
+ ],
+ "keys": {
+  "alice": {
+   "publicKey": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+   "seed": "f3baca2e00e5725561b98eeca3a4dbaa0c4f0ad4c1c6fc6f53305250a8d91f64"
+  },
+  "bob": {
+   "publicKey": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+   "seed": "d74e66f123464f85b3133f6e652eae587117a181ff8cd026a48ea1b304fd188e"
+  },
+  "carol": {
+   "publicKey": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+   "seed": "9679b277c5bda546b449a9ba24ef274fe915efe6e55b3f903b2b7a06b13bd6b2"
+  },
+  "dave": {
+   "publicKey": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+   "seed": "176d002c81ba6cfdbe3838045fc07bfef02f31e9907d28192ecbd98e0733095b"
+  },
+  "mallory": {
+   "publicKey": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+   "seed": "16e728db35e43dea91ad5d93d4a833555fb1b3f8bc025da7d35ceecccac26dfd"
+  }
+ },
+ "note": "Test keys only. Seeds are SHA-256 of 'forkmesh-social-signal-test-key\\n' + name.",
+ "records": [
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "summary": "Star",
+    "valid": true
+   },
+   "id": "interest-star",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+    "summary": "Usage endorsement: production use of 2.4.1 (1 evidence)",
+    "valid": true
+   },
+   "id": "attestation-usage-endorsement",
+   "input": {
+    "evidence": [
+     {
+      "label": "Deployment manifest",
+      "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+      "uri": "https://example.org/bob/deploy.yaml"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767398400000,
+    "kind": "usage-endorsement",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "environment": "production",
+     "since": 1767225600000,
+     "version": "2.4.1"
+    },
+    "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+    "signature": "rljN9v9k4Uxg67umk1bPaCaLvfz5rFjPKelFRT03cedxEnMNBKpB4oDq9fXEGzm6qZplAJu9MsQyZhw_imYmDw",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+    "summary": "Security review: manual-audit of 84a31cda4ed3, findings resolved (2 evidence)",
+    "valid": true
+   },
+   "id": "attestation-security-review",
+   "input": {
+    "evidence": [
+     {
+      "label": "Audit report",
+      "sha256": null,
+      "uri": "https://example.org/carol/beacon-audit.pdf"
+     },
+     {
+      "label": "Fix pull request",
+      "sha256": null,
+      "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767484800000,
+    "kind": "security-review",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "findings": "resolved",
+     "method": "manual-audit",
+     "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+    },
+    "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+    "signature": "j2B2SCqrXFAEcuc8hcZgtS5sUA3RpNogzGNcFZDWDgUBEvjyJMHLXfQPnKM74nhUiXpos12HqmaZMtn8QHi6CA",
+    "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+    "summary": "Mirror commitment: https://mirror.example.net/cinder.git until 1798761600000 (1 evidence)",
+    "valid": true
+   },
+   "id": "attestation-mirror-commitment",
+   "input": {
+    "evidence": [
+     {
+      "label": "Mirror health",
+      "sha256": null,
+      "uri": "https://mirror.example.net/health"
+     }
+    ],
+    "expiresAt": 1798761600000,
+    "issuedAt": 1767312000000,
+    "kind": "mirror-commitment",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "endpoint": "https://mirror.example.net/cinder.git",
+     "protocols": [
+      "git-https",
+      "git-ssh"
+     ]
+    },
+    "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+    "signature": "ljfAhEk3jXs2C9hOR9zp80j70XXD4sUXhO-5OBsUPQpPaHc7qOgPA-5RWwTUNZuKjeeKrn9T2_GRjO6uHOb-DQ",
+    "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+    "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "signalId": "sha256:4d8918a8c47776b0878b5ea3b1041c90207efac5e25ad8c94aeea0ffc6c3db56",
+    "summary": "Bookmark",
+    "valid": true
+   },
+   "id": "private-bookmark",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "bookmark",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4d8918a8c47776b0878b5ea3b1041c90207efac5e25ad8c94aeea0ffc6c3db56",
+    "signature": "MdotXUG6l-iT-YM97hX2rRDwHtnvNRmlsZ_l9utEYDuIKfp_C_lWTUjqoPLoToG9mao6Pwt4Jrg5zJ3-vnIbAg",
+    "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+    "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+    "tier": "interest",
+    "visibility": "private"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "signalId": "sha256:7a44fa9114c17a766f93088f68cdf4c40d710f3ff6e073b979c869fd4f4766a2",
+    "summary": "Follow",
+    "valid": true
+   },
+   "id": "follow",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767225600000,
+    "kind": "follow",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:7a44fa9114c17a766f93088f68cdf4c40d710f3ff6e073b979c869fd4f4766a2",
+    "signature": "GyJHy4_UE0TVFliGFNAX47YK7jyqwSRzUtZe9j7orms75FWd8kYJMEW1rSrotsC40TIMHUmIWav6jjhDjQzPDw",
+    "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+    "subject": "urn:forkmesh:identity:ed25519:7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "signalId": "sha256:47b42385c2227b6bcab4737192320861ab45b2eb4fa5b6e21856cb786586663d",
+    "summary": "Recommendation",
+    "valid": true
+   },
+   "id": "recommendation-with-note",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767657600000,
+    "kind": "recommendation",
+    "note": "Pairs well with beacon",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:47b42385c2227b6bcab4737192320861ab45b2eb4fa5b6e21856cb786586663d",
+    "signature": "2yWxJDDpGjA8ef95dmcHvsDfarRY_Ko7sJzBmVYrEE9cfMwzB9a7UW85PopB0rdwVodYZe-a-TrBWc8gmB0TBw",
+    "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "signalId": "sha256:8984a0a38d1dc5c7c5b7913433c6a005024ec38091ff5993e23ca3ef849b1944",
+    "summary": "Star",
+    "valid": true
+   },
+   "id": "decomposed-note-normalizes-to-signed-form",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767225600000,
+    "kind": "star",
+    "note": "Café ✓",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:8984a0a38d1dc5c7c5b7913433c6a005024ec38091ff5993e23ca3ef849b1944",
+    "signature": "5tFy6tOi9NM7PMmWhEW8WUqndrDpLTnGqSC0J23Lnwz1dcNEDrZd4B791aVWdoXohB2oGnKDaLlqi0XPES9UCw",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "tier_mismatch",
+    "valid": false
+   },
+   "id": "reject-star-claims-attestation-tier",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4768569a3b9ccdcd4e8a8ba03b1256dd2f9d7cf510356684ff0847e3ee688c28",
+    "signature": "MQCmVd8iMyJiqSsXQSyuux33GpsivBbHLhRZ4a51RjVvlgjxhCgR0elGcYz6j1YCP2wJK1YEvi8RHzT4TcnKDw",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "tier_mismatch",
+    "valid": false
+   },
+   "id": "reject-endorsement-claims-interest-tier",
+   "input": {
+    "evidence": [
+     {
+      "label": "Deployment manifest",
+      "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+      "uri": "https://example.org/bob/deploy.yaml"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767398400000,
+    "kind": "usage-endorsement",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "environment": "production",
+     "since": 1767225600000,
+     "version": "2.4.1"
+    },
+    "signalId": "sha256:8def861f5f5b6bc6c9fa7da59a52b293eeca5edf71fff06755202116e325705a",
+    "signature": "iVz3Xt4BdgdavmSteYgEJYXK1sAcJs9Y1DalPw5kEmr1Jvd_2Jku52cB6c9K3HEuoSVCi478ZpgnxgIb1igrDw",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "interest_claims_scope",
+    "valid": false
+   },
+   "id": "reject-star-with-scope",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "environment": "production"
+    },
+    "signalId": "sha256:dd0ba10145c3ce623f834d7fa90326350f2debf9344f68b06a0bd4162a3ae966",
+    "signature": "3pwNxUQ0mnhQz8cveOePXxdkUgxaO1BgbiCv3LMQB3Aud9SMJxxeI_346Q6yI4VPs9-hglRpdAehRaswPYeWCw",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "interest_claims_scope",
+    "valid": false
+   },
+   "id": "reject-star-with-evidence",
+   "input": {
+    "evidence": [
+     {
+      "label": "Deployment manifest",
+      "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+      "uri": "https://example.org/bob/deploy.yaml"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:2d97d4f430e6bd957b7fedd34d08723575fcb4319e13069b6bb44cbf973fb1f5",
+    "signature": "dXOVHULJfpB2vhsiovzKlcQQ_6-5lP34JHc818FXB4qQS2sTLzEhrdHPxD5wn3aDsY9DTnw25G02nQw0Jpp7Cw",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "evidence_required",
+    "valid": false
+   },
+   "id": "reject-endorsement-without-evidence",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767398400000,
+    "kind": "usage-endorsement",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "environment": "production",
+     "since": 1767225600000,
+     "version": "2.4.1"
+    },
+    "signalId": "sha256:e59c006db4032fdec89463b938275c590b450983f2c05602df1cf0ec25057cc6",
+    "signature": "16lhHlLGqqeDLnHfDiIl_-I2b0n_RME0K2_QYoEfwqq8LB5k-CZ9J9efjUKv_sfHlSf6BUHnvP1ukl5K2a32Bg",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_scope",
+    "valid": false
+   },
+   "id": "reject-endorsement-unknown-environment",
+   "input": {
+    "evidence": [
+     {
+      "label": "Deployment manifest",
+      "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+      "uri": "https://example.org/bob/deploy.yaml"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767398400000,
+    "kind": "usage-endorsement",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "environment": "somewhere",
+     "since": 1767225600000,
+     "version": "2.4.1"
+    },
+    "signalId": "sha256:2d881f3339824c88d1d2b60900f03f993af26948645c2ba078e0cb959162db38",
+    "signature": "hoJKAUlJZfF5rdreT9jORUY3rJF1vjpd5cQ5DorY_wIEjOeLPDrDgpW2BoJaioqJaqq7ObY1qzap1xG6r8PYCg",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_scope",
+    "valid": false
+   },
+   "id": "reject-endorsement-since-after-issue",
+   "input": {
+    "evidence": [
+     {
+      "label": "Deployment manifest",
+      "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+      "uri": "https://example.org/bob/deploy.yaml"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767398400000,
+    "kind": "usage-endorsement",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "environment": "production",
+     "since": 1767398400001,
+     "version": "2.4.1"
+    },
+    "signalId": "sha256:2a1aa194bbdc01662a9640eefd27be74929682877019ffb889694c50fd96dd82",
+    "signature": "mTORqwoNCEWTOZFq_mhtuIOOhwUt7Yc9LWvG7Z28AwDrr36REmad_INgR3YQF03C3oKB8c8pr7I38rkv5xuPDQ",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_scope",
+    "valid": false
+   },
+   "id": "reject-review-short-revision",
+   "input": {
+    "evidence": [
+     {
+      "label": "Audit report",
+      "sha256": null,
+      "uri": "https://example.org/carol/beacon-audit.pdf"
+     },
+     {
+      "label": "Fix pull request",
+      "sha256": null,
+      "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767484800000,
+    "kind": "security-review",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "findings": "resolved",
+     "method": "manual-audit",
+     "revision": "84a31cda4ed3"
+    },
+    "signalId": "sha256:b69135fe4c161a586d60315eade250965a3c7c3244044301eef282d461c657b0",
+    "signature": "c089YXdZKn-QuKMcOIOa1spSNnINTXOmfUzZwZgjYZ8Td4gcXX-71CyqF8ZxscbjQ2566ZMLvVK5W2rH2uyeCg",
+    "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_evidence",
+    "valid": false
+   },
+   "id": "reject-evidence-plain-http",
+   "input": {
+    "evidence": [
+     {
+      "label": "Audit",
+      "sha256": null,
+      "uri": "http://example.org/audit"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767484800000,
+    "kind": "security-review",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "findings": "resolved",
+     "method": "manual-audit",
+     "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+    },
+    "signalId": "sha256:2e96343f0c3736b1166d1127ee6cc5b579d0186ef3ddaa079176e6cecf9d140e",
+    "signature": "-WzC3n0nra6pyTFS2_ujWth5__y14r_Bg9Cs0Z7Tn6ZyjG4R7r2_DuRd3OAq2yEscFO4bqvpinZF75j16kGgAg",
+    "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_evidence",
+    "valid": false
+   },
+   "id": "reject-evidence-extra-key",
+   "input": {
+    "evidence": [
+     {
+      "label": "Audit report",
+      "sha256": null,
+      "trusted": true,
+      "uri": "https://example.org/carol/beacon-audit.pdf"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767484800000,
+    "kind": "security-review",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "findings": "resolved",
+     "method": "manual-audit",
+     "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+    },
+    "signalId": "sha256:51c202f7255f9bb275b3ef25b78a638edd6087c2cffc4f5e9e3577f0d6c49400",
+    "signature": "q3T4qXE5PL1HinQpqUaYQ9phdI4xY4JwpzS4bYDDqYEmfUhD4sR1iZC_UPPkBj4TEkq3eK8WeIpEEDXORaFlCQ",
+    "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+    "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "commitment_requires_expiry",
+    "valid": false
+   },
+   "id": "reject-mirror-without-expiry",
+   "input": {
+    "evidence": [
+     {
+      "label": "Mirror health",
+      "sha256": null,
+      "uri": "https://mirror.example.net/health"
+     }
+    ],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "mirror-commitment",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "endpoint": "https://mirror.example.net/cinder.git",
+     "protocols": [
+      "git-https",
+      "git-ssh"
+     ]
+    },
+    "signalId": "sha256:9b1c1d280f0ace63baac8afef8028a87ecba46cd9b1cffc68bc97738b59a2685",
+    "signature": "ZbQ0y8KdzpWmWd3f2iUJ9N1cnQoQF0IOaokmD7nquoYOPLlpEVrQ3_sNFNEZvJ2Ffg4IyIFuP8HCYGpjOAohDw",
+    "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+    "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_scope",
+    "valid": false
+   },
+   "id": "reject-mirror-unsorted-protocols",
+   "input": {
+    "evidence": [
+     {
+      "label": "Mirror health",
+      "sha256": null,
+      "uri": "https://mirror.example.net/health"
+     }
+    ],
+    "expiresAt": 1798761600000,
+    "issuedAt": 1767312000000,
+    "kind": "mirror-commitment",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {
+     "endpoint": "https://mirror.example.net/cinder.git",
+     "protocols": [
+      "git-ssh",
+      "git-https"
+     ]
+    },
+    "signalId": "sha256:1e35a4c10de30c2e836ee5bae916ef525e0c6a833e809fbfb2e8bd6abbf6ab22",
+    "signature": "PIwKWam8psCfTOyKUSP6kZqRQ1sEu_yA59FLqRLVFucWYfhFTx_r21aNt3K3Fdp-8Ze8i_mqu5kMVA4YYdcbBQ",
+    "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+    "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+    "tier": "attestation",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_expires_at",
+    "valid": false
+   },
+   "id": "reject-expiry-before-issue",
+   "input": {
+    "evidence": [],
+    "expiresAt": 1767312000000,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:f894cdd34fd2c527557533dfca028ea42870a246f83bffa209fc98eb1906e248",
+    "signature": "HGZBNrB1bsOY3QN1TeOjSztXYL5DVXc-AYT6ibCXoLQlC9bRxWlVxEFCb5Ye2kmBWSayfnGLcEH9HrHfDEA-Dg",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "unknown_kind",
+    "valid": false
+   },
+   "id": "reject-unknown-kind",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "like",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:fdac980ada312b2f0e0e67b7f22487d5dc5cb9ea5d891628cc40ac82b708526b",
+    "signature": "998CVvA57ftnyvYX_QAqVp20qLG1sLvSNywyvTQPPf6y3VWTHpmnNhUKS3XQb8nseka25fAqTCdK4-p9eqzvAg",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_subject",
+    "valid": false
+   },
+   "id": "reject-follow-repository-subject",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767225600000,
+    "kind": "follow",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:db3e38bae5ceba1c580d510c98dbe879d030f3af108837ab39454a4012f80af5",
+    "signature": "K5VXRNjDv7uQnR7U8pDH82KbWZSCAlqnv_ScemBXS4LCMROp0AYaYiHr0paP7NVtA8i2bbVZoeCf-P0YCYNIAQ",
+    "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_subject",
+    "valid": false
+   },
+   "id": "reject-star-identity-subject",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:f944ccfc84870a7b51096207e2cf1201135fb7643a43d5def48e5c540c588ad7",
+    "signature": "otJ1QlHkIMxriJRC6p2AZ9qonqeCXCc1mk-6eYpJsgwdBG2vBf58dh9UsMORQ2rLecSa8xuo7aiDSAzSPy9sBw",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:identity:ed25519:E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "self_follow",
+    "valid": false
+   },
+   "id": "reject-self-follow",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767225600000,
+    "kind": "follow",
+    "note": "",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:7d11f1ee490b39366c3f10c244c914535fedc37d56ea9c70a44f06aaf8fa870f",
+    "signature": "rkj0QSTBXTezsOhB8-tRfby_o1uIqPUX-B3Um-7qpL_jzlXk0CfNr-TWM2TyW7mGIjAccJkS5DnT6a6jdp-fCA",
+    "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+    "subject": "urn:forkmesh:identity:ed25519:E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_visibility",
+    "valid": false
+   },
+   "id": "reject-unknown-visibility",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4ceea897f7aa1eb0fdecba5e3b0bc335ca86ce4123199498a1d6a5a340121a11",
+    "signature": "kGd1RNgHFALlnp0VEnfK9MHPIvZ2K0Jriyy4gRECA4PXDGgpWHRch0rqBTDF_ESnCUdu6jgDF_nMutPb5e8TDw",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "unlisted"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_note",
+    "valid": false
+   },
+   "id": "reject-oversized-note",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:75d5fa5f8d85fa465f028a1a21b070e511fc2cbafd71022af87479d8503e77a6",
+    "signature": "Z0SW243CXJOQ6EeY8WWkTmWybcGUsY0vxUCPMTmIzTwNjRehMUUePjRs2RKFWoeDChBtOugX8hu3gQl4tD15BA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "unsupported_schema",
+    "valid": false
+   },
+   "id": "reject-unsupported-schema",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v2",
+    "scope": {},
+    "signalId": "sha256:5893306dacb546f903ed32d1ca01770f29d58b4268e2096e64e5c432d4ef1f79",
+    "signature": "fgJm0NEop0YBXC0qpVXQWTPtyCe0e9pfWWKCrbfYL6YLf8vS8ffOljlrKN1_sNHTrpiT4PPjuIlrulBKRNNABg",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "signal_id_mismatch",
+    "valid": false
+   },
+   "id": "reject-note-edited-after-signing",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Terrible docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_signature",
+    "valid": false
+   },
+   "id": "reject-signer-substituted",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:0f46132aa748fbe3d8a3fad1fef0520feb2b7be7781b1174f948608637b12e07",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_signature",
+    "valid": false
+   },
+   "id": "reject-signature-by-other-key",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "LcDp_Q5G76lf1QrwfA7GhdezwQyC2hP1P4yhYwVAmCug1PDaZd4sTDwRwDAFB8v3XWcA9VnGqT9w6Sgm1t6cDQ",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_signature",
+    "valid": false
+   },
+   "id": "reject-small-order-signer",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:fc975e10e6089933e3beb5a961c5853294276d667e294a9364b998cf60041df2",
+    "signature": "xxt8Jyhf2GUPdSaEjrAWV9r3YDF3fc0Zd4SPmWmpmRfDZo2M9kgu0XfRyLXOeqsQdGS5jyeKh1qt8Qi-v1oeCg",
+    "signer": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_signature",
+    "valid": false
+   },
+   "id": "reject-signature-s-plus-l",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYGCTTDq7wN5WI_-vaspvQQpjW0QpNCaVhWkvhrt01CFA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_signature_encoding",
+    "valid": false
+   },
+   "id": "reject-short-signature",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhr",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_record_keys",
+    "valid": false
+   },
+   "id": "reject-missing-field",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_record_keys",
+    "valid": false
+   },
+   "id": "reject-extra-field",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "score": 5,
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_number",
+    "valid": false
+   },
+   "id": "reject-fractional-timestamp",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1.5,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_number",
+    "valid": false
+   },
+   "id": "reject-unsafe-integer",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 9007199254740992,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1767311699999,
+   "expect": {
+    "error": "issued_in_future",
+    "valid": false
+   },
+   "id": "reject-issued-in-future",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  },
+  {
+   "asOf": 1767311700000,
+   "expect": {
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "summary": "Star",
+    "valid": true
+   },
+   "id": "accept-within-clock-skew",
+   "input": {
+    "evidence": [],
+    "expiresAt": null,
+    "issuedAt": 1767312000000,
+    "kind": "star",
+    "note": "Great docs",
+    "schema": "forkmesh-social-signal-v1",
+    "scope": {},
+    "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+    "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+    "tier": "interest",
+    "visibility": "public"
+   }
+  }
+ ],
+ "revocations": [
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+    "valid": true
+   },
+   "id": "revocation-valid",
+   "input": {
+    "reason": "mistaken",
+    "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+    "revokedAt": 1767830400000,
+    "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+    "schema": "forkmesh-social-revocation-v1",
+    "signature": "yYq9blIdTdCngGwA2XeUUw-fn2tRNRZQG_geOU3CPqOX8JsEVcGx7FY66XSxcmkz2IDFtFBBlAU2AmR7BqCZCA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "revocationId": "sha256:6d2edd5541643f0598022272109f5df1d91fe2b8b022699967447855556c06d2",
+    "valid": true
+   },
+   "id": "revocation-pending-target",
+   "input": {
+    "reason": "withdrawn",
+    "revocationId": "sha256:6d2edd5541643f0598022272109f5df1d91fe2b8b022699967447855556c06d2",
+    "revokedAt": 1767830400000,
+    "revokes": "sha256:abababababababababababababababababababababababababababababababab",
+    "schema": "forkmesh-social-revocation-v1",
+    "signature": "ZuPE5kdpRxQnWBKkUMBXjwPgBQCy31mIp4PtFAADYgQkUbpaXWrV9leTdHTAq4LkL7VmWmrP0L2cytT7yclKCQ",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "revocation_id_mismatch",
+    "valid": false
+   },
+   "id": "reject-revocation-tampered-target",
+   "input": {
+    "reason": "mistaken",
+    "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+    "revokedAt": 1767830400000,
+    "revokes": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+    "schema": "forkmesh-social-revocation-v1",
+    "signature": "yYq9blIdTdCngGwA2XeUUw-fn2tRNRZQG_geOU3CPqOX8JsEVcGx7FY66XSxcmkz2IDFtFBBlAU2AmR7BqCZCA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_signature",
+    "valid": false
+   },
+   "id": "reject-revocation-other-key",
+   "input": {
+    "reason": "mistaken",
+    "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+    "revokedAt": 1767830400000,
+    "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+    "schema": "forkmesh-social-revocation-v1",
+    "signature": "-PiJ37AvSwvXFMCFXEkW3iSK3wbwqCymaRf99uySw_o9WzgXC0hMmAt09u2oPlueFUKnl1aP3r4oF7RTPCvwBg",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_reason",
+    "valid": false
+   },
+   "id": "reject-revocation-unknown-reason",
+   "input": {
+    "reason": "because",
+    "revocationId": "sha256:4853a9ef1e492dabc49e39445dce382188a6334776c6ed0ad7d30efefbc59041",
+    "revokedAt": 1767830400000,
+    "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+    "schema": "forkmesh-social-revocation-v1",
+    "signature": "gnE0fAhYJoafaZYwtLqPHCZMMtgk7geSuxHqnR-6SaQKiw_QKKHEdQrQ6xg-zER_NMHOTeKAg4LabaTAdJMjBA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+   }
+  },
+  {
+   "asOf": 1769817600000,
+   "expect": {
+    "error": "invalid_revokes",
+    "valid": false
+   },
+   "id": "reject-revocation-invalid-target",
+   "input": {
+    "reason": "mistaken",
+    "revocationId": "sha256:cb628378ab7e3fe43149ee1ee4a01e1cab6cf9740b99113c70e16aca817e3292",
+    "revokedAt": 1767830400000,
+    "revokes": "sha1:abc",
+    "schema": "forkmesh-social-revocation-v1",
+    "signature": "ZeJ9nAhAFra0NXXA3KCdPzkoyRxVtPgi1U0zVRU4zex1e5aTM6Bnf3Ft2DZEz9PTbR6nh5nEo055AOEwygH0CQ",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+   }
+  },
+  {
+   "asOf": 1767830099999,
+   "expect": {
+    "error": "issued_in_future",
+    "valid": false
+   },
+   "id": "reject-revocation-in-future",
+   "input": {
+    "reason": "mistaken",
+    "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+    "revokedAt": 1767830400000,
+    "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+    "schema": "forkmesh-social-revocation-v1",
+    "signature": "yYq9blIdTdCngGwA2XeUUw-fn2tRNRZQG_geOU3CPqOX8JsEVcGx7FY66XSxcmkz2IDFtFBBlAU2AmR7BqCZCA",
+    "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+   }
+  }
+ ],
+ "scenarios": [
+  {
+   "asOf": 1769817600000,
+   "bundles": [
+    {
+     "exportedAt": 1769817600000,
+     "revocations": [],
+     "schema": "forkmesh-social-signal-bundle-v1",
+     "signals": [
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767225600000,
+       "kind": "follow",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:7a44fa9114c17a766f93088f68cdf4c40d710f3ff6e073b979c869fd4f4766a2",
+       "signature": "GyJHy4_UE0TVFliGFNAX47YK7jyqwSRzUtZe9j7orms75FWd8kYJMEW1rSrotsC40TIMHUmIWav6jjhDjQzPDw",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "subject": "urn:forkmesh:identity:ed25519:7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767225600000,
+       "kind": "follow",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:5369b823ef2220f8927226d92a9c7ae3306a99667d35b07042df514fd0b282ff",
+       "signature": "C1KwLuWgkmoTJN9QWux3mv53vQqyGfUHQectd6KEIMYV8yRa46iCB8T2fS7cfQQr82eNbnKXlFKDpjdC0xp4CA",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "subject": "urn:forkmesh:identity:ed25519:g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767225600000,
+       "kind": "follow",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:0a44501143eb90fa271da78a6fe7c85c92e2006ca97aaeb34a28839bb39b7c6a",
+       "signature": "2rUKi4xBFow3JCBCcN7U-PuUHaDaC6CDgu9jAPmpo1aMFCJ6s9GvUWpy1pRVUg25xV9WoMPdB1-X-2HW827pBQ",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "subject": "urn:forkmesh:identity:ed25519:zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767398400000,
+       "kind": "star",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:42b6f86cd718efeded90520f4abed7b49a300646dddd082fc697c83365823c98",
+       "signature": "2UvQ4DNk97ujEueL8E2gQysO2y8CAvKr49C1vRzh9bfDSjHasgU2cQUt69B3Iv_ns_rqV3LkGsCYUMvcdvRhAw",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "bookmark",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:4d8918a8c47776b0878b5ea3b1041c90207efac5e25ad8c94aeea0ffc6c3db56",
+       "signature": "MdotXUG6l-iT-YM97hX2rRDwHtnvNRmlsZ_l9utEYDuIKfp_C_lWTUjqoPLoToG9mao6Pwt4Jrg5zJ3-vnIbAg",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+       "tier": "interest",
+       "visibility": "private"
+      }
+     ]
+    },
+    {
+     "exportedAt": 1769817600000,
+     "revocations": [
+      {
+       "reason": "mistaken",
+       "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+       "revokedAt": 1767830400000,
+       "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+       "schema": "forkmesh-social-revocation-v1",
+       "signature": "yYq9blIdTdCngGwA2XeUUw-fn2tRNRZQG_geOU3CPqOX8JsEVcGx7FY66XSxcmkz2IDFtFBBlAU2AmR7BqCZCA",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+      },
+      {
+       "reason": "withdrawn",
+       "revocationId": "sha256:6d2edd5541643f0598022272109f5df1d91fe2b8b022699967447855556c06d2",
+       "revokedAt": 1767830400000,
+       "revokes": "sha256:abababababababababababababababababababababababababababababababab",
+       "schema": "forkmesh-social-revocation-v1",
+       "signature": "ZuPE5kdpRxQnWBKkUMBXjwPgBQCy31mIp4PtFAADYgQkUbpaXWrV9leTdHTAq4LkL7VmWmrP0L2cytT7yclKCQ",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+      }
+     ],
+     "schema": "forkmesh-social-signal-bundle-v1",
+     "signals": [
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "note": "Great docs",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+       "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [
+        {
+         "label": "Deployment manifest",
+         "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+         "uri": "https://example.org/bob/deploy.yaml"
+        }
+       ],
+       "expiresAt": null,
+       "issuedAt": 1767398400000,
+       "kind": "usage-endorsement",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {
+        "environment": "production",
+        "since": 1767225600000,
+        "version": "2.4.1"
+       },
+       "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+       "signature": "rljN9v9k4Uxg67umk1bPaCaLvfz5rFjPKelFRT03cedxEnMNBKpB4oDq9fXEGzm6qZplAJu9MsQyZhw_imYmDw",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+       "signature": "l2A6cx_QyaTwl1l5j65BLr_2bb2E0OdD1fI6bubkPMNZMCJ6UwEZiDzWKITLRItC4LiELGJlgVdVdltM8nTABA",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767225600000,
+       "kind": "follow",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:1b3521b9053e9962ff913893c816c2f873d8eaa2c62bb83846ed4bb3573e3816",
+       "signature": "TsOwspKhVP8j6AsML0MS_yPi5ZrvucdFk97p3unxkczON-P5uTD9aUntCMQK38Roj0Jhyh2ObD8tqyXmkaseDg",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "subject": "urn:forkmesh:identity:ed25519:83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+       "tier": "interest",
+       "visibility": "followers"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "note": "Great docs",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+       "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+       "tier": "interest",
+       "visibility": "public"
+      }
+     ]
+    },
+    {
+     "exportedAt": 1769817600000,
+     "revocations": [
+      {
+       "reason": "compromised",
+       "revocationId": "sha256:c7d816ebd46e612b81bcedfe4e484d2c2afa950a34af162fac561ff0b658f1f2",
+       "revokedAt": 1767830400000,
+       "revokes": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+       "schema": "forkmesh-social-revocation-v1",
+       "signature": "MVoB8mUeewQCsF4P81slOCfUed0c9u-333Y0PWDY08PtTjtj5-b80_Fhc-saLuNyX__YJMxculqIs7PDeAjiBQ",
+       "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8"
+      }
+     ],
+     "schema": "forkmesh-social-signal-bundle-v1",
+     "signals": [
+      {
+       "evidence": [
+        {
+         "label": "Audit report",
+         "sha256": null,
+         "uri": "https://example.org/carol/beacon-audit.pdf"
+        },
+        {
+         "label": "Fix pull request",
+         "sha256": null,
+         "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+        }
+       ],
+       "expiresAt": null,
+       "issuedAt": 1767484800000,
+       "kind": "security-review",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {
+        "findings": "resolved",
+        "method": "manual-audit",
+        "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+       },
+       "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+       "signature": "j2B2SCqrXFAEcuc8hcZgtS5sUA3RpNogzGNcFZDWDgUBEvjyJMHLXfQPnKM74nhUiXpos12HqmaZMtn8QHi6CA",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767571200000,
+       "kind": "watch",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:8ca575acc6df30edccfb5cbc9e884a09e14e7d5d0d34a0348c99c8138b042fcc",
+       "signature": "FnqfhT4uIhD9mly8vtVONoHsmVueXzjaLOgnsFBr3-iC4NnoXws36zDbEZrBp_taHm5gr9I6EmyHn-pKRB33AA",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+       "tier": "interest",
+       "visibility": "followers"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767657600000,
+       "kind": "recommendation",
+       "note": "Pairs well with beacon",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:47b42385c2227b6bcab4737192320861ab45b2eb4fa5b6e21856cb786586663d",
+       "signature": "2yWxJDDpGjA8ef95dmcHvsDfarRY_Ko7sJzBmVYrEE9cfMwzB9a7UW85PopB0rdwVodYZe-a-TrBWc8gmB0TBw",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:8f143da399867a202f8645e8fbe8ed798858f53481c908818ffd4339f9712c4d",
+       "signature": "1ro6PQMx0ATrngs1kdSzhn1aJiTzSkwl3Rtn0IhvGHLHLvBkLmKuf5LX91feqrUlrOXv3ZTSWxptcd34Jr2YDw",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767744000000,
+       "kind": "star",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+       "signature": "KtpjaQE4oA2caCqbW5gl2caO7WPUdJRP7VPgDUe5pcqCZt32eoVZdqwKDstkW0n7uxiASRyD1thPvK8uPFfBAg",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+       "tier": "interest",
+       "visibility": "public"
+      }
+     ]
+    },
+    {
+     "exportedAt": 1769817600000,
+     "revocations": [
+      {
+       "reason": "because",
+       "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+       "revokedAt": 1767830400000,
+       "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+       "schema": "forkmesh-social-revocation-v1",
+       "signature": "yYq9blIdTdCngGwA2XeUUw-fn2tRNRZQG_geOU3CPqOX8JsEVcGx7FY66XSxcmkz2IDFtFBBlAU2AmR7BqCZCA",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+      }
+     ],
+     "schema": "forkmesh-social-signal-bundle-v1",
+     "signals": [
+      {
+       "evidence": [
+        {
+         "label": "Mirror health",
+         "sha256": null,
+         "uri": "https://mirror.example.net/health"
+        }
+       ],
+       "expiresAt": 1798761600000,
+       "issuedAt": 1767312000000,
+       "kind": "mirror-commitment",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {
+        "endpoint": "https://mirror.example.net/cinder.git",
+        "protocols": [
+         "git-https",
+         "git-ssh"
+        ]
+       },
+       "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+       "signature": "ljfAhEk3jXs2C9hOR9zp80j70XXD4sUXhO-5OBsUPQpPaHc7qOgPA-5RWwTUNZuKjeeKrn9T2_GRjO6uHOb-DQ",
+       "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+       "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "evidence": [
+        {
+         "label": "Mirror health",
+         "sha256": null,
+         "uri": "https://mirror.example.net/health"
+        }
+       ],
+       "expiresAt": 1768089600000,
+       "issuedAt": 1767312000000,
+       "kind": "mirror-commitment",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {
+        "endpoint": "https://mirror.example.net/delta.git",
+        "protocols": [
+         "forkmesh-relay"
+        ]
+       },
+       "signalId": "sha256:02dbfaaf5e17e7afb9772cdc33917b0203694746a630548bf187145310fb3bd5",
+       "signature": "X1WdPG-6AJfDQSsnd5ZLW4PsfC3fVcj8FLXoYPtsBtEged6Z764_g3BbSH7MuzcpA717f1zW6C5g0dRW9MIIBw",
+       "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+       "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:42194a3f35b15125583b9c57ebca54ffeea16890d9f1e576bf8219500e15b963",
+       "signature": "gOLIzN-21rCehCl81gxz1HlGZmvWYLrLob6qrOHqxvlMkghuGtFkWr0SwsZ2ODcAzZ5nKfPrPpUlGXZqqs9ZBQ",
+       "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+       "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "evidence": [
+        {
+         "label": "Deployment manifest",
+         "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+         "uri": "https://example.org/bob/deploy.yaml"
+        }
+       ],
+       "expiresAt": null,
+       "issuedAt": 1767398400000,
+       "kind": "usage-endorsement",
+       "note": "",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {
+        "environment": "production",
+        "since": 1767225600000,
+        "version": "2.4.1"
+       },
+       "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+       "signature": "rljN9v9k4Uxg67umk1bPaCaLvfz5rFjPKelFRT03cedxEnMNBKpB4oDq9fXEGzm6qZplAJu9MsQyZhw_imYmDw",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "evidence": [],
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "note": "Terrible docs",
+       "schema": "forkmesh-social-signal-v1",
+       "scope": {},
+       "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+       "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+       "tier": "interest",
+       "visibility": "public"
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "exports": {
+     "followers": {
+      "exportedAt": 1769817600000,
+      "revocations": [
+       {
+        "reason": "mistaken",
+        "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+        "revokedAt": 1767830400000,
+        "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+        "schema": "forkmesh-social-revocation-v1",
+        "signature": "yYq9blIdTdCngGwA2XeUUw-fn2tRNRZQG_geOU3CPqOX8JsEVcGx7FY66XSxcmkz2IDFtFBBlAU2AmR7BqCZCA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+       },
+       {
+        "reason": "compromised",
+        "revocationId": "sha256:c7d816ebd46e612b81bcedfe4e484d2c2afa950a34af162fac561ff0b658f1f2",
+        "revokedAt": 1767830400000,
+        "revokes": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+        "schema": "forkmesh-social-revocation-v1",
+        "signature": "MVoB8mUeewQCsF4P81slOCfUed0c9u-333Y0PWDY08PtTjtj5-b80_Fhc-saLuNyX__YJMxculqIs7PDeAjiBQ",
+        "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8"
+       }
+      ],
+      "schema": "forkmesh-social-signal-bundle-v1",
+      "signals": [
+       {
+        "evidence": [
+         {
+          "label": "Mirror health",
+          "sha256": null,
+          "uri": "https://mirror.example.net/health"
+         }
+        ],
+        "expiresAt": 1768089600000,
+        "issuedAt": 1767312000000,
+        "kind": "mirror-commitment",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "endpoint": "https://mirror.example.net/delta.git",
+         "protocols": [
+          "forkmesh-relay"
+         ]
+        },
+        "signalId": "sha256:02dbfaaf5e17e7afb9772cdc33917b0203694746a630548bf187145310fb3bd5",
+        "signature": "X1WdPG-6AJfDQSsnd5ZLW4PsfC3fVcj8FLXoYPtsBtEged6Z764_g3BbSH7MuzcpA717f1zW6C5g0dRW9MIIBw",
+        "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:0a44501143eb90fa271da78a6fe7c85c92e2006ca97aaeb34a28839bb39b7c6a",
+        "signature": "2rUKi4xBFow3JCBCcN7U-PuUHaDaC6CDgu9jAPmpo1aMFCJ6s9GvUWpy1pRVUg25xV9WoMPdB1-X-2HW827pBQ",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:1b3521b9053e9962ff913893c816c2f873d8eaa2c62bb83846ed4bb3573e3816",
+        "signature": "TsOwspKhVP8j6AsML0MS_yPi5ZrvucdFk97p3unxkczON-P5uTD9aUntCMQK38Roj0Jhyh2ObD8tqyXmkaseDg",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:identity:ed25519:83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+        "tier": "interest",
+        "visibility": "followers"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Mirror health",
+          "sha256": null,
+          "uri": "https://mirror.example.net/health"
+         }
+        ],
+        "expiresAt": 1798761600000,
+        "issuedAt": 1767312000000,
+        "kind": "mirror-commitment",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "endpoint": "https://mirror.example.net/cinder.git",
+         "protocols": [
+          "git-https",
+          "git-ssh"
+         ]
+        },
+        "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+        "signature": "ljfAhEk3jXs2C9hOR9zp80j70XXD4sUXhO-5OBsUPQpPaHc7qOgPA-5RWwTUNZuKjeeKrn9T2_GRjO6uHOb-DQ",
+        "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:42194a3f35b15125583b9c57ebca54ffeea16890d9f1e576bf8219500e15b963",
+        "signature": "gOLIzN-21rCehCl81gxz1HlGZmvWYLrLob6qrOHqxvlMkghuGtFkWr0SwsZ2ODcAzZ5nKfPrPpUlGXZqqs9ZBQ",
+        "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Audit report",
+          "sha256": null,
+          "uri": "https://example.org/carol/beacon-audit.pdf"
+         },
+         {
+          "label": "Fix pull request",
+          "sha256": null,
+          "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+         }
+        ],
+        "expiresAt": null,
+        "issuedAt": 1767484800000,
+        "kind": "security-review",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "findings": "resolved",
+         "method": "manual-audit",
+         "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+        },
+        "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+        "signature": "j2B2SCqrXFAEcuc8hcZgtS5sUA3RpNogzGNcFZDWDgUBEvjyJMHLXfQPnKM74nhUiXpos12HqmaZMtn8QHi6CA",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767398400000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:42b6f86cd718efeded90520f4abed7b49a300646dddd082fc697c83365823c98",
+        "signature": "2UvQ4DNk97ujEueL8E2gQysO2y8CAvKr49C1vRzh9bfDSjHasgU2cQUt69B3Iv_ns_rqV3LkGsCYUMvcdvRhAw",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767657600000,
+        "kind": "recommendation",
+        "note": "Pairs well with beacon",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:47b42385c2227b6bcab4737192320861ab45b2eb4fa5b6e21856cb786586663d",
+        "signature": "2yWxJDDpGjA8ef95dmcHvsDfarRY_Ko7sJzBmVYrEE9cfMwzB9a7UW85PopB0rdwVodYZe-a-TrBWc8gmB0TBw",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "Great docs",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+        "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:5369b823ef2220f8927226d92a9c7ae3306a99667d35b07042df514fd0b282ff",
+        "signature": "C1KwLuWgkmoTJN9QWux3mv53vQqyGfUHQectd6KEIMYV8yRa46iCB8T2fS7cfQQr82eNbnKXlFKDpjdC0xp4CA",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Deployment manifest",
+          "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+          "uri": "https://example.org/bob/deploy.yaml"
+         }
+        ],
+        "expiresAt": null,
+        "issuedAt": 1767398400000,
+        "kind": "usage-endorsement",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "environment": "production",
+         "since": 1767225600000,
+         "version": "2.4.1"
+        },
+        "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+        "signature": "rljN9v9k4Uxg67umk1bPaCaLvfz5rFjPKelFRT03cedxEnMNBKpB4oDq9fXEGzm6qZplAJu9MsQyZhw_imYmDw",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:7a44fa9114c17a766f93088f68cdf4c40d710f3ff6e073b979c869fd4f4766a2",
+        "signature": "GyJHy4_UE0TVFliGFNAX47YK7jyqwSRzUtZe9j7orms75FWd8kYJMEW1rSrotsC40TIMHUmIWav6jjhDjQzPDw",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767744000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+        "signature": "KtpjaQE4oA2caCqbW5gl2caO7WPUdJRP7VPgDUe5pcqCZt32eoVZdqwKDstkW0n7uxiASRyD1thPvK8uPFfBAg",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767571200000,
+        "kind": "watch",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:8ca575acc6df30edccfb5cbc9e884a09e14e7d5d0d34a0348c99c8138b042fcc",
+        "signature": "FnqfhT4uIhD9mly8vtVONoHsmVueXzjaLOgnsFBr3-iC4NnoXws36zDbEZrBp_taHm5gr9I6EmyHn-pKRB33AA",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "interest",
+        "visibility": "followers"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:8f143da399867a202f8645e8fbe8ed798858f53481c908818ffd4339f9712c4d",
+        "signature": "1ro6PQMx0ATrngs1kdSzhn1aJiTzSkwl3Rtn0IhvGHLHLvBkLmKuf5LX91feqrUlrOXv3ZTSWxptcd34Jr2YDw",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+        "signature": "l2A6cx_QyaTwl1l5j65BLr_2bb2E0OdD1fI6bubkPMNZMCJ6UwEZiDzWKITLRItC4LiELGJlgVdVdltM8nTABA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "interest",
+        "visibility": "public"
+       }
+      ]
+     },
+     "public": {
+      "exportedAt": 1769817600000,
+      "revocations": [
+       {
+        "reason": "mistaken",
+        "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+        "revokedAt": 1767830400000,
+        "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+        "schema": "forkmesh-social-revocation-v1",
+        "signature": "yYq9blIdTdCngGwA2XeUUw-fn2tRNRZQG_geOU3CPqOX8JsEVcGx7FY66XSxcmkz2IDFtFBBlAU2AmR7BqCZCA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+       },
+       {
+        "reason": "compromised",
+        "revocationId": "sha256:c7d816ebd46e612b81bcedfe4e484d2c2afa950a34af162fac561ff0b658f1f2",
+        "revokedAt": 1767830400000,
+        "revokes": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+        "schema": "forkmesh-social-revocation-v1",
+        "signature": "MVoB8mUeewQCsF4P81slOCfUed0c9u-333Y0PWDY08PtTjtj5-b80_Fhc-saLuNyX__YJMxculqIs7PDeAjiBQ",
+        "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8"
+       }
+      ],
+      "schema": "forkmesh-social-signal-bundle-v1",
+      "signals": [
+       {
+        "evidence": [
+         {
+          "label": "Mirror health",
+          "sha256": null,
+          "uri": "https://mirror.example.net/health"
+         }
+        ],
+        "expiresAt": 1768089600000,
+        "issuedAt": 1767312000000,
+        "kind": "mirror-commitment",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "endpoint": "https://mirror.example.net/delta.git",
+         "protocols": [
+          "forkmesh-relay"
+         ]
+        },
+        "signalId": "sha256:02dbfaaf5e17e7afb9772cdc33917b0203694746a630548bf187145310fb3bd5",
+        "signature": "X1WdPG-6AJfDQSsnd5ZLW4PsfC3fVcj8FLXoYPtsBtEged6Z764_g3BbSH7MuzcpA717f1zW6C5g0dRW9MIIBw",
+        "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:0a44501143eb90fa271da78a6fe7c85c92e2006ca97aaeb34a28839bb39b7c6a",
+        "signature": "2rUKi4xBFow3JCBCcN7U-PuUHaDaC6CDgu9jAPmpo1aMFCJ6s9GvUWpy1pRVUg25xV9WoMPdB1-X-2HW827pBQ",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Mirror health",
+          "sha256": null,
+          "uri": "https://mirror.example.net/health"
+         }
+        ],
+        "expiresAt": 1798761600000,
+        "issuedAt": 1767312000000,
+        "kind": "mirror-commitment",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "endpoint": "https://mirror.example.net/cinder.git",
+         "protocols": [
+          "git-https",
+          "git-ssh"
+         ]
+        },
+        "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+        "signature": "ljfAhEk3jXs2C9hOR9zp80j70XXD4sUXhO-5OBsUPQpPaHc7qOgPA-5RWwTUNZuKjeeKrn9T2_GRjO6uHOb-DQ",
+        "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:42194a3f35b15125583b9c57ebca54ffeea16890d9f1e576bf8219500e15b963",
+        "signature": "gOLIzN-21rCehCl81gxz1HlGZmvWYLrLob6qrOHqxvlMkghuGtFkWr0SwsZ2ODcAzZ5nKfPrPpUlGXZqqs9ZBQ",
+        "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Audit report",
+          "sha256": null,
+          "uri": "https://example.org/carol/beacon-audit.pdf"
+         },
+         {
+          "label": "Fix pull request",
+          "sha256": null,
+          "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+         }
+        ],
+        "expiresAt": null,
+        "issuedAt": 1767484800000,
+        "kind": "security-review",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "findings": "resolved",
+         "method": "manual-audit",
+         "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+        },
+        "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+        "signature": "j2B2SCqrXFAEcuc8hcZgtS5sUA3RpNogzGNcFZDWDgUBEvjyJMHLXfQPnKM74nhUiXpos12HqmaZMtn8QHi6CA",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767398400000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:42b6f86cd718efeded90520f4abed7b49a300646dddd082fc697c83365823c98",
+        "signature": "2UvQ4DNk97ujEueL8E2gQysO2y8CAvKr49C1vRzh9bfDSjHasgU2cQUt69B3Iv_ns_rqV3LkGsCYUMvcdvRhAw",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767657600000,
+        "kind": "recommendation",
+        "note": "Pairs well with beacon",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:47b42385c2227b6bcab4737192320861ab45b2eb4fa5b6e21856cb786586663d",
+        "signature": "2yWxJDDpGjA8ef95dmcHvsDfarRY_Ko7sJzBmVYrEE9cfMwzB9a7UW85PopB0rdwVodYZe-a-TrBWc8gmB0TBw",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "Great docs",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+        "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:5369b823ef2220f8927226d92a9c7ae3306a99667d35b07042df514fd0b282ff",
+        "signature": "C1KwLuWgkmoTJN9QWux3mv53vQqyGfUHQectd6KEIMYV8yRa46iCB8T2fS7cfQQr82eNbnKXlFKDpjdC0xp4CA",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Deployment manifest",
+          "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+          "uri": "https://example.org/bob/deploy.yaml"
+         }
+        ],
+        "expiresAt": null,
+        "issuedAt": 1767398400000,
+        "kind": "usage-endorsement",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "environment": "production",
+         "since": 1767225600000,
+         "version": "2.4.1"
+        },
+        "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+        "signature": "rljN9v9k4Uxg67umk1bPaCaLvfz5rFjPKelFRT03cedxEnMNBKpB4oDq9fXEGzm6qZplAJu9MsQyZhw_imYmDw",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:7a44fa9114c17a766f93088f68cdf4c40d710f3ff6e073b979c869fd4f4766a2",
+        "signature": "GyJHy4_UE0TVFliGFNAX47YK7jyqwSRzUtZe9j7orms75FWd8kYJMEW1rSrotsC40TIMHUmIWav6jjhDjQzPDw",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767744000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+        "signature": "KtpjaQE4oA2caCqbW5gl2caO7WPUdJRP7VPgDUe5pcqCZt32eoVZdqwKDstkW0n7uxiASRyD1thPvK8uPFfBAg",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:8f143da399867a202f8645e8fbe8ed798858f53481c908818ffd4339f9712c4d",
+        "signature": "1ro6PQMx0ATrngs1kdSzhn1aJiTzSkwl3Rtn0IhvGHLHLvBkLmKuf5LX91feqrUlrOXv3ZTSWxptcd34Jr2YDw",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+        "signature": "l2A6cx_QyaTwl1l5j65BLr_2bb2E0OdD1fI6bubkPMNZMCJ6UwEZiDzWKITLRItC4LiELGJlgVdVdltM8nTABA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "interest",
+        "visibility": "public"
+       }
+      ]
+     },
+     "self": {
+      "exportedAt": 1769817600000,
+      "revocations": [
+       {
+        "reason": "mistaken",
+        "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+        "revokedAt": 1767830400000,
+        "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+        "schema": "forkmesh-social-revocation-v1",
+        "signature": "yYq9blIdTdCngGwA2XeUUw-fn2tRNRZQG_geOU3CPqOX8JsEVcGx7FY66XSxcmkz2IDFtFBBlAU2AmR7BqCZCA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+       },
+       {
+        "reason": "withdrawn",
+        "revocationId": "sha256:6d2edd5541643f0598022272109f5df1d91fe2b8b022699967447855556c06d2",
+        "revokedAt": 1767830400000,
+        "revokes": "sha256:abababababababababababababababababababababababababababababababab",
+        "schema": "forkmesh-social-revocation-v1",
+        "signature": "ZuPE5kdpRxQnWBKkUMBXjwPgBQCy31mIp4PtFAADYgQkUbpaXWrV9leTdHTAq4LkL7VmWmrP0L2cytT7yclKCQ",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y"
+       },
+       {
+        "reason": "compromised",
+        "revocationId": "sha256:c7d816ebd46e612b81bcedfe4e484d2c2afa950a34af162fac561ff0b658f1f2",
+        "revokedAt": 1767830400000,
+        "revokes": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+        "schema": "forkmesh-social-revocation-v1",
+        "signature": "MVoB8mUeewQCsF4P81slOCfUed0c9u-333Y0PWDY08PtTjtj5-b80_Fhc-saLuNyX__YJMxculqIs7PDeAjiBQ",
+        "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8"
+       }
+      ],
+      "schema": "forkmesh-social-signal-bundle-v1",
+      "signals": [
+       {
+        "evidence": [
+         {
+          "label": "Mirror health",
+          "sha256": null,
+          "uri": "https://mirror.example.net/health"
+         }
+        ],
+        "expiresAt": 1768089600000,
+        "issuedAt": 1767312000000,
+        "kind": "mirror-commitment",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "endpoint": "https://mirror.example.net/delta.git",
+         "protocols": [
+          "forkmesh-relay"
+         ]
+        },
+        "signalId": "sha256:02dbfaaf5e17e7afb9772cdc33917b0203694746a630548bf187145310fb3bd5",
+        "signature": "X1WdPG-6AJfDQSsnd5ZLW4PsfC3fVcj8FLXoYPtsBtEged6Z764_g3BbSH7MuzcpA717f1zW6C5g0dRW9MIIBw",
+        "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:0a44501143eb90fa271da78a6fe7c85c92e2006ca97aaeb34a28839bb39b7c6a",
+        "signature": "2rUKi4xBFow3JCBCcN7U-PuUHaDaC6CDgu9jAPmpo1aMFCJ6s9GvUWpy1pRVUg25xV9WoMPdB1-X-2HW827pBQ",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:1b3521b9053e9962ff913893c816c2f873d8eaa2c62bb83846ed4bb3573e3816",
+        "signature": "TsOwspKhVP8j6AsML0MS_yPi5ZrvucdFk97p3unxkczON-P5uTD9aUntCMQK38Roj0Jhyh2ObD8tqyXmkaseDg",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:identity:ed25519:83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+        "tier": "interest",
+        "visibility": "followers"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Mirror health",
+          "sha256": null,
+          "uri": "https://mirror.example.net/health"
+         }
+        ],
+        "expiresAt": 1798761600000,
+        "issuedAt": 1767312000000,
+        "kind": "mirror-commitment",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "endpoint": "https://mirror.example.net/cinder.git",
+         "protocols": [
+          "git-https",
+          "git-ssh"
+         ]
+        },
+        "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+        "signature": "ljfAhEk3jXs2C9hOR9zp80j70XXD4sUXhO-5OBsUPQpPaHc7qOgPA-5RWwTUNZuKjeeKrn9T2_GRjO6uHOb-DQ",
+        "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:42194a3f35b15125583b9c57ebca54ffeea16890d9f1e576bf8219500e15b963",
+        "signature": "gOLIzN-21rCehCl81gxz1HlGZmvWYLrLob6qrOHqxvlMkghuGtFkWr0SwsZ2ODcAzZ5nKfPrPpUlGXZqqs9ZBQ",
+        "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Audit report",
+          "sha256": null,
+          "uri": "https://example.org/carol/beacon-audit.pdf"
+         },
+         {
+          "label": "Fix pull request",
+          "sha256": null,
+          "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+         }
+        ],
+        "expiresAt": null,
+        "issuedAt": 1767484800000,
+        "kind": "security-review",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "findings": "resolved",
+         "method": "manual-audit",
+         "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+        },
+        "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+        "signature": "j2B2SCqrXFAEcuc8hcZgtS5sUA3RpNogzGNcFZDWDgUBEvjyJMHLXfQPnKM74nhUiXpos12HqmaZMtn8QHi6CA",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767398400000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:42b6f86cd718efeded90520f4abed7b49a300646dddd082fc697c83365823c98",
+        "signature": "2UvQ4DNk97ujEueL8E2gQysO2y8CAvKr49C1vRzh9bfDSjHasgU2cQUt69B3Iv_ns_rqV3LkGsCYUMvcdvRhAw",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767657600000,
+        "kind": "recommendation",
+        "note": "Pairs well with beacon",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:47b42385c2227b6bcab4737192320861ab45b2eb4fa5b6e21856cb786586663d",
+        "signature": "2yWxJDDpGjA8ef95dmcHvsDfarRY_Ko7sJzBmVYrEE9cfMwzB9a7UW85PopB0rdwVodYZe-a-TrBWc8gmB0TBw",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "bookmark",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:4d8918a8c47776b0878b5ea3b1041c90207efac5e25ad8c94aeea0ffc6c3db56",
+        "signature": "MdotXUG6l-iT-YM97hX2rRDwHtnvNRmlsZ_l9utEYDuIKfp_C_lWTUjqoPLoToG9mao6Pwt4Jrg5zJ3-vnIbAg",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "interest",
+        "visibility": "private"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "Great docs",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+        "signature": "4Ka88IUOc5U4yJNNueDORvGpdeuJz-V_uV5LcxOd5yYZNT5mkVn7jIyiAlTOrBX8pTW0QpNCaVhWkvhrt01CBA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:5369b823ef2220f8927226d92a9c7ae3306a99667d35b07042df514fd0b282ff",
+        "signature": "C1KwLuWgkmoTJN9QWux3mv53vQqyGfUHQectd6KEIMYV8yRa46iCB8T2fS7cfQQr82eNbnKXlFKDpjdC0xp4CA",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [
+         {
+          "label": "Deployment manifest",
+          "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+          "uri": "https://example.org/bob/deploy.yaml"
+         }
+        ],
+        "expiresAt": null,
+        "issuedAt": 1767398400000,
+        "kind": "usage-endorsement",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {
+         "environment": "production",
+         "since": 1767225600000,
+         "version": "2.4.1"
+        },
+        "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+        "signature": "rljN9v9k4Uxg67umk1bPaCaLvfz5rFjPKelFRT03cedxEnMNBKpB4oDq9fXEGzm6qZplAJu9MsQyZhw_imYmDw",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+        "tier": "attestation",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:7a44fa9114c17a766f93088f68cdf4c40d710f3ff6e073b979c869fd4f4766a2",
+        "signature": "GyJHy4_UE0TVFliGFNAX47YK7jyqwSRzUtZe9j7orms75FWd8kYJMEW1rSrotsC40TIMHUmIWav6jjhDjQzPDw",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767744000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+        "signature": "KtpjaQE4oA2caCqbW5gl2caO7WPUdJRP7VPgDUe5pcqCZt32eoVZdqwKDstkW0n7uxiASRyD1thPvK8uPFfBAg",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767571200000,
+        "kind": "watch",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:8ca575acc6df30edccfb5cbc9e884a09e14e7d5d0d34a0348c99c8138b042fcc",
+        "signature": "FnqfhT4uIhD9mly8vtVONoHsmVueXzjaLOgnsFBr3-iC4NnoXws36zDbEZrBp_taHm5gr9I6EmyHn-pKRB33AA",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "interest",
+        "visibility": "followers"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:8f143da399867a202f8645e8fbe8ed798858f53481c908818ffd4339f9712c4d",
+        "signature": "1ro6PQMx0ATrngs1kdSzhn1aJiTzSkwl3Rtn0IhvGHLHLvBkLmKuf5LX91feqrUlrOXv3ZTSWxptcd34Jr2YDw",
+        "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+        "signature": "l2A6cx_QyaTwl1l5j65BLr_2bb2E0OdD1fI6bubkPMNZMCJ6UwEZiDzWKITLRItC4LiELGJlgVdVdltM8nTABA",
+        "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "interest",
+        "visibility": "public"
+       }
+      ]
+     },
+     "self-alice": {
+      "exportedAt": 1769817600000,
+      "revocations": [],
+      "schema": "forkmesh-social-signal-bundle-v1",
+      "signals": [
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:0a44501143eb90fa271da78a6fe7c85c92e2006ca97aaeb34a28839bb39b7c6a",
+        "signature": "2rUKi4xBFow3JCBCcN7U-PuUHaDaC6CDgu9jAPmpo1aMFCJ6s9GvUWpy1pRVUg25xV9WoMPdB1-X-2HW827pBQ",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767398400000,
+        "kind": "star",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:42b6f86cd718efeded90520f4abed7b49a300646dddd082fc697c83365823c98",
+        "signature": "2UvQ4DNk97ujEueL8E2gQysO2y8CAvKr49C1vRzh9bfDSjHasgU2cQUt69B3Iv_ns_rqV3LkGsCYUMvcdvRhAw",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767312000000,
+        "kind": "bookmark",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:4d8918a8c47776b0878b5ea3b1041c90207efac5e25ad8c94aeea0ffc6c3db56",
+        "signature": "MdotXUG6l-iT-YM97hX2rRDwHtnvNRmlsZ_l9utEYDuIKfp_C_lWTUjqoPLoToG9mao6Pwt4Jrg5zJ3-vnIbAg",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+        "tier": "interest",
+        "visibility": "private"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:5369b823ef2220f8927226d92a9c7ae3306a99667d35b07042df514fd0b282ff",
+        "signature": "C1KwLuWgkmoTJN9QWux3mv53vQqyGfUHQectd6KEIMYV8yRa46iCB8T2fS7cfQQr82eNbnKXlFKDpjdC0xp4CA",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+        "tier": "interest",
+        "visibility": "public"
+       },
+       {
+        "evidence": [],
+        "expiresAt": null,
+        "issuedAt": 1767225600000,
+        "kind": "follow",
+        "note": "",
+        "schema": "forkmesh-social-signal-v1",
+        "scope": {},
+        "signalId": "sha256:7a44fa9114c17a766f93088f68cdf4c40d710f3ff6e073b979c869fd4f4766a2",
+        "signature": "GyJHy4_UE0TVFliGFNAX47YK7jyqwSRzUtZe9j7orms75FWd8kYJMEW1rSrotsC40TIMHUmIWav6jjhDjQzPDw",
+        "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+        "subject": "urn:forkmesh:identity:ed25519:7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+        "tier": "interest",
+        "visibility": "public"
+       }
+      ]
+     }
+    },
+    "imports": [
+     {
+      "accepted": 5,
+      "duplicate": 0,
+      "rejected": []
+     },
+     {
+      "accepted": 6,
+      "duplicate": 1,
+      "rejected": []
+     },
+     {
+      "accepted": 6,
+      "duplicate": 0,
+      "rejected": []
+     },
+     {
+      "accepted": 3,
+      "duplicate": 1,
+      "rejected": [
+       {
+        "error": "signal_id_mismatch",
+        "id": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+        "type": "signal"
+       },
+       {
+        "error": "invalid_reason",
+        "id": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+        "type": "revocation"
+       }
+      ]
+     }
+    ],
+    "recommendations": [
+     {
+      "controls": {
+       "asOf": 1769817600000,
+       "enabled": true,
+       "limit": 10,
+       "mutedSigners": [],
+       "mutedSubjects": [],
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      },
+      "id": "default",
+      "output": {
+       "considered": 11,
+       "enabled": true,
+       "excluded": {
+        "alreadyKnown": 2,
+        "inactive": 3,
+        "mutedSigner": 0,
+        "mutedSubject": 0,
+        "private": 0,
+        "untrusted": 1
+       },
+       "recommendations": [
+        {
+         "reasons": [
+          {
+           "evidence": [
+            {
+             "label": "Deployment manifest",
+             "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+             "uri": "https://example.org/bob/deploy.yaml"
+            }
+           ],
+           "kind": "usage-endorsement",
+           "scope": {
+            "environment": "production",
+            "since": 1767225600000,
+            "version": "2.4.1"
+           },
+           "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+           "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+           "summary": "Usage endorsement: production use of 2.4.1 (1 evidence)",
+           "tier": "attestation",
+           "weight": 3
+          },
+          {
+           "evidence": [
+            {
+             "label": "Audit report",
+             "sha256": null,
+             "uri": "https://example.org/carol/beacon-audit.pdf"
+            },
+            {
+             "label": "Fix pull request",
+             "sha256": null,
+             "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+            }
+           ],
+           "kind": "security-review",
+           "scope": {
+            "findings": "resolved",
+            "method": "manual-audit",
+            "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+           },
+           "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Security review: manual-audit of 84a31cda4ed3, findings resolved (2 evidence)",
+           "tier": "attestation",
+           "weight": 3
+          }
+         ],
+         "score": 6,
+         "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+         "supporters": 2
+        },
+        {
+         "reasons": [
+          {
+           "evidence": [],
+           "kind": "star",
+           "scope": {},
+           "signalId": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Star",
+           "tier": "interest",
+           "weight": 1
+          },
+          {
+           "evidence": [],
+           "kind": "watch",
+           "scope": {},
+           "signalId": "sha256:8ca575acc6df30edccfb5cbc9e884a09e14e7d5d0d34a0348c99c8138b042fcc",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Watching",
+           "tier": "interest",
+           "weight": 1
+          },
+          {
+           "evidence": [
+            {
+             "label": "Mirror health",
+             "sha256": null,
+             "uri": "https://mirror.example.net/health"
+            }
+           ],
+           "kind": "mirror-commitment",
+           "scope": {
+            "endpoint": "https://mirror.example.net/cinder.git",
+            "protocols": [
+             "git-https",
+             "git-ssh"
+            ]
+           },
+           "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+           "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+           "summary": "Mirror commitment: https://mirror.example.net/cinder.git until 1798761600000 (1 evidence)",
+           "tier": "attestation",
+           "weight": 2
+          }
+         ],
+         "score": 3,
+         "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+         "supporters": 2
+        }
+       ],
+       "schema": "forkmesh-social-recommendations-v1",
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      }
+     },
+     {
+      "controls": {
+       "asOf": 1769817600000,
+       "enabled": false,
+       "limit": 10,
+       "mutedSigners": [],
+       "mutedSubjects": [],
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      },
+      "id": "disabled",
+      "output": {
+       "considered": 0,
+       "enabled": false,
+       "excluded": {
+        "alreadyKnown": 0,
+        "inactive": 0,
+        "mutedSigner": 0,
+        "mutedSubject": 0,
+        "private": 0,
+        "untrusted": 0
+       },
+       "recommendations": [],
+       "schema": "forkmesh-social-recommendations-v1",
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      }
+     },
+     {
+      "controls": {
+       "asOf": 1769817600000,
+       "enabled": true,
+       "limit": 10,
+       "mutedSigners": [
+        "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A"
+       ],
+       "mutedSubjects": [],
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      },
+      "id": "mute-carol",
+      "output": {
+       "considered": 11,
+       "enabled": true,
+       "excluded": {
+        "alreadyKnown": 1,
+        "inactive": 3,
+        "mutedSigner": 4,
+        "mutedSubject": 0,
+        "private": 0,
+        "untrusted": 1
+       },
+       "recommendations": [
+        {
+         "reasons": [
+          {
+           "evidence": [
+            {
+             "label": "Deployment manifest",
+             "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+             "uri": "https://example.org/bob/deploy.yaml"
+            }
+           ],
+           "kind": "usage-endorsement",
+           "scope": {
+            "environment": "production",
+            "since": 1767225600000,
+            "version": "2.4.1"
+           },
+           "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+           "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+           "summary": "Usage endorsement: production use of 2.4.1 (1 evidence)",
+           "tier": "attestation",
+           "weight": 3
+          }
+         ],
+         "score": 3,
+         "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+         "supporters": 1
+        },
+        {
+         "reasons": [
+          {
+           "evidence": [
+            {
+             "label": "Mirror health",
+             "sha256": null,
+             "uri": "https://mirror.example.net/health"
+            }
+           ],
+           "kind": "mirror-commitment",
+           "scope": {
+            "endpoint": "https://mirror.example.net/cinder.git",
+            "protocols": [
+             "git-https",
+             "git-ssh"
+            ]
+           },
+           "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+           "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+           "summary": "Mirror commitment: https://mirror.example.net/cinder.git until 1798761600000 (1 evidence)",
+           "tier": "attestation",
+           "weight": 2
+          }
+         ],
+         "score": 2,
+         "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+         "supporters": 1
+        }
+       ],
+       "schema": "forkmesh-social-recommendations-v1",
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      }
+     },
+     {
+      "controls": {
+       "asOf": 1769817600000,
+       "enabled": true,
+       "limit": 10,
+       "mutedSigners": [],
+       "mutedSubjects": [
+        "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887"
+       ],
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      },
+      "id": "mute-beacon",
+      "output": {
+       "considered": 11,
+       "enabled": true,
+       "excluded": {
+        "alreadyKnown": 2,
+        "inactive": 3,
+        "mutedSigner": 0,
+        "mutedSubject": 2,
+        "private": 0,
+        "untrusted": 1
+       },
+       "recommendations": [
+        {
+         "reasons": [
+          {
+           "evidence": [],
+           "kind": "star",
+           "scope": {},
+           "signalId": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Star",
+           "tier": "interest",
+           "weight": 1
+          },
+          {
+           "evidence": [],
+           "kind": "watch",
+           "scope": {},
+           "signalId": "sha256:8ca575acc6df30edccfb5cbc9e884a09e14e7d5d0d34a0348c99c8138b042fcc",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Watching",
+           "tier": "interest",
+           "weight": 1
+          },
+          {
+           "evidence": [
+            {
+             "label": "Mirror health",
+             "sha256": null,
+             "uri": "https://mirror.example.net/health"
+            }
+           ],
+           "kind": "mirror-commitment",
+           "scope": {
+            "endpoint": "https://mirror.example.net/cinder.git",
+            "protocols": [
+             "git-https",
+             "git-ssh"
+            ]
+           },
+           "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+           "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+           "summary": "Mirror commitment: https://mirror.example.net/cinder.git until 1798761600000 (1 evidence)",
+           "tier": "attestation",
+           "weight": 2
+          }
+         ],
+         "score": 3,
+         "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+         "supporters": 2
+        }
+       ],
+       "schema": "forkmesh-social-recommendations-v1",
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      }
+     },
+     {
+      "controls": {
+       "asOf": 1769817600000,
+       "enabled": true,
+       "limit": 1,
+       "mutedSigners": [],
+       "mutedSubjects": [],
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      },
+      "id": "limit-one",
+      "output": {
+       "considered": 11,
+       "enabled": true,
+       "excluded": {
+        "alreadyKnown": 2,
+        "inactive": 3,
+        "mutedSigner": 0,
+        "mutedSubject": 0,
+        "private": 0,
+        "untrusted": 1
+       },
+       "recommendations": [
+        {
+         "reasons": [
+          {
+           "evidence": [
+            {
+             "label": "Deployment manifest",
+             "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+             "uri": "https://example.org/bob/deploy.yaml"
+            }
+           ],
+           "kind": "usage-endorsement",
+           "scope": {
+            "environment": "production",
+            "since": 1767225600000,
+            "version": "2.4.1"
+           },
+           "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+           "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+           "summary": "Usage endorsement: production use of 2.4.1 (1 evidence)",
+           "tier": "attestation",
+           "weight": 3
+          },
+          {
+           "evidence": [
+            {
+             "label": "Audit report",
+             "sha256": null,
+             "uri": "https://example.org/carol/beacon-audit.pdf"
+            },
+            {
+             "label": "Fix pull request",
+             "sha256": null,
+             "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+            }
+           ],
+           "kind": "security-review",
+           "scope": {
+            "findings": "resolved",
+            "method": "manual-audit",
+            "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+           },
+           "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Security review: manual-audit of 84a31cda4ed3, findings resolved (2 evidence)",
+           "tier": "attestation",
+           "weight": 3
+          }
+         ],
+         "score": 6,
+         "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+         "supporters": 2
+        }
+       ],
+       "schema": "forkmesh-social-recommendations-v1",
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      }
+     },
+     {
+      "controls": {
+       "asOf": 1767657600000,
+       "enabled": true,
+       "limit": 10,
+       "mutedSigners": [],
+       "mutedSubjects": [],
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      },
+      "id": "before-mirror-lapse",
+      "output": {
+       "considered": 11,
+       "enabled": true,
+       "excluded": {
+        "alreadyKnown": 3,
+        "inactive": 2,
+        "mutedSigner": 0,
+        "mutedSubject": 0,
+        "private": 0,
+        "untrusted": 1
+       },
+       "recommendations": [
+        {
+         "reasons": [
+          {
+           "evidence": [
+            {
+             "label": "Deployment manifest",
+             "sha256": "sha256:b7bd55c11b781b0ccc43aa6e57f9dadf0660e9d1d4e27e0979ee43a407d454ae",
+             "uri": "https://example.org/bob/deploy.yaml"
+            }
+           ],
+           "kind": "usage-endorsement",
+           "scope": {
+            "environment": "production",
+            "since": 1767225600000,
+            "version": "2.4.1"
+           },
+           "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+           "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+           "summary": "Usage endorsement: production use of 2.4.1 (1 evidence)",
+           "tier": "attestation",
+           "weight": 3
+          },
+          {
+           "evidence": [
+            {
+             "label": "Audit report",
+             "sha256": null,
+             "uri": "https://example.org/carol/beacon-audit.pdf"
+            },
+            {
+             "label": "Fix pull request",
+             "sha256": null,
+             "uri": "https://app.forkmesh.com/beacon/beacon/pulls/7"
+            }
+           ],
+           "kind": "security-review",
+           "scope": {
+            "findings": "resolved",
+            "method": "manual-audit",
+            "revision": "84a31cda4ed3181db5ed0a72cfe7d8adaf752f29"
+           },
+           "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Security review: manual-audit of 84a31cda4ed3, findings resolved (2 evidence)",
+           "tier": "attestation",
+           "weight": 3
+          }
+         ],
+         "score": 6,
+         "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+         "supporters": 2
+        },
+        {
+         "reasons": [
+          {
+           "evidence": [],
+           "kind": "star",
+           "scope": {},
+           "signalId": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Star",
+           "tier": "interest",
+           "weight": 1
+          },
+          {
+           "evidence": [],
+           "kind": "watch",
+           "scope": {},
+           "signalId": "sha256:8ca575acc6df30edccfb5cbc9e884a09e14e7d5d0d34a0348c99c8138b042fcc",
+           "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+           "summary": "Watching",
+           "tier": "interest",
+           "weight": 1
+          },
+          {
+           "evidence": [
+            {
+             "label": "Mirror health",
+             "sha256": null,
+             "uri": "https://mirror.example.net/health"
+            }
+           ],
+           "kind": "mirror-commitment",
+           "scope": {
+            "endpoint": "https://mirror.example.net/cinder.git",
+            "protocols": [
+             "git-https",
+             "git-ssh"
+            ]
+           },
+           "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+           "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+           "summary": "Mirror commitment: https://mirror.example.net/cinder.git until 1798761600000 (1 evidence)",
+           "tier": "attestation",
+           "weight": 2
+          }
+         ],
+         "score": 3,
+         "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+         "supporters": 2
+        }
+       ],
+       "schema": "forkmesh-social-recommendations-v1",
+       "viewer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0"
+      }
+     },
+     {
+      "controls": {
+       "asOf": 1769817600000,
+       "enabled": true,
+       "limit": 10,
+       "mutedSigners": [],
+       "mutedSubjects": [],
+       "viewer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8"
+      },
+      "id": "stranger-viewer",
+      "output": {
+       "considered": 11,
+       "enabled": true,
+       "excluded": {
+        "alreadyKnown": 0,
+        "inactive": 3,
+        "mutedSigner": 0,
+        "mutedSubject": 0,
+        "private": 0,
+        "untrusted": 8
+       },
+       "recommendations": [],
+       "schema": "forkmesh-social-recommendations-v1",
+       "viewer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8"
+      }
+     }
+    ],
+    "state": {
+     "asOf": 1769817600000,
+     "digest": "sha256:6357ab415ed1f2a1c5208585a2c04fd0adfee8ea1fbe1aec99aefc057071020c",
+     "revocations": [
+      {
+       "revocationId": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+       "revokes": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+       "status": "applied"
+      },
+      {
+       "revocationId": "sha256:6d2edd5541643f0598022272109f5df1d91fe2b8b022699967447855556c06d2",
+       "revokes": "sha256:abababababababababababababababababababababababababababababababab",
+       "status": "pending"
+      },
+      {
+       "revocationId": "sha256:c7d816ebd46e612b81bcedfe4e484d2c2afa950a34af162fac561ff0b658f1f2",
+       "revokes": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+       "status": "signer_mismatch"
+      }
+     ],
+     "schema": "forkmesh-social-signal-state-v1",
+     "signals": [
+      {
+       "expiresAt": 1768089600000,
+       "issuedAt": 1767312000000,
+       "kind": "mirror-commitment",
+       "revokedBy": null,
+       "signalId": "sha256:02dbfaaf5e17e7afb9772cdc33917b0203694746a630548bf187145310fb3bd5",
+       "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+       "status": "expired",
+       "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+       "supersededBy": null,
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767225600000,
+       "kind": "follow",
+       "revokedBy": null,
+       "signalId": "sha256:0a44501143eb90fa271da78a6fe7c85c92e2006ca97aaeb34a28839bb39b7c6a",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "status": "active",
+       "subject": "urn:forkmesh:identity:ed25519:zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767225600000,
+       "kind": "follow",
+       "revokedBy": null,
+       "signalId": "sha256:1b3521b9053e9962ff913893c816c2f873d8eaa2c62bb83846ed4bb3573e3816",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "status": "active",
+       "subject": "urn:forkmesh:identity:ed25519:83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "followers"
+      },
+      {
+       "expiresAt": 1798761600000,
+       "issuedAt": 1767312000000,
+       "kind": "mirror-commitment",
+       "revokedBy": null,
+       "signalId": "sha256:33cf164d67678f27f1aa1401f1056ccae915024bb08bde0865e57155906905e6",
+       "signer": "zcMO0eSxSuh4dttDllV6NzB03iWO_6x12PFDkPH-tV0",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+       "supersededBy": null,
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "revokedBy": null,
+       "signalId": "sha256:42194a3f35b15125583b9c57ebca54ffeea16890d9f1e576bf8219500e15b963",
+       "signer": "83_vJnEcnn1OBLTZN74E311PAtc88fQl21mcjOO0ah8",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767484800000,
+       "kind": "security-review",
+       "revokedBy": null,
+       "signalId": "sha256:4285640586bba10efc7fd337d9c9b57787208df3249b9243acdeb7bb933fd2c8",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+       "supersededBy": null,
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767398400000,
+       "kind": "star",
+       "revokedBy": null,
+       "signalId": "sha256:42b6f86cd718efeded90520f4abed7b49a300646dddd082fc697c83365823c98",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767657600000,
+       "kind": "recommendation",
+       "revokedBy": null,
+       "signalId": "sha256:47b42385c2227b6bcab4737192320861ab45b2eb4fa5b6e21856cb786586663d",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "bookmark",
+       "revokedBy": null,
+       "signalId": "sha256:4d8918a8c47776b0878b5ea3b1041c90207efac5e25ad8c94aeea0ffc6c3db56",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "private"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "revokedBy": null,
+       "signalId": "sha256:4e398516b134c4f62328c0a3840436394c949386f370565ec7f54fa0ee75419b",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:7c82602500857aa6ed0cf38c4c3e4ec645bdcaa82c00b9155eb08be100c778a9",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767225600000,
+       "kind": "follow",
+       "revokedBy": null,
+       "signalId": "sha256:5369b823ef2220f8927226d92a9c7ae3306a99667d35b07042df514fd0b282ff",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "status": "active",
+       "subject": "urn:forkmesh:identity:ed25519:g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767398400000,
+       "kind": "usage-endorsement",
+       "revokedBy": null,
+       "signalId": "sha256:6676f85508c637d0479b4237fb50859bcfd95142d79adc5142427921ea60b7a1",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:8a62e967fcd6dfa5d75308c37808b4668a7faf1cdb06e09ac0a7161827603887",
+       "supersededBy": null,
+       "tier": "attestation",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767225600000,
+       "kind": "follow",
+       "revokedBy": null,
+       "signalId": "sha256:7a44fa9114c17a766f93088f68cdf4c40d710f3ff6e073b979c869fd4f4766a2",
+       "signer": "E39CBYkymRKw0hDkfutik-CwvhBOVpR2qHpVUMXdsb0",
+       "status": "active",
+       "subject": "urn:forkmesh:identity:ed25519:7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767744000000,
+       "kind": "star",
+       "revokedBy": null,
+       "signalId": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767571200000,
+       "kind": "watch",
+       "revokedBy": null,
+       "signalId": "sha256:8ca575acc6df30edccfb5cbc9e884a09e14e7d5d0d34a0348c99c8138b042fcc",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "status": "active",
+       "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "followers"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "revokedBy": null,
+       "signalId": "sha256:8f143da399867a202f8645e8fbe8ed798858f53481c908818ffd4339f9712c4d",
+       "signer": "g4onSUwvzedIFeg1ThTz1LBgCmmBM0AI6iccaUpaH8A",
+       "status": "superseded",
+       "subject": "urn:forkmesh:repository:sha256:0bc26e0941de568a4e56061688bbad799ffe3d6e53437a071c2436aac119230d",
+       "supersededBy": "sha256:8ab2742d4d743dea5cf5e47c94eaef6267765977c63c2fcf4f0c9de46d462780",
+       "tier": "interest",
+       "visibility": "public"
+      },
+      {
+       "expiresAt": null,
+       "issuedAt": 1767312000000,
+       "kind": "star",
+       "revokedBy": "sha256:09e813891292a0a01d8dcaa2f48b6ce8c4e4c37e2f2b55c9e968696c997caedf",
+       "signalId": "sha256:e36e7169aac06c6d6d003c111eb45c5ea2cd6c52987dfebc025092a1c64e8d78",
+       "signer": "7BHs3mFB70-DtvVFInRsRWhR4gCsLAnA2NiZ0_dlv2Y",
+       "status": "revoked",
+       "subject": "urn:forkmesh:repository:sha256:4f4a9410ffcdf895c4adb880659e9b5c0dd1f23a30790684340b3eaacb045398",
+       "supersededBy": null,
+       "tier": "interest",
+       "visibility": "public"
+      }
+     ]
+    }
+   },
+   "id": "four-services-merge",
+   "orders": [
+    [
+     0,
+     1,
+     2,
+     3
+    ],
+    [
+     0,
+     1,
+     3,
+     2
+    ],
+    [
+     0,
+     2,
+     1,
+     3
+    ],
+    [
+     0,
+     2,
+     3,
+     1
+    ],
+    [
+     0,
+     3,
+     1,
+     2
+    ],
+    [
+     0,
+     3,
+     2,
+     1
+    ],
+    [
+     1,
+     0,
+     2,
+     3
+    ],
+    [
+     1,
+     0,
+     3,
+     2
+    ],
+    [
+     1,
+     2,
+     0,
+     3
+    ],
+    [
+     1,
+     2,
+     3,
+     0
+    ],
+    [
+     1,
+     3,
+     0,
+     2
+    ],
+    [
+     1,
+     3,
+     2,
+     0
+    ],
+    [
+     2,
+     0,
+     1,
+     3
+    ],
+    [
+     2,
+     0,
+     3,
+     1
+    ],
+    [
+     2,
+     1,
+     0,
+     3
+    ],
+    [
+     2,
+     1,
+     3,
+     0
+    ],
+    [
+     2,
+     3,
+     0,
+     1
+    ],
+    [
+     2,
+     3,
+     1,
+     0
+    ],
+    [
+     3,
+     0,
+     1,
+     2
+    ],
+    [
+     3,
+     0,
+     2,
+     1
+    ],
+    [
+     3,
+     1,
+     0,
+     2
+    ],
+    [
+     3,
+     1,
+     2,
+     0
+    ],
+    [
+     3,
+     2,
+     0,
+     1
+    ],
+    [
+     3,
+     2,
+     1,
+     0
+    ]
+   ]
+  }
+ ],
+ "schema": "forkmesh-social-signal-vectors-v1",
+ "specification": "www/docs/social-signals.md",
+ "version": "1.0.0"
+}

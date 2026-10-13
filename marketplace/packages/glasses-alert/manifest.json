@@ -1,0 +1,77 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "glasses-alert",
+  "name": "Glasses Alert",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Privacy",
+  "version": "1.2.0",
+  "summary": "Know when someone near you wears Meta smart glasses. Your phone scans Bluetooth for Ray-Ban Meta and Oakley Meta glasses, rings a loud alarm through silent mode, and points an arrow towards them. Nothing leaves the phone.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Glasses Alert on a phone, watching for smart glasses, with Ray-Ban Meta glasses found close by and the alarm ringing"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "android": "builtin:glasses-alert",
+    "ios": "builtin:glasses-alert",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "device.bluetooth.scan",
+      "label": "With your permission, listen to Bluetooth adverts nearby; it never connects or pairs",
+      "risk": "sensitive"
+    },
+    {
+      "id": "device.alarm.loud",
+      "label": "Ring at full alarm volume and vibrate, even on silent, when glasses are found",
+      "risk": "low"
+    },
+    {
+      "id": "device.dnd.override",
+      "label": "On Android, if you allow it, ring through Do Not Disturb and then restore it",
+      "risk": "sensitive"
+    },
+    {
+      "id": "device.notifications",
+      "label": "Show the alarm and a Stop button as a notification",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none"
+  }
+}

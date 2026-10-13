@@ -1,0 +1,71 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=ForkMesh Next app on CPython (node @@NODE@@)
+Wants=network-online.target rqlite.service
+After=network-online.target rqlite.service wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=forkmesh-app
+Group=forkmesh-app
+# Read-only access to rqlite's db.sqlite when RQLITE_READ_MODE=local.
+SupplementaryGroups=rqlite
+UMask=0077
+WorkingDirectory=@@CURRENT@@/app/host
+Environment=TZ=UTC
+Environment=MALLOC_ARENA_MAX=2
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=@@ETC@@/app.env
+# FORKMESH_VAR_BUILD_REV etc., written by tools/next_deploy.py per release.
+EnvironmentFile=-@@CURRENT@@/release.env
+# One encrypted credential per secret; forkmesh_host.env reads each file in
+# $CREDENTIALS_DIRECTORY as the Worker secret of the same name.
+@@APP_CREDENTIALS@@
+@@VAULT_SETTINGS@@
+# The unseal/control socket lives here (forkmesh-app only; root may connect).
+RuntimeDirectory=forkmesh-next
+RuntimeDirectoryMode=0700
+ExecStart=@@CURRENT@@/.venv/bin/python -OO -m forkmesh_host serve \
+  --host 127.0.0.1 --port @@APP_PORT@@ --no-build \
+  --db rqlite:http://127.0.0.1:@@HTTP_PORT@@ \
+  --data-dir @@VAR@@/app
+Restart=always
+RestartSec=2s
+TimeoutStopSec=20s
+MemoryHigh=280M
+MemoryMax=340M
+OOMScoreAdjust=300
+LimitNOFILE=65536
+# Secrets (DATA_KEY once unsealed) live only in this process's memory: never
+# page them out to the swapfile/zram, never write a core dump, and hide
+# /proc of other processes.
+MemorySwapMax=0
+# Outbound fetches never reach the cloud metadata service.
+IPAddressDeny=169.254.0.0/16
+LimitCORE=0
+ProtectProc=invisible
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=@@VAR@@/app
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# cffi callbacks may need writable+executable pages; keep this off.
+MemoryDenyWriteExecute=false
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

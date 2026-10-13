@@ -1,0 +1,73 @@
+# Generated build-time provenance helper.  It intentionally runs before every
+# target build, not only at CMake configure time: otherwise editing a tracked or
+# untracked source file after configure could leave a binary falsely claiming
+# the last clean commit.
+set(FM_SOURCE_DIR [==[@CMAKE_CURRENT_SOURCE_DIR@]==])
+set(FM_TEMPLATE [==[@CMAKE_CURRENT_SOURCE_DIR@/src/ForkMeshVersion.h.in]==])
+set(FM_OUTPUT [==[@CMAKE_CURRENT_BINARY_DIR@/ForkMeshVersion.h]==])
+set(FM_COMMIT_TEMPLATE [==[@CMAKE_CURRENT_SOURCE_DIR@/src/ForkMeshBuildCommit.h.in]==])
+set(FM_COMMIT_OUTPUT [==[@CMAKE_CURRENT_BINARY_DIR@/ForkMeshBuildCommit.h]==])
+set(FM_VERSION [==[@FORKMESH_VERSION@]==])
+set(FM_OVERRIDE [==[@FORKMESH_BUILD_COMMIT_OVERRIDE@]==])
+
+execute_process(
+    COMMAND git -C "${FM_SOURCE_DIR}" rev-parse --show-toplevel
+    RESULT_VARIABLE fm_git_root_result
+    OUTPUT_VARIABLE fm_git_root
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+
+set(FORKMESH_BUILD_COMMIT "unknown")
+if(fm_git_root_result EQUAL 0)
+    execute_process(
+        COMMAND git -C "${fm_git_root}" status --porcelain=v1
+                --untracked-files=all -- . ":(exclude).forkmesh/releases/**"
+        RESULT_VARIABLE fm_status_result
+        OUTPUT_VARIABLE fm_dirty
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    execute_process(
+        COMMAND git -C "${fm_git_root}" log -1 --format=%H --
+                . ":(exclude).forkmesh/releases/**"
+        RESULT_VARIABLE fm_revision_result
+        OUTPUT_VARIABLE fm_revision
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    string(TOLOWER "${fm_revision}" fm_revision)
+    if(NOT fm_status_result EQUAL 0 OR NOT "${fm_dirty}" STREQUAL "")
+        set(FORKMESH_BUILD_COMMIT "dirty")
+    elseif(NOT fm_revision_result EQUAL 0)
+        set(FORKMESH_BUILD_COMMIT "unknown")
+    elseif(NOT "${FM_OVERRIDE}" STREQUAL "" AND
+           NOT "${FM_OVERRIDE}" STREQUAL "${fm_revision}")
+        message(FATAL_ERROR
+            "FORKMESH_BUILD_COMMIT_OVERRIDE does not match the clean checkout")
+    elseif(NOT "${FM_OVERRIDE}" STREQUAL "")
+        set(FORKMESH_BUILD_COMMIT "${FM_OVERRIDE}")
+    else()
+        set(FORKMESH_BUILD_COMMIT "${fm_revision}")
+    endif()
+elseif(NOT "${FM_OVERRIDE}" STREQUAL "")
+    # Source-archive packagers have no .git directory.  Their trusted packaging
+    # pipeline must supply the manifest's exact build_commit explicitly.
+    set(FORKMESH_BUILD_COMMIT "${FM_OVERRIDE}")
+endif()
+
+set(FORKMESH_VERSION "${FM_VERSION}")
+# Each header is rewritten only when its own content changes, so its includers
+# keep their objects: a commit touches ForkMeshBuildCommit.h alone.
+function(fm_write_if_changed template output)
+    set(candidate "${output}.candidate")
+    configure_file("${template}" "${candidate}" @ONLY)
+    file(READ "${candidate}" new_content)
+    set(old_content "")
+    if(EXISTS "${output}")
+        file(READ "${output}" old_content)
+    endif()
+    if(NOT "${new_content}" STREQUAL "${old_content}")
+        file(WRITE "${output}" "${new_content}")
+    endif()
+    file(REMOVE "${candidate}")
+endfunction()
+fm_write_if_changed("${FM_TEMPLATE}" "${FM_OUTPUT}")
+fm_write_if_changed("${FM_COMMIT_TEMPLATE}" "${FM_COMMIT_OUTPUT}")

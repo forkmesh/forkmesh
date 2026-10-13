@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Rich diffs" %}
+{% set slug = "rich-diffs" %}
+{% set image = "/assets/blog/features/rich-diffs.webp" %}
+{% set description = "Syntax-aware diffs with side-by-side image comparison and clear badges for binary changes, in the app and on the web." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Pull requests &amp; review</p>
+            <h1>Rich diffs</h1>
+            <p class="lede">Syntax-aware diffs with side-by-side image comparison and clear badges for binary changes, in the app and on the web.</p>
+            <div class="meta"><span class="pill">Feature 24 of 72</span><span>Feature</span><span>Pull requests &amp; review</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/rich-diffs.webp" alt="Abstract ForkMesh artwork for Rich diffs">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Rich diffs gives ForkMesh a concrete mechanism for review diffs that understand syntax, images, and binary changes. Syntax-aware diffs with side-by-side image comparison and clear badges for binary changes, in the app and on the web.</p>
+          <p>Review becomes risky when merge state, discussion, and final application are trapped in a central service. In ForkMesh, rich diffs addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles rich diffs through the same split it uses across the product: ForkMesh derives diffs from live branches or signed patches, checks mergeability against the live base, and records review activity as portable data.</p>
+          <p>The behavior is intentionally narrow: Syntax-aware diffs with side-by-side image comparison and clear badges for binary changes, in the app and on the web. Maintainers can verify what changed, who proposed it, and whether it will merge before touching the base branch.</p>
+          <h2>Where it fits</h2>
+          <p>Use rich diffs when contributors need familiar review mechanics without making one hosted PR database the source of truth.</p>
+          <p>It pairs with the rest of Pull requests &amp; review because Rich diffs keeps review diffs that understand syntax, images, and binary changes connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/issues-prs-that-talk/">← Issues ↔ PRs that talk</a>
+          <a href="/blog/real-mergeability-checks/">Real mergeability checks →</a>
+        </nav>
+{% endblock %}

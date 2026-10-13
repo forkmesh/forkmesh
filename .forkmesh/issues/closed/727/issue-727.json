@@ -1,0 +1,91 @@
+{
+    "assignees": [
+        "CC"
+    ],
+    "author": "spidertest",
+    "authorName": "spidertest",
+    "bountyAddress": "",
+    "bountyStatus": "",
+    "bountyUsd": 0,
+    "createdAt": 1790197454687,
+    "endDate": 0,
+    "events": [
+        {
+            "attachments": [
+                "eb6658ac.jpg"
+            ],
+            "author": "spidertest",
+            "authorName": "spidertest",
+            "body": "Title: [Regression/Blocker] Desktop app now fails to open at all — \"configuration_lock_unavailable\" persists across full uninstall/reinstall, indicating a server-side stuck state\n\nEnvironment: ForkMesh Desktop v1.2.3, Windows (previously v0.8.10)\n\nSteps to Reproduce:\n1- Install ForkMesh Desktop v1.2.3\n2- Open ForkMesh\n\nExpected Result: The app opens to its normal interface (login screen or dashboard), same as previous versions did.\n\nActual Result: The app immediately shows a fatal error dialog: \"ForkMesh could not recover an interrupted mirror Actions configuration (configuration_lock_unavailable). No Actions services were started.\" No further access to the app is possible — this is a regression from v0.8.10, which at least opened normally even when login/connectivity failed.\n\nAdditional verification performed:\nUninstalled and reinstalled 3 separate times\nOne of those uninstalls used GeekUninstaller (which also removes leftover registry entries), not just the standard Windows uninstaller\nThe exact same error reappears every time, immediately on first launch of a fresh install\n\n---\n_Reported by @LTelloM on Discord (ForkMesh user spidertest)._\n_Original message: https://discord.com/channels/1531610390574665809/1531718105124831304/1552424718378733598_\n_Attached from Discord: eb6658ac.jpg (fallo.jpg)._\n_Filed by ForkBot from the Discord bug channel._",
+            "id": "forkbot-1790197454687",
+            "sig": "",
+            "title": "Desktop App Fails to Open with 'configuration_lock_unavailable' Error",
+            "ts": 1790197454687,
+            "type": "open"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "claude-code",
+            "agentSessionId": 466,
+            "agentStatus": "queued",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "e6804165-cc55-464e-b803-cdc39b3ee668",
+            "sig": "vUWFuqH_Lr4JwGv8OqStfDQ8mbhfc2FkAc3a978vx3G_DkMaXCjzA-BzaGbeQJaYH9N5amAPe_vnNM124YkcCQ",
+            "ts": 1790532121484,
+            "type": "agent"
+        },
+        {
+            "assignees": [
+                "CC"
+            ],
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "7a234115-bc2a-4f99-a25a-81ec2cf62109",
+            "sig": "7MNHR6-EzqJhgSW_kKLvG8bqQga0-RW0Cg1qUQlqfiJi93v_Sp92R0A0TYsNEGruEAh991Q3kg0x9YE1wJuWBA",
+            "ts": 1790532121590,
+            "type": "assignees"
+        },
+        {
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "6199b005-f743-43a1-8c94-cdff4a06479a",
+            "sig": "hQHhIOmcqbmPOPJ_u5c0kx3VB_ArnCcgErkGgTlEryemKaUPncvDkMh5S8Aq_devKFckmysvUSTjUbvMWD2LBg",
+            "status": "closed",
+            "ts": 1790545797297,
+            "type": "status"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "",
+            "agentSessionId": 0,
+            "agentStatus": "cleared",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "5527fd02-200b-4034-b418-14ee1a92e89f",
+            "sig": "8rOAmjnFbDpOaxH4116bxFswxv3fQNoqKuHjbNhBd5CEQoB8kARmYSZRkllJHw0rg9yMK4t8FRffLv4HFrk7CQ",
+            "ts": 1790545808221,
+            "type": "agent"
+        }
+    ],
+    "labels": [
+        "bug",
+        "discord"
+    ],
+    "milestone": "",
+    "number": 727,
+    "priority": 0,
+    "progress": 0,
+    "rewardCondition": "accepted_report",
+    "rewardEstimateLamports": 3000000,
+    "rewardId": "reward-discord-87f497248642e5b1e8ed7032",
+    "rewardRecipient": "spidertest",
+    "rewardStatus": "pending_wallet",
+    "rewardTxSignature": "",
+    "schema": "forkmesh-issue-v1",
+    "startDate": 0,
+    "status": "closed",
+    "title": "Desktop App Fails to Open with 'configuration_lock_unavailable' Error",
+    "updatedAt": 1790545808221,
+    "votes": 0
+}

@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Artifacts" %}
+{% set slug = "artifacts" %}
+{% set image = "/assets/blog/features/artifacts.webp" %}
+{% set description = "Workflow outputs are collected per run and browsable from the repository&#x27;s Artifacts tab." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">CI, releases &amp; distribution</p>
+            <h1>Artifacts</h1>
+            <p class="lede">Workflow outputs are collected per run and browsable from the repository's Artifacts tab.</p>
+            <div class="meta"><span class="pill">Feature 41 of 72</span><span>Feature</span><span>CI, releases &amp; distribution</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/artifacts.webp" alt="Abstract ForkMesh artwork for Artifacts">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Artifacts gives ForkMesh a concrete mechanism for run outputs collected and browsable beside the repository. Workflow outputs are collected per run and browsable from the repository's Artifacts tab.</p>
+          <p>Delivery metadata is part of a project, not a separate dashboard that should disappear during a migration. In ForkMesh, artifacts addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles artifacts through the same split it uses across the product: ForkMesh keeps runs, logs, artifacts, releases, quality signals, installers, and downloads close to the mirrored repository.</p>
+          <p>The behavior is intentionally narrow: Workflow outputs are collected per run and browsable from the repository's Artifacts tab. Outputs can be linked to commits and served by nodes instead of becoming opaque hosted-only assets.</p>
+          <h2>Where it fits</h2>
+          <p>Use artifacts when shipping, validation, and release assets need to remain attached to the preserved repository.</p>
+          <p>It pairs with the rest of CI, releases &amp; distribution because Artifacts keeps run outputs connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/actions/">← Actions</a>
+          <a href="/blog/releases-and-tags/">Releases &amp; tags →</a>
+        </nav>
+{% endblock %}

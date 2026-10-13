@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block html_attrs %} class="dark h-full scroll-smooth"{% endblock %}
+{% block title %}ForkMesh Terms{% endblock %}
+{% block meta %}
+    <meta name="description" content="Simple terms for using ForkMesh, joining the network, and hosting mirrored repositories." />
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/tailwind.css" />
+    <script>window.tailwind = window.tailwind || {};</script>
+    <script>
+      tailwind.config = { darkMode: "class", theme: { extend: { colors: { background: "var(--background)", foreground: "var(--foreground)", border: "var(--border)", "muted-foreground": "var(--muted-foreground)" }, fontFamily: { "favorit-mono": ["ABCFavoritMono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"] } } } };
+    </script>
+    <style>
+      @font-face {
+        font-family: "ForkMesh Favorit";
+        src: url("/assets/fonts/ABCFavorit-Bold.woff2") format("woff2");
+        font-weight: 400 800;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "ABCFavoritMono";
+        src: url("/assets/fonts/DejaVuSansMono.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      :root {
+        --background: #090909;
+        --foreground: #f5f5f5;
+        --muted-foreground: #a3a3a3;
+        --border: #313131;
+        --green: #3fb950;
+        --violet: #9672ee;
+      }
+      * { box-sizing: border-box; }
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: geometricPrecision;
+      }
+      .font-favorit { font-family: "ForkMesh Favorit", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-synthesis: none; }
+      .font-favorit-mono { font-family: ABCFavoritMono, ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .legal-shell { position: relative; min-height: 100svh; isolation: isolate; overflow: hidden; background: #090909; }
+      .mesh-bg {
+        position: absolute; inset: 0; z-index: -3;
+        background:
+          radial-gradient(circle at 18% 10%, rgba(150, 114, 238, 0.20), transparent 28rem),
+          radial-gradient(circle at 84% 8%, rgba(63, 185, 80, 0.14), transparent 30rem),
+          radial-gradient(circle at 50% 56%, rgba(255, 255, 255, 0.055), transparent 36rem),
+          #090909;
+      }
+      .mesh-grid {
+        position: absolute; inset: -1px; z-index: -2; opacity: 0.24;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.065) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.065) 1px, transparent 1px);
+        background-size: 72px 72px;
+        mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 72%);
+      }
+      .mesh-vignette {
+        position: absolute; inset: 0; z-index: -1;
+        background: linear-gradient(to bottom, rgba(9,9,9,.92), rgba(9,9,9,.56) 34%, #090909 78%);
+      }
+      .brand-mark { filter: drop-shadow(0 0 22px rgba(63,185,80,.16)); }
+      .legal-card {
+        border: 1px solid rgba(255,255,255,.09);
+        background: linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.025)), rgba(12,12,12,.78);
+        box-shadow: 0 24px 90px rgba(0,0,0,.42);
+        backdrop-filter: blur(18px);
+      }
+      .legal-content h2 { margin: 2.25rem 0 .65rem; font-size: 1.375rem; line-height: 1.2; color: #fff; }
+      .legal-content p, .legal-content li { color: var(--muted-foreground); line-height: 1.75; }
+      .legal-content ul { padding-left: 1.25rem; }
+      .legal-note { border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.045); border-radius: 1rem; padding: 1rem; margin: 1.5rem 0; }
+    </style>
+    <link rel="stylesheet" href="/mesh-page-theme.css" />
+{% endblock %}
+{% block body_attrs %} class="h-full"{% endblock %}
+{% block body %}
+    <main class="legal-shell flex min-h-screen flex-col">
+      <div class="mesh-bg" aria-hidden="true"></div>
+      <div class="mesh-grid" aria-hidden="true"></div>
+      <div class="mesh-vignette" aria-hidden="true"></div>
+
+      <div data-forkmesh-header="simple"></div>
+
+      <section class="relative z-10 mx-auto w-full max-w-4xl px-5 pb-8 pt-16 lg:px-8 lg:pt-24">
+        <article class="legal-card rounded-[2rem] px-6 py-8 sm:px-10 lg:px-14 lg:py-12">
+          <p class="font-favorit-mono text-sm uppercase tracking-[0.34em] text-muted-foreground">Plain-language terms</p>
+          <h1 class="font-favorit mt-5 text-balance text-4xl leading-[1] tracking-tight text-foreground sm:text-5xl">ForkMesh Terms</h1>
+          <p class="mt-5 text-sm text-muted-foreground">Last updated October 1, 2026.</p>
+          <div class="legal-content mt-8 text-base">
+            <div class="legal-note">
+              <strong class="text-foreground">Short version:</strong>
+              ForkMesh is experimental distributed code-hosting software. Use it only for repositories you have the right to mirror, keep your keys on your own device, and independently verify every transaction before signing it.
+            </div>
+            <h2>Using ForkMesh</h2>
+            <p>You are responsible for the repositories, messages, issues, pull requests, profile data, and payment addresses you publish through ForkMesh. Do not use ForkMesh to host or distribute content you do not have permission to share.</p>
+            <h2>Free protocol and hosted services</h2>
+            <p>The ForkMesh protocol and reference software remain available under the MIT license. Payment is not required to use, inspect, fork, modify, independently implement, or self-host them, and it does not grant control over the protocol. Public read and clone and export of canonical Git and signed <code>.forkmesh</code> records cannot be made paid-only. Hosted Free and Pro membership are bounded services without a response-time, reserved-capacity, recovery, or uptime commitment. Any future managed service must publish its measured allowance, support boundary, portability terms, and service commitment before sale. The current details are in the public <a class="text-foreground underline decoration-white/25 underline-offset-4 hover:decoration-white" href="/docs/business-model">free-protocol / paid-services contract</a>.</p>
+            <h2>Joining the network</h2>
+            <p>Joining ForkMesh does not require a cryptocurrency payment. You may optionally publish a self-custodial payout address or voluntarily contribute from your own wallet to the community reward pool. ForkMesh never asks for a payout- or contribution-wallet private key, seed phrase, or mnemonic. Separately, the first instance operator may explicitly import the existing community-pool key into an encrypted signer on that operator’s own device.</p>
+            <h2>Wallet custody and fund states</h2>
+            <p>ForkMesh does not hold, custody, or control user funds. Wallet keys and transaction approval stay on the user’s device. The interface distinguishes user-owned wallet funds, the community-funded public pool, temporary pending allocations, and completed on-chain transfers. A pending allocation is not a ForkMesh balance or custodial wallet: if no external address is supplied before its displayed deadline, it expires and remains at the external source.</p>
+            <h2>Rewards and availability</h2>
+            <p>Community rewards are voluntary incentives, not investments, wages, yield, or a promise of financial return. Any payout, reward, uptime, or earnings display is experimental and may change. Running a node does not guarantee selection, payment, availability, or data recovery. Visual coins and fountain effects are illustrations; only a finalized transaction on the configured public network represents a completed transfer. You are responsible for backing up your own repositories and keys.</p>
+            <h2>Third parties</h2>
+            <p>We try our best not to use third parties. The current public service still involves a few:</p>
+            <ul>
+              <li>Cloudflare for hosting the public website at forkmesh.com, forwarding requests made there, and DNS.</li>
+              <li>A Solana JSON-RPC endpoint for payment-reference lookups.</li>
+              <li>Bundled open-source font files served locally by ForkMesh; no remote font service is used.</li>
+              <li>All styling and scripts are served from ForkMesh’s own domain; no third-party CDN is loaded at runtime.</li>
+              <li>The Solana network for payment settlement.</li>
+              <li>Any Git hosting provider or remote repository you choose to mirror.</li>
+            </ul>
+            <h2>No warranty</h2>
+            <p>ForkMesh is provided as-is. The software and network may have bugs, outages, incomplete features, or data loss. Use it at your own risk.</p>
+            <p class="mt-8"><a class="text-foreground underline decoration-white/25 underline-offset-4 hover:decoration-white" href="/privacy">Read the privacy notes</a></p>
+          </div>
+        </article>
+      </section>
+
+      <div data-forkmesh-footer="standard"></div>
+    </main>
+{% endblock %}

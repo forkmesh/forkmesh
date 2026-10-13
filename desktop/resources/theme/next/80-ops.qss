@@ -1,0 +1,18 @@
+QTableWidget#issueTable[nodesDirectory="true"]::item:selected {
+    background-color: @surfaceActive; color: @fg;
+}
+
+#actionWorkflowList::item:hover { background-color: @surfaceRaised; color: @fg; }
+#actionWorkflowList::item:selected { background-color: @surfaceActive; color: @fg; }
+QPlainTextEdit#actionLog {
+    background-color: @bgSubtle; border: 1px solid @border; color: @fg;
+    selection-background-color: @accent; selection-color: @onAccent;
+}
+
+#profileUserCard, #statTile, #profileCard {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QPushButton#profileActionButton { border-radius: 8px; }
+QPushButton#profileActionButton:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong; color: @fg;
+}

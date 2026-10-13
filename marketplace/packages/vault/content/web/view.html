@@ -1,0 +1,189 @@
+          <section data-view="vault" class="view active h-full overflow-y-auto">
+            <style>
+              .vault-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+              .vault-fingerprint { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; word-spacing: .25rem; overflow-wrap: anywhere; }
+              .vault-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; letter-spacing: .04em; line-height: 1.9; overflow-wrap: anywhere; user-select: all; }
+              .vault-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; align-items: center; }
+              .vault-row + .vault-row { border-top: 1px solid rgb(var(--dashboard-border-rgb)); }
+              .vault-meter { height: 4px; border-radius: 2px; background: rgb(var(--dashboard-border-rgb)); overflow: hidden; }
+              .vault-meter > span { display: block; height: 100%; width: 0; transition: width .15s; background: rgb(var(--dashboard-primary-rgb)); }
+              .vault-meter[data-level="weak"] > span { background: rgb(var(--dashboard-destructive-rgb)); }
+              .vault-badge { display: inline-block; border-radius: 9999px; border: 1px solid rgb(var(--dashboard-border-rgb)); padding: 0 .45rem; font-size: 10px; font-weight: 600; line-height: 1.6; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .vault-badge[data-tone="warn"] { border-color: rgb(var(--dashboard-destructive-rgb)); color: rgb(var(--dashboard-destructive-rgb)); }
+              .vault-input { width: 100%; border-radius: .375rem; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); padding: .5rem .65rem; font-size: 13px; }
+              .vault-label { display: block; margin-bottom: .25rem; font-size: 11px; font-weight: 600; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .vault-busy { opacity: .6; pointer-events: none; }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Password Vault</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">Logins encrypted in this browser before they leave it. ForkMesh stores ciphertext and cannot read a title, a username, or a password. Share one with a ForkMesh user or with an organization you belong to.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button data-vault-lock data-vault-requires-unlock type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="lock" class="mr-1 inline h-3.5 w-3.5"></i>Lock</button>
+                  <button data-vault-settings-open data-vault-requires-unlock type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="settings" class="mr-1 inline h-3.5 w-3.5"></i>Vault settings</button>
+                </div>
+              </div>
+              <div data-vault-error role="alert" class="mb-3 hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
+              <div data-vault-notice role="status" class="mb-3 hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+
+              <section data-vault-unsupported class="hidden rounded-lg border border-border bg-card p-8 text-center">
+                <h2 class="text-base font-semibold text-foreground">This browser cannot open a vault</h2>
+                <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">The vault needs X25519 and Ed25519 in the browser's own cryptography. Current Chrome, Edge, Firefox, and Safari have both. Update this browser, then reload.</p>
+              </section>
+
+              <section data-vault-setup class="hidden rounded-lg border border-border bg-card p-6">
+                <h2 class="text-base font-semibold text-foreground">Create your vault</h2>
+                <p class="mt-2 max-w-xl text-sm text-muted-foreground">Choose a master password. It never leaves this browser and ForkMesh cannot reset it, so it must be one you will not forget and do not use anywhere else. Four or more unrelated words work well.</p>
+                <form data-vault-setup-form data-credential-scope class="mt-4 max-w-xl">
+                  <input type="text" autocomplete="username" data-vault-setup-account class="hidden" tabindex="-1" aria-hidden="true">
+                  <label class="vault-label" for="vaultSetupPassword">Master password</label>
+                  <input id="vaultSetupPassword" data-vault-setup-password type="password" autocomplete="new-password" minlength="12" required class="vault-input">
+                  <div data-vault-setup-meter class="vault-meter mt-2"><span></span></div>
+                  <p data-vault-setup-hint class="mt-1 text-xs text-muted-foreground">At least 12 characters.</p>
+                  <label class="vault-label mt-4" for="vaultSetupConfirm">Type it again</label>
+                  <input id="vaultSetupConfirm" data-vault-setup-confirm type="password" autocomplete="new-password" required class="vault-input">
+                  <button data-vault-setup-submit type="submit" class="mt-4 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Create vault</button>
+                </form>
+              </section>
+
+              <section data-vault-unlock class="hidden rounded-lg border border-border bg-card p-6">
+                <h2 class="text-base font-semibold text-foreground">Unlock your vault</h2>
+                <p class="mt-2 max-w-xl text-sm text-muted-foreground">Stretching the master password takes a few seconds on purpose: it is what makes guessing it expensive.</p>
+                <form data-vault-unlock-form data-credential-scope class="mt-4 max-w-xl">
+                  <input type="text" autocomplete="username" data-vault-unlock-account class="hidden" tabindex="-1" aria-hidden="true">
+                  <label class="vault-label" for="vaultUnlockPassword">Master password</label>
+                  <input id="vaultUnlockPassword" data-vault-unlock-password type="password" autocomplete="current-password" required class="vault-input">
+                  <div class="mt-4 flex flex-wrap items-center gap-3">
+                    <button data-vault-unlock-submit type="submit" class="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Unlock</button>
+                    <button data-vault-recover-open type="button" class="text-xs font-semibold text-muted-foreground hover:text-foreground">Forgot it? Use your recovery code</button>
+                  </div>
+                </form>
+              </section>
+
+              <div data-vault-app class="hidden">
+                <div class="mb-3 flex flex-wrap items-center gap-2">
+                  <input data-vault-search type="search" autocomplete="off" placeholder="Search titles, usernames, and sites" aria-label="Search the vault" class="vault-input flex-1">
+                  <select data-vault-filter aria-label="Which items to show" class="rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground">
+                    <option value="all">All items</option>
+                    <option value="mine">Mine</option>
+                    <option value="shared">Shared with me</option>
+                  </select>
+                  <button data-vault-new type="button" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><i data-lucide="plus" class="mr-1 inline h-3.5 w-3.5"></i>New login</button>
+                </div>
+                <div data-vault-list class="rounded-lg border border-border bg-card"></div>
+                <p data-vault-empty class="hidden rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">Nothing here yet. Add a login, or install the ForkMesh browser extension to fill and save them as you browse.</p>
+              </div>
+            </div>
+
+            <dialog data-vault-item-dialog class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-vault-item-form data-credential-scope class="p-5">
+                <div class="mb-4 flex items-center justify-between"><h2 data-vault-item-heading class="text-base font-semibold">New login</h2><button data-vault-dialog-close type="button" aria-label="Close">✕</button></div>
+                <p data-vault-item-origin class="mb-3 hidden text-xs text-muted-foreground"></p>
+                <label class="vault-label" for="vaultItemTitle">Title</label>
+                <input id="vaultItemTitle" data-vault-field="title" type="text" autocomplete="off" maxlength="200" required class="vault-input">
+                <label class="vault-label mt-3" for="vaultItemUrl">Website</label>
+                <input id="vaultItemUrl" data-vault-field="url" type="text" inputmode="url" autocomplete="off" maxlength="2048" placeholder="https://" class="vault-input">
+                <label class="vault-label mt-3" for="vaultItemUsername">Username</label>
+                <input id="vaultItemUsername" data-vault-field="username" type="text" autocomplete="off" maxlength="320" class="vault-input">
+                <label class="vault-label mt-3" for="vaultItemPassword">Password</label>
+                <div class="flex items-center gap-2">
+                  <input id="vaultItemPassword" data-vault-field="password" type="password" autocomplete="new-password" maxlength="4096" class="vault-input vault-mono flex-1">
+                  <button data-vault-reveal type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Show</button>
+                  <button data-vault-generate type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Generate</button>
+                </div>
+                <label class="vault-label mt-3" for="vaultItemNotes">Notes</label>
+                <textarea id="vaultItemNotes" data-vault-field="notes" rows="3" maxlength="8000" class="vault-input"></textarea>
+                <div class="mt-4 flex items-center justify-between">
+                  <button data-vault-item-delete type="button" class="hidden rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Delete</button>
+                  <div class="ml-auto flex gap-2">
+                    <button data-vault-dialog-close type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Cancel</button>
+                    <button data-vault-item-save type="submit" class="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Save</button>
+                  </div>
+                </div>
+              </form>
+            </dialog>
+
+            <dialog data-vault-share-dialog class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Share <span data-vault-share-title></span></h2><p class="text-xs text-muted-foreground">The login's key is sealed to each person's own public keys. ForkMesh passes the sealed key along and cannot open it.</p></div><button data-vault-dialog-close type="button" aria-label="Close">✕</button></div>
+                <div data-vault-share-current class="mb-4 rounded-md border border-border"></div>
+                <form data-vault-share-form>
+                  <div class="flex flex-wrap items-end gap-2">
+                    <div><label class="vault-label" for="vaultShareKind">Share with</label>
+                      <select id="vaultShareKind" data-vault-share-kind class="rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground"><option value="user">A ForkMesh user</option><option value="organization">An organization</option></select></div>
+                    <div class="flex-1"><label class="vault-label" for="vaultShareName">Username</label>
+                      <input id="vaultShareName" data-vault-share-name type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="63" class="vault-input">
+                      <select data-vault-share-org aria-label="Organization" class="hidden w-full rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground"></select></div>
+                    <div><label class="vault-label" for="vaultSharePermission">Can</label>
+                      <select id="vaultSharePermission" data-vault-share-permission class="rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground"><option value="read">View and use</option><option value="write">View and edit</option></select></div>
+                    <button data-vault-share-check type="submit" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Check keys</button>
+                  </div>
+                </form>
+                <div data-vault-share-preview class="mt-4 hidden">
+                  <p class="vault-label">Who this reaches</p>
+                  <div data-vault-share-members class="rounded-md border border-border"></div>
+                  <p data-vault-share-advice class="mt-2 text-xs text-muted-foreground"></p>
+                  <label data-vault-share-confirm-row class="mt-3 hidden text-xs text-foreground"><input data-vault-share-confirm type="checkbox"> I compared the fingerprint marked below with that person, outside ForkMesh.</label>
+                  <div class="mt-3 flex justify-end"><button data-vault-share-submit type="button" class="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Share</button></div>
+                </div>
+              </div>
+            </dialog>
+
+            <dialog data-vault-recovery-dialog class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <h2 class="text-base font-semibold">Your recovery code</h2>
+                <p class="mt-1 text-xs text-muted-foreground">This is the only way back into the vault if the master password is forgotten. It is shown once. Print it or write it down and keep it somewhere safe, away from this device. Do not store it in the vault.</p>
+                <p data-vault-recovery-code class="vault-code mt-3 rounded-md border border-border bg-background p-3"></p>
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                  <button data-vault-recovery-copy type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Copy</button>
+                  <button data-vault-recovery-print type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Print</button>
+                </div>
+                <label class="mt-4 flex items-center gap-2 text-xs text-foreground"><input data-vault-recovery-saved type="checkbox"> I have saved this code.</label>
+                <div class="mt-3 flex justify-end"><button data-vault-recovery-done type="button" disabled class="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Done</button></div>
+              </div>
+            </dialog>
+
+            <dialog data-vault-recover-dialog class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-vault-recover-form data-credential-scope class="p-5">
+                <div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Recover your vault</h2><p class="text-xs text-muted-foreground">The recovery code opens the vault once. You set a new master password and get a new code; the old one stops working.</p></div><button data-vault-dialog-close type="button" aria-label="Close">✕</button></div>
+                <input type="text" autocomplete="username" data-vault-recover-account class="hidden" tabindex="-1" aria-hidden="true">
+                <label class="vault-label" for="vaultRecoverCode">Recovery code</label>
+                <textarea id="vaultRecoverCode" data-vault-recover-code rows="2" autocomplete="off" spellcheck="false" required class="vault-input vault-mono"></textarea>
+                <label class="vault-label mt-3" for="vaultRecoverPassword">New master password</label>
+                <input id="vaultRecoverPassword" data-vault-recover-password type="password" autocomplete="new-password" minlength="12" required class="vault-input">
+                <label class="vault-label mt-3" for="vaultRecoverConfirm">Type it again</label>
+                <input id="vaultRecoverConfirm" data-vault-recover-confirm type="password" autocomplete="new-password" required class="vault-input">
+                <div class="mt-4 flex justify-end gap-2"><button data-vault-dialog-close type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Cancel</button><button type="submit" class="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Recover</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-vault-settings-dialog class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <div class="mb-4 flex items-center justify-between"><h2 class="text-base font-semibold">Vault settings</h2><button data-vault-dialog-close type="button" aria-label="Close">✕</button></div>
+                <p class="vault-label">Your key fingerprint</p>
+                <p data-vault-my-fingerprint class="vault-fingerprint rounded-md border border-border bg-background p-3"></p>
+                <p class="mt-1 text-xs text-muted-foreground">Someone sharing with you for the first time can read this back to you to be sure the keys they were given are yours.</p>
+
+                <label class="vault-label mt-4" for="vaultAutoLock">Lock after</label>
+                <select id="vaultAutoLock" data-vault-autolock class="rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground"><option value="1">1 minute idle</option><option value="5">5 minutes idle</option><option value="10">10 minutes idle</option><option value="30">30 minutes idle</option></select>
+
+                <form data-vault-password-form data-credential-scope class="mt-4">
+                  <input type="text" autocomplete="username" data-vault-password-account class="hidden" tabindex="-1" aria-hidden="true">
+                  <label class="vault-label" for="vaultNewPassword">New master password</label>
+                  <input id="vaultNewPassword" data-vault-new-password type="password" autocomplete="new-password" minlength="12" required class="vault-input">
+                  <label class="vault-label mt-3" for="vaultNewConfirm">Type it again</label>
+                  <input id="vaultNewConfirm" data-vault-new-confirm type="password" autocomplete="new-password" required class="vault-input">
+                  <button type="submit" class="mt-3 rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Change master password</button>
+                </form>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                  <button data-vault-renew-recovery type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">New recovery code</button>
+                  <button data-vault-export type="button" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Download encrypted export</button>
+                  <a data-vault-extension-link href="/dashboard/extension" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">Browser extension</a>
+                  <button data-vault-destroy type="button" class="rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Delete vault</button>
+                </div>
+              </div>
+            </dialog>
+          </section>

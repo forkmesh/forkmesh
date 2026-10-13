@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "updated": "2026-07-23",
+  "modes": {
+    "native": "The surface provides its own usable interface.",
+    "read-only": "The surface presents authorized state and hands mutations to a canonical surface.",
+    "deep-link": "The surface exposes a safe entry point to the canonical interface.",
+    "api": "The Worker provides policy-enforcing transport or storage, not an end-user screen.",
+    "device-local": "The capability intentionally stays on the owner device.",
+    "not-applicable": "The capability would violate the surface boundary or has no meaningful UI there."
+  },
+  "surfaces": [
+    "worker",
+    "web",
+    "world",
+    "qt"
+  ],
+  "capabilities": [
+    {
+      "id": "world",
+      "label": "Multiplayer developer world",
+      "canonicalPath": "/",
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "native"
+    },
+    {
+      "id": "repositories",
+      "label": "Repository catalog, import, browse, and code graph",
+      "canonicalPath": "/dashboard/repos",
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "native"
+    },
+    {
+      "id": "collaboration",
+      "label": "Issues, pulls, discussions, comments, and chat",
+      "canonicalPath": "/dashboard/repos",
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "native"
+    },
+    {
+      "id": "git-ssh",
+      "label": "SSH public-key management and permission-checked Git push",
+      "canonicalPath": "/dashboard/settings/ssh-keys",
+      "sensitiveOwnerDevice": true,
+      "worker": "api",
+      "web": "native",
+      "world": "deep-link",
+      "qt": "device-local",
+      "exception": "SSH private keys remain on the user's device. Raw SSH terminates at an independently operated node-side forced-command gateway, not the Cloudflare HTTP Worker."
+    },
+    {
+      "id": "organizations",
+      "label": "Organizations, teams, floors, and offices",
+      "canonicalPath": "/dashboard",
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "native"
+    },
+    {
+      "id": "mirror-map",
+      "label": "Mirror registration, health, routing, and map",
+      "canonicalPath": "/network",
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "native"
+    },
+    {
+      "id": "mirror-control",
+      "label": "Start, stop, sync, keys, and local mirror services",
+      "canonicalPath": "/desktop",
+      "sensitiveOwnerDevice": true,
+      "worker": "not-applicable",
+      "web": "deep-link",
+      "world": "deep-link",
+      "qt": "device-local",
+      "exception": "Service processes, repository decryption keys, and host credentials remain on the operator device."
+    },
+    {
+      "id": "cloudflare-bootstrap",
+      "label": "Cloudflare Worker, D1, DNS, and tunnel bootstrap",
+      "canonicalPath": "/desktop",
+      "sensitiveOwnerDevice": true,
+      "worker": "not-applicable",
+      "web": "deep-link",
+      "world": "deep-link",
+      "qt": "device-local",
+      "exception": "The Cloudflare API token is entered only into the local Qt control node."
+    },
+    {
+      "id": "agents",
+      "label": "Owner-sealed agents and shared workspaces",
+      "canonicalPath": "/dashboard",
+      "sensitiveOwnerDevice": true,
+      "worker": "api",
+      "web": "read-only",
+      "world": "deep-link",
+      "qt": "device-local",
+      "exception": "Provider login credentials and the private key that decrypts agent data never become a relay or browser capability."
+    },
+    {
+      "id": "security",
+      "label": "Security scans, clipboard, reports, and human review",
+      "canonicalPath": "/security-report",
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "native"
+    },
+    {
+      "id": "rewards",
+      "label": "Public reward pool, pending allocations, and finalized transfers",
+      "canonicalPath": "/mirror-payouts",
+      "sensitiveOwnerDevice": true,
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "device-local",
+      "exception": "Transaction signing and wallet keys stay in the self-custodial wallet or local operator signer."
+    },
+    {
+      "id": "fediverse",
+      "label": "Fediverse directory, digests, mentions, and remote replies",
+      "canonicalPath": "/",
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "deep-link"
+    },
+    {
+      "id": "events-media",
+      "label": "Events, shared playback state, and consented media",
+      "canonicalPath": "/",
+      "worker": "api",
+      "web": "native",
+      "world": "native",
+      "qt": "deep-link"
+    },
+    {
+      "id": "speech-to-text",
+      "label": "Local speech-to-text for World composers",
+      "canonicalPath": "/desktop",
+      "sensitiveOwnerDevice": true,
+      "worker": "not-applicable",
+      "web": "deep-link",
+      "world": "deep-link",
+      "qt": "device-local",
+      "exception": "Microphone audio and transcription inference stay in the paired local Qt client."
+    },
+    {
+      "id": "administration",
+      "label": "Moderation, permissions, and audit review",
+      "canonicalPath": "/dashboard",
+      "worker": "api",
+      "web": "native",
+      "world": "read-only",
+      "qt": "native"
+    }
+  ]
+}

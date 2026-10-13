@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "VoiceEngine.h",
+    "VoiceEngine.cpp",
+    "VoiceAudio.h",
+    "VoiceAudio.cpp",
+    "VoiceChangerFeature.h",
+    "VoiceChangerFeature.cpp"
+  ],
+  "mocHeaders": [
+    "VoiceAudio.h"
+  ],
+  "testSources": [
+    "tests/test_voice_engine.cpp",
+    "VoiceEngine.h",
+    "VoiceEngine.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
+}

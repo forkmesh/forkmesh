@@ -1,0 +1,71 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "forkmesh-ide",
+  "name": "ForkMesh for VS Code",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.vscode",
+  "category": "Extensions",
+  "version": "0.1.1",
+  "summary": "Browse ForkMesh issues and hand them to Claude Code or Codex from VS Code-compatible editors.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "ide": "content/vscode/package.json",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "repository.issues.read",
+      "label": "Read issue records from the workspace you open in the editor",
+      "risk": "sensitive"
+    },
+    {
+      "id": "process.agent.start",
+      "label": "Start Claude Code or Codex in an editor terminal when you choose an issue",
+      "risk": "high"
+    },
+    {
+      "id": "storage.handoff.write",
+      "label": "Write temporary prompts and local IDE handoff files on this device",
+      "risk": "sensitive"
+    },
+    {
+      "id": "extension.claude.invoke",
+      "label": "Open the installed Anthropic Claude Code editor extension when available",
+      "risk": "sensitive"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "ForkMesh artwork for the optional VS Code issue and agent workflow extension"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

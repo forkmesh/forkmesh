@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The week after the move · ForkMesh Blog</title>
+    <meta name="description" content="What changed in ForkMesh from September 24 to 30: the last of the old Cloudflare setup switched off, deploys on every push, cloud agents that merge their own work, ForkMesh Office, a much faster World, the Flutter app deleted, desktop 1.2.5, and what we fixed along the way.">
+    <link rel="canonical" href="https://forkmesh.com/blog/the-week-after-the-move/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/the-week-after-the-move/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="The week after the move">
+    <meta property="og:description" content="The six days after ForkMesh moved onto its own servers: Cloudflare switched off, deploys on every push, cloud agents that finish their own work, an office you can walk around in, and the Flutter app deleted.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/the-week-after-the-move.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="Three glowing green server monoliths stand on wet stone in a moonlit forest beside a lit glass office pavilion, a small robot at a workbench and an overgrown, unlit cloud-shaped frame; the official ForkMesh logo and its vertical reflection stand in the foreground">
+    <meta property="article:published_time" content="2026-09-30T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The week after the move">
+    <meta name="twitter:description" content="The six days after ForkMesh moved onto its own servers, and what we fixed along the way.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/the-week-after-the-move.webp">
+    <meta name="twitter:image:alt" content="Three glowing green server monoliths stand on wet stone in a moonlit forest beside a lit glass office pavilion, a small robot at a workbench and an overgrown, unlit cloud-shaped frame; the official ForkMesh logo and its vertical reflection stand in the foreground">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <style>
+      .body table { width:100%; margin:24px 0; border-collapse:collapse; font-size:15px; line-height:1.5; }
+      .body th, .body td { border-bottom:1px solid var(--line); padding:9px 10px 9px 0; text-align:left; vertical-align:top; color:var(--paragraph); }
+      .body th { color:var(--muted); font-weight:700; }
+      .body td:nth-child(n+2), .body th:nth-child(n+2) { white-space:nowrap; }
+      .body h3 { margin:30px 0 4px; font-size:21px; line-height:1.25; }
+      @media (max-width:760px) { .body td:nth-child(n+2), .body th:nth-child(n+2) { white-space:normal; } }
+    </style>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>The week after the move</h1>
+            <p class="lede">ForkMesh moved onto three servers of our own on September 24. We spent the six days since unpacking: switching off the last of the old setup, letting cloud agents finish their own work, opening an office you can walk around in, and deleting the Flutter app. Here's the full picture.</p>
+            <div class="meta"><span class="pill">September 30, 2026</span><span>Product update</span><span>14 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/the-week-after-the-move.webp" alt="Three glowing green server monoliths stand on wet stone in a moonlit forest beside a lit glass office pavilion, a small robot at a workbench and an overgrown, unlit cloud-shaped frame; the official ForkMesh logo and its vertical reflection stand in the foreground">
+        </section>
+        <article class="body">
+          <p>The last post ended with a late addition: on September 24, forkmesh.com, app.forkmesh.com and world.forkmesh.com moved onto three small servers we run ourselves. This one picks up right after that post went out and runs to this evening.</p>
+          <p>The rough numbers: about 550 commits on the main branch of <code>forkmesh/forkmesh</code> (merges counted once), one desktop release, and a few fixes worth explaining.</p>
+          <p>One note on reading the rest, because it matters more than usual this time. Since September 26, every push to main that touches the website, the app or the World deploys itself, so anything below that lives on the web is live now unless we say otherwise. The desktop and phone apps are different. The only release in this window is 1.2.5, built from September 25's code, so most of the desktop and phone work here is merged and waiting for 1.2.6. We'll say which is which as we go.</p>
+
+          <h2>Cloudflare, switched off</h2>
+          <p>After the move we left the old Cloudflare setup running for a few days, in case we had to go back. We didn't. On September 27 we deleted the old D1 database, but first we took a final backup of it (57,790 rows) and compared it row by row with the new database. 937 rows weren't in the new one, and we went through every one of them: data from mirrors we'd already retired, old notifications and expired sessions the new servers had already cleaned up, and a few rows the old Worker wrote after the move. No user data existed only in the old database.</p>
+          <p>The same day the app, World and email Workers went, along with the old key-value store (exported first) and the notification queue. What's still on Cloudflare: DNS and one Worker that serves the static pages of forkmesh.com, including this blog.</p>
+          <p>Email moved too. Since September 25, ForkMesh's email leaves from our own servers instead of a third-party sending service, signed with DKIM and covered by SPF. On September 27 we set the DMARC policy for forkmesh.com to quarantine, so mail that claims to be from us and fails those checks should go to spam rather than your inbox.</p>
+
+          <h3>Deploys on every push</h3>
+          <p>Deploying used to be something a person started. Since September 26 a push to main that touches the served code deploys itself. The tests that gate it went from about 3 minutes 20 seconds to about 35. Then the release goes to one server first, and the other two only get it once that one passes its health checks. The fastest we've measured from commit to live is 1 minute 43 seconds. Under a minute is the goal. We haven't hit it yet.</p>
+
+          <h3>Intrusion detection, and a switch nobody has flipped</h3>
+          <p>Intrusion detection now runs on our servers.</p>
+          <p>We also built autoscaling: extra app servers and extra agent runners that start when they're needed and go away afterwards, with hard monthly spending caps and a kill switch in the desktop. It's merged, and it's off. Every pool starts disabled and in dry-run mode, and turning one on is something a person has to decide to do. Nobody has yet. Extra runners also can't start on their own until we've settled how they sign in to Claude safely.</p>
+
+          <h2>Cloud agents finish their own work</h2>
+          <p>Last time, an agent on a runner could do the work and push a branch, and that was about it. To merge the result you went back to your desktop. Now a runner session shows you its diff and has the same two buttons as a desktop agent: <strong>Merge &amp; clean up</strong> and <strong>Clean up</strong>. The merge is a real merge commit, and the branch tip is saved to a backup ref before the branch is deleted. You can also start a run from a branch other than the default and give the new branch a name. The session page on the website has the same buttons. One limit for now: this only works for public repositories. A private one answers "not found" and you merge from the desktop as before.</p>
+          <p>While a Claude Code run is working, its transcript now streams onto the website, a message at a time and at most one update every 2.5 seconds. Codex runs still only report when they finish.</p>
+          <p>A repository's Agents tab on the website also lists the agents running on your own desktop now, not just the ones you started from the website. You can read their transcripts, steer them, stop them and merge their work. The browser reaches your desktop over the same end-to-end encrypted control channel the phone apps use; our relay passes the messages along but can't read or forge them. Seeing a desktop agent's diff or deleting it from the website needs a desktop newer than 1.2.5.</p>
+
+          <h3>The login that kept expiring</h3>
+          <p>Some cloud agent jobs failed because the runner's Claude login expired: after each job it restored an older copy of its credentials over the ones Claude had just refreshed. The fix is merged and reaches the runner with its next update. What's live now is that an expired login can't fail quietly any more. Admins get a ping and an email, the status page turns red, the Runners page shows a <strong>Connect Claude</strong> banner, and new jobs are turned away up front with a clear error instead of failing halfway through.</p>
+
+          <h3>Smaller agent and task changes</h3>
+          <p>A prompt box now docks at the bottom of every dashboard page (<code>Ctrl+/</code> opens it). Sending to the cloud and opening a pull request are both off there until you switch them on. "Gemma (local)" is in the model list; it runs only on your own machines that have Codex and Ollama installed, and our runners don't offer it.</p>
+          <p>Deleted tasks go to a trash for 30 days instead of disappearing, with ten seconds to undo, and a task can't be deleted while an agent is still working on it unless an owner overrides that. A task can also keep track of up to 20 of its branches and worktrees. In the next desktop release, deleting a task cleans those up too: finished, merged work goes without a question, and anything unmerged asks first and is backed up before it goes.</p>
+
+          <h2>Your phone, typing into your terminal</h2>
+          <p>This is the one we've wanted for the longest. Lots of people run Claude Code or Codex in a plain terminal, outside ForkMesh. Two changes merged today make those sessions reachable from your phone. Both need the next desktop release and the next phone builds.</p>
+          <p>The first lets the phone watch them. The desktop finds Claude Code and Codex sessions running on your machine, and the phone shows their transcripts live. You can also steer a Claude Code session: ForkMesh sends your message through Claude Code's own way for sessions to talk to each other. Claude Code tells the model that the message came from another session and not from you, so the model gives it less weight, and a session that skips permission prompts holds it until someone approves it. That's the honest behavior, and we don't try to get around it.</p>
+          <p>The second is for when you want your phone to count as you. Start the CLI as <code>forkmesh term claude</code> (or <code>forkmesh term codex</code>) and it runs inside a small terminal wrapper that the desktop can type into. What you send from the phone arrives as keystrokes, exactly as if you'd typed it at that keyboard, and Stop presses Esc. Settings → Phone offers aliases you can copy if you want this every time. ForkMesh never edits your shell files.</p>
+          <p>That's a lot of power to hand a phone, so here's what limits it:</p>
+          <ul>
+            <li>Only a phone you've paired with that desktop can type. Its requests are signed with the phone's own key and encrypted. Away from home they travel through our relay, which sees only ciphertext: it can delay or drop them, but it can't type.</li>
+            <li>The phone can send printable text, new lines and Enter, or one interrupt key through Stop. It can't send escape sequences or other key combinations.</li>
+            <li>Nothing is typed while someone is typing at the keyboard, and both the desktop and the wrapper enforce rate limits.</li>
+            <li>Every prompt shows "⌨ typed from" and the device's name in the terminal, and goes into the desktop log.</li>
+            <li>The person at the keyboard can switch it off for that session with <code>Ctrl-^</code>, or start with <code>--no-remote</code>.</li>
+          </ul>
+          <p>And the limitation we want to be clear about: because the phone types as you, a stolen, unlocked phone that's still paired can do anything you could do at that terminal. Removing the phone under Settings → Phone revokes it. It's built and tested on Linux. It compiles on macOS but hasn't been run on a Mac yet, and it doesn't exist on Windows.</p>
+
+          <h2>An office you can walk around in</h2>
+          <p>ForkMesh Office is a small pixel-art office for each organization. You walk around a floor, talk over voice and video with whoever is standing near you, share a screen, draw on whiteboards, claim a desk, see what your teammates' agents are up to, and play a game when you probably should be working. It's live at <a href="https://app.forkmesh.com/office">app.forkmesh.com/office</a>. You sign in with your ForkMesh account, each organization gets its own office, and the Office chat uses the site's regular channels and direct messages instead of a separate chat of its own.</p>
+          <p>Office came from Md Kaif Ansari, as nine pull requests (#233 to #242, less one duplicate). Kaif built it as a Cloudflare Worker, and since we'd just moved off Workers, we rewrote the server half in Python to run on our own servers next to the World. The part you see and walk around in is Kaif's. Thank you, Kaif.</p>
+
+          <h2>The World got fast</h2>
+          <p>The World, our 3D town at world.forkmesh.com, got six rounds of loading work and a round of in-game work this week. The clearest numbers come from one test PC with an older AMD RX 580 graphics card, loading the live site:</p>
+          <table>
+            <thead><tr><th>Load on the live site</th><th>When</th><th>Ready to use after</th></tr></thead>
+            <tbody>
+              <tr><td>Before the first round</td><td>Sept 29</td><td>14.85 s</td></tr>
+              <tr><td>After round 1</td><td>Sept 29</td><td>2.99 s</td></tr>
+              <tr><td>Build going into round 6</td><td>Sept 30</td><td>1.67 s</td></tr>
+            </tbody>
+          </table>
+          <p>That's one machine, so take the exact figures with some salt; the direction isn't in doubt. Walking around got smoother too. On a scripted tour of the town, the worst frame went from well over a second to at most 155 ms, the World now compiles 91 or 92 shader programs instead of up to 177, and the circle of member figures went from 1,680 draw calls to 92. A new performance check runs the World from nine fixed camera positions and fails if a change makes it slower than its budget.</p>
+          <p>It wasn't all speed work. There's drone racing through ten rings, with laps and a ghost of your best lap, bikes that can leave the road, a reef with a control panel, and a lighter interface. Feedback, bounties and link rewards moved out of the World and onto the dashboard, where they're easier to find.</p>
+
+          <h2>The phone apps: Flutter is gone</h2>
+          <p>On September 28 we deleted the Flutter app from the repository: 1,104 files and about 157,000 lines.</p>
+          <p>What's left are the native apps, Swift and SwiftUI on iPhone and Kotlin and Compose on Android, and both copy the Flutter app's data across the first time they start. By our own tracker the Android app now covers 74 of 75 features, though that counts features written, and it still needs hands-on testing. We're not giving a new iPhone number until the tracker catches up with the code.</p>
+          <p>Now the important part: where you can get them. Mostly, you can't yet. The App Store still has the old Flutter app (1.1.0). The Android APK in 1.2.5 was built before the switch, so it's still Flutter too. What's new is that every change to the iPhone app now builds automatically and sends an install link to early iOS testers. Those builds only install on registered iPhones. 1.2.6 is set up to be the first release with the native Android APK and the first one sent to the App Store automatically.</p>
+          <p>Merged and waiting in those builds: richer agent transcripts with tables, JSON and tool calls; <strong>Merge &amp; clean up</strong> in one tap; a diff viewer; screenshot capture and markup; pull request pings that open the pull request; and interface sounds. On iPhone there are also Pedometer and Water Intake packages that read from Apple Health, and both are off until you turn them on.</p>
+
+          <h3>Three days without iPhone pushes</h3>
+          <p>From the move on September 24 until late on September 27, iPhone push notifications weren't delivered: Apple's push service only accepts HTTP/2, and the new servers were sending over HTTP/1.1. After that fix, a name-lookup problem still stopped some pushes from connecting until early on September 28. Both fixes were on our servers, so you didn't have to update anything. If you missed pings on your iPhone that week, this is why.</p>
+
+          <h2>Desktop 1.2.5</h2>
+          <p>1.2.5 went out on the <code>latest</code> channel on September 28. It was built on September 25 and waited for its Mac image. What's in it:</p>
+          <ul>
+            <li><strong>Linux</strong> builds are made in a Debian 12 container now, so the app and the AppImage run on Ubuntu 22.04 or newer and Debian 12 or newer.</li>
+            <li><strong>macOS</strong> gets one universal <code>.dmg</code> for Apple Silicon and Intel, under two file names. It's ad-hoc signed and not notarized, so macOS will still complain the first time you open it.</li>
+            <li>A crash in the node connection that 1.2.4 could hit is fixed.</li>
+            <li>The release manifest is signed with an Ed25519 key, and both the install script and the download card on the homepage check that signature against a key built into them. We checked 1.2.5's signature ourselves before writing this.</li>
+          </ul>
+          <p>And the bad news, for Windows. On a clean install, 1.2.5 stops at launch with "Qt6OpenGLWidgets.dll was not found". Our Windows packaging copied a fixed list of Qt libraries, and a new GPU-drawn view in the app needed one that wasn't on the list. The fix reads what the program actually imports, copies all of it, and refuses to build an installer if anything is missing. That fix is merged, but the 1.2.5 installer wasn't rebuilt. If you're installing on Windows for the first time, wait for 1.2.6.</p>
+
+          <h2>Updates that never delete your checkout</h2>
+          <p>On September 29 we found that the desktop's <strong>Update, rebuild &amp; restart</strong> treated any failed <code>git pull</code> as a reason to start over: it deleted the source checkout and cloned it again, taking local branches and unpushed work with it. Our install script had the same flaw. We fixed the whole kind of bug, not just the one line:</p>
+          <ul>
+            <li>A failed pull now stops, tells you why, and changes nothing. A fresh clone only goes into a folder that's missing or empty.</li>
+            <li>The install script tries the next mirror, and it moves an incomplete checkout aside instead of deleting it.</li>
+            <li>Removing a project in the desktop moves its folder aside. It never deletes it.</li>
+            <li>Every recursive delete in the code now goes through one guarded helper per language. The helper refuses to touch your home folder, a Git checkout or someone else's worktree, and a test fails if anyone writes a delete that skips it.</li>
+          </ul>
+          <p>The install script fix is live now. The desktop fix ships in the next release.</p>
+
+          <h2>Smaller things</h2>
+          <p>The website got a new coat of paint: redesigned pages with a shared look, pricing as a plan table, a new features page, and an Ecosystem page listing projects built around ForkMesh. On the app side there's a page of its own for creating or mirroring a repository, and you can merge branches from the website. Issues and pull requests sent from the website to a newly created hosted repository were being refused with a 401, and that's fixed. The status page now has a row for each core server, runs every check every minute with a small countdown to the next one, and lists each system's checks when you hover over them. Its email row now checks our own mail server.</p>
+
+          <h2>Coming next</h2>
+          <p>Mostly, 1.2.6. It carries the Windows installer fix, the first native Android APK, the first automatic App Store submission, the desktop halves of the terminal and outside-session features, diff and delete for desktop agents on the website, and the safer update. There's no date yet, and we'll say so here when it's out. The runners also get an update that brings the login fix and continuing a session on another runner. Autoscaling stays off until we decide to turn it on, and when we do, it'll get a mention here.</p>
+          <p>That's the week. If something here is broken for you, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a>. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/office-identity/">← Office identity</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/open-collective/">ForkMesh is on Open Collective →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

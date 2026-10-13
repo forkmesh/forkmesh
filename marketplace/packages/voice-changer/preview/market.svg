@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">The desktop Voice Changer page running the Deep baritone voice, with the ForkMesh Voice microphone picked in a call app</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <text x="64" y="84" font-size="30" font-weight="600" fill="#f4f5f7">Voice Changer</text>
+    <text x="64" y="114" font-size="16" fill="#9aa3b2">Sound like another person on any call or meeting app · ForkMesh desktop · free · audio stays on your computer</text>
+    <g transform="translate(64,150)">
+      <rect width="580" height="480" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+      <text x="28" y="40" font-size="17" font-weight="600" fill="#f4f5f7">Your microphone</text>
+      <rect x="28" y="58" width="96" height="36" rx="8" fill="#238636"/><text x="58" y="81" font-size="14" font-weight="600" fill="#ffffff">Stop</text>
+      <text x="140" y="81" font-size="14" fill="#9aa3b2">Live on the "ForkMesh Voice" microphone.</text>
+      <text x="28" y="126" font-size="13" fill="#9aa3b2">Microphone</text>
+      <rect x="130" y="108" width="420" height="30" rx="6" fill="#171a21" stroke="#2a2f3a"/><text x="142" y="128" font-size="13" fill="#f4f5f7">USB Microphone</text>
+      <rect x="28" y="156" width="522" height="8" rx="4" fill="#2a2f3a"/><rect x="28" y="156" width="310" height="8" rx="4" fill="#8b5cf6"/>
+      <text x="28" y="188" font-size="13" fill="#9aa3b2">Your pitch ≈ 128 Hz · now 131 Hz · delay 21 ms</text>
+      <text x="28" y="240" font-size="17" font-weight="600" fill="#f4f5f7">Voice</text>
+      <rect x="28" y="256" width="522" height="34" rx="6" fill="#171a21" stroke="#2a2f3a"/><text x="42" y="278" font-size="14" fill="#f4f5f7">Deep baritone</text>
+      <text x="28" y="351" font-size="13" fill="#9aa3b2">Pitch (Hz)</text><rect x="200" y="344" width="300" height="6" rx="3" fill="#2a2f3a"/><rect x="200" y="344" width="69" height="6" rx="3" fill="#8b5cf6"/><circle cx="269" cy="347" r="8" fill="#c4b5fd"/><text x="540" y="351" font-size="13" fill="#f4f5f7" text-anchor="end">92</text><text x="28" y="385" font-size="13" fill="#9aa3b2">Shift (semitones)</text><rect x="200" y="378" width="300" height="6" rx="3" fill="#2a2f3a"/><rect x="200" y="378" width="150" height="6" rx="3" fill="#8b5cf6"/><circle cx="350" cy="381" r="8" fill="#c4b5fd"/><text x="540" y="385" font-size="13" fill="#f4f5f7" text-anchor="end">0</text><text x="28" y="419" font-size="13" fill="#9aa3b2">Vocal tract</text><rect x="200" y="412" width="300" height="6" rx="3" fill="#2a2f3a"/><rect x="200" y="412" width="63" height="6" rx="3" fill="#8b5cf6"/><circle cx="263" cy="415" r="8" fill="#c4b5fd"/><text x="540" y="419" font-size="13" fill="#f4f5f7" text-anchor="end">0.86</text><text x="28" y="453" font-size="13" fill="#9aa3b2">Brightness</text><rect x="200" y="446" width="300" height="6" rx="3" fill="#2a2f3a"/><rect x="200" y="446" width="114" height="6" rx="3" fill="#8b5cf6"/><circle cx="314" cy="449" r="8" fill="#c4b5fd"/><text x="540" y="453" font-size="13" fill="#f4f5f7" text-anchor="end">-0.25</text>
+    </g>
+    <g transform="translate(680,150)">
+      <rect width="504" height="480" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+      <text x="28" y="40" font-size="17" font-weight="600" fill="#f4f5f7">Call app · audio settings</text>
+      <text x="28" y="84" font-size="13" fill="#9aa3b2">Microphone</text>
+      <rect x="28" y="96" width="448" height="40" rx="8" fill="#171a21" stroke="#8b5cf6"/>
+      <text x="44" y="122" font-size="15" fill="#f4f5f7">ForkMesh Voice</text>
+      <rect x="28" y="150" width="448" height="120" rx="8" fill="#171a21" stroke="#2a2f3a"/>
+      <text x="44" y="178" font-size="14" fill="#9aa3b2">USB Microphone</text>
+      <text x="44" y="210" font-size="14" fill="#f4f5f7">ForkMesh Voice ✓</text>
+      <text x="44" y="242" font-size="14" fill="#9aa3b2">Built-in Audio</text>
+      <text x="28" y="320" font-size="17" font-weight="600" fill="#f4f5f7">Design a voice with AI</text>
+      <rect x="28" y="336" width="448" height="40" rx="8" fill="#171a21" stroke="#2a2f3a"/>
+      <text x="44" y="361" font-size="14" fill="#9aa3b2">A calm, deep late-night radio host</text>
+      <rect x="28" y="392" width="112" height="36" rx="8" fill="#7c3aed"/><text x="60" y="416" font-size="14" font-weight="600" fill="#ffffff">Design</text>
+    </g>
+  </g>
+</svg>

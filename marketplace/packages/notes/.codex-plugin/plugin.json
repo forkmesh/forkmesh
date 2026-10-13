@@ -1,0 +1,23 @@
+{
+  "name": "notes",
+  "version": "1.0.0",
+  "description": "Collaborative Markdown notes for ForkMesh.",
+  "author": { "name": "ForkMesh", "url": "https://forkmesh.com" },
+  "homepage": "https://forkmesh.com",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["notes", "markdown", "collaboration", "knowledge"],
+  "interface": {
+    "displayName": "Notes",
+    "shortDescription": "Capture and share versioned Markdown notes.",
+    "longDescription": "Encrypted collaborative Markdown notes with sharing, publishing, snapshots, and repository conversation links.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": ["Show my recent notes.", "Help turn this note into a project plan."],
+    "brandColor": "#BF8700"
+  }
+}

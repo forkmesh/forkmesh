@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Free protocol, paid services · ForkMesh{% endblock %}
+{% block meta %}
+    <meta name="description" content="What ForkMesh keeps free and portable, what its hosted services sell, and the evidence required before managed plans launch." />
+    <link rel="canonical" href="https://forkmesh.com/docs/business-model/" />
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .model-wrap { max-width: 1120px; margin: 0 auto; padding: 42px 20px 88px; }
+      .model-wrap h1 { max-width: 15ch; margin: 0 0 18px; font-size: clamp(38px, 6vw, 64px); line-height: 1.02; }
+      .model-lead { max-width: 74ch; margin: 0; color: var(--muted); font-size: 18px; line-height: 1.7; }
+      .model-crumbs, .model-note, .model-card p, .model-section p, .model-section li { color: var(--muted); }
+      .model-crumbs { margin: 0 0 20px; font-size: 13px; }
+      .model-wrap a { color: var(--accent); }
+      .model-banner { margin: 28px 0; padding: 18px 20px; border: 1px solid color-mix(in srgb,var(--accent) 48%,var(--border)); border-radius: 12px; background: color-mix(in srgb,var(--accent) 8%,var(--card)); line-height: 1.6; }
+      .model-banner strong { color: var(--foreground); }
+      .model-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin: 28px 0 38px; }
+      .model-card { display: flex; flex-direction: column; min-height: 240px; padding: 22px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb,var(--card) 86%,transparent); }
+      .model-card[data-status="free"] { border-top: 3px solid #3fb950; }
+      .model-card[data-status="paid"] { border-top: 3px solid #9672ee; }
+      .model-kicker { margin: 0; color: var(--accent); font-family: "ForkMesh Mono",ui-monospace,monospace; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+      .model-card h2 { margin: 10px 0 6px; font-size: 23px; }
+      .model-price { color: var(--foreground) !important; font-size: 17px; font-weight: 700; }
+      .model-card ul { margin: 8px 0 0; padding-left: 19px; }
+      .model-card li { margin: 7px 0; color: var(--muted); line-height: 1.5; }
+      .model-section { margin-top: 42px; padding-top: 34px; border-top: 1px solid var(--border); }
+      .model-section h2 { margin: 0 0 12px; font-size: 30px; }
+      .model-section p, .model-section li { line-height: 1.68; }
+      .matrix-scroll { margin-top: 20px; overflow-x: auto; border: 1px solid var(--border); border-radius: 13px; }
+      .matrix { width: 100%; min-width: 910px; border-collapse: collapse; background: color-mix(in srgb,var(--card) 82%,transparent); font-size: 14px; }
+      .matrix th, .matrix td { padding: 14px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; line-height: 1.48; }
+      .matrix th { color: var(--foreground); background: rgba(127,127,127,.08); }
+      .matrix td { color: var(--muted); }
+      .matrix th:first-child, .matrix td:first-child { width: 23%; color: var(--foreground); font-weight: 650; }
+      .matrix th:last-child, .matrix td:last-child { border-right: 0; }
+      .matrix tr:last-child td { border-bottom: 0; }
+      .model-units { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 18px; padding: 0; list-style: none; }
+      .model-units li { margin: 0; padding: 13px 14px; border: 1px solid var(--border); border-radius: 10px; background: rgba(127,127,127,.05); }
+      .model-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+      .model-action { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px; border: 1px solid var(--border); border-radius: 9px; color: var(--foreground) !important; background: var(--card); font-weight: 700; text-decoration: none; }
+      .model-action.primary { border-color: var(--foreground); color: var(--background) !important; background: var(--foreground); }
+      .model-note { margin-top: 18px; padding: 16px 18px; border-left: 3px solid var(--accent); background: rgba(127,127,127,.07); line-height: 1.65; }
+      @media (max-width: 760px) { .model-grid { grid-template-columns: 1fr; } .model-units { grid-template-columns: 1fr; } }
+    </style>
+{% endblock %}
+{% block body %}
+    <div data-forkmesh-header="simple"></div>
+    <main class="model-wrap">
+      <p class="model-crumbs"><a href="/docs">Docs</a> / Business model</p>
+      <p class="eyebrow">Contract version 1 · published August 20, 2026</p>
+      <h1>Free protocol.<br />Paid service.</h1>
+      <p class="model-lead"><strong>ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.</strong> We charge for operating replaceable services and taking responsibility for them. We do not charge for permission to use, self-host, fork, or participate in the protocol.</p>
+
+      <div class="model-banner"><strong>The permanent line:</strong> protocol rights, MIT-licensed software, independent implementations, self-hosting, anonymous public read and clone, portable Git data, signed collaboration records, and governance do not become paid features. A paid customer receives service—never control over the protocol.</div>
+
+      <section class="model-grid" aria-label="Initial plans">
+        <article class="model-card" data-status="free">
+          <p class="model-kicker">Available · free software</p>
+          <h2>Protocol + self-hosted</h2>
+          <p class="model-price">$0 forever</p>
+          <ul>
+            <li>Use, inspect, modify, fork, and reimplement under MIT.</li>
+            <li>Run your own client, relay, index, mirror, or compatible service.</li>
+            <li>You own capacity, uptime, backups, policy, and operations.</li>
+          </ul>
+        </article>
+        <article class="model-card" data-status="free">
+          <p class="model-kicker">Public preview · best effort</p>
+          <h2>Hosted Free</h2>
+          <p class="model-price">$0 · no payment method</p>
+          <ul>
+            <li>One personal account; public read and clone stay anonymous.</li>
+            <li>Shared relay, discovery, and public indexing under safety and capacity limits.</li>
+            <li>No managed private workspace, reserved replica, SLO, or priority support.</li>
+          </ul>
+        </article>
+        <article class="model-card" data-status="paid">
+          <p class="model-kicker">Launch membership · funds the network</p>
+          <h2>Supporter membership</h2>
+          <p class="model-price">$5 / member / month</p>
+          <ul>
+            <li>Funds shared public infrastructure and adds membership recognition.</li>
+            <li>No extra hosted capability, reserved replica, or protocol authority.</li>
+            <li>Community and billing support; no response-time or uptime promise.</li>
+          </ul>
+        </article>
+        <article class="model-card" data-status="paid">
+          <p class="model-kicker">Launch membership · bounded</p>
+          <h2>Pro membership</h2>
+          <p class="model-price">$10 / member / month</p>
+          <ul>
+            <li>Current published Pro hosted workflows where configured.</li>
+            <li>Membership recognition and billing help.</li>
+            <li>No uptime, reserved-capacity, private-workspace, or unlimited-infrastructure promise.</li>
+          </ul>
+        </article>
+        <article class="model-card" data-status="paid">
+          <p class="model-kicker">Research preview · not for sale</p>
+          <h2>Managed services</h2>
+          <p class="model-price">Price and allowances not yet validated</p>
+          <ul>
+            <li>Proposed hosting, team administration, indexing, replicas, recovery, runners, support, and reliability.</li>
+            <li>No unlimited plan; every variable-cost job has a published usage unit.</li>
+            <li>Checkout stays off until interviews, margin, security, export, and recovery evidence pass.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="model-section" aria-labelledby="matrix-title">
+        <p class="model-kicker">Public entitlement matrix</p>
+        <h2 id="matrix-title">The service can change. Your rights do not.</h2>
+        <p>“Self-hosted” means you operate the current software and accept its current capability boundaries. “Paid service” describes work ForkMesh could operate for you; it does not add a proprietary protocol right.</p>
+        <div class="matrix-scroll" tabindex="0" aria-label="Scrollable entitlement comparison">
+          <table class="matrix">
+            <thead><tr><th>Capability</th><th>Protocol right</th><th>Self-hosted capability</th><th>Hosted Free limit</th><th>Paid service</th></tr></thead>
+            <tbody>
+              <tr><td>Use, fork, modify, reimplement</td><td>Yes, under MIT</td><td>Yes</td><td>Payment never changes this right</td><td>No extra protocol authority</td></tr>
+              <tr><td>Run relay, index, mirror, client</td><td>Permitted for independent operators</td><td>No ForkMesh fee; operator supplies resources</td><td>Shared public roles only</td><td>ForkMesh operates selected, replaceable roles</td></tr>
+              <tr><td>Read and clone public projects</td><td>Open interface</td><td>Yes</td><td>Anonymous and best effort</td><td>Cannot be made pay-only</td></tr>
+              <tr><td>Own and export project data</td><td>Git plus signed <code>.forkmesh</code> records</td><td>Local canonical formats</td><td>Clone/export without upgrading</td><td>Same export before and after cancellation; $0 export fee</td></tr>
+              <tr><td>Hosted relay, discovery, public index</td><td>Replaceable role</td><td>Operator-managed</td><td>No reserved capacity or SLO</td><td>Proposed reserved, measured capacity</td></tr>
+              <tr><td>Private workspace and team administration</td><td>No vendor exclusivity</td><td>Operator-managed current capabilities</td><td>No supported entitlement</td><td>Blocked on privacy, isolation, export, and buyer validation</td></tr>
+              <tr><td>Managed replica, recovery, reliability</td><td>Any operator may offer it</td><td>Operator supplies infrastructure and recovery</td><td>No reserved replica or uptime promise</td><td>Metered proposal; blocked on restore and service-level evidence</td></tr>
+              <tr><td>Human onboarding, migration, support</td><td>Public docs remain free</td><td>Community support</td><td>Community support; no response time</td><td>Proposed scoped hours and an explicit support order</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="model-section" aria-labelledby="units-title">
+        <p class="model-kicker">Measured before sale</p>
+        <h2 id="units-title">Observable usage units</h2>
+        <p>Managed proposals use units that correspond to a service-cost source. Unknown cost remains unknown—never zero—and blocks an unlimited or margin claim.</p>
+        <ul class="model-units">
+          <li>Active member-month</li><li>Indexed project-month</li><li>Managed replica GiB-month</li>
+          <li>Verified egress GiB</li><li>Hosted runner minute</li><li>Priority support hour</li>
+          <li>Edge Worker request</li><li>Durable Object request</li><li>Durable Object GB-second</li>
+        </ul>
+      </section>
+
+      <section class="model-section" aria-labelledby="portability-title">
+        <p class="model-kicker">Portability commitment</p>
+        <h2 id="portability-title">Leaving is a supported path.</h2>
+        <p>Canonical repositories remain standard Git objects and refs. Canonical collaboration remains signed <code>.forkmesh</code> repository records. Clone and export do not require an upgrade or export fee, including before cancellation. A managed launch must prove export into a clean self-hosted deployment and restore from the same records without changing object ids or signatures.</p>
+        <p class="model-note"><strong>No data sale:</strong> ForkMesh does not sell personal data, repository data, collaboration data, telemetry, or derived profiles, and does not use them to sell advertising. Optional coarse analytics remains disabled by default.</p>
+      </section>
+
+      <section class="model-section" aria-labelledby="support-title">
+        <p class="model-kicker">Support boundary</p>
+        <h2 id="support-title">Responsibility is the product.</h2>
+        <p>Community support includes public docs and reproducible issue reports, with no response-time or uptime promise. A future paid order must name supported platforms, contact hours, response target, exclusions, escalation, data-access boundary, and included human time. ForkMesh does not promise an SLO for self-hosted systems it does not operate.</p>
+      </section>
+
+      <section class="model-section" aria-labelledby="research-title">
+        <p class="model-kicker">Current evidence</p>
+        <h2 id="research-title">Managed pricing is not validated yet.</h2>
+        <p>The current register contains <strong>zero qualifying buyer interviews</strong>. Buyer, budget, and paid-job ordering remain hypotheses, so managed checkout is disabled. Real, consented decision-maker interviews—not comments, analytics, internal opinions, or synthetic notes—must cause documented revisions before a price launches.</p>
+        <div class="model-actions">
+          <a class="model-action primary" href="mailto:founders@forkmesh.com?subject=ForkMesh%20managed-services%20research" data-forkmesh-product-action="pricing-managed-interest">Join a pricing interview</a>
+          <a class="model-action" href="/business-model.json" data-forkmesh-product-action="pricing-contract-opened">Read the machine-readable contract</a>
+          <a class="model-action" href="/#pricing">See the pricing summary</a>
+        </div>
+      </section>
+    </main>
+    <div data-forkmesh-footer="standard"></div>
+{% endblock %}

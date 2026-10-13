@@ -1,0 +1,30 @@
+{
+  "name": "calories",
+  "version": "2.0.0",
+  "description": "A private, per-account calorie and macro diary synced across web, desktop, and mobile, with AI photo identification, barcode lookups, goals, reminders, charts, and friend challenges.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com/market",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["calories", "nutrition", "diet", "weight-loss", "barcode", "challenges"],
+  "interface": {
+    "displayName": "Calorie Counter",
+    "shortDescription": "Track calories, macros, weight, and challenges with friends.",
+    "longDescription": "Install it for your own account; no organization needed and nobody else sees your diary. Log meals by photo, barcode, search, or hand on the web, desktop, or mobile app; set calorie and macro goals; get reminders; watch 30-day calorie and weight charts; and invite friends by username to weight-loss and logging-streak challenges.",
+    "developerName": "ForkMesh",
+    "category": "Health",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com/market",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "How many calories have I logged today?",
+      "Who is leading our weight-loss challenge?",
+      "Remind me to log lunch at 12:30."
+    ],
+    "brandColor": "#1BAF7A"
+  }
+}

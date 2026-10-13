@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Burnup charts · ForkMesh Blog</title>
+    <meta name="description" content="Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance.">
+    <link rel="canonical" href="https://forkmesh.com/blog/burnup-charts/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/burnup-charts/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Burnup charts">
+    <meta property="og:description" content="Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/burnup-charts.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/burnup-charts.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Issues &amp; planning</p>
+            <h1>Burnup charts</h1>
+            <p class="lede">Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance.</p>
+            <div class="meta"><span class="pill">Feature 21 of 72</span><span>Feature</span><span>Issues &amp; planning</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/burnup-charts.webp" alt="Abstract ForkMesh artwork for Burnup charts">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Burnup charts gives ForkMesh a concrete mechanism for scope and completion trends that show whether a release is converging. Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance.</p>
+          <p>Planning loses force when it drifts away from the code history and pull requests it is supposed to guide. In ForkMesh, burnup charts addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles burnup charts through the same split it uses across the product: issues are repository-linked records surfaced in desktop and web views beside branches, pull requests, milestones, and agent sessions.</p>
+          <p>The behavior is intentionally narrow: Built-in burnup charts show scope and completion over time, so you can see a release converging (or not) at a glance. State changes stay portable because the planning layer follows the repository instead of one private dashboard.</p>
+          <h2>Where it fits</h2>
+          <p>Use burnup charts when triage and progress tracking should live beside the repository and remain portable.</p>
+          <p>It pairs with the rest of Issues &amp; planning because Burnup charts keeps scope and completion trends that show whether a release is converging connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/milestones-with-progress/">← Milestones with progress</a>
+          <a href="/blog/quick-add-from-anywhere/">Quick-add from anywhere →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

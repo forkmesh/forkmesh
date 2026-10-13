@@ -1,0 +1,455 @@
+name = "forkmesh-next-app"
+main = "src_build/entry.py"
+# Python's legacy global-handler bridge can reuse a PyProxy after its GIL scope
+# ends, so concurrent fetches fail before application routing with NoGilError.
+# Use the supported WorkerEntrypoint handler model instead.  The entrypoint
+# delegates to a fresh route receiver per event, so event-local state remains
+# isolated while the runtime owns the PyProxy lifecycle.
+#
+# disable_python_external_sdk keeps `from workers import ...` bound to the SDK
+# the runtime already ships.  Without it this runtime treats `workers` as an
+# uploaded package, so the shim at site-packages/workers/__init__.py raises
+# ModuleNotFoundError ("update to workers-py >= 1.90 or pass
+# disable_python_external_sdk") on every start that did not vendor the external
+# package -- which is every plain `wrangler dev`.  Vendoring it is the wrong
+# half of that choice here: pyproject.toml declares no dependencies and there is
+# no pylock.toml precisely so the deploy does not upload a second copy of an SDK
+# the runtime already has.  world/browser_tests runs this same entry.py under
+# the same flag.
+#
+# python_no_global_handlers is deliberately NOT listed: it has been the
+# default since compatibility date 2025-08-14 (this manifest is past that),
+# and current workerd refuses to start when the flag is spelled out ("became
+# the default ... so does not need to be specified anymore"). The legacy
+# bridge stays off as long as disable_python_no_global_handlers is absent.
+compatibility_flags = [
+  "python_workers",
+  "disable_python_external_sdk",
+]
+# The date also picks the Python runtime: from 2026-09-08 on, python_workers_314
+# is the default (Python 3.14, Pyodide 314.0.6); earlier dates ran Python 3.13
+# on Pyodide 0.28.2. Do not add python_workers_314 by name -- the date carries it.
+compatibility_date = "2026-09-22"
+
+[python_modules]
+exclude = ["**/*.pyc", "asgi.py", "workers/wsgi.py"]
+
+[build]
+command = "python3 tools/build_dashboard_assets.py && python3 tools/build_worker_python.py && python3 tools/build_site_assets.py app && python3 ../world/tools/build_worker_footprint.py --staged --report dist/worker-footprint.json"
+watch_dir = ["src", "public", "tools", "../marketplace/catalog.json", "../marketplace/packages", "../marketplace/tools", "../world/src", "../world/public", "../www/public"]
+
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+html_handling = "drop-trailing-slash"
+not_found_handling = "404-page"
+run_worker_first = [
+  "/",
+  "/api",
+  "/api/*",
+  "/developers",
+  "/health",
+  "/simulate-sentry-error",
+  "/rss.xml",
+  "/feed.xml",
+  "/.well-known/*",
+  "/ap/*",
+  "/nodeinfo/*",
+  "/mcp",
+  "/mcp/*",
+  "/admin-*",
+  "/product-analysis",
+  "/product-analysis/*",
+  "/@*",
+  "/%40*",
+  "/blog",
+  "/blog/*",
+  "/docs",
+  "/docs/*",
+  "/world",
+  "/world/*",
+  "/about",
+  "/careers",
+  "/changelog",
+  "/desktop",
+  "/mobile",
+  "/features",
+  "/leaderboards",
+  "/market",
+  "/network",
+  "/ecosystem",
+  "/ecosystem/*",
+  "/press",
+  "/pricing",
+  "/privacy",
+  "/security-report",
+  "/signup",
+  "/signup/",
+  "/status",
+  "/terms",
+  "/*.html",
+  # Retired plural URL: the Worker 308s it to /referral.
+  "/referrals",
+  "/referrals/",
+  # Hackathon. /hackathon and /hackathon/leaderboard|rules 308 to the
+  # marketing origin that owns those documents; /hackathon/join/<name> and
+  # /hackathon/squad/<code> are rendered here because they carry live
+  # standings. The participant HQ is excluded below with the dashboard pages.
+  "/hackathon",
+  "/hackathon/*",
+  # Investor deck links minted by the CRM. The Worker must see every request
+  # under the prefix: the deck document is an asset, and only a live token
+  # may read it.
+  "/pitch-deck",
+  "/pitch-deck/*",
+  "/dashboard/*",
+  "!/dashboard",
+  "!/dashboard/",
+  "!/dashboard/repos",
+  "!/dashboard/repos/",
+  "!/dashboard/repos/new",
+  "!/dashboard/repos/new/",
+  "!/dashboard/network",
+  "!/dashboard/network/",
+  "!/dashboard/chat",
+  "!/dashboard/chat/",
+  "!/dashboard/ads",
+  "!/dashboard/ads/",
+  "!/dashboard/challenges",
+  "!/dashboard/challenges/",
+  "!/dashboard/agents",
+  "!/dashboard/agents/",
+  "!/dashboard/bounties",
+  "!/dashboard/bounties/",
+  "!/dashboard/links",
+  "!/dashboard/links/",
+  "!/dashboard/runners",
+  "!/dashboard/runners/",
+  "!/dashboard/docs",
+  "!/dashboard/docs/",
+  "!/dashboard/apps",
+  "!/dashboard/apps/",
+  "!/dashboard/apps/build",
+  "!/dashboard/apps/build/",
+  "!/dashboard/settings",
+  "!/dashboard/settings/",
+  "!/dashboard/profile",
+  "!/dashboard/profile/",
+  "!/dashboard/profile/repositories",
+  "!/dashboard/profile/repositories/",
+  "!/dashboard/partials/*",
+  "!/dashboard/js/*",
+  "!/dashboard/tailwind.css",
+  # The hackathon participant HQ is a composed dashboard page, served straight
+  # from Assets like the pages above.
+  "!/hackathon/me",
+  "/notes/*",
+  "/*/*",
+  "!/assets/*",
+  "!/office/*",
+  # Generated plugin registry and browser modules are immutable static build
+  # artifacts. Let Cloudflare Assets serve them directly; otherwise /*/* sends
+  # them through the repository router and adds a Worker invocation per load.
+  "!/dashboard-plugins/*",
+  "!/favicon/*",
+  "!/chat/",
+  "!/forgot-password/",
+  "!/ledger/",
+  "!/login/",
+  "!/microjobs",
+  "!/microjobs/",
+  "!/mirror-payouts/",
+  "!/referral",
+  "!/referral/",
+  "!/reset-password/",
+  "!/start/",
+]
+
+[[routes]]
+pattern = "app.next.forkmesh.com"
+custom_domain = true
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# Core nodes whose agent-job queues pool runners (fmnext-r1) drain.
+RUNNER_POOL_TARGET_NODES = "fmnext-n1,fmnext-n2,fmnext-n3"
+# Core nodes that host ForkMesh-hosted repositories (docs/HOSTED_REPOS.md):
+# every one holds a replica; pushes go to the last pusher, else the
+# rendezvous-first live core. Empty turns core hosting off.
+HOSTED_GIT_CORE_NODES = "fmnext-n1,fmnext-n2,fmnext-n3"
+HOSTED_REPO_MAX_PER_ACCOUNT = "10"
+HOSTED_REPO_MAX_BYTES = "209715200"
+HOSTED_IMPORT_HOSTS = "github.com,gitlab.com,codeberg.org"
+NODE_NAME = "forkmesh-mainnode"
+MAIL_LOG_OWNER = "jett"
+MAIL_TRANSPORT = "smtp"
+FLAGSHIP_ROUTING_REFS_SHA256 = ""
+FLAGSHIP_RECOVERY_NODE = ""
+PUBLIC_BASE_URL = "https://forkmesh.com"
+API_ORIGIN = "https://app.forkmesh.com"
+APP_ORIGIN = "https://app.forkmesh.com"
+WWW_ORIGIN = "https://forkmesh.com"
+WORLD_ORIGIN = "https://world.forkmesh.com"
+CORS_ALLOWED_ORIGINS = "https://forkmesh.com,https://app.forkmesh.com,https://world.forkmesh.com"
+DISCORD_OAUTH_REDIRECT_URI = "https://app.forkmesh.com/api/integrations/discord/callback"
+# The bug channel this deployment watches, and the repository new reports are
+# filed into. Public ids, not credentials: the bot secret is pushed separately
+# and never appears in this manifest. Clearing DISCORD_BUGS_CHANNEL_ID turns
+# the watcher off without a code change.
+DISCORD_BUGS_GUILD_ID = ""
+DISCORD_BUGS_CHANNEL_ID = ""
+DISCORD_BUGS_REPO = ""
+# Canonical Patreon callback URL. Keeping it in the production manifest ensures
+# every deploy supplies the exact redirect URI registered with Patreon while
+# client/webhook/creator credentials remain Worker secrets. The www Worker
+# proxies /api/* through to this Worker, so the public forkmesh.com origin stays
+# the registered callback.
+PATREON_OAUTH_REDIRECT_URI = "https://forkmesh.com/api/integrations/patreon/callback"
+COMMUNITY_REWARD_NETWORK = "devnet"
+COMMUNITY_REWARD_RPC_URL = "https://api.devnet.solana.com"
+WORKER_ROLE = "app"
+SINGLE_WORKER_SITE = "false"
+# Acquisition attribution (docs/attribution.md). The allowlists are
+# configuration, not code: an off-list utm value is stored as "other" and the
+# sanitised original is kept in the landing_view event metadata for review.
+ATTRIBUTION_ALLOWED_SOURCES = "reddit,mastodon,x,hn,direct,search,docs,blog,discord,email"
+ATTRIBUTION_ALLOWED_MEDIUMS = "social,referral,organic,comparison,email"
+ATTRIBUTION_ALLOWED_CAMPAIGNS = "forever_launch,search_to_clone_478,category_comparison_509,reddit_scout,changelog,start_instance,revenue_contest,product_update,promotion,repo_mirrored"
+# Cloudflare Turnstile widget "forkmesh-next-signup" (managed mode; domains
+# app.forkmesh.com and forkmesh.com). The site key is public; its
+# secret TURNSTILE_SECRET_KEY arrives through the vault (deploy/fleet.toml
+# optional_secrets). See app/src/turnstile.py and docs/OPERATIONS.md.
+TURNSTILE_SITE_KEY = "0x4AAAAAAFB4BWGb6Sgx78UR"
+OFFICE_STUN_URLS = "stun:stun.cloudflare.com:3478"
+
+# Optional overrides, deliberately NOT bound here. Workers Free caps a Worker at
+# 64 variables (secrets + text), and every entry below only restated the default
+# the code already falls back to when the name is unset. Add one back only to
+# change it; the value shown is the current built-in default.
+#   NODE_SOLANA_ADDRESS = ""                  (node payout address in /api/status)
+#   REWARD_INTERVAL_MS = "3600000"            (reward policy, entry.py _reward_config)
+#   REWARD_JITTER_MAX_MS = "2700000"
+#   REWARD_AMOUNT_LAMPORTS = "100000"
+#   REWARD_MIN_UPTIME_MS = "1800000"
+#   REWARD_MIN_CONTRIBUTION_UNITS = "0"
+#   REWARD_HEALTH_FRESH_MS = "600000"
+#   FORKBOT_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+#   USERNAME_MODERATION_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
+#   USERNAME_MODERATION_CONFIRM_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+#       (a different, larger model on purpose: only an already-flagged name
+#       reaches it, and two passes of one small model share its blind spots)
+#   SIGNUP_REFERRAL_CODE_MODE = "false"       (seed for the admin setting only;
+#       administrators change the requirement at runtime from the console)
+#   ATTRIBUTION_BOT_UA_PATTERNS = ""          (comma-separated UA substrings;
+#       empty = the built-in crawler list in attribution.py)
+#   ATTRIBUTION_SKIP_COUNTRIES = ""           (empty = EU-27 + EEA: no cookie,
+#       session or event until a consent banner exists; www/wrangler.toml too)
+#   ATTRIBUTION_TIMEZONE = "UTC"              ("UTC" or a "+HH:MM" offset)
+#   ATTRIBUTION_RETENTION_DAYS = "400"
+#   PUBLIC_ACQUISITION_PAGE = "false"         (public /transparency/acquisition
+#       page; the private /admin/acquisition dashboard is the source of truth)
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+binding = "REPOSITORY_METADATA"
+id = "REPLACE_NEXT_KV_REPOSITORY_METADATA_ID"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_MAINNODE_ROOM"
+class_name = "ForkMeshRoom"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_WORLD"
+class_name = "ForkMeshWorld"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_OFFICE_ROOM"
+class_name = "ForkMeshOfficeRoom"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_NODES"
+class_name = "ForkMeshNodes"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_NOTE_ROOM"
+class_name = "ForkMeshNoteRoom"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_CRON_WATCHDOG"
+class_name = "ForkMeshCronWatchdog"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_CRON_RUNNER"
+class_name = "ForkMeshCronRunner"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_DISCORD_GATE"
+class_name = "ForkMeshDiscordGate"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_ORG_OFFICE"
+class_name = "ForkMeshOrgOffice"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "forkmesh-next"
+database_id = "REPLACE_NEXT_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Instant notification email. enqueue_notification rings a payload-free
+# doorbell here and the consumer sends the mail, so a comment POST never waits
+# on a Mailtrap round-trip. deploy.sh creates the queue before deploying, since
+# wrangler refuses a deploy that names a queue the account does not have.
+[[queues.producers]]
+binding = "NOTIFICATION_QUEUE"
+queue = "forkmesh-notification-email"
+
+# max_batch_timeout is the latency floor for "instant", so it is the smallest
+# value that still collapses a thread's fan-out into one invocation. The batch
+# size is what one consumer run will serve at most; NOTIFICATION_QUEUE_MAX_
+# RECIPIENTS bounds the distinct accounts inside it, and the per-minute cron
+# backstop picks up any overflow.
+[[queues.consumers]]
+queue = "forkmesh-notification-email"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 3
+max_concurrency = 1
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "forkmesh-dev"
+database_id = "REPLACE_WITH_DEV_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[env.dev.vars]
+COMMUNITY_REWARD_NETWORK = "devnet"
+COMMUNITY_REWARD_RPC_URL = "https://api.devnet.solana.com"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_MAINNODE_ROOM"
+class_name = "ForkMeshRoom"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_WORLD"
+class_name = "ForkMeshWorld"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_OFFICE_ROOM"
+class_name = "ForkMeshOfficeRoom"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_NODES"
+class_name = "ForkMeshNodes"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_NOTE_ROOM"
+class_name = "ForkMeshNoteRoom"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_CRON_WATCHDOG"
+class_name = "ForkMeshCronWatchdog"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_CRON_RUNNER"
+class_name = "ForkMeshCronRunner"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_DISCORD_GATE"
+class_name = "ForkMeshDiscordGate"
+
+[[env.dev.durable_objects.bindings]]
+name = "FORKMESH_ORG_OFFICE"
+class_name = "ForkMeshOrgOffice"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ForkMeshRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["ForkMeshCatalog"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["ForkMeshFiles"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["ForkMeshHost"]
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["ForkMeshAccounts"]
+
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["ForkMeshIssues"]
+
+[[migrations]]
+tag = "v7"
+new_sqlite_classes = ["ForkMeshPulls"]
+
+[[migrations]]
+tag = "v8"
+deleted_classes = [
+    "ForkMeshCatalog",
+    "ForkMeshFiles",
+    "ForkMeshAccounts",
+    "ForkMeshIssues",
+    "ForkMeshPulls",
+]
+
+[[migrations]]
+tag = "v9"
+new_sqlite_classes = ["ForkMeshWorld"]
+
+[[migrations]]
+tag = "v10"
+deleted_classes = ["ForkMeshHost"]
+
+[[migrations]]
+tag = "v11"
+new_sqlite_classes = ["ForkMeshOfficeRoom"]
+
+[[migrations]]
+tag = "v12"
+new_sqlite_classes = ["ForkMeshNodes"]
+
+[[migrations]]
+tag = "v13"
+new_sqlite_classes = ["ForkMeshCronWatchdog"]
+
+[[migrations]]
+tag = "v14"
+new_sqlite_classes = ["ForkMeshCronRunner"]
+
+[[migrations]]
+tag = "v15"
+new_sqlite_classes = ["ForkMeshDiscordGate"]
+
+[[migrations]]
+tag = "v16"
+new_sqlite_classes = ["ForkMeshNoteRoom"]
+
+[[migrations]]
+tag = "v17"
+new_sqlite_classes = ["ForkMeshOrgOffice"]
+
+
+[observability]
+enabled = true
+head_sampling_rate = 0.05
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 0.05
+invocation_logs = false
+
+[observability.traces]
+enabled = false

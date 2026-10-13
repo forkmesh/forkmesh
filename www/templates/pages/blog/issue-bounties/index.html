@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Issue bounties" %}
+{% set slug = "issue-bounties" %}
+{% set image = "/assets/blog/features/issue-bounties.webp" %}
+{% set description = "ForkMesh's earlier issue-bounty flow is retired. Funding and payouts are switched off, and historical records are read-only." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Accounts &amp; rewards</p>
+            <h1>Issue bounties</h1>
+            <p class="lede">The earlier issue-bounty flow is retired. Funding and payouts are switched off, and historical records are read-only.</p>
+            <div class="meta"><span class="pill">Feature 65 of 72</span><span>Feature</span><span>Accounts, money &amp; rewards</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/issue-bounties.webp" alt="Abstract ForkMesh artwork for Issue bounties">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>An earlier version of ForkMesh held issue-bounty deposits and paid them out automatically. That design does not fit ForkMesh’s non-custodial approach, so it is no longer an active funding or payout path.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>Bounty wallet creation, funding, and automatic payouts are switched off. The web, desktop, and mobile apps show historical bounty state as read-only, and no funds move automatically.</p>
+          <p>Any future issue incentive will use an owner-controlled external wallet, program, or multisig; publish only public transaction evidence; and verify exact finalized transfers. ForkMesh will not create or hold a custodial wallet for the issue or contributor.</p>
+          <div class="note"><strong>Non-custodial notice:</strong> Do not send funds to a historical bounty address. ForkMesh does not hold or control user funds, and this retired bounty flow never asks for payout private keys, seed phrases, or mnemonics.</div>
+          <h2>Where it fits</h2>
+          <p>The current community reward program supports verified mirror-node incentives on Solana mainnet-beta; explicit development deployments may select a test network. It does not reactivate issue bounties.</p>
+          <p>Historical status labels are accounting and migration records, not user balances, redeemable claims, or guaranteed payouts.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/make-it-rain/">← Make it rain</a>
+          <a href="/blog/mirror-rewards/">Mirror rewards →</a>
+        </nav>
+{% endblock %}

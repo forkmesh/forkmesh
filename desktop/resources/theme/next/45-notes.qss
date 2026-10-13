@@ -1,0 +1,46 @@
+#notesSection QLabel#mutedLabel {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#notesSection > QLabel#mutedLabel { font-size: 13px; }
+
+#notesList {
+    background-color: transparent; border: none; padding: 0px 8px 0px 0px;
+}
+
+QLineEdit#noteTitleEdit {
+    background-color: @surface; border: 1px solid @border;
+    color: @fg; font-size: 16px; font-weight: 600; padding: 7px 12px;
+}
+QLineEdit#noteTitleEdit:hover { border-color: @borderStrong; }
+QLineEdit#noteTitleEdit:focus { border-color: @accent; }
+
+#notesSection QPushButton#markdownTab {
+    background-color: transparent; border: none; border-radius: 6px;
+    color: @fgMuted; font-size: 13px; font-weight: 500;
+    padding: 5px 10px; margin: 4px 2px 8px 0px;
+}
+#notesSection QPushButton#markdownTab:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+#notesSection QPushButton#markdownTab:checked {
+    background-color: @surfaceActive; color: @fg;
+}
+
+#notesSection QToolButton#markdownTool {
+    background-color: transparent; border: none; border-radius: 6px;
+    color: @fgMuted; font-size: 13px; font-weight: 500;
+    padding: 4px 6px; margin: 4px 0px 8px 0px;
+}
+#notesSection QToolButton#markdownTool:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+#notesSection QToolButton#markdownTool:pressed {
+    background-color: @surfaceActive; color: @fg;
+}
+
+#notesSection QPlainTextEdit#markdownSource,
+#notesSection QTextBrowser#markdownPreview {
+    background-color: @surface; color: @fg;
+    border: 1px solid @border; border-radius: 12px; padding: 14px 16px;
+}
+#notesSection QPlainTextEdit#markdownSource:focus { border-color: @borderStrong; }

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Web chat · ForkMesh Blog</title>
+    <meta name="description" content="Join the conversation from the browser too, the website speaks the same room protocol as the desktop app.">
+    <link rel="canonical" href="https://forkmesh.com/blog/web-chat/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/web-chat/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Web chat">
+    <meta property="og:description" content="Join the conversation from the browser too, the website speaks the same room protocol as the desktop app.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/web-chat.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/web-chat.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Chat &amp; private sharing</p>
+            <h1>Web chat</h1>
+            <p class="lede">Join the conversation from the browser too, the website speaks the same room protocol as the desktop app.</p>
+            <div class="meta"><span class="pill">Feature 51 of 72</span><span>Feature</span><span>Chat &amp; private sharing</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/web-chat.webp" alt="Abstract ForkMesh artwork for Web chat">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Web chat gives ForkMesh a concrete mechanism for browser participation in the same room protocol as the desktop app. Join the conversation from the browser too, the website speaks the same room protocol as the desktop app.</p>
+          <p>Project conversations often carry design, access, and coordination context, so web chat states the relay trust boundary directly.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>The website uses the same AES-256-GCM envelopes as the desktop and mobile apps. Public channels stop at the controller-readable room layer so ForkBot, MCP, and webhooks can participate. Private channels and direct messages automatically add recipient encryption with a device-local X25519 key.</p>
+          <p>The mainnode retains only marked history, capped at the newest 500 persisted frames per room for 7 days.</p>
+          <div class="note">The chat badge states the active policy: Public is controller-readable; End-to-end protects private content beyond the controller key without asking for a phrase.</div>
+          <h2>Where it fits</h2>
+          <p>Use a public web channel when integrations need access, and a private channel or direct message when they do not.</p>
+          <p>It pairs with the rest of Chat &amp; private sharing because Web chat keeps browser participation in the same room protocol as the desktop app connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/discussions/">← Discussions</a>
+          <a href="/blog/complete-repository-workspace/">Complete repository workspace →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

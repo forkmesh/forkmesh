@@ -1,0 +1,13 @@
+{
+  "category": "Social and content",
+  "integrations": [
+    "x",
+    "mastodon",
+    "linkedin",
+    "facebookPages",
+    "youtube",
+    "reddit",
+    "wordpress",
+    "webflow"
+  ]
+}

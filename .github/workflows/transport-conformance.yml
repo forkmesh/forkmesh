@@ -1,0 +1,57 @@
+name: Transport conformance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forkmesh-transport-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    name: Adapters, leak tracing, and failover · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Configure Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/requirements-ci.txt
+
+      - name: Install pinned test runner
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-ci.txt
+
+      # Leak tests trace the Git child process; without strace they skip, so
+      # the Linux job installs it and the macOS job covers everything else.
+      - name: Install the system call tracer
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends strace
+
+      - name: Verify every adapter, the planner vectors, leak tests, failover, and recovery
+        run: >-
+          python -m pytest -q -rs app/tests/test_transports.py
+          --junitxml=artifacts/transport-conformance-${{ matrix.os }}.xml
+
+      - name: Retain conformance evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: transport-conformance-${{ matrix.os }}-${{ github.run_id }}
+          path: artifacts/transport-conformance-*.xml

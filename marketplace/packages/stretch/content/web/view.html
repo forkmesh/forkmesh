@@ -1,0 +1,96 @@
+          <section data-view="stretch" class="view active h-full overflow-y-auto stretch-viz">
+            <style>
+              .stretch-viz { --stretch-figure: #2f6fd6; --stretch-accent: #1baf7a; --stretch-track: rgb(var(--dashboard-border-rgb)); --stretch-ink: rgb(var(--dashboard-foreground-rgb)); --stretch-ink-muted: rgb(var(--dashboard-muted-foreground-rgb)); --stretch-bg: rgb(var(--dashboard-background-rgb)); }
+              :root[data-dashboard-theme="dark"] .stretch-viz { --stretch-figure: #6ea0f0; --stretch-accent: #199e70; }
+              .stretch-viz svg { display: block; overflow: visible; }
+              .stretch-viz .stretch-stage { width: 100%; max-width: 22rem; aspect-ratio: 200 / 264; margin: 0 auto; }
+              .stretch-viz .stretch-stage svg { width: 100%; height: 100%; }
+              .stretch-viz .stretch-limb { stroke: var(--stretch-figure); stroke-linecap: round; fill: none; }
+              .stretch-viz .stretch-ripple { fill: none; stroke: var(--stretch-accent); stroke-width: 2; }
+              .stretch-viz .stretch-routine { display: block; width: 100%; text-align: left; border-radius: .5rem; border: 1px solid var(--stretch-track); padding: .75rem; }
+              .stretch-viz .stretch-routine[aria-pressed="true"] { border-color: var(--stretch-accent); box-shadow: 0 0 0 1px var(--stretch-accent) inset; }
+              .stretch-viz .stretch-start { display: block; width: 100%; min-height: 3.5rem; border-radius: .75rem; background: var(--stretch-accent); color: #fff; font-size: 1.125rem; font-weight: 700; }
+              .stretch-viz .stretch-start:hover { opacity: .9; }
+              .stretch-viz .stretch-count { font-size: 3.5rem; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--stretch-ink); }
+              .stretch-viz .stretch-bar { height: .5rem; border-radius: 999px; background: var(--stretch-track); overflow: hidden; }
+              .stretch-viz .stretch-bar > div { height: 100%; background: var(--stretch-accent); border-radius: 999px; transition: width .25s linear; }
+              .stretch-viz .stretch-steps li[data-current="true"] { color: var(--stretch-ink); font-weight: 600; }
+              .stretch-viz .stretch-steps li[data-done="true"] { text-decoration: line-through; opacity: .6; }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Stretch Break</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">A guided stretch for your back and posture after a long day at the computer, and a lymph tapping routine. A voice talks you through each move while the example person does it with you.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <label data-stretch-requires-install class="hidden items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><input data-stretch-voice type="checkbox" class="h-3.5 w-3.5"> Voice</label>
+                  <button data-stretch-refresh data-stretch-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="refresh-cw" class="mr-1 inline h-3.5 w-3.5"></i>Refresh</button>
+                  <button data-stretch-manage data-stretch-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="settings" class="mr-1 inline h-3.5 w-3.5"></i>Plugin data</button>
+                </div>
+              </div>
+              <div data-stretch-error class="mb-3 hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
+              <div data-stretch-notice class="mb-3 hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+
+              <section data-stretch-install-panel class="hidden rounded-lg border border-border bg-card p-8 text-center">
+                <h2 class="text-base font-semibold text-foreground">Install Stretch Break</h2>
+                <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Take a few minutes away from the screen: circle your hips, swing your arms so your torso rotates, stretch to the left and the right, and roll your neck. There is also a lymph tapping routine down your arms, around your eyes and over your head. A voice guides you and an example person moves with you. Sessions are private to your account, follow you to the desktop and iPhone apps, and on iPhone are saved to Apple Health. Everything is encrypted at rest with a key minted for your account alone.</p>
+                <button data-stretch-install type="button" class="mt-4 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Install Stretch Break</button>
+              </section>
+
+              <div data-stretch-app class="hidden grid gap-4">
+                <div data-stretch-picker class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+                  <section class="rounded-lg border border-border bg-card p-4">
+                    <h2 class="text-sm font-semibold text-foreground">Choose a routine</h2>
+                    <div class="mt-3 grid gap-2 sm:grid-cols-3" data-stretch-routines></div>
+                    <ol class="stretch-steps mt-4 grid gap-1 text-sm text-muted-foreground sm:grid-cols-2" data-stretch-step-list></ol>
+                    <button data-stretch-start type="button" class="stretch-start mt-4">Start</button>
+                    <p class="mt-2 text-xs text-muted-foreground">Move gently and stop if anything hurts. Turn your sound on to hear the voice.</p>
+                  </section>
+                  <section class="rounded-lg border border-border bg-card p-4">
+                    <div class="stretch-stage" data-stretch-preview></div>
+                  </section>
+                </div>
+
+                <section data-stretch-session class="hidden rounded-lg border border-border bg-card p-4">
+                  <div class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+                    <div class="stretch-stage" data-stretch-stage></div>
+                    <div class="flex min-w-0 flex-col gap-3">
+                      <p data-stretch-position class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"></p>
+                      <h2 data-stretch-title class="text-2xl font-semibold text-foreground"></h2>
+                      <p data-stretch-say class="text-base text-foreground"></p>
+                      <div class="flex items-end gap-3"><span data-stretch-count class="stretch-count"></span><span class="pb-2 text-sm text-muted-foreground">seconds</span></div>
+                      <div class="stretch-bar" aria-hidden="true"><div data-stretch-step-bar style="width:0%"></div></div>
+                      <p data-stretch-next class="text-sm text-muted-foreground"></p>
+                      <div class="stretch-bar" aria-hidden="true"><div data-stretch-total-bar style="width:0%"></div></div>
+                      <p data-stretch-total class="text-xs text-muted-foreground"></p>
+                      <div class="mt-2 flex flex-wrap gap-2">
+                        <button data-stretch-back type="button" class="rounded-md border border-border px-3 py-2 text-sm text-foreground"><i data-lucide="skip-back" class="mr-1 inline h-4 w-4"></i>Back</button>
+                        <button data-stretch-pause type="button" class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Pause</button>
+                        <button data-stretch-skip type="button" class="rounded-md border border-border px-3 py-2 text-sm text-foreground">Skip<i data-lucide="skip-forward" class="ml-1 inline h-4 w-4"></i></button>
+                        <button data-stretch-stop type="button" class="rounded-md border border-destructive px-3 py-2 text-sm text-destructive">Stop</button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="rounded-lg border border-border bg-card p-4">
+                  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4" data-stretch-stats></div>
+                  <div class="mt-4" data-stretch-chart></div>
+                </section>
+
+                <section data-stretch-recent-panel class="hidden rounded-lg border border-border bg-card p-4">
+                  <h2 class="text-sm font-semibold text-foreground">Recent sessions</h2>
+                  <div class="mt-3 grid gap-1" data-stretch-recent></div>
+                </section>
+
+                <p class="text-xs text-muted-foreground">Apple Health: in the ForkMesh iPhone app, turn on Save to Apple Health in Stretch Break and every session there is saved as a Flexibility or Mind and Body workout. Sessions saved to Health are marked here with a heart.</p>
+              </div>
+            </div>
+
+            <dialog data-stretch-manage-dialog class="w-full max-w-lg rounded-lg border border-border bg-card p-5 text-foreground shadow-2xl backdrop:bg-background/80">
+              <h2 class="text-base font-semibold">Stretch Break data</h2>
+              <p class="mt-2 text-sm text-muted-foreground">Export your sessions as JSON, or uninstall Stretch Break from your account. Uninstalling downloads your export first, then deletes your sessions on web, desktop, and mobile. Apple Health keeps its own records.</p>
+              <div class="mt-4 flex flex-wrap justify-end gap-2"><button data-stretch-export type="button" class="rounded-md border border-border px-3 py-2 text-xs">Export my data</button><button data-stretch-uninstall type="button" class="rounded-md border border-destructive px-3 py-2 text-xs text-destructive">Uninstall…</button><button data-stretch-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs">Close</button></div>
+            </dialog>
+          </section>

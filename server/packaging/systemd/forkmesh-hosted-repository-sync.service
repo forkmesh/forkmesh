@@ -1,0 +1,39 @@
+[Unit]
+Description=Materialize public provider imports as ForkMesh-hosted repositories
+Documentation=https://forkmesh.com/docs/repository-imports
+Wants=network-online.target
+After=network-online.target forkmesh-mirror.service
+
+[Service]
+Type=oneshot
+User=forkmesh-mirror
+Group=forkmesh-mirror
+UMask=0077
+Environment=TMPDIR=/var/lib/forkmesh-mirror/runtime-tmp
+ExecStartPre=+/usr/bin/install -d -o forkmesh-mirror -g forkmesh-mirror -m 0755 /srv/forkmesh-git/imports
+ExecStartPre=/usr/bin/python3 -I /opt/forkmesh-mirror/hosted_repository_sync.py --config /var/lib/forkmesh-mirror/gateway/mirror-refresh.json prepare
+ExecStartPre=/usr/bin/python3 -I /opt/forkmesh-mirror/headless_mirror_refresh.py --config /var/lib/forkmesh-mirror/gateway/mirror-refresh.json refresh
+ExecStartPre=+/usr/bin/systemctl restart forkmesh-mirror.service
+ExecStart=/usr/bin/python3 -I /opt/forkmesh-mirror/hosted_repository_sync.py --config /var/lib/forkmesh-mirror/gateway/mirror-refresh.json register
+ExecStartPost=/usr/bin/python3 -I /opt/forkmesh-mirror/hosted_repository_sync.py --config /var/lib/forkmesh-mirror/gateway/mirror-refresh.json cleanup
+TimeoutStartSec=2h
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/run/forkmesh-mirror-refresh /var/lib/forkmesh-mirror /srv/forkmesh-git
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_READ_SEARCH
+SystemCallArchitectures=native
+TasksMax=32

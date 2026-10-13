@@ -1,0 +1,10 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=Reload the office TURN relay when its TLS certificate changes
+
+[Path]
+PathChanged=@@TURN_CERT@@
+Unit=fmnext-turn-cert.service
+
+[Install]
+WantedBy=multi-user.target

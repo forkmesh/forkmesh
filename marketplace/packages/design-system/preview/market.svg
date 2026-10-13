@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#090909"/>
+  <text x="40" y="58" fill="#f5f5f5" font-family="Helvetica, Arial, sans-serif" font-size="26" font-weight="700">Design system</text>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700">
+    <rect x="40" y="78" width="58" height="28" rx="14" fill="#f5f5f5"/>
+    <text x="69" y="97" fill="#090909" text-anchor="middle">Web</text>
+    <rect x="106" y="78" width="78" height="28" rx="14" fill="none" stroke="#313134"/>
+    <text x="145" y="97" fill="#f5f5f5" text-anchor="middle">Desktop</text>
+    <rect x="192" y="78" width="72" height="28" rx="14" fill="none" stroke="#313134"/>
+    <text x="228" y="97" fill="#f5f5f5" text-anchor="middle">iPhone</text>
+    <rect x="272" y="78" width="78" height="28" rx="14" fill="none" stroke="#313134"/>
+    <text x="311" y="97" fill="#f5f5f5" text-anchor="middle">Android</text>
+  </g>
+  <g>
+    <rect x="40" y="128" width="64" height="44" rx="8" fill="#0d1117" stroke="#313134"/>
+    <rect x="112" y="128" width="64" height="44" rx="8" fill="#2ea043"/>
+    <rect x="184" y="128" width="64" height="44" rx="8" fill="#58a6ff"/>
+    <rect x="256" y="128" width="64" height="44" rx="8" fill="#a371f7"/>
+    <rect x="328" y="128" width="64" height="44" rx="8" fill="#d29922"/>
+    <rect x="400" y="128" width="64" height="44" rx="8" fill="#f85149"/>
+    <rect x="472" y="128" width="64" height="44" rx="8" fill="#f6f8fa"/>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="600">
+    <rect x="40" y="194" width="110" height="34" rx="6" fill="#238636" stroke="#2ea043"/>
+    <text x="95" y="216" fill="#ffffff" text-anchor="middle">Primary</text>
+    <rect x="160" y="194" width="110" height="34" rx="6" fill="#21262d" stroke="#30363d"/>
+    <text x="215" y="216" fill="#e6edf3" text-anchor="middle">Default</text>
+    <rect x="280" y="194" width="110" height="34" rx="6" fill="none" stroke="#da3633"/>
+    <text x="335" y="216" fill="#f85149" text-anchor="middle">Danger</text>
+    <rect x="400" y="194" width="110" height="34" rx="17" fill="#f4f4f5"/>
+    <text x="455" y="216" fill="#0b0b0c" text-anchor="middle">Filled</text>
+  </g>
+  <g fill="none" stroke="#a3a3a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="40" y="252" width="64" height="64" rx="10" stroke="#232326"/>
+    <path d="M62 274h20v20H62z"/>
+    <rect x="112" y="252" width="64" height="64" rx="10" stroke="#232326"/>
+    <circle cx="144" cy="284" r="11"/>
+    <path d="M144 278v6l4 3"/>
+    <rect x="184" y="252" width="64" height="64" rx="10" stroke="#232326"/>
+    <path d="M206 296l10-24 10 24M210 288h12"/>
+    <rect x="256" y="252" width="64" height="64" rx="10" stroke="#232326"/>
+    <path d="M276 276h24M276 284h24M276 292h16"/>
+    <rect x="328" y="252" width="64" height="64" rx="10" stroke="#232326"/>
+    <path d="M360 272l4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z"/>
+    <rect x="400" y="252" width="64" height="64" rx="10" stroke="#232326"/>
+    <path d="M420 296c4-14 20-14 24 0M432 280a6 6 0 1 0 0-1"/>
+    <rect x="472" y="252" width="64" height="64" rx="10" stroke="#232326"/>
+    <path d="M494 284h20M504 274v20"/>
+  </g>
+</svg>

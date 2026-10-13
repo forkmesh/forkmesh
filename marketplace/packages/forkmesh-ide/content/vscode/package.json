@@ -1,0 +1,179 @@
+{
+  "name": "forkmesh",
+  "displayName": "ForkMesh",
+  "description": "Browse ForkMesh issues and hand them to Claude Code or Codex, right inside the IDE.",
+  "version": "0.1.1",
+  "publisher": "forkmesh",
+  "license": "MIT",
+  "icon": "media/forkmesh.png",
+  "repository": {
+    "type": "git",
+    "url": "https://forkmesh.com/forkmesh"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "forkmesh",
+    "git",
+    "issues",
+    "claude",
+    "codex",
+    "agents"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "forkmesh",
+          "title": "ForkMesh",
+          "icon": "media/forkmesh.svg"
+        }
+      ]
+    },
+    "views": {
+      "forkmesh": [
+        {
+          "id": "forkmeshIssues",
+          "name": "Open Issues",
+          "icon": "media/forkmesh.svg",
+          "contextualTitle": "ForkMesh Issues"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "forkmeshIssues",
+        "contents": "No ForkMesh issues found in this workspace.\nOpen a folder that contains an `issues/` directory (a ForkMesh repository), or set the issues path.\n[Set issues path](command:forkmesh.openSettings)\n[Become a ForkMesh member](command:forkmesh.becomeMember)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "forkmesh.refresh",
+        "title": "Refresh",
+        "category": "ForkMesh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forkmesh.startClaude",
+        "title": "Start with Claude Code",
+        "category": "ForkMesh",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "forkmesh.startCodex",
+        "title": "Start with Codex",
+        "category": "ForkMesh",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "forkmesh.openIssue",
+        "title": "Open Issue",
+        "category": "ForkMesh"
+      },
+      {
+        "command": "forkmesh.openSettings",
+        "title": "Open ForkMesh Settings",
+        "category": "ForkMesh",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "forkmesh.reload",
+        "title": "Update & Reload ForkMesh",
+        "category": "ForkMesh",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "forkmesh.becomeMember",
+        "title": "Become a Member",
+        "category": "ForkMesh",
+        "icon": "$(heart)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "forkmesh.refresh",
+          "when": "view == forkmeshIssues",
+          "group": "navigation"
+        },
+        {
+          "command": "forkmesh.openSettings",
+          "when": "view == forkmeshIssues",
+          "group": "navigation"
+        },
+        {
+          "command": "forkmesh.reload",
+          "when": "view == forkmeshIssues",
+          "group": "navigation"
+        },
+        {
+          "command": "forkmesh.becomeMember",
+          "when": "view == forkmeshIssues",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "forkmesh.startClaude",
+          "when": "view == forkmeshIssues && viewItem == forkmeshIssue",
+          "group": "inline@1"
+        },
+        {
+          "command": "forkmesh.startCodex",
+          "when": "view == forkmeshIssues && viewItem == forkmeshIssue",
+          "group": "inline@2"
+        },
+        {
+          "command": "forkmesh.reload",
+          "when": "view == forkmeshIssues && viewItem == forkmeshVersion",
+          "group": "inline@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ForkMesh",
+      "properties": {
+        "forkmesh.claudeCommand": {
+          "type": "string",
+          "default": "claude \"$(cat {promptFile})\"",
+          "markdownDescription": "Shell command used to start Claude Code on an issue. `{promptFile}` is replaced with a temp file holding the generated prompt; `{issueNumber}` with the issue number. Runs in a terminal opened at the repository root."
+        },
+        "forkmesh.codexCommand": {
+          "type": "string",
+          "default": "codex \"$(cat {promptFile})\"",
+          "markdownDescription": "Shell command used to start Codex on an issue. Same placeholders as `forkmesh.claudeCommand`."
+        },
+        "forkmesh.issuesPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional absolute path to a ForkMesh `issues/` directory. Leave empty to auto-detect `<workspaceFolder>/issues`."
+        },
+        "forkmesh.showClosedIssues": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also list closed issues in the ForkMesh view."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.4.0"
+  }
+}

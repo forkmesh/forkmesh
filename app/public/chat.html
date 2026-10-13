@@ -1,0 +1,1864 @@
+<!doctype html>
+<html lang="en" class="dark h-full">
+  <head>
+    <meta charset="utf-8" />
+    <script>
+      if (new URLSearchParams(location.search).get("embed") === "office") {
+        document.documentElement.dataset.chatEmbed = "office";
+      }
+    </script>
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ForkMesh Community Chat</title>
+    <meta name="description" content="Join public ForkMesh channels with integrations or use automatic end-to-end encryption for private channels and direct messages." />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/user-status.js?v=${version}" defer></script>
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script>
+      (() => {
+        const keys = ["forkmesh.dashboard.theme", "forkmesh.theme"];
+        let theme = "dark";
+        try {
+          theme = keys.map((key) => localStorage.getItem(key)).find((value) => value === "light" || value === "dark") || theme;
+        } catch (_) {}
+        document.documentElement.classList.toggle("dark", theme !== "light");
+        document.documentElement.style.colorScheme = theme;
+        document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f6f8fa" : "#090909");
+      })();
+    </script>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      [hidden] { display: none !important; }
+
+      :root {
+        --bg: #090909;
+        --surface: #111111;
+        --surface2: #1a1a1a;
+        --border: #2a2a2a;
+        --fg: #f0f0f0;
+        --muted: #888;
+        --accent: oklch(0.72 0.17 152);
+        --accent-dim: rgba(63, 185, 80, 0.12);
+        --danger: #f85149;
+        --radius: 10px;
+        --nav-h: 52px;
+      }
+
+      html:not(.dark) {
+        --bg: #f6f8fb;
+        --surface: #ffffff;
+        --surface2: #eef2f7;
+        --border: #d0d7de;
+        --fg: #1f2328;
+        --muted: #656d76;
+        --accent: #1f883d;
+        --accent-dim: rgba(31, 136, 61, 0.11);
+        --danger: #d1242f;
+      }
+
+      html, body {
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* ── layout: nav on top, three panes below ── */
+      .chat-shell {
+        display: flex;
+        flex-direction: column;
+        height: 100vh; /* fallback for browsers without dvh */
+        height: 100dvh; /* mobile: track the dynamic viewport so the input bar
+                           and full message log stay on-screen as the browser's
+                           URL/tool bar shows and hides */
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      .chat-panes {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr) 240px;
+      }
+
+      /* ── universal site header wrapper: pin it to the shell's top row and
+         give it the page's border, matching the panes below. ── */
+      .chat-site-header {
+        flex-shrink: 0;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg);
+      }
+
+      .chat-name-wrap { display: flex; align-items: center; gap: 6px; }
+      .chat-name-label { font-size: 12px; color: var(--muted); }
+
+      #chat-name {
+        width: 120px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--surface2);
+        color: var(--fg);
+        font-size: 13px;
+        outline: none;
+        transition: border-color 150ms;
+      }
+
+      #chat-name:focus { border-color: var(--accent); }
+
+      /* ── left pane: rooms ── */
+      .chat-rooms-pane {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .chat-pane-title {
+        flex-shrink: 0;
+        padding: 12px 14px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .chat-pane-title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .chat-admin-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 26px;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--surface2);
+        color: var(--muted);
+        font: inherit;
+        cursor: pointer;
+        text-transform: none;
+      }
+
+      .chat-admin-action:hover,
+      .chat-admin-action:focus-visible {
+        border-color: var(--accent);
+        color: var(--fg);
+        outline: none;
+      }
+
+      #chat-channel-manage { font-size: 12px; }
+
+      .chat-retention-select {
+        max-width: 190px;
+        padding: 2px 6px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .chat-retention-select:hover,
+      .chat-retention-select:focus-visible {
+        border-color: var(--accent);
+        color: var(--fg);
+        outline: none;
+      }
+
+      .chat-retention-select[hidden] { display: none; }
+
+      #chat-channel-dialog,
+      #chat-direct-dialog {
+        width: min(520px, calc(100vw - 32px));
+        max-height: min(720px, calc(100vh - 32px));
+        margin: auto;
+        padding: 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--fg);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+      }
+
+      #chat-channel-dialog::backdrop,
+      #chat-direct-dialog::backdrop { background: rgba(0, 0, 0, 0.62); }
+
+      .chat-channel-dialog-body {
+        display: grid;
+        max-height: inherit;
+        gap: 16px;
+        padding: 18px;
+        overflow-y: auto;
+      }
+
+      .chat-channel-dialog-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .chat-channel-dialog-head h2 { margin: 0; font-size: 18px; }
+      .chat-channel-dialog-head button {
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        font-size: 22px;
+        cursor: pointer;
+      }
+
+      .chat-channel-section {
+        display: grid;
+        gap: 10px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+
+      .chat-channel-section h3 { margin: 0; font-size: 14px; }
+      .chat-channel-form { display: flex; gap: 8px; }
+      .chat-channel-form input,
+      .chat-channel-form select,
+      #chat-channel-initial-members,
+      #chat-direct-search {
+        flex: 1;
+        width: 100%;
+        min-width: 0;
+        height: 38px;
+        padding: 0 11px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface2);
+        color: var(--fg);
+        outline: none;
+      }
+      .chat-channel-form input:focus,
+      .chat-channel-form select:focus,
+      #chat-channel-initial-members:focus,
+      #chat-direct-search:focus {
+        border-color: var(--accent);
+      }
+      .chat-channel-form button,
+      .chat-member-remove {
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--accent);
+        color: #06120a;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+
+      .chat-channel-heading {
+        display: flex;
+        align-items: baseline;
+        min-width: 0;
+        gap: 8px;
+      }
+
+      #chat-channel-visibility-badge {
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      #chat-direct-server-copies {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      #chat-direct-server-copies.is-stored {
+        color: var(--accent, var(--text));
+      }
+
+      #chat-channel-topic {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 400;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #chat-channel-error,
+      #chat-direct-error {
+        min-height: 17px;
+        margin: 0;
+        color: #f85149;
+        font-size: 12px;
+      }
+
+      #chat-channel-members { display: grid; gap: 6px; }
+      #chat-channel-webhooks { display: grid; gap: 8px; }
+      .chat-webhook-row,
+      .chat-webhook-created {
+        display: grid;
+        gap: 6px;
+        padding: 9px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface2);
+        font-size: 12px;
+      }
+      .chat-webhook-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .chat-webhook-url { width: 100%; overflow-wrap: anywhere; color: var(--muted); }
+      .chat-channel-member {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface2);
+        font-size: 13px;
+      }
+      .chat-member-remove {
+        min-height: 28px;
+        padding: 0 9px;
+        background: transparent;
+        color: #f85149;
+        font-size: 11px;
+      }
+
+      #chat-rooms {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0 8px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .chat-direct-section {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border-top: 1px solid var(--border);
+      }
+
+      #chat-direct-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0 8px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      #chat-direct-more {
+        flex: 0 0 auto;
+        margin: 0 8px 10px;
+        min-height: 32px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+      }
+
+      #chat-direct-more:hover,
+      #chat-direct-more:focus-visible {
+        border-color: var(--accent);
+        color: var(--fg);
+        outline: none;
+      }
+
+      .chat-direct-row .chat-avatar {
+        width: 22px;
+        height: 22px;
+        margin: 0;
+        font-size: 10px;
+      }
+
+      #chat-direct-options {
+        display: grid;
+        gap: 4px;
+        max-height: 320px;
+        overflow-y: auto;
+      }
+
+      .chat-direct-option {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 10px;
+        width: 100%;
+        padding: 9px 10px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--fg);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .chat-direct-option:hover,
+      .chat-direct-option:focus-visible {
+        background: var(--surface2);
+        outline: 1px solid var(--accent);
+      }
+
+      .chat-direct-option span:last-child {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #chat-direct-empty {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .chat-room {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 7px 10px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 14px;
+        font-family: ui-monospace, monospace;
+        text-align: left;
+        cursor: pointer;
+        transition: background 120ms, color 120ms;
+      }
+
+      .chat-room:hover { background: var(--surface2); color: var(--fg); }
+
+      .chat-room.is-active {
+        background: var(--accent-dim);
+        color: var(--fg);
+        font-weight: 600;
+      }
+
+      .chat-room-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .chat-room-unread {
+        flex-shrink: 0;
+        min-width: 18px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #06120a;
+        font-size: 11px;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      /* ── middle pane ── */
+      .chat-main-pane {
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+      }
+
+      .chat-main-head {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .chat-main-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      #chat-channel-title {
+        font-size: 15px;
+        font-weight: 700;
+        font-family: ui-monospace, monospace;
+      }
+
+      #chat-status {
+        font-size: 12px;
+        color: var(--muted);
+        font-family: ui-monospace, monospace;
+        text-align: right;
+      }
+
+      #chat-clear {
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+        cursor: pointer;
+        transition: color 150ms, border-color 150ms;
+        flex-shrink: 0;
+      }
+
+      #chat-clear:hover { color: var(--fg); border-color: #444; }
+
+      /* ── message log ── */
+      #chat-log {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 16px 16px 8px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      #chat-log::-webkit-scrollbar { width: 4px; }
+      #chat-log::-webkit-scrollbar-track { background: transparent; }
+      #chat-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+      .chat-empty {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 14px;
+        text-align: center;
+        gap: 8px;
+        flex-direction: column;
+        padding: 40px 0;
+      }
+
+      .chat-empty-icon { opacity: 0.3; }
+
+      /* Discord-style rows: avatar + header (name/time) + text, consecutive
+         messages from the same sender collapse under one header. */
+      .chat-msg {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 2px 10px;
+        border-radius: 8px;
+        font-size: 14px;
+        line-height: 1.5;
+        word-break: break-word;
+      }
+
+      .chat-msg:hover { background: var(--surface); }
+
+      .chat-msg.is-group-start { margin-top: 10px; }
+
+      .chat-avatar {
+        flex-shrink: 0;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        font-weight: 700;
+        color: #fff;
+        user-select: none;
+        margin-top: 2px;
+      }
+
+      .chat-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+      /* Continuation rows keep the text aligned under the header row. */
+      .chat-msg.is-continuation .chat-avatar { visibility: hidden; height: 0; margin: 0; }
+      .chat-msg.is-continuation { padding-top: 1px; padding-bottom: 1px; }
+
+      .chat-msg-main { flex: 1; min-width: 0; }
+
+      .chat-msg-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .chat-author {
+        font-size: 13.5px;
+        font-weight: 700;
+        white-space: nowrap;
+        color: #7c9cff;
+        text-decoration: none;
+      }
+
+      a.chat-author:hover,
+      a.chat-author:focus-visible {
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .chat-avatar-link {
+        flex-shrink: 0;
+        display: block;
+        text-decoration: none;
+      }
+
+      .chat-msg.is-self .chat-author { color: var(--accent); }
+      .chat-msg.is-bot .chat-author { color: #d2a8ff; }
+
+      .chat-time {
+        font-size: 11px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .chat-text { color: var(--fg); }
+
+      /* ── reactions ── */
+      .chat-reactions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 3px;
+      }
+
+      .chat-reactions:empty { display: none; }
+
+      .chat-reaction-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface2);
+        color: var(--fg);
+        font-size: 12.5px;
+        cursor: pointer;
+        transition: border-color 120ms, background 120ms;
+      }
+
+      .chat-reaction-chip:hover { border-color: var(--accent); }
+
+      .chat-reaction-chip.is-mine {
+        border-color: var(--accent);
+        background: var(--accent-dim);
+      }
+
+      .chat-reaction-count { font-size: 11px; color: var(--muted); font-weight: 700; }
+
+      .chat-react-btn {
+        position: absolute;
+        top: -12px;
+        right: 10px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface2);
+        color: var(--muted);
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .chat-msg:hover .chat-react-btn { display: inline-flex; }
+      .chat-react-btn:hover { color: var(--fg); border-color: var(--accent); }
+
+      .chat-emoji-picker {
+        position: absolute;
+        z-index: 1000;
+        display: flex;
+        gap: 2px;
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface2);
+        box-shadow: 0 16px 45px rgba(0, 0, 0, 0.35);
+      }
+
+      .chat-emoji-picker[hidden] { display: none; }
+
+      .chat-emoji-picker button {
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        font-size: 17px;
+        cursor: pointer;
+        transition: background 120ms, transform 120ms;
+      }
+
+      .chat-emoji-picker button:hover { background: var(--accent-dim); transform: scale(1.15); }
+
+      /* ── mentions ── */
+      .chat-mention {
+        display: inline-block;
+        border-radius: 5px;
+        background: rgba(88, 166, 255, 0.14);
+        color: #79c0ff;
+        font-weight: 700;
+        padding: 0 4px;
+        text-decoration: none;
+      }
+
+      .chat-mention:hover,
+      .chat-mention:focus {
+        background: rgba(88, 166, 255, 0.22);
+        outline: none;
+      }
+
+      .chat-mention-card {
+        position: absolute;
+        z-index: 1000;
+        display: grid;
+        width: min(260px, calc(100vw - 24px));
+        gap: 5px;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface2);
+        box-shadow: 0 16px 45px rgba(0, 0, 0, 0.35);
+        color: var(--fg);
+        text-align: left;
+        text-decoration: none;
+      }
+
+      .chat-mention-card[hidden] { display: none; }
+      .chat-mention-card strong { font-size: 13px; color: var(--fg); }
+      .chat-mention-card span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+      .chat-mention-card small { color: #79c0ff; font-size: 11px; }
+      .chat-mention-card-actions { display: flex; gap: 10px; align-items: center; font-size: 12px; }
+      .chat-mention-card-actions a { color: #79c0ff; }
+      .chat-mention-message { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; border: 1px solid #30363d; background: #21262d; color: var(--fg); cursor: pointer; }
+      .chat-channel-audience { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+
+      .chat-system {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+        padding: 4px 0;
+        font-style: italic;
+      }
+
+      /* ── input bar ── */
+      .chat-input-bar {
+        position: relative; /* anchors the @mention suggestion popup */
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        border-top: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      /* ── @mention autocomplete ── */
+      .chat-mention-suggest {
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 16px;
+        z-index: 1000;
+        width: min(280px, calc(100vw - 32px));
+        max-height: 260px;
+        overflow-y: auto;
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface2);
+        box-shadow: 0 16px 45px rgba(0, 0, 0, 0.35);
+      }
+
+      .chat-mention-suggest[hidden] { display: none; }
+
+      .chat-mention-suggest-hint {
+        padding: 4px 8px 6px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .chat-mention-suggest-item {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        padding: 6px 8px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--fg);
+        font-size: 13.5px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .chat-mention-suggest-item.is-active,
+      .chat-mention-suggest-item:hover { background: var(--accent-dim); }
+
+      .chat-mention-suggest-item .chat-avatar {
+        width: 24px;
+        height: 24px;
+        font-size: 11px;
+        margin: 0;
+        flex-shrink: 0;
+      }
+
+      .chat-mention-suggest-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #chat-input {
+        flex: 1;
+        height: 42px;
+        padding: 0 14px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--surface2);
+        color: var(--fg);
+        font-size: 14px;
+        outline: none;
+        transition: border-color 150ms;
+      }
+
+      #chat-input::placeholder { color: var(--muted); }
+      #chat-input:focus { border-color: var(--accent); }
+
+      #chat-attachment-input { display: none; }
+
+      #chat-attachment-button {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface2);
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      #chat-attachment-button:hover,
+      #chat-attachment-button:focus-visible {
+        border-color: var(--accent);
+        color: var(--fg);
+        outline: none;
+      }
+
+      #chat-attachment-button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+      #chat-attachment-feedback {
+        position: absolute;
+        left: 16px;
+        bottom: calc(100% + 8px);
+        max-width: min(420px, calc(100vw - 32px));
+        padding: 7px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface2);
+        color: var(--fg);
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+        font-size: 12px;
+      }
+
+      #chat-attachment-feedback:empty { display: none; }
+
+      .chat-attachment {
+        display: grid;
+        width: min(440px, 100%);
+        gap: 8px;
+        margin-top: 5px;
+      }
+
+      .chat-attachment-image {
+        display: block;
+        width: auto;
+        min-width: 96px;
+        min-height: 72px;
+        max-width: 100%;
+        max-height: 320px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface2);
+        object-fit: contain;
+      }
+
+      .chat-attachment-card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        padding: 9px 10px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--surface2);
+      }
+
+      .chat-attachment-info { min-width: 0; flex: 1; }
+      .chat-attachment-name {
+        overflow: hidden;
+        color: var(--fg);
+        font-size: 12.5px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .chat-attachment-meta { color: var(--muted); font-size: 11px; }
+      .chat-attachment-download {
+        flex-shrink: 0;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 650;
+        text-decoration: none;
+      }
+      .chat-attachment-download:hover,
+      .chat-attachment-download:focus-visible { text-decoration: underline; }
+
+      #chat-send {
+        flex-shrink: 0;
+        height: 42px;
+        padding: 0 18px;
+        border-radius: 10px;
+        border: none;
+        background: var(--accent);
+        color: #06120a;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        transition: opacity 150ms;
+      }
+
+      #chat-send:hover { opacity: 0.85; }
+      #chat-send:active { opacity: 0.7; }
+
+      /* ── e2e note ── */
+      .chat-e2e-note {
+        flex-shrink: 0;
+        text-align: center;
+        font-size: 11px;
+        color: var(--muted);
+        padding: 6px 16px 10px;
+        background: var(--surface);
+      }
+
+      .chat-e2e-note a {
+        color: var(--muted);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      /* ── right pane: people ── */
+      .chat-people-pane {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      #chat-people {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0 8px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .chat-people-section {
+        padding: 10px 6px 4px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .chat-person {
+        flex: 0 0 auto;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 5px 8px;
+        border-radius: 8px;
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .chat-loading::before {
+        content: "";
+        display: inline-block;
+        width: 0.8em;
+        height: 0.8em;
+        margin-right: 0.55em;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        vertical-align: -0.08em;
+        animation: chat-loading-spin 0.75s linear infinite;
+      }
+
+      @keyframes chat-loading-spin { to { transform: rotate(360deg); } }
+
+      .chat-person:hover { background: var(--surface2); }
+      a.chat-person:hover .chat-person-name { text-decoration: underline; text-underline-offset: 2px; }
+
+      .chat-person-row {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 3px;
+      }
+
+      .chat-person-message {
+        flex: 0 0 auto;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .chat-person-message:hover,
+      .chat-person-message:focus-visible {
+        border-color: var(--border);
+        background: var(--surface2);
+        color: var(--fg);
+        outline: none;
+      }
+
+      .chat-person .chat-avatar { width: 26px; height: 26px; font-size: 12px; margin: 0; }
+
+      .chat-person-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13.5px;
+        color: var(--fg);
+      }
+
+      .chat-person .chat-person-name { flex: 0 1 auto; }
+      .chat-person-status { flex: 1 0 auto; display: inline-flex; align-items: center; }
+      .chat-msg-head .fm-user-status-badge { margin-left: 2px; margin-right: 2px; }
+      /* Away: amber instead of green, online or not it stays distinct. */
+      .chat-person-face .chat-presence-dot.is-online.is-away,
+      .chat-direct-face .chat-presence-dot.is-online.is-away {
+        background: #d4a72c;
+      }
+
+      .chat-plan-chip {
+        flex-shrink: 0;
+        margin-left: 4px;
+        padding: 1px 5px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+
+      .chat-person.is-offline .chat-person-name { color: var(--muted); }
+      .chat-person.is-offline .chat-avatar { opacity: 0.45; }
+
+      .chat-presence-dot {
+        flex-shrink: 0;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--muted);
+        opacity: 0.5;
+      }
+
+      .chat-presence-dot.is-online {
+        background: var(--accent);
+        opacity: 1;
+        box-shadow: 0 0 6px var(--accent-dim);
+      }
+
+      .chat-office-alert {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid var(--border);
+        background: var(--accent-dim);
+        padding: 8px 12px;
+        color: var(--fg);
+        font-size: 12px;
+      }
+
+      .chat-office-alert span {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .chat-office-alert a,
+      .chat-office-alert button,
+      #chat-office-manage {
+        flex: 0 0 auto;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface2);
+        color: var(--fg);
+        padding: 5px 8px;
+        cursor: pointer;
+        font: inherit;
+        text-decoration: none;
+      }
+
+      html[data-chat-embed="office"],
+      html[data-chat-embed="office"] body {
+        min-width: 0;
+        height: 100dvh;
+        overflow: hidden;
+      }
+
+      html[data-chat-embed="office"] .chat-shell {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        height: 100dvh;
+      }
+
+      html[data-chat-embed="office"] .chat-panes {
+        min-width: 0;
+        grid-template-columns: 118px minmax(0, 1fr);
+      }
+
+      html[data-chat-embed="office"] .chat-site-header { display: none; }
+      html[data-chat-embed="office"] .chat-people-pane { display: none; }
+      html[data-chat-embed="office"] .chat-e2e-note { display: none; }
+      html[data-chat-embed="office"] .chat-admin-action { display: none; }
+      /* Creating a channel is the one manager control the embed keeps, for
+         organization members. [hidden] still wins for everyone else, and the
+         dialog's member/webhook sections stay closed in create mode. */
+      html[data-chat-embed="office"] #chat-channel-create {
+        display: inline-flex;
+      }
+      html[data-chat-embed="office"] #chat-channel-dialog:not([open]) {
+        display: none;
+      }
+      html[data-chat-embed="office"] #chat-direct-dialog { display: none; }
+
+      html[data-chat-embed="office"] .chat-rooms-pane,
+      html[data-chat-embed="office"] .chat-main-pane,
+      html[data-chat-embed="office"] .chat-main-head,
+      html[data-chat-embed="office"] .chat-main-controls {
+        min-width: 0;
+      }
+
+      html[data-chat-embed="office"] .chat-room {
+        padding-inline: 10px;
+      }
+
+      html[data-chat-embed="office"] .chat-name-wrap,
+      html[data-chat-embed="office"] #chat-clear {
+        display: none;
+      }
+
+      html[data-chat-embed="office"] #chat-status {
+        display: inline;
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* ── responsive ── */
+      @media (max-width: 980px) {
+        .chat-panes { grid-template-columns: 200px minmax(0, 1fr); }
+        .chat-people-pane { display: none; }
+      }
+
+      @media (max-width: 680px) {
+        .chat-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+        .chat-rooms-pane {
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr);
+          grid-template-rows: auto auto;
+          align-items: center;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+        }
+        .chat-rooms-pane .chat-pane-title { padding: 10px 12px; }
+        #chat-rooms,
+        #chat-direct-list {
+          min-width: 0;
+          width: 100%;
+          flex-direction: row;
+          overflow-x: auto;
+          overflow-y: hidden;
+          padding: 6px 8px;
+        }
+        .chat-direct-section {
+          grid-column: 1 / -1;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr);
+          min-width: 0;
+          align-items: center;
+          border-top: 1px solid var(--border);
+          border-left: none;
+        }
+        .chat-direct-section .chat-pane-title { padding: 10px 8px; }
+        .chat-room { width: auto; white-space: nowrap; }
+        .chat-name-wrap { display: none; }
+        .chat-main-head { gap: 8px; padding: 8px 12px; }
+        #chat-channel-title {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .chat-main-controls { flex-shrink: 0; gap: 6px; }
+        #chat-status { display: none; }
+
+        html[data-chat-embed="office"] .chat-panes {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: auto minmax(0, 1fr);
+        }
+
+        html[data-chat-embed="office"] #chat-status {
+          display: none;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .chat-channel-dialog-body { padding: 14px; }
+      }
+    </style>
+    <link rel="stylesheet" href="/chat.css?v=${version}" />
+  </head>
+  <body>
+    <div class="chat-shell">
+
+      <!-- universal site header (session-aware; see site-header.js) -->
+      <div class="chat-site-header">
+        <div data-forkmesh-header="simple"></div>
+      </div>
+
+      <section class="chat-workbench" aria-label="Community chat workspace">
+        <div class="chat-panes">
+
+        <div id="chat-drop-overlay" class="chat-drop-overlay" aria-hidden="true" hidden>
+          <div>
+            <strong>Drop files to share</strong>
+            <span>Images and documents up to 1 MiB each</span>
+          </div>
+        </div>
+
+        <!-- left: rooms -->
+        <aside class="chat-rooms-pane" aria-label="Rooms">
+          <!-- Filters the channel and direct-message lists as you type;
+               Ctrl/⌘ + K focuses it from anywhere on the page. -->
+          <label class="chat-room-filter" for="chat-room-filter">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m20 20-3.5-3.5"></path>
+            </svg>
+            <input id="chat-room-filter" type="search" autocomplete="off" spellcheck="false" placeholder="Jump to…" aria-label="Filter channels and direct messages" />
+            <kbd class="chat-kbd" aria-hidden="true">⌘K</kbd>
+          </label>
+          <div class="chat-rooms-scroll">
+          <div class="chat-pane-title chat-pane-title-row">
+            <button class="chat-section-toggle" type="button" data-chat-section="rooms" aria-expanded="true" aria-controls="chat-rooms">
+              <svg class="chat-section-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+              <span>Channels</span>
+            </button>
+            <button id="chat-channel-create" class="chat-admin-action chat-icon-action" type="button" aria-label="Create channel" title="Create channel" hidden>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+            </button>
+          </div>
+          <div id="chat-rooms"></div>
+          <section id="chat-direct-section" class="chat-direct-section" aria-labelledby="chat-direct-title" hidden>
+            <div class="chat-pane-title chat-pane-title-row">
+              <button class="chat-section-toggle" type="button" data-chat-section="direct" aria-expanded="true" aria-controls="chat-direct-list">
+                <svg class="chat-section-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+                <span id="chat-direct-title">Direct messages</span>
+              </button>
+              <button id="chat-direct-create" class="chat-admin-action chat-icon-action" type="button" aria-label="New direct message" title="New direct message">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+              </button>
+            </div>
+            <div id="chat-direct-list"></div>
+            <button id="chat-direct-more" type="button" hidden>Load older conversations</button>
+          </section>
+          <p id="chat-room-filter-empty" class="chat-room-filter-empty" hidden>No channels or people match.</p>
+          </div>
+        </aside>
+
+        <!-- middle: conversation -->
+        <main class="chat-main-pane">
+          <div class="chat-main-head">
+            <span class="chat-channel-heading">
+              <span id="chat-channel-title">#general</span>
+              <span id="chat-channel-visibility-badge" hidden></span>
+              <button
+                id="chat-channel-manage"
+                class="chat-admin-action"
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="chat-channel-settings"
+                title="Channel settings"
+                hidden
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <span class="chat-manage-label">Settings</span>
+              </button>
+              <button
+                id="chat-direct-add"
+                class="chat-admin-action"
+                type="button"
+                aria-haspopup="dialog"
+                aria-controls="chat-direct-dialog"
+                title="Add someone — starts a private group channel with both of you"
+                hidden
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14"></path>
+                </svg>
+                <span class="chat-manage-label">Add person</span>
+              </button>
+              <select
+                id="chat-retention-select"
+                class="chat-retention-select"
+                aria-label="Messages disappear after"
+                title="Messages disappear after"
+                hidden
+              ></select>
+              <span id="chat-channel-topic" hidden></span>
+              <span id="chat-direct-server-copies" role="status" aria-live="polite" hidden></span>
+            </span>
+            <div class="chat-main-controls">
+              <a id="chat-office-manage" href="/chat" target="_top" hidden>Manage channels in full chat</a>
+              <!-- Shows or hides the people list; on narrow screens it opens
+                   the list as a drawer over the conversation. -->
+              <button
+                id="chat-people-toggle"
+                class="chat-people-toggle"
+                type="button"
+                aria-controls="chat-people-pane"
+                aria-expanded="true"
+                title="Show or hide people"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                <span id="chat-people-count">0</span>
+                <span class="chat-visually-hidden">people online</span>
+              </button>
+              <input id="chat-name" type="hidden" />
+              <button
+                id="chat-call-audio"
+                class="chat-call-button"
+                type="button"
+                title="Start an encrypted peer-to-peer audio call"
+                aria-label="Start an encrypted peer-to-peer audio call"
+                hidden
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                </svg>
+              </button>
+              <button
+                id="chat-call-video"
+                class="chat-call-button"
+                type="button"
+                title="Start an encrypted peer-to-peer video call"
+                aria-label="Start an encrypted peer-to-peer video call"
+                hidden
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M23 7l-7 5 7 5V7z"></path>
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                </svg>
+              </button>
+              <button
+                id="chat-seal"
+                class="chat-seal-button"
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="chat-seal-panel"
+                title="Chat access policy"
+              >
+                <span id="chat-seal-icon" aria-hidden="true">🔒</span>
+                <span id="chat-seal-label">End-to-end</span>
+              </button>
+              <span id="chat-status">Waiting to connect…</span>
+            </div>
+
+            <!-- Information about the active channel's encryption policy. -->
+            <div
+              id="chat-seal-panel"
+              class="chat-channel-settings chat-seal-panel"
+              role="dialog"
+              aria-labelledby="chat-seal-title"
+              hidden
+            >
+              <div class="chat-channel-settings-head">
+                <h2 id="chat-seal-title">Chat encryption</h2>
+                <button id="chat-seal-close" type="button" aria-label="Close encryption details">×</button>
+              </div>
+              <p class="chat-attachment-meta">
+                Private channels and direct messages are encrypted automatically
+                to known participant devices, beyond the controller's room key.
+                Public channels are intentionally controller-readable so ForkBot,
+                MCP, and incoming webhooks can participate.
+              </p>
+              <p id="chat-seal-state" class="chat-attachment-meta" role="status" aria-live="polite"></p>
+              <p class="chat-attachment-meta">
+                In an end-to-end encrypted conversation, a new device can read
+                messages addressed after its public key is learned but cannot
+                retroactively open older history. Changing a channel to Public does
+                not expose its previously encrypted messages.
+              </p>
+            </div>
+
+            <!-- Everything a channel manager controls, anchored under the
+                 channel name it belongs to. Opened by #chat-channel-manage. -->
+            <div
+              id="chat-channel-settings"
+              class="chat-channel-settings"
+              role="dialog"
+              aria-labelledby="chat-channel-settings-title"
+              hidden
+            >
+              <div class="chat-channel-settings-head">
+                <h2 id="chat-channel-settings-title">Channel settings</h2>
+                <button id="chat-channel-settings-close" type="button" aria-label="Close channel settings">×</button>
+              </div>
+              <p id="chat-channel-settings-error" role="alert" aria-live="polite"></p>
+
+              <section class="chat-channel-section chat-channel-section-lead" aria-labelledby="chat-channel-general-title">
+                <h3 id="chat-channel-general-title">General</h3>
+                <form id="chat-channel-settings-form" class="chat-channel-settings-form">
+                  <label for="chat-channel-settings-name">Channel name</label>
+                  <input id="chat-channel-settings-name" name="name" maxlength="40" placeholder="release-team" autocomplete="off" required />
+                  <label for="chat-channel-settings-topic">Topic</label>
+                  <input id="chat-channel-settings-topic" name="topic" maxlength="200" placeholder="What this channel is for" autocomplete="off" />
+                  <label for="chat-channel-settings-visibility">Visibility</label>
+                  <select id="chat-channel-settings-visibility" name="visibility">
+                    <option value="private">Private — only the creator and invited members</option>
+                    <option value="public">Public — every signed-in member can join</option>
+                  </select>
+                  <p class="chat-attachment-meta">Closing a public channel rotates its key, so earlier messages stay behind in the old room.</p>
+                  <div class="chat-channel-settings-actions">
+                    <button type="submit">Save changes</button>
+                    <span id="chat-channel-settings-saved" class="chat-attachment-meta" role="status" aria-live="polite"></span>
+                  </div>
+                </form>
+              </section>
+
+              <section id="chat-channel-members-section" class="chat-channel-section" aria-labelledby="chat-channel-members-title" hidden>
+                <h3 id="chat-channel-members-title">Members</h3>
+                <form id="chat-channel-invite-form" class="chat-channel-form">
+                  <input id="chat-channel-username" name="username" maxlength="63" placeholder="username" aria-label="Registered username" required />
+                  <button type="submit">Invite</button>
+                </form>
+                <div id="chat-channel-members" aria-live="polite"></div>
+                <div class="chat-invite-link">
+                  <label for="chat-channel-invite-link">Invite link</label>
+                  <p class="chat-attachment-meta">Anyone with a ForkMesh account who opens this link can join the room. Removing a member turns the link off.</p>
+                  <form id="chat-channel-invite-link-form" class="chat-channel-form">
+                    <input id="chat-channel-invite-link" readonly placeholder="No invite link yet" />
+                    <button id="chat-channel-invite-link-copy" type="submit">Create link</button>
+                  </form>
+                  <div class="chat-invite-link-actions">
+                    <button id="chat-channel-invite-link-reset" type="button" hidden>New link</button>
+                    <button id="chat-channel-invite-link-off" type="button" hidden>Turn off</button>
+                    <span id="chat-channel-invite-link-status" class="chat-attachment-meta" role="status" aria-live="polite"></span>
+                  </div>
+                </div>
+              </section>
+
+              <section id="chat-channel-webhooks-section" class="chat-channel-section" aria-labelledby="chat-channel-webhooks-title" hidden>
+                <h3 id="chat-channel-webhooks-title">Incoming webhooks</h3>
+                <p class="chat-attachment-meta">Public channels can accept controller integrations. POST JSON with a <code>text</code>, <code>content</code>, or <code>message</code> field. Each delivery posts to this channel and sends a notification.</p>
+                <form id="chat-channel-webhook-form" class="chat-channel-form">
+                  <input id="chat-channel-webhook-name" name="name" maxlength="80" placeholder="Deploy bot" aria-label="Webhook name" required />
+                  <button type="submit">Add webhook</button>
+                </form>
+                <div id="chat-channel-webhook-created" class="chat-webhook-created" aria-live="polite" hidden></div>
+                <div id="chat-channel-webhooks" aria-live="polite"></div>
+              </section>
+
+              <section class="chat-channel-section chat-channel-danger" aria-labelledby="chat-channel-danger-title">
+                <h3 id="chat-channel-danger-title">Delete channel</h3>
+                <p class="chat-attachment-meta">Removes <span id="chat-channel-delete-name">this channel</span> for every member, with its memberships, webhooks, and retained history.</p>
+                <button id="chat-channel-delete" class="chat-channel-danger-action" type="button">Delete channel</button>
+                <div id="chat-channel-delete-confirm" class="chat-channel-delete-confirm" hidden>
+                  <span>Delete permanently? This cannot be undone.</span>
+                  <button id="chat-channel-delete-cancel" type="button">Cancel</button>
+                  <button id="chat-channel-delete-confirmed" class="chat-channel-danger-action" type="button">Yes, delete</button>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div id="chat-office-alert" class="chat-office-alert" role="alert" hidden>
+            <span id="chat-office-alert-copy"></span>
+            <a id="chat-office-login" href="/login?next=%2Fchat%3Fembed%3Doffice" target="_top" hidden>Log in</a>
+            <button id="chat-office-retry" type="button" hidden>Retry</button>
+          </div>
+
+          <div id="chat-log" aria-live="polite" aria-label="Chat messages">
+            <div class="chat-empty">
+              <svg class="chat-empty-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              Log in as a user to join the room.
+            </div>
+          </div>
+
+          <div class="chat-input-bar">
+            <!-- Floats above the composer while the log is scrolled away from
+                 the newest message, counting what arrived in the meantime. -->
+            <button id="chat-jump-latest" class="chat-jump-latest" type="button" hidden>
+              <span id="chat-jump-latest-label">Jump to latest</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"></path></svg>
+            </button>
+            <input
+              id="chat-attachment-input"
+              type="file"
+              multiple
+              aria-label="Choose image or document"
+            />
+            <span id="chat-attachment-feedback" role="status" aria-live="polite"></span>
+            <div class="chat-format-toolbar" role="toolbar" aria-label="Message formatting">
+              <button type="button" data-format="bold" aria-label="Bold" title="Bold: *text* (Ctrl+B)"><strong>B</strong></button>
+              <button type="button" data-format="italic" aria-label="Italic" title="Italic: _text_ (Ctrl+I)"><em>I</em></button>
+              <button type="button" data-format="underline" aria-label="Underline" title="Underline: ++text++"><u>U</u></button>
+              <button type="button" data-format="strike" aria-label="Strikethrough" title="Strikethrough: ~text~ (Ctrl+Shift+X)"><s>S</s></button>
+              <span class="chat-format-divider" role="separator" aria-hidden="true"></span>
+              <button type="button" data-format="link" aria-label="Link" title="Link: [text](url) (Ctrl+Shift+U)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15"></path>
+                  <path d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 12 20l1.15-1.15"></path>
+                </svg>
+              </button>
+              <button type="button" data-format="bullet" aria-label="Bulleted list" title="Bulleted list: - item (Ctrl+Shift+8)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <circle cx="5" cy="6" r="1.25" fill="currentColor" stroke="none"></circle>
+                  <circle cx="5" cy="12" r="1.25" fill="currentColor" stroke="none"></circle>
+                  <circle cx="5" cy="18" r="1.25" fill="currentColor" stroke="none"></circle>
+                  <path d="M10 6h9M10 12h9M10 18h9"></path>
+                </svg>
+              </button>
+              <button type="button" data-format="number" aria-label="Numbered list" title="Numbered list: 1. item (Ctrl+Shift+7)">
+                <svg width="18" height="17" viewBox="0 0 26 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+                  <path d="M11 6h11M11 12h11M11 18h11"></path>
+                  <path d="M4 5h1v4M3.5 9h3M3.5 13.5c.5-.7 2.5-.5 2.5.5 0 1-2.5 2.5-2.5 4h3M3.5 21h3M3.5 18.5c.2-.8 2.6-.9 2.6.3 0 1.5-2.5 1.1-2.5 2.2 0 1.1 2.4 1 2.9.1"></path>
+                </svg>
+              </button>
+              <button type="button" data-format="quote" aria-label="Quote" title="Quote: &gt; text (Ctrl+Shift+9)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M6 7v10M10 7v10M6 7h4M6 17h4"></path>
+                  <path d="M15 9h4M15 15h4M15 9v6"></path>
+                </svg>
+              </button>
+              <span class="chat-format-divider" role="separator" aria-hidden="true"></span>
+              <button type="button" data-format="code" aria-label="Inline code" title="Inline code: `code` (Ctrl+Shift+C)"><span aria-hidden="true">&lt;/&gt;</span></button>
+              <button type="button" data-format="codeblock" aria-label="Code block" title="Code block: ```code``` (Ctrl+Alt+Shift+C)"><span aria-hidden="true">{ }</span></button>
+            </div>
+            <div id="chat-composer-attachments" class="chat-composer-attachments" aria-live="polite" aria-label="Staged attachments"></div>
+            <div class="chat-composer-main">
+              <textarea
+                id="chat-input"
+                rows="1"
+                placeholder="Message #general…"
+                title="Slash commands: /topic &lt;text&gt; · /issue [owner/repo] &lt;title&gt;"
+                maxlength="16000"
+                autocomplete="off"
+                spellcheck="true"
+                aria-label="Message input"
+                aria-autocomplete="list"
+                aria-controls="chat-slash-suggest"
+                aria-expanded="false"
+              ></textarea>
+            </div>
+            <div
+              id="chat-slash-suggest"
+              class="chat-slash-suggest"
+              role="listbox"
+              aria-label="Available slash commands"
+              hidden
+            ></div>
+            <div id="chat-composer-emoji-menu" class="chat-composer-emoji-menu" role="menu" aria-label="Choose an emoji" hidden>
+              <button type="button" role="menuitem" data-composer-emoji="👍" aria-label="👍">👍</button>
+              <button type="button" role="menuitem" data-composer-emoji="❤️" aria-label="❤️">❤️</button>
+              <button type="button" role="menuitem" data-composer-emoji="😂" aria-label="😂">😂</button>
+              <button type="button" role="menuitem" data-composer-emoji="🎉" aria-label="🎉">🎉</button>
+              <button type="button" role="menuitem" data-composer-emoji="👀" aria-label="👀">👀</button>
+              <button type="button" role="menuitem" data-composer-emoji="🚀" aria-label="🚀">🚀</button>
+            </div>
+            <div class="chat-composer-foot">
+              <div class="chat-composer-actions">
+                <button
+                  id="chat-attachment-button"
+                  type="button"
+                  aria-label="Attach image or document"
+                  title="Attach image, video, or document (up to 1 MiB)"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14"></path>
+                  </svg>
+                </button>
+                <button id="chat-emoji-button" type="button" aria-label="Insert emoji" title="Insert emoji" aria-haspopup="menu" aria-expanded="false" aria-controls="chat-composer-emoji-menu">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                    <path d="M9 9h.01M15 9h.01"></path>
+                  </svg>
+                </button>
+                <button id="chat-mention-button" type="button" aria-label="Mention someone" title="Mention someone">
+                  <span aria-hidden="true">@</span>
+                </button>
+                <!-- Which Cloudflare Workers AI model a "@forkbot …" mention is
+                     sent to. Options are filled from /api/forkbot/models, so it
+                     stays hidden on a relay that does not offer the endpoint. -->
+                <select
+                  id="chat-forkbot-model"
+                  class="chat-forkbot-model"
+                  aria-label="ForkBot AI model"
+                  title="Cloudflare AI model @forkbot mentions are sent to"
+                  hidden
+                ></select>
+              </div>
+              <span class="chat-composer-hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line</span>
+              <button id="chat-send" type="button" aria-label="Send message">
+                Send
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M14.54 21.69a.5.5 0 0 0 .94-.03l6.5-19a.5.5 0 0 0-.64-.64l-19 6.5a.5.5 0 0 0-.03.94l7.93 3.18a2 2 0 0 1 1.11 1.11z"></path>
+                  <path d="m21.85 2.15-10.94 10.94"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="chat-e2e-note" title="Private channels and direct messages add automatic device-to-device encryption beyond the controller's AES-256-GCM room key. Public channels are controller-readable so ForkBot, MCP, and webhooks can participate. The relay retains at most 500 persisted frames per room for 7 days.">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+            <span>Private channels and DMs are end-to-end encrypted · Public channels allow ForkBot, MCP and webhooks · Messages disappear after 7 days, or sooner if you choose</span>
+            <a href="/docs">Learn more</a>
+          </div>
+        </main>
+
+        <!-- right: people and message threads -->
+        <aside id="chat-people-pane" class="chat-people-pane chat-context-pane" aria-label="People and threads">
+          <section class="chat-people-view" data-chat-context="people">
+            <div class="chat-pane-title chat-pane-title-row">
+              <span id="chat-people-title">People</span>
+              <button id="chat-people-close" class="chat-admin-action chat-icon-action" type="button" aria-label="Close people list" title="Close">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            <label class="chat-people-search" for="chat-people-search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-3.5-3.5"></path>
+              </svg>
+              <input id="chat-people-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search people" aria-label="Search people" />
+            </label>
+            <div id="chat-people"></div>
+            <div class="chat-people-foot">
+              <button id="chat-invite-copy" class="chat-invite-button" type="button">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M19 8v6M22 11h-6"></path>
+                </svg>
+                <span id="chat-invite-label">Copy invite link</span>
+              </button>
+            </div>
+          </section>
+          <section class="chat-thread-view" data-chat-context="thread" aria-labelledby="chat-thread-title" hidden>
+            <div class="chat-thread-head">
+              <div>
+                <h2 id="chat-thread-title">Thread</h2>
+                <span id="chat-thread-count">0 replies</span>
+              </div>
+              <button id="chat-thread-close" type="button" aria-label="Close thread" title="Close thread">×</button>
+            </div>
+            <div class="chat-thread-content">
+              <div id="chat-thread-root"></div>
+              <div id="chat-thread-replies" class="chat-thread-replies" aria-live="polite"></div>
+            </div>
+            <div class="chat-thread-composer">
+              <input id="chat-thread-attachment-input" type="file" multiple aria-label="Choose image, video, or document" />
+              <div id="chat-thread-attachments" class="chat-composer-attachments" aria-live="polite" aria-label="Staged thread attachments"></div>
+              <div class="chat-thread-composer-row">
+                <button id="chat-thread-attachment-button" type="button" aria-label="Attach image, video, or document" title="Attach image, video, or document (up to 1 MiB)">+</button>
+                <textarea id="chat-thread-input" rows="1" maxlength="16000" placeholder="Reply in thread…" aria-label="Reply in thread"></textarea>
+                <button id="chat-thread-send" type="button">Reply</button>
+              </div>
+            </div>
+          </section>
+        </aside>
+
+        </div>
+      </section>
+
+      <dialog id="chat-channel-dialog" aria-labelledby="chat-channel-dialog-title">
+        <div class="chat-channel-dialog-body">
+          <div class="chat-channel-dialog-head">
+            <h2 id="chat-channel-dialog-title">New channel</h2>
+            <button id="chat-channel-dialog-close" type="button" aria-label="Close new channel dialog">×</button>
+          </div>
+          <p id="chat-channel-error" role="alert" aria-live="polite"></p>
+          <section id="chat-channel-create-section" class="chat-channel-section" aria-labelledby="chat-channel-create-title" hidden>
+            <h3 id="chat-channel-create-title">Create a channel</h3>
+            <form id="chat-channel-create-form" class="chat-channel-form">
+              <input id="chat-channel-name" name="name" maxlength="40" placeholder="release-team" aria-label="Channel name" required />
+              <select id="chat-channel-visibility" name="visibility" aria-label="Who can see this channel">
+                <option value="private">Private — only you and the people you invite</option>
+                <option value="public">Public — every signed-in member can join</option>
+              </select>
+              <button type="submit">Create</button>
+            </form>
+            <input id="chat-channel-initial-members" maxlength="1000" placeholder="Invite people: alice, bob" aria-label="Usernames to invite, separated by commas" />
+            <p id="chat-channel-audience" class="chat-channel-audience" role="status" aria-live="polite">Only you can see this room until you invite someone. Nobody else, including administrators, is added.</p>
+            <p class="chat-attachment-meta">Members, renaming and deletion live in Settings. Controller integrations such as webhooks are available in Public channels.</p>
+          </section>
+        </div>
+      </dialog>
+
+      <dialog id="chat-direct-dialog" aria-labelledby="chat-direct-dialog-title">
+        <div class="chat-channel-dialog-body">
+          <div class="chat-channel-dialog-head">
+            <h2 id="chat-direct-dialog-title">New direct message</h2>
+            <button id="chat-direct-dialog-close" type="button" aria-label="Close direct message picker">×</button>
+          </div>
+          <p id="chat-direct-error" role="alert" aria-live="polite"></p>
+          <p id="chat-direct-dialog-hint" class="chat-attachment-meta" hidden></p>
+          <input id="chat-direct-search" type="search" autocomplete="off" placeholder="Search people" aria-label="Search people to message" />
+          <div id="chat-direct-options" role="group" aria-label="People available to message"></div>
+          <p id="chat-direct-empty" aria-live="polite">Loading registered users...</p>
+        </div>
+      </dialog>
+
+      <div id="chat-call-panel" class="chat-call-panel" role="dialog" aria-label="Encrypted call" hidden>
+        <div class="chat-call-head">
+          <strong id="chat-call-peer"></strong>
+          <span id="chat-call-state" role="status" aria-live="polite"></span>
+        </div>
+        <div class="chat-call-videos">
+          <video id="chat-call-remote" autoplay playsinline></video>
+          <video id="chat-call-local" autoplay muted playsinline hidden></video>
+        </div>
+        <p class="chat-call-meta">
+          Media flows peer-to-peer between your devices, and call setup rides
+          this conversation's end-to-end encryption.
+        </p>
+        <label id="chat-call-face-row" class="chat-call-face" hidden>
+          <span>Face</span>
+          <select id="chat-call-face" title="Show the other person a different face that follows your head and lips"></select>
+        </label>
+        <div class="chat-call-actions">
+          <button id="chat-call-mute" type="button">Mute</button>
+          <button id="chat-call-camera" type="button" hidden>Camera off</button>
+          <button id="chat-call-hangup" type="button" class="chat-call-hangup">Hang up</button>
+        </div>
+      </div>
+
+      <div id="chat-call-incoming" class="chat-call-incoming" role="alertdialog" aria-label="Incoming call" hidden>
+        <p id="chat-call-incoming-label" aria-live="assertive"></p>
+        <div class="chat-call-actions">
+          <button id="chat-call-accept" type="button">Accept</button>
+          <button id="chat-call-decline" type="button" class="chat-call-hangup">Decline</button>
+        </div>
+      </div>
+
+      <dialog id="chat-delete-dialog" aria-labelledby="chat-delete-title">
+        <form method="dialog" class="chat-delete-dialog-body">
+          <h2 id="chat-delete-title">Delete message?</h2>
+          <p>This removes the message for everyone in this channel.</p>
+          <div class="chat-delete-actions">
+            <button id="chat-delete-cancel" type="submit" value="cancel">Cancel</button>
+            <button id="chat-delete-confirm" type="submit" value="confirm">Delete permanently</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="chat-join-dialog" aria-labelledby="chat-join-title">
+        <form method="dialog" class="chat-delete-dialog-body">
+          <h2 id="chat-join-title">Join room?</h2>
+          <p id="chat-join-copy"></p>
+          <div class="chat-delete-actions">
+            <button id="chat-join-cancel" type="submit" value="cancel">Not now</button>
+            <button id="chat-join-confirm" type="submit" value="confirm">Join room</button>
+          </div>
+        </form>
+      </dialog>
+    </div>
+    <script src="/chat-apps.js?v=${version}" defer></script>
+    <script type="module" src="/chat.js"></script>
+  </body>
+</html>

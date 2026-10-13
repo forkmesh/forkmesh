@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "OnboardingTour.h",
+    "OnboardingTour.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_onboarding_tour.cpp",
+    "OnboardingTour.h",
+    "OnboardingTour.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Widgets"
+  ]
+}

@@ -1,0 +1,108 @@
+name: Daily one-way GitHub issue sync
+
+on:
+  schedule:
+    - cron: "17 04 * * *"
+  workflow_dispatch:
+    inputs:
+      source_repository:
+        description: "Source repository (owner/name); blank uses the configured variable or this repository"
+        required: false
+        type: string
+      destination_repository:
+        description: "Destination repository (owner/name); blank uses FORKMESH_ISSUE_SYNC_DESTINATION"
+        required: false
+        type: string
+      dry_run:
+        description: "Preview writes without changing destination issues"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: forkmesh-github-issue-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_REPOSITORY: ${{ inputs.source_repository || vars.FORKMESH_ISSUE_SYNC_SOURCE || github.repository }}
+      DESTINATION_REPOSITORY: ${{ inputs.destination_repository || vars.FORKMESH_ISSUE_SYNC_DESTINATION }}
+      WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check out synchronization code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Validate one-way synchronization configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$DESTINATION_REPOSITORY" ]; then
+            echo "FORKMESH_ISSUE_SYNC_DESTINATION (owner/name) is required." >&2
+            exit 2
+          fi
+          if [ "${SOURCE_REPOSITORY,,}" = "${DESTINATION_REPOSITORY,,}" ]; then
+            echo "Source and destination repositories must be different." >&2
+            exit 2
+          fi
+
+      - name: Synchronize only new or changed issues
+        id: synchronize
+        shell: bash
+        env:
+          SOURCE_GITHUB_TOKEN: ${{ secrets.FORKMESH_ISSUE_SYNC_SOURCE_TOKEN || secrets.FORKMESH_ISSUE_SYNC_TOKEN || github.token }}
+          DESTINATION_GITHUB_TOKEN: ${{ secrets.FORKMESH_ISSUE_SYNC_DESTINATION_TOKEN || secrets.FORKMESH_ISSUE_SYNC_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          dry_run=()
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            dry_run=(--dry-run)
+          fi
+          python3 tools/github_issue_sync.py sync \
+            --source "$SOURCE_REPOSITORY" \
+            --destination "$DESTINATION_REPOSITORY" \
+            --source-token-env SOURCE_GITHUB_TOKEN \
+            --destination-token-env DESTINATION_GITHUB_TOKEN \
+            --report artifacts/github-issue-sync.json \
+            --summary artifacts/github-issue-sync.md \
+            "${dry_run[@]}"
+
+      - name: Publish job summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f artifacts/github-issue-sync.md ]; then
+            cat artifacts/github-issue-sync.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload non-secret synchronization report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: github-issue-sync-${{ github.run_id }}
+          path: |
+            artifacts/github-issue-sync.json
+            artifacts/github-issue-sync.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Notify administrators through the destination issue tracker
+        if: failure() && env.DESTINATION_REPOSITORY != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          DESTINATION_GITHUB_TOKEN: ${{ secrets.FORKMESH_ISSUE_SYNC_DESTINATION_TOKEN || secrets.FORKMESH_ISSUE_SYNC_TOKEN || github.token }}
+        run: |
+          python3 tools/github_issue_sync.py notify-failure \
+            --destination "$DESTINATION_REPOSITORY" \
+            --token-env DESTINATION_GITHUB_TOKEN \
+            --run-url "$WORKFLOW_RUN_URL" \
+            --message "The scheduled one-way synchronization failed. Review the linked workflow run."

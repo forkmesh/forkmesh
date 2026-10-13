@@ -1,0 +1,140 @@
+{
+  "schema": "forkmesh-governance-charter-v1",
+  "charterVersion": "1.0.0-rc.1",
+  "status": "proposed",
+  "adoptionRecord": "FMP-0001",
+  "guide": "www/docs/governance/README.md",
+  "bodies": [
+    {
+      "id": "protocol-council",
+      "name": "Protocol council",
+      "decides": ["protocol", "compatibility", "deprecation", "certification", "moderation-baseline", "charter"],
+      "seats": [
+        {"id": "maintainer-1", "constituency": "forkmesh-maintainer"},
+        {"id": "maintainer-2", "constituency": "forkmesh-maintainer"},
+        {"id": "implementer-1", "constituency": "independent-implementer"},
+        {"id": "implementer-2", "constituency": "independent-implementer"},
+        {"id": "operator-1", "constituency": "community-operator"},
+        {"id": "operator-2", "constituency": "community-operator"}
+      ],
+      "quorum": {
+        "minimumVoters": 4,
+        "requiredConstituencies": ["independent-implementer", "community-operator"],
+        "maximumShareFromOneEmployerOrFunder": 0.5
+      },
+      "threshold": {"default": "simple-majority", "protectedRights": "two-thirds-including-every-filled-independent-seat"}
+    },
+    {
+      "id": "security-response-team",
+      "name": "Security response team",
+      "decides": ["security"],
+      "seats": [
+        {"id": "security-maintainer", "constituency": "forkmesh-maintainer"},
+        {"id": "security-independent", "constituency": "independent-implementer"},
+        {"id": "security-operator", "constituency": "community-operator"}
+      ],
+      "quorum": {
+        "minimumVoters": 2,
+        "requiredConstituencies": ["independent-implementer"],
+        "maximumShareFromOneEmployerOrFunder": 0.5
+      },
+      "threshold": {"default": "simple-majority", "protectedRights": "two-thirds-including-every-filled-independent-seat"}
+    },
+    {
+      "id": "appeals-panel",
+      "name": "Appeals panel",
+      "decides": ["appeal"],
+      "seats": [
+        {"id": "appeal-implementer", "constituency": "independent-implementer"},
+        {"id": "appeal-operator", "constituency": "community-operator"},
+        {"id": "appeal-member", "constituency": "community-member"}
+      ],
+      "quorum": {
+        "minimumVoters": 3,
+        "requiredConstituencies": ["independent-implementer", "community-operator"],
+        "maximumShareFromOneEmployerOrFunder": 0.34
+      },
+      "threshold": {"default": "simple-majority", "protectedRights": "simple-majority"}
+    }
+  ],
+  "constituencies": {
+    "forkmesh-maintainer": "Holds write access to the forkmesh/forkmesh main branch or is paid by the entity that operates forkmesh.com.",
+    "independent-implementer": "Maintains a client, relay, mirror, index, or verifier that is not ForkMesh code, has a public https source, and holds or is pursuing a certification badge. Is not paid by the entity that operates forkmesh.com.",
+    "community-operator": "Operates a public mirror, relay, gateway, or moderation service used by people other than themselves. Is not paid by the entity that operates forkmesh.com.",
+    "community-member": "Holds an active ForkMesh identity with signed contribution history and no other seat."
+  },
+  "processes": {
+    "proposal": {
+      "recordPrefix": "FMP",
+      "stages": ["draft", "review", "last-call", "decided", "implemented", "withdrawn"],
+      "outcomes": ["accepted", "rejected", "withdrawn"],
+      "minimumReviewDays": 14,
+      "minimumLastCallDays": 7,
+      "decisionDueDaysAfterLastCall": 14,
+      "breakingChangeMinimumReviewDays": 30
+    },
+    "security": {
+      "recordPrefix": "FMS",
+      "acknowledgeWithinDays": 3,
+      "maximumEmbargoDays": 90,
+      "publishRecordWithinDaysOfDisclosure": 7,
+      "ratifyWithinDaysOfDisclosure": 30,
+      "outcomes": ["mitigated", "accepted", "rejected", "deferred"]
+    },
+    "appeal": {
+      "recordPrefix": "FMA",
+      "fileWithinDaysOfDecision": 30,
+      "decisionDueDaysAfterFiling": 30,
+      "outcomes": ["upheld", "overturned", "remanded"]
+    },
+    "deprecation": {
+      "announceMinorReleasesAhead": 1,
+      "minimumNoticeDays": 180,
+      "requiresMigrationPath": true
+    },
+    "compatibility": {
+      "wireIdentifiersFrozen": true,
+      "majorSuiteVersionRemovesAcceptance": true,
+      "reference": "www/docs/protocol/README.md#compatibility-policy"
+    }
+  },
+  "disclosures": {
+    "freshnessDays": 180,
+    "requiredForEveryParticipant": true,
+    "fundingKinds": ["membership", "donation", "grant", "contract", "investment", "reward-pool", "employment", "none"]
+  },
+  "protectedRights": [
+    {
+      "id": "free-protocol",
+      "statement": "Implementing, running, and certifying the protocol requires no payment, license fee, plan, or account on a ForkMesh-operated service.",
+      "commitments": ["protocolUseRequiresPayment", "selfHostingRequiresPayment", "independentImplementationsAllowed"]
+    },
+    {
+      "id": "portable-identity",
+      "statement": "An identity and its signed history can be exported, recovered, and used with any conforming implementation without the operator's permission.",
+      "commitments": ["portableSignedCollaborationRequiresPaidPlan"]
+    },
+    {
+      "id": "portable-repositories",
+      "statement": "Git data and signed collaboration records can be read, cloned, and moved off any host, including forkmesh.com, without a paid plan.",
+      "commitments": ["publicReadAndCloneRequirePaidPlan", "portableGitDataRequiresPaidPlan"]
+    },
+    {
+      "id": "token-free-governance",
+      "statement": "No token, asset holding, payment, plan, or funding amount grants a seat, a vote, standing to appeal, or weight in any decision.",
+      "commitments": ["governanceRequiresPaidPlan", "tokenOrBlockchainRequired", "incentivesAffectIdentityPermissionsRankingModerationOrGovernance"]
+    }
+  ],
+  "moderationBaseline": [
+    "Every moderation action on a signed collaboration record is itself a signed record naming the moderator key and the policy rule applied.",
+    "Hiding content never deletes the underlying signed record; another host may serve it under its own policy.",
+    "A person whose content or account is actioned is told the rule applied and may appeal under the appeal process.",
+    "Operators publish their own moderation policy; the baseline is a floor, not a ceiling, and never binds another operator's host."
+  ],
+  "succession": {
+    "vacantSeatFilledWithinDays": 60,
+    "interimHolder": "When a seat is vacant, it counts as absent. Its constituency's quorum requirement blocks decisions that need it, and no other constituency fills it.",
+    "stewardshipTransfer": "If the entity operating forkmesh.com stops operating, the protocol council holds the suite, vectors, and certification registry. Any member may republish them under the MIT license.",
+    "reference": "www/docs/operations/organization-succession.md"
+  }
+}

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Signed patch pull requests · ForkMesh Blog</title>
+    <meta name="description" content="PRs are signed records built around a patch. A contributor can submit one without push access, a fork, or even a branch, and the maintainer can verify exactly who sent what.">
+    <link rel="canonical" href="https://forkmesh.com/blog/signed-patch-pull-requests/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/signed-patch-pull-requests/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Signed patch pull requests">
+    <meta property="og:description" content="PRs are signed records built around a patch. A contributor can submit one without push access, a fork, or even a branch, and the maintainer can verify exactly who sent what.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/signed-patch-pull-requests.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/signed-patch-pull-requests.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Signed collaboration</p>
+            <h1>Signed patch pull requests</h1>
+            <p class="lede">PRs are signed records built around a patch. A contributor can submit one without push access, a fork, or even a branch, and the maintainer can verify exactly who sent what.</p>
+            <div class="meta"><span class="pill">Feature 13 of 72</span><span>Feature</span><span>Signed, portable collaboration</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/signed-patch-pull-requests.webp" alt="Abstract ForkMesh artwork for Signed patch pull requests">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Signed patch pull requests gives ForkMesh a concrete mechanism for portable patch submissions with verifiable authorship. PRs are signed records built around a patch. A contributor can submit one without push access, a fork, or even a branch, and the maintainer can verify exactly who sent what.</p>
+          <p>Collaboration data becomes fragile when issues, reviews, and authorship only exist inside one hosted database. In ForkMesh, signed patch pull requests addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles signed patch pull requests through the same split it uses across the product: local identities sign issue events, patch PRs, catalog records, and contribution inbox items before they travel through mirrors.</p>
+          <p>The signature covers more than the patch itself: the PR object (title, base, head, and the patch or commit series it carries) is Ed25519-signed as one unit, and every comment and review on it is signed separately and bound to that PR's number, so the whole discussion thread is independently verifiable. When a maintainer merges, ForkMesh does a real <code>git merge</code> whenever there's a resolvable commit to merge into, and only falls back to replaying the stored patch or commit series when there isn't one &mdash; e.g. for a patch-only submission with no branch behind it. The accepted PR and its discussion are committed straight into the repository on their own branch, not just logged in a database.</p>
+          <figure class="body-figure">
+            <img src="/assets/blog/diagrams/signed-patch-pull-requests.webp" width="1254" height="1254" loading="lazy" alt="Diagram of the five-step ForkMesh PR flow: 1. Open a PR — a signed record carrying a patch or pointing to a branch. 2. Sign everything — the PR object plus every comment, review, and thread event is Ed25519-signed. 3. Relay = temporary inbox — the relay routes traffic and stages encrypted submissions without permanently storing Git data. 4. Commit into the repo — the PR and discussion are committed onto the repository's forkmesh/pulls branch. 5. Maintainer merges — a real Git merge when possible, a patch fallback when needed. Full mirrors on peers then sync and converge.">
+            <figcaption>How a ForkMesh PR moves from submission to merge: signed at every step, staged (not stored) by the relay, and committed into the repo itself.</figcaption>
+          </figure>
+          <h2>Where it fits</h2>
+          <p>Use signed patch pull requests when project context needs to survive migrations, forks, offline work, and mirror failover.</p>
+          <p>It pairs with the rest of Signed, portable collaboration because Signed patch pull requests keeps portable patch submissions with verifiable authorship connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/signed-issue-events/">← Signed issue events</a>
+          <a href="/blog/everything-lives-in-git/">Everything lives in Git →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

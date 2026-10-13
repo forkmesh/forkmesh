@@ -1,0 +1,123 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "status-page",
+  "name": "Status Page",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Utilities",
+  "version": "2.1.0",
+  "summary": "ForkMesh's live status as green dots on desktop, phone and web. Each check is its own package, you can add your own monitors, and installing or removing it applies to every device on your account.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "A row of green, amber and red status dots under the app version, one per ForkMesh system"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:status-page",
+    "ios": "builtin:status-page",
+    "android": "builtin:status-page",
+    "worker": "content/worker/status_monitors.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/status-monitors",
+        "title": "Status monitors",
+        "description": "Green dots for every ForkMesh system you watch, your own monitors, and the Status Page settings.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Status",
+          "icon": "activity",
+          "order": 46
+        }
+      }
+    }
+  ],
+  "settings": [
+    {
+      "key": "onlyProblems",
+      "type": "boolean",
+      "label": "Show only systems that need attention",
+      "default": false
+    },
+    {
+      "key": "refreshMinutes",
+      "type": "choice",
+      "label": "Recheck healthy systems every",
+      "default": "15",
+      "options": [
+        { "value": "2", "label": "2 minutes" },
+        { "value": "5", "label": "5 minutes" },
+        { "value": "15", "label": "15 minutes" },
+        { "value": "30", "label": "30 minutes" }
+      ]
+    }
+  ],
+  "permissions": [
+    {
+      "id": "network.status.read",
+      "label": "Read ForkMesh's public status report from /api/status",
+      "risk": "low"
+    },
+    {
+      "id": "network.website.probe",
+      "label": "Load the website and the Status page from this device to check they answer",
+      "risk": "low"
+    },
+    {
+      "id": "network.monitor.probe",
+      "label": "Load the addresses of your own monitors from each of your devices to check they answer",
+      "risk": "low"
+    },
+    {
+      "id": "account.statusmonitors.write",
+      "label": "Keep your own monitors, check choices and settings on your account so every device shows the same dots",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account",
+    "localData": false
+  },
+  "worker": {
+    "module": "status_monitors",
+    "api": "/api/status-monitors"
+  }
+}

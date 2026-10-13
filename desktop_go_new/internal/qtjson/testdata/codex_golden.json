@@ -1,0 +1,917 @@
+[
+    {
+        "launch": {
+            "cwd": "/w",
+            "effort": "high",
+            "initialPrompt": "Do the task\nAttached image: \"/tmp/x.png\"",
+            "mode": "Auto",
+            "model": "gpt-5",
+            "resumeFallbackPrompt": "",
+            "resumeThreadId": "",
+            "sessionId": "5"
+        },
+        "name": "full",
+        "ops": [
+            {
+                "feed": "{\"id\":1,\"result\":{\"userAgent\":\"codex\"}}"
+            },
+            {
+                "feed": "{\"id\":2,\"result\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":10,\"windowDurationMins\":300},\"planType\":\"pro\"},\"rateLimitsByLimitId\":null}}"
+            },
+            {
+                "feed": "{\"id\":3,\"result\":{\"data\":[{\"id\":\"gpt-5\",\"displayName\":\"GPT-5\"}],\"nextCursor\":\"c2\"}}"
+            },
+            {
+                "feed": "{\"id\":5,\"result\":{\"data\":[{\"id\":\"gpt-5-mini\"}],\"nextCursor\":null}}"
+            },
+            {
+                "feed": "{\"id\":4,\"result\":{\"thread\":{\"id\":\"th-1\"},\"model\":\"gpt-5-codex\"}}"
+            },
+            {
+                "feed": "{\"id\":6,\"result\":{\"turn\":{\"id\":\"tu-1\"}}}"
+            },
+            {
+                "feed": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"th-1\",\"turn\":{\"id\":\"tu-1\"}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"th-1\",\"turnId\":\"tu-1\",\"itemId\":\"m1\",\"delta\":\"Hel\"}}"
+            },
+            {
+                "feed": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"commandExecution\",\"id\":\"c1\",\"command\":\"ls -la\",\"cwd\":\"/w\",\"status\":\"inProgress\"}}}"
+            },
+            {
+                "feed": "{\"id\":77,\"method\":\"item/commandExecution/requestApproval\",\"params\":{\"threadId\":\"th-1\",\"turnId\":\"tu-1\",\"itemId\":\"c1\",\"command\":\"rm -rf build\",\"reason\":\"cleanup\"}}"
+            },
+            {
+                "respond": [
+                    "codex-approval-1",
+                    "allow once"
+                ]
+            },
+            {
+                "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"commandExecution\",\"id\":\"c1\",\"command\":\"ls -la\",\"cwd\":\"/w\",\"aggregatedOutput\":\"a\\nb\\n\",\"exitCode\":0,\"status\":\"completed\"}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/reasoning/summaryTextDelta\",\"params\":{\"itemId\":\"r1\",\"delta\":\"thinking\"}}"
+            },
+            {
+                "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"r1\",\"summary\":[\"thinking\"],\"content\":[]}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"r2\",\"summary\":[\"s\"],\"content\":[\"c\"]}}}"
+            },
+            {
+                "feed": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"th-1\",\"turnId\":\"tu-1\",\"tokenUsage\":{\"total\":{\"inputTokens\":100,\"outputTokens\":20,\"totalTokens\":120},\"last\":{\"inputTokens\":1},\"modelContextWindow\":272000}}}"
+            },
+            {
+                "feed": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":12},\"planType\":null,\"credits\":null}}}"
+            },
+            {
+                "feed": "{\"method\":\"turn/plan/updated\",\"params\":{\"turnId\":\"tu-1\",\"plan\":[{\"step\":\"one\",\"status\":\"completed\"},{\"step\":\"two\",\"status\":\"inProgress\"}]}}"
+            },
+            {
+                "feed": "{\"method\":\"item/fileChange/outputDelta\",\"params\":{\"itemId\":\"f1\",\"delta\":\"+x\"}}"
+            },
+            {
+                "feed": "{\"method\":\"turn/diff/updated\",\"params\":{\"turnId\":\"tu-1\",\"diff\":\"diff --git\"}}"
+            },
+            {
+                "feed": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"fileChange\",\"id\":\"f1\",\"changes\":[{\"path\":\"a.txt\",\"kind\":\"add\"}],\"status\":\"inProgress\"}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"fileChange\",\"id\":\"f1\",\"changes\":[{\"path\":\"a.txt\",\"kind\":\"add\"}],\"status\":\"declined\"}}}"
+            },
+            {
+                "feed": "{\"id\":\"q-1\",\"method\":\"item/tool/requestUserInput\",\"params\":{\"questions\":[{\"id\":\"q1\",\"question\":\"Pick?\",\"header\":\"Choice\",\"options\":[{\"label\":\"A\"},{\"label\":\"B\"}]},{\"id\":\"q2\",\"question\":\"Name?\",\"header\":\"Name\",\"options\":null,\"isOther\":true,\"isSecret\":true}]}}"
+            },
+            {
+                "respond": [
+                    "codex-request-2",
+                    "Pick? → A\nName? -> bob"
+                ]
+            },
+            {
+                "feed": "{\"id\":\"q-2\",\"method\":\"item/tool/requestUserInput\",\"params\":{\"questions\":[{\"id\":\"only\",\"question\":\"Why?\",\"header\":\"H\",\"options\":[]}]}}"
+            },
+            {
+                "respond": [
+                    "codex-request-3",
+                    "because"
+                ]
+            },
+            {
+                "feed": "{\"id\":91,\"method\":\"item/fileChange/requestApproval\",\"params\":{\"availableDecisions\":[\"accept\",{\"acceptWithExecpolicyAmendment\":{\"x\":1}},\"cancel\"]}}"
+            },
+            {
+                "respond": [
+                    "codex-approval-4",
+                    "Allow with changes"
+                ]
+            },
+            {
+                "feed": "{\"id\":92,\"method\":\"mcpServer/elicitation/request\",\"params\":{\"message\":\"Use server?\"}}"
+            },
+            {
+                "respond": [
+                    "codex-request-5",
+                    "accept"
+                ]
+            },
+            {
+                "feed": "{\"id\":93,\"method\":\"item/permissions/requestApproval\",\"params\":{\"permissions\":{\"network\":true}}}"
+            },
+            {
+                "respond": [
+                    "codex-approval-6",
+                    "allow for session"
+                ]
+            },
+            {
+                "feed": "{\"id\":94,\"method\":\"some/unknown\",\"params\":{}}"
+            },
+            {
+                "feed": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"contextCompaction\",\"id\":\"cc1\"}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"contextCompaction\",\"id\":\"cc1\"}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"mcpToolCall\",\"id\":\"mc1\",\"server\":\"gh\",\"tool\":\"search\",\"arguments\":{\"q\":\"x\"}}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"mcpToolCall\",\"id\":\"mc1\",\"server\":\"gh\",\"tool\":\"search\",\"arguments\":{\"q\":\"x\"},\"result\":{\"content\":[1.5,2]},\"error\":null,\"status\":\"completed\"}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"sleep\",\"id\":\"s1\",\"durationMs\":1500}}}"
+            },
+            {
+                "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"m1\",\"text\":\"Hello done\"}}}"
+            },
+            {
+                "send": "steer this"
+            },
+            {
+                "feed": "{\"id\":12,\"result\":{}}"
+            },
+            {
+                "options": [
+                    "",
+                    "Plan",
+                    ""
+                ]
+            },
+            {
+                "send": "after mode change"
+            },
+            {
+                "feed": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"th-1\",\"turn\":{\"id\":\"tu-1\",\"status\":\"completed\",\"durationMs\":3200,\"items\":[],\"startedAt\":100,\"completedAt\":200}}}"
+            },
+            {
+                "feed": "{\"id\":13,\"result\":{\"turn\":{\"id\":\"tu-2\"}}}"
+            },
+            {
+                "feed": "{\"method\":\"error\",\"params\":{\"turnId\":\"tu-2\",\"message\":\"stream broke\",\"willRetry\":true}}"
+            },
+            {
+                "feed": "{\"method\":\"error\",\"params\":{\"turnId\":\"tu-2\",\"error\":{\"message\":\"fatal\"},\"willRetry\":false}}"
+            },
+            {
+                "send": "third"
+            },
+            {
+                "feed": "{\"id\":14,\"error\":{\"code\":-1,\"message\":\"busy\"}}"
+            },
+            {
+                "send": "fourth"
+            },
+            {
+                "feed": "{\"id\":15,\"result\":{\"turn\":{\"id\":\"tu-4\"}}}"
+            },
+            {
+                "interrupt": true
+            },
+            {
+                "feed": "{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"id\":\"tu-4\",\"status\":\"interrupted\",\"items\":[{\"type\":\"agentMessage\",\"text\":\"partial\"}]}}}"
+            },
+            {
+                "feed": "{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"id\":\"tu-4\",\"status\":\"failed\",\"error\":{\"message\":\"dup\"}}}}"
+            },
+            {
+                "feed": "{\"method\":\"configWarning\",\"params\":{\"summary\":\"cfg\",\"details\":null}}"
+            },
+            {
+                "feed": "not json"
+            }
+        ],
+        "steps": [
+            {
+                "events": [
+                ],
+                "writes": [
+                    "{\"id\":1,\"method\":\"initialize\",\"params\":{\"capabilities\":{\"experimentalApi\":true,\"requestAttestation\":false},\"clientInfo\":{\"name\":\"forkmesh\",\"title\":\"ForkMesh\",\"version\":\"0\"}}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"method\":\"initialized\",\"params\":{}}\n",
+                    "{\"id\":2,\"method\":\"account/rateLimits/read\",\"params\":null}\n",
+                    "{\"id\":3,\"method\":\"model/list\",\"params\":{\"includeHidden\":false,\"limit\":100}}\n",
+                    "{\"id\":4,\"method\":\"thread/start\",\"params\":{\"approvalPolicy\":\"never\",\"cwd\":\"/w\",\"model\":\"gpt-5\",\"sandbox\":\"danger-full-access\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                    "{\"rateLimits\":{\"limitId\":\"codex\",\"planType\":\"pro\",\"primary\":{\"usedPercent\":10,\"windowDurationMins\":300}},\"rateLimitsByLimitId\":{\"codex\":{\"limitId\":\"codex\",\"planType\":\"pro\",\"primary\":{\"usedPercent\":10,\"windowDurationMins\":300}}},\"type\":\"_codex_rate_limits\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":5,\"method\":\"model/list\",\"params\":{\"cursor\":\"c2\",\"includeHidden\":false,\"limit\":100}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                    [
+                        {
+                            "displayName": "GPT-5",
+                            "id": "gpt-5"
+                        },
+                        {
+                            "id": "gpt-5-mini"
+                        }
+                    ]
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"cwd\":\"/w\",\"model\":\"gpt-5-codex\",\"permissionMode\":\"Auto\",\"provider\":\"codex\",\"session_id\":\"th-1\",\"subtype\":\"init\",\"type\":\"system\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":6,\"method\":\"turn/start\",\"params\":{\"approvalPolicy\":\"never\",\"collaborationMode\":{\"mode\":\"default\",\"settings\":{\"developer_instructions\":null,\"model\":\"gpt-5-codex\",\"reasoning_effort\":\"high\"}},\"effort\":\"high\",\"input\":[{\"text\":\"Do the task\",\"text_elements\":[],\"type\":\"text\"},{\"path\":\"/tmp/x.png\",\"type\":\"localImage\"}],\"model\":\"gpt-5\",\"sandboxPolicy\":{\"type\":\"dangerFullAccess\"},\"threadId\":\"th-1\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"delta\":\"Hel\",\"itemId\":\"m1\",\"item_id\":\"m1\",\"text\":\"Hel\",\"threadId\":\"th-1\",\"thread_id\":\"th-1\",\"turnId\":\"tu-1\",\"turn_id\":\"tu-1\",\"type\":\"_codex_agent_delta\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"id\":\"c1\",\"input\":{\"command\":\"ls -la\",\"cwd\":\"/w\"},\"name\":\"Bash\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},\"session_id\":\"th-1\",\"type\":\"assistant\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":77,\"result\":{\"decision\":\"acceptForSession\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": false,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"content\":\"a\\nb\\n\\nExit code: 0\",\"is_error\":false,\"tool_use_id\":\"c1\",\"type\":\"tool_result\"}],\"role\":\"user\"},\"session_id\":\"th-1\",\"type\":\"user\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"event\":{\"delta\":{\"thinking\":\"thinking\",\"type\":\"thinking_delta\"},\"type\":\"content_block_delta\"},\"itemId\":\"r1\",\"item_id\":\"r1\",\"type\":\"stream_event\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"item_id\":\"r1\",\"text\":\"thinking\",\"type\":\"_codex_reasoning_complete\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"event\":{\"delta\":{\"thinking\":\"s\\nc\",\"type\":\"thinking_delta\"},\"type\":\"content_block_delta\"},\"itemId\":\"r2\",\"item_id\":\"r2\",\"type\":\"stream_event\"}",
+                    "{\"item_id\":\"r2\",\"text\":\"s\\nc\",\"type\":\"_codex_reasoning_complete\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"context_window\":272000,\"input_tokens\":100,\"output_tokens\":20,\"threadId\":\"th-1\",\"tokenUsage\":{\"last\":{\"inputTokens\":1},\"modelContextWindow\":272000,\"total\":{\"inputTokens\":100,\"outputTokens\":20,\"totalTokens\":120}},\"total_tokens\":120,\"turnId\":\"tu-1\",\"type\":\"_codex_usage\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"rateLimits\":{\"credits\":null,\"limitId\":\"codex\",\"planType\":\"pro\",\"primary\":{\"usedPercent\":12,\"windowDurationMins\":300}},\"rateLimitsByLimitId\":{\"codex\":{\"credits\":null,\"limitId\":\"codex\",\"planType\":\"pro\",\"primary\":{\"usedPercent\":12,\"windowDurationMins\":300}}},\"type\":\"_codex_rate_limits\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"id\":\"plan-tu-1\",\"input\":{\"todos\":[{\"content\":\"one\",\"status\":\"completed\"},{\"content\":\"two\",\"status\":\"in_progress\"}]},\"name\":\"TodoWrite\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},\"session_id\":\"th-1\",\"type\":\"assistant\"}",
+                    "{\"delta\":\"[{\\\"status\\\":\\\"completed\\\",\\\"step\\\":\\\"one\\\"},{\\\"status\\\":\\\"inProgress\\\",\\\"step\\\":\\\"two\\\"}]\",\"itemId\":\"plan-tu-1\",\"item_id\":\"plan-tu-1\",\"method\":\"turn/plan/updated\",\"turnId\":\"tu-1\",\"turn_id\":\"tu-1\",\"type\":\"_codex_tool_delta\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"delta\":\"+x\",\"itemId\":\"f1\",\"item_id\":\"f1\",\"method\":\"item/fileChange/outputDelta\",\"type\":\"_codex_tool_delta\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"delta\":\"diff --git\",\"method\":\"turn/diff/updated\",\"turnId\":\"tu-1\",\"turn_id\":\"tu-1\",\"type\":\"_codex_tool_delta\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"id\":\"f1\",\"input\":{\"changes\":[{\"kind\":\"add\",\"path\":\"a.txt\"}]},\"name\":\"FileChange\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},\"session_id\":\"th-1\",\"type\":\"assistant\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"content\":\"[{\\\"kind\\\":\\\"add\\\",\\\"path\\\":\\\"a.txt\\\"}]\",\"is_error\":true,\"tool_use_id\":\"f1\",\"type\":\"tool_result\"}],\"role\":\"user\"},\"session_id\":\"th-1\",\"type\":\"user\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"id\":\"codex-request-2\",\"input\":{\"questions\":[{\"header\":\"Choice\",\"multiSelect\":false,\"options\":[{\"label\":\"A\"},{\"label\":\"B\"}],\"question\":\"Pick?\"},{\"header\":\"Name\",\"isOther\":true,\"isSecret\":true,\"multiSelect\":false,\"options\":null,\"question\":\"Name?\"}]},\"name\":\"AskUserQuestion\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},\"session_id\":\"th-1\",\"thread_id\":\"th-1\",\"type\":\"assistant\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":\"q-1\",\"result\":{\"answers\":{\"q1\":{\"answers\":[\"A\"]},\"q2\":{\"answers\":[\"bob\"]}}}}\n"
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"id\":\"codex-request-3\",\"input\":{\"questions\":[{\"header\":\"H\",\"multiSelect\":false,\"options\":[],\"question\":\"Why?\"}]},\"name\":\"AskUserQuestion\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},\"session_id\":\"th-1\",\"thread_id\":\"th-1\",\"type\":\"assistant\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":\"q-2\",\"result\":{\"answers\":{\"only\":{\"answers\":[\"because\"]}}}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":91,\"result\":{\"decision\":\"accept\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": false,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"id\":\"codex-request-5\",\"input\":{\"questions\":[{\"header\":\"MCP request\",\"multiSelect\":false,\"options\":[{\"description\":\"Approve this request\",\"label\":\"Allow\"},{\"description\":\"Reject this request\",\"label\":\"Deny\"}],\"question\":\"Use server?\"}]},\"name\":\"AskUserQuestion\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},\"session_id\":\"th-1\",\"thread_id\":\"th-1\",\"type\":\"assistant\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":92,\"result\":{\"_meta\":null,\"action\":\"accept\",\"content\":null}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":93,\"result\":{\"permissions\":{\"network\":true},\"scope\":\"session\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": false,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"error\":{\"code\":-32601,\"message\":\"Unsupported Codex server request\"},\"id\":94}\n"
+                ]
+            },
+            {
+                "events": [
+                    "{\"level\":\"info\",\"text\":\"Codex compacted the conversation context.\",\"type\":\"_local_notice\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"id\":\"mc1\",\"input\":{\"arguments\":{\"q\":\"x\"},\"server\":\"gh\",\"tool\":\"search\"},\"name\":\"gh::search\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},\"session_id\":\"th-1\",\"type\":\"assistant\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"content\":\"{\\\"content\\\":[1.5,2]}\",\"is_error\":false,\"tool_use_id\":\"mc1\",\"type\":\"tool_result\"}],\"role\":\"user\"},\"session_id\":\"th-1\",\"type\":\"user\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"id\":\"s1\",\"input\":{\"duration_ms\":1500},\"name\":\"Sleep\",\"type\":\"tool_use\"}],\"role\":\"assistant\"},\"session_id\":\"th-1\",\"type\":\"assistant\"}",
+                    "{\"message\":{\"content\":[{\"content\":\"Waited 1500 ms\",\"is_error\":false,\"tool_use_id\":\"s1\",\"type\":\"tool_result\"}],\"role\":\"user\"},\"session_id\":\"th-1\",\"type\":\"user\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"item_id\":\"m1\",\"text\":\"Hello done\",\"type\":\"_codex_agent_complete\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":7,\"method\":\"turn/steer\",\"params\":{\"expectedTurnId\":\"tu-1\",\"input\":[{\"text\":\"steer this\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"th-1\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"level\":\"info\",\"text\":\"Permission mode changed to Plan. This message will start after the current turn completes so Codex can apply it.\",\"type\":\"_local_notice\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"message\":{\"content\":[{\"content\":\"one\\ntwo\",\"is_error\":false,\"tool_use_id\":\"plan-tu-1\",\"type\":\"tool_result\"}],\"role\":\"user\"},\"session_id\":\"th-1\",\"type\":\"user\"}",
+                    "{\"level\":\"warning\",\"text\":\"Starting the queued message as a new turn.\",\"type\":\"_local_notice\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":8,\"method\":\"turn/start\",\"params\":{\"approvalPolicy\":\"never\",\"collaborationMode\":{\"mode\":\"plan\",\"settings\":{\"developer_instructions\":null,\"model\":\"gpt-5-codex\",\"reasoning_effort\":null}},\"input\":[{\"text\":\"after mode change\",\"text_elements\":[],\"type\":\"text\"}],\"model\":\"gpt-5\",\"sandboxPolicy\":{\"type\":\"dangerFullAccess\"},\"threadId\":\"th-1\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"level\":\"error\",\"text\":\"stream broke\",\"type\":\"_local_notice\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"level\":\"error\",\"text\":\"fatal\",\"type\":\"_local_notice\"}",
+                    "{\"is_error\":true,\"num_turns\":1,\"result\":\"fatal\",\"session_id\":\"th-1\",\"subtype\":\"error\",\"thread_id\":\"th-1\",\"turn_id\":\"tu-2\",\"type\":\"result\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":9,\"method\":\"turn/start\",\"params\":{\"approvalPolicy\":\"never\",\"collaborationMode\":{\"mode\":\"plan\",\"settings\":{\"developer_instructions\":null,\"model\":\"gpt-5-codex\",\"reasoning_effort\":null}},\"input\":[{\"text\":\"third\",\"text_elements\":[],\"type\":\"text\"}],\"model\":\"gpt-5\",\"sandboxPolicy\":{\"type\":\"dangerFullAccess\"},\"threadId\":\"th-1\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"level\":\"warning\",\"text\":\"Starting the queued message as a new turn.\",\"type\":\"_local_notice\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":10,\"method\":\"turn/start\",\"params\":{\"approvalPolicy\":\"never\",\"collaborationMode\":{\"mode\":\"plan\",\"settings\":{\"developer_instructions\":null,\"model\":\"gpt-5-codex\",\"reasoning_effort\":null}},\"input\":[{\"text\":\"fourth\",\"text_elements\":[],\"type\":\"text\"}],\"model\":\"gpt-5\",\"sandboxPolicy\":{\"type\":\"dangerFullAccess\"},\"threadId\":\"th-1\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                    "{\"context_window\":272000,\"input_tokens\":100,\"is_error\":true,\"num_turns\":1,\"output_tokens\":20,\"result\":\"dup\",\"session_id\":\"th-1\",\"subtype\":\"error\",\"thread_id\":\"th-1\",\"tokenUsage\":{\"last\":{\"inputTokens\":1},\"modelContextWindow\":272000,\"total\":{\"inputTokens\":100,\"outputTokens\":20,\"totalTokens\":120}},\"total_tokens\":120,\"turn_id\":\"tu-4\",\"turn_status\":\"failed\",\"type\":\"result\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"level\":\"warning\",\"text\":\"{\\\"details\\\":null,\\\"summary\\\":\\\"cfg\\\"}\",\"type\":\"_local_notice\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            }
+        ]
+    },
+    {
+        "launch": {
+            "cwd": "/w",
+            "effort": "",
+            "initialPrompt": "continue",
+            "mode": "Ask",
+            "model": "",
+            "resumeFallbackPrompt": "Fallback task",
+            "resumeThreadId": "old-thread",
+            "sessionId": ""
+        },
+        "name": "resume",
+        "ops": [
+            {
+                "feed": "{\"id\":1,\"result\":{}}"
+            },
+            {
+                "feed": "{\"id\":4,\"error\":{\"message\":\"no such thread\"}}"
+            },
+            {
+                "feed": "{\"id\":5,\"result\":{\"thread\":{\"id\":\"th-new\"}}}"
+            },
+            {
+                "feed": "{\"id\":6,\"result\":{\"turn\":{\"id\":\"t1\"}}}"
+            },
+            {
+                "feed": "{\"id\":50,\"method\":\"item/commandExecution/requestApproval\",\"params\":{\"command\":\"make\"}}"
+            },
+            {
+                "respond": [
+                    "codex-approval-1",
+                    "deny"
+                ]
+            },
+            {
+                "respond": [
+                    "codex-approval-1",
+                    "deny"
+                ]
+            },
+            {
+                "feed": "{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"id\":\"t1\",\"status\":\"completed\"}}}"
+            }
+        ],
+        "steps": [
+            {
+                "events": [
+                ],
+                "writes": [
+                    "{\"id\":1,\"method\":\"initialize\",\"params\":{\"capabilities\":{\"experimentalApi\":true,\"requestAttestation\":false},\"clientInfo\":{\"name\":\"forkmesh\",\"title\":\"ForkMesh\",\"version\":\"0\"}}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"method\":\"initialized\",\"params\":{}}\n",
+                    "{\"id\":2,\"method\":\"account/rateLimits/read\",\"params\":null}\n",
+                    "{\"id\":3,\"method\":\"model/list\",\"params\":{\"includeHidden\":false,\"limit\":100}}\n",
+                    "{\"id\":4,\"method\":\"thread/resume\",\"params\":{\"approvalPolicy\":\"never\",\"cwd\":\"/w\",\"sandbox\":\"danger-full-access\",\"threadId\":\"old-thread\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                    "{\"level\":\"warning\",\"text\":\"Codex thread/resume failed: no such thread. The saved Codex thread is unavailable, so ForkMesh started a new thread with the saved task and latest instruction.\",\"type\":\"_local_notice\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":5,\"method\":\"thread/start\",\"params\":{\"approvalPolicy\":\"never\",\"cwd\":\"/w\",\"sandbox\":\"danger-full-access\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                    "{\"cwd\":\"/w\",\"model\":\"\",\"permissionMode\":\"Ask\",\"provider\":\"codex\",\"session_id\":\"th-new\",\"subtype\":\"init\",\"type\":\"system\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":6,\"method\":\"turn/start\",\"params\":{\"approvalPolicy\":\"never\",\"collaborationMode\":null,\"input\":[{\"text\":\"Fallback task\",\"text_elements\":[],\"type\":\"text\"}],\"sandboxPolicy\":{\"type\":\"dangerFullAccess\"},\"threadId\":\"th-new\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                    "{\"id\":50,\"result\":{\"decision\":\"acceptForSession\"}}\n"
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": false,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                ],
+                "models": [
+                ],
+                "ok": false,
+                "writes": [
+                ]
+            },
+            {
+                "events": [
+                    "{\"is_error\":false,\"num_turns\":1,\"result\":\"\",\"session_id\":\"th-new\",\"subtype\":\"success\",\"thread_id\":\"th-new\",\"turn_id\":\"t1\",\"turn_status\":\"completed\",\"type\":\"result\"}"
+                ],
+                "models": [
+                ],
+                "ok": true,
+                "writes": [
+                ]
+            }
+        ]
+    }
+]

@@ -1,0 +1,83 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "workflows-pack-data-and-storage",
+  "name": "Workflows: Data and storage",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Workflow add-ons",
+  "version": "1.0.0",
+  "summary": "Adds 6 data and storage integrations to Workflows: Dropbox, Box, Supabase, Firebase Realtime Database and more.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Workflows: Data and storage"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "pack": "content/pack.json",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "workflows.integrations",
+      "entrypoint": "pack",
+      "config": {
+        "category": "Data and storage",
+        "integrations": [
+          "dropbox",
+          "box",
+          "supabase",
+          "firebase",
+          "algolia",
+          "upstash"
+        ]
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "network.workflows.outbound",
+      "label": "Let workflow steps call data and storage services you connect",
+      "risk": "high"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "workflows",
+      "version": "^1.0.0"
+    }
+  ],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

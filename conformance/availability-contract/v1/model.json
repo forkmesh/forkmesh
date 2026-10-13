@@ -1,0 +1,71 @@
+{
+  "schema": "forkmesh-availability-contract-model-v1",
+  "inputSchema": "forkmesh-availability-contract-evidence-v1",
+  "outputSchema": "forkmesh-availability-contract-report-v1",
+  "signedSchema": "forkmesh-availability-contract-signed-report-v1",
+  "signatureDomain": "forkmesh-availability-contract-report-v1",
+  "version": "1.0.0",
+  "updated": "2026-09-14",
+  "documentation": "www/docs/availability-contract.md",
+  "fixture": "conformance/availability-contract/v1/fixture.json",
+  "referenceImplementation": "app/src/availability_contract.py",
+  "dependsOn": ["conformance/availability-proof/v1/model.json"],
+  "implementations": [
+    {"client": "reference", "path": "app/src/availability_contract.py", "test": "app/tests/test_availability_contract.py"},
+    {"client": "cli", "path": "tools/forkmesh_availability_contract.py", "test": "app/tests/test_availability_contract.py"}
+  ],
+  "policy": {
+    "minVerificationIntervalMs": 60000,
+    "maxSlots": 10000,
+    "maxFailureTolerance": 2,
+    "minContractedOperators": 2,
+    "money": "integer micro-USD; credits are fee * creditBps // 10000",
+    "attainment": "met slots * 10000 // counted slots, rounded down",
+    "privacy": "Operator accounts are never echoed; copies that share an operator share an opaque operator number for the whole bundle. Endpoints, mirror URLs, drill archive paths, and node keys are never echoed."
+  },
+  "terms": [
+    {"id": "copies", "meaning": "Verified copies that must hold the counted state in every slot."},
+    {"id": "operators", "meaning": "Distinct operators that must hold the same verified state in every slot; at least the availability-proof quorum target."},
+    {"id": "regions", "meaning": "Distinct declared regions among verified copies in every slot."},
+    {"id": "uptimeBps", "meaning": "Share of counted slots that must meet every check."},
+    {"id": "verificationIntervalMs", "meaning": "Slot length; a slot with no observation is unverified."},
+    {"id": "transports", "meaning": "Transports that must each have at least one verified copy: router, directHttps, smartHttp."},
+    {"id": "refCoverage", "meaning": "At least the contracted operator count of verified copies carry every branch."},
+    {"id": "artifactCoverage", "meaning": "At least the contracted operator count of verified copies carry every release artifact."},
+    {"id": "recoveryTimeObjectiveMs", "meaning": "Longest allowed incident and the slowest allowed restore drill."},
+    {"id": "drillIntervalMs", "meaning": "Oldest allowed restore drill at period end."},
+    {"id": "incidentResponseMs", "meaning": "Longest allowed time from an incident's start to its acknowledgement."},
+    {"id": "failureTolerance", "meaning": "How many operators, and separately how many regions, may fail at once while the quorum holds."},
+    {"id": "maxExcludedBps", "meaning": "Share of slots that honored exclusions may remove."}
+  ],
+  "transports": ["router", "directHttps", "smartHttp"],
+  "capacityClasses": ["community", "contracted"],
+  "exclusionKinds": ["scheduled-maintenance", "customer-requested", "legal-hold"],
+  "exclusionReasons": ["unknown_kind", "announced_late", "over_budget"],
+  "checks": [
+    "unverified", "quorum_below_contract", "copies_below_contract",
+    "regions_below_contract", "transport_missing", "ref_coverage_incomplete",
+    "artifact_coverage_incomplete"
+  ],
+  "slos": ["availability", "recovery", "incident-response", "restore-drills"],
+  "misses": [
+    {"code": "availability_window", "slo": "availability"},
+    {"code": "recovery_objective_exceeded", "slo": "recovery"},
+    {"code": "response_late", "slo": "incident-response"},
+    {"code": "response_missing", "slo": "incident-response"},
+    {"code": "drill_missing", "slo": "restore-drills"},
+    {"code": "drill_stale", "slo": "restore-drills"},
+    {"code": "drill_beyond_objective", "slo": "restore-drills"}
+  ],
+  "drillStates": ["ok", "drill_missing", "drill_stale", "drill_beyond_objective"],
+  "responseStates": ["ok", "late", "missing", "pending"],
+  "admissionReasons": [
+    "no_evidence", "copies_not_demonstrated", "operators_not_demonstrated",
+    "regions_not_demonstrated", "failure_simulation_failed"
+  ],
+  "disclosures": [
+    "community_capacity_relied_on", "contracted_single_operator",
+    "operator_concentration", "region_concentration", "no_failure_headroom",
+    "capacity_not_demonstrated"
+  ]
+}

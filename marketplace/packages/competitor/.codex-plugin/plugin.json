@@ -1,0 +1,30 @@
+{
+  "name": "competitor",
+  "version": "1.0.0",
+  "description": "Organization-private competitor watchlists and positioning analysis.",
+  "author": {
+    "name": "ForkMesh",
+    "url": "https://forkmesh.com"
+  },
+  "homepage": "https://forkmesh.com/market",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["competitors", "competitive-intelligence", "positioning", "marketing"],
+  "interface": {
+    "displayName": "Competitor Watch",
+    "shortDescription": "Track competitors and positioning.",
+    "longDescription": "Keep an organization-private competitor watchlist with positioning, strengths, weaknesses, notes, status, and review dates.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com/market",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "Summarize our competitor watchlist.",
+      "Compare the positioning of our primary competitors.",
+      "Which competitor profiles need another review?"
+    ],
+    "brandColor": "#7C3AED"
+  }
+}

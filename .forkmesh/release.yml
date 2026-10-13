@@ -1,0 +1,362 @@
+name: Attach desktop build to release
+# Automatically builds the desktop Qt client for each platform when a release is
+# published (a tag drafted from the Releases panel). Each node it runs on builds
+# its own platform's binary and publishes it to the release, so to cover
+# Linux + macOS + Windows, the workflow runs on a node of each OS. The installer
+# (www/public/install.sh) then autodetects the visitor's platform
+# and downloads the matching prebuilt binary instead of compiling.
+#
+# Release binaries are NOT committed into git (issue #304). The binary bytes are
+# staged into the node's content-addressed release store (the CAS, co-located
+# with the served mirror) and only small TEXT metadata is committed under
+# .forkmesh/releases/<channel>/ — SHASUMS256.txt + release.json. install.sh reads that
+# metadata over the git proxy, authenticates the detached Ed25519 signature
+# against a separately provisioned publisher key, then downloads the binary
+# from the relay's content-addressed endpoint and verifies its SHA-256.
+#
+# Triggered by the release event (the runner checks out the tagged commit and
+# exports FORKMESH_TAG with the tag name); also runnable by hand via
+# workflow_dispatch.
+on: [release, workflow_dispatch]
+fetch-depth: 0
+jobs:
+  release:
+    steps:
+      # Build the optimized desktop client, name the binary forkmesh-<os>-<arch>
+      # [.exe] (the exact scheme install.sh resolves from `uname`), then publish
+      # it: tools/forkmesh-release-publish.sh hashes the binary, copies the bytes
+      # into the node's CAS, and writes .forkmesh/releases/<channel>/{SHASUMS256.txt,
+      # release.json}. The runner sets FORKMESH_RELEASE_CAS to the served CAS
+      # (<mirror>/forkmesh-releases) so the bytes land where the node streams them
+      # from, then — after this step succeeds — harvests the .forkmesh/releases/<channel>/
+      # signed metadata into the working copy, commits it, and publishes (syncs the
+      # served mirror). The asset goes live for download automatically; nothing
+      # here needs to commit into the throwaway worktree (cleanup discards it).
+      - name: Build and attach the desktop binary
+        run: |
+          set -e
+
+          # Provenance is meaningful only for committed inputs. Ignore the
+          # release metadata directory (it is output of this job), but reject
+          # every tracked or untracked source change before building bytes.
+          dirty="$(git status --porcelain=v1 --untracked-files=all -- . \
+            ':(exclude).forkmesh/releases/**')"
+          if [ -n "$dirty" ]; then
+            echo "ERROR: release artifact build requires a clean source worktree." >&2
+            exit 1
+          fi
+
+          # Resolve the release signing key BEFORE the (multi-minute) build.
+          # Publishing fails closed without an Ed25519 key, and the Actions
+          # sandbox mounts no part of the host filesystem — so a secret holding
+          # a key *path* can never name a real file inside the run. Take the key
+          # material itself through the ordinary variables/secrets channel
+          # ($FORKMESH_RELEASE_SIGNING_KEY_PEM, raw PEM or a single line with \n
+          # escapes, since the variables dialog is one line) and materialize it
+          # 0600 in the sandbox. Checking it here means a misconfigured node
+          # fails in seconds instead of after a full release build.
+          signing_key="${FORKMESH_RELEASE_SIGNING_KEY:-}"
+          signing_key_pem="$FORKMESH_RELEASE_SIGNING_KEY_PEM"
+          if [ -z "$signing_key" ] && [ -n "$signing_key_pem" ]; then
+            signing_key="${TMPDIR:-/tmp}/forkmesh-release-signing-key.pem"
+            trap 'rm -f "$signing_key"' EXIT INT TERM
+            (umask 077; printf '%b\n' "$signing_key_pem" > "$signing_key")
+          fi
+          if [ -z "$signing_key" ] || [ ! -f "$signing_key" ]; then
+            echo "ERROR: no Ed25519 release signing key is configured." >&2
+            echo "       Release metadata is signed supply-chain input, so publishing fails closed." >&2
+            echo "       Generate a key once (keep it out of git):" >&2
+            echo "         openssl genpkey -algorithm Ed25519 -out release-ed25519-private.pem" >&2
+            echo "       then store its contents in the FORKMESH_RELEASE_SIGNING_KEY_PEM variable" >&2
+            echo "       (Settings -> Actions -> Variables / secrets), or set" >&2
+            echo "       FORKMESH_RELEASE_SIGNING_KEY to a key file readable inside the run." >&2
+            exit 1
+          fi
+          # A key that cannot produce a 64-byte Ed25519 signature (wrong
+          # algorithm, truncated paste, mangled newlines) is rejected now rather
+          # than after the build, by signing a throwaway probe with the exact
+          # command the publisher uses.
+          probe="${TMPDIR:-/tmp}/forkmesh-release-signing-probe"
+          printf 'forkmesh release signing probe\n' > "$probe"
+          if ! openssl pkeyutl -sign -rawin -inkey "$signing_key" \
+               -in "$probe" -out "${probe}.sig" 2>/dev/null ||
+             [ "$(wc -c < "${probe}.sig" | tr -d ' ')" != "64" ]; then
+            rm -f "$probe" "${probe}.sig"
+            echo "ERROR: the configured release signing key is not a usable Ed25519 private key." >&2
+            exit 1
+          fi
+          rm -f "$probe" "${probe}.sig"
+
+          # Map this host's uname to the asset name install.sh autodetects.
+          os="$(uname -s)"
+          arch="$(uname -m)"
+          case "$os" in
+            Linux)                            os="linux" ;;
+            Darwin)                           os="macos" ;;
+            MINGW*|MSYS*|CYGWIN*|Windows_NT)  os="windows" ;;
+            *) os="$(printf '%s' "$os" | tr '[:upper:]' '[:lower:]')" ;;
+          esac
+          case "$arch" in
+            x86_64|amd64|x64) arch="x86_64" ;;
+            aarch64|arm64)    arch="arm64" ;;
+          esac
+          asset="forkmesh-${os}-${arch}"
+          [ "$os" = "windows" ] && asset="${asset}.exe"
+          # The tag is the release version.  The CMake override below stamps it
+          # into the artifact without modifying the checked-out source, so a
+          # release can be attached to any immutable tagged commit even when
+          # that commit's next-development project version has moved on.
+          project_version="$(
+            sed -nE \
+              's/^project\(ForkMesh VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' \
+              desktop/CMakeLists.txt | head -n1
+          )"
+          # A manual workflow resolves the immutable tag for the committed
+          # project version instead of letting the publisher guess a possibly
+          # older nearest tag. Same-version rebuilds may have a newer
+          # build_commit while this tag target remains immutable.
+          release_tag="${FORKMESH_TAG:-v${project_version}}"
+          version="${release_tag#v}"
+          # Native runners contribute to an isolated candidate. It is copied to
+          # the public channel only once every required asset is present, so a
+          # failed platform can never replace the previous working latest.
+          channel="${RELEASE_CHANNEL:-candidate-${version}}"
+          promote_channel="${FORKMESH_PROMOTE_CHANNEL:-latest}"
+          echo "Building release asset: $asset (candidate: $channel)"
+          if ! git rev-parse --verify \
+               "refs/tags/${release_tag}^{commit}" >/dev/null 2>&1; then
+            echo "ERROR: release tag '$release_tag' does not exist or does not target a commit." >&2
+            exit 1
+          fi
+          # The promotion gate fails closed on a required-asset variable that
+          # names nothing; report that misconfiguration before the build too.
+          if ! python3 tools/forkmesh-release-promote.py --check-config; then
+            echo "       Set FORKMESH_RELEASE_REQUIRED_ASSETS to comma/space-separated asset names, or remove it." >&2
+            exit 1
+          fi
+
+          # Stamp the exact checkout commit separately: the fleet installer
+          # compares this embedded revision with release.json/build_commit, so a
+          # stale artifact cannot pass merely because it has the same semver.
+          # release.json is committed after this artifact is built.  Use the
+          # newest non-release-metadata commit as the code provenance on both
+          # sides, avoiding an impossible artifact<->metadata commit cycle.
+          revision="$(git log -1 --format=%H -- . \
+            ':(exclude).forkmesh/releases/**')"
+
+          desktop_native=1
+          if [ "$os" = "linux" ]; then
+            desktop_native=0
+            echo "Linux desktop assets ($asset, $asset.AppImage) are built by the release host in the Debian 12 baseline container (tools/package/linux-baseline.sh); this job publishes the mirror node only."
+          fi
+          if [ "$desktop_native" = 1 ]; then
+          # Configure + build the client (Release, tests off — this is a release
+          # artifact build, the CI workflow already runs the test suite).
+          # Size -j to the sandbox budget, not the host: inside the Actions
+          # cgroup `nproc` overcounts the CPU quota (compilers thrash and the
+          # build runs into the step deadline) and one g++ per host core can
+          # blow MemoryMax. The runner publishes the real budget; outside it
+          # (plain checkout, macOS/Windows nodes) fall back to the host.
+          jobs="${FORKMESH_ACTIONS_CPUS:-}"
+          if [ -z "$jobs" ]; then
+            jobs="$( (nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) )"
+          fi
+          mem_mb="${FORKMESH_ACTIONS_MEMORY_MB:-0}"
+          if [ "$mem_mb" -gt 0 ]; then
+            # Leave 2 GiB for packaging/autogen and budget 2 GiB for every
+            # compiler; measured MainWindow peaks reach roughly 1.6 GiB.
+            mem_jobs=$(((mem_mb - 2048) / 2048))
+            [ "$mem_jobs" -lt 1 ] && mem_jobs=1
+            [ "$jobs" -gt "$mem_jobs" ] && jobs="$mem_jobs"
+          fi
+          [ "$jobs" -lt 1 ] && jobs=1
+          [ "$jobs" -gt 4 ] && jobs=4
+          echo "Building with -j$jobs (memory budget: ${mem_mb}MB)"
+          # The node keeps one cache mount per repository between runs and
+          # already points CCACHE_DIR into it, so the objects the CI run of
+          # this same commit compiled come back warm here without this step
+          # arranging anything. The build tree itself deliberately stays in the
+          # disposable workspace: a signed, published artifact is linked out of
+          # a tree this run configured, never one a previous run left behind.
+          if command -v ccache >/dev/null 2>&1; then
+            echo "compiler cache: ${CCACHE_DIR:-<node default>}"
+          fi
+          # AUTOGEN_PARALLEL's AUTO default sizes each AUTOMOC driver's thread
+          # pool from the host's core count, which the sandbox cannot see; one
+          # such pool per -j slot exhausts the cgroup's task ceiling (#1586).
+          cmake -S desktop -B desktop/build-release \
+            -DCMAKE_BUILD_TYPE=Release -DFORKMESH_BUILD_TESTS=OFF -DFORKMESH_REQUIRE_OPENSSL_3_5=ON \
+            -DCMAKE_AUTOGEN_PARALLEL="$jobs" \
+            -DFORKMESH_BUILD_COMMIT_OVERRIDE="$revision" \
+            ${version:+-DFORKMESH_VERSION_OVERRIDE="$version"}
+          cmake --build desktop/build-release -j"$jobs"
+          install_root="desktop/build-release/install"
+          cmake --install desktop/build-release --prefix "$install_root"
+
+          # Locate the executable inside the CMake install tree. That tree also
+          # contains the pinned bootstrap/Tunnel/gateway tools plus the Worker
+          # source, generated/static assets, and migrations required by the
+          # token-only Cloudflare flow; native packagers must ship it intact.
+          built=""
+          for cand in \
+            "$install_root/bin/forkmesh" \
+            "$install_root/bin/forkmesh.exe" \
+            "$install_root/ForkMesh.app/Contents/MacOS/ForkMesh"; do
+            if [ -x "$cand" ]; then built="$cand"; break; fi
+          done
+          if [ -z "$built" ]; then
+            echo "ERROR: build did not produce an executable in desktop/build-release" >&2
+            exit 1
+          fi
+          reported_version="$("$built" --version 2>&1)" || {
+            echo "ERROR: built release did not report its version." >&2
+            exit 1
+          }
+          if [ "$reported_version" != "ForkMesh $version" ]; then
+            echo "ERROR: built release reports '$reported_version' (expected 'ForkMesh $version')." >&2
+            exit 1
+          fi
+          reported_commit="$("$built" --build-commit 2>&1)" || {
+            echo "ERROR: built release did not report an exact source commit." >&2
+            exit 1
+          }
+          if [ "$reported_commit" != "$revision" ]; then
+            echo "ERROR: built release reports source commit '$reported_commit' (expected '$revision')." >&2
+            exit 1
+          fi
+
+          # Name the built binary the way install.sh resolves per platform, then
+          # publish it via the content-addressed store (no binary in git). The
+          # CAS dir must be the one the serving node reads from:
+          # <mirror>/forkmesh-releases. Set FORKMESH_RELEASE_CAS to that path on
+          # the node; it defaults to .forkmesh/release-blobs otherwise.
+          staged="$asset"
+          cp "$built" "$staged"
+          chmod 0755 "$staged" || true
+
+          fi
+
+          # Headless hosts run the native Go daemon, not the Qt executable.
+          # Publish it as a first-class signed release asset so install.sh can
+          # update an existing mirror without a source toolchain or an
+          # out-of-band controller upload. Keep its platform/architecture
+          # naming in lockstep with the installer lookup above.
+          mirror_asset="forkmesh-mirror-node-${os}-${arch}"
+          [ "$os" = "windows" ] && mirror_asset="${mirror_asset}.exe"
+          if ! command -v go >/dev/null 2>&1; then
+            echo "ERROR: Go is required to build the native mirror-node release asset." >&2
+            exit 1
+          fi
+          if ! (
+            cd server
+            CGO_ENABLED=0 go build -trimpath \
+              -o "../${mirror_asset}" ./cmd/forkmesh-mirror-node
+          ); then
+            echo "WARNING: the go.mod toolchain could not be used; building with the local Go $(GOTOOLCHAIN=local go env GOVERSION)." >&2
+            (
+              cd server
+              CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath \
+                -o "../${mirror_asset}" ./cmd/forkmesh-mirror-node
+            )
+          fi
+          if [ ! -s "$mirror_asset" ]; then
+            echo "ERROR: native mirror-node build did not produce $mirror_asset." >&2
+            exit 1
+          fi
+          chmod 0755 "$mirror_asset" || true
+          echo "Built native mirror asset: $mirror_asset"
+
+          # Wrap the bare binary into this platform's native, (optionally) signed
+          # installer for desktop users (issue #370): AppImage on Linux, an NSIS
+          # setup.exe on Windows, and a .dmg on macOS. Packaging is fail-closed:
+          # publishing a bare executable without its runtime would recreate the
+          # source-build onboarding failure this workflow exists to prevent.
+          # See www/docs/design/signed-installers.md.
+          publish_assets=("$mirror_asset")
+          if [ "$desktop_native" = 1 ]; then
+          publish_assets+=("$staged")
+          package_input="$built"
+          if [ "$os" = "macos" ]; then
+            package_input="$install_root/ForkMesh.app"
+          fi
+          if [ "$os" = "windows" ] || [ "$os" = "macos" ]; then
+            export FORKMESH_REQUIRE_NATIVE_SIGNING=1
+          fi
+          # The Authenticode certificate (base64 .pfx) and its password live in
+          # this node's Settings -> Secrets & Coves store. Referencing them by
+          # name here is what exposes them to the step's environment, exactly
+          # like $FORKMESH_RELEASE_SIGNING_KEY_PEM above; the values are never
+          # spliced into the script text or committed.
+          if [ "$os" = "windows" ]; then
+            export FORKMESH_WIN_CERT_PFX FORKMESH_WIN_CERT_PASSWORD
+            if [ -z "${FORKMESH_WIN_CERT_PFX:-}" ] || [ -z "${FORKMESH_WIN_CERT_PASSWORD:-}" ]; then
+              echo "ERROR: FORKMESH_WIN_CERT_PFX and FORKMESH_WIN_CERT_PASSWORD must be configured in Settings -> Secrets & Coves." >&2
+              exit 1
+            fi
+          fi
+          installer="$(tools/package/package-release.sh \
+            --os "$os" --arch "$arch" \
+            --binary "$package_input" \
+            --install-root "$install_root" \
+            --channel "$channel" \
+            --tag "$release_tag" \
+            --outdir . | tail -n1)"
+          [ -n "$installer" ] && [ -s "$installer" ] || {
+            echo "ERROR: native packager produced no installer for $os/$arch." >&2
+            exit 1
+          }
+          case "$os:$installer" in
+            linux:*.AppImage|windows:*-setup.exe|macos:*.dmg) ;;
+            *) echo "ERROR: unexpected native installer name: $installer" >&2; exit 1 ;;
+          esac
+          echo "Built installer: $installer"
+          publish_assets+=("$installer")
+          # zsync delta control file rides along when the AppImage produced one.
+          [ -f "${installer}.zsync" ] && publish_assets+=("${installer}.zsync")
+          fi
+
+          cas="${FORKMESH_RELEASE_CAS:-.forkmesh/release-blobs}"
+          tools/forkmesh-release-publish.sh \
+            --channel "$channel" \
+            --signing-key "$signing_key" \
+            --tag "$release_tag" \
+            --build-commit "$revision" \
+            --cas-dir "$cas" \
+            ${FORKMESH_REPO:+--repo "$FORKMESH_REPO"} \
+            "${publish_assets[@]}"
+
+          # Promote at the metadata layer only after every REQUIRED asset is in
+          # the candidate: a partially failed matrix must never replace a
+          # working latest. The required set is FORKMESH_RELEASE_REQUIRED_ASSETS
+          # (comma/space-separated; unset = what the fleet builds today:
+          # forkmesh-linux-x86_64, forkmesh-linux-x86_64.AppImage and
+          # forkmesh-mirror-node-linux-x86_64; set-but-empty fails closed).
+          # Promotion is also refused while the current latest offers assets
+          # the candidate lacks (the signed Android APK, which this sandbox
+          # cannot build) unless FORKMESH_RELEASE_ALLOW_DROPPED_ASSETS=1. The
+          # release host completes such candidates on its own:
+          # tools/forkmesh-release-android.py (forkmesh-release-android.timer)
+          # builds and signs the APK, promotes, seeds the mirrors, and lands the
+          # metadata. On success the gate copies the signed candidate metadata
+          # and regenerates latest's appcast.
+          # Held back (exit 3), install.sh and /desktop keep serving the
+          # previous public channel and this step still lands the candidate.
+          promotion=0
+          python3 tools/forkmesh-release-promote.py \
+            --candidate "$channel" --channel "$promote_channel" || promotion=$?
+          case "$promotion" in
+            0) ;;
+            3) echo "Candidate $channel remains unpublished; $promote_channel is unchanged." ;;
+            *) echo "ERROR: release promotion gate failed (exit $promotion)." >&2; exit 1 ;;
+          esac
+
+          # The bytes are now in the served CAS and the small text metadata
+          # (SHASUMS256.txt + release.json + release.json.sig + appcast.xml) is written under
+          # .forkmesh/releases/${channel}/. ForkMesh harvests that metadata into the working
+          # copy, commits it, and publishes the mirror once this step succeeds — so
+          # the asset becomes downloadable with no manual commit. (Running this
+          # script standalone, outside ForkMesh? Commit .forkmesh/releases/${channel}/ and
+          # publish it yourself.)
+          echo "Staged asset: $asset (candidate: $channel)"
+          echo "Once published, install it with:"
+          echo "  curl -fsSL \"\${FORKMESH_HOST:-https://forkmesh.com}/install.sh\" | bash"

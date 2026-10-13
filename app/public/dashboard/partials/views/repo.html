@@ -1,0 +1,36 @@
+          <section data-view="explore" class="view active h-full overflow-y-auto">
+            <div data-explore-inner class="w-full">
+              <div data-repo-detail>
+                <p class="text-sm text-muted-foreground">Choose a repository to inspect it.</p>
+              </div>
+              <template id="dashboard-repo-feature-template">
+                <div class="panel-header-aside">
+                  <div class="issue-filter" role="group" aria-label="Issue state">
+                    <button id="issue-filter-open" type="button" data-state="open" class="is-active" aria-pressed="true">Open</button>
+                    <button id="issue-filter-closed" type="button" data-state="closed" aria-pressed="false">Closed</button>
+                    <button id="issue-filter-all" type="button" data-state="all" aria-pressed="false">All</button>
+                  </div>
+                </div>
+                <button id="tab-mirrors" type="button">Mirrors</button>
+                <section id="repo-mirrors" hidden aria-labelledby="mirrors-title">
+                  <h2 id="mirrors-title">Mirrors</h2>
+                  <div id="mirror-summary"></div>
+                  <div class="mirror-table-wrap">
+                    <table class="mirror-health-table">
+                      <thead>
+                        <tr>
+                          <th>Node</th>
+                          <th>Status</th>
+                          <th>Last seen</th>
+                          <th>Hosted since</th>
+                          <th>Sync age</th>
+                          <th>Clone available</th>
+                        </tr>
+                      </thead>
+                      <tbody id="mirror-list"></tbody>
+                    </table>
+                  </div>
+                </section>
+              </template>
+            </div>
+          </section>

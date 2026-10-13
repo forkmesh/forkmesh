@@ -1,0 +1,38 @@
+[Unit]
+Description=Renew the signed ForkMesh mirror health lease
+Documentation=https://forkmesh.com/docs/operations/direct-https-mirror-gateway
+Requires=forkmesh-mirror.service
+Wants=cloudflared-forkmesh.service network-online.target
+After=forkmesh-mirror.service cloudflared-forkmesh.service network-online.target
+PartOf=forkmesh-mirror.service
+
+[Service]
+Type=oneshot
+User=forkmesh-mirror
+Group=forkmesh-mirror
+UMask=0077
+ExecStart=/usr/bin/python3 -I /opt/forkmesh-mirror/headless_mirror_refresh.py --config /var/lib/forkmesh-mirror/gateway/mirror-refresh.json renew
+TimeoutStartSec=5min
+Restart=on-failure
+RestartSec=20s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/forkmesh-mirror/gateway /var/lib/forkmesh-mirror/identity
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+TasksMax=16

@@ -1,0 +1,78 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Proof before promises · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="A current-main ForkMesh update on the free protocol and paid-service boundary, human-gated agent work, clearer routing, and release evidence.">
+    <link rel="canonical" href="https://forkmesh.com/blog/proof-before-promises/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/proof-before-promises/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Proof before promises">
+    <meta property="og:description" content="The current-main ForkMesh update: a clearer product contract, human-gated agent work, honest routing language, and release evidence you can inspect.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/proof-before-promises.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit glass repository prism connects an evidence ledger, guarded teammate workbench, and release beacon on wet stone; the official ForkMesh logo and its vertical reflection stand in the foreground">
+    <meta property="article:published_time" content="2026-09-01T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Proof before promises">
+    <meta name="twitter:description" content="A current-main report on the product contract, human-gated agents, routing boundaries, and signed release evidence.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/proof-before-promises.webp">
+    <meta name="twitter:image:alt" content="A moonlit glass repository prism connects an evidence ledger, guarded teammate workbench, and release beacon on wet stone; the official ForkMesh logo and its vertical reflection stand in the foreground">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Proof before promises</h1>
+            <p class="lede">ForkMesh's current <code>main</code> branch makes the product boundary easier to inspect: a free, portable protocol; routing with explicit eligibility checks; human-gated agent work; and release evidence that says where availability still stops.</p>
+            <div class="meta"><span class="pill">September 1, 2026</span><span>Product update</span><span>5 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/proof-before-promises.webp" alt="A moonlit glass repository prism connects an evidence ledger, guarded teammate workbench, and release beacon on wet stone; the official ForkMesh logo and its vertical reflection stand in the foreground">
+        </section>
+        <article class="body">
+          <p><a href="/blog/the-mirror-becomes-a-front-door/">The mirror becomes a front door</a> ended with a useful distinction: current <code>main</code> can contain more than the current installer or hosted surface. This short window is about making that distinction visible in the product story, then tightening a few of the everyday paths around it.</p>
+          <p>It covers work merged between August 31 and September 1. Unless a section says otherwise, this is merged current-<code>main</code> work, not a claim about every installed client or deployed surface.</p>
+
+          <h2>The product contract is now part of the product</h2>
+          <p>The new free-protocol and paid-services contract puts a durable boundary in one place. MIT protocol rights, self-hosting, public Git reads and clones, and signed repository-native collaboration remain free and portable. Hosted Free is best effort. Supporter and Pro are memberships with bounded published workflows, not reserved capacity or uptime guarantees. Managed hosting, indexing, replicas, recovery, runners, and support remain a research preview until buyer, cost, security, portability, and recovery evidence passes.</p>
+          <p>That contract also makes the numbers more meaningful. Managed proposals use observable units such as indexed project-months, replica GiB-months, verified egress GiB, runner minutes, and support hours. Unknown usage or cost stays unknown rather than being rounded down to zero. The public pricing surface now points to this boundary, and managed checkout stays disabled.</p>
+          <p>For developers, the promise is simple: using or forking ForkMesh does not put protocol objects behind a paywall. For operators, the tradeoff is equally explicit: self-hosting means supplying the capacity, backups, moderation, uptime, and support yourself.</p>
+
+          <h2>The homepage now has a proof path—and a claim audit</h2>
+          <p>The refreshed homepage leads with a four-step idea: add a complete mirror, take the source mirror offline, and clone the same URL again. The public product promise documents the required evidence: a fresh signed health result, an eligible state, matching refs, a recorded expected commit, and an explicit rollback. A stale or mismatched mirror must be excluded; if every serving host is offline, the stable URL is unavailable.</p>
+          <p>That is a demonstration contract, not a measured availability statistic, so the homepage does not imply that failover was measured. We also removed two absolute shortcuts from the primary surface: routing now says “health-aware” rather than “nearest,” and the custody card says what the relay and mirror operators do without promising “always.” Network distance is not an eligibility proof, and operator dependencies remain real.</p>
+          <p>The custody boundary is concrete. The relay is not the canonical Git storage layer, and ForkMesh does not ask for a self-custodial wallet's private key. Public channels remain controller-readable for integrations; private channels and direct messages add device-to-device encryption, with timing, size, metadata, key-discovery, and denial-of-service limits documented in the protocol guide.</p>
+
+          <h2>Agent work keeps a human in the loop</h2>
+          <p>Human-gated continual teammate loops now have a repository-owned definition and a desktop lifecycle. A scheduled run can surface its issue, provider, transcript, diff, and next decision, but a queue is not permission to run forever: the operator still decides whether a loop may continue. Teammate detail is reachable from skills, schedules can be disabled in bulk, and briefing actions stay close to the work they describe.</p>
+          <p>The surrounding task surface became easier to operate as well. Desktop tasks can sort and filter by status, issue and pull-request history is visible on the web, and new repositories remain visible while publication is in progress. Alerts no longer steal focus from the active agent surface. These changes shorten the path from an incoming report to an inspectable change without turning a worktree into a security sandbox or claiming that a current-main feature is already in the signed desktop.</p>
+
+          <h2>Small edges, handled more carefully</h2>
+          <p>Status pages are lighter to serve, and a burst of activity on one repository no longer slows unrelated work.</p>
+          <p>Issue reports from Discord are deduplicated before credit is assigned. Pull-request history now has a web view, while a separate report about desktop pull-request creation was still open. Mobile's iOS privacy manifest now declares collected data, which is a release-readiness step, not a public App Store build.</p>
+
+          <h2>Release evidence still draws the line</h2>
+          <p>The signed <code>latest</code> manifest verifies as <strong>v0.7.29</strong> against the Ed25519 publisher key embedded in the installer, and its checksum list matches the signed manifest. It publishes Linux x86_64 assets. The signed <code>candidate-0.7.95</code> manifest also verifies and binds its checksums, but it is a Linux x86_64 candidate, not a complete cross-platform release.</p>
+          <p>So the accurate availability sentence remains narrow: the work described here is merged on current <code>main</code>; the published native release remains v0.7.29; and the human-gated loop, refreshed homepage, mobile privacy repair, and newer desktop surfaces need their matching hosted rollout or later complete signed release before they should be called universally available.</p>
+          <p>The next steps are practical ones: a clean anonymous clone, a two-operator source-offline drill that compares the same commit, a complete native release matrix, and the mobile checklist on real devices. Our claims stay as large as the evidence behind them, and no larger.</p>
+          <p><a href="/docs/product-promise">Read the product proof</a>, browse the <a href="/docs">public documentation</a>, or <a href="/desktop">get the current signed desktop</a>.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/signals-that-lead-somewhere/">← Signals that lead somewhere</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/the-mirror-becomes-a-front-door/">The mirror becomes a front door →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

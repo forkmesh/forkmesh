@@ -1,0 +1,28 @@
+{
+  "schema": "forkmesh-certification-results-v1",
+  "attested": "2026-09-14",
+  "runs": [
+    {
+      "runId": "0f463340bf4d3c03",
+      "implementation": "forkmesh-clean-room-python",
+      "profile": "core",
+      "platform": "linux",
+      "finishedAt": "2026-09-14T19:03:45Z",
+      "suiteVersion": "1.0.0-rc.1",
+      "result": "pass",
+      "cases": 116,
+      "failed": 0
+    },
+    {
+      "runId": "47ee8e5f355c09c9",
+      "implementation": "forkmesh-webcrypto-javascript",
+      "profile": "collaboration-fold",
+      "platform": "linux",
+      "finishedAt": "2026-09-14T19:03:46Z",
+      "suiteVersion": "1.0.0-rc.1",
+      "result": "pass",
+      "cases": 76,
+      "failed": 0
+    }
+  ]
+}

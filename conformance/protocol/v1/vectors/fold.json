@@ -1,0 +1,165 @@
+{
+  "suite": "forkmesh-protocol",
+  "suiteVersion": "1.0.0-rc.1",
+  "vectorSet": "fold",
+  "procedure": "Split ndjson on LF (retaining any CR), fold every record under policies.primary, and compare stateDigest = sha256 of the canonical state plus the telemetry counts.",
+  "policies": {
+    "primary": {
+      "schema": "forkmesh-collaboration-policy-v1",
+      "repository": "urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb",
+      "maintainers": [
+        "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4"
+      ],
+      "moderators": [
+        "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM"
+      ],
+      "notifiers": [
+        "RkpI3DGD9LcXUTQnHXErcT3QN8iPhKUJTE5u8X3t68M"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "concurrent-scalar-conflict",
+      "requirements": [
+        "FM-SYNC-002",
+        "FM-SYNC-003"
+      ],
+      "ndjson": "{\"action\":\"create\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":0,\"eventId\":\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\",\"family\":\"issue\",\"issuedAt\":1800000000000,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[],\"payload\":{\"fields\":{\"body\":\"Steps\",\"title\":\"Original\"},\"objectKey\":\"S258YjIUJ23e7zEjv9jnzg\"},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"dPKfWcLKJquD9h7nO1_sB76XsESkzUK2hD-xRqwYVMTfVThWtFOw-yiIylrq8b0D6o6fm6kcfY2dRYUSatlyDw\"}\n{\"action\":\"update\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":1,\"eventId\":\"sha256:487a5c1c51b41b9ff5b8c7b1835222954d5975721875b6c202269d38a42c8f32\",\"family\":\"issue\",\"issuedAt\":1799999999983,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Alice title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":1,\"signature\":\"MZi29dKOWmGGNlO5AjUXWtf-ix02srMR9sw8QsG0-QLas4uI1Hp9ZGx-eCKvf2ikfrTsUykhPYVtKIwn1TwHBw\"}\n{\"action\":\"update\",\"author\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\",\"clock\":1,\"eventId\":\"sha256:31eafb249cd2666f107dc148da96c3dc3416d22b49198ecdea8294a1757ae0c8\",\"family\":\"issue\",\"issuedAt\":1799999999966,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Maintainer title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"T0QlbJ16Ae65e0KFX4AUpHL6J2VSx9DI5IwXgU7_IqMj_guKUdOFs5K-TcQh-9M8d3HdaQvVb8he4bGrNdYbCg\"}\n",
+      "expect": {
+        "stateDigest": "sha256:55f6cc3c0cf96d415f7b6ac1f53b3e1468a2472e50d227280afd43f49f899510",
+        "telemetry": {
+          "accepted": 3,
+          "pending": 0,
+          "rejected": 0,
+          "duplicateDeliveries": 0,
+          "equivocations": 0,
+          "conflicts": 1
+        },
+        "rejectionReasons": {}
+      }
+    },
+    {
+      "id": "conflict-resolution",
+      "requirements": [
+        "FM-SYNC-002",
+        "FM-SYNC-003"
+      ],
+      "ndjson": "{\"action\":\"create\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":0,\"eventId\":\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\",\"family\":\"issue\",\"issuedAt\":1800000000000,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[],\"payload\":{\"fields\":{\"body\":\"Steps\",\"title\":\"Original\"},\"objectKey\":\"S258YjIUJ23e7zEjv9jnzg\"},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"dPKfWcLKJquD9h7nO1_sB76XsESkzUK2hD-xRqwYVMTfVThWtFOw-yiIylrq8b0D6o6fm6kcfY2dRYUSatlyDw\"}\n{\"action\":\"update\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":1,\"eventId\":\"sha256:487a5c1c51b41b9ff5b8c7b1835222954d5975721875b6c202269d38a42c8f32\",\"family\":\"issue\",\"issuedAt\":1799999999983,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Alice title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":1,\"signature\":\"MZi29dKOWmGGNlO5AjUXWtf-ix02srMR9sw8QsG0-QLas4uI1Hp9ZGx-eCKvf2ikfrTsUykhPYVtKIwn1TwHBw\"}\n{\"action\":\"update\",\"author\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\",\"clock\":1,\"eventId\":\"sha256:31eafb249cd2666f107dc148da96c3dc3416d22b49198ecdea8294a1757ae0c8\",\"family\":\"issue\",\"issuedAt\":1799999999966,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Maintainer title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"T0QlbJ16Ae65e0KFX4AUpHL6J2VSx9DI5IwXgU7_IqMj_guKUdOFs5K-TcQh-9M8d3HdaQvVb8he4bGrNdYbCg\"}\n{\"action\":\"update\",\"author\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\",\"clock\":2,\"eventId\":\"sha256:2fafc626e378b08d436ce293f2fd2aed64a4b5107fd07dedf56703cb673bb60b\",\"family\":\"issue\",\"issuedAt\":1799999999949,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:31eafb249cd2666f107dc148da96c3dc3416d22b49198ecdea8294a1757ae0c8\",\"sha256:487a5c1c51b41b9ff5b8c7b1835222954d5975721875b6c202269d38a42c8f32\"],\"payload\":{\"fields\":{\"title\":\"Resolved title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":1,\"signature\":\"24fIcx0EtIIdevuza4sqR_1MSXFa0L9mp_w-izh-3AIoWWAUqKpNlXQpWI2_PUjivl_RyICM-g3SAHwOsozCCQ\"}\n",
+      "expect": {
+        "stateDigest": "sha256:53c5a758cf5170ccc7a624f61a1de79379983ad31429358a078b543e45053aa6",
+        "telemetry": {
+          "accepted": 4,
+          "pending": 0,
+          "rejected": 0,
+          "duplicateDeliveries": 0,
+          "equivocations": 0,
+          "conflicts": 0
+        },
+        "rejectionReasons": {}
+      }
+    },
+    {
+      "id": "permuted-duplicated-delivery",
+      "requirements": [
+        "FM-SYNC-001",
+        "FM-SYNC-002"
+      ],
+      "ndjson": "{\"action\":\"update\",\"author\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\",\"clock\":2,\"eventId\":\"sha256:2fafc626e378b08d436ce293f2fd2aed64a4b5107fd07dedf56703cb673bb60b\",\"family\":\"issue\",\"issuedAt\":1799999999949,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:31eafb249cd2666f107dc148da96c3dc3416d22b49198ecdea8294a1757ae0c8\",\"sha256:487a5c1c51b41b9ff5b8c7b1835222954d5975721875b6c202269d38a42c8f32\"],\"payload\":{\"fields\":{\"title\":\"Resolved title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":1,\"signature\":\"24fIcx0EtIIdevuza4sqR_1MSXFa0L9mp_w-izh-3AIoWWAUqKpNlXQpWI2_PUjivl_RyICM-g3SAHwOsozCCQ\"}\n{\"action\":\"update\",\"author\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\",\"clock\":1,\"eventId\":\"sha256:31eafb249cd2666f107dc148da96c3dc3416d22b49198ecdea8294a1757ae0c8\",\"family\":\"issue\",\"issuedAt\":1799999999966,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Maintainer title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"T0QlbJ16Ae65e0KFX4AUpHL6J2VSx9DI5IwXgU7_IqMj_guKUdOFs5K-TcQh-9M8d3HdaQvVb8he4bGrNdYbCg\"}\n{\"action\":\"create\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":0,\"eventId\":\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\",\"family\":\"issue\",\"issuedAt\":1800000000000,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[],\"payload\":{\"fields\":{\"body\":\"Steps\",\"title\":\"Original\"},\"objectKey\":\"S258YjIUJ23e7zEjv9jnzg\"},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"dPKfWcLKJquD9h7nO1_sB76XsESkzUK2hD-xRqwYVMTfVThWtFOw-yiIylrq8b0D6o6fm6kcfY2dRYUSatlyDw\"}\n{\"action\":\"update\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":1,\"eventId\":\"sha256:487a5c1c51b41b9ff5b8c7b1835222954d5975721875b6c202269d38a42c8f32\",\"family\":\"issue\",\"issuedAt\":1799999999983,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Alice title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":1,\"signature\":\"MZi29dKOWmGGNlO5AjUXWtf-ix02srMR9sw8QsG0-QLas4uI1Hp9ZGx-eCKvf2ikfrTsUykhPYVtKIwn1TwHBw\"}\n{\"action\":\"create\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":0,\"eventId\":\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\",\"family\":\"issue\",\"issuedAt\":1800000000000,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[],\"payload\":{\"fields\":{\"body\":\"Steps\",\"title\":\"Original\"},\"objectKey\":\"S258YjIUJ23e7zEjv9jnzg\"},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"dPKfWcLKJquD9h7nO1_sB76XsESkzUK2hD-xRqwYVMTfVThWtFOw-yiIylrq8b0D6o6fm6kcfY2dRYUSatlyDw\"}\n{\"action\":\"update\",\"author\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\",\"clock\":1,\"eventId\":\"sha256:31eafb249cd2666f107dc148da96c3dc3416d22b49198ecdea8294a1757ae0c8\",\"family\":\"issue\",\"issuedAt\":1799999999966,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Maintainer title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"T0QlbJ16Ae65e0KFX4AUpHL6J2VSx9DI5IwXgU7_IqMj_guKUdOFs5K-TcQh-9M8d3HdaQvVb8he4bGrNdYbCg\"}\n",
+      "expect": {
+        "stateDigest": "sha256:53c5a758cf5170ccc7a624f61a1de79379983ad31429358a078b543e45053aa6",
+        "telemetry": {
+          "accepted": 4,
+          "pending": 0,
+          "rejected": 0,
+          "duplicateDeliveries": 2,
+          "equivocations": 0,
+          "conflicts": 0
+        },
+        "rejectionReasons": {}
+      }
+    },
+    {
+      "id": "missing-parent-pending",
+      "requirements": [
+        "FM-SYNC-003"
+      ],
+      "ndjson": "{\"action\":\"update\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":1,\"eventId\":\"sha256:487a5c1c51b41b9ff5b8c7b1835222954d5975721875b6c202269d38a42c8f32\",\"family\":\"issue\",\"issuedAt\":1799999999983,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Alice title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":1,\"signature\":\"MZi29dKOWmGGNlO5AjUXWtf-ix02srMR9sw8QsG0-QLas4uI1Hp9ZGx-eCKvf2ikfrTsUykhPYVtKIwn1TwHBw\"}\n",
+      "expect": {
+        "stateDigest": "sha256:b86d84be3cd17dbe61bac19cd12e90a057f05e96207eb26b1e0b211735a1d82a",
+        "telemetry": {
+          "accepted": 0,
+          "pending": 1,
+          "rejected": 0,
+          "duplicateDeliveries": 0,
+          "equivocations": 0,
+          "conflicts": 0
+        },
+        "rejectionReasons": {}
+      }
+    },
+    {
+      "id": "equivocation-excludes-both",
+      "requirements": [
+        "FM-SYNC-003"
+      ],
+      "ndjson": "{\"action\":\"create\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":0,\"eventId\":\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\",\"family\":\"issue\",\"issuedAt\":1800000000000,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[],\"payload\":{\"fields\":{\"body\":\"Steps\",\"title\":\"Original\"},\"objectKey\":\"S258YjIUJ23e7zEjv9jnzg\"},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"dPKfWcLKJquD9h7nO1_sB76XsESkzUK2hD-xRqwYVMTfVThWtFOw-yiIylrq8b0D6o6fm6kcfY2dRYUSatlyDw\"}\n{\"action\":\"update\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":1,\"eventId\":\"sha256:f2f032f7f113112f26ec48ebbc68fe4a9d4ec77aa148093181888bfaec638209\",\"family\":\"issue\",\"issuedAt\":1799999999932,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"body\":\"first\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":50,\"signature\":\"kX6HboutZfjTMiln2H3GDLMxr-Ho1SCP01hSuCyQ49ckCyN4qXfAojKkXy_NDIdXcVcFxi7FnjJUAiVVonerBw\"}\n{\"action\":\"update\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":1,\"eventId\":\"sha256:7f57a9d3ba58a6190dc72da45daf6afd83c71c89b6e9bf4db85280bfdbbe6d6e\",\"family\":\"issue\",\"issuedAt\":1799999999915,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"body\":\"second\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":50,\"signature\":\"1t4-FB21sQeV0otfV9T1X4o2UOKLwGZ1jSjIUBfswGqBcbdeE5KuiuVyjJIcsiGPEr115o-uH14c-eKvz1_TBQ\"}\n",
+      "expect": {
+        "stateDigest": "sha256:24b6fc47471d2eba99cb42d1fb7a59c89fede20609b93973b38d0de1fe2786f3",
+        "telemetry": {
+          "accepted": 1,
+          "pending": 0,
+          "rejected": 2,
+          "duplicateDeliveries": 0,
+          "equivocations": 1,
+          "conflicts": 0
+        },
+        "rejectionReasons": {
+          "author_sequence_equivocation": 2
+        }
+      }
+    },
+    {
+      "id": "unauthorized-label-create",
+      "requirements": [
+        "FM-SYNC-003"
+      ],
+      "ndjson": "{\"action\":\"create\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":0,\"eventId\":\"sha256:6650dce5d092a0f56f139eb8f67ca7a595a086b2b4027f6a047516ef56a2040d\",\"family\":\"label\",\"issuedAt\":1799999999898,\"object\":\"urn:forkmesh:collaboration:label:sha256:c8e9c4a4173321104c826394b2051ded64d38d14da97faeb488b9031f959fbd9\",\"parents\":[],\"payload\":{\"fields\":{\"color\":\"#d73a4a\",\"name\":\"bug\"},\"objectKey\":\"yFuJAbevL_bF5t7c6c3-Pg\"},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":2,\"signature\":\"qS7FbO25ziVyfDXvwUPYWjqu0AwZcUphjL1roe_UpD-lgiynwz14CL89zwSN9SSOuN9R7vaQpYjyl_n9eN4rCA\"}\n",
+      "expect": {
+        "stateDigest": "sha256:260461517ce0b815a0b6817d424b2e23788711e30cfdd62f31f1220129c88765",
+        "telemetry": {
+          "accepted": 0,
+          "pending": 0,
+          "rejected": 1,
+          "duplicateDeliveries": 0,
+          "equivocations": 0,
+          "conflicts": 0
+        },
+        "rejectionReasons": {
+          "unauthorized": 1
+        }
+      }
+    },
+    {
+      "id": "crlf-record-is-audited",
+      "requirements": [
+        "FM-SYNC-001"
+      ],
+      "ndjson": "{\"action\":\"create\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":0,\"eventId\":\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\",\"family\":\"issue\",\"issuedAt\":1800000000000,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[],\"payload\":{\"fields\":{\"body\":\"Steps\",\"title\":\"Original\"},\"objectKey\":\"S258YjIUJ23e7zEjv9jnzg\"},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":0,\"signature\":\"dPKfWcLKJquD9h7nO1_sB76XsESkzUK2hD-xRqwYVMTfVThWtFOw-yiIylrq8b0D6o6fm6kcfY2dRYUSatlyDw\"}\r\n{\"action\":\"update\",\"author\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"clock\":1,\"eventId\":\"sha256:487a5c1c51b41b9ff5b8c7b1835222954d5975721875b6c202269d38a42c8f32\",\"family\":\"issue\",\"issuedAt\":1799999999983,\"object\":\"urn:forkmesh:collaboration:issue:sha256:aee98c97eaf77f699556a8d966b918edc9af54e5007c5d5142d32363bbd0b13c\",\"parents\":[\"sha256:99e7f42d9fd4d3a811c3d6cfa95273975ad271a2cc2a35e01c937ed57dcf6f12\"],\"payload\":{\"fields\":{\"title\":\"Alice title\"}},\"policy\":\"sha256:32437022204be575c1ef8279ceb35e14d924c71931779cebb86a30949eaf2350\",\"references\":[],\"repository\":\"urn:forkmesh:repository:sha256:d7333da28eb5bf66b24f0b214524c87fe2dcf69dffdc224bfad2f8ca3d3a5ceb\",\"schema\":\"forkmesh-collaboration-event-v1\",\"sequence\":1,\"signature\":\"MZi29dKOWmGGNlO5AjUXWtf-ix02srMR9sw8QsG0-QLas4uI1Hp9ZGx-eCKvf2ikfrTsUykhPYVtKIwn1TwHBw\"}\n",
+      "expect": {
+        "stateDigest": "sha256:b86d84be3cd17dbe61bac19cd12e90a057f05e96207eb26b1e0b211735a1d82a",
+        "telemetry": {
+          "accepted": 0,
+          "pending": 1,
+          "rejected": 1,
+          "duplicateDeliveries": 0,
+          "equivocations": 0,
+          "conflicts": 0
+        },
+        "rejectionReasons": {
+          "noncanonical_encoding": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "stretch",
+  "name": "Stretch Break",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Health",
+  "version": "1.1.0",
+  "summary": "A guided stretch break for your back and posture after a day at the computer, plus a lymph tapping routine: a voice talks you through each move while an example person does it with you, and iPhone saves it to Apple Health.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Stretch Break page with an example person leaning into a side stretch, a 14 second countdown, the spoken cue, and the next step"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:stretch",
+    "worker": "content/worker/stretch.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/stretch",
+        "title": "Stretch Break",
+        "description": "A guided, spoken stretch routine for your back and posture, and a lymph tapping routine, with an example person to follow.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Stretch Break",
+          "icon": "person-standing",
+          "order": 49
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.stretch.read",
+      "label": "Read your own stretch sessions and settings, encrypted under your account's own key",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.stretch.write",
+      "label": "Log and delete stretch sessions and change your voice and routine settings",
+      "risk": "sensitive"
+    },
+    {
+      "id": "health.workouts.readwrite",
+      "label": "On iPhone, with your permission, save each session to Apple Health as a workout and read this week's stretch workouts",
+      "risk": "sensitive"
+    },
+    {
+      "id": "device.speech",
+      "label": "Speak the cues in your device's own voice; nothing is sent to a speech service",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account"
+  },
+  "worker": {
+    "module": "stretch",
+    "api": "/api/stretch",
+    "outboundOrigins": []
+  }
+}

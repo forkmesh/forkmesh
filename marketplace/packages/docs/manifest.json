@@ -1,0 +1,65 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "docs",
+  "name": "Docs",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.0.0",
+  "summary": "The whole ForkMesh documentation library on a rail page, the same pages forkmesh.com/docs serves: browse by area, search every page, follow links between documents and jump through each page's outline, even offline.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:docs",
+    "settings": "builtin:package"
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  },
+  "permissions": [
+    {
+      "id": "docs.library.read",
+      "label": "Read the ForkMesh documentation library bundled with this desktop",
+      "risk": "low"
+    },
+    {
+      "id": "browser.open",
+      "label": "Open forkmesh.com and other links from a document in your web browser",
+      "risk": "low"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Docs page: the library grouped by area on the left, a rendered document in the middle and its outline on the right"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

@@ -1,0 +1,4 @@
+.cf-badge { display: inline-flex; align-items: center; gap: 2px; padding: 0 5px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 16px; vertical-align: middle; }
+.cf-badge .i { margin: 0; }
+.cf-blaze { background: #fde3d0; color: #9a3412; }
+.cf-ember { background: #f5e8d6; color: #7c4a1e; }

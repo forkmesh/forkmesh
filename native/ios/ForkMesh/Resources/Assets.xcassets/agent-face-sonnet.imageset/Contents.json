@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "sonnet.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

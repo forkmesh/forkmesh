@@ -1,0 +1,86 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "workflows-examples",
+  "name": "Workflows: Examples",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Workflow add-ons",
+  "version": "1.0.0",
+  "summary": "Adds 10 ready-made example workflows to Workflows: GitHub bugs to Slack, uptime alerts, Stripe to HubSpot, Claude summaries and more. Each opens as an unsaved copy.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Workflows: Examples"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "pack": "content/examples.json",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "workflows.templates",
+      "entrypoint": "pack",
+      "config": {
+        "examples": [
+          "github-bugs-to-slack",
+          "daily-weather-telegram",
+          "summarize-with-claude",
+          "stripe-customers-to-hubspot",
+          "form-to-airtable-and-email",
+          "uptime-alert",
+          "translate-and-reply",
+          "shopify-orders-to-sheets",
+          "new-github-release-notes",
+          "calendly-to-notion"
+        ]
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.workflows.write",
+      "label": "Open an example as a new unsaved workflow on your account",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "workflows",
+      "version": "^1.0.0"
+    }
+  ],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

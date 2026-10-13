@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"{% block html_attrs %}{% endblock %}>
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}ForkMesh{% endblock %}</title>
+{% block meta %}
+{% endblock %}
+{% include "partials/identity.html" %}
+{% block head %}
+{% endblock %}
+{% block chrome %}
+{% include "partials/site-footer.html" %}
+{% include "partials/site-header.html" %}
+{% endblock %}
+{% block genie %}
+{% include "partials/genie-spider.html" %}
+{% endblock %}
+  </head>
+  <body{% block body_attrs %}{% endblock %}>
+{% block body %}
+{% endblock %}
+  </body>
+</html>

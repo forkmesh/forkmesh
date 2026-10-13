@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Guest-first access · ForkMesh Blog</title>
+    <meta name="description" content="Enter the ForkMesh world immediately as a guest; registration uses an email, password, and email verification.">
+    <link rel="canonical" href="https://forkmesh.com/blog/anonymous-accounts/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/anonymous-accounts/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Guest-first access">
+    <meta property="og:description" content="Enter the ForkMesh world immediately as a guest; registration uses an email, password, and email verification.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/anonymous-accounts.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/anonymous-accounts.webp">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Accounts &amp; rewards</p>
+            <h1>Guest-first access</h1>
+            <p class="lede">Enter the ForkMesh world immediately as a guest; registration uses an email, password, and email verification.</p>
+            <div class="meta"><span class="pill">Feature 61 of 72</span><span>Feature</span><span>Accounts, money &amp; rewards</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/anonymous-accounts.webp" alt="Abstract ForkMesh artwork for guest-first access">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Guest-first access lets every visitor enter the Town Square without completing an account form. Generalized guest presence can show exploration without exposing form contents, search terms, raw IP addresses, or private browsing details.</p>
+          <p>Preservation costs time, disk, bandwidth, and maintenance, so accountable node operation remains distinct from low-friction guest exploration.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>A registered user supplies an email and password, then verifies that email. Local desktop identities use device-held Ed25519 keys; public profile, device, platform, time, and activity fields remain separately configurable.</p>
+          <p>The distinction is explicit: a guest can explore, while account-only actions require an active authenticated session and any repository-specific authorization.</p>
+          <div class="note">Guest presence is not an anonymous registered account and does not bypass email verification or repository permissions.</div>
+          <h2>Where it fits</h2>
+          <p>Use guest access to learn and explore; register when identity, collaboration, node operation, or rewards need an accountable user session.</p>
+          <p>It pairs with configurable badges and generalized public activity so immediate entry does not become precise surveillance.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/built-to-stay-up/">← Built to stay up</a>
+          <a href="/blog/public-node-profiles/">Public node profiles →</a>
+        </nav>
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

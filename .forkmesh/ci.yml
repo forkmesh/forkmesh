@@ -1,0 +1,100 @@
+name: CI tests
+on: [push, pull_request]
+# The contracts that gate a Cloudflare deploy: .forkmesh/deploy.yml waits on
+# this workflow by name, so everything here covers code the Worker actually
+# ships. The Qt client build lives in .forkmesh/desktop-ci.yml instead — it is
+# the slowest suite by far and none of it reaches Cloudflare, so keeping it
+# here made every deploy wait minutes for a binary it does not publish.
+jobs:
+  test:
+    steps:
+      # Each suite gets its own Actions scope. Keeping the compiler and pytest
+      # in one scope starves the test runner and leaves its shell vulnerable to
+      # a process-group SIGTERM before either suite can report a useful result.
+      - name: Critical Cloudflare Worker contracts
+        run: |
+          set -eu
+          ci_tmp="$PWD/.forkmesh-ci-tmp"
+          export TMPDIR="$ci_tmp"
+          rm -rf "$ci_tmp"
+          mkdir -p "$ci_tmp"
+
+          # Actions run with egress disabled, so CI imports the packages
+          # provided by the node instead of trying to install them.
+          python3 - <<'PY'
+          import importlib.util
+          import sys
+          missing = [
+              name for name in ("pytest", "cryptography")
+              if importlib.util.find_spec(name) is None
+          ]
+          if missing:
+              print(
+                  "Runner image is missing required offline Python packages: "
+                  + ", ".join(missing),
+                  file=sys.stderr,
+              )
+              print(
+                  "Install them for the node's own python3, system-wide or "
+                  "per-user on the host; network access is intentionally "
+                  "disabled during Actions.",
+                  file=sys.stderr,
+              )
+              raise SystemExit(2)
+          PY
+          python3 tools/run_critical_tests.py worker
+
+      - name: Critical virtual World contracts
+        run: |
+          set -eu
+          python3 tools/run_critical_tests.py world
+
+      - name: Versioned stock Git conformance
+        run: |
+          set -eu
+          ci_tmp="$PWD/.forkmesh-ci-tmp"
+          mkdir -p "$ci_tmp"
+          python3 tools/git_conformance.py validate
+          python3 tools/git_conformance.py render --check
+          private_loopback() {
+            if unshare -rn true 2>/dev/null; then
+              unshare -rn sh -c 'ip link set lo up && exec "$@"' sh "$@"
+            else
+              "$@"
+            fi
+          }
+          private_loopback python3 tools/git_conformance.py run \
+            --transport auto \
+            --protocol-version 0 \
+            --client-label "ForkMesh Actions system Git (protocol v0)" \
+            --output "$ci_tmp/git-conformance-v0.json"
+          private_loopback python3 tools/git_conformance.py run \
+            --transport auto \
+            --protocol-version 2 \
+            --client-label "ForkMesh Actions system Git (protocol v2)" \
+            --output "$ci_tmp/git-conformance-v2.json"
+
+      - name: Versioned integration contract
+        run: |
+          set -eu
+          python3 tools/forkmesh_integration.py validate
+          private_loopback() {
+            if unshare -rn true 2>/dev/null; then
+              unshare -rn sh -c 'ip link set lo up && exec "$@"' sh "$@"
+            else
+              "$@"
+            fi
+          }
+          for target in hosted self-hosted; do
+            for profile in previous current next; do
+              private_loopback python3 tools/forkmesh_integration.py contract \
+                --target "$target" --fixture "$profile" --allow-mutating >/dev/null
+            done
+          done
+          private_loopback python3 -m pytest -q app/tests/test_integration_contract.py
+
+      - name: Worker syntax + config
+        run: |
+          set -eu
+          python3 -c "import ast; ast.parse(open('app/src/entry.py').read()); print('entry.py OK')"
+          python3 -c "import tomllib; [tomllib.load(open(f'{unit}/wrangler.toml','rb')) for unit in ('app','www','world')]; print('Worker manifests OK')"

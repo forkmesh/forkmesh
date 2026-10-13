@@ -1,0 +1,78 @@
+{
+  "dataLoss": {
+    "commitsLost": 1,
+    "policy": "since-last-good-copy",
+    "refsLost": [
+      "refs/heads/main"
+    ],
+    "withinPolicy": true
+  },
+  "fault": null,
+  "missingPrerequisites": [],
+  "mode": "automated-live",
+  "objective": {
+    "automatedBudgetSeconds": 120,
+    "dataLoss": "since-last-good-copy",
+    "recoveryMinutes": 60
+  },
+  "platform": {
+    "git": "2.47",
+    "os": "linux",
+    "python": "3.13.5"
+  },
+  "ranAt": "2026-09-14T21:34:59+00:00",
+  "recoveryMs": 3620,
+  "runbookSha256": "b93908faaa80a062ef68b76c01bb1d452bd93cc0b83b821c483e25f0212229ee",
+  "runbookVersion": "1.0.0",
+  "scenario": "corrupted-backup",
+  "schema": "forkmesh-disaster-drill-report-v1",
+  "steps": [
+    {
+      "action": "verify copies newest first",
+      "ms": 1753,
+      "ok": true,
+      "procedure": "choose-good-backup"
+    },
+    {
+      "action": "importing the corrupted copy changes nothing",
+      "ms": 894,
+      "ok": true,
+      "procedure": "choose-good-backup"
+    },
+    {
+      "action": "import the newest verified copy",
+      "ms": 950,
+      "ok": true,
+      "procedure": "choose-good-backup"
+    }
+  ],
+  "unsafeSteps": {
+    "refused": [
+      {
+        "reason": "chunk 0 is corrupt",
+        "step": "import the newest backup"
+      }
+    ],
+    "taken": []
+  },
+  "verdict": "pass",
+  "verification": [
+    {
+      "check": "a corrupted copy is refused before import",
+      "ok": true
+    },
+    {
+      "check": "a corrupted import leaves the repository unchanged",
+      "ok": true
+    },
+    {
+      "check": "connectivity check passes",
+      "ok": true
+    },
+    {
+      "check": "every signed pin of the chosen copy matches",
+      "ok": true
+    }
+  ],
+  "withinObjective": true
+}

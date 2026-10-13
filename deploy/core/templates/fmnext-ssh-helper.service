@@ -1,0 +1,42 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=ForkMesh runner SSH setup helper (docs/RUNNERS.md, "Set up a runner")
+Requires=fmnext-ssh-helper.socket
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I @@CURRENT@@/app/host/forkmesh_host/ssh_helper.py --systemd-socket
+Restart=on-failure
+RestartSec=5s
+DynamicUser=yes
+UMask=0077
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectProc=invisible
+ProcSubset=pid
+NoNewPrivileges=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=localhost link-local multicast 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 172.16.0.0/12 192.168.0.0/16 198.18.0.0/15 240.0.0.0/4 fc00::/7
+MemorySwapMax=0
+LimitCORE=0
+MemoryMax=192M
+TasksMax=64
+CPUQuota=50%
+
+[Install]
+Also=fmnext-ssh-helper.socket

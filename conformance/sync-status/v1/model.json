@@ -1,0 +1,117 @@
+{
+  "schema": "forkmesh-sync-status-model-v1",
+  "outputSchema": "forkmesh-sync-status-v1",
+  "version": "1.0.0",
+  "updated": "2026-09-14",
+  "documentation": "www/docs/sync-status.md",
+  "fixture": "conformance/sync-status/v1/fixture.json",
+  "referenceImplementation": "app/src/sync_status.py",
+  "implementations": [
+    {"client": "api", "path": "app/src/sync_status.py", "test": "app/tests/test_sync_status.py"},
+    {"client": "cli", "path": "tools/forkmesh_sync_status.py", "test": "app/tests/test_sync_status.py"},
+    {"client": "web", "path": "app/public/dashboard/js/07-repo-compose-branch.js", "test": "app/tests/test_sync_status.py"},
+    {"client": "mirror-node", "path": "server/syncstatus.go", "test": "server/syncstatus_test.go"},
+    {"client": "desktop", "path": "desktop/src/SyncStatusModel.h", "test": "desktop/tests/test_control_node.cpp"},
+    {"client": "ios", "path": "native/ios/ForkMeshCore/Sources/FMAccount/SyncStatus.swift", "test": "native/ios/ForkMeshCore/Tests/FMAccountTests/ConformanceTests.swift"},
+    {"client": "android", "path": "native/android/core/src/main/kotlin/com/forkmesh/nativeapp/api/SyncStatus.kt", "test": "native/android/core/src/test/kotlin/com/forkmesh/nativeapp/api/SyncStatusTest.kt"}
+  ],
+  "policy": {
+    "staleAfterMs": 3600000,
+    "syncDeadlineMs": 900000,
+    "defaultRequiredCopies": 1,
+    "privacy": "Output is composed only from counts, timestamps, and the closed state and error vocabularies below. Node names, peer addresses, object names, and free-form error text in the evidence are never echoed."
+  },
+  "evidence": {
+    "now": "integer milliseconds; the observation time",
+    "paused": "boolean; an operator or owner paused synchronization",
+    "externalOnly": "boolean; the object so far exists only at an external provider (import or provider sync)",
+    "sourceUpdatedAt": "integer milliseconds or null; when the source last changed",
+    "queuedAt": "integer milliseconds or null; a synchronization is queued",
+    "syncStartedAt": "integer milliseconds or null; a synchronization is in flight",
+    "conflicts": "integer; conflicting refs or collaboration heads that need a decision",
+    "requiredCopies": "integer; verified current copies needed before the state counts as confirmed (minimum 1)",
+    "lastError": "string or null; one of reportedErrors, anything else is reported as unknown",
+    "copies": [
+      {
+        "status": "current | behind | unreachable | rejected (anything else is unreachable)",
+        "verified": "boolean; the copy's signed attestation verified",
+        "trusted": "boolean; the copy is a trusted mirror (admitted to serve)",
+        "confirmedAt": "integer milliseconds or null; the copy's last confirmation"
+      }
+    ]
+  },
+  "states": [
+    {"id": "queued", "label": "Queued", "severity": "info", "current": false, "headline": "Waiting to synchronize"},
+    {"id": "syncing", "label": "Syncing", "severity": "info", "current": false, "headline": "Synchronizing now"},
+    {"id": "verified", "label": "Verified", "severity": "ok", "current": true, "headline": "Every copy is verified and current"},
+    {"id": "stale", "label": "Stale", "severity": "warning", "current": false, "headline": "The visible state may be out of date"},
+    {"id": "degraded", "label": "Degraded", "severity": "warning", "current": true, "headline": "Verified, but some copies are not current"},
+    {"id": "conflicted", "label": "Conflicted", "severity": "error", "current": false, "headline": "Copies disagree about the latest state"},
+    {"id": "paused", "label": "Paused", "severity": "info", "current": false, "headline": "Synchronization is paused"},
+    {"id": "external-only", "label": "External only", "severity": "info", "current": false, "headline": "Only stored on the external provider so far"},
+    {"id": "failed", "label": "Failed", "severity": "error", "current": false, "headline": "Synchronization failed"}
+  ],
+  "reportedErrors": ["rejected", "signature_invalid", "unauthorized", "provider_unavailable", "network", "quota_exceeded"],
+  "errors": [
+    {"code": "conflict", "action": "Review the conflicting changes and choose which state to keep."},
+    {"code": "rejected", "action": "A copy rejected the update; check the node's signing key and push again."},
+    {"code": "signature_invalid", "action": "The update's signature did not verify; re-sign it from a trusted device."},
+    {"code": "unauthorized", "action": "This node is not authorized to publish; reconnect the account and retry."},
+    {"code": "provider_unavailable", "action": "The external provider did not respond; ForkMesh retries automatically."},
+    {"code": "network", "action": "A network error interrupted synchronization; it retries when the connection returns."},
+    {"code": "quota_exceeded", "action": "A service quota was reached; synchronization resumes when the quota resets."},
+    {"code": "sync_delayed", "action": "Synchronization is taking longer than expected; check that the source node is online."},
+    {"code": "unreachable", "action": "One or more copies could not be reached; check that the mirrors are online."},
+    {"code": "unverified", "action": "A copy reports the latest state without a verified signature; wait for it to re-attest."},
+    {"code": "copies_behind", "action": "Some copies have not received the latest state yet; they normally catch up within minutes."},
+    {"code": "confirmation_expired", "action": "No copy has confirmed the state recently; check that the mirrors are online."},
+    {"code": "unconfirmed", "action": "No copy has confirmed the latest state yet."},
+    {"code": "unknown", "action": "An unexpected error stopped synchronization; see the node's log for details."}
+  ],
+  "derivation": {
+    "counts": [
+      "totalCopies = copies",
+      "nodesReached = copies whose status is not unreachable",
+      "verifiedCopies = copies that are current and verified",
+      "trustedMirrors = verified current copies that are trusted",
+      "lastConfirmedAt = newest confirmedAt of a verified copy that is not rejected, else null"
+    ],
+    "precedence": [
+      "paused -> paused",
+      "conflicts > 0 -> conflicted (conflict)",
+      "externalOnly and no copies and no lastError -> external-only",
+      "verifiedCopies >= requiredCopies: newest current confirmation missing or older than staleAfterMs -> stale (confirmation_expired); verifiedCopies < totalCopies -> degraded (rejected, else unreachable, else unverified, else copies_behind); otherwise verified",
+      "syncStartedAt set and not older than syncDeadlineMs -> syncing",
+      "queuedAt set and nothing in flight -> queued",
+      "any rejected copy -> failed (lastError, else rejected)",
+      "lastError -> failed (lastError)",
+      "in flight past syncDeadlineMs -> stale (sync_delayed)",
+      "every copy unreachable -> stale (unreachable)",
+      "otherwise -> stale (unconfirmed)"
+    ],
+    "lagMs": "0 when verified; otherwise now - sourceUpdatedAt (floored at 0) when known; else null",
+    "current": "true only for verified and degraded"
+  },
+  "summary": {
+    "sentences": [
+      "{headline}.",
+      "{verifiedCopies} of {totalCopies copy|copies} verified, {trustedMirrors trusted mirror|trusted mirrors}, {nodesReached node|nodes} reached.",
+      "Never confirmed. | Last confirmed just now. (under 60 s) | Last confirmed {age} ago.",
+      "{age} behind the source. (only when lagMs >= 60000)",
+      "{action} (only when error is set)"
+    ],
+    "age": "floor minutes below 60 min -> '{n} min'; floor hours below 48 h -> '{n} h'; otherwise floor days -> '{n} d'",
+    "join": "sentences joined by one space"
+  },
+  "mirrorsPayload": {
+    "resource": "GET /api/repo/<owner>/<repo>/mirrors",
+    "rules": [
+      "now = generatedAt",
+      "sourceUpdatedAt = summary.freshestSync when non-zero, else null",
+      "each mirrors[] row is a copy: status online is required to be reached; integrity rejected -> rejected; behind or integrity healing -> behind; otherwise current",
+      "verified = integrity is ok",
+      "trusted = cloneAvailable or endpointHealthy is true",
+      "confirmedAt = lastSync"
+    ]
+  }
+}

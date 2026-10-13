@@ -1,0 +1,16 @@
+# fail2ban for ForkMesh mirror hosts: ban addresses that keep failing SSH.
+# sshd already takes keys only (ssh/10-forkmesh-hardening.conf), so every
+# failure here is a bot; "aggressive" also counts the ones that give up at the
+# key exchange. The fleet key always succeeds, so the desktop is never banned.
+# Debian 13 has no auth.log: read sshd from the systemd journal.
+[DEFAULT]
+bantime = 1h
+bantime.increment = true
+bantime.maxtime = 1w
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+mode = aggressive
+backend = systemd

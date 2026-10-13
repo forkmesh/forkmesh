@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Presence done right" %}
+{% set slug = "presence-done-right" %}
+{% set image = "/assets/blog/features/presence-done-right.webp" %}
+{% set description = "Bounded heartbeats, expiry, and live probes reduce stale presence while allowing the deliberately minimal real-time layer to lag." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Presence done right</h1>
+            <p class="lede">Bounded heartbeats, expiry, and live probes reduce stale presence while allowing the deliberately minimal real-time layer to lag.</p>
+            <div class="meta"><span class="pill">Feature 10 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/presence-done-right.webp" alt="Abstract ForkMesh artwork for Presence done right">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Presence done right uses heartbeats, expiry, and probes so routing decisions have recent evidence. Presence remains generalized and eventually consistent; it may lag a disconnect until its freshness window or probe completes.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, presence done right addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles presence through the same split it uses across the product: nodes keep real Git mirrors, the HTTPS router handles repository bytes, and minimal sockets carry generalized presence and small collaborative events.</p>
+          <p>The behavior is intentionally narrow: a routing request rechecks eligible health instead of treating a presence dot as proof. The routing service helps find a live host, but it is not canonical Git storage.</p>
+          <h2>Where it fits</h2>
+          <p>Use presence done right when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Presence done right keeps using heartbeats, expiry, and probes so routing decisions reflect reality connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/public-network-map/">← Public network map</a>
+          <a href="/blog/ed25519-identity/">Ed25519 identity →</a>
+        </nav>
+{% endblock %}

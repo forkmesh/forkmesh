@@ -1,0 +1,16 @@
+QPushButton#scmSyncButton {
+    background-color: @accent; border-color: @accent; color: @onAccent; font-weight: 600;
+}
+QPushButton#scmSyncButton:hover { background-color: @accentHover; border-color: @accentHover; }
+QPushButton#scmSyncButton:pressed {
+    background-color: @accentPressed; border-color: @accentPressed;
+}
+
+QPushButton#ghostButton[needsPull="true"] {
+    background-color: @warningSubtle; border-color: transparent; color: @warning;
+}
+QPushButton#ghostButton[needsPull="true"]:hover {
+    background-color: @warningSubtle; border-color: @warning; color: @warning;
+}
+
+#scmMessageInput:focus { border-color: @accent; }

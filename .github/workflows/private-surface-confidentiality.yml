@@ -1,0 +1,56 @@
+name: Private surface confidentiality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forkmesh-private-surface-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  keyless-inspection:
+    name: Keyless inspection · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Configure Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned test runner
+        run: python -m pip install --disable-pip-version-check pytest==9.1.1
+
+      - name: Verify storage, backup, index, replica, and failure contracts
+        run: >-
+          python -m pytest -q app/tests/test_private_surface_audit.py
+          app/tests/test_private_repository_control_access.py
+          app/tests/test_https_mirror_routing_integration.py
+          app/tests/test_security_controls.py
+          app/tests/test_sentry_worker.py
+          -k "private or error_logs"
+          --junitxml=artifacts/private-surface-confidentiality.xml
+
+      - name: Retain confidentiality evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: private-surface-${{ matrix.os }}-${{ github.run_id }}
+          path: artifacts/private-surface-confidentiality.xml
+          if-no-files-found: error
+          retention-days: 30

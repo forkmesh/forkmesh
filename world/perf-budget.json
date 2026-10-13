@@ -1,0 +1,614 @@
+{
+  "tool": "world_bench",
+  "version": 1,
+  "gpu": "ANGLE (AMD, AMD Radeon RX 580 Series (radeonsi polaris10 ACO), OpenGL ES 3.2)",
+  "updatedAt": "2026-09-30",
+  "policy": {
+    "timeFactor": 2.0,
+    "timeAbsoluteMs": 5.0,
+    "counts": {
+      "draws": {
+        "factor": 1.0,
+        "absolute": 0
+      },
+      "triangles": {
+        "factor": 1.0,
+        "absolute": 0
+      },
+      "programs": {
+        "factor": 1.2,
+        "absolute": 12
+      },
+      "geometries": {
+        "factor": 1.03,
+        "absolute": 4
+      },
+      "textures": {
+        "factor": 1.15,
+        "absolute": 32
+      },
+      "loadLongTasks": {
+        "factor": 2.0,
+        "absolute": 8
+      },
+      "duplicateGeometries": {
+        "factor": 1.05,
+        "absolute": 3
+      },
+      "duplicateMaterials": {
+        "factor": 1.05,
+        "absolute": 3
+      },
+      "instancingCandidates": {
+        "factor": 1.05,
+        "absolute": 3
+      },
+      "frustumCulledOff": {
+        "factor": 1.05,
+        "absolute": 3
+      }
+    }
+  },
+  "golden": {
+    "width": 320,
+    "height": 180,
+    "tolerance": 32,
+    "maxChangedPct": 0.5
+  },
+  "poses": {
+    "spawn": {
+      "renderMsP50": {
+        "baseline": 9.1,
+        "ceiling": 18.2
+      },
+      "renderMsP90": {
+        "baseline": 10.4,
+        "ceiling": 20.8
+      },
+      "firstFrameMs": {
+        "baseline": 1854.3,
+        "ceiling": 3708.6
+      },
+      "interactiveMs": {
+        "baseline": 2558.1,
+        "ceiling": 5116.2
+      },
+      "interactiveFrameMs": {
+        "baseline": 4417.2,
+        "ceiling": 8834.4
+      },
+      "draws": {
+        "baseline": 214,
+        "ceiling": 214
+      },
+      "triangles": {
+        "baseline": 71904,
+        "ceiling": 71904
+      },
+      "programs": {
+        "baseline": 72,
+        "ceiling": 87
+      },
+      "geometries": {
+        "baseline": 211,
+        "ceiling": 218
+      },
+      "textures": {
+        "baseline": 192,
+        "ceiling": 224
+      },
+      "loadLongTasks": {
+        "baseline": 25,
+        "ceiling": 50
+      },
+      "duplicateGeometries": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    },
+    "office-lobby": {
+      "renderMsP50": {
+        "baseline": 6,
+        "ceiling": 12.0
+      },
+      "renderMsP90": {
+        "baseline": 11,
+        "ceiling": 22.0
+      },
+      "firstFrameMs": {
+        "baseline": 1266.8,
+        "ceiling": 2533.6
+      },
+      "interactiveMs": {
+        "baseline": 1809.1,
+        "ceiling": 3618.2
+      },
+      "interactiveFrameMs": {
+        "baseline": 2399.7,
+        "ceiling": 4799.4
+      },
+      "draws": {
+        "baseline": 191,
+        "ceiling": 191
+      },
+      "triangles": {
+        "baseline": 52444,
+        "ceiling": 52444
+      },
+      "programs": {
+        "baseline": 92,
+        "ceiling": 111
+      },
+      "geometries": {
+        "baseline": 466,
+        "ceiling": 480
+      },
+      "textures": {
+        "baseline": 195,
+        "ceiling": 227
+      },
+      "loadLongTasks": {
+        "baseline": 13,
+        "ceiling": 26
+      },
+      "duplicateGeometries": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    },
+    "office-rooftop": {
+      "renderMsP50": {
+        "baseline": 6.4,
+        "ceiling": 12.8
+      },
+      "renderMsP90": {
+        "baseline": 7.4,
+        "ceiling": 14.8
+      },
+      "firstFrameMs": {
+        "baseline": 1322.3,
+        "ceiling": 2644.6
+      },
+      "interactiveMs": {
+        "baseline": 1869.4,
+        "ceiling": 3738.8
+      },
+      "interactiveFrameMs": {
+        "baseline": 2240.2,
+        "ceiling": 4480.4
+      },
+      "draws": {
+        "baseline": 107,
+        "ceiling": 107
+      },
+      "triangles": {
+        "baseline": 31720,
+        "ceiling": 31720
+      },
+      "programs": {
+        "baseline": 83,
+        "ceiling": 100
+      },
+      "geometries": {
+        "baseline": 441,
+        "ceiling": 455
+      },
+      "textures": {
+        "baseline": 194,
+        "ceiling": 226
+      },
+      "loadLongTasks": {
+        "baseline": 12,
+        "ceiling": 24
+      },
+      "duplicateGeometries": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    },
+    "office-engineering": {
+      "renderMsP50": {
+        "baseline": 5.7,
+        "ceiling": 11.4
+      },
+      "renderMsP90": {
+        "baseline": 6.7,
+        "ceiling": 13.4
+      },
+      "firstFrameMs": {
+        "baseline": 1328.6,
+        "ceiling": 2657.2
+      },
+      "interactiveMs": {
+        "baseline": 1838.2,
+        "ceiling": 3676.4
+      },
+      "interactiveFrameMs": {
+        "baseline": 2290.6,
+        "ceiling": 4581.2
+      },
+      "draws": {
+        "baseline": 102,
+        "ceiling": 102
+      },
+      "triangles": {
+        "baseline": 31238,
+        "ceiling": 31238
+      },
+      "programs": {
+        "baseline": 83,
+        "ceiling": 100
+      },
+      "geometries": {
+        "baseline": 429,
+        "ceiling": 442
+      },
+      "textures": {
+        "baseline": 197,
+        "ceiling": 229
+      },
+      "loadLongTasks": {
+        "baseline": 14,
+        "ceiling": 28
+      },
+      "duplicateGeometries": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    },
+    "beach": {
+      "renderMsP50": {
+        "baseline": 2.7,
+        "ceiling": 7.7
+      },
+      "renderMsP90": {
+        "baseline": 3.5,
+        "ceiling": 8.5
+      },
+      "firstFrameMs": {
+        "baseline": 1083.4,
+        "ceiling": 2166.8
+      },
+      "interactiveMs": {
+        "baseline": 1694.3,
+        "ceiling": 3388.6
+      },
+      "interactiveFrameMs": {
+        "baseline": 1829.6,
+        "ceiling": 3659.2
+      },
+      "draws": {
+        "baseline": 36,
+        "ceiling": 36
+      },
+      "triangles": {
+        "baseline": 5532,
+        "ceiling": 5532
+      },
+      "programs": {
+        "baseline": 77,
+        "ceiling": 93
+      },
+      "geometries": {
+        "baseline": 138,
+        "ceiling": 143
+      },
+      "textures": {
+        "baseline": 192,
+        "ceiling": 224
+      },
+      "loadLongTasks": {
+        "baseline": 12,
+        "ceiling": 24
+      },
+      "duplicateGeometries": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    },
+    "members-circle": {
+      "renderMsP50": {
+        "baseline": 16.8,
+        "ceiling": 33.6
+      },
+      "renderMsP90": {
+        "baseline": 19.9,
+        "ceiling": 39.8
+      },
+      "firstFrameMs": {
+        "baseline": 1123,
+        "ceiling": 2246.0
+      },
+      "interactiveMs": {
+        "baseline": 1747.8,
+        "ceiling": 3495.6
+      },
+      "interactiveFrameMs": {
+        "baseline": 2110,
+        "ceiling": 4220.0
+      },
+      "draws": {
+        "baseline": 91,
+        "ceiling": 91
+      },
+      "triangles": {
+        "baseline": 452868,
+        "ceiling": 452868
+      },
+      "programs": {
+        "baseline": 73,
+        "ceiling": 88
+      },
+      "geometries": {
+        "baseline": 259,
+        "ceiling": 267
+      },
+      "textures": {
+        "baseline": 191,
+        "ceiling": 223
+      },
+      "loadLongTasks": {
+        "baseline": 10,
+        "ceiling": 20
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    },
+    "arrival-stats": {
+      "renderMsP50": {
+        "baseline": 8.9,
+        "ceiling": 17.8
+      },
+      "renderMsP90": {
+        "baseline": 10.4,
+        "ceiling": 20.8
+      },
+      "firstFrameMs": {
+        "baseline": 1281.5,
+        "ceiling": 2563.0
+      },
+      "interactiveMs": {
+        "baseline": 1818.7,
+        "ceiling": 3637.4
+      },
+      "interactiveFrameMs": {
+        "baseline": 2373.5,
+        "ceiling": 4747.0
+      },
+      "draws": {
+        "baseline": 205,
+        "ceiling": 205
+      },
+      "triangles": {
+        "baseline": 69774,
+        "ceiling": 69774
+      },
+      "programs": {
+        "baseline": 72,
+        "ceiling": 87
+      },
+      "geometries": {
+        "baseline": 211,
+        "ceiling": 218
+      },
+      "textures": {
+        "baseline": 192,
+        "ceiling": 224
+      },
+      "loadLongTasks": {
+        "baseline": 12,
+        "ceiling": 24
+      },
+      "duplicateGeometries": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    },
+    "repository-portals": {
+      "renderMsP50": {
+        "baseline": 4.6,
+        "ceiling": 9.6
+      },
+      "renderMsP90": {
+        "baseline": 6.8,
+        "ceiling": 13.6
+      },
+      "firstFrameMs": {
+        "baseline": 1272.1,
+        "ceiling": 2544.2
+      },
+      "interactiveMs": {
+        "baseline": 1788.7,
+        "ceiling": 3577.4
+      },
+      "interactiveFrameMs": {
+        "baseline": 2534.5,
+        "ceiling": 5069.0
+      },
+      "draws": {
+        "baseline": 26,
+        "ceiling": 26
+      },
+      "triangles": {
+        "baseline": 78276,
+        "ceiling": 78276
+      },
+      "programs": {
+        "baseline": 73,
+        "ceiling": 88
+      },
+      "geometries": {
+        "baseline": 165,
+        "ceiling": 170
+      },
+      "textures": {
+        "baseline": 264,
+        "ceiling": 304
+      },
+      "loadLongTasks": {
+        "baseline": 13,
+        "ceiling": 26
+      },
+      "duplicateGeometries": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    },
+    "town-overview": {
+      "renderMsP50": {
+        "baseline": 10.2,
+        "ceiling": 20.4
+      },
+      "renderMsP90": {
+        "baseline": 11.9,
+        "ceiling": 23.8
+      },
+      "firstFrameMs": {
+        "baseline": 1322.3,
+        "ceiling": 2644.6
+      },
+      "interactiveMs": {
+        "baseline": 2014.6,
+        "ceiling": 4029.2
+      },
+      "interactiveFrameMs": {
+        "baseline": 2658.6,
+        "ceiling": 5317.2
+      },
+      "draws": {
+        "baseline": 336,
+        "ceiling": 336
+      },
+      "triangles": {
+        "baseline": 131040,
+        "ceiling": 131040
+      },
+      "programs": {
+        "baseline": 72,
+        "ceiling": 87
+      },
+      "geometries": {
+        "baseline": 246,
+        "ceiling": 254
+      },
+      "textures": {
+        "baseline": 192,
+        "ceiling": 224
+      },
+      "loadLongTasks": {
+        "baseline": 13,
+        "ceiling": 26
+      },
+      "duplicateGeometries": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "duplicateMaterials": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "instancingCandidates": {
+        "baseline": 0,
+        "ceiling": 3
+      },
+      "frustumCulledOff": {
+        "baseline": 0,
+        "ceiling": 3
+      }
+    }
+  }
+}

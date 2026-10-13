@@ -1,0 +1,252 @@
+[
+ {
+  "name": "full",
+  "launch": {
+   "cwd": "/w",
+   "initialPrompt": "Do the task\nAttached image: \"/tmp/x.png\"",
+   "resumeThreadId": "",
+   "model": "gpt-5",
+   "mode": "Auto",
+   "effort": "high",
+   "resumeFallbackPrompt": "",
+   "sessionId": "5"
+  },
+  "ops": [
+   {
+    "feed": "{\"id\":1,\"result\":{\"userAgent\":\"codex\"}}"
+   },
+   {
+    "feed": "{\"id\":2,\"result\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":10,\"windowDurationMins\":300},\"planType\":\"pro\"},\"rateLimitsByLimitId\":null}}"
+   },
+   {
+    "feed": "{\"id\":3,\"result\":{\"data\":[{\"id\":\"gpt-5\",\"displayName\":\"GPT-5\"}],\"nextCursor\":\"c2\"}}"
+   },
+   {
+    "feed": "{\"id\":5,\"result\":{\"data\":[{\"id\":\"gpt-5-mini\"}],\"nextCursor\":null}}"
+   },
+   {
+    "feed": "{\"id\":4,\"result\":{\"thread\":{\"id\":\"th-1\"},\"model\":\"gpt-5-codex\"}}"
+   },
+   {
+    "feed": "{\"id\":6,\"result\":{\"turn\":{\"id\":\"tu-1\"}}}"
+   },
+   {
+    "feed": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"th-1\",\"turn\":{\"id\":\"tu-1\"}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"th-1\",\"turnId\":\"tu-1\",\"itemId\":\"m1\",\"delta\":\"Hel\"}}"
+   },
+   {
+    "feed": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"commandExecution\",\"id\":\"c1\",\"command\":\"ls -la\",\"cwd\":\"/w\",\"status\":\"inProgress\"}}}"
+   },
+   {
+    "feed": "{\"id\":77,\"method\":\"item/commandExecution/requestApproval\",\"params\":{\"threadId\":\"th-1\",\"turnId\":\"tu-1\",\"itemId\":\"c1\",\"command\":\"rm -rf build\",\"reason\":\"cleanup\"}}"
+   },
+   {
+    "respond": [
+     "codex-approval-1",
+     "allow once"
+    ]
+   },
+   {
+    "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"commandExecution\",\"id\":\"c1\",\"command\":\"ls -la\",\"cwd\":\"/w\",\"aggregatedOutput\":\"a\\nb\\n\",\"exitCode\":0,\"status\":\"completed\"}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/reasoning/summaryTextDelta\",\"params\":{\"itemId\":\"r1\",\"delta\":\"thinking\"}}"
+   },
+   {
+    "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"r1\",\"summary\":[\"thinking\"],\"content\":[]}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"r2\",\"summary\":[\"s\"],\"content\":[\"c\"]}}}"
+   },
+   {
+    "feed": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"th-1\",\"turnId\":\"tu-1\",\"tokenUsage\":{\"total\":{\"inputTokens\":100,\"outputTokens\":20,\"totalTokens\":120},\"last\":{\"inputTokens\":1},\"modelContextWindow\":272000}}}"
+   },
+   {
+    "feed": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":12},\"planType\":null,\"credits\":null}}}"
+   },
+   {
+    "feed": "{\"method\":\"turn/plan/updated\",\"params\":{\"turnId\":\"tu-1\",\"plan\":[{\"step\":\"one\",\"status\":\"completed\"},{\"step\":\"two\",\"status\":\"inProgress\"}]}}"
+   },
+   {
+    "feed": "{\"method\":\"item/fileChange/outputDelta\",\"params\":{\"itemId\":\"f1\",\"delta\":\"+x\"}}"
+   },
+   {
+    "feed": "{\"method\":\"turn/diff/updated\",\"params\":{\"turnId\":\"tu-1\",\"diff\":\"diff --git\"}}"
+   },
+   {
+    "feed": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"fileChange\",\"id\":\"f1\",\"changes\":[{\"path\":\"a.txt\",\"kind\":\"add\"}],\"status\":\"inProgress\"}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"fileChange\",\"id\":\"f1\",\"changes\":[{\"path\":\"a.txt\",\"kind\":\"add\"}],\"status\":\"declined\"}}}"
+   },
+   {
+    "feed": "{\"id\":\"q-1\",\"method\":\"item/tool/requestUserInput\",\"params\":{\"questions\":[{\"id\":\"q1\",\"question\":\"Pick?\",\"header\":\"Choice\",\"options\":[{\"label\":\"A\"},{\"label\":\"B\"}]},{\"id\":\"q2\",\"question\":\"Name?\",\"header\":\"Name\",\"options\":null,\"isOther\":true,\"isSecret\":true}]}}"
+   },
+   {
+    "respond": [
+     "codex-request-2",
+     "Pick? \u2192 A\nName? -> bob"
+    ]
+   },
+   {
+    "feed": "{\"id\":\"q-2\",\"method\":\"item/tool/requestUserInput\",\"params\":{\"questions\":[{\"id\":\"only\",\"question\":\"Why?\",\"header\":\"H\",\"options\":[]}]}}"
+   },
+   {
+    "respond": [
+     "codex-request-3",
+     "because"
+    ]
+   },
+   {
+    "feed": "{\"id\":91,\"method\":\"item/fileChange/requestApproval\",\"params\":{\"availableDecisions\":[\"accept\",{\"acceptWithExecpolicyAmendment\":{\"x\":1}},\"cancel\"]}}"
+   },
+   {
+    "respond": [
+     "codex-approval-4",
+     "Allow with changes"
+    ]
+   },
+   {
+    "feed": "{\"id\":92,\"method\":\"mcpServer/elicitation/request\",\"params\":{\"message\":\"Use server?\"}}"
+   },
+   {
+    "respond": [
+     "codex-request-5",
+     "accept"
+    ]
+   },
+   {
+    "feed": "{\"id\":93,\"method\":\"item/permissions/requestApproval\",\"params\":{\"permissions\":{\"network\":true}}}"
+   },
+   {
+    "respond": [
+     "codex-approval-6",
+     "allow for session"
+    ]
+   },
+   {
+    "feed": "{\"id\":94,\"method\":\"some/unknown\",\"params\":{}}"
+   },
+   {
+    "feed": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"contextCompaction\",\"id\":\"cc1\"}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"contextCompaction\",\"id\":\"cc1\"}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"mcpToolCall\",\"id\":\"mc1\",\"server\":\"gh\",\"tool\":\"search\",\"arguments\":{\"q\":\"x\"}}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"mcpToolCall\",\"id\":\"mc1\",\"server\":\"gh\",\"tool\":\"search\",\"arguments\":{\"q\":\"x\"},\"result\":{\"content\":[1.5,2]},\"error\":null,\"status\":\"completed\"}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"sleep\",\"id\":\"s1\",\"durationMs\":1500}}}"
+   },
+   {
+    "feed": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"m1\",\"text\":\"Hello done\"}}}"
+   },
+   {
+    "send": "steer this"
+   },
+   {
+    "feed": "{\"id\":12,\"result\":{}}"
+   },
+   {
+    "options": [
+     "",
+     "Plan",
+     ""
+    ]
+   },
+   {
+    "send": "after mode change"
+   },
+   {
+    "feed": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"th-1\",\"turn\":{\"id\":\"tu-1\",\"status\":\"completed\",\"durationMs\":3200,\"items\":[],\"startedAt\":100,\"completedAt\":200}}}"
+   },
+   {
+    "feed": "{\"id\":13,\"result\":{\"turn\":{\"id\":\"tu-2\"}}}"
+   },
+   {
+    "feed": "{\"method\":\"error\",\"params\":{\"turnId\":\"tu-2\",\"message\":\"stream broke\",\"willRetry\":true}}"
+   },
+   {
+    "feed": "{\"method\":\"error\",\"params\":{\"turnId\":\"tu-2\",\"error\":{\"message\":\"fatal\"},\"willRetry\":false}}"
+   },
+   {
+    "send": "third"
+   },
+   {
+    "feed": "{\"id\":14,\"error\":{\"code\":-1,\"message\":\"busy\"}}"
+   },
+   {
+    "send": "fourth"
+   },
+   {
+    "feed": "{\"id\":15,\"result\":{\"turn\":{\"id\":\"tu-4\"}}}"
+   },
+   {
+    "interrupt": true
+   },
+   {
+    "feed": "{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"id\":\"tu-4\",\"status\":\"interrupted\",\"items\":[{\"type\":\"agentMessage\",\"text\":\"partial\"}]}}}"
+   },
+   {
+    "feed": "{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"id\":\"tu-4\",\"status\":\"failed\",\"error\":{\"message\":\"dup\"}}}}"
+   },
+   {
+    "feed": "{\"method\":\"configWarning\",\"params\":{\"summary\":\"cfg\",\"details\":null}}"
+   },
+   {
+    "feed": "not json"
+   }
+  ]
+ },
+ {
+  "name": "resume",
+  "launch": {
+   "cwd": "/w",
+   "initialPrompt": "continue",
+   "resumeThreadId": "old-thread",
+   "model": "",
+   "mode": "Ask",
+   "effort": "",
+   "resumeFallbackPrompt": "Fallback task",
+   "sessionId": ""
+  },
+  "ops": [
+   {
+    "feed": "{\"id\":1,\"result\":{}}"
+   },
+   {
+    "feed": "{\"id\":4,\"error\":{\"message\":\"no such thread\"}}"
+   },
+   {
+    "feed": "{\"id\":5,\"result\":{\"thread\":{\"id\":\"th-new\"}}}"
+   },
+   {
+    "feed": "{\"id\":6,\"result\":{\"turn\":{\"id\":\"t1\"}}}"
+   },
+   {
+    "feed": "{\"id\":50,\"method\":\"item/commandExecution/requestApproval\",\"params\":{\"command\":\"make\"}}"
+   },
+   {
+    "respond": [
+     "codex-approval-1",
+     "deny"
+    ]
+   },
+   {
+    "respond": [
+     "codex-approval-1",
+     "deny"
+    ]
+   },
+   {
+    "feed": "{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"id\":\"t1\",\"status\":\"completed\"}}}"
+   }
+  ]
+ }
+]

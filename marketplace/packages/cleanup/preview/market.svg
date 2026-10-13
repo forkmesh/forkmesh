@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#0d1117"/>
+  <g font-family="sans-serif" fill="#c9d1d9">
+    <text x="24" y="40" font-size="22" font-weight="bold">Disk Cleanup</text>
+    <text x="172" y="40" font-size="13" fill="#8b949e">What Claude Code, Codex and agent runs left on this computer, and what still uses it</text>
+    <text x="24" y="70" font-size="13" fill="#8b949e">86.4 GB in 312 items · 41.2 GB orphaned · 14 selected (22.9 GB)</text>
+    <rect x="24" y="84" width="14" height="14" rx="3" fill="#238636"/>
+    <text x="46" y="96" font-size="13">Orphaned only</text>
+    <rect x="160" y="82" width="150" height="20" rx="4" fill="#161b22" stroke="#30363d"/>
+    <text x="170" y="96" font-size="12">Older than 7 days</text>
+    <rect x="320" y="82" width="150" height="20" rx="4" fill="#161b22" stroke="#30363d"/>
+    <text x="330" y="96" font-size="12">Larger than 100 MB</text>
+  </g>
+  <g font-family="sans-serif" font-size="12" fill="#c9d1d9">
+    <rect x="24" y="114" width="912" height="370" rx="6" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="134" fill="#8b949e">Item</text>
+    <text x="356" y="134" fill="#8b949e">Size</text>
+    <text x="430" y="134" fill="#8b949e">Age</text>
+    <text x="490" y="134" fill="#8b949e">Status</text>
+    <text x="590" y="134" fill="#8b949e">Attached to</text>
+    <text x="36" y="160" font-weight="bold">▾ Agent worktrees</text><text x="356" y="160">31.7 GB</text><text x="490" y="160">42 items</text>
+    <rect x="52" y="172" width="12" height="12" rx="2" fill="#238636"/><text x="72" y="182">612-fix-merge-pin</text><text x="356" y="182">2.1 GB</text><text x="430" y="182">9 d</text><text x="490" y="182" fill="#16a34a">● Orphaned</text><text x="590" y="182">branch 612-fix-merge-pin · merged into main</text>
+    <rect x="52" y="194" width="12" height="12" rx="2" fill="none" stroke="#8b949e"/><text x="72" y="204">644-native-ws4</text><text x="356" y="204">3.4 GB</text><text x="430" y="204">2 d</text><text x="490" y="204" fill="#3b82f6">● Attached</text><text x="590" y="204">4 commits not in main · agent #644 (success)</text>
+    <text x="72" y="226">701-world-heap</text><text x="356" y="226">1.8 GB</text><text x="430" y="226">3 min</text><text x="490" y="226" fill="#d97706">● In use</text><text x="590" y="226">agent #701 is running</text>
+    <text x="36" y="256" font-weight="bold">▾ Claude Code</text><text x="356" y="256">2.9 GB</text><text x="490" y="256">88 items</text>
+    <rect x="52" y="268" width="12" height="12" rx="2" fill="#238636"/><text x="72" y="278">Old transcripts · ~/projects/forkmesh/src</text><text x="356" y="278">812 MB</text><text x="430" y="278">41 d</text><text x="490" y="278" fill="#16a34a">● Orphaned</text><text x="590" y="278">sessions older than 30 days</text>
+    <text x="72" y="300">Desktop agent transcripts · claude a591eff2</text><text x="356" y="300">1.2 GB</text><text x="430" y="300">1 min</text><text x="490" y="300" fill="#8b949e">● Protected</text><text x="590" y="300">ForkMesh user data; never deleted here</text>
+    <text x="36" y="330" font-weight="bold">▾ Builds and temp files</text><text x="356" y="330">48.6 GB</text><text x="490" y="330">160 items</text>
+    <rect x="52" y="342" width="12" height="12" rx="2" fill="#238636"/><text x="72" y="352">Build · agent-874</text><text x="356" y="352">1.3 GB</text><text x="430" y="352">6 d</text><text x="490" y="352" fill="#16a34a">● Orphaned</text><text x="590" y="352">agent 874 build; its worktree is gone</text>
+    <rect x="52" y="364" width="12" height="12" rx="2" fill="#238636"/><text x="72" y="374">Actions sandbox · forkmesh-run-41</text><text x="356" y="374">912 MB</text><text x="430" y="374">4 d</text><text x="490" y="374" fill="#16a34a">● Orphaned</text><text x="590" y="374">finished run's disposable tree</text>
+    <text x="72" y="396">ccache · ~/.ccache</text><text x="356" y="396">5.0 GB</text><text x="430" y="396">2 min</text><text x="490" y="396" fill="#8b949e">● Protected</text><text x="590" y="396">the active compiler cache; report only</text>
+    <text x="36" y="426" font-weight="bold">▸ Codex</text><text x="356" y="426">470 MB</text><text x="490" y="426">9 items</text>
+    <text x="36" y="452" font-weight="bold">▸ Other caches</text><text x="356" y="452">2.7 GB</text><text x="490" y="452">14 items</text>
+  </g>
+  <g font-family="sans-serif" font-size="12" fill="#c9d1d9">
+    <rect x="24" y="498" width="112" height="26" rx="5" fill="#21262d"/><text x="36" y="515">Select orphaned</text>
+    <rect x="142" y="498" width="52" height="26" rx="5" fill="#21262d"/><text x="154" y="515">Clear</text>
+    <rect x="200" y="498" width="92" height="26" rx="5" fill="#21262d"/><text x="212" y="515">Open folder</text>
+    <rect x="298" y="498" width="102" height="26" rx="5" fill="#21262d"/><text x="310" y="515">Trim ccache…</text>
+    <rect x="806" y="498" width="130" height="26" rx="6" fill="#238636"/><text x="820" y="515" fill="#ffffff">Delete selected…</text>
+  </g>
+</svg>

@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Start your own instance - ForkMesh</title>
+    <meta
+      name="description"
+      content="Start your own ForkMesh: your name, your server, your domain. Enter your VPS details and ForkMesh sets up Git hosting, your admin account and your first repository, live, in about fifteen minutes."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/start.js?v=${version}" defer></script>
+    <style>
+      :root {
+        --page-bg: #050505;
+        --page-glow: rgba(255, 255, 255, 0.14);
+        --ink-strong: #ffffff;
+        --ink: rgba(255, 255, 255, 0.82);
+        --ink-soft: rgba(255, 255, 255, 0.62);
+        --ink-faint: rgba(255, 255, 255, 0.47);
+        --card-bg: rgba(8, 8, 8, 0.88);
+        --card-border: rgba(255, 255, 255, 0.1);
+        --card-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+        --panel-bg: rgba(255, 255, 255, 0.03);
+        --field-bg: rgba(255, 255, 255, 0.045);
+        --field-border: rgba(255, 255, 255, 0.14);
+        --field-solid: #101010;
+        --track: rgba(255, 255, 255, 0.08);
+        --ok-ink: #4ade80;
+        --ok-bg: rgba(74, 222, 128, 0.18);
+        --danger-ink: #fda4af;
+        --danger-strong: #f87171;
+        --danger-border: rgba(248, 113, 113, 0.4);
+        --danger-bg: rgba(248, 113, 113, 0.1);
+      }
+      html.light {
+        --page-bg: #ffffff;
+        --page-glow: color-mix(in srgb, var(--muted) 12%, transparent);
+        --ink-strong: #111113;
+        --ink: rgba(17, 17, 19, 0.84);
+        --ink-soft: rgba(17, 17, 19, 0.62);
+        --ink-faint: rgba(17, 17, 19, 0.5);
+        --card-bg: rgba(255, 255, 255, 0.92);
+        --card-border: rgba(0, 0, 0, 0.1);
+        --card-shadow: 0 24px 80px rgba(0, 0, 0, 0.1);
+        --panel-bg: rgba(0, 0, 0, 0.03);
+        --field-bg: rgba(0, 0, 0, 0.025);
+        --field-border: rgba(0, 0, 0, 0.16);
+        --field-solid: #ffffff;
+        --track: rgba(0, 0, 0, 0.08);
+        --ok-ink: #15803d;
+        --ok-bg: rgba(21, 128, 61, 0.14);
+        --danger-ink: #b91c1c;
+        --danger-strong: #cf222e;
+        --danger-border: rgba(185, 28, 28, 0.4);
+        --danger-bg: rgba(185, 28, 28, 0.07);
+      }
+      body {
+        min-height: 100vh;
+        color: var(--ink);
+        background: radial-gradient(circle at top, var(--page-glow), transparent 32rem), var(--page-bg);
+      }
+      .start-shell { padding: 28px 16px 64px; display: grid; justify-items: center; }
+      .start-wrap { width: min(100%, 760px); }
+      .start-hero { text-align: center; margin-bottom: 22px; }
+      .start-hero .brand { width: fit-content; margin: 0 auto 14px; display: block; }
+      .start-eyebrow { color: var(--ink-soft); font-weight: 650; font-size: 12px; letter-spacing: 0.02em; }
+      .start-title {
+        font-size: clamp(28px, 6vw, 42px); font-weight: 800; line-height: 1.06;
+        margin: 8px 0 10px; color: var(--ink-strong);
+      }
+      .start-sub { color: var(--ink-soft); max-width: 600px; margin: 0 auto; line-height: 1.55; font-size: 14.5px; }
+      .plot-banner {
+        margin: 14px auto 0; width: fit-content; max-width: 100%;
+        border: 1px solid var(--card-border); background: var(--panel-bg);
+        border-radius: 999px; padding: 6px 14px; font-size: 12.5px; color: var(--ink);
+      }
+      .start-card {
+        border: 1px solid var(--card-border); border-radius: 18px;
+        background: var(--card-bg); box-shadow: var(--card-shadow);
+        padding: 20px 22px; margin-bottom: 14px;
+      }
+      .section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+      .section-num {
+        width: 22px; height: 22px; border-radius: 999px; flex: none;
+        display: inline-grid; place-items: center; font-size: 12px; font-weight: 800;
+        background: var(--track); color: var(--ink-strong);
+      }
+      .start-card h2 { margin: 0; font-size: 16px; color: var(--ink-strong); }
+      .start-card .hint { color: var(--ink-soft); font-size: 13px; margin: 2px 0 14px 32px; line-height: 1.5; }
+      .field { margin-bottom: 12px; }
+      .field label, .field .label { display: block; font-size: 12.5px; font-weight: 650; color: var(--ink); margin-bottom: 5px; }
+      .field label.check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+      .field label.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent-bright); }
+      .field .sub { font-weight: 400; color: var(--ink-faint); }
+      .field input[type="text"], .field input[type="password"], .field input[type="email"],
+      .field input[type="number"], .field select, .field textarea {
+        width: 100%; box-sizing: border-box;
+        background: var(--field-bg); border: 1px solid var(--field-border);
+        border-radius: 10px; color: var(--ink);
+        padding: 10px 12px; font-size: 14px; outline: none;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      .field textarea { font-family: var(--mono); font-size: 12px; min-height: 92px; resize: vertical; }
+      .field input:focus, .field select:focus, .field textarea:focus {
+        border-color: var(--link);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--link) 28%, transparent);
+      }
+      .field input[aria-invalid="true"], .field textarea[aria-invalid="true"], .field select[aria-invalid="true"] {
+        border-color: var(--danger-strong);
+      }
+      .field select option { background: var(--field-solid); }
+      .field .help { color: var(--ink-faint); font-size: 12px; margin-top: 5px; line-height: 1.45; }
+      .field .help code { font-family: var(--mono); font-size: 11.5px; }
+      .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .field-row.three { grid-template-columns: 2fr 1fr 1fr; }
+      .field-row.owner-row { grid-template-columns: 1fr 1.4fr 1fr auto; align-items: center; margin-bottom: 8px; }
+      @media (max-width: 560px) { .field-row, .field-row.three, .field-row.owner-row { grid-template-columns: 1fr; } }
+      .project-input { font-size: 18px !important; font-weight: 700; padding: 12px 14px !important; }
+      .preview {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        border: 1px dashed var(--field-border); border-radius: 12px;
+        padding: 10px 14px; font-size: 13px; color: var(--ink-soft);
+      }
+      .preview strong { color: var(--ink-strong); font-size: 15px; }
+      .preview small { color: var(--ink-faint); }
+      .segmented { display: inline-flex; border: 1px solid var(--field-border); border-radius: 10px; padding: 3px; gap: 3px; }
+      .segmented label {
+        display: inline-flex; align-items: center; margin: 0; cursor: pointer;
+        padding: 7px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--ink-soft);
+      }
+      .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+      .segmented label:has(input:checked) { background: var(--track); color: var(--ink-strong); }
+      .segmented label:has(input:focus-visible) { box-shadow: 0 0 0 2px var(--link); }
+      .key-drop {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        border: 1px dashed var(--field-border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+      }
+      .key-drop.dragging { border-color: var(--link); background: var(--panel-bg); }
+      .key-drop button, .ghost-btn {
+        border: 1px solid var(--field-border); background: var(--panel-bg); color: var(--ink-strong);
+        border-radius: 9px; padding: 7px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+      }
+      .key-drop span { font-size: 12.5px; color: var(--ink-faint); }
+      .logo-preview { width: 40px; height: 40px; object-fit: contain; border-radius: 8px; background: var(--panel-bg); }
+      .preview-name { display: inline-flex; align-items: center; gap: 8px; }
+      .preview-name img { width: 24px; height: 24px; object-fit: contain; }
+      .config-card .hint { margin-left: 0; }
+      .config-links { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; }
+      .config-links a, .link-btn {
+        color: var(--link); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline;
+      }
+      .config-status { margin: 10px 0 0; font-size: 13px; color: var(--ink); line-height: 1.5; }
+      .config-card .launch-btn { margin-top: 12px; }
+      details.more { margin-top: 4px; }
+      details.more summary { cursor: pointer; font-size: 12.5px; color: var(--ink-soft); margin-bottom: 10px; }
+      .launch-btn {
+        width: 100%; border: 1px solid var(--button-border); cursor: pointer; border-radius: 12px;
+        padding: 14px 16px; font-size: 16px; font-weight: 750;
+        color: var(--button-foreground);
+        background: var(--button-fill);
+        box-shadow: var(--button-shadow);
+        transition: transform 0.12s ease, background 0.12s ease;
+      }
+      .launch-btn:hover:not(:disabled) { transform: translateY(-1px); background: var(--button-fill-hover); }
+      .launch-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+      .form-error {
+        margin-top: 10px; border-radius: 10px; padding: 9px 12px;
+        border: 1px solid var(--danger-border); background: var(--danger-bg);
+        color: var(--danger-ink); font-size: 13px;
+      }
+      .keys-note { color: var(--ink-faint); font-size: 12px; margin-top: 10px; line-height: 1.5; text-align: center; }
+      .progress-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+      .progress-head h2 { margin: 0; font-size: 18px; }
+      .progress-sub { color: var(--ink-soft); font-size: 13px; margin: 0 0 14px; line-height: 1.5; }
+      .progress-sub code { font-family: var(--mono); font-size: 12px; }
+      .elapsed { color: var(--ink-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+      .progress-bar { height: 6px; border-radius: 999px; overflow: hidden; background: var(--track); margin-bottom: 16px; }
+      .progress-bar > div { height: 100%; width: 0%; border-radius: 999px; background: var(--accent-bright); transition: width 0.5s ease; }
+      .steps { display: grid; gap: 5px; margin: 0 0 14px; padding: 0; list-style: none; }
+      .step {
+        display: flex; align-items: center; gap: 10px; border-radius: 10px; padding: 7px 10px; font-size: 13.5px;
+        color: var(--ink-faint); border: 1px solid transparent;
+        transition: background 0.25s ease, color 0.25s ease;
+      }
+      .step .dot {
+        width: 20px; height: 20px; border-radius: 999px; flex: none;
+        display: grid; place-items: center; font-size: 11px; font-weight: 800;
+        background: var(--track); color: var(--ink-faint);
+      }
+      .step.running {
+        color: var(--ink-strong); border-color: color-mix(in srgb, var(--accent-bright) 45%, transparent);
+        background: color-mix(in srgb, var(--accent-bright) 12%, transparent);
+      }
+      .step.running .dot {
+        background: transparent; color: transparent;
+        border: 2px solid color-mix(in srgb, var(--accent-bright) 40%, transparent);
+        border-top-color: var(--accent-bright);
+        animation: fm-start-spin 0.8s linear infinite;
+      }
+      .step.done { color: var(--ink); }
+      .step.done .dot { background: var(--ok-bg); color: var(--ok-ink); }
+      .step.skipped { color: var(--ink-faint); }
+      .step.failed { color: var(--danger-ink); }
+      .step.failed .dot { background: var(--danger-bg); color: var(--danger-strong); }
+      @keyframes fm-start-spin { to { transform: rotate(360deg); } }
+      .console {
+        background: #020202; border: 1px solid var(--card-border); color: rgba(255, 255, 255, 0.72);
+        border-radius: 12px; padding: 12px 14px; height: 280px; overflow-y: auto; margin: 0;
+        font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+      }
+      .log-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px; }
+      .log-head span { font-size: 12px; color: var(--ink-faint); }
+      .result { margin-top: 14px; border-radius: 14px; padding: 16px 18px; }
+      .result.ok {
+        text-align: center;
+        border: 1px solid color-mix(in srgb, var(--accent-bright) 45%, transparent);
+        background: color-mix(in srgb, var(--accent-bright) 10%, transparent);
+      }
+      .result.ok h3 { margin: 0 0 6px; color: var(--ink-strong); font-size: 18px; }
+      .result.ok p { margin: 0 0 12px; color: var(--ink-soft); font-size: 13.5px; }
+      .result.bad { border: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger-ink); font-size: 13.5px; }
+      .result.bad p { margin: 0 0 10px; }
+      .result a.open-btn {
+        display: inline-block; text-decoration: none; border-radius: 10px; padding: 10px 18px; font-weight: 750;
+        color: var(--button-foreground); background: var(--button-fill); border: 1px solid var(--button-border);
+      }
+      .powered { text-align: center; color: var(--ink-faint); font-size: 12px; margin-top: 18px; }
+    </style>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <main class="start-shell">
+      <div class="start-wrap">
+        <header class="start-hero">
+          <a class="brand" href="/" aria-label="ForkMesh home">
+            <img class="brand-mark" src="/assets/logo.svg" alt="" aria-hidden="true" width="44" height="44" />
+          </a>
+          <div class="start-eyebrow">Your own ForkMesh</div>
+          <h1 class="start-title">Start your own instance</h1>
+          <p class="start-sub">
+            Git hosting, repositories, chat and agents under your own name, on your own server.
+            Fill in five short sections, or upload them all in one settings file; ForkMesh connects to your server, sets everything up and
+            shows you each step live. It takes about fifteen minutes.
+          </p>
+          <p class="plot-banner" data-start-plot hidden></p>
+        </header>
+
+        <form id="start-form" data-start-form autocomplete="off" novalidate>
+          <section class="start-card config-card" aria-labelledby="start-config-title">
+            <div class="section-head"><h2 id="start-config-title">Set up from a file <span class="sub" style="font-weight: 400; color: var(--ink-faint)">(optional)</span></h2></div>
+            <p class="hint">Have every setting in one zip file, with your settings and your logo? Upload it to fill in the whole form, then start with one click.</p>
+            <div class="key-drop" data-start-config-drop>
+              <button type="button" data-start-config-pick>Upload settings zip</button>
+              <span data-start-config-name>or drop it here</span>
+              <input type="file" accept=".zip,application/zip,.json,application/json" data-start-config-file hidden />
+            </div>
+            <div class="config-links">
+              <a href="https://forkmesh.com/docs/start-config/" target="_blank" rel="noopener">How the file works</a>
+              <a href="/start-config.example.zip" download="forkmesh-instance.zip">Download example zip</a>
+              <a href="/start-config.example.json" download="forkmesh-instance.json" data-start-config-example>Example settings only</a>
+              <button type="button" class="link-btn" data-start-config-copy>Copy example settings</button>
+            </div>
+            <p class="config-status" role="status" aria-live="polite" data-start-config-status hidden></p>
+            <button type="button" class="launch-btn" data-start-config-launch hidden>Start my instance now</button>
+          </section>
+
+          <section class="start-card" aria-labelledby="start-name-title">
+            <div class="section-head"><span class="section-num">1</span><h2 id="start-name-title">Name your project</h2></div>
+            <p class="hint">This name replaces “ForkMesh” across your instance, its emails and its pages.</p>
+            <div class="field">
+              <label for="start-project">Project name</label>
+              <input id="start-project" class="project-input" name="projectName" type="text" maxlength="40" placeholder="Acme Code" required />
+            </div>
+            <div class="field">
+              <span class="label" id="start-logo-label">Logo <span class="sub">(optional: PNG, JPEG, WebP or SVG, up to 200 KB)</span></span>
+              <div class="key-drop" data-start-logo-drop aria-labelledby="start-logo-label">
+                <img class="logo-preview" data-start-logo-preview alt="Your logo" hidden />
+                <button type="button" data-start-logo-pick>Upload logo</button>
+                <span data-start-logo-name>or drop it here</span>
+                <button type="button" class="link-btn" data-start-logo-clear hidden>Remove</button>
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" data-start-logo-file hidden />
+                <input type="hidden" name="logo" />
+              </div>
+              <p class="help">It replaces the ForkMesh logo in your instance's header, browser tab and emails. Without one, the ForkMesh logo stays.</p>
+            </div>
+            <div class="field">
+              <label for="start-theme">Colour theme</label>
+              <select id="start-theme" name="theme">
+                <option value="">ForkMesh (green)</option>
+                <option value="crimson">Crimson (zinc and red)</option>
+              </select>
+              <p class="help">Colours for your instance's pages, in dark and light mode. Layout stays the same.</p>
+            </div>
+            <div class="preview" aria-live="polite">
+              <span class="preview-name"><img data-start-preview-logo alt="" hidden /><strong data-start-preview-name>Acme Code</strong> <small data-start-preview-host></small></span>
+              <small>Powered by ForkMesh</small>
+            </div>
+          </section>
+
+          <section class="start-card" aria-labelledby="start-server-title">
+            <div class="section-head"><span class="section-num">2</span><h2 id="start-server-title">Your server</h2></div>
+            <p class="hint">A fresh Debian 13 or Ubuntu 24.04 VPS with at least 1 GB of memory. ForkMesh signs in once to set it up.</p>
+            <div class="field-row three">
+              <div class="field">
+                <label for="start-host">Server IP address</label>
+                <input id="start-host" name="host" type="text" inputmode="url" placeholder="203.0.113.10" required />
+              </div>
+              <div class="field">
+                <label for="start-user">SSH user</label>
+                <input id="start-user" name="sshUser" type="text" value="root" required />
+              </div>
+              <div class="field">
+                <label for="start-port">SSH port</label>
+                <input id="start-port" name="port" type="number" min="1" max="65535" value="22" />
+              </div>
+            </div>
+            <div class="field">
+              <span class="label" id="start-auth-label">Sign in with</span>
+              <div class="segmented" role="radiogroup" aria-labelledby="start-auth-label">
+                <label><input type="radio" name="authKind" value="password" checked />Password</label>
+                <label><input type="radio" name="authKind" value="key" />Private key</label>
+              </div>
+            </div>
+            <div class="field" data-start-auth="password">
+              <label for="start-ssh-password">SSH password</label>
+              <input id="start-ssh-password" name="sshPassword" type="password" autocomplete="off" />
+            </div>
+            <div class="field" data-start-auth="key" hidden>
+              <label for="start-ssh-key">Private key <span class="sub">(for example <code>id_ed25519</code>)</span></label>
+              <div class="key-drop" data-start-key-drop>
+                <button type="button" data-start-key-pick>Upload key file</button>
+                <span data-start-key-name>or drop it here, or paste it below</span>
+                <input type="file" data-start-key-file hidden />
+              </div>
+              <textarea id="start-ssh-key" name="sshPrivateKey" spellcheck="false" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>  <!-- forkmesh-secret-scan:ignore-line -->
+              <div class="field" style="margin-top: 10px">
+                <label for="start-ssh-passphrase">Key passphrase <span class="sub">(only if the key has one)</span></label>
+                <input id="start-ssh-passphrase" name="sshPassphrase" type="password" autocomplete="off" />
+              </div>
+            </div>
+            <details class="more">
+              <summary>Check the server's fingerprint (optional)</summary>
+              <div class="field">
+                <label for="start-fingerprint">Host key fingerprint</label>
+                <input id="start-fingerprint" name="hostKeyFingerprint" type="text" placeholder="SHA256:…" spellcheck="false" />
+                <p class="help">On the server, run <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>. ForkMesh stops if the server answers with a different key. Left empty, the key the server shows first is trusted and shown in the setup log.</p>
+              </div>
+            </details>
+          </section>
+
+          <section class="start-card" aria-labelledby="start-domain-title">
+            <div class="section-head"><span class="section-num">3</span><h2 id="start-domain-title">Your address</h2></div>
+            <p class="hint">Point your domain at the server, or leave it empty to start on a free address right away.</p>
+            <div class="field">
+              <label for="start-domain">Domain <span class="sub">(optional)</span></label>
+              <input id="start-domain" name="domain" type="text" inputmode="url" placeholder="code.example.com" spellcheck="false" />
+              <p class="help" data-start-domain-help>At your DNS provider, add an <b>A</b> record for this name pointing at your server's IP. Setup waits for it and then gets an HTTPS certificate. On Cloudflare the proxy can stay on; set SSL/TLS to <b>Full (strict)</b>.</p>
+            </div>
+          </section>
+
+          <section class="start-card" aria-labelledby="start-admin-title">
+            <div class="section-head"><span class="section-num">4</span><h2 id="start-admin-title">Your admin account</h2></div>
+            <p class="hint">The first user of your instance. You sign in with it to manage everything.</p>
+            <div class="field-row">
+              <div class="field">
+                <label for="start-admin">Username</label>
+                <input id="start-admin" name="adminUsername" type="text" maxlength="39" placeholder="ada" spellcheck="false" required />
+              </div>
+              <div class="field">
+                <label for="start-email">Email</label>
+                <input id="start-email" name="adminEmail" type="email" placeholder="ada@example.com" required />
+              </div>
+            </div>
+            <div class="field">
+              <label for="start-admin-password">Password <span class="sub">(at least 10 characters)</span></label>
+              <input id="start-admin-password" name="adminPassword" type="password" autocomplete="new-password" minlength="10" required />
+            </div>
+            <div class="field">
+              <span class="label" id="start-owner-label">Your <code>forkmesh</code> repository belongs to</span>
+              <div class="segmented" role="radiogroup" aria-labelledby="start-owner-label">
+                <label><input type="radio" name="ownerType" value="org" checked />An organization</label>
+                <label><input type="radio" name="ownerType" value="user" />My user account</label>
+              </div>
+            </div>
+            <div class="field" data-start-owner-org>
+              <label for="start-owner">Organization name</label>
+              <input id="start-owner" name="ownerName" type="text" maxlength="39" placeholder="acme" spellcheck="false" />
+            </div>
+            <div class="field" data-start-owner-others>
+              <span class="label" id="start-owners-label">Other owners <span class="sub">(optional)</span></span>
+              <div class="owner-list" data-start-owners aria-labelledby="start-owners-label"></div>
+              <button type="button" class="ghost-btn" data-start-owner-add>Add an owner</button>
+              <p class="help">Each one gets an account on your instance and owns the organization with you. Give them their password; they can change it after they sign in.</p>
+            </div>
+            <template data-start-owner-template>
+              <div class="field-row three owner-row" data-start-owner>
+                <input type="text" data-owner="username" maxlength="39" placeholder="grace" spellcheck="false" aria-label="Owner username" />
+                <input type="email" data-owner="email" placeholder="grace@example.com" aria-label="Owner email" />
+                <input type="password" data-owner="password" autocomplete="new-password" minlength="10" placeholder="Password" aria-label="Owner password (at least 10 characters)" />
+                <button type="button" class="link-btn" data-owner-remove>Remove</button>
+              </div>
+            </template>
+            <p class="help" data-start-repo-preview></p>
+          </section>
+
+          <section class="start-card" aria-labelledby="start-mail-title">
+            <div class="section-head"><span class="section-num">5</span><h2 id="start-mail-title">Email <span class="sub" style="font-weight: 400; color: var(--ink-faint)">(optional)</span></h2></div>
+            <p class="hint">For sign-up confirmations, password resets and notifications. You can add this later.</p>
+            <div class="field">
+              <label for="start-mail-provider">Email service</label>
+              <select id="start-mail-provider" name="mailProvider">
+                <option value="none">No email for now</option>
+                <option value="mailtrap">Mailtrap</option>
+                <option value="sendgrid">SendGrid</option>
+                <option value="mailgun">Mailgun</option>
+              </select>
+            </div>
+            <div data-start-mail hidden>
+              <div class="field">
+                <label for="start-mail-key" data-start-mail-key-label>API key</label>
+                <input id="start-mail-key" name="mailApiKey" type="password" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label for="start-mail-from">Send from <span class="sub">(optional)</span></label>
+                <input id="start-mail-from" name="mailFrom" type="email" placeholder="no-reply@code.example.com" />
+              </div>
+              <div class="field-row" data-start-mailgun hidden>
+                <div class="field">
+                  <label for="start-mailgun-domain">Mailgun sending domain</label>
+                  <input id="start-mailgun-domain" name="mailgunDomain" type="text" placeholder="mg.example.com" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label for="start-mailgun-region">Mailgun region</label>
+                  <select id="start-mailgun-region" name="mailgunRegion">
+                    <option value="us">US</option>
+                    <option value="eu">EU</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="start-card" aria-labelledby="start-forkmesh-title">
+            <div class="section-head"><span class="section-num">6</span><h2 id="start-forkmesh-title">On ForkMesh</h2></div>
+            <p class="hint">Both are on by default. Turn either off and your instance stays private to its own address.</p>
+            <div class="field">
+              <label class="check"><input type="checkbox" name="ownWorld" checked data-start-own-world />Give my instance its own world</label>
+              <p class="help">A hexagon of its own, joined to the ForkMesh World, with a small landmark and your logo. Visitors who click it open your instance.</p>
+            </div>
+            <div class="field">
+              <label class="check"><input type="checkbox" name="listOnHomepage" checked data-start-list-on-homepage />List my instance on forkmesh.com</label>
+              <p class="help">Your project name and logo in the list of instances on the ForkMesh homepage, linking to your address.</p>
+            </div>
+          </section>
+
+          <button type="submit" class="launch-btn" data-start-launch>Start my instance</button>
+          <div class="form-error" role="alert" data-start-error hidden></div>
+          <p class="keys-note">
+            Setup runs on ForkMesh's servers. Your SSH password or key is used once to connect and is never stored.
+            Your admin password and email key are written only to your own server.
+          </p>
+        </form>
+
+        <section class="start-card" data-start-progress hidden aria-labelledby="start-progress-title">
+          <div class="progress-head">
+            <h2 id="start-progress-title" data-start-progress-title>Setting up your instance</h2>
+            <span class="elapsed" data-start-elapsed>0:00</span>
+          </div>
+          <p class="progress-sub" data-start-progress-sub></p>
+          <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-start-bar><div></div></div>
+          <ol class="steps" data-start-steps></ol>
+          <div class="log-head"><strong style="font-size: 13px">Live log</strong><span data-start-status role="status" aria-live="polite"></span></div>
+          <pre class="console" data-start-log aria-live="off"></pre>
+          <div class="result ok" data-start-done hidden>
+            <h3 data-start-done-title>Your instance is ready</h3>
+            <p data-start-done-text>Taking you there…</p>
+            <a class="open-btn" data-start-open href="/">Open my instance</a>
+          </div>
+          <div class="result bad" data-start-failed hidden>
+            <p data-start-failed-text></p>
+            <p>Check the details and enter the passwords again. Starting again on the same server skips the steps that already finished, and follows a setup that is still running there.</p>
+            <button type="button" class="ghost-btn" data-start-retry>Change the details and try again</button>
+          </div>
+        </section>
+        <p class="powered">Every instance shows “Powered by ForkMesh” at the bottom of its pages.</p>
+      </div>
+    </main>
+  </body>
+</html>

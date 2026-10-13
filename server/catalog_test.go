@@ -1,0 +1,378 @@
+package mirrornode
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+func TestCatalogPublisherSignsTheWorkerNormalizedRecord(t *testing.T) {
+	source, bare := makeBareRepo(t)
+	if err := os.MkdirAll(filepath.Join(source, ".forkmesh/issues/open/7"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, ".forkmesh/issues/open/7/issue-7.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(source, ".forkmesh/issues/open/8"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	tombstone := `{"events":[{"type":"open","author":"alice"},{"type":"delete","target":"self","author":"alice"}]}`
+	if err := os.WriteFile(filepath.Join(source, ".forkmesh/issues/open/8/issue-8.json"), []byte(tombstone), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run(t, source, "git", "add", ".")
+	run(t, source, "git", "commit", "-m", "issue")
+	for _, number := range []string{"1", "2"} {
+		dir := filepath.Join(source, ".forkmesh", "pulls", number)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "pull.md"), []byte("---\nstatus: open\n---\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run(t, source, "git", "add", ".")
+	run(t, source, "git", "commit", "-m", "historical pulls")
+	run(t, source, "git", "checkout", "-b", "forkmesh/pulls")
+	run(t, source, "git", "rm", "-r", ".forkmesh/pulls/2")
+	run(t, source, "git", "commit", "-m", "retain open pulls only")
+	run(t, source, "git", "checkout", "main")
+	run(t, source, "git", "checkout", "-b", "activity-merge")
+	if err := os.WriteFile(filepath.Join(source, "merged.txt"), []byte("merged\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run(t, source, "git", "add", "merged.txt")
+	run(t, source, "git", "commit", "-m", "merge fixture")
+	run(t, source, "git", "checkout", "main")
+	run(t, source, "git", "merge", "--no-ff", "activity-merge", "-m", "merge activity")
+	run(t, ".", "git", "--git-dir="+bare, "fetch", source, "refs/heads/main:refs/heads/main")
+	run(t, ".", "git", "--git-dir="+bare, "fetch", source, "refs/heads/forkmesh/pulls:refs/heads/forkmesh/pulls")
+	identity, _ := testIdentity(t)
+	stateHash, err := refsSHA256(context.Background(), bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("bad request: %s %s", r.Method, r.Header.Get("Content-Type"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Error(err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+	repo := Repository{Owner: "forkmesh", Name: "forkmesh", ForkedFrom: "alice/forkmesh", Visibility: "public", Enabled: true, GitDir: bare}
+	publisher := &CatalogPublisher{
+		URL: server.URL, Owner: "mirror9", Node: "mirror9", Version: "test",
+		Identity: identity, Client: server.Client(),
+		MirrorURL: "https://git.mirror9.example.test",
+		LookPath: func(binary string) (string, error) {
+			if binary == "claude" || binary == "codex" {
+				return "/usr/local/bin/" + binary, nil
+			}
+			return "", exec.ErrNotFound
+		},
+	}
+	if err := publisher.Publish(context.Background(), repo, stateHash); err != nil {
+		t.Fatal(err)
+	}
+	if received["stateHash"] != stateHash || received["issueCount"] != "1" ||
+		received["pullCount"] != "2" || received["mergeCount"] != "1" ||
+		received["runtimeMode"] != "headless" ||
+		received["mirrorUrl"] != "https://git.mirror9.example.test/forkmesh/forkmesh.git" ||
+		received["forkedFrom"] != "alice/forkmesh" {
+		t.Fatalf("unexpected record: %+v", received)
+	}
+	agentProviders, agentProvidersOK := received["agentProviders"].([]any)
+	if !agentProvidersOK || len(agentProviders) != 2 ||
+		agentProviders[0] != "claude-code" || agentProviders[1] != "codex" {
+		t.Fatalf("unexpected agent providers: %v", received["agentProviders"])
+	}
+	commitWeeks, commitWeeksOK := received["activityWeeks"].([]any)
+	mergeWeeks, mergeWeeksOK := received["mergeActivityWeeks"].([]any)
+	if !commitWeeksOK || !mergeWeeksOK || len(commitWeeks) != 52 ||
+		len(mergeWeeks) != 52 || sumJSONNumbers(mergeWeeks) != 1 ||
+		sumJSONNumbers(commitWeeks) < 1 {
+		t.Fatalf("unexpected activity series: commits=%v merges=%v",
+			commitWeeks, mergeWeeks)
+	}
+	statePayload := "forkmesh-repostate-v1\nmirror9\nforkmesh\n" + stateHash + "\n" + received["updatedAt"].(string)
+	stateSig, _ := base64.RawURLEncoding.DecodeString(received["stateSig"].(string))
+	if !ed25519.Verify(identity.public, []byte(statePayload), stateSig) {
+		t.Fatal("bad state signature")
+	}
+	catalogSig, _ := base64.RawURLEncoding.DecodeString(received["catalogSig"].(string))
+	delete(received, "catalogSig")
+	delete(received, "catalogSigVersion")
+	delete(received, "signature")
+	canonical, _ := json.Marshal(received)
+	digest := sha256.Sum256(canonical)
+	payload := []byte("forkmesh-catalog-v2\n" + hex.EncodeToString(digest[:]))
+	if !ed25519.Verify(identity.public, payload, catalogSig) {
+		t.Fatalf("bad catalog signature over %s", canonical)
+	}
+}
+
+func TestCatalogPublisherOmitsUnavailableAgentProviders(t *testing.T) {
+	identity, _ := testIdentity(t)
+	publisher := &CatalogPublisher{
+		Identity: identity,
+		LookPath: func(string) (string, error) { return "", exec.ErrNotFound },
+	}
+	if providers := publisher.agentProviders(); len(providers) != 0 {
+		t.Fatalf("unexpected unavailable providers: %v", providers)
+	}
+}
+
+func sumJSONNumbers(values []any) int {
+	total := 0
+	for _, value := range values {
+		if number, ok := value.(float64); ok {
+			total += int(number)
+		}
+	}
+	return total
+}
+
+func TestCatalogPublisherSurfacesHTTPFailure(t *testing.T) {
+	_, bare := makeBareRepo(t)
+	identity, _ := testIdentity(t)
+	stateHash, _ := refsSHA256(context.Background(), bare)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "no", http.StatusUnauthorized) }))
+	defer server.Close()
+	p := &CatalogPublisher{URL: server.URL, Owner: "mirror9", Node: "mirror9", Version: "test", Identity: identity, Client: server.Client()}
+	if err := p.Publish(context.Background(), Repository{Owner: "mirror9", Name: "forkmesh", GitDir: bare}, stateHash); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatal("HTTP failure ignored")
+	}
+}
+
+func TestEndpointPublisherRenewsSignedActiveLease(t *testing.T) {
+	identity, _ := testIdentity(t)
+	var received map[string]any
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/mirrors/https" || r.Method != http.MethodPost {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Error(err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true, "node": "mirror9", "baseUrl": "https://mirror9.example.test",
+			"health": "active",
+		})
+	}))
+	defer server.Close()
+	publisher := &EndpointPublisher{
+		CatalogURL: server.URL + "/api/repositories?ignored=true",
+		Node:       "mirror9", BaseURL: "https://mirror9.example.test",
+		Version: "test", Identity: identity, Client: server.Client(),
+	}
+	active, err := publisher.Publish(context.Background())
+	if err != nil || !active {
+		t.Fatal(err)
+	}
+	issuedAt := int64(received["issuedAt"].(float64))
+	message := "forkmesh-https-endpoint-v1\nmirror9\nhttps://mirror9.example.test\n" +
+		identity.PublicKey() + "\n" + strconv.FormatInt(issuedAt, 10)
+	signature, err := base64.RawURLEncoding.DecodeString(received["signature"].(string))
+	if err != nil || !ed25519.Verify(identity.public, []byte(message), signature) {
+		t.Fatal("endpoint registration signature is invalid")
+	}
+}
+
+func TestEndpointPublisherRetriesPendingLeaseWithoutFailingSync(t *testing.T) {
+	identity, _ := testIdentity(t)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true, "node": "mirror9", "baseUrl": "https://mirror9.example.test",
+			"health": "pending",
+		})
+	}))
+	defer server.Close()
+	publisher := &EndpointPublisher{
+		CatalogURL: server.URL + "/api/repositories", Node: "mirror9",
+		BaseURL: "https://mirror9.example.test", Version: "test",
+		Identity: identity, Client: server.Client(),
+	}
+	active, err := publisher.Publish(context.Background())
+	if err != nil || active {
+		t.Fatalf("pending lease result: active=%v err=%v", active, err)
+	}
+}
+
+func TestEndpointPublisherSignsReplaceableDirectMirrorURL(t *testing.T) {
+	identity, _ := testIdentity(t)
+	var received map[string]any
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Error(err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true, "node": "mirror9",
+			"baseUrl":   "https://tunnel.example.test",
+			"mirrorUrl": "https://git.example.test", "health": "active",
+		})
+	}))
+	defer server.Close()
+	publisher := &EndpointPublisher{
+		CatalogURL: server.URL, Node: "mirror9",
+		BaseURL:   "https://tunnel.example.test",
+		MirrorURL: "https://git.example.test",
+		Version:   "test", Identity: identity, Client: server.Client(),
+	}
+	active, err := publisher.Publish(context.Background())
+	if err != nil || !active {
+		t.Fatal(err)
+	}
+	issuedAt := int64(received["issuedAt"].(float64))
+	message := "forkmesh-https-endpoint-v2\nmirror9\n" +
+		"https://tunnel.example.test\nhttps://git.example.test\n" +
+		identity.PublicKey() + "\n" + strconv.FormatInt(issuedAt, 10)
+	signature, err := base64.RawURLEncoding.DecodeString(received["signature"].(string))
+	if err != nil || !ed25519.Verify(identity.public, []byte(message), signature) {
+		t.Fatal("direct endpoint registration signature is invalid")
+	}
+}
+
+func TestFirstLineMatchesWorkerRootCommitNormalization(t *testing.T) {
+	if got := firstLine("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"); got != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("got %q", got)
+	}
+	if got := firstLine(strings.Repeat("x", 80)); len(got) != 64 {
+		t.Fatalf("got %d chars", len(got))
+	}
+}
+
+func TestCatalogPathCountsUseCurrentGitLayouts(t *testing.T) {
+	issues, maxIssue, pulls, discussions, artifacts := catalogPathCounts([]string{
+		".forkmesh/issues/open/7/issue-7.json",
+		".forkmesh/issues/closed/91/issue-91.json",
+		".forkmesh/pulls/11/pull.md",
+		".forkmesh/pulls/11/changes.patch",
+		".forkmesh/pulls/open/pull-11.json",
+		".forkmesh/pulls/not-a-number/pull.md",
+		".forkmesh/discussions/2/discussion.md",
+		".forkmesh/discussions/2/0002-comment.md",
+		".forkmesh/artifacts/sha256/file",
+	})
+	if issues != 1 || maxIssue != 91 || pulls != 1 || discussions != 1 || artifacts != 1 {
+		t.Fatalf("got issues=%d max=%d pulls=%d discussions=%d artifacts=%d",
+			issues, maxIssue, pulls, discussions, artifacts)
+	}
+}
+
+func TestReleaseArtifactCountUsesPhysicalCasBlobs(t *testing.T) {
+	store := t.TempDir()
+	valid := strings.Repeat("a", 64)
+	validData := filepath.Join(store, "sha256", "aa", valid, "data")
+	if err := os.MkdirAll(filepath.Dir(validData), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(validData, []byte("release"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	wrongShard := filepath.Join(store, "sha256", "bb", valid, "data")
+	if err := os.MkdirAll(filepath.Dir(wrongShard), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wrongShard, []byte("wrong shard"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	incomplete := filepath.Join(store, "sha256", "cc", strings.Repeat("c", 64))
+	if err := os.MkdirAll(incomplete, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(validData, filepath.Join(incomplete, "data")); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := releaseArtifactCount(store); got != 1 {
+		t.Fatalf("artifact count = %d, want 1", got)
+	}
+}
+
+func TestCPUPercentUsesDeltaAndBoundsInput(t *testing.T) {
+	oldRead := readCPUStat
+	oldPrevious := cpuPrevious
+	t.Cleanup(func() {
+		readCPUStat = oldRead
+		cpuPrevious = oldPrevious
+	})
+	samples := [][]byte{
+		[]byte("cpu  100 0 50 800 50 0 0 0\n"),
+		[]byte("cpu  150 0 70 860 60 0 0 0\n"),
+	}
+	readCPUStat = func() ([]byte, error) {
+		value := samples[0]
+		samples = samples[1:]
+		return value, nil
+	}
+	cpuPrevious = cpuTimes{}
+	if got := cpuPercent(); got != 0 {
+		t.Fatalf("first sample = %d", got)
+	}
+	if got := cpuPercent(); got != 50 {
+		t.Fatalf("second sample = %d", got)
+	}
+	if _, ok := parseCPUTimes([]byte("intr 1 2 3\n")); ok {
+		t.Fatal("accepted non-CPU stat line")
+	}
+}
+
+func TestMemoryUsageExcludesReclaimableLinuxCache(t *testing.T) {
+	oldRead := readMemInfo
+	t.Cleanup(func() { readMemInfo = oldRead })
+	readMemInfo = func() ([]byte, error) {
+		return []byte("MemTotal:       1000000 kB\nMemFree:         100000 kB\nMemAvailable:    650000 kB\nCached:          500000 kB\n"), nil
+	}
+	used, total := memoryUsage()
+	if total != 1000000*1024 || used != 350000*1024 {
+		t.Fatalf("used=%d total=%d", used, total)
+	}
+}
+
+func TestCatalogActivityWeeksMatchesGitLogInOnePass(t *testing.T) {
+	source, bare := makeBareRepo(t)
+	run(t, source, "git", "checkout", "-b", "side")
+	if err := os.WriteFile(filepath.Join(source, "side.txt"), []byte("side\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run(t, source, "git", "add", "side.txt")
+	run(t, source, "git", "commit", "-m", "side")
+	run(t, source, "git", "checkout", "main")
+	if err := os.WriteFile(filepath.Join(source, "main.txt"), []byte("main\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run(t, source, "git", "add", "main.txt")
+	run(t, source, "git", "commit", "-m", "main")
+	run(t, source, "git", "merge", "--no-ff", "side", "-m", "merge side")
+	run(t, ".", "git", "--git-dir="+bare, "fetch", source, "+refs/heads/main:refs/heads/main")
+	commits, merges := catalogActivityWeeks(context.Background(), bare)
+	all := countLines(gitValue(context.Background(), bare, "log", "--since=52 weeks ago", "--format=%ct", "HEAD", "--"))
+	merged := countLines(gitValue(context.Background(), bare, "log", "--since=52 weeks ago", "--format=%ct", "--merges", "HEAD", "--"))
+	sum := func(values []int) int {
+		total := 0
+		for _, value := range values {
+			total += value
+		}
+		return total
+	}
+	if len(commits) != 52 || len(merges) != 52 || sum(commits) != all || sum(merges) != merged || merged != 1 {
+		t.Fatalf("activity commits=%d/%d merges=%d/%d", sum(commits), all, sum(merges), merged)
+	}
+}

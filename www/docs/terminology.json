@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "guide": "www/docs/terminology.md",
+  "approvedTerms": [
+    {
+      "term": "repository",
+      "definition": "A Git repository: its files, commits, branches, and tags, together with its issues, pull requests, and releases.",
+      "insteadOf": ["project (for source code)"],
+      "notes": "Use \"repo\" only in URLs, command names, and space-constrained labels."
+    },
+    {
+      "term": "branch",
+      "definition": "A named line of commits in a repository. The default branch is the one a clone checks out."
+    },
+    {
+      "term": "commit",
+      "definition": "A recorded change to a repository, identified by its hash."
+    },
+    {
+      "term": "fork",
+      "definition": "Your own copy of a repository under your account. Change it freely and open pull requests back to the original."
+    },
+    {
+      "term": "clone",
+      "definition": "Download a repository with Git, for example git clone https://forkmesh.com/OWNER/REPOSITORY."
+    },
+    {
+      "term": "issue",
+      "definition": "A tracked bug report, task, or request in a repository."
+    },
+    {
+      "term": "pull request",
+      "definition": "A proposal to merge commits from one branch or fork into another, with its discussion, checks, and reviews.",
+      "insteadOf": ["merge request", "patch (for a proposed change)"],
+      "notes": "\"PR\" is acceptable in compact labels and CLI output; spell it out in sentences."
+    },
+    {
+      "term": "review",
+      "definition": "An approval, a request for changes, or comments on a pull request.",
+      "insteadOf": ["peer approval"]
+    },
+    {
+      "term": "mirror",
+      "definition": "A complete copy of a repository on another host that stays in sync and can serve clones when the source is offline.",
+      "insteadOf": ["peer", "seed node", "mesh node", "replica (for public copies)"]
+    },
+    {
+      "term": "seed",
+      "definition": "The first push that fills a new mirror from an existing copy. After seeding, the mirror keeps itself in sync.",
+      "insteadOf": ["seeder"]
+    },
+    {
+      "term": "trusted maintainer",
+      "definition": "A person the repository owner trusts to merge, release, and change settings. Their signed actions are accepted by every mirror.",
+      "insteadOf": ["delegate"]
+    },
+    {
+      "term": "host",
+      "definition": "A computer that serves repositories: your own machine, a server you run, or a ForkMesh-managed host."
+    },
+    {
+      "term": "desktop app",
+      "definition": "The ForkMesh desktop application. Say \"desktop app (Qt)\" only where build instructions need the toolkit.",
+      "insteadOf": ["Qt client", "Qt app", "Qt desktop node"]
+    }
+  ],
+  "protocolTerms": [
+    {"term": "node", "explanation": "A running copy of ForkMesh (desktop app, server, or phone) that signs and syncs on behalf of an account."},
+    {"term": "relay", "explanation": "The ForkMesh web service that routes requests to healthy mirrors. It is not the canonical Git store."},
+    {"term": "refs attestation", "explanation": "The signed list of branch and tag commits a mirror must match before it can serve a repository."},
+    {"term": "signed repository proof", "explanation": "A host's signature over the branch and tag commits it serves."},
+    {"term": "commit DAG", "explanation": "Commit history: each commit points at its parents."},
+    {"term": "CRDT / fold", "explanation": "How signed issue and pull request events merge into one current state without conflicts."},
+    {"term": "lease", "explanation": "A short-lived claim that stops two hosts from processing the same issue or pull request at once."},
+    {"term": "outbox", "explanation": "The queue of signed events waiting to be delivered to other hosts."},
+    {"term": "opaque replica", "explanation": "An encrypted copy of a private repository that a host stores without being able to read it."},
+    {"term": "federation", "explanation": "Sharing repository activity with the fediverse (Mastodon and other ActivityPub servers)."}
+  ],
+  "discouragedTerms": [
+    {
+      "id": "merge-request",
+      "category": "replace",
+      "pattern": "\\bmerge(?: |-)requests?\\b",
+      "preferred": "pull request",
+      "reason": "ForkMesh uses the GitHub-style name for proposed changes; the /pulls route and API already say pull."
+    },
+    {
+      "id": "peer-approval",
+      "category": "replace",
+      "pattern": "\\bpeer approvals?\\b",
+      "preferred": "review",
+      "reason": "Approving a pull request is a review."
+    },
+    {
+      "id": "peer-to-peer",
+      "category": "replace",
+      "pattern": "\\bpeer(?: |-)to(?: |-)peer\\b|\\bP2P\\b",
+      "preferred": "independent hosts, or mirrors",
+      "reason": "The promise is independent hosts and mirrors; peer-to-peer suggests file sharing and hides Git workflows."
+    },
+    {
+      "id": "qt-product-name",
+      "category": "replace",
+      "pattern": "\\bQt (?:desktop(?: node| app)?|client|app)\\b",
+      "preferred": "ForkMesh desktop app",
+      "reason": "Qt is the UI toolkit, not a product name users recognize."
+    },
+    {
+      "id": "delegate",
+      "category": "replace",
+      "pattern": "\\bdelegates?\\b",
+      "preferred": "trusted maintainer",
+      "reason": "Delegate is protocol jargon from other decentralized forges."
+    },
+    {
+      "id": "seed-node",
+      "category": "replace",
+      "pattern": "\\bseed(?:ers?| nodes?)\\b",
+      "preferred": "mirror",
+      "reason": "Seed is the first push into a mirror; the copy itself is a mirror."
+    },
+    {
+      "id": "mesh-node",
+      "category": "replace",
+      "pattern": "\\bmesh (?:nodes?|peers?)\\b",
+      "preferred": "host, or mirror",
+      "reason": "Users choose hosts and mirrors; the mesh is an implementation detail."
+    },
+    {
+      "id": "attestation",
+      "category": "explain",
+      "pattern": "\\battestations?\\b",
+      "preferred": "signed branch and tag state, or explain the term where it appears",
+      "reason": "Protocol term; allowed on a primary surface only next to a plain explanation."
+    },
+    {
+      "id": "refs-pin",
+      "category": "explain",
+      "pattern": "\\brefs? pins?\\b|\\bsigrefs\\b",
+      "preferred": "signed branch and tag state",
+      "reason": "Protocol term; allowed on a primary surface only next to a plain explanation."
+    },
+    {
+      "id": "commit-dag",
+      "category": "explain",
+      "pattern": "\\bDAG\\b",
+      "caseSensitive": true,
+      "preferred": "commit history",
+      "reason": "Protocol term; allowed on a primary surface only next to a plain explanation."
+    },
+    {
+      "id": "crdt",
+      "category": "explain",
+      "pattern": "\\bCRDTs?\\b",
+      "caseSensitive": true,
+      "preferred": "conflict-free merging of issue and pull request events",
+      "reason": "Protocol term; allowed on a primary surface only next to a plain explanation."
+    },
+    {
+      "id": "gossip",
+      "category": "explain",
+      "pattern": "\\bgossip(?:ed|ing|s)?\\b",
+      "preferred": "sync between hosts",
+      "reason": "Protocol term; allowed on a primary surface only next to a plain explanation."
+    },
+    {
+      "id": "lease",
+      "category": "explain",
+      "pattern": "(?<![-\\w])leases?\\b",
+      "preferred": "claim, or explain the term where it appears",
+      "reason": "Protocol term; allowed on a primary surface only next to a plain explanation."
+    },
+    {
+      "id": "outbox",
+      "category": "explain",
+      "pattern": "\\boutbox(?:es)?\\b",
+      "preferred": "delivery queue",
+      "reason": "Protocol term; allowed on a primary surface only next to a plain explanation."
+    }
+  ],
+  "primarySurfaces": [
+    "README.md",
+    "www/docs/README.md",
+    "www/docs/getting-started.md",
+    "www/docs/product-promise.md",
+    "www/docs/hosted-repositories.md",
+    "www/docs/repository-imports.md",
+    "www/public/index.html",
+    "www/public/about.html",
+    "www/public/press.html",
+    "www/public/careers.html",
+    "www/public/features.html",
+    "www/public/desktop.html",
+    "www/public/docs/index.html",
+    "www/public/docs/onboarding/index.html",
+    "www/public/docs/product-promise/index.html",
+    "app/public/start.html",
+    "app/public/signup.html",
+    "app/public/login.html",
+    "app/public/dashboard/partials/**/*.html",
+    "app/public/dashboard/js/*.js"
+  ],
+  "extendedAuditSurfaces": [
+    "www/public/**/*.html",
+    "www/docs/**/*.md",
+    "app/public/**/*.html",
+    "desktop/src/*.cpp",
+    "desktop/src/*.h"
+  ],
+  "allowances": [
+    {
+      "path": "www/public/about.html",
+      "term": "peer-to-peer",
+      "reason": "A team member's biography names their field of interest, not the product."
+    },
+    {
+      "path": "www/docs/repository-imports.md",
+      "term": "merge-request",
+      "reason": "Names the GitLab source object an import reads."
+    },
+    {
+      "path": "www/docs/hosted-repositories.md",
+      "term": "attestation",
+      "explanation": "the signed list of branch and tag commits",
+      "reason": "Explains what a public read is routed against for people pushing to a web-created repository."
+    }
+  ],
+  "compatibilityAliases": [
+    {
+      "id": "repo-pull-singular",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/pull/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "policy": "Permanent 308 that keeps the query; never removed."
+    },
+    {
+      "id": "repo-pull-requests",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/pull-requests/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "policy": "Permanent 308 that keeps the query; never removed."
+    },
+    {
+      "id": "repo-merge-requests",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/merge_requests/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "policy": "Permanent 308 that keeps the query; never removed."
+    },
+    {
+      "id": "repo-merge-requests-hyphen",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/merge-requests",
+      "canonical": "/OWNER/REPOSITORY/pulls",
+      "policy": "Permanent 308 that keeps the query; never removed."
+    },
+    {
+      "id": "repo-gitlab-merge-requests",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/-/merge_requests/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "policy": "Permanent 308 that keeps the query; never removed."
+    },
+    {
+      "id": "repo-gitlab-scoped-tabs",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/-/issues/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/issues/NUMBER",
+      "policy": "Permanent 308 for every repository tab, tree, blob, and compare path under /-/; never removed."
+    },
+    {
+      "id": "dashboard-section-repos",
+      "kind": "route",
+      "resolver": "dashboard_section_redirect",
+      "alias": "/dashboard?section=repos",
+      "canonical": "/dashboard/repos",
+      "policy": "Permanent 308 that keeps other query parameters; never removed."
+    },
+    {
+      "id": "referrals-plural",
+      "kind": "route",
+      "resolver": "legacy_page_redirect",
+      "alias": "/referrals",
+      "canonical": "/referral",
+      "policy": "Permanent 308 that keeps the query; never removed."
+    },
+    {
+      "id": "docs-desktop-app-guide",
+      "kind": "docs",
+      "alias": "/docs/qt-client/",
+      "canonical": "/docs/qt-client/",
+      "policy": "The page is labeled \"desktop app guide\" but keeps its URL so existing links work."
+    },
+    {
+      "id": "wire-names",
+      "kind": "api",
+      "alias": "pull, pulls, repo, repoKey, /api/repositories",
+      "canonical": "pull, pulls, repo, repoKey, /api/repositories",
+      "policy": "API routes, JSON fields, signed event kinds, config keys, and CLI flags are never renamed for wording. Only user-visible labels change; a new name is added beside the old one, never in place of it."
+    }
+  ]
+}

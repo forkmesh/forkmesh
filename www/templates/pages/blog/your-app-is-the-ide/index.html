@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Your app is the IDE" %}
+{% set slug = "your-app-is-the-ide" %}
+{% set image = "/assets/blog/features/your-app-is-the-ide.webp" %}
+{% set description = "The desktop app speaks the Claude Code IDE protocol: run claude in a repo and it connects to ForkMesh for diff views and selection context, just like an editor extension." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">AI agents</p>
+            <h1>Your app is the IDE</h1>
+            <p class="lede">The desktop app speaks the Claude Code IDE protocol: run claude in a repo and it connects to ForkMesh for diff views and selection context, just like an editor extension.</p>
+            <div class="meta"><span class="pill">Feature 37 of 72</span><span>Feature</span><span>AI agents, built in</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/your-app-is-the-ide.webp" alt="Abstract ForkMesh artwork for Your app is the IDE">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Your app is the IDE gives ForkMesh a concrete mechanism for ForkMesh acting as the IDE surface for Claude Code context and diffs. The desktop app speaks the Claude Code IDE protocol: run claude in a repo and it connects to ForkMesh for diff views and selection context, just like an editor extension.</p>
+          <p>AI coding only helps when the agent can work in a real repository without trampling human state or hiding what it did. In ForkMesh, your app is the IDE addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles your app is the IDE through the same split it uses across the product: ForkMesh runs agents beside the repository, capturing transcripts, branches, diffs, prompts, usage, questions, and handoffs in the desktop app.</p>
+          <p>The behavior is intentionally narrow: The desktop app speaks the Claude Code IDE protocol: run claude in a repo and it connects to ForkMesh for diff views and selection context, just like an editor extension. Humans keep control of instructions, answers, review, and merge decisions.</p>
+          <h2>Where it fits</h2>
+          <p>Use your app is the IDE when agent work should be reviewable, resumable, and connected to the same repo UI humans use.</p>
+          <p>It pairs with the rest of AI agents, built in because Your app is the IDE keeps ForkMesh acting as the IDE surface for Claude Code context and diffs connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/native-terminal/">← Native terminal</a>
+          <a href="/blog/live-usage-meter/">Live usage meter →</a>
+        </nav>
+{% endblock %}

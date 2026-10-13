@@ -1,0 +1,43 @@
+{
+  "remoteActor": {
+    "id": "https://lemmy.dev/u/bob",
+    "url": "https://lemmy.dev/u/bob",
+    "preferredUsername": "bob",
+    "name": "Bob",
+    "software": "lemmy"
+  },
+  "context": {
+    "owner": "forkmesh",
+    "repo": "forkmesh",
+    "kind": "pull",
+    "ref": "17"
+  },
+  "activities": [
+    {
+      "@context": ["https://www.w3.org/ns/activitystreams", "https://join-lemmy.org/context.json"],
+      "id": "https://lemmy.dev/activities/create/pr-comment-1",
+      "type": "Create",
+      "actor": "https://lemmy.dev/u/bob",
+      "object": {
+        "id": "https://lemmy.dev/comment/300",
+        "type": "Note",
+        "attributedTo": "https://lemmy.dev/u/bob",
+        "content": "<p>Could this use the existing retry helper?</p>",
+        "inReplyTo": "https://forkmesh.test/ap/o/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "context": "https://lemmy.dev/post/77",
+        "url": "https://lemmy.dev/comment/300",
+        "published": "2026-07-22T13:00:00Z"
+      }
+    },
+    {
+      "@context": ["https://www.w3.org/ns/activitystreams", "https://join-lemmy.org/context.json"],
+      "id": "https://lemmy.dev/activities/delete/pr-comment-1",
+      "type": "Delete",
+      "actor": "https://lemmy.dev/u/bob",
+      "object": {
+        "id": "https://lemmy.dev/comment/300",
+        "type": "Tombstone"
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/mirror-actions-catalog-configuration-v1.json",
+  "title": "ForkMesh mirror Actions catalog configuration request",
+  "description": "Secret-free bounded stdin request used only to toggle the owner-approved public Actions capability and renew its signed catalog record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "actionsEnabled"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "type": {
+      "const": "forkmesh.mirror-actions-catalog-configuration"
+    },
+    "actionsEnabled": {
+      "type": "boolean"
+    }
+  }
+}

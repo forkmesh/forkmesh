@@ -1,0 +1,150 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "workflows",
+  "name": "Workflows",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Automation",
+  "version": "1.1.0",
+  "summary": "Build automations on a visual canvas with 100 integrations, and edit your repositories' actions, shortcuts, skills and special agents as connected steps. Each integration group is its own package.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "A workflow canvas: a trigger connected to an If step, Claude and Slack"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:workflows",
+    "worker": "builtin:workflows",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "agent-builder": "content/teammates/workflow-builder.json",
+    "shortcut-build": "content/shortcuts/build-a-workflow.md",
+    "shortcut-check": "content/shortcuts/check-forkmesh-files.sh",
+    "skill-design": "content/skills/workflow-design.skill",
+    "action-check": "content/actions/check-forkmesh-files.yml",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/workflows",
+        "title": "Workflows",
+        "description": "Build automations visually: connect triggers, logic and integrations such as Slack, GitHub, Notion, Stripe and Claude on one canvas.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Workflows",
+          "icon": "workflow",
+          "order": 5
+        }
+      }
+    },
+    {
+      "id": "builder-agent",
+      "socket": "content.teammate",
+      "entrypoint": "agent-builder",
+      "config": {
+        "path": ".forkmesh/teammates/workflow-builder.json",
+        "name": "Workflow Builder"
+      }
+    },
+    {
+      "id": "build-shortcut",
+      "socket": "content.shortcut",
+      "entrypoint": "shortcut-build",
+      "config": {
+        "path": ".forkmesh/shortcuts/build-a-workflow.md",
+        "name": "Build a workflow"
+      }
+    },
+    {
+      "id": "check-shortcut",
+      "socket": "content.shortcut",
+      "entrypoint": "shortcut-check",
+      "config": {
+        "path": ".forkmesh/shortcuts/check-forkmesh-files.sh",
+        "name": "Check ForkMesh files"
+      }
+    },
+    {
+      "id": "design-skill",
+      "socket": "content.skill",
+      "entrypoint": "skill-design",
+      "config": {
+        "path": ".forkmesh/skills/workflow-design.skill",
+        "name": "Workflow design"
+      }
+    },
+    {
+      "id": "check-action",
+      "socket": "content.action",
+      "entrypoint": "action-check",
+      "config": {
+        "path": ".forkmesh/check-forkmesh-files.yml",
+        "name": "Check ForkMesh files"
+      }
+    }
+  ],
+  "settings": [
+    {
+      "key": "showTips",
+      "type": "boolean",
+      "label": "Show building tips beside the canvas",
+      "default": true
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.workflows.write",
+      "label": "Keep your workflows, credentials and run history on your account, encrypted",
+      "risk": "sensitive"
+    },
+    {
+      "id": "network.workflows.outbound",
+      "label": "Call the public HTTPS APIs your workflow steps name, from ForkMesh's servers",
+      "risk": "high"
+    },
+    {
+      "id": "network.workflows.webhook",
+      "label": "Give each active webhook workflow a secret URL that anyone with it can call",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-14"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "CrmFeature.h",
+    "CrmFeature.cpp",
+    "CrmStageStrip.h",
+    "CrmStageStrip.cpp",
+    "CrmTeamChart.h",
+    "CrmTeamChart.cpp"
+  ],
+  "mocHeaders": []
+}

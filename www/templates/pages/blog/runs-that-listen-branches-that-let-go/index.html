@@ -1,0 +1,84 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Runs that listen, branches that let go · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="Follow-ups now reach cloud runs, phones watch them live, merged pull requests stop leaving branches behind, and phones pick up more of the desktop. October 7, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/runs-that-listen-branches-that-let-go/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/runs-that-listen-branches-that-let-go/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Runs that listen, branches that let go">
+    <meta property="og:description" content="Follow-ups that reach cloud runs, a live stream to the phone, merged pull requests without leftover branches, and more of the desktop on your phone.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/runs-that-listen-branches-that-let-go.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A rain-wet stone clearing at night where a glowing green runner tower sends a thread of cyan light to a phone resting on a rock, while faint branch paths fade into the forest behind them; the official ForkMesh logo and its vertical reflection stand in the foreground">
+    <meta property="article:published_time" content="2026-10-07T19:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Runs that listen, branches that let go">
+    <meta name="twitter:description" content="Follow-ups that reach cloud runs, a live stream to the phone, merged pull requests without leftover branches, and more of the desktop on your phone.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/runs-that-listen-branches-that-let-go.webp">
+    <meta name="twitter:image:alt" content="A rain-wet stone clearing at night where a glowing green runner tower sends a thread of cyan light to a phone resting on a rock, while faint branch paths fade into the forest behind them; the official ForkMesh logo and its vertical reflection stand in the foreground">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Runs that listen, branches that let go</h1>
+            <p class="lede">A cloud run can now hear the follow-up you send it, and your phone can watch it work in close to real time. Merged pull requests stop leaving branches behind, and the phones picked up more of what the desktop does.</p>
+            <div class="meta"><span class="pill">October 7, 2026</span><span>Product update</span><span>6 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/runs-that-listen-branches-that-let-go.webp" alt="A rain-wet stone clearing at night where a glowing green runner tower sends a thread of cyan light to a phone resting on a rock, while faint branch paths fade into the forest behind them; the official ForkMesh logo and its vertical reflection stand in the foreground">
+        </section>
+        <article class="body">
+          <p>This update covers the work merged on main from the afternoon of October 4, when "The work keeps its place" went out, through October 7. All of it is on main. On October 7 the hosted service reported a main revision that contains this whole window, so the server and web changes below are live there. Desktop changes wait for the build after 1.2.7, Android changes for the next APK, and the iPhone app is still in App Review.</p>
+
+          <h2>Follow-ups reach the run</h2>
+          <p>Until this week, a cloud run on a runner could start from a prompt but could not hear the next one. Follow-ups were turned away because the steering job named the wrong owner, so a reply to a run's question just sat in the queue. That is fixed, and follow-ups now reach runner runs. Messages queued before the fix stay queued, so send those again. Stop still does not reach a runner; that is the next gap to close.</p>
+          <p>Images travel with the prompt too. A screenshot attached on the web or a phone now goes to the runner job along with the text, and it shows up in the cloud transcript on the desktop. The web's Start an agent dialog has an Attach images button for JPEG, PNG, WebP and GIF files. A finished cloud run can be continued on its runner, and on iPhone a run that failed before any runner picked it up accepts a follow-up that runs the task again. Android still hides the composer on that kind of run.</p>
+          <p>The wait got shorter as well. While a runner waits for work, the app now checks for new prompts every 250 ms instead of every second, so a prompt from the web or a phone reaches the runner in about a quarter of a second.</p>
+
+          <h2>Watching from the phone</h2>
+          <p>Phones used to see a runner's progress three to six seconds late, after a chain of reports and re-reads. Since October 5 the phone follows the run's live stream instead, with updates every 250 ms while the run screen is open. Text still arrives one message or tool call at a time, not token by token. Every run with a session now opens the same agent page with its live transcript, and signing a runner in to Claude Code from the phone opens the sign-in instead of hanging on "Connecting…".</p>
+          <p>Accounts have a home on the web as well. Settings → Agents &amp; runners lists every desktop on your account with its Claude Code and Codex accounts. From there you can see usage, log in and out, add or rename an account, pick the one new agents use, and open a terminal. This needs a desktop build that carries the new controls; an older desktop shows its accounts and asks you to update. On iPhone, Runner accounts gained usage bars, Log in again, Log out and a full-screen terminal on the runner. Android does not have those yet.</p>
+
+          <h2>Finishing a run where you are</h2>
+          <p>In the desktop's Agents list, a cloud run now has the finishing moves of a local one: Merge &amp; clean up, Clean up, Create PR, Pull from its base and Actions. Merging completes the linked task, and Fix conflicts sends a follow-up to the cloud run instead of refusing. An organization's runs are still merged from the website.</p>
+          <p>On the phones, a runner run shows its pull request, or a Create PR button, beside Merge &amp; clean up. It can update from its base branch, with Fix with agent when that update conflicts. The Branches screen can merge, merge and delete, update from the default branch, and delete. The phones can now also merge contributed pull requests that arrive as patches, which they could not do before.</p>
+          <p>On the web, a single merge, update or delete in a public hosted repository runs straight away on the cores, so the owner's desktop no longer has to be online. Private repositories still queue the work for the desktop. When a repository's queue is full, the Branches page keeps the extra requests in a waiting list and sends them as room frees up. That list lives in the open page, so closing the page drops whatever has not been sent.</p>
+
+          <h2>Branches that let go</h2>
+          <p>A merged pull request no longer keeps its branch. Its record (the merge, the reward fields and the pull number) moves to a hidden ref that stays out of branch lists and clones, and merging or deleting a pull removes its branch in the same step. On forkmesh/forkmesh, 210 of 233 per-pull branches belonged to pulls that had already merged. Each core cleans those up after the deploy that carries this change.</p>
+          <p>The desktop also stops bringing back what you removed. A branch deleted upstream is now deleted locally too, and a pull branch the desktop deleted stays deleted instead of returning on the next sync. The Branches page calls a fresh agent branch that has not committed yet "new" rather than "merged", adds a Created column, shows clock times next to ages, and hides remote copies that say nothing the local branch does not.</p>
+
+          <h2>More of the desk on the phone</h2>
+          <p>#mesh no longer needs someone watching it. Phones now raise their own notification for each new #mesh message that arrives over the local mesh while the room is not on screen. No account or internet connection is needed, and the alert is raised on the phone itself. Messages more than ten minutes old do not ring, so catching up on history stays quiet. Chat on both phones also gained day separators, and a run of messages no longer groups across midnight.</p>
+          <p>Marketing on the phones now covers what the desktop page does: Overview, Content, Campaigns, Channels, Ads, Growth, Reddit and Performance. The CRM's phone apps can list and send note drafts, set last-contacted dates and connect Zoho Mail. Task tabs on the web, desktop and phones became icons with counts, with a strip of member avatars to filter by person. The Android side of this work compiles. The new iPhone screens have been parse-checked but not yet built in Xcode, so treat the iPhone half as in progress.</p>
+
+          <h2>Chat, mail and the small print</h2>
+          <p>Chat has one way to format text. The web, the desktop and notification emails all read Slack-style markup: <code>*bold*</code>, <code>_italic_</code>, <code>~strike~</code>, code blocks and <code>&lt;url|label&gt;</code> links, with the familiar keyboard shortcuts. One side effect to know about: an old web message written as <code>*italic*</code> now shows as bold.</p>
+          <p>Account and security email (verification, password resets and alerts) no longer carries tracking links or an open pixel. Notification email still does, as the privacy page describes, and still offers a one-click unsubscribe. On forkmesh.com, Analytics now asks first. Public pages show a small consent box, and nothing is counted for a visitor until they choose Allow analytics.</p>
+          <p>On the desktop, the debug bar's new Report button copies a Markdown diagnostic report for a coding agent and compares it with the previous one. The main window has rounded corners on Wayland, and Today's activity adds up counts from the desktop, the phones and the web.</p>
+
+          <h2>What follows</h2>
+          <p>Some boundaries are worth naming. Server and web work from this window is on the hosted service now; the rest waits on app releases. Desktop changes wait for the build after 1.2.7. The iPhone app is still in App Review: after Apple's review raised its in-app payment rule, the iOS build no longer offers tips, the treasury, or Free and Paid labels in the Market, while Android and the desktop keep them. And Stop for runner runs is the most visible gap we know about.</p>
+          <p><a href="https://app.forkmesh.com/signup?utm_source=blog&amp;utm_medium=referral&amp;utm_campaign=changelog&amp;utm_content=runs-that-listen-branches-that-let-go">Try ForkMesh in the browser</a> to start the hosted workflow. If something here does not work the way we described it, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a>. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/forkmesh-coaster/">← Ride the ForkMesh coaster</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/the-work-keeps-its-place/">The work keeps its place →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

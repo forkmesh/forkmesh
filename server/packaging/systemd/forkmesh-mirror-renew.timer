@@ -1,0 +1,16 @@
+[Unit]
+Description=Keep the signed ForkMesh mirror health lease fresh
+Documentation=https://forkmesh.com/docs/operations/direct-https-mirror-gateway
+
+[Timer]
+# The edge registration lease is ten minutes. The four-minute cadence plus
+# scheduling jitter and the renewal service's five-minute timeout remains
+# inside that bound without repeatedly hashing large encrypted archives.
+OnBootSec=2min
+OnUnitActiveSec=4min
+AccuracySec=15s
+RandomizedDelaySec=30s
+Unit=forkmesh-mirror-renew.service
+
+[Install]
+WantedBy=timers.target

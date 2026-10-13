@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The mesh keeps moving · ForkMesh Blog</title>
+    <meta name="description" content="ForkMesh's current main branch turns teammates into a shared workbench, carries identity and mobile work further, and makes mirror recovery easier to trust.">
+    <link rel="canonical" href="https://forkmesh.com/blog/the-mesh-keeps-moving/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/the-mesh-keeps-moving/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="The mesh keeps moving">
+    <meta property="og:description" content="Shared teammate runs, portable identity and mobile-node groundwork, sealed private chat, and more honest mirror recovery land on current main.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/the-mesh-keeps-moving.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit ForkMesh workbench with four coding robots around a glass repository node, independent mirror capsules, a portable identity token, and the official ForkMesh logo reflected on wet stone">
+    <meta property="article:published_time" content="2026-08-28T00:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The mesh keeps moving">
+    <meta name="twitter:description" content="A current-main report on shared agent work, portable identity, mobile nodes, sealed private chat, and recovery that says what it knows.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/the-mesh-keeps-moving.webp">
+    <meta name="twitter:image:alt" content="A moonlit ForkMesh workbench with four coding robots around a glass repository node, independent mirror capsules, a portable identity token, and the official ForkMesh logo reflected on wet stone">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>The mesh keeps moving</h1>
+            <p class="lede">ForkMesh's current <code>main</code> branch turns teammate runs into a shared, reviewable workbench, carries identity and mobile work further, and makes the mesh more candid about recovery when a signal is missing.</p>
+            <div class="meta"><span class="pill">August 28, 2026</span><span>Product update</span><span>7 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/the-mesh-keeps-moving.webp" alt="A moonlit ForkMesh workbench with four coding robots around a glass repository node, independent mirror capsules, a portable identity token, and the official ForkMesh logo reflected on wet stone">
+        </section>
+        <article class="body">
+          <p><a href="/blog/the-teammate-who-asks-what-should-leave/">The teammate who asks what should leave</a> gave Reaper a narrow, evidence-backed job. This update follows what happened around that role: the rest of the team gained a shared run surface, sessions kept more of their history, identity got a portable recovery format, and the network learned to separate “we saw a failure” from “we did not get a sample.”</p>
+          <p>This update covers the work that landed on <code>main</code> from August 25 through August 28. The latest signed desktop remains <strong>v0.7.29</strong>; everything described below is current-<code>main</code> unless marked otherwise. App, website, World, and mobile surfaces can deploy on different schedules.</p>
+
+          <h2>One team can now share one run</h2>
+          <p>The desktop Team surface can run every available prompt-based teammate in one agent session. Each participant keeps its own assignment, but the session records the full teammate list, so attribution survives a restart and a shared run still has a durable home in the repository's agent history. Daily briefings use the same shape: one session can collect the team's configured work instead of scattering a single briefing across unrelated processes.</p>
+          <p>That shared run is paired with more deliberate controls. Agent sessions can be ranked with priorities from 1 through 99 and linked back to an organization task. Teammate run modes, persisted prompts, individual briefing refresh, and a self-improvement cycle give an operator a way to keep the loop moving without turning it into an unbounded automation claim. Outputs remain opt-in, and a teammate still needs the repository permissions its task requires.</p>
+          <p>The web can launch an agent for an eligible owner node, while the desktop keeps the branch, session, and review path visible. A failed or interrupted run has somewhere to resume, but that does not mean a hosted service is running every schedule in the background. The durable configuration lives in the repository; execution still depends on the available client, model route, and permissions.</p>
+
+          <h2>Feedback has a place to land</h2>
+          <p>The desktop now treats agent work as a conversation with a finish line. A session can point to its issue or organization task, its branch, its checks, and its next review action. Active agents sort ahead of completed history, the list can be reprioritized directly, and a task link opens the task that gave the run its scope. A small performance improvement also collapses duplicate Git reads during the merge sweep, keeping the view responsive as the history grows.</p>
+          <p>Pull and mirror intake received the same attention. The desktop drains all available issue mirror pages, preserves the upstream checkout boundary, propagates branch deletion, and keeps conflict fixes on the pull-request branch. Owners can explicitly waive pull review when their policy allows it; the interface shows the choice instead of implying that every repository follows one review rule. Those are workflow changes, not a new claim that every change is automatically safe to merge.</p>
+
+          <h2>A private conversation has a narrower audience</h2>
+          <p>Private channels and direct messages now add an automatic device-to-device encryption layer inside the room cipher. Each protected frame gets a fresh content key, wraps that key for known participant devices with X25519 and HKDF, and keeps the recipient ciphertext behind the outer room envelope. Browser, desktop, and mobile clients share the same v2 envelope fixture and reject a protected frame that does not validate.</p>
+          <p>The boundary is important. Public <code>#</code> channels stay controller-readable so ForkBot, MCP, and webhooks can participate. Device-key discovery is not authenticated membership: an actively modified controller could inject a key, and an operator serving modified browser JavaScript can read that browser's plaintext. Timing, sizes, connection metadata, and durable flags remain visible; the protocol is not a double ratchet and does not promise post-compromise security. The current security guide is the source of truth for those limits.</p>
+          <p>The same private-room work now gives team agent threads a protected place to live. The relay can still drop, delay, replay, or withhold frames, so this is a confidentiality boundary for protected conversations, not a promise of availability or perfect participant authentication.</p>
+
+          <h2>Identity can move without becoming a hosting dependency</h2>
+          <p>Portable identity export is now a documented, provider-neutral JSON format shared by web, mobile, and Qt desktop. The client encrypts the local payload with AES-256-GCM using a 600,000-round PBKDF2-HMAC-SHA-256 key derivation, canonical base64url fields, and authenticated data that binds the format version. The relay does not receive the passphrase or the plaintext container. Passkeys and hardware-key private material remains intentionally non-exportable.</p>
+          <p>That is a recovery kit, not a magic reset. The docs still require independent control of the passphrase, a fresh key on a replacement device, revocation of a lost device, and tested recovery drills. The broader identity epic remains a release-level outcome with more drills and delegation evidence still required; this shipped format is one concrete step, not a claim that every recovery path is complete.</p>
+
+          <h2>The phone can participate, in the foreground</h2>
+          <p>The Flutter app now has the shape of an independent mobile node. A bound phone can sign and apply supported issue, pull, and discussion work through the account sync path, show node activity, and commit applicable items to a local repository. If a desktop node is enrolled, the phone stays in standby so two nodes do not drain the same inbox. Items it cannot honestly apply—such as work that needs a desktop working copy—remain available for the desktop rather than being acknowledged and lost.</p>
+          <p>The contract is deliberately smaller than “a desktop in your pocket.” Mobile nodes do not host or mirror repositories, do not run in the background, and do not touch wallet or mirror-process settings. Applied local commits still need an explicit push to publish. APNs registration and the next store build are groundwork in current <code>main</code>; repository evidence does not establish an App Store release.</p>
+
+          <h2>Recovery should not manufacture an outage</h2>
+          <p>Status history now makes monitoring coverage visible without painting missing minutes red. Recorded failures remain failures; an absent sampler is a coverage gap. Uptime calculations no longer turn a partially observed period into a perfect number, and an independent retry is required for a new flagship failure unless visitor evidence already confirms it.</p>
+          <p>Mirror proofs renew on a tighter cadence, status snapshots can republish as an atomic pair after a real transition, and the handoff path can recover toward a deployed flagship revision after catalog trouble. A healthy repository stays servable through a transient refresh failure instead of being replaced by an empty or partial state. The native node's deterministic merge remains intentionally narrow: bounded issue-intake divergence can converge when the required directory evidence is present; conflicting ordinary changes still stop for review.</p>
+          <p>These changes are unglamorous by design. They make the public status page, mirror router, and local diagnostics say less when the evidence is weak—and say it more clearly when the evidence is strong.</p>
+
+          <h2>What is live, and what comes next</h2>
+          <p>The repository's default homepage also now presents a clearer capabilities and plans surface, and the World gained adaptive device-quality groundwork. Those are merged website and World changes, but they remain subject to their own deployment and device validation. The current signed desktop download is still v0.7.29; the shared teammate runs, sealed private chat, portable identity, mobile-node work, and recovery refinements need a later signed artifact or their matching hosted rollout before they should be described as universally available.</p>
+          <p>The window contains closed issue records for identity recovery, release preservation, World rendering, issue filters, and navigation, but no new repository-native merged pull record. We treat those records as evidence of completed slices and verification work, not as proof that the larger roadmap epics are done. The next useful step is end-to-end validation across the clients and a signed release that carries the desktop portion of this work.</p>
+          <p><a href="/desktop">Get the current signed desktop</a>, check the <a href="/status">live status page</a>, or <a href="/docs/">browse the public documentation</a> for the portable-identity and sealed-chat contracts.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog/the-mirror-becomes-a-front-door/">← The mirror becomes a front door</a>
+          <a href="/blog">All posts</a>
+          <a href="/blog/the-teammate-who-asks-what-should-leave/">The teammate who asks what should leave →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>

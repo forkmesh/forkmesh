@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+umask 077
+secret=$(cat "$CREDENTIALS_DIRECTORY/@@TURN_SECRET@@")
+case "$secret" in
+  ""|*[!A-Za-z0-9_-]*)
+    echo "fmnext-turn: @@TURN_SECRET@@ is empty or has unexpected characters" >&2
+    exit 2 ;;
+esac
+if [ "${#secret}" -lt 32 ]; then
+  echo "fmnext-turn: @@TURN_SECRET@@ is shorter than 32 characters" >&2
+  exit 2
+fi
+conf="$RUNTIME_DIRECTORY/turnserver.conf"
+{ cat @@ETC@@/turnserver.conf; printf 'static-auth-secret=%s\n' "$secret"; } >"$conf.new"
+chown @@TURN_USER@@:@@TURN_USER@@ "$conf.new"
+chmod 0400 "$conf.new"
+mv -f "$conf.new" "$conf"

@@ -1,0 +1,10 @@
+{
+  "category": "Analytics",
+  "integrations": [
+    "mixpanel",
+    "segment",
+    "amplitude",
+    "plausible",
+    "googleAnalytics"
+  ]
+}

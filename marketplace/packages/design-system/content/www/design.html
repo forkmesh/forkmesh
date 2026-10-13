@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ForkMesh Design System — desktop, mobile and web specs</title>
+    <meta
+      name="description"
+      content="The ForkMesh design system: colours, type, spacing, buttons and every icon of the desktop app, the iPhone and Android apps and the website, read from the code that draws them."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href="https://forkmesh.com/design" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/design/design.css?v=${version}" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forkmesh.com/design" />
+    <meta property="og:site_name" content="ForkMesh" />
+    <meta property="og:title" content="ForkMesh Design System" />
+    <meta
+      property="og:description"
+      content="Colours, type, spacing, buttons and every icon ForkMesh ships on desktop, iPhone, Android and the web."
+    />
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/assets/vendor/lucide-0.468.0.min.js" defer></script>
+    <script src="/design/design.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="ds-wrap" id="design-system">
+      <header class="ds-hero">
+        <p class="eyebrow">Design system</p>
+        <h1>How ForkMesh looks, on every screen.</h1>
+        <p class="ds-lede">
+          Colours, type, spacing, buttons and every icon of the desktop app, the iPhone and
+          Android apps and this website. Each value on this page is read from the code that
+          draws it, so it changes when the apps do.
+        </p>
+        <nav class="ds-tabs" aria-label="Platforms">
+          <a href="#web" data-ds-tab="web">Web</a>
+          <a href="#desktop" data-ds-tab="desktop">Desktop</a>
+          <a href="#ios" data-ds-tab="ios">iPhone</a>
+          <a href="#android" data-ds-tab="android">Android</a>
+          <a href="#icons" data-ds-tab="icons">All icons</a>
+        </nav>
+        <p class="ds-counts" data-ds-counts></p>
+      </header>
+
+      <section class="ds-logo" aria-labelledby="ds-logo-title">
+        <h2 id="ds-logo-title">Logo</h2>
+        <p class="ds-intro">
+          One vector file, <a href="/assets/logo.svg" download="forkmesh-logo.svg">logo.svg</a>, for
+          white and black backgrounds. The letters and the top face are white so the mark still reads
+          from a distance.
+        </p>
+        <div class="ds-logo-tiles">
+          <figure class="ds-logo-tile is-light">
+            <img src="/assets/logo.svg" alt="ForkMesh logo on white" />
+            <figcaption>On white</figcaption>
+          </figure>
+          <figure class="ds-logo-tile is-dark">
+            <img src="/assets/logo.svg" alt="ForkMesh logo on black" />
+            <figcaption>On black</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <p class="ds-status" data-ds-status>Loading the design system…</p>
+      <noscript><p class="ds-status">This page needs JavaScript to draw the specimens.</p></noscript>
+
+      <section class="ds-section" id="web" data-ds-section="web" hidden></section>
+      <section class="ds-section" id="desktop" data-ds-section="desktop" hidden></section>
+      <section class="ds-section" id="ios" data-ds-section="ios" hidden></section>
+      <section class="ds-section" id="android" data-ds-section="android" hidden></section>
+      <section class="ds-section" id="icons" data-ds-section="icons" hidden></section>
+
+      <footer class="ds-note">
+        <p>
+          The design system is a removable Market package. Desktop, iPhone and Android show a
+          Design button while it is installed; remove it from the Market to hide the button.
+        </p>
+        <p><a class="secondary-button" href="/market">Open the Market</a></p>
+      </footer>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

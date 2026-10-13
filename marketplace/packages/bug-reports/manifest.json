@@ -1,0 +1,64 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "bug-reports",
+  "name": "Report a bug",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Support",
+  "version": "1.0.0",
+  "summary": "The Bug button: report a bug in ForkMesh with a screenshot and the app's recent log, from Home or the menu.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Report a bug plugin card"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:bug-reports",
+    "ios": "builtin:bug-reports",
+    "android": "builtin:bug-reports",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "support.report",
+      "label": "Send your report, a screenshot and the recent app log to ForkMesh",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

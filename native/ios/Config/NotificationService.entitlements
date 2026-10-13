@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Shared by the app and the notification service extension: the app
+	     leaves the session token here and the extension presents it to
+	     GET /api/push/alert to turn "New activity" into the real notification.
+	     Both targets must list exactly this group, or each silently gets its
+	     own keychain. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.forkmesh.forkmesh</string>
+	</array>
+</dict>
+</plist>

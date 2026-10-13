@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Desktop client · ForkMesh Docs</title>
+    <meta
+      name="description"
+      content="The ForkMesh Qt 6 desktop client: local Ed25519 identity, repository workspaces, signed collaboration, and encrypted mainnode chat rooms."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .doc-wrap { max-width: 860px; margin: 0 auto; padding: 42px 20px 80px; }
+      .doc-wrap h1 { font-size: clamp(32px, 5vw, 48px); margin: 0 0 12px; }
+      .doc-intro { color: var(--muted); max-width: 68ch; font-size: 17px; margin: 0 0 8px; line-height: 1.6; }
+      .doc-crumbs { margin: 0 0 18px; font-size: 13px; color: var(--muted); }
+      .doc-crumbs a { color: var(--muted); }
+      .doc-crumbs a:hover { color: var(--foreground); }
+      .doc-toc { margin: 28px 0 8px; padding: 16px 20px; border: 1px solid var(--border); border-radius: 12px; }
+      .doc-toc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+      .doc-toc ol { margin: 0; padding-left: 18px; columns: 2; column-gap: 24px; }
+      .doc-toc li { margin: 4px 0; break-inside: avoid; }
+      .doc-toc a { color: var(--foreground); text-decoration: none; }
+      .doc-toc a:hover { text-decoration: underline; }
+      .doc-body { margin-top: 32px; }
+      .doc-body h2 { font-size: 26px; margin: 44px 0 14px; padding-top: 22px; border-top: 1px solid var(--border); }
+      .doc-body h2:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+      .doc-body h3 { font-size: 19px; margin: 28px 0 10px; }
+      .doc-body p { color: var(--muted); line-height: 1.65; margin: 0 0 14px; }
+      .doc-body p strong, .doc-body li strong { color: var(--foreground); }
+      .doc-body a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+      .doc-body ul, .doc-body ol { padding-left: 22px; margin: 0 0 14px; color: var(--muted); }
+      .doc-body li { margin: 6px 0; line-height: 1.6; }
+      .doc-body code { font-family: "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: rgba(127,127,127,0.14); border-radius: 4px; padding: 0.12em 0.4em; }
+      .doc-body pre { background: rgba(127,127,127,0.08); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+      .doc-body pre code { background: none; padding: 0; font-size: 0.86em; line-height: 1.55; }
+      .doc-body blockquote { margin: 0 0 16px; padding: 4px 16px; border-left: 3px solid var(--border); color: var(--muted); }
+      .doc-body table { width: 100%; border-collapse: collapse; margin: 0 0 20px; font-size: 0.93em; }
+      .doc-body th, .doc-body td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      .doc-body th { color: var(--foreground); font-weight: 700; }
+      .doc-body hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+      .doc-siblings { margin-top: 44px; padding-top: 24px; border-top: 1px solid var(--border); }
+      .doc-siblings h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+      .doc-siblings ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; color: var(--muted); }
+      .doc-siblings a { font-weight: 600; color: var(--foreground); text-decoration: none; }
+      .doc-siblings a:hover { text-decoration: underline; }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="doc-wrap">
+      <p class="doc-crumbs"><a href="/docs">Docs</a> / Desktop client</p>
+      <p class="eyebrow">Developer docs</p>
+      <h1>ForkMesh Qt Client</h1>
+      <p class="doc-intro">
+        The ForkMesh desktop client is a Qt 6 workspace application for
+        preserving repositories and communicating with peers. Repository
+        serving and catalog publication belong to the managed mirror service.
+      </p>
+
+      <div class="doc-body">
+        <h2 id="features">Features</h2>
+        <ul>
+          <li>Generates a local Ed25519 ForkMesh identity</li>
+          <li>Stores a profile name and, when enabled, only a public Solana payout address</li>
+          <li>Keeps wallet signing keys and repository decryption identities on the owner’s device</li>
+          <li>Seals private mirrors into opaque, recipient-encrypted replicas with local key rotation and revocation</li>
+          <li>Configures selected repositories for the managed direct-HTTPS mirror service</li>
+          <li>Creates per-repository chat channels</li>
+          <li>Uses encrypted WebSocket rooms for chat, presence, and small update signals—not repository bytes</li>
+          <li>Supports messages, files, reactions, avatars, typing state, and history sync</li>
+          <li>Opens the multiplayer ForkMesh world in the default browser from the main navigation</li>
+        </ul>
+        <p>
+          <strong>Non-custodial:</strong> ForkMesh does not hold or control
+          user funds and never stores a community member’s payout-wallet private
+          key or recovery phrase. The first instance operator may separately keep
+          the existing community-pool key in an encrypted signer on that operator’s own device.
+          User-owned funds, the public community-funded reward pool, pending
+          allocations, and completed on-chain transfers are separate states.
+          Community rewards are optional incentives and are never guaranteed.
+        </p>
+
+        <h2 id="build">Build</h2>
+        <p>On Debian/Ubuntu:</p>
+        <pre><code>sudo apt install build-essential cmake git qt6-base-dev libssl-dev \
+  libxkbcommon-dev libxkbcommon-x11-dev openssl</code></pre>
+        <pre><code>cd desktop
+./run.sh</code></pre>
+        <p>On macOS with Homebrew:</p>
+        <pre><code>brew install cmake qt openssl@3</code></pre>
+        <pre><code>cd desktop
+./run.sh</code></pre>
+
+        <h2 id="tests">Tests</h2>
+        <pre><code>cd desktop
+./run.sh test</code></pre>
+        <p>The smoke test covers Ed25519 identity generation/signing and room crypto.</p>
+
+        <h2 id="cloudflare">Cloudflare setup stays local</h2>
+        <p>
+          Open <strong>Control Node</strong> in the installed ForkMesh Qt client,
+          then use its Cloudflare deployment form. Enter a narrowly scoped
+          Cloudflare API token in that local desktop form. The optional World
+          instance launcher (Start your world here, Cloudflare key) can hold a masked token only in the current browser
+          tab long enough to copy it into the desktop field; it never submits,
+          proxies, persists, screenshots, or includes that value in the
+          <code>forkmesh://control/cloudflare</code> setup link. The link carries
+          bounded public topology only and rejects token-, password-, key-, and
+          credential-shaped parameters.
+        </p>
+        <p>
+          Review the dry-run output before deployment and clear or rotate the
+          token after use according to your Cloudflare policy. Repository
+          decryption keys, wallet private keys, and recovery phrases do not
+          belong in the Cloudflare form.
+        </p>
+
+        <h2 id="relay-mode">Relay Mode</h2>
+        <p>Start a local relay:</p>
+        <pre><code>cd ../app
+uvx --from workers-py pywrangler dev</code></pre>
+        <p>The client starts without setup input and connects to the ForkMesh mainnode:</p>
+        <pre><code>wss://app.forkmesh.com/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
+        <p>For local relay testing, use this server URL instead:</p>
+        <pre><code>ws://127.0.0.1:8787/api/repo/mainnode/forkmesh/rooms/general/ws</code></pre>
+        <p>
+          Default rooms fetch a relay-derived shared passphrase after account
+          or signed-node authentication. The client applies
+          PBKDF2-HMAC-SHA256 for 210,000 rounds with the first 16 bytes of
+          SHA-256(&quot;ForkMesh room:&quot; + room name) as salt, producing an
+          AES-256-GCM key. Public channels intentionally remain readable by the
+          controller so ForkBot, MCP, and webhooks can participate. Private
+          channels and direct messages automatically add device-to-device
+          X25519 encryption beyond that controller key. Persisted history is
+          capped at 500 frames per room for 7 days.
+        </p>
+
+        <h2 id="repository-mirroring">Repository Mirroring</h2>
+        <p>
+          Click <code>+ Add</code>, choose a local Git repository or enter a
+          remote clone URL, and ForkMesh will run:
+        </p>
+        <pre><code>git clone --mirror &lt;local-path-or-url&gt; &lt;app-data&gt;/mirrors/&lt;owner&gt;-&lt;repo&gt;.git</code></pre>
+        <p>Later syncs run:</p>
+        <pre><code>git -C &lt;mirror&gt; fetch --prune</code></pre>
+        <p>
+          Each mirror also gets a repository chat channel so nodes can
+          discuss project health, releases, and mirror status.
+        </p>
+        <p>
+          If network mirroring is enabled, the desktop commits local mirror
+          intent and refreshes the local Git copy. The managed Go mirror daemon,
+          not the desktop process, signs and publishes bounded catalog metadata
+          and owns the authenticated direct-HTTPS endpoint. Local source paths,
+          repository plaintext, and recipient private keys are never catalog
+          fields.
+        </p>
+
+        <h2 id="network-details">Network Details</h2>
+        <ul>
+          <li>Relay WebSocket path: <code>/api/repo/{owner}/{repo}/rooms/{room}/ws</code></li>
+          <li>Repository catalog path: <code>/api/repositories</code></li>
+          <li>Compatibility WebSocket path: <code>/api/room/{room}/ws</code></li>
+          <li>The client encrypts room traffic before sending it to the mainnode.</li>
+          <li>
+            File browsing/clone are served on demand from a managed mirror host,
+            with nothing stored on the relay. The website caches browsed data
+            in localStorage; the desktop client can keep temporary preview
+            mirrors in the Settings-configured preview cache before you
+            mirror or fork. This keeps the relay lean.
+          </li>
+        </ul>
+      </div>
+
+      <nav class="doc-siblings" aria-label="Other developer docs">
+        <h2>More developer docs</h2>
+        <ul>
+          <li><a href="/docs/protocol">Protocol spec</a> — identity, signatures, HTTP API, self-hosting a mainnode</li>
+          <li><a href="/docs/cloudflare-worker">Relay &amp; website</a> — where the App and relay run</li>
+          <li><a href="/mobile">Mobile app</a> — the native iOS and Android apps</li>
+          <li><a href="/changelog">Changelog</a> — release-by-release history</li>
+        </ul>
+      </nav>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

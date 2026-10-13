@@ -1,0 +1,100 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "browser-extension",
+  "name": "Browser Extension",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Extensions",
+  "version": "2.18.0",
+  "summary": "The ForkMesh extension for Chrome. Fills Password Vault logins, links Gmail, Zoho Mail and Mastodon conversations to CRM contacts, feeds Marketing's Reddit desk and updates any Marketing channel from its page in one click. One sign-in.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The ForkMesh extension popup offering to fill a saved login, beside the page that installs and updates the extension"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "browser-extension": "content/extension/manifest.json",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/extension",
+        "title": "Browser Extension",
+        "description": "Install or update the ForkMesh extension for Chrome, which serves the Password Vault, the CRM and Marketing from one sign-in.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Browser extension",
+          "icon": "puzzle",
+          "order": 90
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "browser.session.bearer",
+      "label": "Keep a ForkMesh session token in the extension's own storage after you sign in; website cookies are never used",
+      "risk": "sensitive"
+    },
+    {
+      "id": "browser.vault.fill",
+      "label": "Type a Password Vault login into the current tab, only when you press Fill and only on that login's own site",
+      "risk": "high"
+    },
+    {
+      "id": "browser.vault.capture",
+      "label": "Read the username and password typed into the current page when you press Save this page's login",
+      "risk": "high"
+    },
+    {
+      "id": "browser.mail.link",
+      "label": "Read the Gmail, Zoho Mail or Mastodon message you have open to tie it to a CRM contact after an explicit click",
+      "risk": "sensitive"
+    },
+    {
+      "id": "browser.x.profile.read",
+      "label": "Read your organization's public X profile counts while you have the profile open, for the Marketing package",
+      "risk": "low"
+    },
+    {
+      "id": "browser.reddit.read",
+      "label": "Read watched Reddit pages you open, and the views of threads you monitor, for the Marketing Reddit desk",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

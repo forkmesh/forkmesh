@@ -1,0 +1,4 @@
+# BEGIN forkmesh-next (managed by deploy/core/render.py; the daemon's catalog
+# and lease calls stay on this node and TLS still validates)
+127.0.0.1 @@APP_HOSTS@@
+# END forkmesh-next

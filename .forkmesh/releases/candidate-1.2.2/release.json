@@ -1,0 +1,11 @@
+{
+  "schema": "forkmesh-release-v2",
+  "repo": "forkmesh/forkmesh",
+  "tag": "v1.2.2",
+  "tag_commit": "57d52e5c1625d6827b1c3415546f87d679faf2ad",
+  "build_commit": "57d52e5c1625d6827b1c3415546f87d679faf2ad",
+  "channel": "candidate-1.2.2",
+  "created_at": 1789769869000,
+  "checksums_sha256": "212df7bf53672dc655a431cdd54b1be35dad7b4af464f848abed0e74105c740a",
+  "assets": [{"name":"forkmesh-linux-x86_64","blob_sha256":"785e5e9122672ef7e04a0d41844863d4f7aaf2236ee36a3cfabd4bee90edc660","size":61277832,"os":"linux","arch":"x86_64"},{"name":"forkmesh-linux-x86_64.AppImage","blob_sha256":"cb7d47ba23c3fc822a6aa1ef5f533f0952e4d136886871d4bd509db8f2b24df4","size":102554104,"os":"linux","arch":"x86_64"},{"name":"forkmesh-linux-x86_64.AppImage.zsync","blob_sha256":"a0e26d007a7597eb220c5aa28cc819d7f422a6b3b18b83f1655dd3f94df7fc86","size":175498,"os":"linux","arch":"x86_64"},{"name":"forkmesh-mirror-node-linux-x86_64","blob_sha256":"0b1bf172fd240ecad01f79816d01084018ffec3fe61754196e1c3f14b9bbf1e7","size":11727300,"os":"linux","arch":"x86_64"}]
+}

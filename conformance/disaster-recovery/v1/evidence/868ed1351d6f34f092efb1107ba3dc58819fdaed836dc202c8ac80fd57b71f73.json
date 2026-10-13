@@ -1,0 +1,96 @@
+{
+  "dataLoss": {
+    "commitsLost": 0,
+    "policy": "none",
+    "refsLost": [],
+    "withinPolicy": true
+  },
+  "fault": null,
+  "missingPrerequisites": [],
+  "mode": "automated-live",
+  "objective": {
+    "automatedBudgetSeconds": 120,
+    "dataLoss": "none",
+    "recoveryMinutes": 60
+  },
+  "platform": {
+    "git": "2.47",
+    "os": "linux",
+    "python": "3.13.5"
+  },
+  "ranAt": "2026-09-14T21:34:37+00:00",
+  "recoveryMs": 1637,
+  "runbookSha256": "b93908faaa80a062ef68b76c01bb1d452bd93cc0b83b821c483e25f0212229ee",
+  "runbookVersion": "1.0.0",
+  "scenario": "main-service-loss",
+  "schema": "forkmesh-disaster-drill-report-v1",
+  "steps": [
+    {
+      "action": "detect the outage as unreachable, never as empty",
+      "ms": 24,
+      "ok": true,
+      "procedure": "serve-static-emergency-mirror"
+    },
+    {
+      "action": "copy a verified repository into the serve directory",
+      "ms": 1001,
+      "ok": true,
+      "procedure": "serve-static-emergency-mirror"
+    },
+    {
+      "action": "a newcomer clones the emergency mirror over static HTTP",
+      "ms": 42,
+      "ok": true,
+      "procedure": "serve-static-emergency-mirror"
+    },
+    {
+      "action": "push to the read-only emergency mirror",
+      "ms": 42,
+      "ok": true,
+      "procedure": "serve-static-emergency-mirror"
+    },
+    {
+      "action": "verify the newcomer's clone against signed pins",
+      "ms": 16,
+      "ok": true,
+      "procedure": "serve-static-emergency-mirror"
+    }
+  ],
+  "unsafeSteps": {
+    "refused": [
+      {
+        "reason": "static HTTP mirrors are read-only",
+        "step": "write to an unauthenticated emergency mirror"
+      }
+    ],
+    "taken": []
+  },
+  "verdict": "pass",
+  "verification": [
+    {
+      "check": "the hosted copy answered before the outage",
+      "ok": true
+    },
+    {
+      "check": "the lost service reports unreachable",
+      "ok": true
+    },
+    {
+      "check": "the signed export verifies",
+      "ok": true
+    },
+    {
+      "check": "the emergency mirror refuses writes",
+      "ok": true
+    },
+    {
+      "check": "connectivity check passes",
+      "ok": true
+    },
+    {
+      "check": "every signed pin matches",
+      "ok": true
+    }
+  ],
+  "withinObjective": true
+}

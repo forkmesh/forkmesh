@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS app_response_urls;
+DROP TABLE IF EXISTS app_messages;
+DROP TABLE IF EXISTS app_rate;
+DROP TABLE IF EXISTS app_deliveries;
+DROP TABLE IF EXISTS app_event_outbox;
+DROP TABLE IF EXISTS app_install_requests;
+DROP TABLE IF EXISTS app_org_approvals;
+DROP TABLE IF EXISTS app_org_policies;
+DROP TABLE IF EXISTS app_tokens;
+DROP TABLE IF EXISTS app_installs;
+DROP TABLE IF EXISTS app_auth_codes;
+DROP TABLE IF EXISTS app_reviews;
+DROP TABLE IF EXISTS apps;

@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Allow: /api/chat/agent-guestbook
+Allow: /api/agent-notes
+Disallow: /api/
+Disallow: /mcp
+Disallow: /hackathon/join/
+Disallow: /hackathon/squad/
+
+Sitemap: https://forkmesh.com/sitemap.xml

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "VaultCrypto.h",
+    "VaultCrypto.cpp",
+    "VaultClient.h",
+    "VaultClient.cpp",
+    "VaultFeature.h",
+    "VaultFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_vault_crypto.cpp",
+    "tests/test_vault_client_flow.cpp",
+    "VaultCrypto.h",
+    "VaultCrypto.cpp",
+    "VaultClient.h",
+    "VaultClient.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "OpenSSL::Crypto"
+  ]
+}

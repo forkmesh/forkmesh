@@ -1,0 +1,11 @@
+{
+  "schema": "forkmesh-release-v2",
+  "repo": "forkmesh/forkmesh",
+  "tag": "v1.2.1",
+  "tag_commit": "4256994349b5bc4d3e7f1ec2174b922f88ce7f5e",
+  "build_commit": "4256994349b5bc4d3e7f1ec2174b922f88ce7f5e",
+  "channel": "candidate-1.2.1",
+  "created_at": 1789765488000,
+  "checksums_sha256": "a259312fe375ef2ea56c949cee645484505687a8e082f5f8120cdfad2867a93d",
+  "assets": [{"name":"forkmesh-android-universal.apk","blob_sha256":"556a1bad21e9b4c87b7c9ca47de282cdbff0f178715619a3bd12dc67cbf6f03d","size":66943220,"os":"android","arch":"universal"},{"name":"forkmesh-linux-x86_64","blob_sha256":"d8123d46ec33d232f160691548e4912a620608574b65a526988b3116816c1143","size":60292152,"os":"linux","arch":"x86_64"},{"name":"forkmesh-linux-x86_64.AppImage","blob_sha256":"5c2951bb62cdd7bc367e8d64724f60e2eca7898d232c063fa83870c8c455b89a","size":101997048,"os":"linux","arch":"x86_64"},{"name":"forkmesh-linux-x86_64.AppImage.zsync","blob_sha256":"bc958442acd8bf8825902247530b0a31351beabf0f43f1516c58619a01f163bc","size":174546,"os":"linux","arch":"x86_64"},{"name":"forkmesh-mirror-node-linux-x86_64","blob_sha256":"a4fa9d6a46f96fe85ccf4a978f15bab1bd87c79d93a55259729ae481540eefa2","size":11727300,"os":"linux","arch":"x86_64"},{"name":"forkmesh-windows-x86_64-setup.exe","blob_sha256":"ee790b3ce4396c9203697e878f3783c22fa2cad9f15e8e19c37b949fb8170448","size":75363120,"os":"windows","arch":"x86_64"}]
+}

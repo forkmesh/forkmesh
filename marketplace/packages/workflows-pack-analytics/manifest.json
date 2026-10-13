@@ -1,0 +1,82 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "workflows-pack-analytics",
+  "name": "Workflows: Analytics",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Workflow add-ons",
+  "version": "1.0.0",
+  "summary": "Adds 5 analytics integrations to Workflows: Mixpanel, Segment, Amplitude, Plausible and more.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Workflows: Analytics"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "pack": "content/pack.json",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "workflows.integrations",
+      "entrypoint": "pack",
+      "config": {
+        "category": "Analytics",
+        "integrations": [
+          "mixpanel",
+          "segment",
+          "amplitude",
+          "plausible",
+          "googleAnalytics"
+        ]
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "network.workflows.outbound",
+      "label": "Let workflow steps call analytics services you connect",
+      "risk": "high"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "workflows",
+      "version": "^1.0.0"
+    }
+  ],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

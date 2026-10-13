@@ -1,0 +1,7 @@
+/* The CRM header styles itself inside a shadow root; the host is a plain
+   block above the open email's body. */
+#forkmesh-crm-host {
+  all: initial;
+  display: block;
+  position: relative;
+}

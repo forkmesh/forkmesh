@@ -1,0 +1,61 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "reddit-banner-board",
+  "name": "Reddit Banner Board",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "virtual.object",
+  "category": "3D",
+  "version": "1.0.0",
+  "summary": "A portable World board for the public r/forkmesh feed.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "world": "content/world/index.js",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "world.socialfeed.read",
+      "label": "Read the public Reddit feed snapshot supplied by the World",
+      "risk": "low"
+    },
+    {
+      "id": "external.link.open",
+      "label": "Open reddit.com after an explicit board click",
+      "risk": "sensitive"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "Orange Reddit community board standing in ForkMesh World"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

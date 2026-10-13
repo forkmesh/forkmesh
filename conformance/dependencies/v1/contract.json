@@ -1,0 +1,135 @@
+{
+  "schema": "forkmesh-dependency-workflows-contract-v1",
+  "version": "1.0.0",
+  "updated": "2026-09-14",
+  "documentation": "www/docs/dependency-workflows.md",
+  "referenceImplementation": "app/src/stable_repository.py",
+  "probe": "tools/dependency_conformance.py",
+  "test": "app/tests/test_dependency_workflows.py",
+  "workflow": ".github/workflows/dependency-conformance.yml",
+  "reportSchema": "forkmesh-dependency-conformance-report-v1",
+  "resolutionSchema": "forkmesh-dependency-resolution-v1",
+  "identity": {
+    "format": "urn:forkmesh:repository:sha256:<64 lowercase hex>",
+    "requirement": "FM-ID-001",
+    "verifiedRoot": "git-root-commit:<full root commit object ID>",
+    "source": "rootCommit in the account-key-signed catalog record",
+    "routingHintsOnly": ["host", "owner", "organization alias", "repository name", "URL"]
+  },
+  "routes": [
+    {"id": "https", "template": "https://{host}/{owner}/{repository}", "read": true, "write": false},
+    {"id": "https-git-suffix", "template": "https://{host}/{owner}/{repository}.git", "read": true, "write": false},
+    {"id": "ssh", "template": "ssh://git@{host}/{owner}/{repository}.git", "read": true, "write": true}
+  ],
+  "providerSwitch": ["git", "config", "--global", "url.{active_base}/.insteadOf", "{logical_base}/"],
+  "clients": [
+    {
+      "id": "git",
+      "name": "Git",
+      "minimumVersion": "2.34.0",
+      "manifest": "git clone {logical_url} dependency && git -C dependency checkout --detach {commit}",
+      "lockEvidence": "the checked-out commit object ID",
+      "required": true
+    },
+    {
+      "id": "git-submodule",
+      "name": "Git submodule",
+      "minimumVersion": "2.34.0",
+      "manifest": "git submodule add {logical_url} deps/dependency, then commit the gitlink at {commit}",
+      "lockEvidence": "the gitlink object ID recorded in the superproject tree",
+      "required": true
+    },
+    {
+      "id": "pip",
+      "name": "pip",
+      "minimumVersion": "23.0",
+      "manifest": "dependency @ git+{logical_url}@{commit}",
+      "lockEvidence": "vcs_info.commit_id in the installed direct_url.json",
+      "required": true
+    },
+    {
+      "id": "npm",
+      "name": "npm",
+      "minimumVersion": "9.0.0",
+      "manifest": "\"dependency\": \"git+{logical_url}#{commit}\"",
+      "lockEvidence": "resolved in package-lock.json",
+      "required": true
+    },
+    {
+      "id": "go",
+      "name": "Go modules",
+      "minimumVersion": "1.21",
+      "manifest": "require {logical_host}/{owner}/{repository}.git {pseudo_version}",
+      "environment": {"GOPROXY": "direct", "GONOSUMDB": "{logical_host}", "GOFLAGS": "-mod=mod"},
+      "lockEvidence": "the h1: module and go.mod hashes in go.sum",
+      "required": true
+    },
+    {
+      "id": "cargo",
+      "name": "Cargo",
+      "minimumVersion": "1.70.0",
+      "manifest": "dependency = { git = \"{logical_url}\", rev = \"{commit}\" }",
+      "environment": {"CARGO_NET_GIT_FETCH_WITH_CLI": "true"},
+      "lockEvidence": "source = \"git+{logical_url}?rev={commit}#{commit}\" in Cargo.lock",
+      "required": false
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "install",
+      "expect": "installed",
+      "contract": "Every client installs the pinned commit through the logical URL and records it in its lock evidence."
+    },
+    {
+      "id": "provider-switch",
+      "expect": "installed",
+      "contract": "Pointing the logical base at a different provider installs byte-identical content and leaves the lock evidence unchanged."
+    },
+    {
+      "id": "origin-lost",
+      "expect": "installed",
+      "contract": "With the origin unavailable, the relay fails over, in declared order, to a route serving a signed state; content and lock evidence are unchanged.",
+      "resolution": "failed_over"
+    },
+    {
+      "id": "unverified-fallback",
+      "expect": "refused",
+      "contract": "With the origin unavailable and the only other route serving an unsigned state, the relay refuses before sending any bytes and no client installs anything.",
+      "resolution": "unavailable",
+      "reason": "state_unverified"
+    },
+    {
+      "id": "missing-commit",
+      "expect": "refused",
+      "contract": "A pin to a commit no route holds fails in every client; nothing else is installed in its place.",
+      "reason": "commit_missing"
+    },
+    {
+      "id": "moved-tag",
+      "expect": "refused",
+      "contract": "Re-pointing a tag after a lock exists is detected: Go reports a go.sum checksum mismatch, and the resolver reports ref_moved.",
+      "reason": "ref_moved"
+    },
+    {
+      "id": "rollback-recovery",
+      "expect": "installed",
+      "contract": "Restoring the origin and the provider rewrite reinstalls exactly the locked content without editing any manifest or lock."
+    }
+  ],
+  "routeReasons": ["unreachable", "identity_mismatch", "state_unverified", "commit_missing", "ref_moved"],
+  "pinErrors": ["identity_invalid", "mutable_pin", "ref_invalid"],
+  "resolutionStatuses": ["resolved", "failed_over", "unavailable", "rejected"],
+  "telemetry": {
+    "report": [
+      "schema", "suiteVersion", "generatedAt", "platform", "clients",
+      "results", "resolutions", "relay", "summary"
+    ],
+    "summary": [
+      "resolutionSuccess", "resolutionAttempts", "failoverSuccess",
+      "failoverAttempts", "reproducibleLocks", "lockChecks",
+      "verificationFailures", "unexpectedResults", "unavailableClients"
+    ],
+    "excluded": "Temporary paths, loopback URLs and ports, file contents, credentials, and client addresses are never written to a report."
+  },
+  "platforms": ["ubuntu-latest", "macos-latest", "windows-latest"]
+}

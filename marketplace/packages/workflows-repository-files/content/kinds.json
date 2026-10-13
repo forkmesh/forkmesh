@@ -1,0 +1,8 @@
+{
+  "kinds": [
+    "action",
+    "shortcut",
+    "skill",
+    "agent"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "marketing",
+  "version": "1.4.0",
+  "description": "Organization marketing dashboard with content operations across 100 global marketing channels.",
+  "author": { "name": "ForkMesh", "url": "https://forkmesh.com" },
+  "homepage": "https://forkmesh.com",
+  "repository": "https://github.com/forkmesh/forkmesh",
+  "license": "MIT",
+  "keywords": ["marketing", "content", "analytics", "reddit", "x", "youtube", "mastodon", "blog"],
+  "interface": {
+    "displayName": "Marketing",
+    "shortDescription": "Plan content across 100 global marketing channels.",
+    "longDescription": "A shared organization content pipeline and analytics dashboard with a one-click catalog of 100 globally available channels, RSS blog reading, channel settings, and auditable metric snapshots.",
+    "developerName": "ForkMesh",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://forkmesh.com",
+    "privacyPolicyURL": "https://forkmesh.com/privacy",
+    "termsOfServiceURL": "https://forkmesh.com/terms",
+    "defaultPrompt": [
+      "Summarize this organization's marketing pipeline.",
+      "Compare current performance across marketing channels.",
+      "Help plan the next cross-channel campaign."
+    ],
+    "brandColor": "#2F81F7"
+  }
+}

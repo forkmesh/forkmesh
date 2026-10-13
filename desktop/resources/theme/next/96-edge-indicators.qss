@@ -1,0 +1,3 @@
+#pageNoticeArea #inlineNotice { border-left: 2px solid @fgSubtle; }
+#pageNoticeArea #inlineNotice[tone="danger"] { border-left-color: @danger; }
+#pageNoticeArea #inlineNotice[tone="accent"] { border-left-color: @accent; }

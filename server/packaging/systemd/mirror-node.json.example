@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "listen": "127.0.0.1:8791",
+  "gatewayProbe": "127.0.0.1:8790",
+  "gatewayConfig": "/var/lib/forkmesh/.local/share/ForkMesh/ForkMesh/mirror-gateway/config.json",
+  "gatewayScript": "/usr/local/share/forkmesh/tools/mirror_gateway.py",
+  "python": "/usr/bin/python3",
+  "cloudflared": "/usr/local/bin/cloudflared",
+  "connectorToken": "/var/lib/forkmesh/.local/share/ForkMesh/ForkMesh/mirror-gateway/connector.token",
+  "identityKey": "/var/lib/forkmesh/.local/share/ForkMesh/ForkMesh/identity/ed25519.pem",
+  "catalogUrl": "https://app.forkmesh.com/api/repositories",
+  "publishOwner": "mirror9",
+  "version": "0.7.16",
+  "syncInterval": "15s",
+  "syncTimeout": "5m",
+  "disableMergeExecutor": false,
+  "disableAgentLogin": false,
+  "upstreams": {
+    "mirror9/forkmesh": [
+      "https://forkmesh.com/forkmesh/forkmesh"
+    ]
+  }
+}

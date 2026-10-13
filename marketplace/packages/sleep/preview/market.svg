@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">Sleep page with last night's 7 h 20 min against an 8 hour goal, bedtime and wake time, and a 30-night sleep chart</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <text x="64" y="84" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" font-weight="600" fill="#f4f5f7">Sleep</text>
+  <text x="64" y="114" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#9aa3b2">Phone resting by your bed counts as sleep · Apple Watch sleep from Apple Health · goal and sleep debt</text>
+  <g transform="translate(64,150)">
+    <rect width="320" height="380" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <circle cx="160" cy="150" r="90" fill="none" stroke="#2a2f3a" stroke-width="16"/>
+    <circle cx="160" cy="150" r="90" fill="none" stroke="#8a80f0" stroke-width="16" stroke-linecap="round" stroke-dasharray="518.4 565.5" transform="rotate(-90 160 150)"/>
+    <text x="160" y="150" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="28" font-weight="600" fill="#f4f5f7">7 h 20 min</text>
+    <text x="160" y="176" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">of 8 h</text>
+    <text x="160" y="290" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#f4f5f7">11:12 PM – 6:47 AM</text>
+    <text x="160" y="316" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">15 min awake · 1 interruption</text>
+    <text x="160" y="346" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#9aa3b2">Phone at rest · high confidence</text>
+  </g>
+  <g transform="translate(420,150)">
+    <rect width="796" height="380" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="310.0" y2="310.0" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="240.0" y2="240.0" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="170.0" y2="170.0" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="100.0" y2="100.0" stroke="#2a2f3a"/>
+    <line x1="40" x2="776" y1="30.0" y2="30.0" stroke="#2a2f3a"/>
+    <rect x="44.3" y="118.7" width="16" height="191.3" rx="3" fill="#8a80f0"/>
+    <rect x="68.8" y="81.3" width="16" height="228.7" rx="3" fill="#199e70"/>
+    <rect x="93.4" y="128.0" width="16" height="182.0" rx="3" fill="#8a80f0"/>
+    <rect x="117.9" y="114.0" width="16" height="196.0" rx="3" fill="#8a80f0"/>
+    <rect x="142.4" y="114.0" width="16" height="196.0" rx="3" fill="#8a80f0"/>
+    <rect x="166.9" y="102.3" width="16" height="207.7" rx="3" fill="#8a80f0"/>
+    <rect x="191.5" y="76.7" width="16" height="233.3" rx="3" fill="#199e70"/>
+    <rect x="216.0" y="132.7" width="16" height="177.3" rx="3" fill="#8a80f0"/>
+    <rect x="240.5" y="109.3" width="16" height="200.7" rx="3" fill="#8a80f0"/>
+    <rect x="265.1" y="114.0" width="16" height="196.0" rx="3" fill="#8a80f0"/>
+    <rect x="289.6" y="132.7" width="16" height="177.3" rx="3" fill="#8a80f0"/>
+    <rect x="314.1" y="128.0" width="16" height="182.0" rx="3" fill="#8a80f0"/>
+    <rect x="338.7" y="128.0" width="16" height="182.0" rx="3" fill="#8a80f0"/>
+    <rect x="363.2" y="118.7" width="16" height="191.3" rx="3" fill="#8a80f0"/>
+    <rect x="387.7" y="88.3" width="16" height="221.7" rx="3" fill="#8a80f0"/>
+    <rect x="412.3" y="76.7" width="16" height="233.3" rx="3" fill="#199e70"/>
+    <rect x="436.8" y="128.0" width="16" height="182.0" rx="3" fill="#8a80f0"/>
+    <rect x="461.3" y="128.0" width="16" height="182.0" rx="3" fill="#8a80f0"/>
+    <rect x="485.8" y="109.3" width="16" height="200.7" rx="3" fill="#8a80f0"/>
+    <rect x="510.4" y="132.7" width="16" height="177.3" rx="3" fill="#8a80f0"/>
+    <rect x="534.9" y="95.3" width="16" height="214.7" rx="3" fill="#8a80f0"/>
+    <rect x="559.4" y="132.7" width="16" height="177.3" rx="3" fill="#8a80f0"/>
+    <rect x="584.0" y="88.3" width="16" height="221.7" rx="3" fill="#8a80f0"/>
+    <rect x="608.5" y="97.7" width="16" height="212.3" rx="3" fill="#8a80f0"/>
+    <rect x="633.0" y="118.7" width="16" height="191.3" rx="3" fill="#8a80f0"/>
+    <rect x="657.5" y="81.3" width="16" height="228.7" rx="3" fill="#199e70"/>
+    <rect x="682.1" y="97.7" width="16" height="212.3" rx="3" fill="#8a80f0"/>
+    <rect x="706.6" y="74.3" width="16" height="235.7" rx="3" fill="#199e70"/>
+    <rect x="731.1" y="88.3" width="16" height="221.7" rx="3" fill="#8a80f0"/>
+    <rect x="755.7" y="109.3" width="16" height="200.7" rx="3" fill="#8a80f0"/>
+    <line x1="40" x2="776" y1="86.0" y2="86.0" stroke="#c98500" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="40" y="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#9aa3b2">Last 30 nights · 7 h 31 min average · bedtime 11:20 PM ± 25 min</text>
+  </g>
+</svg>

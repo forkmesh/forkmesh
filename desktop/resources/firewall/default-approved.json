@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "description": "URLs every ForkMesh download approves in the desktop firewall, so sign-in, sync, updates and the relay sockets work before anyone answers a prompt. Each rule is seeded once: a rule someone removes or denies stays that way, and a rule added here in a later release is seeded on upgrade. Keep these to URL patterns on the default relay; everything else asks. Syntax: host/path is one path on any scheme, * matches anything, and dir/* also covers dir.",
+  "rules": [
+    {
+      "rule": "app.forkmesh.com/api/accounts/*",
+      "purpose": "Sign-in, account records and linked devices"
+    },
+    {
+      "rule": "app.forkmesh.com/api/security/*",
+      "purpose": "Owner signing keys that prove who pushed and merged"
+    },
+    {
+      "rule": "app.forkmesh.com/api/repositories*",
+      "purpose": "The repository catalog"
+    },
+    {
+      "rule": "app.forkmesh.com/api/repo/*",
+      "purpose": "Repository sync, issues and pulls, release downloads for updates, and the relay chat room socket"
+    },
+    {
+      "rule": "app.forkmesh.com/api/sync*",
+      "purpose": "Relay sync"
+    },
+    {
+      "rule": "app.forkmesh.com/api/nodes/*",
+      "purpose": "The node event socket and linked nodes"
+    },
+    {
+      "rule": "app.forkmesh.com/api/network/*",
+      "purpose": "The relay, node and host roster"
+    },
+    {
+      "rule": "app.forkmesh.com/api/chat/*",
+      "purpose": "Chat channels, activity and room keys"
+    },
+    {
+      "rule": "app.forkmesh.com/api/notifications*",
+      "purpose": "Pings"
+    },
+    {
+      "rule": "app.forkmesh.com/api/orgs/*",
+      "purpose": "Organizations and their members"
+    },
+    {
+      "rule": "app.forkmesh.com/api/tasks*",
+      "purpose": "Tasks and agent status"
+    },
+    {
+      "rule": "app.forkmesh.com/api/version",
+      "purpose": "Which relay version is running"
+    },
+    {
+      "rule": "app.forkmesh.com/api/status",
+      "purpose": "Relay health"
+    },
+    {
+      "rule": "app.forkmesh.com/api/desktop-errors*",
+      "purpose": "Crash and error reports"
+    },
+    {
+      "rule": "app.forkmesh.com/status",
+      "purpose": "The status page check"
+    },
+    {
+      "rule": "app.forkmesh.com/dashboard",
+      "purpose": "The website reachability check"
+    }
+  ]
+}

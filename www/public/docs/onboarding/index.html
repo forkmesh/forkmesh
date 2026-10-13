@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Team onboarding · ForkMesh Docs</title>
+    <meta name="description" content="ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider." />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .doc-wrap { max-width: 940px; margin: 0 auto; padding: 42px 20px 80px; }
+      .doc-wrap h1 { max-width: 17ch; font-size: clamp(34px, 5vw, 52px); line-height: 1.06; margin: 0 0 14px; }
+      .doc-intro { max-width: 72ch; color: var(--muted); font-size: 17px; line-height: 1.65; margin: 0 0 12px; }
+      .doc-crumbs { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+      .doc-crumbs a, .doc-body a { color: var(--link); }
+      .role-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; margin: 28px 0; }
+      .role-card, .note, .steps { border: 1px solid var(--border); border-radius: 13px; background: color-mix(in srgb,var(--card) 84%,transparent); }
+      .role-card { padding: 18px; }
+      .role-card h2 { margin: 0 0 8px; font-size: 20px; }
+      .role-card p { margin: 0 0 12px; color: var(--muted); line-height: 1.55; }
+      .role-card a { font-weight: 700; }
+      .doc-toc { margin: 28px 0 8px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; }
+      .doc-toc h2 { margin: 0 0 10px; color: var(--muted); font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+      .doc-toc ol { margin: 0; padding-left: 20px; columns: 2; }
+      .doc-toc li { margin: 5px 0; break-inside: avoid; }
+      .doc-body h2 { margin: 46px 0 14px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 27px; }
+      .doc-body h3 { margin: 28px 0 10px; font-size: 19px; }
+      .doc-body p, .doc-body li { color: var(--muted); line-height: 1.67; }
+      .doc-body p { margin: 0 0 14px; }
+      .doc-body li { margin: 7px 0; }
+      .doc-body strong { color: var(--foreground); }
+      .steps { padding: 16px 20px 16px 42px; }
+      .note { margin: 18px 0; padding: 16px 18px; border-left: 3px solid var(--accent); }
+      .note p { margin: 0; }
+      .doc-body code { padding: .12em .4em; border-radius: 4px; background: rgba(127,127,127,.14); font-family: "ForkMesh Mono",ui-monospace,monospace; font-size: .88em; }
+      .doc-body pre { overflow-x: auto; margin: 0 0 18px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 10px; background: rgba(127,127,127,.08); }
+      .doc-body pre code { padding: 0; background: none; line-height: 1.55; }
+      .policy-table { width: 100%; border-collapse: collapse; margin: 16px 0 22px; }
+      .policy-table th, .policy-table td { padding: 11px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+      .policy-table th { color: var(--foreground); }
+      .policy-table td { color: var(--muted); }
+      @media (max-width: 760px) { .role-grid { grid-template-columns: 1fr; } .doc-toc ol { columns: 1; } }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div data-forkmesh-header="simple"></div>
+    <main class="doc-wrap">
+      <p class="doc-crumbs"><a href="/docs">Docs</a> / Team onboarding</p>
+      <p class="eyebrow">Start here</p>
+      <h1>Join ForkMesh and make your first contribution</h1>
+      <p class="doc-intro"><strong>ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.</strong></p>
+      <p class="doc-intro">This is the shared starting point for QA, developers, and marketing. You can enter the World immediately; sign in when you need to save work, review a pull request, use a team floor, or submit a public link.</p>
+      <div class="note"><p><strong>See the promise work:</strong> <a href="/docs/product-promise" data-forkmesh-product-action="onboarding-proof-opened">collaborate, add an independent mirror, take the source host offline, and clone again</a>. The guide includes prerequisites, expected failures, and recovery.</p></div>
+
+      <div class="role-grid" aria-label="Role quick starts">
+        <article class="role-card"><h2>QA</h2><p>Run the shared test deck, record pass/fail/unsure, and turn a reproducible failure into an issue.</p><a href="#qa">QA checklist →</a></article>
+        <article class="role-card"><h2>Developers</h2><p>Set up the Qt node, work on a branch, open a signed pull request, and get an independent approval.</p><a href="#developers">Developer checklist →</a></article>
+        <article class="role-card"><h2>Marketing</h2><p>Join the Office, claim assigned work, submit proof, and publish campaign links through the lobby kiosk.</p><a href="#marketing">Marketing checklist →</a></article>
+      </div>
+
+      <nav class="doc-toc" aria-label="Table of contents">
+        <h2>Contents</h2>
+        <ol>
+          <li><a href="#world">Join the World</a></li>
+          <li><a href="#qa">QA onboarding</a></li>
+          <li><a href="#developers">Developer onboarding</a></li>
+          <li><a href="#pull-requests">Submit a pull request</a></li>
+          <li><a href="#reviews">Peer-review policy</a></li>
+          <li><a href="#marketing">Marketing onboarding</a></li>
+          <li><a href="#link-rewards">Link rewards</a></li>
+          <li><a href="#help">Where to ask for help</a></li>
+        </ol>
+      </nav>
+
+      <div class="doc-body">
+        <h2 id="world">Join the World</h2>
+        <ol class="steps">
+          <li>Open <a href="/world">forkmesh.com/world</a>. Guest exploration is available immediately.</li>
+          <li>Use <strong>WASD</strong> or the arrow keys to move, drag to look, and use the mouse wheel or pinch gesture to zoom.</li>
+          <li>Select <strong>Log in</strong> to use account-backed features. Never paste a repository key, wallet recovery phrase, or Cloudflare token into World chat or a form.</li>
+          <li>Walk to the Office entrance. The lobby is public; elevator buttons show only floors your server-verified organization membership permits.</li>
+          <li>Use the <strong>CHAT</strong> terminal for public World chat. Repository and private team conversations remain on their own authorized channels.</li>
+        </ol>
+        <div class="note"><p><strong>Accessibility:</strong> the website dashboards expose the same repository, review, QA, and account workflows without requiring 3D navigation.</p></div>
+
+        <h2 id="qa">QA onboarding</h2>
+        <ol class="steps">
+          <li>Enter the World and walk to the QA board, or open the current QA surface from the project dashboard.</li>
+          <li>Test exactly what the card asks on the listed browser/device. Record <strong>Pass</strong>, <strong>Fail</strong>, or <strong>Unsure</strong>; do not guess.</li>
+          <li>For a failure, capture the smallest reproducible sequence, expected result, actual result, app/build version, OS, and relevant sanitized logs.</li>
+          <li>Search existing issues before opening another. Add screenshots only after checking that they contain no secrets or private repository content.</li>
+          <li>Retest the exact changed build. A fix is complete only when the original reproduction no longer fails and nearby behavior still works.</li>
+        </ol>
+
+        <h2 id="developers">Developer onboarding</h2>
+        <p>For the fastest path, install dependencies, start the desktop app (Qt), and run its focused tests:</p>
+        <pre><code>git clone https://forkmesh.com/forkmesh/forkmesh.git
+cd forkmesh/desktop
+./run.sh
+
+# In another run, execute the Qt test suite:
+./run.sh test</code></pre>
+        <p>See the <a href="/docs/qt-client">desktop app guide</a> for platform packages, local relay setup, repository mirroring, chat, and troubleshooting. The root <code>CONTRIBUTING.md</code> is the authoritative repository-level workflow.</p>
+        <ol class="steps">
+          <li>Create a focused branch from the current default branch.</li>
+          <li>Make one coherent change. Preserve unrelated local modifications and never commit credentials, build output, or user data.</li>
+          <li>Run the smallest relevant tests first, then the broader suite appropriate to the risk.</li>
+          <li>Update docs and tests whenever behavior, security boundaries, migrations, or user-visible workflows change.</li>
+          <li>Open a pull request and request at least one independent peer review.</li>
+        </ol>
+
+        <h2 id="pull-requests">Submit a pull request</h2>
+        <ol class="steps">
+          <li>Open the target repository on the website and read its <code>CONTRIBUTING.md</code>.</li>
+          <li>Create or publish your feature branch, then open the repository’s <strong>Pull requests</strong> tab.</li>
+          <li>Select <strong>New pull request</strong>, choose the base and head branches, and review the exact signed diff.</li>
+          <li>Write a specific title and explain the problem, the change, tests performed, user impact, migrations, and any known follow-up.</li>
+          <li>Submit the pull request. ForkMesh sends the signed proposal to the maintainer’s inbox; it becomes part of the live mirror after the owner node drains and publishes it.</li>
+          <li>Ask a peer who is not the pull-request author to review. Respond to requested changes with code and a short explanation, then request another review.</li>
+        </ol>
+        <div class="note"><p><strong>Before submitting:</strong> the branch should be current, tests should pass, the diff should contain no generated noise or secrets, and the description should give a reviewer enough context to verify the change.</p></div>
+
+        <h2 id="reviews">Peer-review and merge policy</h2>
+        <table class="policy-table">
+          <thead><tr><th>Signal</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td>Author approves their own PR</td><td>Ignored for the merge gate.</td></tr>
+            <tr><td>One distinct peer approves</td><td>Minimum review gate is met if no peer has an unresolved request for changes.</td></tr>
+            <tr><td>Two or more distinct peers approve</td><td>Creates a stronger review signal and makes a discretionary merge more likely; it does not bypass tests or maintainer judgment.</td></tr>
+            <tr><td>A peer requests changes</td><td>Merge remains locked until that reviewer’s latest decisive review is approval or the blocking state is cleared.</td></tr>
+            <tr><td>Comment only</td><td>Useful discussion, but it is not approval.</td></tr>
+          </tbody>
+        </table>
+        <p>The website and protected mirror merge both enforce the minimum independent approval. Reviews are signed events, and the latest decisive review from each signer wins. Approval count is never a promise to merge: correctness, security, scope, test results, maintainability, and repository-owner judgment still apply.</p>
+
+        <h2 id="marketing">Marketing onboarding</h2>
+        <ol class="steps">
+          <li>Join the World, enter the Office lobby, and use the elevator to open the Marketing floor. If it is locked, ask an organization owner to add your account to the Marketing team.</li>
+          <li>Open your desk or the task wall, start only work assigned to you, and use progress check-ins to mark <strong>Going well</strong>, <strong>Blocked</strong>, or <strong>Need help</strong>.</li>
+          <li>Keep campaign credentials, private drafts, customer data, and unreleased URLs out of public chat and public World presence.</li>
+          <li>When a task is complete, submit the public HTTPS proof link from your desk. Task notes and proof records use the organization-scoped API rather than multiplayer presence.</li>
+          <li>Use <a href="/dashboard/links">Link rewards</a> only when you intentionally want a link and your ForkMesh account name shown publicly.</li>
+        </ol>
+
+        <h2 id="link-rewards">Link rewards and estimated reach</h2>
+        <p>Open <a href="/dashboard/links"><strong>Link rewards</strong></a> in the dashboard (Community, then Links). Enter a public HTTPS link, a short title, and its channel, then accept the public-submission disclosure.</p>
+        <p>The score is a transparent 0–100 <strong>estimated reach score</strong>. It uses the authenticated account’s server-side follower count, aggregate visits ForkMesh has already observed from that hostname, and a small verified-domain signal. Potential traffic is shown as a range based on the selected channel. ForkMesh does not fetch, crawl, execute, or preview the submitted URL.</p>
+        <div class="note"><p><strong>What the score is not:</strong> it is not a social-credit score, quality judgment, identity verification, guaranteed traffic forecast, or input to merge access, rewards, governance, moderation, or team permissions.</p></div>
+
+        <h2 id="help">Where to ask for help</h2>
+        <ul>
+          <li>General onboarding: talk to Noah at the Office welcome desk or use World <code>#general</code>.</li>
+          <li>A reproducible product problem: open a repository issue with the QA details above.</li>
+          <li>A code-specific question: ask on the pull request so the answer stays with the change.</li>
+          <li>Qt setup: use the <a href="/docs/qt-client">desktop client guide</a> and include OS, Qt version, the exact command, and sanitized error output when asking.</li>
+          <li>Security-sensitive reports: do not post exploit details, credentials, private source, or personal data in public chat or issues; use the repository’s security reporting instructions.</li>
+        </ul>
+      </div>
+    </main>
+    <div data-forkmesh-footer="standard"></div>
+  </body>
+</html>

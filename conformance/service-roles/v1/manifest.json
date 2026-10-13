@@ -1,0 +1,427 @@
+{
+  "schemaVersion": 1,
+  "suite": {
+    "id": "forkmesh-service-roles",
+    "version": "1.0.0",
+    "updated": "2026-09-14",
+    "reportSchema": "forkmesh-service-role-report-v1",
+    "tool": "tools/forkmesh_service_roles.py",
+    "documentation": "www/docs/operations/service-roles.md",
+    "tracking": "#502"
+  },
+  "statuses": {
+    "independent": "An unaffiliated operator can run the role from this repository with open-source dependencies only, and no default endpoint is required.",
+    "partial": "An independent profile serves part of the role; the listed gaps still need the hosted deployment.",
+    "hosted-only": "The role runs only on the hosted deployment today; the listed gaps say what is missing."
+  },
+  "failureVerdicts": {
+    "pass": "Every contract check answered as specified.",
+    "degraded": "Every check that did not pass answered with the role's declared explicit degradation (for example 503 with a machine-readable error). Canonical data is untouched.",
+    "fail": "At least one check answered outside both the contract and the declared degradation.",
+    "unreachable": "The role did not answer at all. Clients must treat this as service loss, never as an empty result."
+  },
+  "roles": [
+    {
+      "id": "web-ui",
+      "label": "Web UI",
+      "status": "partial",
+      "summary": "Browse repositories, files, history, pull requests, issues, and projects in a browser.",
+      "hosted": {
+        "implementation": "Python Worker (forkmesh-app)",
+        "paths": ["app/src/entry.py", "app/wrangler.toml", "app/public/dashboard.js"],
+        "platform": "cloudflare-workers"
+      },
+      "independentProfile": {
+        "implementation": "Mirror gateway dashboard (DashboardService)",
+        "paths": ["tools/mirror_gateway.py"],
+        "start": ["python3", "tools/mirror_gateway.py", "--config", "<gateway.json>"],
+        "check": ["python3", "tools/mirror_gateway.py", "--config", "<gateway.json>", "--check"],
+        "configSchema": "www/docs/mirror-gateway-config.schema.json",
+        "runbook": "www/docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard",
+        "evidence": ["app/tests/test_mirror_dashboard.py", "app/tests/test_service_roles_contract.py"]
+      },
+      "contract": [
+        {
+          "id": "health",
+          "method": "GET",
+          "path": "/health",
+          "expect": {"status": [200], "json": {"ok": "bool", "integrity": "str"}},
+          "degraded": {"status": [503], "json": {"ok": "bool", "integrity": "str"}},
+          "source": {"path": "tools/mirror_gateway.py", "marker": "parsed.path == \"/health\""}
+        },
+        {
+          "id": "version",
+          "method": "GET",
+          "path": "/api/version",
+          "expect": {"status": [200], "json": {"ok": "bool", "version": "str"}},
+          "source": {"path": "tools/mirror_gateway.py", "marker": "path == \"/api/version\""}
+        },
+        {
+          "id": "dashboard-shell",
+          "method": "GET",
+          "path": "/dashboard",
+          "expect": {"status": [200], "contentType": "text/html"},
+          "source": {"path": "tools/mirror_gateway.py", "marker": "path == \"/dashboard\""}
+        },
+        {
+          "id": "signed-out-session",
+          "method": "GET",
+          "path": "/api/accounts/sessions",
+          "expect": {"status": [401], "json": {"error": "str"}},
+          "source": {"path": "tools/mirror_gateway.py", "marker": "path == \"/api/accounts/sessions\""}
+        }
+      ],
+      "dependencies": {
+        "required": [
+          {"id": "python3", "proprietary": false},
+          {"id": "git", "proprietary": false},
+          {"id": "https-reverse-proxy", "proprietary": false, "note": "Any TLS-terminating proxy (Caddy, nginx, HAProxy) in front of the loopback listener."}
+        ],
+        "optional": [
+          {
+            "id": "cloudflared",
+            "proprietary": false,
+            "substitute": "Set disableCloudflared and publish the origin through the operator's own HTTPS reverse proxy.",
+            "docs": "www/docs/operations/mirror-node.md#build-and-test"
+          },
+          {
+            "id": "canonical-login-origin",
+            "proprietary": false,
+            "substitute": "Omit dashboard.canonicalOrigin: /login and /signup are not redirected, and the dashboard stays signed out except for portable sessions the router key already signed.",
+            "docs": "www/docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard"
+          }
+        ]
+      },
+      "defaultEndpoints": [],
+      "canonicalData": "None. Pages and assets are Git blobs from the mirrored assets repository; the gateway stores no page state.",
+      "backup": {"paths": ["gateway configuration", "dashboard.replicaPath"], "runbook": "www/docs/operations/node-backup-and-recovery.md#backups"},
+      "observability": ["GET /health", "GET /api/version", "structured gateway access log on stderr"],
+      "failure": "Losing the hosted Worker leaves the dashboard serving the last validated public projection from dashboard.replicaPath; losing the gateway makes /health unreachable and the stable clone URL fails over to another healthy mirror.",
+      "gaps": [
+        "Account signup, password login, and every write form still require the hosted Worker.",
+        "The Worker itself depends on Cloudflare Workers, D1, Durable Objects, KV, and Queues; there is no packaged, tested workerd profile."
+      ]
+    },
+    {
+      "id": "relay",
+      "label": "Repository relay and clone routing",
+      "status": "partial",
+      "summary": "Serve stock Git clones and fetches, route the stable repository URL to a healthy copy, and notify nodes when refs change.",
+      "hosted": {
+        "implementation": "Python Worker edge routing and ForkMeshNodes Durable Object",
+        "paths": ["app/src/edge_routing.py", "app/src/git_http.py", "app/src/node_events_runtime.py"],
+        "platform": "cloudflare-workers"
+      },
+      "independentProfile": {
+        "implementation": "Mirror gateway Smart HTTP plus forkmesh-mirror-node synchronization",
+        "paths": ["tools/mirror_gateway.py", "server/cmd/forkmesh-mirror-node/main.go", "server/daemon.go"],
+        "start": ["forkmesh-mirror-node", "--config", "<mirror-node.json>"],
+        "check": ["forkmesh-mirror-node", "--config", "<mirror-node.json>", "--preflight", "--json"],
+        "configSchema": "www/docs/mirror-gateway-config.schema.json",
+        "runbook": "www/docs/operations/mirror-node.md",
+        "evidence": ["server/daemon_test.go", "app/tests/test_mirror_dashboard.py", "app/tests/test_service_roles_contract.py"]
+      },
+      "contract": [
+        {
+          "id": "clone-advertisement",
+          "method": "GET",
+          "path": "/{owner}/{repository}.git/info/refs?service=git-upload-pack",
+          "expect": {"status": [200], "contentType": "application/x-git-upload-pack-advertisement"},
+          "source": {"path": "tools/mirror_gateway.py", "marker": "direct_public_git = _public_git_route(parsed.path)"}
+        },
+        {
+          "id": "signed-endpoint-manifest",
+          "method": "GET",
+          "path": "/forkmesh-mirror.json",
+          "expect": {"status": [200], "json": {"schemaVersion": "int", "node": "dict", "signature": "dict"}},
+          "source": {"path": "tools/mirror_gateway.py", "marker": "\"/forkmesh-mirror.json\", \"/.well-known/forkmesh-mirror.json\""}
+        }
+      ],
+      "dependencies": {
+        "required": [
+          {"id": "git", "proprietary": false},
+          {"id": "python3", "proprietary": false},
+          {"id": "go-toolchain-or-release-binary", "proprietary": false}
+        ],
+        "optional": [
+          {
+            "id": "hosted-node-event-socket",
+            "proprietary": false,
+            "substitute": "Ref changes arrive through the post-receive doorbell (POST /v1/control/sync) and direct peer upstreams; third-party upstreams use syncInterval.",
+            "docs": "www/docs/operations/mirror-node.md"
+          },
+          {
+            "id": "cloudflared",
+            "proprietary": false,
+            "substitute": "Pass --disable-cloudflared with an operator HTTPS origin.",
+            "docs": "www/docs/operations/mirror-node.md#build-and-test"
+          }
+        ]
+      },
+      "defaultEndpoints": [
+        {
+          "value": "https://forkmesh.com/forkmesh/forkmesh",
+          "purpose": "default round-robin upstream",
+          "override": {"name": "--upstream", "path": "server/cmd/forkmesh-mirror-node/main.go", "marker": "flag.String(\"upstream\""}
+        }
+      ],
+      "canonicalData": "Git objects and refs in the node's bare repositories, pinned by the signed refs digest.",
+      "backup": {"paths": ["bare repositories", "node identity", "mirror-node configuration"], "runbook": "www/docs/operations/node-backup-and-recovery.md#backups"},
+      "observability": ["GET /healthz", "GET /readyz", "GET /v1/status syncStatus and recovery blocks"],
+      "failure": "Without the hosted relay, existing clones and fetches keep working against the gateway's own origin; the stable forkmesh.com URL cannot redirect to it.",
+      "gaps": [
+        "Stable-URL routing across independent operators and the node event socket have no self-hostable implementation.",
+        "A repository needs a signed refs pin that the hosted control plane issues before its stable URL routes."
+      ]
+    },
+    {
+      "id": "public-index",
+      "label": "Public repository index",
+      "status": "partial",
+      "summary": "List public repositories with their clone endpoints and maintainers.",
+      "hosted": {
+        "implementation": "Python Worker catalog",
+        "paths": ["app/src/catalog.py", "app/src/catalog_routes.py"],
+        "platform": "cloudflare-workers"
+      },
+      "independentProfile": {
+        "implementation": "Mirror gateway local catalog projection",
+        "paths": ["tools/mirror_gateway.py"],
+        "start": ["python3", "tools/mirror_gateway.py", "--config", "<gateway.json>"],
+        "check": ["python3", "tools/mirror_gateway.py", "--config", "<gateway.json>", "--check"],
+        "configSchema": "www/docs/mirror-gateway-config.schema.json",
+        "runbook": "www/docs/operations/direct-https-mirror-gateway.md#same-codebase-dashboard",
+        "evidence": ["app/tests/test_mirror_dashboard.py", "app/tests/test_service_roles_contract.py"]
+      },
+      "contract": [
+        {
+          "id": "catalog",
+          "method": "GET",
+          "path": "/api/repositories",
+          "expect": {"status": [200], "json": {"ok": "bool", "repositories": "list"}},
+          "degraded": {"status": [503], "json": {"error": "str"}},
+          "source": {"path": "tools/mirror_gateway.py", "marker": "path == \"/api/repositories\""}
+        }
+      ],
+      "dependencies": {
+        "required": [
+          {"id": "python3", "proprietary": false},
+          {"id": "git", "proprietary": false}
+        ],
+        "optional": [
+          {
+            "id": "hosted-catalog-publication",
+            "proprietary": false,
+            "substitute": "Set disableCatalog in the mirror-node configuration, or point --catalog-url at another operator's catalog.",
+            "docs": "www/docs/operations/mirror-node.md"
+          }
+        ]
+      },
+      "defaultEndpoints": [
+        {
+          "value": "https://app.forkmesh.com/api/repositories",
+          "purpose": "catalog publication",
+          "override": {"name": "--catalog-url", "path": "server/cmd/forkmesh-mirror-node/main.go", "marker": "flag.String(\"catalog-url\""}
+        }
+      ],
+      "canonicalData": "None. Catalog rows are signed, republished projections of repository state on each node.",
+      "backup": {"paths": ["none: rebuilt from repositories"], "runbook": "www/docs/operations/node-backup-and-recovery.md#restoring-a-node"},
+      "observability": ["GET /api/repositories", "GET /v1/status"],
+      "failure": "A node's own catalog keeps listing its repositories; the network-wide list is lost with the hosted Worker, and clients must show it as unavailable rather than empty.",
+      "gaps": [
+        "Aggregating catalogs from several independent operators requires the hosted Worker."
+      ]
+    },
+    {
+      "id": "search",
+      "label": "Repository search",
+      "status": "hosted-only",
+      "summary": "Rank and filter the public index by text, facets, activity, and cloneability.",
+      "hosted": {
+        "implementation": "Python Worker repository index",
+        "paths": ["app/src/repository_index.py"],
+        "platform": "cloudflare-workers"
+      },
+      "contract": [
+        {
+          "id": "search",
+          "method": "GET",
+          "path": "/api/repositories/search?q={query}",
+          "expect": {"status": [200], "json": {"total": "int"}},
+          "degraded": {"status": [503], "json": {"error": "str"}},
+          "source": {"path": "www/docs/repository-index.md", "marker": "catalog_unavailable"}
+        }
+      ],
+      "dependencies": {"required": [{"id": "cloudflare-workers", "proprietary": true}], "optional": []},
+      "defaultEndpoints": [],
+      "canonicalData": "None. Results are derived from the catalog.",
+      "backup": {"paths": ["none: derived"], "runbook": "www/docs/repository-index.md#determinism-and-pagination"},
+      "observability": ["response freshness, withheld, and budgets blocks"],
+      "failure": "The endpoint answers 503 catalog_unavailable when no catalog can be read, never an empty result.",
+      "gaps": [
+        "app/src/repository_index.py is standard-library Python, but only the Worker serves it; the gateway has no search route."
+      ]
+    },
+    {
+      "id": "identity-resolver",
+      "label": "Identity resolver",
+      "status": "partial",
+      "summary": "Resolve usernames, node keys, SSH keys, and browser sessions to verifiable public identities.",
+      "hosted": {
+        "implementation": "Python Worker accounts, SSH keys, WebFinger, and portable session grants",
+        "paths": ["app/src/account_users.py", "app/src/ssh_keys.py", "app/src/portable_sessions.py"],
+        "platform": "cloudflare-workers"
+      },
+      "independentProfile": {
+        "implementation": "Node-local Ed25519 identity, SSH authorization broker in local mode, and router-key verification of portable sessions",
+        "paths": ["tools/headless_mirror_identity.py", "tools/ssh_authorization_broker.py", "tools/mirror_gateway.py"],
+        "start": ["python3", "tools/ssh_authorization_broker.py", "--config", "<ssh-authorization-broker.json>"],
+        "check": ["forkmesh-mirror-node", "--config", "<mirror-node.json>", "--public-key"],
+        "configSchema": "www/docs/ssh-authorization-broker.schema.json",
+        "runbook": "www/docs/operations/git-ssh-gateway.md#controller-free-operation",
+        "evidence": ["app/tests/test_ssh_independent_writes.py", "app/tests/test_mirror_dashboard.py"]
+      },
+      "contract": [],
+      "dependencies": {
+        "required": [
+          {"id": "python3", "proprietary": false},
+          {"id": "openssh", "proprietary": false}
+        ],
+        "optional": [
+          {
+            "id": "hosted-account-registry",
+            "proprietary": false,
+            "substitute": "localAuthorization mode local with an operator-maintained grants file; nodes keep signing with their own key.",
+            "docs": "www/docs/operations/git-ssh-gateway.md#controller-free-operation"
+          }
+        ]
+      },
+      "defaultEndpoints": [
+        {
+          "value": "https://app.forkmesh.com/api/accounts",
+          "purpose": "installer link-code registration",
+          "override": {"name": "--accounts-url", "path": "server/cmd/forkmesh-mirror-node/main.go", "marker": "flag.String(\"accounts-url\""}
+        }
+      ],
+      "canonicalData": "Private keys stay on each device or node; the registry holds only public authority state.",
+      "backup": {"paths": ["node identity key (sealed export)", "SSH local grants file"], "runbook": "www/docs/operations/node-backup-and-recovery.md#moving-or-replacing-an-identity-key"},
+      "observability": ["broker decision log", "GET /v1/status"],
+      "failure": "In fallback mode the broker consults local grants only when the Worker is unreachable, never after a denial, so revocation cannot be bypassed by cutting the uplink.",
+      "gaps": [
+        "Username registration, WebFinger, and minting portable session grants run only on the hosted Worker.",
+        "There is no HTTP resolver an independent operator can run for username-to-key lookups."
+      ]
+    },
+    {
+      "id": "collaboration-relay",
+      "label": "Collaboration relay",
+      "status": "partial",
+      "summary": "Accept signed issues, pull requests, reviews, and discussions and commit them into repositories.",
+      "hosted": {
+        "implementation": "Python Worker collaboration inboxes and room Durable Objects",
+        "paths": ["app/src/collaboration.py", "app/src/events.py"],
+        "platform": "cloudflare-workers"
+      },
+      "independentProfile": {
+        "implementation": "forkmesh-mirror-node native intake, gateway direct submissions, and SSH pull submission spool",
+        "paths": ["server/intake.go", "tools/ssh_gateway.py", "tools/mirror_gateway.py"],
+        "start": ["forkmesh-mirror-node", "--config", "<mirror-node.json>"],
+        "check": ["forkmesh-mirror-node", "--config", "<mirror-node.json>", "--check"],
+        "configSchema": "www/docs/ssh-gateway-config.schema.json",
+        "runbook": "www/docs/operations/direct-https-mirror-gateway.md#contributor-pull-requests-over-ssh",
+        "evidence": ["server/intake_test.go", "app/tests/test_ssh_independent_writes.py", "app/tests/test_mirror_dashboard.py"]
+      },
+      "contract": [],
+      "dependencies": {
+        "required": [
+          {"id": "git", "proprietary": false},
+          {"id": "openssl", "proprietary": false},
+          {"id": "go-toolchain-or-release-binary", "proprietary": false}
+        ],
+        "optional": [
+          {
+            "id": "hosted-inbox-leases",
+            "proprietary": false,
+            "substitute": "Contributors submit over SSH (forkmesh-pull-submit) or directly to the gateway; the signed records are committed on the node.",
+            "docs": "www/docs/operations/direct-https-mirror-gateway.md#contributor-pull-requests-over-ssh"
+          }
+        ]
+      },
+      "defaultEndpoints": [],
+      "canonicalData": "Signed collaboration records under .forkmesh/ in the repository itself.",
+      "backup": {"paths": ["bare repositories", "pullSubmissionSpool"], "runbook": "www/docs/operations/node-backup-and-recovery.md#backups"},
+      "observability": ["GET /v1/status", "spool file count"],
+      "failure": "Submissions made while the Worker is down stay durable in the spool; nothing is acknowledged that was not committed.",
+      "gaps": [
+        "Live rooms and chat run only in hosted Durable Objects.",
+        "Forwarding a spool to another node still names a controller API origin."
+      ]
+    },
+    {
+      "id": "automation-broker",
+      "label": "Automation broker",
+      "status": "partial",
+      "summary": "Run repository workflows, record signed status checks, and dispatch agent jobs.",
+      "hosted": {
+        "implementation": "Python Worker agent job queue",
+        "paths": ["app/src/microjobs.py", "server/agents.go"],
+        "platform": "cloudflare-workers"
+      },
+      "independentProfile": {
+        "implementation": "Desktop ActionRunner sandbox and signed forkmesh-check-v1 attestations",
+        "paths": ["desktop/src/ActionRunner.cpp", "server/checks.go"],
+        "start": ["forkmesh"],
+        "check": ["forkmesh-mirror-node", "--sign-check-attestation"],
+        "configSchema": "www/docs/mirror-actions-catalog-configuration.schema.json",
+        "runbook": "www/docs/operations/required-checks.md",
+        "evidence": ["server/checks_test.go"]
+      },
+      "contract": [],
+      "dependencies": {
+        "required": [
+          {"id": "bubblewrap", "proprietary": false},
+          {"id": "git", "proprietary": false}
+        ],
+        "optional": [
+          {
+            "id": "hosted-agent-cli",
+            "proprietary": true,
+            "substitute": "Leave website agent jobs disabled; workflows and signed required checks run without them.",
+            "docs": "www/docs/operations/required-checks.md"
+          }
+        ]
+      },
+      "defaultEndpoints": [],
+      "canonicalData": "Workflow files and signed check attestations in the repository; run logs on the runner host.",
+      "backup": {"paths": ["actions run directory on the runner host"], "runbook": "www/docs/operations/node-backup-and-recovery.md#backups"},
+      "observability": ["run meta.json and log.txt per run", "actionsSummaryPath on the gateway"],
+      "failure": "A missing check attestation keeps the merge gate closed; it never counts as success.",
+      "gaps": [
+        "Workflows run only inside the Qt desktop; there is no headless runner service.",
+        "The agent job queue is hosted-only."
+      ]
+    },
+    {
+      "id": "organization-service",
+      "label": "Organization service",
+      "status": "hosted-only",
+      "summary": "Create organizations, manage members and roles, and hand over ownership.",
+      "hosted": {
+        "implementation": "Python Worker organization authorization and succession",
+        "paths": ["app/src/organization_rbac.py", "app/src/organization_succession.py", "app/src/organization_succession_api.py"],
+        "platform": "cloudflare-workers"
+      },
+      "contract": [],
+      "dependencies": {"required": [{"id": "cloudflare-workers", "proprietary": true}], "optional": []},
+      "defaultEndpoints": [],
+      "canonicalData": "Organization rows in the hosted D1 database.",
+      "backup": {"paths": ["hosted D1 export"], "runbook": "www/docs/operations/organization-succession.md"},
+      "observability": ["hosted route metrics"],
+      "failure": "Repositories owned by an organization stay cloneable from their mirrors; membership changes are unavailable.",
+      "gaps": [
+        "No independent implementation; membership and roles are not yet repository-native records.",
+        "The authorization projection mirrors receive covers repository roles only, not organization administration."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+#calendarSection QLabel#sectionTitle {
+    color: @fg; font-size: 16px; font-weight: 600; background: transparent;
+}
+#calendarSection QLabel#mutedLabel {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#calendarSection QLabel#mutedLabel[calendarSidebar="heading"] {
+    font-size: 11px; font-weight: 500; padding: 10px 8px 2px 8px;
+}
+#calendarSection QLabel#mutedLabel[calendarSidebar="note"] {
+    padding: 4px 8px 0px 8px;
+}
+#calendarSection QLabel#statusChip {
+    color: @fgSecondary; background-color: @surfaceRaised;
+    border: 1px solid @border; border-radius: 4px;
+    padding: 1px 6px; font-size: 11px; font-weight: 500; max-height: 16px;
+}
+
+#calendarSection QPushButton#ghostButton[calendarNav="today"] {
+    background-color: transparent; border: 1px solid @borderStrong;
+    border-radius: 8px; color: @fg; font-weight: 500;
+    padding: 8px 14px; text-align: center;
+}
+#calendarSection QPushButton#ghostButton[calendarNav="step"] {
+    background-color: transparent; border: 1px solid @borderStrong;
+    border-radius: 8px; padding: 0px; text-align: center;
+    min-width: 34px; max-width: 34px; min-height: 34px; max-height: 34px;
+}
+#calendarSection QPushButton#ghostButton[calendarNav="today"]:hover,
+#calendarSection QPushButton#ghostButton[calendarNav="step"]:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+#calendarSection QPushButton#ghostButton[calendarNav="today"]:pressed,
+#calendarSection QPushButton#ghostButton[calendarNav="step"]:pressed {
+    background-color: @surfaceActive;
+}
+
+#calendarList {
+    background-color: @bg; border: none; outline: none; padding: 0px;
+}
+#calendarList::item {
+    padding: 6px 8px; border: none; border-radius: 8px;
+    color: @fgSecondary; background: transparent;
+}
+#calendarList::item:hover { background-color: @surfaceRaised; color: @fg; }
+#calendarList::item:selected { background-color: @surfaceRaised; color: @fg; }
+#calendarList::indicator {
+    width: 14px; height: 14px; border-radius: 4px;
+    border: 1px solid @borderStrong; background: @surface;
+}
+#calendarList::indicator:hover { border-color: @fgSubtle; }
+#calendarList::indicator:checked {
+    border-color: @accent; background: @accent; image: url(@checkIcon);
+}
+#calendarList::indicator:checked:hover {
+    border-color: @accentHover; background: @accentHover;
+}
+
+#calendarMonthTable, #calendarWeekTable {
+    background-color: @bg; border: none; outline: none; gridline-color: @border;
+}
+#calendarMonthTable::item, #calendarMonthTable::item:hover,
+#calendarMonthTable::item:selected,
+#calendarWeekTable::item, #calendarWeekTable::item:hover,
+#calendarWeekTable::item:selected {
+    background-color: @bg; color: @fg; border: none;
+}
+#calendarMonthTable QHeaderView::section {
+    background-color: transparent; border: none; color: @fgMuted;
+    font-size: 12px; font-weight: 500; padding: 2px 10px 8px 10px;
+}
+#calendarWeekTable QHeaderView::section:horizontal {
+    background-color: transparent; border: none;
+    border-bottom: 1px solid @border; color: @fgMuted;
+    font-size: 12px; font-weight: 500; padding: 2px 10px 8px 10px;
+}
+#calendarWeekTable QHeaderView::section:vertical {
+    background-color: transparent; border: none;
+    border-right: 1px solid @border; color: @fgMuted;
+    font-size: 11px; font-weight: 400; padding: 0px 10px;
+}
+#calendarWeekTable QTableCornerButton::section {
+    background-color: @bg; border: none;
+    border-bottom: 1px solid @border; border-right: 1px solid @border;
+}
+
+#calendarDayList, #calendarAgendaList {
+    background-color: @bg; border: 1px solid @border; border-radius: 12px;
+    padding: 4px; outline: none;
+}
+#calendarDayList::item, #calendarAgendaList::item {
+    border: none; border-radius: 8px; color: @fg;
+}
+#calendarDayList::item:hover, #calendarAgendaList::item:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+#calendarDayList::item:selected, #calendarAgendaList::item:selected {
+    background-color: @surfaceActive; color: @fg;
+}

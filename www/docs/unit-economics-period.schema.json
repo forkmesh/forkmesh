@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/docs/unit-economics-period.schema.json",
+  "title": "ForkMesh unit-economics accounting period",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "periodStart",
+    "periodEnd",
+    "usageWindowComplete",
+    "funnel",
+    "recognizedRevenueMicrousd",
+    "revenueSource",
+    "servicesInScope",
+    "measurements",
+    "grossMarginTargetBps",
+    "evidence"
+  ],
+  "properties": {
+    "schema": {
+      "const": "forkmesh-unit-economics-period-v1"
+    },
+    "periodStart": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "periodEnd": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "usageWindowComplete": {
+      "type": "boolean"
+    },
+    "funnel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publicProjectsAtProof",
+        "qualifiedDemand",
+        "trialsStarted",
+        "trialsCompleted",
+        "newPaidCustomers"
+      ],
+      "properties": {
+        "publicProjectsAtProof": { "type": "integer", "minimum": 0 },
+        "qualifiedDemand": { "type": "integer", "minimum": 0 },
+        "trialsStarted": { "type": "integer", "minimum": 0 },
+        "trialsCompleted": { "type": "integer", "minimum": 0 },
+        "newPaidCustomers": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "recognizedRevenueMicrousd": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revenueSource": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "servicesInScope": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "measurements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["unit", "quantity", "costMicrousd", "sourceEvidence"],
+        "properties": {
+          "unit": { "type": "string", "minLength": 1 },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,9})?$"
+          },
+          "costMicrousd": { "type": "integer", "minimum": 0 },
+          "sourceEvidence": { "type": "string", "minLength": 1, "maxLength": 400 }
+        }
+      }
+    },
+    "grossMarginTargetBps": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "billingReconciliation",
+        "providerInvoice",
+        "portabilityDrill",
+        "recoveryDrill",
+        "securityPrivacyReview",
+        "supportReview"
+      ],
+      "properties": {
+        "billingReconciliation": { "type": "string", "maxLength": 400 },
+        "providerInvoice": { "type": "string", "maxLength": 400 },
+        "portabilityDrill": { "type": "string", "maxLength": 400 },
+        "recoveryDrill": { "type": "string", "maxLength": 400 },
+        "securityPrivacyReview": { "type": "string", "maxLength": 400 },
+        "supportReview": { "type": "string", "maxLength": 400 }
+      }
+    }
+  }
+}

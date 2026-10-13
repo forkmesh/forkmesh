@@ -1,0 +1,79 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "status-check-api",
+  "name": "Status: API",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Status checks",
+  "version": "1.0.0",
+  "summary": "Adds the API check to Status Page: no unhandled exceptions or 5xx answers on /api routes in the last minute.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "A green status dot labelled API"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "monitor": "content/monitor.json",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "status.monitor",
+      "entrypoint": "monitor",
+      "config": {
+        "label": "API",
+        "systems": [
+          "api"
+        ],
+        "prefixes": []
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "network.status.read",
+      "label": "Read this check's one dot from ForkMesh's public /api/status report",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "status-page",
+      "version": "^2.0.0"
+    }
+  ],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

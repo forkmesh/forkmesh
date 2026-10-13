@@ -1,0 +1,638 @@
+/* =============================================================================
+   ForkMesh Hackathon — page stylesheet.
+
+   The bulk of this file is the authored ThreeUI <SublevelStudioLandingPage />
+   stylesheet, carried over verbatim from the canonical single-file source
+   (public/landing-pages/sublevel-studio.html, SHA-256
+   91db5c1bb779687990b01f226a02d7fe7cf7954a40ba8053c4d6b7abf82232e3). Two
+   changes were required to host it here:
+
+     1. The footer grain texture was an inlined data: URI; it now points at the
+        extracted file so the HTML stays small and the image stays cacheable.
+     2. The source loaded Geist / Geist Mono from Google Fonts. This origin's
+        CSP is style-src 'self' and font-src 'self' data:, so the webfont link
+        is gone and the authored "Geist Fallback" @font-face metric overrides
+        (ascent/descent/size-adjust against local Arial) carry the type scale.
+
+   ForkMesh-specific section styles are appended at the end under their own
+   banner. Layout for those new sections comes from the page-scoped Tailwind
+   build in ./tailwind.css; this file supplies the design system the sections
+   are dressed in (.framed, .rule, .f-* type scale, arcade caps, CRT, VHS).
+   ============================================================================= */
+
+:root{
+  color-scheme:dark;
+
+  /* ---- ForkMesh site palette. Same values as www/public/styles.css and the
+     homepage's own token block, so this page reads as part of the site rather
+     than a one-off. Green is the accent; primary buttons are the house
+     white/black --button pair, never a green solid. ---- */
+  --background:#090909;
+  --foreground:#f5f5f5;
+  --muted:#272727;
+  --muted-foreground:#a3a3a3;
+  --border:#313134;
+  --accent:#4ade80;
+  --accent-soft:#9ef7c6;
+  --accent-deep:#1f7a45;
+  --button:#e8e8e8;
+  --button-hover:#ffffff;
+  --button-foreground:#111113;
+
+  /* ---- tokens the shared homepage nav (home-nav.css) reads ---- */
+  --home-nav-h:4.5rem;
+  --home-ink:#f5f5f5;
+  --home-muted:#a3a3a3;
+  --home-line:#2a2a2e;
+  --home-surface:#121214;
+  --home-surface-2:#1b1b1f;
+  --home-pattern:#33333a;
+  --home-shadow:0 1px 2px rgba(0,0,0,.5),0 16px 40px -22px rgba(0,0,0,.9);
+  --home-shadow-raised:0 1px 2px rgba(0,0,0,.5),0 24px 56px -24px rgba(0,0,0,.95);
+
+  /* ---- ThreeUI's own variables, re-pointed at the palette above. The authored
+     sheet decorates with white-alpha hairlines and black-alpha shadows; --ink
+     and --ground carry those as channel triples so the same rules invert
+     cleanly under html.light. ---- */
+  --ink:245,245,245;
+  --ground:9,9,9;
+  --k:var(--background);
+  --w1:var(--foreground);
+  --w2:#c9ced4;
+  --g1:var(--muted-foreground);
+  --g2:var(--muted);
+  --o:var(--accent);
+  --sans:"Geist","Geist Fallback",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --mono:"Geist Mono","Geist Mono Fallback",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --canvas-offset:100svh;
+  --line:rgba(var(--ink),.085);
+  --line-soft:rgba(var(--ink),.05);
+  --maxw:82.5rem;--gutter:16px;
+
+  /* ---- surfaces and depth ---- */
+  --panel:rgba(18,18,20,.72);
+  --panel-sunk:#0a0a0a;
+  --panel-glass:rgba(8,8,8,.8);
+  --card-glass:rgba(6,6,6,.6);
+  --field:rgba(0,0,0,.5);
+  --field-focus:rgba(0,0,0,.66);
+  /* Dark pages can carry deep shadows; the light block swaps in short soft ones,
+     because black at 40-50% over white reads as a smudge. */
+  --shadow-card:0 10px 28px rgba(0,0,0,.55);
+  --shadow-cap:0 12px 26px rgba(0,0,0,.62);
+  --shadow-cap-pressed:0 5px 14px rgba(0,0,0,.6);
+
+  /* ---- arcade caps. The moulded texture is the authored one; only the colour
+     comes from the house button tokens. ---- */
+  --cap-face:linear-gradient(178deg,
+      color-mix(in srgb,var(--button),#fff 34%) 0%,
+      var(--button) 42%,
+      color-mix(in srgb,var(--button),#000 14%) 100%);
+  --cap-throw:#8f9095;
+  --cap-top:rgba(255,255,255,.5);
+  --cap-bottom:rgba(0,0,0,.22);
+  --metal-face:linear-gradient(180deg,#2a2a2a,#161616);
+  --metal-throw:#141414;
+  --metal-edge:rgba(0,0,0,.7);
+  --cap-edge:rgba(0,0,0,.55);
+  --cap-drop:rgba(0,0,0,.55);
+  --plume-bg:#0a0a0a;
+  /* the hero scrim darkens on a dark page and lightens on a light one */
+  --scrim:0,0,0;
+  /* hairline hatch inside empty states */
+  --hatch:255,255,255;
+}
+
+html.light{
+  color-scheme:light;
+
+  --background:#ffffff;
+  --foreground:#1f2328;
+  --muted:#eef2f7;
+  --muted-foreground:#57606a;
+  --border:#d0d7de;
+  --accent:#1a7f37;
+  --accent-soft:#2da44e;
+  --accent-deep:#116329;
+  --button:#111113;
+  --button-hover:#000000;
+  --button-foreground:#ffffff;
+
+  --home-ink:#101012;
+  --home-muted:#5f6270;
+  --home-line:#e4e5ea;
+  --home-surface:#ffffff;
+  --home-surface-2:#f4f4f6;
+  --home-pattern:#d4d6df;
+  --home-shadow:0 1px 2px rgba(16,16,18,.05),0 14px 36px -22px rgba(16,16,18,.3);
+  --home-shadow-raised:0 1px 2px rgba(16,16,18,.06),0 22px 48px -22px rgba(16,16,18,.32);
+
+  --ink:16,16,18;
+  --ground:255,255,255;
+  --w2:#4a5158;
+  --line:rgba(var(--ink),.14);
+  --line-soft:rgba(var(--ink),.08);
+
+  --panel:rgba(255,255,255,.78);
+  --panel-sunk:#f4f4f6;
+  --panel-glass:rgba(255,255,255,.82);
+  --card-glass:rgba(255,255,255,.72);
+  --field:rgba(var(--ink),.04);
+  --field-focus:rgba(var(--ink),.07);
+
+  /* Short, soft shadows: the dark page's 40-50% black at a long blur reads as a
+     smudge on white. */
+  --shadow-card:0 8px 20px -12px rgba(16,16,18,.28);
+  --shadow-cap:0 8px 16px -8px rgba(16,16,18,.3);
+  --shadow-cap-pressed:0 4px 10px -6px rgba(16,16,18,.26);
+
+  --cap-throw:#4a4f57;
+  --cap-top:rgba(255,255,255,.18);
+  --cap-bottom:rgba(0,0,0,.4);
+  --cap-edge:rgba(0,0,0,.25);
+  --cap-drop:rgba(16,16,18,.22);
+  --metal-face:linear-gradient(180deg,#ffffff,#eceef1);
+  --metal-throw:#cdd2d8;
+  --metal-edge:rgba(16,16,18,.14);
+  --plume-bg:#eef1f4;
+  --scrim:255,255,255;
+  --hatch:16,16,18;
+}
+@font-face{font-family:"Geist Fallback";src:local(Arial);ascent-override:95.94%;descent-override:28.16%;line-gap-override:0%;size-adjust:104.76%}
+@font-face{font-family:"Geist Mono Fallback";src:local(Arial);ascent-override:74.67%;descent-override:21.92%;line-gap-override:0%;size-adjust:134.59%}
+*, *::before, *::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;background:var(--background)}
+body{background:var(--background);color:var(--foreground);font-family:var(--sans);font-size:16px;line-height:24px;font-weight:400;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+ul{list-style:none}
+img, svg{display:block}
+::selection{background:var(--o);color:var(--button-foreground)}
+
+.f-h0{font-size:5.4375rem;line-height:5.25rem;letter-spacing:-.035em;font-weight:400}
+.f-h1{font-size:4.75rem;line-height:4.75rem;letter-spacing:-.035em;font-weight:400}
+.f-h2{font-size:2.375rem;line-height:2.5rem;letter-spacing:-.03em;font-weight:400}
+.f-h3{font-size:1.5rem;line-height:1.5rem;letter-spacing:-.02em;font-weight:500}
+.f-h4{font-size:1.25rem;line-height:1.25rem;letter-spacing:-.02em;font-weight:600}
+.f-p{font-size:.8125rem;line-height:1rem;letter-spacing:0;font-weight:600}
+.f-nav{font-size:.75rem;line-height:1rem;font-weight:600}
+
+.grid-layout{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;width:100%;max-width:var(--maxw);margin:0 auto;padding:0 var(--gutter)}
+
+/* ---------- canvas ---------- */
+#canvas-container{position:fixed;top:0;left:0;width:100%;height:var(--canvas-offset);z-index:0;background:var(--background);overflow:hidden}
+#loader{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:13px;font-weight:600;color:var(--o);letter-spacing:.02em;text-transform:uppercase;pointer-events:none;transition:opacity .6s ease}
+/* visibility is latched off after the fade so the loader can never linger over
+   the hero if the opacity transition is skipped. */
+#loader.done{opacity:0;visibility:hidden;transition:opacity .6s ease,visibility 0s .6s}
+#loader span{display:inline-block;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+@keyframes pulse{50%{opacity:.5}}
+
+.actionable{position:relative;font-weight:600;--underline-height:max(.06em,1px)}
+.actionable::before{content:"";position:absolute;left:0;right:0;bottom:calc(var(--underline-height) * -1);height:var(--underline-height);background:currentColor;opacity:0;transition:opacity .15s cubic-bezier(.4,0,.2,1)}
+.actionable:hover::before{opacity:1}
+.actionable:hover{animation:actionable-blink .3s .06s linear forwards;text-shadow:0 0 30px color-mix(in srgb,currentColor 25%,transparent)}
+@keyframes actionable-blink{0%{opacity:1}40%{opacity:.5}60%{opacity:1}80%{opacity:.5}100%{opacity:1}}
+.blink:hover{animation:actionable-blink .3s .06s linear forwards}
+
+/* ---------- particle scroll (Canvas UI) ---------- */
+#ps-output{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:850}
+.ps-hidden{visibility:hidden}
+@media (prefers-reduced-motion:reduce){.ps-hidden{visibility:visible}}
+/* ---------- manga marginalia: keyed line drawings sitting behind the copy ---------- */
+.ill{position:absolute;pointer-events:none;user-select:none;z-index:0;display:block;
+  opacity:.42;filter:saturate(.9)}
+.contact{position:relative}
+.ill-lantern{top:-3.5rem;right:1.5rem;width:clamp(120px,13vw,214px);opacity:.5}
+.ill-cat{bottom:-2.5rem;right:12rem;width:clamp(150px,17vw,268px);opacity:.34}
+.ill-joystick{top:2rem;left:1.5rem;width:clamp(110px,12vw,196px);opacity:.3}
+.ill-crt{bottom:1rem;right:2rem;width:clamp(120px,12vw,200px);opacity:.34}
+@media (max-width:1023px){.ill-cat, .ill-crt{display:none}.ill-lantern, .ill-joystick{width:110px;opacity:.28}}
+/* ---------- container lines, frames, rule animation ---------- */
+.vrules{position:absolute;inset:0;z-index:0;pointer-events:none;width:100%;max-width:var(--maxw);margin:0 auto;left:0;right:0;
+  padding:0 var(--gutter);display:grid;grid-template-columns:repeat(6,minmax(0,1fr))}
+.vrules i{position:relative;display:block}
+.vrules i::before{content:"";position:absolute;top:0;bottom:0;left:0;width:1px;background:var(--line-soft);
+  transform:scaleY(0);transform-origin:top;transition:transform 1.6s cubic-bezier(.16,.84,.24,1)}
+.vrules i:last-child::after{content:"";position:absolute;top:0;bottom:0;right:0;width:1px;background:var(--line-soft);
+  transform:scaleY(0);transform-origin:top;transition:transform 1.6s cubic-bezier(.16,.84,.24,1) .3s}
+.vrules.in i::before, .vrules.in i:last-child::after{transform:scaleY(1)}
+.vrules i:nth-child(2)::before{transition-delay:.08s}.vrules i:nth-child(3)::before{transition-delay:.16s}
+.vrules i:nth-child(4)::before{transition-delay:.24s}.vrules i:nth-child(5)::before{transition-delay:.32s}
+.vrules i:nth-child(6)::before{transition-delay:.4s}
+
+.rule{border:0;height:1px;width:100%;background:var(--line);transform:scaleX(0);transform-origin:left;
+  transition:transform 1.1s cubic-bezier(.16,.84,.24,1)}
+.rule.in{transform:scaleX(1)}
+.rule.thin{background:var(--line-soft)}
+
+.framed{position:relative;border:1px solid var(--line);padding:28px;background:linear-gradient(180deg,rgba(var(--ink),.014),rgba(var(--ink),0))}
+.framed.label{padding:9px 14px;width:max-content}
+.framed.flush{padding:24px}
+.framed .corner{position:absolute;width:5px;height:5px;border:1px solid rgba(var(--ink),.28)}
+.framed .corner.tl{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.framed .corner.tr{top:-1px;right:-1px;border-left:0;border-bottom:0}
+.framed .corner.bl{bottom:-1px;left:-1px;border-right:0;border-top:0}
+.framed .corner.br{bottom:-1px;right:-1px;border-left:0;border-top:0}
+
+/* ---------- layout ---------- */
+#layout{position:relative;z-index:1;margin-top:calc(var(--canvas-offset) - var(--home-nav-h));background:var(--background);padding-bottom:40px}
+main{position:relative;z-index:1;display:flex;flex-direction:column;gap:180px;padding-top:32px}
+.with-diagonal-lines{position:relative;overflow:hidden}
+.with-diagonal-lines::after{content:"";pointer-events:none;position:absolute;inset:-64px;background-repeat:repeat;animation:diag 6s linear infinite;
+  background-image:url("data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 64' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cg clip-path='url(%23c)' stroke='%23fff' stroke-opacity='.10'%3E%3Cpath d='M-27 27 91-91M-27 35 91-83M-27 43 91-75M-27 51 91-67M-27 59 91-59M-27 67 91-51M-27 75 91-43M-27 83 91-35M-27 91 91-27M-27 99 91-19M-27 107 91-11M-27 115 91-3M-27 123 91 5M-27 131 91 13M-27 139 91 21M-27 147 91 29M-27 155 91 37'/%3E%3C/g%3E%3Cdefs%3E%3CclipPath id='c'%3E%3Cpath fill='%23fff' d='M0 0h64v64H0z'/%3E%3C/clipPath%3E%3C/defs%3E%3C/svg%3E")}
+@keyframes diag{to{transform:translate(64px,64px)}}
+/* The authored hatch strokes white; on a light page it needs the ink colour. */
+html.light .with-diagonal-lines::after{
+  background-image:url("data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 64' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cg clip-path='url(%23c)' stroke='%23101012' stroke-opacity='.10'%3E%3Cpath d='M-27 27 91-91M-27 35 91-83M-27 43 91-75M-27 51 91-67M-27 59 91-59M-27 67 91-51M-27 75 91-43M-27 83 91-35M-27 91 91-27M-27 99 91-19M-27 107 91-11M-27 115 91-3M-27 123 91 5M-27 131 91 13M-27 139 91 21M-27 147 91 29M-27 155 91 37'/%3E%3C/g%3E%3Cdefs%3E%3CclipPath id='c'%3E%3Cpath fill='%23fff' d='M0 0h64v64H0z'/%3E%3C/clipPath%3E%3C/defs%3E%3C/svg%3E")}
+
+/* contact */
+.contact{padding:64px 16px 128px}
+.contact .box{grid-column:1/-1;position:relative;display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:16px;height:fit-content;padding:44px 40px}
+.contact .box .lines{position:absolute;inset:0;pointer-events:none}
+.contact h2{position:relative;grid-column:span 2;margin-bottom:24px;color:var(--g1)}
+.contact .lead{position:relative;grid-column:span 8;grid-row:2;color:var(--w2)}
+.contact .mail{position:relative;grid-column:span 5;grid-row:3;display:flex;align-items:center;color:var(--w1);white-space:nowrap}
+
+/* footer */
+/* the footer rides as one big floating card: full width less a margin, its own
+   rounded frame, and the drive scene clipped inside it */
+footer{position:relative;z-index:10;display:flex;flex-direction:column;
+  background:var(--panel-glass);-webkit-backdrop-filter:blur(26px) saturate(130%);backdrop-filter:blur(26px) saturate(130%);
+  margin:120px 22px 0;border-radius:20px;border:1px solid rgba(var(--ink),.13);
+  box-shadow:0 -1px 0 rgba(var(--ink),.06) inset,var(--shadow-card);
+  min-height:min(1040px,116svh);padding:0 0 72px;overflow:hidden;isolation:isolate;
+  --fe-bg:var(--plume-bg);--fe-band:clamp(340px,72%,760px)}
+footer .grid-layout{padding-left:34px;padding-right:34px}
+footer>*:not(.terrain-plume-component){position:relative;z-index:1}
+/* ThreeUI TerrainPlumeCanvas (variant: sunset-drive) */
+.terrain-plume-component{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;isolation:isolate}
+.terrain-plume-canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
+.footer-engraved-terrain{position:absolute;left:0;right:0;bottom:0;display:block;width:100%;height:var(--fe-band)}
+.footer-engraved-reveal{position:absolute;inset:0;display:block;width:100%;height:100%}
+.footer-engraved-grain{position:absolute;inset:0;pointer-events:none;opacity:.42;mix-blend-mode:overlay;background-repeat:repeat;background-size:140px 140px;background-image:url("/assets/hackathon/grain.png")}
+
+/* the signup card, centred on the road */
+footer .fcard-wrap{flex:1;align-content:center;padding:64px 16px 96px}
+footer .fcard{grid-column:4/10;justify-self:center;width:100%;max-width:34rem;display:flex;flex-direction:column;gap:14px;
+  padding:30px 30px 26px;background:var(--card-glass);-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);
+  border:1px solid rgba(var(--ink),.14)}
+footer .fcard .tag{color:var(--o);font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase;font-size:11px;line-height:16px}
+footer .fcard h3{color:var(--w1);text-wrap:pretty}
+footer .fcard .sub{color:var(--w2);font-weight:500;text-wrap:pretty}
+footer .fcard .fine{color:var(--g1);font-weight:500;letter-spacing:.01em}
+footer .fcard .cta-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:6px}
+footer .signup{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+footer .signup input{height:46px;width:100%;padding:0 14px;color:var(--foreground);background:var(--field);
+  border:1px solid rgba(var(--ink),.22);border-radius:0;outline:none;
+  font:500 15px/46px var(--sans);letter-spacing:-.01em;transition:border-color .2s,background .2s}
+footer .signup input::placeholder{color:var(--g1)}
+footer .signup input:focus{border-color:color-mix(in srgb,var(--o),transparent 38%);background:var(--field-focus)}
+
+/* Arcade controls: a moulded cap sitting on a coloured body, with a real throw.
+   The body is the drop-shadow layer, so pressing moves the cap down onto it. */
+.arcade{--body:var(--cap-throw);--throw:5px;position:relative;border:1px solid var(--cap-edge);border-radius:3px;
+  box-shadow:inset 0 1px 0 var(--cap-top),inset 0 -2px 0 var(--cap-bottom),
+             0 var(--throw) 0 var(--body),0 calc(var(--throw) + 3px) 10px var(--cap-drop);
+  transition:transform .07s cubic-bezier(.3,.8,.4,1),box-shadow .07s cubic-bezier(.3,.8,.4,1),filter .18s}
+.arcade:hover{filter:brightness(1.09)}
+.arcade:active{transform:translateY(var(--throw));
+  box-shadow:inset 0 1px 0 var(--cap-top),inset 0 -1px 0 var(--cap-bottom),
+             0 0 0 var(--body),0 1px 3px var(--cap-drop)}
+.arcade:focus-visible{outline:2px solid color-mix(in srgb,var(--o),transparent 20%);outline-offset:3px}
+@media (prefers-reduced-motion:reduce){.arcade{transition:none}}
+/* the small square controls in the header and the footer share the cap, in metal */
+.arcade.metal{--body:var(--metal-throw);background:var(--metal-face);color:var(--w1);
+  border-color:var(--metal-edge);
+  box-shadow:inset 0 1px 0 rgba(var(--ink),.16),inset 0 -2px 0 var(--cap-bottom),
+             0 3px 0 var(--body),0 5px 9px var(--cap-drop)}
+.arcade.metal:active{transform:translateY(3px);
+  box-shadow:inset 0 1px 0 rgba(var(--ink),.1),0 0 0 var(--body),0 1px 3px var(--cap-drop)}
+
+/* ThreeUI <RectangleButtons variant="ember-keycap" mode="dark" />, ported from the
+   registered source (rectangle-buttons.json, all 18 files SHA-256 verified). The
+   demo stage keeps its ember ground tint but not its 240px preview sizing, since
+   the keycap sits inline in the signup form here. */
+.threeui-page-button-stage{--threeui-page-ink:var(--foreground);position:relative;display:grid;place-items:center;
+  overflow:visible;isolation:isolate;background:var(--panel-sunk);color:var(--threeui-page-ink);
+  font-family:Inter,"Helvetica Neue",Helvetica,Arial,sans-serif}
+.threeui-page-button-stage::before{content:"";position:absolute;inset:-18px -12px;z-index:-1;pointer-events:none}
+.threeui-page-button-stage--ember-keycap{background:var(--panel-sunk);
+  font-family:"JetBrains Mono","SFMono-Regular",Menlo,Consolas,monospace}
+.threeui-page-button-stage--ember-keycap::before{
+  background:
+    radial-gradient(ellipse at 50% 56%, color-mix(in srgb,var(--o),transparent 80%), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb,var(--o),transparent 96%), transparent 58%)}
+.threeui-page-button{position:relative;display:inline-flex;align-items:center;justify-content:center;border:0;
+  font:inherit;text-decoration:none;white-space:nowrap;cursor:pointer;-webkit-font-smoothing:antialiased}
+.threeui-page-button:focus-visible{outline:2px solid var(--threeui-page-ink);outline-offset:5px}
+.threeui-page-button-ember-wrap{position:relative;display:inline-block}
+.threeui-page-button-ember-glow, .threeui-page-button-ember-bloom{position:absolute;pointer-events:none;
+  border-radius:50%;mix-blend-mode:plus-lighter;transition:opacity .16s ease,transform .16s ease}
+.threeui-page-button-ember-glow{left:6%;right:6%;top:-9px;height:16px;
+  background:radial-gradient(closest-side, color-mix(in srgb,var(--accent-soft),transparent 6%), color-mix(in srgb,var(--o),transparent 40%) 50%, transparent 100%);
+  filter:blur(4px);opacity:1}
+.threeui-page-button-ember-bloom{left:-10%;right:-10%;top:-31px;height:58px;
+  background:radial-gradient(closest-side, color-mix(in srgb,var(--o),transparent 46%), color-mix(in srgb,var(--o),transparent 84%) 58%, transparent 100%);
+  filter:blur(12px);opacity:.85}
+.threeui-page-button--ember-keycap{gap:.85em;padding:1.05em 1.6em 1.1em;border-radius:9px;
+  background:var(--cap-face);
+  box-shadow:inset 0 1.5px 0 var(--cap-top),inset 0 -1px 0 var(--cap-bottom),
+             0 7px 0 -1px var(--cap-throw),var(--shadow-cap);
+  color:var(--button-foreground);font-size:14px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;
+  transform:translateY(0);transition:transform .13s cubic-bezier(.3,.7,.3,1),box-shadow .13s ease}
+.threeui-page-button--ember-keycap .threeui-page-button__spark{width:1.1em;height:1.1em;flex:none;
+  fill:var(--accent-deep);filter:drop-shadow(0 0 .55em color-mix(in srgb,var(--o),transparent 25%))}
+.threeui-page-button--ember-keycap .threeui-page-button__price{color:color-mix(in srgb,var(--button-foreground),transparent 42%)}
+.threeui-page-button-ember-wrap:hover .threeui-page-button--ember-keycap, .threeui-page-button--ember-keycap:focus-visible{transform:translateY(5px);
+  box-shadow:inset 0 1.5px 0 var(--cap-top),inset 0 -1px 0 var(--cap-bottom),
+             0 2px 0 -1px var(--cap-throw),var(--shadow-cap-pressed)}
+.threeui-page-button--ember-keycap:focus-visible{outline-color:var(--o)}
+.threeui-page-button-ember-wrap:hover .threeui-page-button-ember-glow, .threeui-page-button-ember-wrap:focus-within .threeui-page-button-ember-glow{transform:translateY(5px) scaleX(1.05)}
+.threeui-page-button-ember-wrap:hover .threeui-page-button-ember-bloom, .threeui-page-button-ember-wrap:focus-within .threeui-page-button-ember-bloom{opacity:1;transform:translateY(5px) scale(1.05)}
+.threeui-page-button--ember-keycap:active{transform:translateY(6px)}
+/* The keycap fills the form row rather than sitting as an inline demo. The stage's
+   isolate + own background is what boxed the glow in: plus-lighter was blending
+   against the stage instead of the card, printing a lighter rectangle around it. */
+footer .signup .threeui-page-button-stage{background:transparent;isolation:auto;overflow:visible;margin-top:16px}
+footer .signup .threeui-page-button-stage::before{display:none}
+footer .signup .threeui-page-button-ember-wrap, footer .signup .threeui-page-button--ember-keycap{display:flex;width:100%}
+/* warmer, machined-amber cap with a fine scanline over it — closer to a console key */
+footer .signup .threeui-page-button--ember-keycap{
+  background:var(--cap-face);
+  box-shadow:inset 0 1.5px 0 var(--cap-top),inset 0 -1px 0 var(--cap-bottom),
+             0 7px 0 -1px var(--cap-throw),var(--shadow-cap)}
+footer .signup .threeui-page-button-ember-wrap:hover .threeui-page-button--ember-keycap{
+  box-shadow:inset 0 1.5px 0 var(--cap-top),inset 0 -1px 0 var(--cap-bottom),
+             0 2px 0 -1px var(--cap-throw),var(--shadow-cap-pressed)}
+footer .signup .threeui-page-button--ember-keycap::after{content:"";position:absolute;inset:0;
+  border-radius:inherit;pointer-events:none;mix-blend-mode:overlay;opacity:.5;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.28) 0 1px,rgba(255,255,255,.06) 1px 3px)}
+footer .signup .threeui-page-button--ember-keycap .lbl, footer .signup .threeui-page-button__price{text-shadow:none}
+
+/* VHS over the whole signup panel: scanlines, a colour fringe and a tape wobble */
+footer .fcard{overflow:hidden}
+footer .fcard::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:6;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.20) 0 1px,rgba(var(--ink),.022) 1px 3px)}
+footer .fcard>*:not(.corner){position:relative;animation:fcard-wobble 7s steps(1) infinite}
+footer .fcard h3, footer .fcard .sub, footer .fcard .tag, footer .fcard .fine{
+  text-shadow:.6px 0 0 rgba(255,60,40,.22),-.6px 0 0 rgba(60,200,255,.18)}
+@keyframes fcard-wobble{
+  0%,88%{transform:translateX(0)} 89%{transform:translateX(1.2px)} 90%{transform:translateX(-.8px)}
+  91%{transform:translateX(.4px)} 92%,100%{transform:translateX(0)}}
+@media (prefers-reduced-motion:reduce){footer .fcard>*:not(.corner){animation:none}}
+footer .thanks{color:var(--accent);font-weight:600}
+
+footer .mark{grid-column:1/-1;color:var(--w2);border-bottom:1px solid rgba(var(--ink),.3);padding-bottom:16px}
+footer .mark svg{width:100%;height:auto;fill:currentColor}
+footer .bottom{align-items:center;row-gap:18px;padding-top:18px}
+footer .links{grid-column:1/9;display:flex;flex-wrap:wrap;align-items:center;gap:6px 24px;color:var(--w1)}
+footer .links a{color:var(--w1);white-space:nowrap}
+footer .social{grid-column:9/13;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+footer .social a{width:34px;height:34px;display:grid;place-items:center;color:var(--w2);border:1px solid rgba(var(--ink),.16);transition:color .2s,border-color .2s,background .2s}
+footer .social a:hover{color:var(--w1);border-color:rgba(var(--ink),.4);background:rgba(var(--ink),.06)}
+footer .social svg{width:17px;height:17px;fill:currentColor}
+footer .copy{grid-column:1/13;margin-top:2px;text-align:left;color:var(--g1);font-weight:500}
+footer .social .row{display:flex;gap:4px;white-space:nowrap;color:var(--g1)}
+footer .social .row a{color:var(--w1);height:max-content}
+footer .social .copy{text-align:right;color:var(--g1)}
+
+#vhs-overlay{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:900;mix-blend-mode:screen;opacity:.9}
+body.machine #vhs-overlay{z-index:2100;mix-blend-mode:screen;opacity:.85}
+#machine-scan{display:none;position:fixed;inset:0;z-index:2050;pointer-events:none;overflow:hidden;
+  mix-blend-mode:multiply;
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.5) 0 1px,rgba(0,0,0,0) 1px 3px)}
+body.machine #machine-scan{display:block}
+#machine-scan::after{content:'';position:absolute;left:-10%;right:-10%;height:16%;
+  background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45) 45%,rgba(0,0,0,.1) 62%,rgba(0,0,0,0));
+  animation:mtrack 7.5s linear infinite}
+@keyframes mtrack{from{transform:translateY(-30%)}to{transform:translateY(640%)}}
+@media (prefers-reduced-motion:reduce){#machine-scan::after{animation:none;opacity:.25}}
+
+/* machine mode: ThreeUI <CrtBackground variant="terminal"> host (threeui.css rules for .threeui-background) */
+#machine{display:none;position:fixed;inset:0;z-index:2000;background:transparent;mix-blend-mode:screen}
+#machine-scrim{display:none;position:fixed;inset:0;z-index:1999;pointer-events:none;
+  background:rgba(2,6,4,.34);
+  -webkit-backdrop-filter:blur(5px) saturate(.72) brightness(.42);backdrop-filter:blur(5px) saturate(.72) brightness(.42)}
+body.machine #machine-scrim{display:block}
+body.machine #machine{display:block}
+body.machine .home-nav-wrap,body.machine #layout{display:none}
+/* The authored page left an abstract 3D scene behind the CRT scrim. Here the
+   backdrop carries the hero headline, which read as a double exposure through
+   the scrim, so the card steps aside and only the plume shows through. */
+body.machine #herocard{display:none}
+.threeui-background{position:relative;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;isolation:isolate;background:#030304}
+.threeui-background>canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
+#crt-host{position:absolute;inset:0}
+#machine-close{position:absolute;top:18px;right:22px;z-index:2;font-family:var(--mono);font-size:12px;line-height:16px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:#4ade80;background:rgba(2,6,4,.78);border:1px solid rgba(74,222,128,.4);border-radius:9999px;padding:8px 14px;cursor:pointer;text-shadow:0 0 10px rgba(74,222,128,.55)}
+#machine-close:hover{background:rgba(74,222,128,.15)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* responsive */
+@media (max-width:1023px){
+  .f-h0{font-size:2.875rem;line-height:2.45rem}
+  .f-h1{font-size:2.1875rem;line-height:2.25rem;letter-spacing:-.03em}
+  .f-h2{font-size:2.1875rem;line-height:2.25rem;letter-spacing:-.03em}
+  .f-h3{font-size:1.25rem;line-height:1.25rem}
+  .f-h4{font-size:.9375rem;line-height:1rem}
+  .f-p{font-size:.75rem}
+  :root{--canvas-offset:100svh}
+  main{gap:72px}
+  .framed{padding:18px}
+  .framed.label{padding:8px 12px}
+  .contact .box{padding:24px 18px}
+  .vrules{grid-template-columns:repeat(2,minmax(0,1fr))}
+  footer{--fe-band:clamp(220px,58%,420px);min-height:min(880px,104svh);padding-bottom:48px}
+  footer .fcard{grid-column:1/-1;padding:22px 20px}
+  footer .fcard-wrap{padding:40px 16px 56px}
+  footer .links{grid-column:1/-1;gap:6px 16px}
+  footer .social{grid-column:1/-1;grid-row:2;justify-content:flex-start}
+  footer .copy{grid-column:1/-1;grid-row:3}
+  .contact{padding:48px 16px 64px}
+  .contact .box{grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr))}
+  .contact .lead{grid-column:span 4}
+  .contact .mail{grid-column:span 4;white-space:normal;font-size:2rem;line-height:2rem;letter-spacing:-.03em}
+  .contact .mail a{overflow-wrap:anywhere}
+  #machine-close{top:12px;right:12px}
+  footer{height:auto;gap:64px}
+  footer .bottom{grid-template-rows:auto auto auto}
+  footer .links{grid-column:1/-1}
+  footer .news{grid-column:1/-1;grid-row:2}
+  footer .social{grid-column:1/-1;grid-row:3;align-items:flex-start;transform:none}
+  footer .social .copy{text-align:left}}
+
+/* =============================================================================
+   ForkMesh Hackathon — section styles.
+
+   Everything below is new. It stays in the authored idiom (the same custom
+   properties, the same hairline/frame/mono-eyebrow vocabulary) so the new
+   sections read as part of the same system rather than bolted on. Column
+   counts and the responsive steps for these sections come from Tailwind
+   utilities in the markup; what lives here is the chrome Tailwind has no
+   opinion about.
+   ============================================================================= */
+
+.tracks, .prizes, .steps, .boards, .faq{position:relative}
+
+/* ---------- hero card, overlaid on the fixed plume canvas ---------- */
+/* The engraved drive scene is anchored to the bottom of the canvas, so the copy
+   sits in the upper half and the road runs out underneath it rather than behind
+   the headline. */
+#herocard{position:absolute;inset:0;z-index:3;display:flex;align-items:flex-start;pointer-events:none}
+#herocard::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(var(--scrim),.86) 0,rgba(var(--scrim),.6) 34%,rgba(var(--scrim),.18) 58%,rgba(var(--scrim),.1) 78%,rgba(var(--scrim),.66) 100%)}
+#herocard .inner{position:relative;width:100%;max-width:var(--maxw);margin:0 auto;
+  padding:calc(var(--home-nav-h) + clamp(28px,7svh,96px)) var(--gutter) 0;display:flex;flex-direction:column;gap:20px}
+#herocard .eyebrow{display:flex;align-items:center;gap:16px;color:var(--g1);
+  font-family:var(--mono);font-size:12px;line-height:16px;letter-spacing:.14em;text-transform:uppercase}
+#herocard .eyebrow .rule{flex:1;transform:scaleX(1)}
+#herocard .eyebrow .live{color:var(--o)}
+#herocard h1{max-width:20ch;color:var(--w1);text-wrap:pretty}
+#herocard .lede{max-width:44rem;color:var(--w2);font-weight:500;line-height:1.75rem;text-wrap:pretty}
+#herocard .cta-row{pointer-events:auto;display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:6px}
+@media (max-width:1023px){
+  #herocard .inner{gap:14px;padding-top:calc(var(--home-nav-h) + clamp(18px,5svh,56px))}
+  #herocard h1{max-width:none}
+  #herocard .lede{line-height:1.375rem}
+  /* neither label fits beside the other at this width, so the connecting hairline
+     goes and the two read as stacked rows */
+  #herocard .eyebrow{flex-wrap:wrap;gap:4px 14px}
+  #herocard .eyebrow .rule{display:none}
+  #herocard .cta-row{gap:10px}
+  #herocard .cta{width:100%;justify-content:center}}
+
+/* ---------- arcade call-to-action caps ---------- */
+.cta{display:inline-flex;align-items:center;gap:10px;height:46px;padding:0 20px;
+  font-family:var(--mono);font-size:12px;line-height:1;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;white-space:nowrap;color:var(--w1)}
+.cta svg{width:15px;height:15px;fill:currentColor;opacity:.65}
+/* The house primary is the white/black --button pair used across the site; only
+   the moulded cap texture is inherited from the authored control. */
+.cta.primary{--body:var(--cap-throw);color:var(--button-foreground);border-color:var(--cap-edge);
+  background:var(--cap-face)}
+.cta.primary:hover{background:linear-gradient(178deg,
+    color-mix(in srgb,var(--button-hover),#fff 22%) 0%,
+    var(--button-hover) 42%,
+    color-mix(in srgb,var(--button-hover),#000 12%) 100%)}
+.cta.primary svg{opacity:.55}
+
+/* ---------- shared section furniture ---------- */
+.sec-head{grid-column:1/-1;color:var(--g1)}
+.sec-line{grid-column:1/-1;margin:26px 0 0}
+.sec-intro{grid-column:1/-1;color:var(--w2);margin-top:24px;max-width:54rem}
+.sec-intro p{text-wrap:balance}
+/* .f-h4 is a 20px/20px label step in the authored scale; the supporting copy in
+   these intros runs to several lines, so it gets readable leading back. */
+.sec-intro .f-h4{line-height:1.625rem;text-wrap:pretty}
+.sec-body{grid-column:1/-1;margin-top:clamp(40px,6vw,88px)}
+.sec-note{grid-column:1/-1;margin-top:30px;color:var(--g1);font-weight:500;max-width:58rem;text-wrap:pretty}
+.sec-note a{color:var(--w1)}
+
+/* ---------- three tracks ---------- */
+.track{display:flex;flex-direction:column;gap:16px;height:100%;padding:26px 24px;color:var(--w1)}
+.track .idx{font-family:var(--mono);font-size:11px;line-height:16px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--o)}
+.track h3{color:var(--w1);text-wrap:pretty}
+.track p{color:var(--w2);font-weight:500;font-size:.9375rem;line-height:1.375rem;text-wrap:pretty}
+.track .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto;padding-top:6px;
+  font-size:.8125rem;line-height:1rem;font-weight:600}
+.track .tags span{display:block;width:fit-content;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;background:var(--g2);padding:0 4px;color:var(--w1)}
+
+/* ---------- prizes ---------- */
+.prize{display:flex;flex-direction:column;gap:14px;height:100%;padding:26px 24px;color:var(--w1)}
+.prize .who{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  font-family:var(--mono);font-size:11px;line-height:16px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--g1)}
+.prize .who .flag{color:var(--o)}
+.prize .award{color:var(--w1);text-wrap:pretty}
+.prize .sub{color:var(--w2);font-weight:500}
+.prize ul{display:flex;flex-direction:column;gap:9px;color:var(--w2);
+  font-size:.875rem;line-height:1.25rem;font-weight:500}
+.prize li{position:relative;padding-left:18px;text-wrap:pretty}
+.prize li::before{content:"";position:absolute;left:0;top:.52rem;width:7px;height:1px;background:var(--o)}
+.prize .go{margin-top:auto;padding-top:8px;display:inline-flex;align-items:center;gap:8px;color:var(--w1)}
+.prize .go svg{width:18px;height:18px;fill:currentColor;opacity:.5}
+.prize.top{border-color:color-mix(in srgb,var(--o),transparent 62%)}
+.prize.top .corner{border-color:color-mix(in srgb,var(--o),transparent 30%)}
+
+/* ---------- how it works ---------- */
+.step{display:flex;flex-direction:column;gap:12px;height:100%;padding:24px 22px;color:var(--w1)}
+.step .num{font-family:var(--mono);font-size:2.375rem;line-height:1;font-weight:700;color:var(--o)}
+.step h3{color:var(--w1)}
+.step p{color:var(--w2);font-weight:500;font-size:.875rem;line-height:1.25rem;text-wrap:pretty}
+
+/* ---------- live boards ---------- */
+.board{display:flex;flex-direction:column;height:100%;padding:0;overflow:hidden;color:var(--w1)}
+.board .bhead{display:flex;align-items:baseline;justify-content:space-between;gap:14px;
+  padding:20px 22px;border-bottom:1px solid var(--line)}
+.board .bhead .by{font-family:var(--mono);font-size:11px;line-height:16px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--g1);white-space:nowrap}
+.board .empty{position:relative;flex:1;display:grid;place-items:center;min-height:210px;padding:34px 22px}
+.board .empty .lines{position:absolute;inset:0;opacity:.5;pointer-events:none}
+.board .empty p{position:relative;z-index:2;text-align:center;font-family:var(--mono);
+  font-size:12px;line-height:18px;letter-spacing:.08em;text-transform:uppercase;color:var(--g1)}
+
+/* ---------- faq ---------- */
+.faq .list{border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+  gap:20px;padding:22px 2px;color:var(--w2);transition:color .2s}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary:hover{color:var(--foreground)}
+.faq summary:focus-visible{outline:2px solid color-mix(in srgb,var(--o),transparent 25%);outline-offset:3px}
+.faq summary .mk{position:relative;flex:none;width:14px;height:14px}
+.faq summary .mk::before, .faq summary .mk::after{content:"";position:absolute;background:var(--o);
+  transition:transform .25s cubic-bezier(.2,.7,.2,1),opacity .2s}
+.faq summary .mk::before{left:0;right:0;top:6px;height:1.5px}
+.faq summary .mk::after{top:0;bottom:0;left:6px;width:1.5px}
+.faq details[open] summary .mk::after{transform:scaleY(0);opacity:0}
+.faq details .ans{color:var(--w2);font-weight:500;font-size:.9375rem;line-height:1.5rem;
+  padding:0 34px 24px 2px;max-width:58rem;text-wrap:pretty}
+@media (prefers-reduced-motion:reduce){.faq summary .mk::before, .faq summary .mk::after{transition:none}}
+
+/* ---------- closing call to action ---------- */
+.contact .lead{text-wrap:pretty}
+.contact .cta-row{position:relative;grid-column:span 8;grid-row:3;display:flex;flex-wrap:wrap;
+  align-items:center;gap:12px;margin-top:4px}
+
+@media (max-width:1023px){
+  .track, .prize{padding:20px 18px}
+  .step{padding:20px 18px}
+  .board .bhead{padding:16px 18px}
+  .board .empty{min-height:170px;padding:26px 18px}
+  .faq summary{padding:18px 2px}
+  .faq details .ans{padding:0 0 20px 2px}
+  .sec-intro .f-h4{line-height:1.375rem}
+  .contact .cta-row{grid-column:span 4}
+  #herocard .lede{font-size:.9375rem;line-height:1.375rem}}
+
+/* ---------- plume host inside the fixed hero canvas ----------
+   mountTerrainPlume() appends its own absolutely positioned .terrain-plume-component
+   to whatever host it is given, and the engraved terrain band is sized from --fe-band,
+   which the authored sheet only declares on <footer>. Both are restated here so the
+   same component can drive the hero backdrop. */
+#plume-host{position:absolute;inset:0;overflow:hidden;isolation:isolate;
+  --fe-bg:var(--plume-bg);--fe-band:clamp(300px,64%,720px)}
+@media (max-width:1023px){#plume-host{--fe-band:clamp(200px,54%,420px)}}
+
+/* ---------- machine-readable view toggle in the site header ----------
+   It borrows the theme switch's chrome so the two read as a pair; pressed state
+   picks up the accent the way the authored control did. */
+.hack-term[aria-pressed="true"]{
+  color:var(--accent);
+  border-color:color-mix(in srgb,var(--accent),transparent 55%);
+  background:color-mix(in srgb,var(--accent),transparent 88%)}
+@media (max-width:420px){.hack-term{display:none}}
+
+/* ---------- marginalia on a light page ----------
+   The authored drawings are white line art keyed for a black page; on white they
+   wash out entirely, so they are inverted rather than dropped. */
+html.light .ill{filter:invert(1) saturate(.9)}
+
+/* The authored VHS pass over the signup panel is keyed for a dark card; at full
+   strength on white it reads as grey banding rather than tape texture. */
+html.light footer .fcard::after{
+  background:repeating-linear-gradient(180deg,rgba(0,0,0,.06) 0 1px,rgba(255,255,255,.5) 1px 3px)}
+html.light footer .fcard h3,html.light footer .fcard .sub,
+html.light footer .fcard .tag,html.light footer .fcard .fine{text-shadow:none}

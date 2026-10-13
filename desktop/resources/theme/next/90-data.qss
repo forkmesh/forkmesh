@@ -1,0 +1,25 @@
+#ledgerWalletCard, #ledgerEntryForm {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#ledgerWalletLabel { color: @fgMuted; font-weight: 500; letter-spacing: 0px; }
+QPushButton#ledgerWalletRefresh:hover { border-color: @fgSubtle; }
+#ledgerPayoutHoldPanel {
+    background-color: @warningSubtle; border: 1px solid @warning; border-radius: 12px;
+}
+#ledgerPayoutHoldTitle { color: @warning; }
+#ledgerPayoutHoldDetails { color: @fgSecondary; }
+QPushButton#ledgerPayoutUndoButton { color: @danger; border-color: @borderStrong; }
+QPushButton#ledgerPayoutUndoButton:hover {
+    color: @onAccent; background-color: @danger; border-color: @danger;
+}
+
+#logRangeButton {
+    background-color: transparent; border-color: transparent; border-radius: 6px;
+    color: @fgMuted; font-weight: 500;
+}
+#logRangeButton:hover { background-color: @surfaceRaised; color: @fg; }
+#logRangeButton:checked {
+    background-color: @surfaceActive; border-color: transparent; color: @fg;
+}
+
+#adBanner { background-color: @bgSubtle; }

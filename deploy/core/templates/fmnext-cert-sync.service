@@ -1,0 +1,26 @@
+# Managed by deploy/core/render.py for node @@NODE@@ (same on every core).
+# One leaderless round of deploy/core/certsync.py: export what this node
+# holds, pull the freshest valid pair from the live peers into @@TLS@@
+# (0600, owner caddy), pick files/acme/internal per shared name (the
+# rendezvous-first live node renews), write the Caddy includes and reload
+# Caddy only when a file changed.
+[Unit]
+Description=Sync the shared app/world certificate with the other cores
+Wants=wg-quick@wg0.service
+After=wg-quick@wg0.service fmnext-certsync.service
+
+[Service]
+Type=oneshot
+LoadCredentialEncrypted=@@CERTSYNC_SECRET@@:@@CREDS@@/@@CERTSYNC_SECRET@@.cred
+ExecStart=/usr/bin/python3 -I @@OPT@@/bin/fmnext-certsync sync --config @@ETC@@/certsync.json
+MemorySwapMax=0
+IPAddressDeny=169.254.0.0/16
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=@@TLS@@ @@VAR@@/certsync @@ETC@@/caddy
+ReadOnlyPaths=/var/lib/caddy
+RestrictAddressFamilies=AF_INET AF_UNIX
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_DAC_READ_SEARCH

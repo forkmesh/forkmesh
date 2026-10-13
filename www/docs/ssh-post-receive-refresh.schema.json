@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forkmesh.com/schemas/ssh-post-receive-refresh-v1.json",
+  "title": "ForkMesh fixed SSH push refresh bridge configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "triggerPath",
+    "notifyUser",
+    "mirrorUser",
+    "pythonProgram",
+    "refreshProgram",
+    "refreshConfigPath",
+    "gatewayConfigPath",
+    "mirrorService",
+    "healthTimeoutSeconds"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "type": {"const": "forkmesh.ssh-post-receive-refresh"},
+    "triggerPath": {
+      "type": "string",
+      "const": "/run/forkmesh-mirror-refresh/pending"
+    },
+    "notifyUser": {"const": "git"},
+    "mirrorUser": {"const": "forkmesh-mirror"},
+    "pythonProgram": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$"
+    },
+    "refreshProgram": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$"
+    },
+    "refreshConfigPath": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$"
+    },
+    "gatewayConfigPath": {
+      "type": "string",
+      "pattern": "^/[^\\r\\n\\u0000]+$"
+    },
+    "mirrorService": {"const": "forkmesh-mirror.service"},
+    "healthTimeoutSeconds": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 300,
+      "default": 180
+    }
+  }
+}

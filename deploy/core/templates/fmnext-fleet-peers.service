@@ -1,0 +1,30 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=ForkMesh fleet peers: WireGuard, nftables and certsync allowances for autoscaled app replicas (docs/fleet/AUTOSCALING.md)
+After=network-online.target wg-quick@wg0.service rqlite.service nftables.service
+Wants=wg-quick@wg0.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I @@OPT@@/bin/fmnext-fleet-peers --config @@ETC@@/fleet-peers.json
+Restart=always
+RestartSec=10s
+RuntimeDirectory=fmnext-fleet-peers
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run/fmnext-fleet-peers
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+CapabilityBoundingSet=CAP_NET_ADMIN
+MemoryMax=64M
+CPUQuota=10%
+
+[Install]
+WantedBy=multi-user.target

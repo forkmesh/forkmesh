@@ -1,0 +1,8 @@
+QPushButton { padding: 5px 12px; }
+QLineEdit, QSpinBox, QComboBox { padding: 5px 9px; min-height: 18px; }
+QComboBox QAbstractItemView::item { min-height: 24px; }
+QMenu::item { padding: 5px 24px 5px 10px; }
+QHeaderView::section { padding: 5px 8px; }
+QTabBar::tab { padding: 5px 10px; }
+QTableView[dataTable="true"] QHeaderView::section { padding: 7px 12px; }
+#repoRowActions QPushButton { padding: 4px 6px; }

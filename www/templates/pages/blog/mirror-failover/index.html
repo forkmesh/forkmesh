@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Mirror failover" %}
+{% set slug = "mirror-failover" %}
+{% set image = "/assets/blog/features/mirror-failover.webp" %}
+{% set description = "When an eligible, healthy, integrity-matching mirror exists, ForkMesh can fail over behind the same public URL." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Mirror failover</h1>
+            <p class="lede">When an eligible, healthy, integrity-matching mirror exists, ForkMesh can fail over behind the same public URL. Sticky routing keeps a clone exchange on one mirror.</p>
+            <div class="meta"><span class="pill">Feature 05 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/mirror-failover.webp" alt="Abstract ForkMesh artwork for Mirror failover">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Mirror failover gives ForkMesh a concrete mechanism for keeping the same repository URL during a source outage when a verified candidate is available. If no eligible mirror is online, the request fails clearly rather than implying guaranteed availability.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, mirror failover addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles failover through a fresh eligible set scoped to the same signed repository state. Candidates must have an account-bound endpoint, a recent successful challenge, matching integrity proof, no active abuse block, and the required read operations.</p>
+          <p>The routing service prefers suitable region and observed latency, uses a bounded cursor for fair selection, and keeps a clone exchange sticky to one mirror. If an origin becomes unavailable before a response is committed, it can choose another verified candidate without redirecting the client or storing the repository.</p>
+          <h2>Where it fits</h2>
+          <p>Use mirror failover when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Mirror failover keeps the same repository URL surviving host outages by moving traffic to a healthy mirror connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/streaming-transfers/">← Streaming transfers</a>
+          <a href="/blog/source-attested-integrity/">Source-attested integrity →</a>
+        </nav>
+{% endblock %}

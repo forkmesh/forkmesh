@@ -1,0 +1,531 @@
+{
+  "suite": "forkmesh-protocol",
+  "suiteVersion": "1.0.0-rc.1",
+  "vectorSet": "signatures",
+  "procedure": "ed25519: strict verification of raw bytes; canonicalStrings: rebuild messageText from scheme+fields (when given) and verify the signature against publicKey; gitPushMessages: normalize input and build the message or reject; freshness: apply the request timestamp window.",
+  "catalogV2Record": {
+    "branch": "main",
+    "description": "caf\u00e9 mirror",
+    "maintainer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+    "name": "demo",
+    "owner": "alice",
+    "signature": "descriptive-field-not-bound",
+    "stateHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "updatedAt": "2026-09-13T12:00:00Z",
+    "visibility": "private"
+  },
+  "ed25519": [
+    {
+      "id": "ed25519-rfc8032-test-1",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "messageHex": "",
+      "signatureHex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "ed25519-rfc8032-test-2",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "messageHex": "72",
+      "signatureHex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "ed25519-tampered-message",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "messageHex": "73",
+      "signatureHex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "ed25519-noncanonical-scalar-s-plus-l",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "messageHex": "72",
+      "signatureHex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69daf52db7415978abc61b2c2eb6aeebfca0387b2eaeb4302aeeb00d291612bb0c10",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "ed25519-identity-public-key",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "0100000000000000000000000000000000000000000000000000000000000000",
+      "messageHex": "72",
+      "signatureHex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "ed25519-order-2-public-key",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "messageHex": "72",
+      "signatureHex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "ed25519-order-4-public-key",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "messageHex": "72",
+      "signatureHex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "ed25519-noncanonical-public-key-y",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "messageHex": "72",
+      "signatureHex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "ed25519-short-signature",
+      "requirements": [
+        "FM-SIG-001"
+      ],
+      "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "messageHex": "72",
+      "signatureHex": "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c",
+      "expect": {
+        "valid": false
+      }
+    }
+  ],
+  "canonicalStrings": [
+    {
+      "id": "catalog-v1",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-ENC-007",
+        "FM-AUTH-004"
+      ],
+      "scheme": "forkmesh-catalog-v1",
+      "fields": [
+        [
+          "owner",
+          "alice"
+        ],
+        [
+          "name",
+          "demo"
+        ],
+        [
+          "updatedAt",
+          "2026-09-13T12:00:00Z"
+        ]
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-catalog-v1\nalice\ndemo\n2026-09-13T12:00:00Z",
+      "signature": "s9O9SIwZQrYZD6tnbJ6AY_TKoc_W-t4kM6Cdm0ibsr6KrgivN0Z3w7pqmqPt64ml5CXGpbcJbDcUK55UHAxKBw",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "catalog-v2",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-AUTH-004",
+        "FM-VER-002"
+      ],
+      "scheme": "forkmesh-catalog-v2",
+      "fields": [
+        [
+          "recordSha256",
+          "d2d927c2e5a1d063e2ec062507b8c814b90b3b46cbaed600f9163d3858dc57ec"
+        ]
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-catalog-v2\nd2d927c2e5a1d063e2ec062507b8c814b90b3b46cbaed600f9163d3858dc57ec",
+      "signature": "LUGjz3FG18nZ2djNBzdtJm7hkwJqupex3ugLGfjaxATD9YbAzmYz0CZgfeiE33XRoBRRhyXrIxDLv6yq8IlVDQ",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "repostate-v1",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-ENC-007",
+        "FM-ID-005"
+      ],
+      "scheme": "forkmesh-repostate-v1",
+      "fields": [
+        [
+          "owner",
+          "alice"
+        ],
+        [
+          "repo",
+          "demo"
+        ],
+        [
+          "stateHash",
+          "97b46ba1745519b538aba38e3d1329ee53ffe71d8e8e6f551b9369bcf45f6650"
+        ],
+        [
+          "updatedAt",
+          "2026-09-13T12:00:00Z"
+        ]
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-repostate-v1\nalice\ndemo\n97b46ba1745519b538aba38e3d1329ee53ffe71d8e8e6f551b9369bcf45f6650\n2026-09-13T12:00:00Z",
+      "signature": "ZoAhPtw68PFtd-y2Lt2KAOxboUMsWjJ88MzOzAThcqnm6QgMPIlPtqfV8NYwMbZS0sboDVomtqhrdwO6FgZiCA",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "private-manifest-v1",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-ENC-007"
+      ],
+      "scheme": "forkmesh-private-manifest-v1",
+      "fields": [
+        [
+          "owner",
+          "alice"
+        ],
+        [
+          "name",
+          "demo"
+        ],
+        [
+          "opaqueRepoId",
+          "0123456789abcdef0123456789abcdef"
+        ],
+        [
+          "keyEpoch",
+          "3"
+        ],
+        [
+          "manifestHash",
+          "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        ],
+        [
+          "updatedAt",
+          "2026-09-13T12:00:00Z"
+        ]
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-private-manifest-v1\nalice\ndemo\n0123456789abcdef0123456789abcdef\n3\nffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\n2026-09-13T12:00:00Z",
+      "signature": "bS7OHD7NA93b_CCRy2itiKvR9OB7K9uQA0iBDlYXvLrTAn_xL4Y5McvRWC0SFOn87U59dcx22gdswNmQN8cSDA",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "view-v1",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-ENC-007",
+        "FM-AUTH-001"
+      ],
+      "scheme": "forkmesh-view-v1",
+      "fields": [
+        [
+          "owner",
+          "alice"
+        ],
+        [
+          "repo",
+          "demo"
+        ],
+        [
+          "ts",
+          "1789300000000"
+        ]
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-view-v1\nalice\ndemo\n1789300000000",
+      "signature": "BZkQuZBKxOcMifQwlKF-C2NnqfkKTmm0fT_hLv6ckU0z5gC4-n6RQDNF7t-PFlT9MTq_yu17c3Wz8hj7BkanDg",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "rotate-v1",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-ENC-007"
+      ],
+      "scheme": "forkmesh-rotate-v1",
+      "fields": [
+        [
+          "oldPubkey",
+          "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0"
+        ],
+        [
+          "newPubkey",
+          "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+        ],
+        [
+          "ts",
+          "1789300000000"
+        ]
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-rotate-v1\nzXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\nGu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\n1789300000000",
+      "signature": "KiKkmr9Hjqy2NsqGM_KoVU9f1DGaKW32yZcEZCPVXsxm-Vf-5DE21khFsVrgoKcNeWqcLPHBzMEzjEtSjexOAg",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "git-push-v1-advertisement",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-AUTH-002"
+      ],
+      "scheme": "forkmesh-git-push-v1",
+      "fields": [
+        [
+          "owner",
+          "alice"
+        ],
+        [
+          "repo",
+          "demo"
+        ],
+        [
+          "method",
+          "GET"
+        ],
+        [
+          "ts",
+          "1789300000000"
+        ],
+        [
+          "bodySha256",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ]
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-git-push-v1\nalice\ndemo\nGET\n1789300000000\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signature": "piFod6UFkfBPu4xXGWSmDNFWL9GghL1WyzvRpAL6txkWHTy__yqLDsyLBPHelYSMWEHbfLAbKAleFe2BUzggAQ",
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "cross-version-view-signature",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-VER-002"
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-view-v2\nalice\ndemo\n1789300000000",
+      "signature": "BZkQuZBKxOcMifQwlKF-C2NnqfkKTmm0fT_hLv6ckU0z5gC4-n6RQDNF7t-PFlT9MTq_yu17c3Wz8hj7BkanDg",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "git-push-method-substitution",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-AUTH-002"
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-git-push-v1\nalice\ndemo\nPOST\n1789300000000\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signature": "piFod6UFkfBPu4xXGWSmDNFWL9GghL1WyzvRpAL6txkWHTy__yqLDsyLBPHelYSMWEHbfLAbKAleFe2BUzggAQ",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "catalog-v1-signature-as-repostate",
+      "requirements": [
+        "FM-SIG-002"
+      ],
+      "publicKey": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+      "messageText": "forkmesh-repostate-v1\nalice\ndemo\n2026-09-13T12:00:00Z",
+      "signature": "s9O9SIwZQrYZD6tnbJ6AY_TKoc_W-t4kM6Cdm0ibsr6KrgivN0Z3w7pqmqPt64ml5CXGpbcJbDcUK55UHAxKBw",
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "repostate-other-signer",
+      "requirements": [
+        "FM-SIG-002",
+        "FM-AUTH-004"
+      ],
+      "publicKey": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0",
+      "messageText": "forkmesh-repostate-v1\nalice\ndemo\n97b46ba1745519b538aba38e3d1329ee53ffe71d8e8e6f551b9369bcf45f6650\n2026-09-13T12:00:00Z",
+      "signature": "ZoAhPtw68PFtd-y2Lt2KAOxboUMsWjJ88MzOzAThcqnm6QgMPIlPtqfV8NYwMbZS0sboDVomtqhrdwO6FgZiCA",
+      "expect": {
+        "valid": false
+      }
+    }
+  ],
+  "gitPushMessages": [
+    {
+      "id": "git-push-normalizes-owner-method-digest",
+      "requirements": [
+        "FM-AUTH-002"
+      ],
+      "input": {
+        "owner": " Alice ",
+        "repo": "demo",
+        "method": "post",
+        "ts": "1789300000000",
+        "bodySha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+      },
+      "expect": {
+        "valid": true,
+        "messageText": "forkmesh-git-push-v1\nalice\ndemo\nPOST\n1789300000000\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "git-push-rejects-unsupported-method",
+      "requirements": [
+        "FM-AUTH-002"
+      ],
+      "input": {
+        "owner": "alice",
+        "repo": "demo",
+        "method": "PUT",
+        "ts": "1789300000000",
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "git-push-rejects-short-digest",
+      "requirements": [
+        "FM-AUTH-002"
+      ],
+      "input": {
+        "owner": "alice",
+        "repo": "demo",
+        "method": "GET",
+        "ts": "1789300000000",
+        "bodySha256": "abc"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "git-push-rejects-overlong-timestamp",
+      "requirements": [
+        "FM-AUTH-002"
+      ],
+      "input": {
+        "owner": "alice",
+        "repo": "demo",
+        "method": "GET",
+        "ts": "12345678901234567",
+        "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "expect": {
+        "valid": false
+      }
+    }
+  ],
+  "freshness": [
+    {
+      "id": "fresh-equal",
+      "requirements": [
+        "FM-AUTH-001"
+      ],
+      "nowMs": 1789300000000,
+      "ts": "1789300000000",
+      "expect": {
+        "fresh": true
+      }
+    },
+    {
+      "id": "fresh-past-edge",
+      "requirements": [
+        "FM-AUTH-001"
+      ],
+      "nowMs": 1789300000000,
+      "ts": "1789299700000",
+      "expect": {
+        "fresh": true
+      }
+    },
+    {
+      "id": "stale-past",
+      "requirements": [
+        "FM-AUTH-001"
+      ],
+      "nowMs": 1789300000000,
+      "ts": "1789299699999",
+      "expect": {
+        "fresh": false
+      }
+    },
+    {
+      "id": "fresh-future-edge",
+      "requirements": [
+        "FM-AUTH-001"
+      ],
+      "nowMs": 1789300000000,
+      "ts": "1789300300000",
+      "expect": {
+        "fresh": true
+      }
+    },
+    {
+      "id": "stale-future",
+      "requirements": [
+        "FM-AUTH-001"
+      ],
+      "nowMs": 1789300000000,
+      "ts": "1789300300001",
+      "expect": {
+        "fresh": false
+      }
+    },
+    {
+      "id": "stale-non-numeric",
+      "requirements": [
+        "FM-AUTH-001"
+      ],
+      "nowMs": 1789300000000,
+      "ts": "soon",
+      "expect": {
+        "fresh": false
+      }
+    }
+  ]
+}

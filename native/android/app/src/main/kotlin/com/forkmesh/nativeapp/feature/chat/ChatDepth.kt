@@ -1,0 +1,292 @@
+package com.forkmesh.nativeapp.feature.chat
+
+import com.forkmesh.nativeapp.App
+import com.forkmesh.nativeapp.account.projects.ProjectScope
+import com.forkmesh.nativeapp.api.ApiService
+import com.forkmesh.nativeapp.api.PrefStore
+import com.forkmesh.nativeapp.api.ServerUrl
+import com.forkmesh.nativeapp.apps.AppsApi
+import com.forkmesh.nativeapp.apps.ChatApps
+import com.forkmesh.nativeapp.chat.ChannelGroupsStore
+import com.forkmesh.nativeapp.chat.ChatAccountCalling
+import com.forkmesh.nativeapp.chat.ChatHistoryCodec
+import com.forkmesh.nativeapp.chat.ChatHistoryStore
+import com.forkmesh.nativeapp.chat.ChatHub
+import com.forkmesh.nativeapp.chat.ChatReadMarks
+import com.forkmesh.nativeapp.chat.ChatWelcomeAnnouncer
+import com.forkmesh.nativeapp.chat.DirectMessageService
+import com.forkmesh.nativeapp.chat.DiscordBridge
+import com.forkmesh.nativeapp.chat.FamilyDiscordControl
+import com.forkmesh.nativeapp.chat.LocalMeshRoom
+import com.forkmesh.nativeapp.chat.OfficeChannelService
+import com.forkmesh.nativeapp.chat.RelayConnectionState
+import com.forkmesh.nativeapp.chat.RelayRoom
+import com.forkmesh.nativeapp.chat.RelayRoomChat
+import com.forkmesh.nativeapp.chat.WebSocketOfficeConnector
+import com.forkmesh.nativeapp.control.DesktopControlFamily
+import com.forkmesh.nativeapp.control.DesktopControlFamilyName
+import com.forkmesh.nativeapp.control.DesktopControlHub
+import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.account.AccountEventChannel
+import com.forkmesh.nativeapp.feature.account.AuthService
+import com.forkmesh.nativeapp.feature.account.SettingsService
+import com.forkmesh.nativeapp.feature.account.projects.FlutterFiles
+import com.forkmesh.nativeapp.feature.agents.AgentsFeature
+import com.forkmesh.nativeapp.platform.ProjectLifecycle
+import com.forkmesh.nativeapp.push.DIRECT_MESSAGES_TOPIC
+import com.forkmesh.nativeapp.security.SecretStore
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+object ChatDepth {
+    private const val SAVE_DELAY_MS = 2_000L
+
+    private val revisionState = MutableStateFlow(0)
+    private val noticeFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    private val pendingIssueState = MutableStateFlow<String?>(null)
+
+    val revision: StateFlow<Int> = revisionState.asStateFlow()
+    val notices: SharedFlow<String> = noticeFlow.asSharedFlow()
+    val pendingIssue: StateFlow<String?> = pendingIssueState.asStateFlow()
+
+    @Volatile
+    var hub: ChatHub? = null
+        private set
+
+    @Volatile
+    var office: OfficeChannelService? = null
+        private set
+
+    @Volatile
+    var direct: DirectMessageService? = null
+        private set
+
+    @Volatile
+    var groups: ChannelGroupsStore? = null
+        private set
+
+    @Volatile
+    var apps: ChatApps? = null
+        private set
+
+    @Volatile
+    private var discordBridge: DiscordBridge? = null
+
+    @Volatile
+    private var discordHub: DesktopControlHub? = null
+
+    private var saveJob: Job? = null
+
+    fun bump() {
+        revisionState.value = revisionState.value + 1
+    }
+
+    fun post(notice: String) {
+        if (notice.isNotEmpty()) noticeFlow.tryEmit(notice)
+    }
+
+    fun requestIssue(argument: String) {
+        pendingIssueState.value = argument
+    }
+
+    fun clearIssue() {
+        pendingIssueState.value = null
+    }
+
+    fun discord(): DiscordBridge? {
+        val desktops = runCatching { AgentsFeature.hub }.getOrNull() ?: return null
+        synchronized(this) {
+            val current = discordBridge
+            if (current != null && discordHub === desktops) return current
+            current?.stopWatching()
+            val next = DiscordBridge(FamilyDiscordControl(DesktopControlFamily(DesktopControlFamilyName.Discord, desktops)))
+            next.addListener { bump() }
+            discordBridge = next
+            discordHub = desktops
+            return next
+        }
+    }
+
+    fun install(app: App, room: RelayRoom, settings: SettingsService, scopeInfo: ProjectScope) {
+        val auth = Services.get<AuthService>()
+        val api = Services.get<ApiService>()
+        val secrets = Services.get<SecretStore>()
+        val prefs = Services.get<PrefStore>()
+        val chat = ChatHub(RelayRoomChat(room))
+        room.frameObserver = { frame -> chat.extras.apply(frame) }
+        chat.onNotice = { post(it) }
+        chat.selfName = { auth?.session?.value?.nodeName ?: room.persona.name }
+        chat.extras.onChange = {
+            bump()
+            scheduleSave()
+        }
+        auth?.let { chat.setRetention(it.chatRetention.value) }
+        hub = chat
+
+        val historyScope = { ChatHistoryCodec.scopeName(settings.core.serverUrl, settings.core.room) }
+        val historyDir = File(FlutterFiles.projectSupportDir(app, scopeInfo), "chat-history")
+        chat.attachHistory(ChatHistoryStore(historyDir), historyScope)
+        room.addListener { scheduleSave() }
+        if (prefs != null) groups = ChannelGroupsStore.forProject(prefs, scopeInfo.projectId, settings.core.serverUrl, settings.core.room)
+
+        if (api != null && secrets != null) {
+            val calling = ChatAccountCalling { method, path, body -> api.accountApiCall(method, path, body) }
+            val service = OfficeChannelService(
+                api = calling,
+                connector = WebSocketOfficeConnector,
+                secureStore = secrets,
+                origin = { ServerUrl.parse(settings.core.serverUrl).httpOrigin },
+                selfId = { room.selfId },
+                displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
+            )
+            service.addListener { bump() }
+            office = service
+            chat.office = service
+            val directService = DirectMessageService(
+                api = calling,
+                connector = WebSocketOfficeConnector,
+                secureStore = secrets,
+                origin = { ServerUrl.parse(settings.core.serverUrl).httpOrigin },
+                selfId = { room.selfId },
+                displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
+            )
+            directService.addListener { bump() }
+            directService.meshSender = { plain, keys -> Services.get<LocalMeshRoom>()?.sendDirect(plain, keys) ?: 0 }
+            direct = directService
+            chat.direct = directService
+            chat.calls = DirectCallFeature.install(
+                context = app,
+                direct = directService,
+                selfId = { room.selfId },
+                accountName = { auth?.session?.value?.nodeName.orEmpty() },
+                prefs = prefs,
+            )
+            val readMarks = ChatReadMarks(calling)
+            chat.readMarks = readMarks
+            Services.get<AccountEventChannel>()?.let { channel ->
+                val previous = channel.onTopic
+                channel.onTopic = { topic ->
+                    previous?.invoke(topic)
+                    if (topic == DIRECT_MESSAGES_TOPIC && direct === directService) {
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { directService.refresh() }
+                    } else if (topic == ChatReadMarks.TOPIC && hub === chat) {
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks() }
+                    }
+                }
+                val previousConnected = channel.onConnected
+                channel.onConnected = {
+                    previousConnected?.invoke()
+                    if (hub === chat) ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks() }
+                }
+            }
+            chat.forkbot = calling
+            val appsService = ChatApps(AppsApi(api))
+            appsService.onChange = { bump() }
+            appsService.onNotice = { post(it) }
+            appsService.enabled = { appsAllowed() }
+            apps = appsService
+            chat.apps = appsService
+        }
+
+        ProjectLifecycle.onClose {
+            withContext(Dispatchers.IO) {
+                chat.calls?.let { DirectCallFeature.uninstall(it, direct) }
+                runCatching { chat.saveHistory() }
+                office?.closeAll()
+                direct?.closeAll()
+                discordBridge?.stopWatching()
+            }
+            room.frameObserver = null
+            chat.calls = null
+            if (hub === chat) hub = null
+            office = null
+            direct = null
+            apps = null
+            groups = null
+            discordBridge = null
+            discordHub = null
+            pendingIssueState.value = null
+        }
+
+        val scope = ProjectLifecycle.scope
+        if (auth != null) {
+            scope.launch {
+                var seen = false
+                auth.session.map { it?.sessionToken.orEmpty() }.distinctUntilChanged().collect { token ->
+                    val changed = seen
+                    seen = true
+                    withContext(Dispatchers.IO) {
+                        if (changed) apps?.reset()
+                        office?.let { if (token.isEmpty()) it.closeAll() else it.refresh() }
+                        direct?.let { if (token.isEmpty()) it.closeAll() else it.refresh() }
+                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks()
+                    }
+                }
+            }
+            scope.launch(Dispatchers.IO) { welcome(room, auth) }
+        }
+    }
+
+    private fun appsAllowed(): Boolean {
+        val auth = Services.get<AuthService>() ?: return false
+        val session = auth.session.value ?: return false
+        return session.sessionToken.isNotEmpty() && session.sessionKind != "preview" && !auth.isGuest.value
+    }
+
+    suspend fun loadAppCommands() {
+        if (!appsAllowed()) return
+        val service = apps ?: return
+        if (service.loaded) return
+        withContext(Dispatchers.IO) { service.load() }
+    }
+
+    private fun scheduleSave() {
+        val chat = hub ?: return
+        saveJob?.cancel()
+        saveJob = ProjectLifecycle.scope.launch(Dispatchers.IO) {
+            delay(SAVE_DELAY_MS)
+            runCatching { chat.saveHistory() }
+        }
+    }
+
+    private suspend fun welcome(room: RelayRoom, auth: AuthService) {
+        repeat(60) {
+            if (room.state == RelayConnectionState.CONNECTED) return@repeat
+            delay(1_000)
+        }
+        if (room.state != RelayConnectionState.CONNECTED) return
+        val session = auth.session.value ?: return
+        if (session.sessionKind == "preview") return
+        val prefs = Services.get<PrefStore>() ?: return
+        delay(3_000)
+        val announcer = ChatWelcomeAnnouncer(prefs)
+        val account = session.nodeName
+        val already = room.messages(ChatWelcomeAnnouncer.CHANNEL).any {
+            it.senderName.equals(account, ignoreCase = true) && it.text == ChatWelcomeAnnouncer.TEXT
+        }
+        val should = announcer.shouldAnnounce(
+            account = account,
+            isGuest = auth.isGuest.value,
+            emailVerified = session.emailVerified,
+            createdAtMs = session.createdAt,
+            nowMs = System.currentTimeMillis(),
+            alreadyInRoom = already,
+        )
+        if (!should) return
+        announcer.markAnnounced(account)
+        room.addChannel(ChatWelcomeAnnouncer.CHANNEL)
+        room.sendMessage(ChatWelcomeAnnouncer.TEXT, ChatWelcomeAnnouncer.CHANNEL)
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "forkmesh-app-browser-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runtime browser contracts for the ForkMesh app",
+  "scripts": {
+    "test": "FORKMESH_BROWSER_FULL=1 playwright test",
+    "test:all": "FORKMESH_BROWSER_FULL=1 playwright test",
+    "test:daily-interface": "FORKMESH_BROWSER_FULL=1 playwright test tests/daily-interface.spec.js tests/dashboard-pull-files-deep-link.spec.js --grep 'daily interface'"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.0"
+  }
+}

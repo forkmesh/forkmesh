@@ -1,0 +1,1092 @@
+{% extends "base.html" %}
+{% block html_attrs %} class="light h-full scroll-smooth" data-theme-default="light"{% endblock %}
+{% block title %}ForkMesh for iPhone - Agents, Git and code review in your pocket{% endblock %}
+{% block chrome %}
+{% endblock %}
+{% block meta %}
+    <meta name="description" content="Send agents to work, review and merge pull requests, and run real Git from your iPhone. ForkMesh for iPhone and iPad is a node with its own keys." />
+    <meta name="apple-itunes-app" content="app-id=6803060735" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://forkmesh.com/mobile" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forkmesh.com/mobile" />
+    <meta property="og:site_name" content="ForkMesh" />
+    <meta property="og:title" content="ForkMesh for iPhone - Your Code. Your World. Now in Your Pocket." />
+    <meta property="og:description" content="Send agents to work, review and merge pull requests, and run real Git from your iPhone." />
+    <meta property="og:image" content="https://forkmesh.com/assets/mobile/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The ForkMesh iPhone app showing an agent prompt, a repository and the inbox" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ForkMesh for iPhone - Your Code. Your World. Now in Your Pocket." />
+    <meta name="twitter:description" content="Send agents to work, review and merge pull requests, and run real Git from your iPhone." />
+    <meta name="twitter:image" content="https://forkmesh.com/assets/mobile/og.png" />
+{% endblock %}
+{% block head %}
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "MobileApplication",
+        "name": "ForkMesh",
+        "url": "https://forkmesh.com/mobile",
+        "operatingSystem": "iOS, iPadOS, Android",
+        "applicationCategory": "DeveloperApplication",
+        "downloadUrl": "https://apps.apple.com/app/forkmesh/id6803060735",
+        "image": "https://forkmesh.com/assets/mobile/og.png",
+        "description": "Send agents to work, review and merge pull requests, and run real Git from your iPhone.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "ForkMesh",
+          "url": "https://forkmesh.com"
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="/tailwind.css" />
+    <link rel="stylesheet" href="/home-nav.css" />
+    <link rel="stylesheet" href="/mobile.css" />
+    {% include "partials/site-footer.html" %}
+    <script src="/home-header-auth.js?v=${version}" defer></script>
+    <script src="/home-theme.js?v=${version}" defer></script>
+    <script src="/home-nav.js?v=${version}" defer></script>
+{% endblock %}
+{% block body_attrs %} class="min-h-full bg-background text-foreground"{% endblock %}
+{% block body %}
+    <main class="landing-main">
+      <header class="home-nav-wrap">
+        <nav
+          id="site-nav"
+          class="home-nav"
+          data-open="false"
+          aria-label="Primary"
+        >
+          <div class="home-nav-shell">
+            <a href="/" class="home-brand" aria-label="ForkMesh home">
+              <img
+                src="/assets/logo.svg"
+                alt=""
+                aria-hidden="true"
+                class="home-brand-mark"
+                width="192"
+                height="220"
+              />
+              <span class="home-brand-word">forkmesh</span>
+            </a>
+
+            <ul class="home-nav-links">
+              <li class="home-nav-item has-menu">
+                <button
+                  type="button"
+                  class="home-nav-link"
+                  aria-expanded="false"
+                  aria-haspopup="true"
+                  aria-controls="home-menu-product"
+                >
+                  Product
+                  <svg class="home-nav-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                    <path d="M2.5 4.5 6 8l3.5-3.5" />
+                  </svg>
+                </button>
+                <div class="home-menu" id="home-menu-product">
+                  <a class="home-menu-item" href="/features">
+                    <span class="home-menu-title">Features</span>
+                    <span class="home-menu-desc">Mirror, route, sign and merge across nodes</span>
+                  </a>
+                  <a class="home-menu-item" href="/desktop">
+                    <span class="home-menu-title">Desktop app</span>
+                    <span class="home-menu-desc">Run a node on your own machine</span>
+                  </a>
+                  <a class="home-menu-item" href="/mobile" aria-current="page">
+                    <span class="home-menu-title">Mobile app</span>
+                    <span class="home-menu-desc">Agents, Git and review on your phone</span>
+                  </a>
+                  <a class="home-menu-item" href="/market">
+                    <span class="home-menu-title">Marketplace</span>
+                    <span class="home-menu-desc">Signed extensions, agents and themes</span>
+                  </a>
+                  <a class="home-menu-item" href="/ecosystem">
+                    <span class="home-menu-title">Ecosystem</span>
+                    <span class="home-menu-desc">Projects around Git-native collaboration</span>
+                  </a>
+                  <a class="home-menu-item" href="https://world.forkmesh.com/" data-plugin-entry="world">
+                    <span class="home-menu-title">World</span>
+                    <span class="home-menu-desc">The shared 3D developer world</span>
+                  </a>
+                  <a class="home-menu-item" href="/hackathon">
+                    <span class="home-menu-title">Hackathon</span>
+                    <span class="home-menu-desc">Build something that outlives its host</span>
+                  </a>
+                  <a class="home-menu-item" href="https://app.forkmesh.com/">
+                    <span class="home-menu-title">App</span>
+                    <span class="home-menu-desc">Dashboard, repos and account</span>
+                  </a>
+                </div>
+              </li>
+              <li class="home-nav-item">
+                <a class="home-nav-link" href="/docs">Docs</a>
+              </li>
+              <li class="home-nav-item">
+                <a class="home-nav-link" href="/changelog">Changelog</a>
+              </li>
+              <li class="home-nav-item has-menu">
+                <button
+                  type="button"
+                  class="home-nav-link"
+                  aria-expanded="false"
+                  aria-haspopup="true"
+                  aria-controls="home-menu-company"
+                >
+                  Company
+                  <svg class="home-nav-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                    <path d="M2.5 4.5 6 8l3.5-3.5" />
+                  </svg>
+                </button>
+                <div class="home-menu" id="home-menu-company">
+                  <a class="home-menu-item" href="/about">
+                    <span class="home-menu-title">About</span>
+                    <span class="home-menu-desc">Why the mesh exists and who runs it</span>
+                  </a>
+                  <a class="home-menu-item" href="/blog">
+                    <span class="home-menu-title">Blog</span>
+                    <span class="home-menu-desc">Updates, design notes and proofs</span>
+                  </a>
+                  <a class="home-menu-item" href="/careers">
+                    <span class="home-menu-title">Careers</span>
+                    <span class="home-menu-desc">Open roles</span>
+                  </a>
+                  <a class="home-menu-item" href="/press">
+                    <span class="home-menu-title">Press</span>
+                    <span class="home-menu-desc">Brand assets and coverage</span>
+                  </a>
+                </div>
+              </li>
+              <li class="home-nav-item has-menu">
+                <button
+                  type="button"
+                  class="home-nav-link"
+                  aria-expanded="false"
+                  aria-haspopup="true"
+                  aria-controls="home-menu-ai"
+                >
+                  AI
+                  <svg class="home-nav-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                    <path d="M2.5 4.5 6 8l3.5-3.5" />
+                  </svg>
+                </button>
+                <div class="home-menu" id="home-menu-ai">
+                  <a class="home-menu-item" href="/docs#developer-integrations">
+                    <span class="home-menu-title">MCP server</span>
+                    <span class="home-menu-desc">Repository and issue tools for your agent</span>
+                  </a>
+                  <a class="home-menu-item" href="/api/chat/agent-guestbook">
+                    <span class="home-menu-title">Agent capability contract</span>
+                    <span class="home-menu-desc">Machine-readable description of what agents can do</span>
+                  </a>
+                </div>
+              </li>
+              <li class="home-nav-item">
+                <a class="home-nav-link" href="/#pricing">Pricing</a>
+              </li>
+              <li class="home-nav-item">
+                <a class="home-nav-link" href="/#membership">Membership</a>
+              </li>
+            </ul>
+
+            <div class="home-nav-actions">
+              <button
+                type="button"
+                data-home-theme
+                class="home-theme-toggle"
+                aria-label="Switch to dark mode"
+                title="Switch to dark mode"
+              >
+                <svg class="home-theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M6 18l-1.4 1.4M19.4 4.6L18 6"></path>
+                </svg>
+                <svg class="home-theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                  <path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a6.6 6.6 0 0 0 9.9 9.9Z"></path>
+                </svg>
+                <span class="sr-only">Switch color theme</span>
+              </button>
+              <a data-home-auth-secondary class="home-nav-signin" href="/login">Sign in</a>
+              <span class="home-nav-divider" aria-hidden="true"></span>
+              <a data-home-auth-primary class="home-nav-signup" href="/signup">Sign up</a>
+              <button
+                id="mobile-menu-toggle"
+                type="button"
+                class="home-nav-burger"
+                aria-label="Open menu"
+                aria-expanded="false"
+                aria-controls="home-mobile-panel"
+              >
+                <svg class="menu-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="4" y1="7" x2="20" y2="7"></line>
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <line x1="4" y1="17" x2="20" y2="17"></line>
+                </svg>
+                <svg class="menu-close-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="home-mobile-panel" id="home-mobile-panel">
+            <div class="home-mobile-group">
+              <p class="home-mobile-heading">Product</p>
+              <a href="/features">Features</a>
+              <a href="/desktop">Desktop app</a>
+              <a href="/mobile" aria-current="page">Mobile app</a>
+              <a href="/market">Marketplace</a>
+              <a href="/ecosystem">Ecosystem</a>
+              <a href="/hackathon">Hackathon</a>
+              <a href="https://world.forkmesh.com/" data-plugin-entry="world">World</a>
+              <a href="https://app.forkmesh.com/">App</a>
+            </div>
+            <div class="home-mobile-group">
+              <p class="home-mobile-heading">Resources</p>
+              <a href="/docs">Docs</a>
+              <a href="/changelog">Changelog</a>
+              <a href="/status" data-status-entry>Status</a>
+              <a href="/#pricing">Pricing</a>
+              <a href="/#membership">Membership</a>
+              <a href="/#faq">FAQ</a>
+            </div>
+            <div class="home-mobile-group">
+              <p class="home-mobile-heading">Company</p>
+              <a href="/about">About</a>
+              <a href="/blog">Blog</a>
+              <a href="/careers">Careers</a>
+              <a href="/press">Press</a>
+            </div>
+            <div class="home-mobile-group">
+              <p class="home-mobile-heading">AI</p>
+              <a href="/docs#developer-integrations">MCP server</a>
+              <a href="/api/chat/agent-guestbook">Agent capability contract</a>
+            </div>
+            <div class="home-mobile-foot">
+              <button
+                type="button"
+                data-home-theme
+                class="home-theme-toggle home-theme-toggle-wide"
+                aria-label="Switch to dark mode"
+                title="Switch to dark mode"
+              >
+                <svg class="home-theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M6 18l-1.4 1.4M19.4 4.6L18 6"></path>
+                </svg>
+                <svg class="home-theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                  <path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a6.6 6.6 0 0 0 9.9 9.9Z"></path>
+                </svg>
+                <span>Switch color theme</span>
+              </button>
+            </div>
+          </div>
+        </nav>
+      </header>
+
+      <section class="hero-section mob-hero" aria-labelledby="hero-title">
+        <div class="hero-backdrop" aria-hidden="true">
+          <svg class="hero-schematic" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMin slice" fill="none" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke" aria-hidden="true" focusable="false">
+          <g id="hero-schematic-art">
+          <rect x="96" y="128" width="372" height="268" rx="10" opacity="0.6"/>
+          <rect x="201.6" y="122" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="350.4" y="122" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="462" y="256.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1140" y="96" width="344" height="300" rx="10" opacity="0.6"/>
+          <rect x="1237.2" y="90" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1374.8" y="90" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1478" y="240.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="48" y="500" width="300" height="220" rx="10" opacity="0.6"/>
+          <rect x="132.0" y="494" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="252.0" y="494" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="342" y="604.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1196" y="520" width="336" height="232" rx="10" opacity="0.6"/>
+          <rect x="1290.8" y="514" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1425.2" y="514" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1526" y="630.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="560" y="600" width="480" height="220" rx="10" opacity="0.6"/>
+          <rect x="698.0" y="594" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="890.0" y="594" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1034" y="704.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="440" y="40" width="300" height="120" rx="10" opacity="0.6"/>
+          <rect x="524.0" y="34" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="644.0" y="34" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="734" y="94.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="900" y="40" width="260" height="110" rx="10" opacity="0.6"/>
+          <rect x="972.0" y="34" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1076.0" y="34" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1154" y="89.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="232.0" y="152.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M237.33333333333334 152.0 v-5 M237.33333333333334 168.0 v5 M232.0 157.33333333333334 h-5 M248.0 157.33333333333334 h5" opacity="0.7"/>
+          <path d="M242.66666666666666 152.0 v-5 M242.66666666666666 168.0 v5 M232.0 162.66666666666666 h-5 M248.0 162.66666666666666 h5" opacity="0.7"/>
+          <rect x="472.0" y="712.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M477.3333333333333 712.0 v-5 M477.3333333333333 728.0 v5 M472.0 717.3333333333334 h-5 M488.0 717.3333333333334 h5" opacity="0.7"/>
+          <path d="M482.6666666666667 712.0 v-5 M482.6666666666667 728.0 v5 M472.0 722.6666666666666 h-5 M488.0 722.6666666666666 h5" opacity="0.7"/>
+          <rect x="308.0" y="628.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="317" y="637" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M314.0 628.0 v-5 M314.0 652.0 v5 M308.0 634.0 h-5 M332.0 634.0 h5" opacity="0.7"/>
+          <path d="M320.0 628.0 v-5 M320.0 652.0 v5 M308.0 640.0 h-5 M332.0 640.0 h5" opacity="0.7"/>
+          <path d="M326.0 628.0 v-5 M326.0 652.0 v5 M308.0 646.0 h-5 M332.0 646.0 h5" opacity="0.7"/>
+          <rect x="68.0" y="388.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="77" y="397" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M74.0 388.0 v-5 M74.0 412.0 v5 M68.0 394.0 h-5 M92.0 394.0 h5" opacity="0.7"/>
+          <path d="M80.0 388.0 v-5 M80.0 412.0 v5 M68.0 400.0 h-5 M92.0 400.0 h5" opacity="0.7"/>
+          <path d="M86.0 388.0 v-5 M86.0 412.0 v5 M68.0 406.0 h-5 M92.0 406.0 h5" opacity="0.7"/>
+          <rect x="72.0" y="312.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M77.33333333333333 312.0 v-5 M77.33333333333333 328.0 v5 M72.0 317.3333333333333 h-5 M88.0 317.3333333333333 h5" opacity="0.7"/>
+          <path d="M82.66666666666667 312.0 v-5 M82.66666666666667 328.0 v5 M72.0 322.6666666666667 h-5 M88.0 322.6666666666667 h5" opacity="0.7"/>
+          <rect x="1270.0" y="550.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1277" y="557" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1276.6666666666667 550.0 v-5 M1276.6666666666667 570.0 v5 M1270.0 556.6666666666666 h-5 M1290.0 556.6666666666666 h5" opacity="0.7"/>
+          <path d="M1283.3333333333333 550.0 v-5 M1283.3333333333333 570.0 v5 M1270.0 563.3333333333334 h-5 M1290.0 563.3333333333334 h5" opacity="0.7"/>
+          <rect x="1192.0" y="312.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M1197.3333333333333 312.0 v-5 M1197.3333333333333 328.0 v5 M1192.0 317.3333333333333 h-5 M1208.0 317.3333333333333 h5" opacity="0.7"/>
+          <path d="M1202.6666666666667 312.0 v-5 M1202.6666666666667 328.0 v5 M1192.0 322.6666666666667 h-5 M1208.0 322.6666666666667 h5" opacity="0.7"/>
+          <rect x="952.0" y="712.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M957.3333333333334 712.0 v-5 M957.3333333333334 728.0 v5 M952.0 717.3333333333334 h-5 M968.0 717.3333333333334 h5" opacity="0.7"/>
+          <path d="M962.6666666666666 712.0 v-5 M962.6666666666666 728.0 v5 M952.0 722.6666666666666 h-5 M968.0 722.6666666666666 h5" opacity="0.7"/>
+          <rect x="632.0" y="632.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M637.3333333333334 632.0 v-5 M637.3333333333334 648.0 v5 M632.0 637.3333333333334 h-5 M648.0 637.3333333333334 h5" opacity="0.7"/>
+          <path d="M642.6666666666666 632.0 v-5 M642.6666666666666 648.0 v5 M632.0 642.6666666666666 h-5 M648.0 642.6666666666666 h5" opacity="0.7"/>
+          <rect x="1430.0" y="630.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1437" y="637" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1436.6666666666667 630.0 v-5 M1436.6666666666667 650.0 v5 M1430.0 636.6666666666666 h-5 M1450.0 636.6666666666666 h5" opacity="0.7"/>
+          <path d="M1443.3333333333333 630.0 v-5 M1443.3333333333333 650.0 v5 M1430.0 643.3333333333334 h-5 M1450.0 643.3333333333334 h5" opacity="0.7"/>
+          <rect x="152.0" y="632.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M157.33333333333334 632.0 v-5 M157.33333333333334 648.0 v5 M152.0 637.3333333333334 h-5 M168.0 637.3333333333334 h5" opacity="0.7"/>
+          <path d="M162.66666666666666 632.0 v-5 M162.66666666666666 648.0 v5 M152.0 642.6666666666666 h-5 M168.0 642.6666666666666 h5" opacity="0.7"/>
+          <rect x="792.0" y="712.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M797.3333333333334 712.0 v-5 M797.3333333333334 728.0 v5 M792.0 717.3333333333334 h-5 M808.0 717.3333333333334 h5" opacity="0.7"/>
+          <path d="M802.6666666666666 712.0 v-5 M802.6666666666666 728.0 v5 M792.0 722.6666666666666 h-5 M808.0 722.6666666666666 h5" opacity="0.7"/>
+          <rect x="1270.0" y="70.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1277" y="77" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1276.6666666666667 70.0 v-5 M1276.6666666666667 90.0 v5 M1270.0 76.66666666666667 h-5 M1290.0 76.66666666666667 h5" opacity="0.7"/>
+          <path d="M1283.3333333333333 70.0 v-5 M1283.3333333333333 90.0 v5 M1270.0 83.33333333333333 h-5 M1290.0 83.33333333333333 h5" opacity="0.7"/>
+          <rect x="152.0" y="232.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M157.33333333333334 232.0 v-5 M157.33333333333334 248.0 v5 M152.0 237.33333333333334 h-5 M168.0 237.33333333333334 h5" opacity="0.7"/>
+          <path d="M162.66666666666666 232.0 v-5 M162.66666666666666 248.0 v5 M152.0 242.66666666666666 h-5 M168.0 242.66666666666666 h5" opacity="0.7"/>
+          <rect x="228.0" y="68.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="237" y="77" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M234.0 68.0 v-5 M234.0 92.0 v5 M228.0 74.0 h-5 M252.0 74.0 h5" opacity="0.7"/>
+          <path d="M240.0 68.0 v-5 M240.0 92.0 v5 M228.0 80.0 h-5 M252.0 80.0 h5" opacity="0.7"/>
+          <path d="M246.0 68.0 v-5 M246.0 92.0 v5 M228.0 86.0 h-5 M252.0 86.0 h5" opacity="0.7"/>
+          <rect x="472.0" y="232.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M477.3333333333333 232.0 v-5 M477.3333333333333 248.0 v5 M472.0 237.33333333333334 h-5 M488.0 237.33333333333334 h5" opacity="0.7"/>
+          <path d="M482.6666666666667 232.0 v-5 M482.6666666666667 248.0 v5 M472.0 242.66666666666666 h-5 M488.0 242.66666666666666 h5" opacity="0.7"/>
+          <rect x="1268.0" y="148.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="1277" y="157" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1274.0 148.0 v-5 M1274.0 172.0 v5 M1268.0 154.0 h-5 M1292.0 154.0 h5" opacity="0.7"/>
+          <path d="M1280.0 148.0 v-5 M1280.0 172.0 v5 M1268.0 160.0 h-5 M1292.0 160.0 h5" opacity="0.7"/>
+          <path d="M1286.0 148.0 v-5 M1286.0 172.0 v5 M1268.0 166.0 h-5 M1292.0 166.0 h5" opacity="0.7"/>
+          <rect x="1112.0" y="712.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M1117.3333333333333 712.0 v-5 M1117.3333333333333 728.0 v5 M1112.0 717.3333333333334 h-5 M1128.0 717.3333333333334 h5" opacity="0.7"/>
+          <path d="M1122.6666666666667 712.0 v-5 M1122.6666666666667 728.0 v5 M1112.0 722.6666666666666 h-5 M1128.0 722.6666666666666 h5" opacity="0.7"/>
+          <rect x="952.0" y="632.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M957.3333333333334 632.0 v-5 M957.3333333333334 648.0 v5 M952.0 637.3333333333334 h-5 M968.0 637.3333333333334 h5" opacity="0.7"/>
+          <path d="M962.6666666666666 632.0 v-5 M962.6666666666666 648.0 v5 M952.0 642.6666666666666 h-5 M968.0 642.6666666666666 h5" opacity="0.7"/>
+          <rect x="148.0" y="148.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="157" y="157" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M154.0 148.0 v-5 M154.0 172.0 v5 M148.0 154.0 h-5 M172.0 154.0 h5" opacity="0.7"/>
+          <path d="M160.0 148.0 v-5 M160.0 172.0 v5 M148.0 160.0 h-5 M172.0 160.0 h5" opacity="0.7"/>
+          <path d="M166.0 148.0 v-5 M166.0 172.0 v5 M148.0 166.0 h-5 M172.0 166.0 h5" opacity="0.7"/>
+          <rect x="468.0" y="388.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="477" y="397" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M474.0 388.0 v-5 M474.0 412.0 v5 M468.0 394.0 h-5 M492.0 394.0 h5" opacity="0.7"/>
+          <path d="M480.0 388.0 v-5 M480.0 412.0 v5 M468.0 400.0 h-5 M492.0 400.0 h5" opacity="0.7"/>
+          <path d="M486.0 388.0 v-5 M486.0 412.0 v5 M468.0 406.0 h-5 M492.0 406.0 h5" opacity="0.7"/>
+          <rect x="1430.0" y="310.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1437" y="317" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1436.6666666666667 310.0 v-5 M1436.6666666666667 330.0 v5 M1430.0 316.6666666666667 h-5 M1450.0 316.6666666666667 h5" opacity="0.7"/>
+          <path d="M1443.3333333333333 310.0 v-5 M1443.3333333333333 330.0 v5 M1430.0 323.3333333333333 h-5 M1450.0 323.3333333333333 h5" opacity="0.7"/>
+          <rect x="630.0" y="390.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="637" y="397" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M636.6666666666666 390.0 v-5 M636.6666666666666 410.0 v5 M630.0 396.6666666666667 h-5 M650.0 396.6666666666667 h5" opacity="0.7"/>
+          <path d="M643.3333333333334 390.0 v-5 M643.3333333333334 410.0 v5 M630.0 403.3333333333333 h-5 M650.0 403.3333333333333 h5" opacity="0.7"/>
+          <rect x="1428.0" y="468.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="1437" y="477" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1434.0 468.0 v-5 M1434.0 492.0 v5 M1428.0 474.0 h-5 M1452.0 474.0 h5" opacity="0.7"/>
+          <path d="M1440.0 468.0 v-5 M1440.0 492.0 v5 M1428.0 480.0 h-5 M1452.0 480.0 h5" opacity="0.7"/>
+          <path d="M1446.0 468.0 v-5 M1446.0 492.0 v5 M1428.0 486.0 h-5 M1452.0 486.0 h5" opacity="0.7"/>
+          <rect x="632.0" y="312.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M637.3333333333334 312.0 v-5 M637.3333333333334 328.0 v5 M632.0 317.3333333333333 h-5 M648.0 317.3333333333333 h5" opacity="0.7"/>
+          <path d="M642.6666666666666 312.0 v-5 M642.6666666666666 328.0 v5 M632.0 322.6666666666667 h-5 M648.0 322.6666666666667 h5" opacity="0.7"/>
+          <rect x="1352.0" y="72.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M1357.3333333333333 72.0 v-5 M1357.3333333333333 88.0 v5 M1352.0 77.33333333333333 h-5 M1368.0 77.33333333333333 h5" opacity="0.7"/>
+          <path d="M1362.6666666666667 72.0 v-5 M1362.6666666666667 88.0 v5 M1352.0 82.66666666666667 h-5 M1368.0 82.66666666666667 h5" opacity="0.7"/>
+          <rect x="1030.0" y="630.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1037" y="637" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1036.6666666666667 630.0 v-5 M1036.6666666666667 650.0 v5 M1030.0 636.6666666666666 h-5 M1050.0 636.6666666666666 h5" opacity="0.7"/>
+          <path d="M1043.3333333333333 630.0 v-5 M1043.3333333333333 650.0 v5 M1030.0 643.3333333333334 h-5 M1050.0 643.3333333333334 h5" opacity="0.7"/>
+          <rect x="468.0" y="468.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="477" y="477" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M474.0 468.0 v-5 M474.0 492.0 v5 M468.0 474.0 h-5 M492.0 474.0 h5" opacity="0.7"/>
+          <path d="M480.0 468.0 v-5 M480.0 492.0 v5 M468.0 480.0 h-5 M492.0 480.0 h5" opacity="0.7"/>
+          <path d="M486.0 468.0 v-5 M486.0 492.0 v5 M468.0 486.0 h-5 M492.0 486.0 h5" opacity="0.7"/>
+          <rect x="68.0" y="548.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="77" y="557" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M74.0 548.0 v-5 M74.0 572.0 v5 M68.0 554.0 h-5 M92.0 554.0 h5" opacity="0.7"/>
+          <path d="M80.0 548.0 v-5 M80.0 572.0 v5 M68.0 560.0 h-5 M92.0 560.0 h5" opacity="0.7"/>
+          <path d="M86.0 548.0 v-5 M86.0 572.0 v5 M68.0 566.0 h-5 M92.0 566.0 h5" opacity="0.7"/>
+          <rect x="1350.0" y="710.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1357" y="717" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1356.6666666666667 710.0 v-5 M1356.6666666666667 730.0 v5 M1350.0 716.6666666666666 h-5 M1370.0 716.6666666666666 h5" opacity="0.7"/>
+          <path d="M1363.3333333333333 710.0 v-5 M1363.3333333333333 730.0 v5 M1350.0 723.3333333333334 h-5 M1370.0 723.3333333333334 h5" opacity="0.7"/>
+          <path d="M240 160 L240 80 L240 80" opacity="0.6"/>
+          <path d="M240 160 L240 160 L160 160" opacity="0.6"/>
+          <path d="M480 720 L320 720 L320 640" opacity="0.6"/>
+          <path d="M320 715 L325 720 L320 725 L315 720 Z" opacity="0.75"/>
+          <path d="M480 720 L480 640 L640 640" opacity="0.6"/>
+          <path d="M480 635 L485 640 L480 645 L475 640 Z" opacity="0.75"/>
+          <path d="M320 640 L320 640 L160 640" opacity="0.6"/>
+          <path d="M80 400 L80 320 L80 320" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M80 400 L80 400 L80 560" opacity="0.6"/>
+          <path d="M80 320 L160 320 L160 240" opacity="0.6"/>
+          <path d="M160 315 L165 320 L160 325 L155 320 Z" opacity="0.75"/>
+          <path d="M1280 560 L1280 640 L1440 640" opacity="0.6"/>
+          <path d="M1280 635 L1285 640 L1280 645 L1275 640 Z" opacity="0.75"/>
+          <path d="M1280 560 L1440 560 L1440 480" opacity="0.6"/>
+          <path d="M1440 555 L1445 560 L1440 565 L1435 560 Z" opacity="0.75"/>
+          <path d="M1200 320 L1280 320 L1280 160" opacity="0.6"/>
+          <path d="M1280 315 L1285 320 L1280 325 L1275 320 Z" opacity="0.75"/>
+          <path d="M1200 320 L1440 320 L1440 320" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M960 720 L960 720 L960 640" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M960 720 L960 720 L800 720" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M640 640 L800 640 L800 720" opacity="0.6"/>
+          <path d="M800 635 L805 640 L800 645 L795 640 Z" opacity="0.75"/>
+          <path d="M1440 640 L1440 640 L1440 480" opacity="0.6"/>
+          <path d="M1440 640 L1360 640 L1360 720" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M1360 635 L1365 640 L1360 645 L1355 640 Z" opacity="0.75"/>
+          <path d="M160 640 L80 640 L80 560" opacity="0.6"/>
+          <path d="M80 635 L85 640 L80 645 L75 640 Z" opacity="0.75"/>
+          <path d="M1280 80 L1280 160 L1280 160" opacity="0.6"/>
+          <path d="M1280 80 L1280 80 L1360 80" opacity="0.6"/>
+          <path d="M160 240 L160 240 L160 160" opacity="0.6"/>
+          <path d="M160 240 L160 160 L240 160" opacity="0.6"/>
+          <path d="M160 155 L165 160 L160 165 L155 160 Z" opacity="0.75"/>
+          <path d="M240 80 L160 80 L160 160" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M160 75 L165 80 L160 85 L155 80 Z" opacity="0.75"/>
+          <path d="M480 240 L480 240 L480 400" opacity="0.6"/>
+          <path d="M480 240 L480 320 L640 320" opacity="0.6"/>
+          <path d="M480 315 L485 320 L480 325 L475 320 Z" opacity="0.75"/>
+          <path d="M1280 160 L1280 80 L1360 80" opacity="0.6"/>
+          <path d="M1280 75 L1285 80 L1280 85 L1275 80 Z" opacity="0.75"/>
+          <path d="M1120 720 L960 720 L960 720" opacity="0.6"/>
+          <path d="M1120 720 L1040 720 L1040 640" opacity="0.6"/>
+          <path d="M1040 715 L1045 720 L1040 725 L1035 720 Z" opacity="0.75"/>
+          <path d="M960 640 L960 640 L1040 640" opacity="0.6"/>
+          <path d="M480 400 L480 480 L480 480" opacity="0.6"/>
+          <path d="M1440 320 L1440 480 L1440 480" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M640 400 L640 320 L640 320" opacity="0.6"/>
+          <path d="M640 400 L480 400 L480 400" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M1040 640 L1040 720 L960 720" opacity="0.6"/>
+          <path d="M1040 715 L1045 720 L1040 725 L1035 720 Z" opacity="0.75"/>
+          <path d="M480 480 L480 720 L480 720" opacity="0.6"/>
+          <path d="M1360 720 L1360 560 L1280 560" opacity="0.6"/>
+          <path d="M1360 555 L1365 560 L1360 565 L1355 560 Z" opacity="0.75"/>
+          <path d="M621 855 h10 M626 850 v10" opacity="0.55"/>
+          <path d="M257 515 h10 M262 510 v10" opacity="0.55"/>
+          <path d="M658 656 h10 M663 651 v10" opacity="0.55"/>
+          <path d="M170 328 h10 M175 323 v10" opacity="0.55"/>
+          <path d="M672 146 h10 M677 141 v10" opacity="0.55"/>
+          <path d="M1355 790 h10 M1360 785 v10" opacity="0.55"/>
+          <path d="M1174 745 h10 M1179 740 v10" opacity="0.55"/>
+          <path d="M674 738 h10 M679 733 v10" opacity="0.55"/>
+          <path d="M247 235 h10 M252 230 v10" opacity="0.55"/>
+          <path d="M1391 227 h10 M1396 222 v10" opacity="0.55"/>
+          <path d="M294 792 h10 M299 787 v10" opacity="0.55"/>
+          <path d="M1325 738 h10 M1330 733 v10" opacity="0.55"/>
+          </g>
+          </svg>
+          <div class="hero-glow"></div>
+          <div class="hero-fade"></div>
+        </div>
+
+        <div class="hero-inner">
+          <a class="mob-badge motion-in" href="#on-device">
+            <b>New</b>
+            Gemma 4 now runs on your iPhone
+            <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
+          </a>
+          <h1 id="hero-title" class="motion-in motion-delay-1">
+            <span>Your Code. Your World.</span>
+            <span>Now in Your Pocket.</span>
+          </h1>
+          <p class="hero-sub motion-in motion-delay-2">
+            Send agents to work, review and merge pull requests, and run real
+            Git from an iPhone that is its own ForkMesh node, with its own keys.
+          </p>
+          <div class="mob-ctas motion-in motion-delay-3">
+            <a class="button-primary mob-store" href="https://apps.apple.com/app/forkmesh/id6803060735"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M16.4 12.9c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.8-3.5.8-.7 0-1.9-.8-3.1-.8-1.6 0-3 .9-3.8 2.4-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7 1.4 0 1.8.7 3 .7 1.2 0 2-1.1 2.8-2.2.9-1.3 1.2-2.5 1.3-2.6-.1 0-2.4-.9-2.4-3.6zM14.1 5.9c.6-.8 1.1-1.9.9-3-1 0-2.1.6-2.8 1.4-.6.7-1.1 1.8-1 2.9 1.1.1 2.2-.6 2.9-1.3z"/></svg><span><small>Download on the</small>App Store</span></a>
+            <a class="button-outline mob-store" href="/#downloads"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M7.2 3.6a.5.5 0 0 1 .7-.1l1.3 1.9A7.3 7.3 0 0 1 12 4.9c1 0 1.9.2 2.8.5l1.3-1.9a.5.5 0 1 1 .8.6l-1.2 1.8a6.3 6.3 0 0 1 3.3 5.1H5a6.3 6.3 0 0 1 3.3-5.1L7.1 4.3a.5.5 0 0 1 .1-.7zM9 8.2a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8zm6 0a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8zM5 12h14v6.3a1.7 1.7 0 0 1-1.7 1.7h-.8v2.2a1.3 1.3 0 0 1-2.6 0V20h-3.8v2.2a1.3 1.3 0 0 1-2.6 0V20h-.8A1.7 1.7 0 0 1 5 18.3zM2.3 12.1a1.3 1.3 0 0 1 2.6 0v4.6a1.3 1.3 0 0 1-2.6 0zm16.8 0a1.3 1.3 0 0 1 2.6 0v4.6a1.3 1.3 0 0 1-2.6 0z"/></svg><span><small>Signed APK for</small>Android</span></a>
+          </div>
+          <p class="mob-note motion-in motion-delay-3">Free<i>&middot;</i>iPhone and iPad<i>&middot;</i>Android as a signed APK</p>
+        </div>
+
+        <div class="mob-trio motion-in motion-delay-4">
+          <figure class="mob-phone is-side is-left"><img src="/assets/mobile/start-agent.webp" alt="The Agents tab with a Start an agent form: a prompt asking for a dark mode toggle, the forkmesh/forkmesh repository mirrored on the device, and a model picker." width="640" height="1391" decoding="async" /></figure>
+          <figure class="mob-phone"><img src="/assets/mobile/prompt.webp" alt="A repository cloned to the iPhone, with the prompt composer open over its files asking an agent to make clone sync resumable and add tests." width="640" height="1391" decoding="async" fetchpriority="high" /></figure>
+          <figure class="mob-phone is-side is-right"><img src="/assets/mobile/inbox.webp" alt="The Inbox listing new pull request review requests, filtered by all, pings, reviews and assigned." width="640" height="1391" decoding="async" /></figure>
+        </div>
+      </section>
+
+      <section class="mob-slab" id="inside" aria-labelledby="inside-title">
+        <div class="mob-slab-backdrop" aria-hidden="true">
+          <svg class="mob-slab-schematic" viewBox="0 0 800 450" preserveAspectRatio="xMinYMin slice" fill="none" stroke="currentColor" stroke-width="1" focusable="false"><use href="#hero-schematic-art" /></svg>
+        </div>
+        <div class="mob-slab-inner">
+          <div class="mob-slab-head">
+            <h2 id="inside-title">Everything you do at your desk, one thumb away</h2>
+            <p>
+              Agents, code, reviews and chat, signed by the key on your phone and
+              kept in step with your desktop and mirrors. Live desktop-control
+              payloads stay encrypted end to end, even when the relay forwards them.
+            </p>
+          </div>
+
+          <div class="mob-rows">
+            <article class="mob-row" id="agents">
+              <div class="mob-copy">
+                <p class="mob-label"><span class="mob-label-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg></span>Agents</p>
+                <h3>Send a prompt. Get a pull request.</h3>
+                <p>
+                  Describe the change and pick who does the work: a mirror, your
+                  desktop, or the phone itself. Then follow it to a branch, a pull
+                  request and a merge.
+                </p>
+                <ul class="mob-list">
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Claude Opus 5.5, Sonnet 5, Haiku 4.5 or Fable 5, or OpenAI GPT-5.6</span></li>
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Approve or deny a blocked agent action straight from a ping</span></li>
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Pair a desktop once, then start, steer and stop its agents from anywhere</span></li>
+                </ul>
+                <a class="mob-link" href="/docs/mobile/mobile-agent-access/">How agent access works <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+              </div>
+              <div class="mob-stage">
+                <svg class="mob-stage-art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true" focusable="false"><use href="#hero-schematic-art" /></svg>
+                <div class="mob-phones is-pair">
+                  <figure class="mob-phone"><img src="/assets/mobile/models.webp" alt="The agent model sheet: Claude, OpenAI or Gemma 4 on this iPhone, with Claude Opus 5.5, Opus 5, Sonnet 5 and Haiku 4.5 to choose from. The key stays on the device." width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                  <div class="mob-phone is-side is-front" aria-hidden="true">
+                    <div class="mob-screen mob-lock">
+                      <svg class="mob-lock-art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" focusable="false"><use href="#hero-schematic-art" /></svg>
+                      <div class="mob-lock-top"><span>9:41</span><span class="mob-lock-island"></span><span class="mob-lock-icons"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><rect x="2" y="15" width="3.2" height="5" rx="1"/><rect x="7" y="12" width="3.2" height="8" rx="1"/><rect x="12" y="8.5" width="3.2" height="11.5" rx="1"/><rect x="17" y="5" width="3.2" height="15" rx="1"/></svg><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M12 18.6 9.3 15.4a4 4 0 0 1 5.4 0z"/><path d="M6.9 12.6a8 8 0 0 1 10.2 0l-1.6 1.9a5.5 5.5 0 0 0-7 0z"/><path d="M4.4 9.7a12 12 0 0 1 15.2 0L18 11.6a9.5 9.5 0 0 0-12 0z"/></svg><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><rect x="1.5" y="7" width="19" height="10" rx="3" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".45"/><rect x="3.2" y="8.7" width="12.5" height="6.6" rx="1.6"/><path d="M22 10.2v3.6c.8-.3 1.2-1 1.2-1.8s-.4-1.5-1.2-1.8z" opacity=".45"/></svg></span></div>
+                      <div class="mob-lock-date">Sunday 27 September</div>
+                      <div class="mob-lock-time">9:41</div>
+                      <div class="mob-lock-stack">
+                        <div class="mob-notice">
+                          <img src="/assets/logo.svg" alt="" width="96" height="96" />
+                          <div class="mob-notice-head"><span>ForkMesh</span><span>now</span></div>
+                          <div class="mob-notice-body"><b>Approval needed</b>An agent on studio-mac wants to run <code>git push</code>.</div>
+                          <div class="mob-notice-actions"><span>Deny</span><span>Approve</span></div>
+                        </div>
+                        <div class="mob-live">
+                          <div class="mob-live-head">
+                            <span class="mob-live-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg></span>
+                            <span class="mob-live-title"><b>Fix the flaky relay test</b><span>forkmesh/forkmesh</span></span>
+                            <span class="mob-live-time">4:12</span>
+                          </div>
+                          <div class="mob-live-bar"><i></i></div>
+                          <div class="mob-live-foot"><span>Writing the patch</span><b>42 tests passed</b></div>
+                        </div>
+                      </div>
+                      <div class="mob-lock-foot"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8.5 3.5h7l-1 5h-5z"/><path d="M9.5 8.5h5v11.5a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1z"/><path d="M12 12.5v2.5"/></svg></span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.5-2h5.4l1.5 2h2.3A1.5 1.5 0 0 1 20 8.5V18a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18z"/><circle cx="12" cy="13" r="3.5"/></svg></span></div>
+                      <div class="mob-lock-bar"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="mob-row is-flip" id="code">
+              <div class="mob-copy">
+                <p class="mob-label"><span class="mob-label-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5"/></svg></span>Code &amp; Git</p>
+                <h3>Real Git, no computer needed.</h3>
+                <p>
+                  Clone, browse, edit, commit, branch, sync and publish right on the
+                  phone, or open any repository on the network. Import from a zip,
+                  or mirror a repo from GitHub, GitLab or Codeberg.
+                </p>
+                <ul class="mob-list">
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>A code editor with syntax highlighting and a coding key bar</span></li>
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>File history, the commit graph, branches, releases and mirrors</span></li>
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Quick edits become a pull request</span></li>
+                </ul>
+                <a class="mob-link" href="/docs/mobile/mobile-node-contract/">How the phone works as a node <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+              </div>
+              <div class="mob-stage">
+                <svg class="mob-stage-art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true" focusable="false"><use href="#hero-schematic-art" /></svg>
+                <div class="mob-phones">
+                  <figure class="mob-phone is-side"><img src="/assets/mobile/history.webp" alt="" width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                  <figure class="mob-phone"><img src="/assets/mobile/editor.webp" alt="The code editor showing account.go with Go syntax highlighting, line numbers and a Save button." width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                  <figure class="mob-phone is-side"><img src="/assets/mobile/repos.webp" alt="" width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                </div>
+                <div class="mob-float is-tl"><span class="mob-float-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.3 9.6 4.5 4.5 0 0 0 7 18.5z"/><path d="m9.6 13.9 1.9 1.9 3.5-3.6"/></svg></span><span>In sync with ForkMesh<small>forkmesh/forkmesh, cloned to this iPhone</small></span></div>
+              </div>
+            </article>
+
+            <article class="mob-row" id="review">
+              <div class="mob-copy">
+                <p class="mob-label"><span class="mob-label-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="6.5" cy="5.5" r="2.2"/><circle cx="6.5" cy="18.5" r="2.2"/><circle cx="17.5" cy="18.5" r="2.2"/><path d="M6.5 7.7v8.6M17.5 16.3V9.5a2.5 2.5 0 0 0-2.5-2.5h-3.5"/><path d="m13.5 4.8-2.2 2.2 2.2 2.2"/></svg></span>Pull requests</p>
+                <h3>Review and merge from anywhere.</h3>
+                <p>
+                  Read the conversation, commits, files and checks, then comment,
+                  approve or request changes. Every review is signed with your
+                  device key, and the merge is one tap away.
+                </p>
+                <ul class="mob-list">
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Diffs unified or side by side, with syntax highlighting</span></li>
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Review an agent's worktree, then merge and clean up</span></li>
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Actions runs, logs and artifacts; secrets stay on your desktop</span></li>
+                </ul>
+                <a class="mob-link" href="/features">See every collaboration feature <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+              </div>
+              <div class="mob-stage">
+                <svg class="mob-stage-art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true" focusable="false"><use href="#hero-schematic-art" /></svg>
+                <div class="mob-phones">
+                  <figure class="mob-phone is-side"><img src="/assets/mobile/diff.webp" alt="" width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                  <figure class="mob-phone"><img src="/assets/mobile/review.webp" alt="Review #174: Auth theme, no green glow or green focus ring in light mode, with Conversation, Commits, Files and Checks tabs and four changed files." width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                  <figure class="mob-phone is-side"><img src="/assets/mobile/commit.webp" alt="" width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                </div>
+                <div class="mob-float is-br"><span class="mob-float-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 19 6v5.5c0 4.6-3 7.8-7 9-4-1.2-7-4.4-7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg></span><span>Approved<small>signed with this iPhone's key</small></span></div>
+              </div>
+            </article>
+
+            <article class="mob-row is-flip" id="chat">
+              <div class="mob-copy">
+                <p class="mob-label"><span class="mob-label-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2H10l-4.5 3.5v-3.5h0a2 2 0 0 1-1-1.7z"/></svg></span>Chat &amp; Inbox</p>
+                <h3>Your team, and every ping, in one place.</h3>
+                <p>
+                  Encrypted channels, private rooms, DMs and threads, with presence
+                  and status. Pings, review requests, assignments and mentions land
+                  in one inbox, and a push opens the right page.
+                </p>
+                <ul class="mob-list">
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Your Discord channels, bridged through your desktop</span></li>
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Chat with nearby devices over Wi-Fi, no internet needed</span></li>
+                  <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Per-type switches, pause, quiet hours and email for pings</span></li>
+                </ul>
+                <a class="mob-link" href="/docs/operations/mobile-push-notifications/">How push notifications work <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+              </div>
+              <div class="mob-stage">
+                <svg class="mob-stage-art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true" focusable="false"><use href="#hero-schematic-art" /></svg>
+                <div class="mob-phones is-pair">
+                  <figure class="mob-phone"><img src="/assets/mobile/chat.webp" alt="The channel list: #general, #random and #welcome, private rooms in an Office group, the #mesh channel, Discord through your desktop, and people with presence and status." width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                  <figure class="mob-phone is-side"><img src="/assets/mobile/inbox.webp" alt="" width="640" height="1391" loading="lazy" decoding="async" /></figure>
+                </div>
+                <div class="mob-push" aria-hidden="true">
+                  <img src="/assets/logo.svg" alt="" width="96" height="96" />
+                  <b>Review requested &middot; forkmesh</b>
+                  <time>now</time>
+                  <span>Auth theme: no green glow or green focus ring in light mode</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="mob-ai" id="on-device" aria-labelledby="on-device-title">
+        <div class="mob-ai-grid">
+          <div class="mob-ai-copy">
+            <p class="mob-label"><span class="mob-label-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg></span>On-device AI</p>
+            <h2 id="on-device-title">Gemma 4, running on your iPhone.</h2>
+            <p>
+              Google's Gemma 4 runs on the iPhone's GPU through Apple's MLX. What
+              you type never leaves the device, and it keeps working offline once
+              a model is downloaded.
+            </p>
+            <div class="mob-models">
+              <div class="mob-model">
+                <div class="mob-model-head"><b>Gemma 4 E2B</b></div>
+                <dl>
+                  <dt>Size</dt><dd>2B effective, 4-bit</dd>
+                  <dt>Download</dt><dd>3.6 GB</dd>
+                  <dt>Memory</dt><dd>about 2.6 GB</dd>
+                  <dt>Context</dt><dd>128K</dd>
+                </dl>
+              </div>
+              <div class="mob-model">
+                <div class="mob-model-head"><b>Gemma 4 E4B</b><span class="mob-model-tag">Recommended</span></div>
+                <dl>
+                  <dt>Size</dt><dd>4B effective, 4-bit</dd>
+                  <dt>Download</dt><dd>5.2 GB</dd>
+                  <dt>Memory</dt><dd>about 4.2 GB</dd>
+                  <dt>Context</dt><dd>128K</dd>
+                </dl>
+              </div>
+            </div>
+            <p class="mob-ai-key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="15.5" r="3.8"/><path d="m10.8 12.8 8.7-8.7M16.5 7.1l2.6 2.6M14.3 9.3l1.9 1.9"/></svg><span><b>Or bring your own key.</b> The coding agent works on a repository cloned to the phone, with your own Anthropic or OpenAI key kept on the device.</span></p>
+          </div>
+          <div class="mob-ai-visual">
+            <svg class="mob-ai-art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true" focusable="false"><use href="#hero-schematic-art" /></svg>
+            <figure class="mob-phone"><img src="/assets/mobile/on-device-ai.webp" alt="The On-device AI settings: Gemma 4 E2B and the recommended Gemma 4 E4B, each with its download size, memory use and 128K context." width="640" height="1391" loading="lazy" decoding="async" /></figure>
+            <div class="mob-ai-chip c1" aria-hidden="true"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg></span>On the GPU with MLX</div>
+            <div class="mob-ai-chip c2" aria-hidden="true"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 10a11 11 0 0 1 4.3-2.6M13.6 7.1a11 11 0 0 1 5.9 2.9M7.5 13.3a6.5 6.5 0 0 1 4-1.8M3.5 3.5l17 17"/><circle cx="12" cy="17" r="1.2"/></svg></span>Works offline</div>
+            <div class="mob-ai-chip c3" aria-hidden="true"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg></span>Never leaves the device</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mob-slab" id="iphone" aria-labelledby="iphone-title">
+        <div class="mob-slab-backdrop" aria-hidden="true">
+          <svg class="mob-slab-schematic" viewBox="0 0 800 450" preserveAspectRatio="xMinYMin slice" fill="none" stroke="currentColor" stroke-width="1" focusable="false"><use href="#hero-schematic-art" /></svg>
+        </div>
+        <div class="mob-slab-inner">
+          <div class="mob-slab-head">
+            <h2 id="iphone-title">At home on iPhone and Apple Watch</h2>
+            <p>
+              Agent runs, pings and timers reach you on the Lock Screen, in the
+              Dynamic Island, on your wrist and in Siri, without opening the app.
+            </p>
+          </div>
+
+          <div class="mob-apple">
+            <article class="mob-card is-wide">
+              <div class="mob-scene" aria-hidden="true">
+                <div class="mob-islands">
+                  <div class="mob-island is-expanded">
+                    <span class="mob-island-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg></span>
+                    <span class="mob-island-text"><b>Fix the flaky relay test</b><span>Writing the patch on studio-mac</span></span>
+                    <span class="mob-island-time">4:12</span>
+                    <span class="mob-island-bar"><i></i></span>
+                  </div>
+                  <div class="mob-island-row">
+                    <div class="mob-island is-compact"><span class="mob-island-lead"><span class="mob-island-dot"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg></span><strong>2 running</strong></div>
+                    <div class="mob-island is-compact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="13.5" r="7"/><path d="M12 13.5V10M10 3h4M18.4 6.6l1.3-1.3"/></svg><em>24:59</em></div>
+                  </div>
+                </div>
+              </div>
+              <div class="mob-card-body">
+                <h3>Live Activities</h3>
+                <p>Agent runs and timers stay on the Lock Screen and in the Dynamic Island while they work.</p>
+              </div>
+            </article>
+
+            <article class="mob-card">
+              <div class="mob-scene" aria-hidden="true">
+                <div class="mob-watch">
+                  <span class="mob-watch-band is-top"></span>
+                  <div class="mob-watch-case">
+                    <div class="mob-watch-screen">
+                      <div class="mob-watch-top"><span>Agents</span><time>9:41</time></div>
+                      <div class="mob-watch-run"><i></i>Relay test</div>
+                      <div class="mob-watch-eq"><i style="--h: 40%; --d: -0.2s"></i><i style="--h: 72%; --d: -0.6s"></i><i style="--h: 55%; --d: -1s"></i><i style="--h: 90%; --d: -0.4s"></i><i style="--h: 62%; --d: -1.2s"></i><i style="--h: 80%; --d: -0.8s"></i><i style="--h: 46%; --d: -0.1s"></i><i style="--h: 68%; --d: -0.9s"></i></div>
+                      <div class="mob-watch-meta">42 tests passed</div>
+                    </div>
+                  </div>
+                  <span class="mob-watch-band is-bottom"></span>
+                </div>
+              </div>
+              <div class="mob-card-body">
+                <h3>Apple Watch</h3>
+                <p>Control your agents and see and hear them work, with watch-face widgets.</p>
+              </div>
+            </article>
+
+            <article class="mob-card">
+              <div class="mob-scene" aria-hidden="true">
+                <div class="mob-widgets">
+                  <div class="mob-widget is-agents"><span class="mob-widget-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg>Agents</span><span class="mob-widget-value">2</span><span class="mob-widget-note">running now</span></div>
+                  <div class="mob-widget is-inbox"><span class="mob-widget-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 13.5 6 5.5h12l2.5 8v5h-17z"/><path d="M3.5 13.5h5l1 2h5l1-2h5"/></svg>Inbox</span><span class="mob-widget-value">9</span><span class="mob-widget-note">reviews waiting</span></div>
+                  <div class="mob-widget is-timer"><svg class="mob-ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="4"/><circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="94.2" stroke-dashoffset="30" transform="rotate(-90 18 18)"/></svg><span class="mob-widget-title">Focus</span><span class="mob-widget-value">24:59</span></div>
+                </div>
+              </div>
+              <div class="mob-card-body">
+                <h3>Home Screen widgets</h3>
+                <p>Agents, Inbox and Timer at a glance.</p>
+              </div>
+            </article>
+
+            <article class="mob-card">
+              <div class="mob-scene" aria-hidden="true">
+                <div class="mob-cc">
+                  <span class="mob-cc-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 10a11 11 0 0 1 15 0M7.5 13.3a6.5 6.5 0 0 1 9 0"/><circle cx="12" cy="17" r="1.2"/></svg></span>
+                  <span class="mob-cc-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8.5 3.5h7l-1 5h-5z"/><path d="M9.5 8.5h5v11.5a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1z"/><path d="M12 12.5v2.5"/></svg></span>
+                  <span class="mob-cc-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="13.5" r="7"/><path d="M12 13.5V10M10 3h4M18.4 6.6l1.3-1.3"/></svg></span>
+                  <span class="mob-cc-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.5-2h5.4l1.5 2h2.3A1.5 1.5 0 0 1 20 8.5V18a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+                  <span class="mob-cc-tile is-on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg></span>
+                  <span class="mob-cc-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 9.5h3.5l4.5-4v13l-4.5-4H4.5z"/><path d="M16 9a4.5 4.5 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg></span>
+                  <span class="mob-cc-tile is-on is-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 19 6v5.5c0 4.6-3 7.8-7 9-4-1.2-7-4.4-7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg></span>
+                  <span class="mob-cc-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5v3"/></svg></span>
+                  <span class="mob-cc-label">New agent</span>
+                  <span class="mob-cc-label">Approvals</span>
+                </div>
+              </div>
+              <div class="mob-card-body">
+                <h3>Control Center</h3>
+                <p>New agent and Approvals buttons, one swipe from anywhere.</p>
+              </div>
+            </article>
+
+            <article class="mob-card">
+              <div class="mob-scene" aria-hidden="true">
+                <div class="mob-shortcuts">
+                  <span class="mob-shortcut is-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg>Start an agent</span>
+                  <span class="mob-shortcut is-orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 13.5 6 5.5h12l2.5 8v5h-17z"/><path d="M3.5 13.5h5l1 2h5l1-2h5"/></svg>Open the inbox</span>
+                  <span class="mob-shortcut is-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="13.5" r="7"/><path d="M12 13.5V10M10 3h4M18.4 6.6l1.3-1.3"/></svg>Start a timer</span>
+                  <span class="mob-shortcut is-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.5 5A1.5 1.5 0 0 1 7 3.5h11.5v14H7a1.5 1.5 0 0 0-1.5 1.5z"/><path d="M5.5 19A1.5 1.5 0 0 0 7 20.5h11.5v-3"/></svg>Open a repo</span>
+                </div>
+              </div>
+              <div class="mob-card-body">
+                <h3>Siri &amp; Shortcuts</h3>
+                <p>Start an agent, open the inbox, a repo, issue, note or run, or start a timer by voice.</p>
+              </div>
+            </article>
+
+            <article class="mob-card is-full">
+              <div class="mob-minis">
+                <div class="mob-mini">
+                  <div class="mob-mini-scene" aria-hidden="true">
+                    <div class="mob-spot">
+                      <div class="mob-spot-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></svg>relay test</div>
+                      <div class="mob-spot-row"><img src="/assets/logo.svg" alt="" width="96" height="96" /><span><b>Fix the flaky relay test</b><span>ForkMesh &middot; agent run</span></span></div>
+                    </div>
+                  </div>
+                  <h3>Spotlight</h3>
+                  <p>Find ForkMesh items from iOS search.</p>
+                </div>
+                <div class="mob-mini">
+                  <div class="mob-mini-scene" aria-hidden="true">
+                    <div class="mob-share">
+                      <span><i class="is-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2H10l-4.5 3.5v-3.5h0a2 2 0 0 1-1-1.7z"/></svg></i>Messages</span>
+                      <span class="is-app"><img src="/assets/logo.svg" alt="" width="96" height="96" />ForkMesh</span>
+                      <span><i class="is-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/></svg></i>Mail</span>
+                      <span><i class="is-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg></i>Notes</span>
+                    </div>
+                  </div>
+                  <h3>Share sheet</h3>
+                  <p>Send text or images from any app to the composer as instructions for an agent.</p>
+                </div>
+                <div class="mob-mini">
+                  <div class="mob-mini-scene" aria-hidden="true">
+                    <div class="mob-autofill">
+                      <div class="mob-autofill-bar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="15.5" r="3.8"/><path d="m10.8 12.8 8.7-8.7M16.5 7.1l2.6 2.6M14.3 9.3l1.9 1.9"/></svg>ada@mesh.dev <span>&middot; Vault</span></div>
+                      <div class="mob-autofill-keys"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                    </div>
+                  </div>
+                  <h3>Password AutoFill</h3>
+                  <p>Fill logins from your Vault in any app.</p>
+                </div>
+                <div class="mob-mini">
+                  <div class="mob-mini-scene" aria-hidden="true">
+                    <div class="mob-ipad">
+                      <div class="mob-ipad-side"><i></i><i></i><i></i><i></i><i></i></div>
+                      <div class="mob-ipad-main"><i></i><i></i><i></i><i></i></div>
+                    </div>
+                  </div>
+                  <h3>iPad</h3>
+                  <p>A sidebar layout and keyboard shortcuts.</p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="mob-more" id="more" aria-labelledby="more-title">
+        <div class="mob-more-head">
+          <h2 id="more-title">And that's not all.</h2>
+          <p>Every screen is a tap or a long-press away, and the whole network is one search box from anywhere.</p>
+        </div>
+        <div class="mob-more-grid">
+          <article class="mob-more-card">
+            <div class="mob-more-scene is-bottom"><figure class="mob-phone"><img src="/assets/mobile/palette.webp" alt="The command palette open over the code tab, suggesting New agent, Running agents, New note, Start a timer and Switch project." width="640" height="1391" loading="lazy" decoding="async" /></figure></div>
+            <h3>Command palette</h3>
+            <p>Long-press the prompt button to go anywhere or run anything.</p>
+          </article>
+          <article class="mob-more-card">
+            <div class="mob-more-scene is-bottom"><figure class="mob-phone"><img src="/assets/mobile/prompt.webp" alt="The prompt composer with the Agent mode, a model picker, dictation and send." width="640" height="1391" loading="lazy" decoding="async" /></figure></div>
+            <h3>Prompt composer</h3>
+            <p>One glass box for agents and chat. It takes photos with their metadata stripped, dictation and <code>/</code> commands, and lets you pick the model.</p>
+          </article>
+          <article class="mob-more-card">
+            <div class="mob-more-scene"><figure class="mob-phone"><img src="/assets/mobile/you.webp" alt="The You sheet with status, the project switcher, and Workspace tools: Notes, Tasks, Calendar and Timers, then Desktops and All agents." width="640" height="1391" loading="lazy" decoding="async" /></figure></div>
+            <h3>Everything from your avatar</h3>
+            <p>Your status, your servers, and Notes, Tasks, Calendar, Timers and Desktops.</p>
+          </article>
+          <article class="mob-more-card">
+            <div class="mob-more-scene"><figure class="mob-phone"><img src="/assets/mobile/tasks.webp" alt="The Tasks screen with Mine, Open and Done tabs and three tasks assigned to you." width="640" height="1391" loading="lazy" decoding="async" /></figure></div>
+            <h3>Tasks</h3>
+            <p>Yours, open and done in one list. Check in, reply, or hand a task to an agent.</p>
+          </article>
+          <article class="mob-more-card">
+            <div class="mob-more-scene"><figure class="mob-phone"><img src="/assets/mobile/calendar.webp" alt="The Calendar in month view for September 2026, with Day, Week, Month and Agenda views." width="640" height="1391" loading="lazy" decoding="async" /></figure></div>
+            <h3>Calendar</h3>
+            <p>A built-in calendar for your days, with day, week, month and agenda views.</p>
+          </article>
+          <article class="mob-more-card">
+            <div class="mob-more-scene"><figure class="mob-phone"><img src="/assets/mobile/calories.webp" alt="The Calorie Counter's Today tab: a 2000 kcal ring, protein, carbs and fat bars, and buttons to log a meal by photo, description, barcode or search." width="640" height="1391" loading="lazy" decoding="async" /></figure></div>
+            <h3>Calorie counter</h3>
+            <p>Log meals from a photo, a barcode or a few words, and track protein, carbs and fat against your goals.</p>
+          </article>
+          <article class="mob-more-card is-wide">
+            <div class="mob-more-scene"><figure class="mob-phone"><img src="/assets/mobile/organizations.webp" alt="The ForkMesh organization page: 2 members, 9 teams and 1 repo, with the member list and their roles." width="640" height="1391" loading="lazy" decoding="async" /></figure></div>
+            <h3>Organizations</h3>
+            <p>Create an organization and run it from your phone: members, teams and their roles, and linked repos.</p>
+          </article>
+          <article class="mob-more-card is-wide">
+            <div class="mob-more-scene is-bottom"><figure class="mob-phone"><img src="/assets/mobile/themes.webp" alt="Settings with the theme set to System, Light or Dark, blue, purple and teal accent colours, and haptics and sounds switches." width="640" height="1391" loading="lazy" decoding="async" /></figure></div>
+            <h3>Themes and accents</h3>
+            <p>System, light or dark, with a blue, purple or teal accent, and haptics and sounds you can switch off.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="mob-index" aria-labelledby="index-title">
+        <h3 id="index-title">Everything else in the app</h3>
+        <div class="mob-index-grid">
+          <div class="mob-index-col">
+            <div class="mob-group">
+              <h4><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5"/></svg></span>Code &amp; Git</h4>
+              <ul>
+                <li><b>Issues</b>Filters, sub-issues, timeline, boards and milestones.</li>
+                <li><b>Discussions</b>Threaded, with replies from other ForkMesh servers.</li>
+                <li><b>Actions</b>Runs, logs and artifacts; secrets are managed through your desktop.</li>
+                <li><b>Code map</b>See where the repo's size goes and jump to definitions.</li>
+                <li><b>Security &amp; insights</b>Published security scans and repo activity.</li>
+                <li><b>Search everywhere</b>Search the whole network from one box.</li>
+              </ul>
+            </div>
+            <div class="mob-group">
+              <h4><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/></svg></span>Personal</h4>
+              <ul>
+                <li><b>Vault</b>A password manager with Face ID unlock and a clipboard that clears itself.</li>
+                <li><b>Coves</b>Encrypted files inside a repo, opened with a password or an invite.</li>
+                  <li><b>Activity</b>Network stats and leaderboards.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="mob-index-col">
+            <div class="mob-group">
+              <h4><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg></span>AI agents</h4>
+              <ul>
+                <li><b>Agent Watch</b>See, hear and feel your agents work, with sound and haptics.</li>
+                <li><b>Teammates</b>AI teammates that learn over time; steer their live runs, and they report back in #team.</li>
+                <li><b>Announcer</b>A sportscaster-style voice that calls out what agents are doing.</li>
+                <li><b>Agent insights</b>See what agents reach on the network, and switch tool groups on or off.</li>
+                <li><b>Provider sign-in</b>Sign a machine into Claude Code or Codex from the phone.</li>
+                <li><b>Shortcuts &amp; skills</b>Run a repo's shortcuts, or hand them to an agent.</li>
+              </ul>
+            </div>
+            <div class="mob-group">
+              <h4><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9.5" r="2.4"/><path d="M15.8 14.2A4.5 4.5 0 0 1 20.5 18.5"/></svg></span>Chat &amp; people</h4>
+              <ul>
+                  <li><b>World</b>The public ForkMesh room.</li>
+                <li><b>Local mesh</b>Chat with nearby devices over Wi-Fi, no internet needed.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="mob-index-col">
+            <div class="mob-group">
+              <h4><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg></span>Workspace</h4>
+              <ul>
+                <li><b>Notes</b>Public or private, with history and sharing; turn one into a task or issue.</li>
+                    <li><b>Timers</b>Timers, countdowns and alarms, live on the Lock Screen.</li>
+                <li><b>Projects</b>Projects with linked issues and agent access.</li>
+              </ul>
+            </div>
+            <div class="mob-group">
+              <h4><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/></svg></span>Operate</h4>
+              <ul>
+                <li><b>Desktops</b>Control your desktop from anywhere, end-to-end encrypted: CPU, memory and disk, files and logs.</li>
+                <li><b>Hosts &amp; fleet</b>Create and manage the servers that host copies of your repos, with live logs.</li>
+                <li><b>Network &amp; nodes</b>Every machine on the network and whether it's online.</li>
+              </ul>
+            </div>
+            <div class="mob-group">
+              <h4><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 16.5a8 8 0 1 1 15 0"/><path d="m12 13.2 3.5-4"/><circle cx="12" cy="13.4" r="1.2"/></svg></span>Insights</h4>
+              <ul>
+                <li><b>Stats</b>A dashboard of the network and your desktop that you can customize.</li>
+                <li><b>Status</b>Live uptime for every ForkMesh system.</li>
+                <li><b>Admin</b>Server admin tools, for admins only.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="mob-index-col">
+            <div class="mob-group">
+              <h4><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5v-2A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5v2M3.5 12.5h17"/></svg></span>Business</h4>
+              <ul>
+                <li><b>Market</b>Install packages for your organization.</li>
+                <li><b>CRM</b>Contacts, companies, pipeline and activity.</li>
+                <li><b>Marketing</b>Content plan and channels.</li>
+                <li><b>Analytics</b>Website visitor numbers, collected with a small snippet on your site.</li>
+                <li><b>Competitors</b>Track how rivals position themselves.</li>
+                <li><b>Ledger</b>The network's public records, plus private income and expense records kept on your phone.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mob-trust" id="security" aria-labelledby="security-title">
+        <p class="mob-label"><span class="mob-label-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 19 6v5.5c0 4.6-3 7.8-7 9-4-1.2-7-4.4-7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg></span>Account &amp; security</p>
+        <h2 id="security-title">Your keys stay in your hand.</h2>
+        <p>Every device is its own identity. Sensitive actions ask for device authentication, and you can see and revoke every session.</p>
+        <div class="mob-trust-grid">
+          <article class="mob-trust-card">
+            <div class="mob-trust-visual" aria-hidden="true">
+              <div class="mob-panel">
+                <div class="mob-panel-label">Device key &middot; Ed25519</div>
+                <div class="mob-panel-key">7Q2m 9fKa Lr4T &hellip; Xk4v</div>
+                <div class="mob-panel-row"><span>Review #174</span><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Signed</b></div>
+                <div class="mob-panel-row"><span>Merge into main</span><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Confirmed</b></div>
+              </div>
+            </div>
+            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="15.5" r="3.8"/><path d="m10.8 12.8 8.7-8.7M16.5 7.1l2.6 2.6M14.3 9.3l1.9 1.9"/></svg>Its own signing key</h3>
+            <p>Each device has its own key. Reviews are signed by the phone; desktop merges and approvals use its authenticated, encrypted control channel.</p>
+          </article>
+          <article class="mob-trust-card">
+            <div class="mob-trust-visual" aria-hidden="true">
+              <div>
+                <div class="mob-pq-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg></div>
+                <div class="mob-pq"><span>X25519</span><i>+</i><span>ML-KEM-768</span></div>
+              </div>
+            </div>
+            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2.2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>Quantum-resistant transcripts</h3>
+            <p>Agent transcripts are encrypted with quantum-resistant keys, designed to stay sealed against future quantum attacks.</p>
+          </article>
+          <article class="mob-trust-card">
+            <div class="mob-trust-visual" aria-hidden="true">
+              <div class="mob-faceid">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.5 8V5.5a2 2 0 0 1 2-2H8M16 3.5h2.5a2 2 0 0 1 2 2V8M20.5 16v2.5a2 2 0 0 1-2 2H16M8 20.5H5.5a2 2 0 0 1-2-2V16"/><path d="M8.6 9.2v1.4M15.4 9.2v1.4M12 9.2v3.6h-1M9.2 15.6a4.2 4.2 0 0 0 5.6 0"/></svg>
+                <div><b>Delete forkmesh-2?</b><span>Confirm with Face ID</span></div>
+              </div>
+            </div>
+            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/></svg>Face ID for sensitive actions</h3>
+            <p>Approving an agent&rsquo;s request, confirming a payment and deleting a desktop secret ask for Face ID first, and the Vault unlocks with it too.</p>
+          </article>
+        </div>
+        <ul class="mob-trust-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Password with two-factor codes</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Read-only guest mode</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>A recovery kit</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Sessions and devices you can revoke</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>ForkMesh or a self-hosted server, each with its own login</li>
+        </ul>
+      </section>
+
+      <section class="mob-cta" id="get" aria-labelledby="get-title">
+        <svg class="mob-cta-corner is-left" viewBox="0 0 80 400" fill="none" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M6 0 L6 132 L62 200 L62 400" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"></path></svg>
+        <svg class="mob-cta-corner is-right" viewBox="0 0 80 400" fill="none" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M6 0 L6 132 L62 200 L62 400" stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"></path></svg>
+        <div class="mob-cta-frame">
+          <div class="mob-cta-grid" aria-hidden="true"></div>
+          <div class="mob-cta-content">
+            <h2 id="get-title">Take your mesh<br />wherever you go.</h2>
+            <p>Free on the App Store for iPhone and iPad, and as a signed APK for Android.</p>
+            <div class="mob-ctas">
+              <a class="button-primary mob-store" href="https://apps.apple.com/app/forkmesh/id6803060735"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M16.4 12.9c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.8-3.5.8-.7 0-1.9-.8-3.1-.8-1.6 0-3 .9-3.8 2.4-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7 1.4 0 1.8.7 3 .7 1.2 0 2-1.1 2.8-2.2.9-1.3 1.2-2.5 1.3-2.6-.1 0-2.4-.9-2.4-3.6zM14.1 5.9c.6-.8 1.1-1.9.9-3-1 0-2.1.6-2.8 1.4-.6.7-1.1 1.8-1 2.9 1.1.1 2.2-.6 2.9-1.3z"/></svg><span><small>Download on the</small>App Store</span></a>
+              <a class="button-outline mob-store" href="/#downloads"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M7.2 3.6a.5.5 0 0 1 .7-.1l1.3 1.9A7.3 7.3 0 0 1 12 4.9c1 0 1.9.2 2.8.5l1.3-1.9a.5.5 0 1 1 .8.6l-1.2 1.8a6.3 6.3 0 0 1 3.3 5.1H5a6.3 6.3 0 0 1 3.3-5.1L7.1 4.3a.5.5 0 0 1 .1-.7zM9 8.2a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8zm6 0a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8zM5 12h14v6.3a1.7 1.7 0 0 1-1.7 1.7h-.8v2.2a1.3 1.3 0 0 1-2.6 0V20h-3.8v2.2a1.3 1.3 0 0 1-2.6 0V20h-.8A1.7 1.7 0 0 1 5 18.3zM2.3 12.1a1.3 1.3 0 0 1 2.6 0v4.6a1.3 1.3 0 0 1-2.6 0zm16.8 0a1.3 1.3 0 0 1 2.6 0v4.6a1.3 1.3 0 0 1-2.6 0z"/></svg><span><small>Signed APK for</small>Android</span></a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div data-forkmesh-footer="landing" data-forkmesh-footer-word="hidden"></div>
+    </main>
+{% endblock %}

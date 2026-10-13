@@ -1,0 +1,17 @@
+{
+  "category": "Communication",
+  "integrations": [
+    "slack",
+    "discord",
+    "discordWebhook",
+    "teams",
+    "telegram",
+    "mattermost",
+    "googleChat",
+    "pushover",
+    "ntfy",
+    "matrix",
+    "twilio",
+    "whatsapp"
+  ]
+}

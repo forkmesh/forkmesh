@@ -1,0 +1,150 @@
+          <section data-view="runners" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full">
+              <div data-runners-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 class="text-base font-semibold text-foreground">Runners</h1>
+                    <p class="mt-1 text-sm text-muted-foreground">Machines that run agent jobs. Sign a runner's Claude Code or Codex CLI in from here: the runner runs the provider's own login in a terminal and this page shows it. The credential is created and kept on the runner; ForkMesh relays only the terminal, and hides anything that looks like a token. A runner can keep several accounts per provider: every job uses the active one, and you can switch at any time. Each account shows its current usage limits.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-3 self-start">
+                    <button
+                      data-runner-setup-open
+                      type="button"
+                      aria-controls="runnerSetupPanel"
+                      aria-expanded="false"
+                      class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+                    >
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                      Set up a runner
+                    </button>
+                    <button
+                      data-runners-refresh
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div id="runnerSetupPanel" data-runner-setup hidden class="px-4 sm:px-5 py-4 border-b border-border grid gap-4">
+                  <div class="flex flex-wrap items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <h2 class="text-sm font-semibold text-foreground">Set up a runner</h2>
+                      <p class="mt-1 text-xs text-muted-foreground">A runner is a Linux machine of yours that runs your agent jobs with its own Claude Code or Codex login. It serves no repositories and only takes jobs you send it.</p>
+                    </div>
+                    <button data-runner-setup-close type="button" class="inline-flex items-center rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Close</button>
+                  </div>
+                  <label class="grid gap-1 text-xs font-semibold text-foreground max-w-sm">
+                    Runner name
+                    <input data-runner-setup-name type="text" maxlength="63" spellcheck="false" autocomplete="off" pattern="[a-z]([a-z0-9-]{0,61}[a-z0-9])?" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm font-normal text-foreground" />
+                  </label>
+                  <div role="tablist" aria-label="How to set it up" class="flex flex-wrap gap-2">
+                    <button data-runner-setup-tab="command" role="tab" type="button" aria-selected="true" aria-controls="runnerSetupCommand" class="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground aria-selected:bg-secondary">One command</button>
+                    <button data-runner-setup-tab="ssh" role="tab" type="button" aria-selected="false" aria-controls="runnerSetupSsh" class="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground aria-selected:bg-secondary">SSH details</button>
+                  </div>
+                  <div id="runnerSetupCommand" data-runner-setup-pane="command" role="tabpanel" class="grid gap-3">
+                    <p class="text-xs text-muted-foreground">Run this on any Linux machine with systemd. It installs the signed ForkMesh runner and registers it as your personal runner. The command holds a one-time token that works once, only for this runner name, for 30 minutes.</p>
+                    <div>
+                      <button data-runner-setup-mint type="button" class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity">Make the command</button>
+                    </div>
+                    <div data-runner-setup-command-box hidden class="grid gap-2">
+                      <pre data-runner-setup-command class="rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground overflow-auto whitespace-pre-wrap" style="word-break: break-all;"></pre>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <button data-runner-setup-copy type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="copy" class="w-3.5 h-3.5"></i>Copy</button>
+                        <button data-runner-setup-revoke type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel this command</button>
+                        <span data-runner-setup-expiry class="text-xs text-muted-foreground"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div id="runnerSetupSsh" data-runner-setup-pane="ssh" role="tabpanel" hidden class="grid gap-3">
+                    <div class="rounded-md border border-border bg-background p-3 grid gap-2">
+                      <p class="text-xs text-foreground"><span class="font-semibold">Recommended: from ForkMesh Desktop.</span> The desktop connects over SSH from your own computer, so your password or key never leaves it.</p>
+                      <div><button data-runner-setup-desktop type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"><i data-lucide="monitor" class="w-3.5 h-3.5"></i>Open in ForkMesh Desktop</button></div>
+                    </div>
+                    <form data-runner-ssh-form class="grid gap-3" autocomplete="off">
+                      <p class="text-xs text-muted-foreground">No desktop? ForkMesh can connect for you from its servers. It checks the server's host key first, then uses your password or key once, in memory, to run the installer. The password or key is sent over HTTPS, never stored, logged or shown again, and this form is cleared when you press Install.</p>
+                      <div class="grid gap-2 sm:grid-cols-[1fr_6rem_10rem]">
+                        <label class="grid min-w-0 gap-1 text-xs font-semibold text-foreground">Host or IP address<input data-runner-ssh-host type="text" maxlength="253" spellcheck="false" autocomplete="off" placeholder="203.0.113.10" class="w-full min-w-0 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm font-normal text-foreground" /></label>
+                        <label class="grid min-w-0 gap-1 text-xs font-semibold text-foreground">Port<input data-runner-ssh-port type="number" min="1" max="65535" value="22" class="w-full min-w-0 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm font-normal text-foreground" /></label>
+                        <label class="grid min-w-0 gap-1 text-xs font-semibold text-foreground">User<input data-runner-ssh-user type="text" maxlength="32" spellcheck="false" autocomplete="off" value="root" class="w-full min-w-0 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm font-normal text-foreground" /></label>
+                      </div>
+                      <div><button data-runner-ssh-probe type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors">Check the host key</button></div>
+                      <fieldset data-runner-ssh-verify hidden class="grid gap-2 rounded-md border border-border p-3">
+                        <legend class="px-1 text-xs font-semibold text-foreground">Host key (trust on first use)</legend>
+                        <div data-runner-ssh-keys class="grid gap-1"></div>
+                        <p class="text-xs text-muted-foreground">Compare it with the server's own key before you go on: run <code class="font-mono">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> on the server, or check your hosting provider's console. ForkMesh connects only to a server that shows this key.</p>
+                        <label class="flex items-center gap-2 text-xs text-foreground"><input data-runner-ssh-trust type="checkbox" />This is my server's host key</label>
+                        <div role="radiogroup" aria-label="Sign in with" class="flex flex-wrap gap-3 text-xs text-foreground">
+                          <label class="flex items-center gap-1.5"><input type="radio" name="runnerSshAuth" value="password" data-runner-ssh-auth checked />Password</label>
+                          <label class="flex items-center gap-1.5"><input type="radio" name="runnerSshAuth" value="key" data-runner-ssh-auth />Private key</label>
+                        </div>
+                        <label data-runner-ssh-password-row class="grid gap-1 text-xs font-semibold text-foreground">Password<input data-runner-ssh-password type="password" maxlength="1024" autocomplete="off" class="rounded-md border border-border bg-background px-3 py-2 text-sm font-normal text-foreground" /></label>
+                        <div data-runner-ssh-key-row hidden class="grid gap-2">
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Private key<textarea data-runner-ssh-key rows="4" spellcheck="false" autocomplete="off" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-xs font-normal text-foreground"></textarea></label>  <!-- forkmesh-secret-scan:ignore-line -->
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Key passphrase (if any)<input data-runner-ssh-passphrase type="password" maxlength="1024" autocomplete="off" class="rounded-md border border-border bg-background px-3 py-2 text-sm font-normal text-foreground" /></label>
+                        </div>
+                        <details class="text-xs text-muted-foreground"><summary class="cursor-pointer font-semibold text-foreground">What will be installed</summary><ul data-runner-ssh-installs class="mt-1 list-disc pl-5 grid gap-0.5"></ul></details>
+                        <p class="text-xs font-semibold text-foreground">Your password or key is used once to sign in and is not kept.</p>
+                        <div><button data-runner-ssh-install type="submit" class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity">Install the runner</button></div>
+                      </fieldset>
+                    </form>
+                    <pre data-runner-ssh-log hidden class="rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground overflow-auto whitespace-pre-wrap" style="max-height: 16rem; word-break: break-all;"></pre>
+                  </div>
+                  <p data-runner-setup-status class="text-sm text-muted-foreground" role="status" aria-live="polite"></p>
+                </div>
+
+                <div data-runners-auth-banner hidden class="px-4 sm:px-5 py-3 border-b border-border grid gap-2 text-sm" role="alert"></div>
+
+                <div data-runners-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
+
+                <div data-runners-list class="px-4 sm:px-5 py-4 grid gap-3">
+                  <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading runners...</p>
+                </div>
+
+                <div data-runner-login hidden class="px-4 sm:px-5 py-4 border-t border-border">
+                  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div class="min-w-0">
+                      <h2 data-runner-login-title class="text-sm font-semibold text-foreground">Sign in</h2>
+                      <p data-runner-login-status class="mt-1 text-xs text-muted-foreground" role="status" aria-live="polite"></p>
+                    </div>
+                    <div class="shrink-0 flex items-center gap-2">
+                      <button
+                        data-runner-login-cancel
+                        type="button"
+                        class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                      >Cancel sign-in</button>
+                      <button
+                        data-runner-login-close
+                        type="button"
+                        hidden
+                        class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                      >Close</button>
+                    </div>
+                  </div>
+                  <div data-runner-login-links class="mt-3 grid gap-1"></div>
+                  <pre data-runner-login-output class="mt-3 rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground overflow-auto whitespace-pre-wrap" style="max-height: 24rem; min-height: 8rem; word-break: break-all;"></pre>
+                  <form data-runner-login-form class="mt-3 flex flex-col sm:flex-row gap-2" autocomplete="off">
+                    <label class="sr-only" for="runnerLoginInput">Code from the sign-in page</label>
+                    <input
+                      id="runnerLoginInput"
+                      data-runner-login-input
+                      type="text"
+                      maxlength="4000"
+                      spellcheck="false"
+                      autocomplete="off"
+                      placeholder="Paste the code the sign-in page shows you"
+                      class="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground"
+                    />
+                    <button
+                      data-runner-login-send
+                      type="submit"
+                      class="inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+                    >Send to runner</button>
+                  </form>
+                  <p class="mt-2 text-xs text-muted-foreground">Open the link, approve the sign-in, then paste the code here. It goes to the runner once and is deleted as soon as the runner has read it. The session ends after 10 minutes.</p>
+                </div>
+              </div>
+            </div>
+          </section>

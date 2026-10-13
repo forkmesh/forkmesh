@@ -1,0 +1,63 @@
+[
+ {
+  "slug": "magnitude",
+  "name": "Magnitude",
+  "tagline": "Open source inference engine for agents that tunes its kernels to your hardware",
+  "summary": "Magnitude is a desktop app and CLI that runs open-weight models locally. It compiles and tunes its kernels on the user's own device before a model runs, shares prefix caches across concurrent agent sessions, and works on Apple Silicon, NVIDIA, AMD or a CPU alone. One click connects coding agents such as Pi, OpenCode, Hermes, Codex, Claude Code and Cline, and anything else can use its OpenAI-compatible API.",
+  "watching": "It is a local model server built for coding agents, the same role Ollama and llama.cpp play behind the desktop's Local Llama provider, and its OpenAI-compatible API is the kind of endpoint that provider accepts.",
+  "url": "https://magnitude.dev",
+  "repo": "https://github.com/magnitudedev/magnitude",
+  "category": "ai-models",
+  "tags": [
+   "local-llm",
+   "inference",
+   "local",
+   "llm",
+   "agents"
+  ],
+  "openSource": true,
+  "license": "Apache-2.0",
+  "gitNative": false,
+  "maker": "Magnitude",
+  "integration": "watching",
+  "reviewed": "2026-10-01",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://github.com/magnitudedev/magnitude"
+   ],
+   "notes": "Requested by the user on 2026-10-01."
+  }
+ },
+ {
+  "slug": "rhun",
+  "name": "rhun",
+  "tagline": "Small, fast code editor written in assembly, with a terminal, Git and an agents panel",
+  "summary": "rhun is a code editor for Linux, Windows and Apple Silicon Macs whose editor and pixel renderer are handwritten x86-64 assembly, translated to AArch64 at build time. It has tabs, syntax highlighting, fuzzy file and project search, an optional Vim mode and a built-in terminal. Its Git view stages, commits, pulls and pushes, shows diffs and history, and can draft commit messages with a Claude or Codex subscription or a local Ollama model. An agents panel shows Claude Code and Codex sessions as they work.",
+  "watching": "It is built for the workflow where coding agents write the code and a person reads diffs, runs commands and commits, the same split the desktop's agent worktrees assume, and it watches Claude Code and Codex sessions beside the editor.",
+  "url": "https://rhun.app/",
+  "repo": "https://github.com/vshvedov/rhun",
+  "category": "dev-tooling",
+  "tags": [
+   "editor",
+   "assembly",
+   "vim",
+   "terminal",
+   "git",
+   "coding-agents"
+  ],
+  "openSource": true,
+  "license": "MIT",
+  "gitNative": false,
+  "maker": "Vlad Shvedov",
+  "integration": "watching",
+  "reviewed": "2026-10-02",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://news.ycombinator.com/item?id=49926726"
+   ],
+   "notes": "Requested by the user on 2026-10-02 from its Show HN post."
+  }
+ }
+]

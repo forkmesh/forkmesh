@@ -1,0 +1,39 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Clean repo URLs" %}
+{% set slug = "clean-repo-urls" %}
+{% set image = "/assets/blog/features/clean-repo-urls.webp" %}
+{% set description = "forkmesh.com/owner/repo stays the public entry point; during an origin outage it can continue through an eligible, healthy, integrity-matching mirror." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Mobile, web &amp; IDE</p>
+            <h1>Clean repo URLs</h1>
+            <p class="lede">forkmesh.com/owner/repo stays the public entry point; during an origin outage it can continue through an eligible, healthy, integrity-matching mirror.</p>
+            <div class="meta"><span class="pill">Feature 68 of 72</span><span>Feature</span><span>Mobile, web &amp; IDE</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/clean-repo-urls.webp" alt="Abstract ForkMesh artwork for Clean repo URLs">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Clean repo URLs gives ForkMesh a stable public entry point across routing changes. During an origin outage, <code>forkmesh.com/owner/repo</code> can continue only when an eligible, healthy, integrity-matching mirror is online.</p>
+          <p>A distributed forge still needs clean entry points for readers, contributors, mobile users, and editor workflows. In ForkMesh, clean repo URLs addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles clean repo URLs through the same split it uses across the product: ForkMesh exposes web, mobile, editor, docs, status, and clean URL surfaces on top of the desktop-node and mainnode model.</p>
+          <p>The behavior is intentionally narrow: <code>forkmesh.com/owner/repo</code> routes to a qualifying live origin or mirror; if none is available, the repository request fails clearly. These surfaces are access layers, not the canonical Git store.</p>
+          <div class="note">A stable URL does not guarantee availability. Failover requires an eligible, healthy, integrity-matching mirror serving the same repository state.</div>
+          <h2>Where it fits</h2>
+          <p>Use clean repo URLs when people need to browse, contribute, learn, and receive updates outside the main desktop window.</p>
+          <p>It pairs with the rest of Mobile, web &amp; IDE by keeping one public repository URL while verified routing selects an available qualifying source.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/web-repo-browser/">← Web repo browser</a>
+          <a href="/blog/mobile-app/">Mobile app →</a>
+        </nav>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Make it rain" %}
+{% set slug = "make-it-rain" %}
+{% set image = "/assets/blog/features/make-it-rain.webp" %}
+{% set description = "Choose an immediate all-eligible-node distribution or add a voluntary contribution to ForkMesh's transparent trickle reward pool, without surrendering wallet custody." %}
+{% set share_description = "Choose an immediate all-eligible-node distribution or add a voluntary contribution to the transparent trickle reward pool, without surrendering wallet custody." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Accounts &amp; rewards</p>
+            <h1>Make it rain</h1>
+            <p class="lede">Choose an immediate all-eligible-node distribution or add a voluntary contribution to the transparent trickle reward pool.</p>
+            <div class="meta"><span class="pill">Feature 64 of 72</span><span>Feature</span><span>Accounts, money &amp; rewards</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/make-it-rain.webp" alt="Abstract ForkMesh artwork for Make it rain">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>One community contribution can support the currently eligible mirror set, while a pooled contribution can fund smaller randomized incentives over time. Both modes begin with a direct, reference-bound transfer that the contributor approves in their own wallet.</p>
+          <p>Preservation costs time, disk, bandwidth, and maintenance, so incentives need to point at the nodes and people doing the work. In ForkMesh, make it rain addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>The “instant” mode takes one fresh, deduplicated eligibility snapshot and creates bounded unsigned transfer jobs for every eligible node. The “trickle” mode leaves the finalized contribution in the public pool for later configurable randomized rounds. An owner-controlled local signer shows the exact recipients and amounts before any outgoing transaction can be approved.</p>
+          <p>Eligibility requires signed node identity, fresh online and health observations, an integrity-verified ForkMesh mirror, no active abuse restriction, minimum observed contribution or uptime, and a valid self-custodial payout address. Public snapshot and selection hashes make the decision auditable, while documented Sybil limitations remain visible.</p>
+          <div class="note"><strong>Non-custodial notice:</strong> ForkMesh never stores community members’ wallet private keys and cannot silently sign a transfer. Visual coins are illustrative; a distribution is complete only after the exact public transaction reaches finality. Contributions are community incentives, not investments.</div>
+          <h2>Where it fits</h2>
+          <p>Use the instant mode to support the current verified set, or the pool mode to fund later rounds. Neither mode guarantees any node a payment or rate of return.</p>
+          <p>The public status view keeps user-owned funds, pool funds, pending unsigned jobs, and finalized transfers distinct.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/solana-donations/">← Solana donations</a>
+          <a href="/blog/issue-bounties/">Issue bounties →</a>
+        </nav>
+{% endblock %}

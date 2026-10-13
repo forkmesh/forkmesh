@@ -1,0 +1,111 @@
+// The app root: the theme from the appearance settings, the relay-switch scope
+// above every route, and the home: the auth flow (with "Explore as guest")
+// until the app has access, then the shell. The home is rebuilt from scratch
+// whenever the project changes (`ProjectRuntime.generation`), so no screen
+// carries one project's state into another.
+
+import FMAccount
+import FMApi
+import FMBase
+import CoreSpotlight
+import SwiftUI
+
+@main
+struct ForkMeshApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) var scenePhase
+    @State var boot: AppBoot = AppBoot()
+
+    var body: some Scene {
+        WindowGroup {
+            AppRootView(boot: boot, pushBridge: appDelegate.pushBridge)
+                .onOpenURL { (url: URL) in
+                    AppServices.current?.openURL(url)
+                }
+                .onContinueUserActivity(CSSearchableItemActionType) { (activity: NSUserActivity) in
+                    _ = SurfacesFeature.continueActivity(activity)
+                }
+                .onContinueUserActivity(VaultCredentialExchange.activityType) { (activity: NSUserActivity) in
+                    VaultCredentialExchange.receive(activity)
+                }
+        }
+        .onChange(of: scenePhase) { (_: ScenePhase, phase: ScenePhase) in
+            AppLifecycle.shared.scenePhaseChanged(phase)
+        }
+    }
+}
+
+/// The launch background until the services exist, then the themed app.
+struct AppRootView: View {
+    let boot: AppBoot
+    let pushBridge: ApplePushBridge
+
+    var body: some View {
+        ZStack {
+            Color("LaunchBackground")
+                .ignoresSafeArea()
+            if let services = boot.services {
+                ThemedAppView(services: services)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: FmMotion.normal), value: boot.services != nil)
+        .fmTracksUserActivity()
+        .task {
+            await boot.start(pushBridge: pushBridge)
+        }
+    }
+}
+
+/// Only the appearance choices rebuild the theme; watching the whole settings
+/// service would redraw every route on each keystroke in a Settings field.
+struct ThemedAppView: View {
+    let services: AppServices
+
+    private var forcedDark: Bool? {
+        switch services.settings.themeMode {
+        case .system: return nil
+        case .light: return false
+        case .dark: return true
+        }
+    }
+
+    private var accent: FmAccent {
+        return FmAccent.fromName(services.settings.accent.rawValue)
+    }
+
+    var body: some View {
+        ForkMeshTheme(accent: accent, dark: forcedDark) {
+            AppHomeView(auth: services.auth)
+                .signInPresenter(services.signIn)
+        }
+        .preferredColorScheme(forcedDark.map { (dark: Bool) -> ColorScheme in dark ? .dark : .light })
+    }
+}
+
+/// The home: guest mode opens the same shell as a session, so
+/// signing in later swaps the session in underneath without rebuilding it.
+struct AppHomeView: View {
+    @Environment(\.fmPalette) var fm
+    let auth: AuthService
+    @State private var projects: ProjectRuntime? = Services.get(ProjectRuntime.self)
+    @State private var settings: SettingsService? = Services.get(SettingsService.self)
+
+    var body: some View {
+        Group {
+            if let project = settings?.project, !project.hasInstance {
+                ChooseInstanceView(project: project).id(project.id)
+            } else if auth.hasAppAccess {
+                HomeShell()
+                    .relaySwitchScope()
+                    .overlay { DevPerformanceOverlay() }
+                    .overlay { PingCelebrationOverlay() }
+            } else {
+                AuthFlowView()
+            }
+        }
+        // A project switch replaces every view and view model underneath.
+        .id(projects?.generation ?? 0)
+        .background(fm.bgBase.ignoresSafeArea())
+    }
+}

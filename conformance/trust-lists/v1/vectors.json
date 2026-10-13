@@ -1,0 +1,3143 @@
+{
+  "cases": [
+    {
+      "description": "A followed list contributes its entries within its own role and scope.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "repo:forkmesh/app",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Published a fake advisory",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 1
+              }
+            ],
+            "stance": "distrust",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Reported CVE-2026-0001 responsibly",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:69d8af38ae274548f4cc55fb6556973fd3f1ad06dcceae54af5aafdf5b0082ec",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 2,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 1,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "trust",
+          "charlie security-researcher repo:forkmesh/app": "distrust"
+        },
+        "states": {
+          "alice/security": "active"
+        }
+      },
+      "id": "follow-single-list",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Holding a valid list without following it yields no assertions.",
+      "expect": {
+        "assertions": [],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": false,
+            "headDocumentId": "sha256:69d8af38ae274548f4cc55fb6556973fd3f1ad06dcceae54af5aafdf5b0082ec",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": false,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 0,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 1,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 0,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 0,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {},
+        "states": {
+          "alice/security": "active"
+        }
+      },
+      "id": "unfollowed-lists-grant-nothing",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}"
+        ],
+        "follows": [],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A local follow narrows a list to one role and one repository.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "reviewer",
+            "scope": "repo:forkmesh/app",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:006de4032b9a65da6e451a6a3e69c7e8263bb9604ddc45f9410d644abd16569a",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:006de4032b9a65da6e451a6a3e69c7e8263bb9604ddc45f9410d644abd16569a"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:623ae778ff1c8cf0f0187448be02d7229aa47cda869a950d15d04dc2c1a0c39b",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4",
+            "listId": "urn:forkmesh:trust-list:sha256:006de4032b9a65da6e451a6a3e69c7e8263bb9604ddc45f9410d644abd16569a",
+            "name": "people",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 1,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 1,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "charlie reviewer repo:forkmesh/app": "trust"
+        },
+        "states": {
+          "maintainer/people": "active"
+        }
+      },
+      "id": "follow-narrowing",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"community:rust\",\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"trust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"\",\"role\":\"maintainer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"},{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"community:rust\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\",\"name\":\"people\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"maintainer\",\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"dYpTdTG9-Q3SaKmOrnppAk_0lYl9J8-anuDX0TTZvskGfcmbo2v1XqvFTC3-QD2gAfXv-TMEPvhlbzCMWX5GDA\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": [
+              "repo:forkmesh/app"
+            ],
+            "issuer": "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4",
+            "name": "people",
+            "roles": [
+              "reviewer"
+            ]
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "An included list contributes only inside the intersection of both scopes.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "repo:forkmesh/app",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020",
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 1
+              }
+            ],
+            "stance": "distrust",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "moderator",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": false,
+            "headDocumentId": "sha256:aed038b74079aeba6e0ee867628ba894472db42e968a2f50bb7cf36cf5690e29",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:95b818a80d145333b2f756f12872961c8ae6925523ff0f6d979228ab1f078dad",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM",
+            "listId": "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020",
+            "name": "mods",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 2,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 2,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 2,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 2,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "alice moderator org:forkmesh": "trust",
+          "charlie security-researcher repo:forkmesh/app": "distrust"
+        },
+        "states": {
+          "alice/security": "active",
+          "moderator/mods": "active"
+        }
+      },
+      "id": "include-composes-within-intersection",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"repo:forkmesh/app\"],\"expiresAt\":null,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"kind\":\"include\",\"name\":\"security\",\"roles\":[\"security-researcher\"]}],\"entries\":[{\"note\":\"\",\"role\":\"moderator\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM\",\"name\":\"mods\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"moderator\",\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"CTsIZM5WDMxifEblVdysOvrG7SaDFNl9tIK1sTGnc3oTHKOer2RJKcgRK3MkXlEILqVpRwtiiJ3O_SYb_htEDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\",\"org:other\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:other\",\"stance\":\"trust\",\"subject\":\"zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"OlrjSWnafT7kmCqwHo_jgJiYSSS7O6gmN1fzoQHc5vTXWRLLrVQzZD6vurqcItdhS8bsles29dLST7DYb7xbDw\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM",
+            "name": "mods",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A live delegation admits the delegate's entries in the delegated scope; an expired one admits nothing.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "reviewer",
+            "scope": "repo:forkmesh/app",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:d5f97dac3de9788669772c17271c1563a3141b6015e3acbdbad846abff9106e0",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0ab93e927b54b565669774837c64a61af7d758a73333c376f9f0fff08ee0e3e8",
+                  "urn:forkmesh:trust-list:sha256:d5f97dac3de9788669772c17271c1563a3141b6015e3acbdbad846abff9106e0"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:8cde5a98a92c6164364e83001e1740222cfa67ae3a70c3c9e2b12ac84d979223",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4",
+            "listId": "urn:forkmesh:trust-list:sha256:0ab93e927b54b565669774837c64a61af7d758a73333c376f9f0fff08ee0e3e8",
+            "name": "reviewers",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": false,
+            "headDocumentId": "sha256:fdfac57e9d048c7cb0c40797cca57d96cf89e3e10f2afcbddcba7175dc9e49f9",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0",
+            "listId": "urn:forkmesh:trust-list:sha256:d5f97dac3de9788669772c17271c1563a3141b6015e3acbdbad846abff9106e0",
+            "name": "app-reviewers",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": false,
+            "headDocumentId": "sha256:1aa57bd4e17761601ae14068a7e95f280ba95386b718e8dc0719524ba0643364",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914",
+            "listId": "urn:forkmesh:trust-list:sha256:d9b4b36a4e09d798dfc8b41de16ffeffa502342f84f082c160efbbb30594b9f3",
+            "name": "old-reviewers",
+            "reachable": false,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 1,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 3,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 1,
+          "followedLists": 1,
+          "listStates": {
+            "active": 3,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 2,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "dave reviewer repo:forkmesh/app": "trust"
+        },
+        "states": {
+          "bob/app-reviewers": "active",
+          "charlie/old-reviewers": "active",
+          "maintainer/reviewers": "active"
+        },
+        "telemetry": {
+          "expiredDelegations": 1
+        }
+      },
+      "id": "delegation-expiry",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"repo:forkmesh/app\"],\"expiresAt\":1799913600000,\"issuer\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\",\"kind\":\"delegate\",\"name\":\"old-reviewers\",\"roles\":[\"reviewer\"]},{\"communities\":[\"repo:forkmesh/app\"],\"expiresAt\":1800086400000,\"issuer\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\",\"kind\":\"delegate\",\"name\":\"app-reviewers\",\"roles\":[\"reviewer\"]}],\"entries\":[],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\",\"name\":\"reviewers\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"nHWvoOdttxt6gH63IxuLsuCPOpkcCU4Dfj9fiTN_7reJqsW54smTdOlViHJqIdG5hez9aog-dynhVGv3zutFBw\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"repo:forkmesh/site\",\"stance\":\"trust\",\"subject\":\"7JD2_Wa7gM_nxz3EkV3hjm8NwVp9I7UFPl6OgOIfA6E\"},{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"trust\",\"subject\":\"zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\",\"name\":\"app-reviewers\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"j4JjO9jrPGhB_-hDKgymHrkeZKSycpjGAhd3j_lQtPtqVVCRB6asj5KrXP2lKjvd-gQgOwl51sleLZPd8Cl8BA\",\"version\":1}",
+          "{\"communities\":[\"repo:forkmesh/app\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\",\"name\":\"old-reviewers\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"onNMvrYuIJMzBN8aFYfBB1lsnv-kVzeM5Ren8lKkNCAt02DhYqi8LS9rccbU1Nrxxg4grYNsCGKQfmaB99nxDw\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4",
+            "name": "reviewers",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Disagreeing lists never pick a quiet winner; a local override decides one tuple.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "conflict",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 1
+              },
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020"
+                ],
+                "stance": "distrust",
+                "version": 1
+              }
+            ],
+            "stance": "conflict",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": "trust",
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 1
+              },
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020"
+                ],
+                "stance": "distrust",
+                "version": 1
+              }
+            ],
+            "stance": "conflict",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [
+          {
+            "kind": "stance",
+            "overridden": false,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "kind": "stance",
+            "overridden": true,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:92e4014e6ae2f192b7275295f6d65c84eb08f4d26012cc591a90a63598219745",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:6d452c4bb9b815d51895eec60f2aefd7087d76f1bd1ffa14c8cde9561ac5fc3a",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM",
+            "listId": "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020",
+            "name": "mods",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 2,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 2,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 2,
+          "listStates": {
+            "active": 2,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 1,
+          "reachableLists": 2,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 2
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "trust",
+          "charlie security-researcher org:forkmesh": "conflict"
+        },
+        "states": {
+          "alice/security": "active",
+          "moderator/mods": "active"
+        },
+        "telemetry": {
+          "overrides": 1,
+          "stanceConflicts": 2
+        }
+      },
+      "id": "conflict-visible-and-local-override",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"cG1Jq4JoVHn65Xa3eDkbLSfCfOnGdQ3KDjY4SudKdcWKxnpF1jRvGiJcaiP8nkCtRS-oM9RoUxnpWThZ8x95Cw\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM\",\"name\":\"mods\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"5ZC6N1ysApFAEoBvYn8udhJEcdYFiTeG6rrw4Pu3ayOryqsfV-d-Dp9hd36wPTgxnqlCwAUOxKzqTa38iWwOCw\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          },
+          {
+            "communities": null,
+            "issuer": "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM",
+            "name": "mods",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": [
+          {
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "stance": "trust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ]
+      }
+    },
+    {
+      "description": "An override can ignore a list's assertion or add a local-only one.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "repo:forkmesh/app",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Published a fake advisory",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 1
+              }
+            ],
+            "stance": "distrust",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "appeals": [],
+            "effective": "ignore",
+            "override": "ignore",
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Reported CVE-2026-0001 responsibly",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": "trust",
+            "role": "maintainer",
+            "scope": "repo:forkmesh/app",
+            "sources": [],
+            "stance": "none",
+            "subject": "zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:69d8af38ae274548f4cc55fb6556973fd3f1ad06dcceae54af5aafdf5b0082ec",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 3,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 1,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 2,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "ignore",
+          "charlie security-researcher repo:forkmesh/app": "distrust",
+          "dave maintainer repo:forkmesh/app": "trust"
+        },
+        "states": {
+          "alice/security": "active"
+        }
+      },
+      "id": "override-ignore-and-local-only",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": [
+          {
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "stance": "ignore",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          },
+          {
+            "role": "maintainer",
+            "scope": "repo:forkmesh/app",
+            "stance": "trust",
+            "subject": "zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk"
+          }
+        ]
+      }
+    },
+    {
+      "description": "The newest consistent version is the head.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 2
+              }
+            ],
+            "stance": "distrust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:ef2f9fba470265f87125367361441cc23d987ad45f80b59a1f02ab1d35562268",
+            "headVersion": 2,
+            "heldVersions": [
+              1,
+              2
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 1,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 2,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "distrust"
+        },
+        "states": {
+          "alice/security": "active"
+        }
+      },
+      "id": "version-history-head",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"bjUeoq0ocoo7ieK3YTgUGouwqej969igF9JsMPqgRbw-bTpvnkyXGia80T48yvYVeJHfPzqEnOTrfwpgU8TZCQ\",\"version\":2}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"oAZ67U2WhalcgSk6sAkOCMV_PpzhTO90iMj3aBrJZfjzitqgcz2sTw6khxLelTl2DWr__a0VYxSEX1WH-M5TDg\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A version whose previous digest skips its predecessor cuts the list back.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 2
+              }
+            ],
+            "stance": "distrust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [
+          {
+            "kind": "history_fork",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "version": 3
+          }
+        ],
+        "lists": [
+          {
+            "cutoffReasons": [
+              "history_fork"
+            ],
+            "cutoffVersion": 3,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:ef2f9fba470265f87125367361441cc23d987ad45f80b59a1f02ab1d35562268",
+            "headVersion": 2,
+            "heldVersions": [
+              1,
+              2,
+              3
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "recovered",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 1,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 3,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 0,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 1,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "distrust"
+        },
+        "states": {
+          "alice/security": "recovered"
+        }
+      },
+      "id": "history-fork-recovers",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"oAZ67U2WhalcgSk6sAkOCMV_PpzhTO90iMj3aBrJZfjzitqgcz2sTw6khxLelTl2DWr__a0VYxSEX1WH-M5TDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"bjUeoq0ocoo7ieK3YTgUGouwqej969igF9JsMPqgRbw-bTpvnkyXGia80T48yvYVeJHfPzqEnOTrfwpgU8TZCQ\",\"version\":2}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799308800000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"tDHc9sy0lxHrphi-orsaAFvHD_jgjL6eEGx2axulIsdyfZU48J1xWPDrVooITYqZRD1nlbeQo5wKlvrlsTo4DQ\",\"version\":3}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Two different documents for one version cut the list back below that version.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [
+          {
+            "kind": "equivocation",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "version": 2
+          }
+        ],
+        "lists": [
+          {
+            "cutoffReasons": [
+              "equivocation"
+            ],
+            "cutoffVersion": 2,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083",
+            "headVersion": 1,
+            "heldVersions": [
+              1,
+              2
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "recovered",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 1,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 3,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 0,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 1,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "trust"
+        },
+        "states": {
+          "alice/security": "recovered"
+        }
+      },
+      "id": "equivocation-recovers",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"oAZ67U2WhalcgSk6sAkOCMV_PpzhTO90iMj3aBrJZfjzitqgcz2sTw6khxLelTl2DWr__a0VYxSEX1WH-M5TDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"bjUeoq0ocoo7ieK3YTgUGouwqej969igF9JsMPqgRbw-bTpvnkyXGia80T48yvYVeJHfPzqEnOTrfwpgU8TZCQ\",\"version\":2}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"WEsqM8rU6L1H-7NgayZOT8iJdBs10owHm3PtD2yz_Wfl14xwHLqypQ2r3AlZvu1pwI8kMglYfiknvfQbMt9lCw\",\"version\":2}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Two different first versions leave no usable version; the list is conflicted, not silently chosen.",
+      "expect": {
+        "assertions": [],
+        "conflicts": [
+          {
+            "kind": "equivocation",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "version": 1
+          }
+        ],
+        "lists": [
+          {
+            "cutoffReasons": [
+              "equivocation"
+            ],
+            "cutoffVersion": 1,
+            "expiresAt": null,
+            "followed": true,
+            "headDocumentId": null,
+            "headVersion": null,
+            "heldVersions": [
+              1,
+              2
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "conflicted",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 0,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 3,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 0,
+            "conflicted": 1,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {},
+        "states": {
+          "alice/security": "conflicted"
+        }
+      },
+      "id": "equivocation-at-first-version-conflicted",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"oAZ67U2WhalcgSk6sAkOCMV_PpzhTO90iMj3aBrJZfjzitqgcz2sTw6khxLelTl2DWr__a0VYxSEX1WH-M5TDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"37IdexsqdX1eUxXISPabAd9t4AO044KwFPLdFHzNsqyJpWxYszWVJCzxDZ52xfK2UqUE25adgeQp1v9Q5JUuAg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"bjUeoq0ocoo7ieK3YTgUGouwqej969igF9JsMPqgRbw-bTpvnkyXGia80T48yvYVeJHfPzqEnOTrfwpgU8TZCQ\",\"version\":2}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Drill step 1: a stolen issuer key publishes a malicious version that followers accept.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Trusted auditor",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 3
+              }
+            ],
+            "stance": "trust",
+            "subject": "-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4"
+          },
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Compromised maintainer",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 3
+              }
+            ],
+            "stance": "distrust",
+            "subject": "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4"
+          },
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 3
+              }
+            ],
+            "stance": "distrust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:512244bb68f3f8acd628f795cd218c0ce3d704f57556dffb191cf45e3dd18d58",
+            "headVersion": 3,
+            "heldVersions": [
+              1,
+              2,
+              3
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 3,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 3,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "distrust",
+          "maintainer security-researcher org:forkmesh": "distrust",
+          "mallory security-researcher org:forkmesh": "trust"
+        },
+        "states": {
+          "alice/security": "active"
+        }
+      },
+      "id": "compromise-drill-before-revocation",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"oAZ67U2WhalcgSk6sAkOCMV_PpzhTO90iMj3aBrJZfjzitqgcz2sTw6khxLelTl2DWr__a0VYxSEX1WH-M5TDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"bjUeoq0ocoo7ieK3YTgUGouwqej969igF9JsMPqgRbw-bTpvnkyXGia80T48yvYVeJHfPzqEnOTrfwpgU8TZCQ\",\"version\":2}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Trusted auditor\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"},{\"note\":\"Compromised maintainer\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799308800000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:ef2f9fba470265f87125367361441cc23d987ad45f80b59a1f02ab1d35562268\",\"revocationKeys\":[\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"N_RywEEskV_P069wrbqO04bmtsxKoMechxHvgiB9TQiM2DmG_jdIFKIqj2VDjM9Soy8zpwuW24yMwo3ohM91Aw\",\"version\":3}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Drill step 2: the pre-committed recovery key revokes from the malicious version; followers fall back to the last good version and see the successor.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 2
+              },
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0b4f89fa1d25cbac5339ffa38ca982e5a4ceda4a94833e2757a0fca7fbfeaa92",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0b4f89fa1d25cbac5339ffa38ca982e5a4ceda4a94833e2757a0fca7fbfeaa92"
+                ],
+                "stance": "distrust",
+                "version": 1
+              }
+            ],
+            "stance": "distrust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [
+              "revoked"
+            ],
+            "cutoffVersion": 3,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:ef2f9fba470265f87125367361441cc23d987ad45f80b59a1f02ab1d35562268",
+            "headVersion": 2,
+            "heldVersions": [
+              1,
+              2,
+              3
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "recovered",
+            "successor": {
+              "issuer": "y0_nn1qoDhKj9xbs5-eRc_4kslu0W_STihQr1XXio9I",
+              "name": "security"
+            }
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:d6b11982f6f4c9d0cc94ef8d87d913d45dce6d963b099c5e427a64295f0538f2",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "y0_nn1qoDhKj9xbs5-eRc_4kslu0W_STihQr1XXio9I",
+            "listId": "urn:forkmesh:trust-list:sha256:0b4f89fa1d25cbac5339ffa38ca982e5a4ceda4a94833e2757a0fca7fbfeaa92",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 1,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 5,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 2,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 1,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 2,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 1,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "distrust"
+        },
+        "states": {
+          "alice-successor/security": "active",
+          "alice/security": "recovered"
+        },
+        "telemetry": {
+          "revocations": 1
+        }
+      },
+      "id": "compromise-drill-revoked-and-recovered",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"oAZ67U2WhalcgSk6sAkOCMV_PpzhTO90iMj3aBrJZfjzitqgcz2sTw6khxLelTl2DWr__a0VYxSEX1WH-M5TDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"bjUeoq0ocoo7ieK3YTgUGouwqej969igF9JsMPqgRbw-bTpvnkyXGia80T48yvYVeJHfPzqEnOTrfwpgU8TZCQ\",\"version\":2}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Trusted auditor\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"},{\"note\":\"Compromised maintainer\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799308800000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:ef2f9fba470265f87125367361441cc23d987ad45f80b59a1f02ab1d35562268\",\"revocationKeys\":[\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"N_RywEEskV_P069wrbqO04bmtsxKoMechxHvgiB9TQiM2DmG_jdIFKIqj2VDjM9Soy8zpwuW24yMwo3ohM91Aw\",\"version\":3}",
+          "{\"fromVersion\":3,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"list\":\"urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc\",\"name\":\"security\",\"reason\":\"compromised\",\"revokedAt\":1799913600000,\"revokedBy\":\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\",\"schema\":\"forkmesh-trust-list-revocation-v1\",\"signature\":\"JXvUCUgpJd1Xmp0oYY1uJmi7RMkUaTS9ATrwTPlm6EG6OL74-o43VjpRN6ooXufiLMLvpCthW1jUkqkYwHKqAQ\",\"successor\":{\"issuer\":\"y0_nn1qoDhKj9xbs5-eRc_4kslu0W_STihQr1XXio9I\",\"name\":\"security\"}}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799913600000,\"issuer\":\"y0_nn1qoDhKj9xbs5-eRc_4kslu0W_STihQr1XXio9I\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"S2KFL60rftdKam_egbF77w3ytIwphS0fJ0FyYWkBq3U0-9SLhxNyVol1mzVuLwakKaV19M8V28VImk90nC4LAA\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          },
+          {
+            "communities": null,
+            "issuer": "y0_nn1qoDhKj9xbs5-eRc_4kslu0W_STihQr1XXio9I",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A key never named before the revoked version cannot revoke the list.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Trusted auditor",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 3
+              }
+            ],
+            "stance": "trust",
+            "subject": "-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4"
+          },
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Compromised maintainer",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 3
+              }
+            ],
+            "stance": "distrust",
+            "subject": "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4"
+          },
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 3
+              }
+            ],
+            "stance": "distrust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:512244bb68f3f8acd628f795cd218c0ce3d704f57556dffb191cf45e3dd18d58",
+            "headVersion": 3,
+            "heldVersions": [
+              1,
+              2,
+              3
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [
+          {
+            "code": "unauthorized_revoker",
+            "documentId": "sha256:7f293694dd14a892831aa5268c13ae3c26b206698d1c24d0a35456491382c05c"
+          },
+          {
+            "code": "unauthorized_revoker",
+            "documentId": "sha256:b6caf1f98cbc2ca1e2b3aa5b727a8b5d7ca18b915c588d0e6939f71e1dae19bd"
+          }
+        ],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 3,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 5,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 2,
+          "rejectionCodes": {
+            "unauthorized_revoker": 2
+          },
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "distrust",
+          "maintainer security-researcher org:forkmesh": "distrust",
+          "mallory security-researcher org:forkmesh": "trust"
+        },
+        "rejected": [
+          "unauthorized_revoker",
+          "unauthorized_revoker"
+        ],
+        "states": {
+          "alice/security": "active"
+        }
+      },
+      "id": "unauthorized-revocations-rejected",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"oAZ67U2WhalcgSk6sAkOCMV_PpzhTO90iMj3aBrJZfjzitqgcz2sTw6khxLelTl2DWr__a0VYxSEX1WH-M5TDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:6125bb8bc6281d309ebdfb2b5971829f967fba8cde8b58933c1136ed9e883083\",\"revocationKeys\":[\"DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"bjUeoq0ocoo7ieK3YTgUGouwqej969igF9JsMPqgRbw-bTpvnkyXGia80T48yvYVeJHfPzqEnOTrfwpgU8TZCQ\",\"version\":2}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Trusted auditor\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"},{\"note\":\"Compromised maintainer\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"distrust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799308800000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:ef2f9fba470265f87125367361441cc23d987ad45f80b59a1f02ab1d35562268\",\"revocationKeys\":[\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"N_RywEEskV_P069wrbqO04bmtsxKoMechxHvgiB9TQiM2DmG_jdIFKIqj2VDjM9Soy8zpwuW24yMwo3ohM91Aw\",\"version\":3}",
+          "{\"fromVersion\":1,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"list\":\"urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc\",\"name\":\"security\",\"reason\":\"malicious\",\"revokedAt\":1799913600000,\"revokedBy\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\",\"schema\":\"forkmesh-trust-list-revocation-v1\",\"signature\":\"u1ycp-TptnCM3TeAN-1BT6k6_op9V6a8dz2Ds83E56cMVkwjEA9tJ0s9uSUD6ZLrSZvfRCTPn7EsT9QC5sIgCg\",\"successor\":null}",
+          "{\"fromVersion\":2,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"list\":\"urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc\",\"name\":\"security\",\"reason\":\"malicious\",\"revokedAt\":1799913600000,\"revokedBy\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\",\"schema\":\"forkmesh-trust-list-revocation-v1\",\"signature\":\"e6SWZXhBnG7n28KTKJ_w9Vz-b51r3A3Rvib7S6Y-vvkLABugi_jQvi1rtQ4X6jnXdtU0f9AjzOuH1Mh3YtLZCw\",\"successor\":null}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "The issuer revokes every version; the list contributes nothing and says so.",
+      "expect": {
+        "assertions": [],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [
+              "revoked"
+            ],
+            "cutoffVersion": 1,
+            "expiresAt": null,
+            "followed": true,
+            "headDocumentId": null,
+            "headVersion": null,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "revoked",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 0,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 2,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 0,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 1
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 1,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {},
+        "states": {
+          "alice/security": "revoked"
+        }
+      },
+      "id": "issuer-retires-list",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}",
+          "{\"fromVersion\":1,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"list\":\"urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc\",\"name\":\"security\",\"reason\":\"retired\",\"revokedAt\":1799913600000,\"revokedBy\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"schema\":\"forkmesh-trust-list-revocation-v1\",\"signature\":\"bCS75YkpLhf8HmclxnIBkMY6PvyOaijmJL-MesdximI5_k0fOdPcD4sPX3aFCuIPfcnoPVyj_hQgtOZj5S7uDw\",\"successor\":null}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "An expired head contributes nothing; no older version is revived.",
+      "expect": {
+        "assertions": [],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1799999999999,
+            "followed": true,
+            "headDocumentId": "sha256:574660bc99595608ff76ad3109d40c82396c8c875aad1abaf9753f15c15c93bc",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "expired",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 0,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 1,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 0,
+            "conflicted": 0,
+            "expired": 1,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {},
+        "states": {
+          "alice/security": "expired"
+        }
+      },
+      "id": "expired-list",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1799999999999,\"issuedAt\":1797408000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"6JKc-eG3fh69IYfAGdzY8j1fZfyti2tPYo2UL6Oi0Cal6Xc88Ww5PbVTD1pbvUFtFqqcA9tJf5RTa1vJvxf-BQ\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A followed list with no verified documents is visible as missing.",
+      "expect": {
+        "assertions": [],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": null,
+            "followed": true,
+            "headDocumentId": null,
+            "headVersion": null,
+            "heldVersions": [],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "missing",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 0,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 0,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 0,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 1,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {},
+        "states": {
+          "alice/security": "missing"
+        }
+      },
+      "id": "missing-followed-list",
+      "input": {
+        "documents": [],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A revoked included list stops contributing while the including list keeps working.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "moderator",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [
+              "revoked"
+            ],
+            "cutoffVersion": 1,
+            "expiresAt": null,
+            "followed": false,
+            "headDocumentId": null,
+            "headVersion": null,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "revoked",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:95b818a80d145333b2f756f12872961c8ae6925523ff0f6d979228ab1f078dad",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM",
+            "listId": "urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020",
+            "name": "mods",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 1,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 3,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 1
+          },
+          "overrides": 0,
+          "reachableLists": 2,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 1,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "alice moderator org:forkmesh": "trust"
+        },
+        "states": {
+          "alice/security": "revoked",
+          "moderator/mods": "active"
+        }
+      },
+      "id": "revoked-include-drops-out",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"repo:forkmesh/app\"],\"expiresAt\":null,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"kind\":\"include\",\"name\":\"security\",\"roles\":[\"security-researcher\"]}],\"entries\":[{\"note\":\"\",\"role\":\"moderator\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM\",\"name\":\"mods\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"moderator\",\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"CTsIZM5WDMxifEblVdysOvrG7SaDFNl9tIK1sTGnc3oTHKOer2RJKcgRK3MkXlEILqVpRwtiiJ3O_SYb_htEDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\",\"org:other\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:other\",\"stance\":\"trust\",\"subject\":\"zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"OlrjSWnafT7kmCqwHo_jgJiYSSS7O6gmN1fzoQHc5vTXWRLLrVQzZD6vurqcItdhS8bsles29dLST7DYb7xbDw\",\"version\":1}",
+          "{\"fromVersion\":1,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"list\":\"urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc\",\"name\":\"security\",\"reason\":\"retired\",\"revokedAt\":1799913600000,\"revokedBy\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"schema\":\"forkmesh-trust-list-revocation-v1\",\"signature\":\"bCS75YkpLhf8HmclxnIBkMY6PvyOaijmJL-MesdximI5_k0fOdPcD4sPX3aFCuIPfcnoPVyj_hQgtOZj5S7uDw\",\"successor\":null}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM",
+            "name": "mods",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Composition stops at four lists and never loops.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "reviewer",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:19377a24b067929ec1cf4e0c1405532c742298b82024774f35714676b699e5a3",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:2a454910b7ada40be0240a2231261f9324d48e9207b1b188b7e76be4085b25e9",
+                  "urn:forkmesh:trust-list:sha256:c032d90a5299bbfe24aee6e7c139cbc9eea159f003791f571ab435901abc2aa3",
+                  "urn:forkmesh:trust-list:sha256:ed65b36868952a3c16276a1d8ca3cd6a5d8bf13bd1e9c94c7b1b29af808dcfed",
+                  "urn:forkmesh:trust-list:sha256:19377a24b067929ec1cf4e0c1405532c742298b82024774f35714676b699e5a3"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "7JD2_Wa7gM_nxz3EkV3hjm8NwVp9I7UFPl6OgOIfA6E"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "reviewer",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:c032d90a5299bbfe24aee6e7c139cbc9eea159f003791f571ab435901abc2aa3",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:2a454910b7ada40be0240a2231261f9324d48e9207b1b188b7e76be4085b25e9",
+                  "urn:forkmesh:trust-list:sha256:c032d90a5299bbfe24aee6e7c139cbc9eea159f003791f571ab435901abc2aa3"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "reviewer",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:2a454910b7ada40be0240a2231261f9324d48e9207b1b188b7e76be4085b25e9",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:2a454910b7ada40be0240a2231261f9324d48e9207b1b188b7e76be4085b25e9"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "reviewer",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:ed65b36868952a3c16276a1d8ca3cd6a5d8bf13bd1e9c94c7b1b29af808dcfed",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:2a454910b7ada40be0240a2231261f9324d48e9207b1b188b7e76be4085b25e9",
+                  "urn:forkmesh:trust-list:sha256:c032d90a5299bbfe24aee6e7c139cbc9eea159f003791f571ab435901abc2aa3",
+                  "urn:forkmesh:trust-list:sha256:ed65b36868952a3c16276a1d8ca3cd6a5d8bf13bd1e9c94c7b1b29af808dcfed"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": false,
+            "headDocumentId": "sha256:cec85812d841f1ef062693eac45b60998534ffd64edfda5c8124d12fc0871197",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "tpjCiRyPBVfzDPb4AXB0tx7SzrvofUE0mhKJOa1l3bw",
+            "listId": "urn:forkmesh:trust-list:sha256:19377a24b067929ec1cf4e0c1405532c742298b82024774f35714676b699e5a3",
+            "name": "chain",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:6c98bb20ab09fedd1dccf6534f147e120c30a338023bf14219a548a476680e73",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "tnSQaPfCxVzfkWPHk1Pg2wXCslDHQ22OB4lkvIi0waY",
+            "listId": "urn:forkmesh:trust-list:sha256:2a454910b7ada40be0240a2231261f9324d48e9207b1b188b7e76be4085b25e9",
+            "name": "chain",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": false,
+            "headDocumentId": "sha256:ea19217dbaf3079c78febad0584efdab640645bc10e8f36f0f662e8eb3c9adbc",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "m7IcrkSdfs1DtspB6FndAE_LLrky3-KaeLRwQy82aCQ",
+            "listId": "urn:forkmesh:trust-list:sha256:a277050f09c9b55a1925b6082de93286065187ebc583da4b27e2f7ffff8cb805",
+            "name": "chain",
+            "reachable": false,
+            "state": "active",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": false,
+            "headDocumentId": "sha256:6e6f36c80064ea9b7fd5bc3145c7fe5d04458fcde95257cb23e56267b73528b4",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "EY4UzvhXLe-9rN0blCBuD42TAokRvM5CQ_6-sGPNWTw",
+            "listId": "urn:forkmesh:trust-list:sha256:c032d90a5299bbfe24aee6e7c139cbc9eea159f003791f571ab435901abc2aa3",
+            "name": "chain",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          },
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": false,
+            "headDocumentId": "sha256:3490af5288c4104bd8caa0b515458caa701e9dfeaa0fe067624c44ffd00a51c8",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "SquNwnnm8GSCqdwUoAEWYKuy5F8qdV_TiQjb7TiIFeI",
+            "listId": "urn:forkmesh:trust-list:sha256:ed65b36868952a3c16276a1d8ca3cd6a5d8bf13bd1e9c94c7b1b29af808dcfed",
+            "name": "chain",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 4,
+          "cycleEdges": 1,
+          "depthLimitedEdges": 1,
+          "documents": 5,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 5,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 4,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob reviewer org:forkmesh": "trust",
+          "charlie reviewer org:forkmesh": "trust",
+          "dave reviewer org:forkmesh": "trust",
+          "erin reviewer org:forkmesh": "trust"
+        },
+        "states": {
+          "chain-a/chain": "active",
+          "chain-b/chain": "active",
+          "chain-c/chain": "active",
+          "chain-d/chain": "active",
+          "chain-e/chain": "active"
+        },
+        "telemetry": {
+          "cycleEdges": 1,
+          "depthLimitedEdges": 1
+        }
+      },
+      "id": "cycles-and-depth",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"org:forkmesh\"],\"expiresAt\":null,\"issuer\":\"EY4UzvhXLe-9rN0blCBuD42TAokRvM5CQ_6-sGPNWTw\",\"kind\":\"include\",\"name\":\"chain\",\"roles\":[\"reviewer\"]}],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"tnSQaPfCxVzfkWPHk1Pg2wXCslDHQ22OB4lkvIi0waY\",\"name\":\"chain\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"YpB3i56YHpQDJF9sBbUc16W9CW_yR6tPvglha1Mh9ujjFT3MnU7mx1P8v9AOp5waBnHuET24YGjQloLJEs0LDw\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"org:forkmesh\"],\"expiresAt\":null,\"issuer\":\"SquNwnnm8GSCqdwUoAEWYKuy5F8qdV_TiQjb7TiIFeI\",\"kind\":\"include\",\"name\":\"chain\",\"roles\":[\"reviewer\"]}],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"EY4UzvhXLe-9rN0blCBuD42TAokRvM5CQ_6-sGPNWTw\",\"name\":\"chain\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"zRatHFdP33lDjAyCKFg2b0ed5e42laG1MZGc_woOIUJbti6OhduNHJDc05asPsb9do5W6xZfkjQP22dPP4z5BA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"org:forkmesh\"],\"expiresAt\":null,\"issuer\":\"tpjCiRyPBVfzDPb4AXB0tx7SzrvofUE0mhKJOa1l3bw\",\"kind\":\"include\",\"name\":\"chain\",\"roles\":[\"reviewer\"]}],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"SquNwnnm8GSCqdwUoAEWYKuy5F8qdV_TiQjb7TiIFeI\",\"name\":\"chain\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"Kp0YijdQoj3zlYBH3-s_4YrY8XtiC_nDWYk0-0x70OhZbndE2VCaIx4Q6aTyd9UD4eJpIaCaZ02z7CxKT6MQDA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"org:forkmesh\"],\"expiresAt\":null,\"issuer\":\"m7IcrkSdfs1DtspB6FndAE_LLrky3-KaeLRwQy82aCQ\",\"kind\":\"include\",\"name\":\"chain\",\"roles\":[\"reviewer\"]},{\"communities\":[\"org:forkmesh\"],\"expiresAt\":null,\"issuer\":\"tnSQaPfCxVzfkWPHk1Pg2wXCslDHQ22OB4lkvIi0waY\",\"kind\":\"include\",\"name\":\"chain\",\"roles\":[\"reviewer\"]}],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"7JD2_Wa7gM_nxz3EkV3hjm8NwVp9I7UFPl6OgOIfA6E\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"tpjCiRyPBVfzDPb4AXB0tx7SzrvofUE0mhKJOa1l3bw\",\"name\":\"chain\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"_wG5MK6fMTC8eaxYh32udIvSjgb__4SY9eZm0JVH9wh7W0pqNprlijVdP5PIR0DJ8NAM7zg95sn_SkWMqDQ2Bg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"m7IcrkSdfs1DtspB6FndAE_LLrky3-KaeLRwQy82aCQ\",\"name\":\"chain\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"K74Bd5xgcvhpvhTwLt-pFRhjCVogG83aRpeQlCHvX3X7OjAVl847dTokgV9VqLqMbOUtq0Lw6x4-Zn_trwKPAQ\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "tnSQaPfCxVzfkWPHk1Pg2wXCslDHQ22OB4lkvIi0waY",
+            "name": "chain",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A subject's signed appeal is attached to the assertion it contests.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [
+              {
+                "appealId": "sha256:e359cadc2397e53de94a9ab5609c7fceaae3021a91d3c48173149693141e64ef",
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "status": "open",
+                "version": 1
+              }
+            ],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "repo:forkmesh/app",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Published a fake advisory",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 1
+              }
+            ],
+            "stance": "distrust",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Reported CVE-2026-0001 responsibly",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:69d8af38ae274548f4cc55fb6556973fd3f1ad06dcceae54af5aafdf5b0082ec",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 1,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 2,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 2,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 0,
+          "rejectionCodes": {},
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "trust",
+          "charlie security-researcher repo:forkmesh/app": "distrust"
+        },
+        "states": {
+          "alice/security": "active"
+        },
+        "telemetry": {
+          "appeals": {
+            "open": 1,
+            "resolved": 0,
+            "unattached": 0
+          }
+        }
+      },
+      "id": "appeal-open",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}",
+          "{\"issuedAt\":1799913600000,\"list\":\"urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc\",\"role\":\"security-researcher\",\"schema\":\"forkmesh-trust-list-appeal-v1\",\"scope\":\"repo:forkmesh/app\",\"signature\":\"lJDo0PdGyI4-tqH5tCXjDa6cIc0WcG58_nDWofewkvaxFzrm3ee2FHcSAxeow5VmBxRBNdSt88kGcE2O068iBg\",\"statement\":\"The advisory was about a fork I do not maintain.\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A later version without the contested distrust resolves the appeal; forged and stray appeals are not attached.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [
+              {
+                "appealId": "sha256:e359cadc2397e53de94a9ab5609c7fceaae3021a91d3c48173149693141e64ef",
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "status": "resolved",
+                "version": 1
+              }
+            ],
+            "effective": "trust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "repo:forkmesh/app",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Advisory withdrawn after appeal",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 2
+              }
+            ],
+            "stance": "trust",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 2
+              }
+            ],
+            "stance": "trust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:51571331b181981f595e1b4cbe9e4d5edfafbcd7598c6de74df0b304808fbb44",
+            "headVersion": 2,
+            "heldVersions": [
+              1,
+              2
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [
+          {
+            "code": "invalid_signature",
+            "documentId": "sha256:e533235002ce956c8485bd7fe16eec31089cf350918b96ee76326ebab944aeef"
+          }
+        ],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 1,
+            "unattached": 1
+          },
+          "assertions": 2,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 5,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 1,
+          "rejectionCodes": {
+            "invalid_signature": 1
+          },
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "trust",
+          "charlie security-researcher repo:forkmesh/app": "trust"
+        },
+        "rejected": [
+          "invalid_signature"
+        ],
+        "states": {
+          "alice/security": "active"
+        },
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 1,
+            "unattached": 1
+          }
+        }
+      },
+      "id": "appeal-resolved-forged-and-unattached",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Advisory withdrawn after appeal\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"trust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799222400000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":\"sha256:69d8af38ae274548f4cc55fb6556973fd3f1ad06dcceae54af5aafdf5b0082ec\",\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"yK2J5RwbaDTKIyKq-ekTlkDARcunG2rI5JmbpEAYN1y78RTyFE0FVi8_Ms7_Oeo8TasGPKoWPU6tcivovDk3DA\",\"version\":2}",
+          "{\"issuedAt\":1799913600000,\"list\":\"urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc\",\"role\":\"security-researcher\",\"schema\":\"forkmesh-trust-list-appeal-v1\",\"scope\":\"repo:forkmesh/app\",\"signature\":\"lJDo0PdGyI4-tqH5tCXjDa6cIc0WcG58_nDWofewkvaxFzrm3ee2FHcSAxeow5VmBxRBNdSt88kGcE2O068iBg\",\"statement\":\"The advisory was about a fork I do not maintain.\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\",\"version\":1}",
+          "{\"issuedAt\":1799913600000,\"list\":\"urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc\",\"role\":\"security-researcher\",\"schema\":\"forkmesh-trust-list-appeal-v1\",\"scope\":\"org:forkmesh\",\"signature\":\"PWTFCtlhNNY54gCk7o3aKJy4-enAIDPbpd8deuE5WA6t8Bc7JPIgt9YvEmpqX23WXOzjZBnKnV5aOrHa8xhoAQ\",\"statement\":\"The advisory was about a fork I do not maintain.\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\",\"version\":1}",
+          "{\"issuedAt\":1799913600000,\"list\":\"urn:forkmesh:trust-list:sha256:9c260771f6127de280552d1f771e4504b989f3efb6d031bae9e52f40ce03e020\",\"role\":\"moderator\",\"schema\":\"forkmesh-trust-list-appeal-v1\",\"scope\":\"org:forkmesh\",\"signature\":\"Yy_D1uW1AuSmpBeCfSvucCOT_YHYoVRZto_41cXI2oDQKevzIdc2xwXaoB6cyxlpeRamL3QuTi5a3tKwIX3tAA\",\"statement\":\"The advisory was about a fork I do not maintain.\",\"subject\":\"zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Identity, small-order, and mixed-order issuer keys are rejected even when a cofactorless equation holds for the forged signature.",
+      "expect": {
+        "assertions": [],
+        "conflicts": [],
+        "lists": [],
+        "now": 1800000000000,
+        "rejected": [
+          {
+            "code": "invalid_signature",
+            "documentId": "sha256:12eba063f541ac37e5a610192110b894b4754cf62279db971cb4c408d23cc3cd"
+          },
+          {
+            "code": "invalid_signature",
+            "documentId": "sha256:22aa119476045b02b33f31d491fc7e113d068541fcf115e1acf9e5935a805fab"
+          },
+          {
+            "code": "invalid_signature",
+            "documentId": "sha256:2bf145329699d9deeff4b74a006620b5b81ef8d289ac818a29b1388cd92f38e7"
+          },
+          {
+            "code": "invalid_signature",
+            "documentId": "sha256:7478bbe080217cdee54b5735baeb86b0d354b11bbbfd91369ab1bc7016be12db"
+          }
+        ],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 0,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 4,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 0,
+          "listStates": {
+            "active": 0,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 0,
+          "rejectedDocuments": 4,
+          "rejectionCodes": {
+            "invalid_signature": 4
+          },
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {},
+        "rejected": [
+          "invalid_signature",
+          "invalid_signature",
+          "invalid_signature",
+          "invalid_signature"
+        ],
+        "states": {}
+      },
+      "id": "forged-weak-keys",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"name\":\"identity\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"7ch21oMf0hBdC0OJyi4oMWZGkokUbizgb67-mLIlSN8FAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA\",\"name\":\"identity-sign-bit\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"7ch21oMf0hBdC0OJyi4oMWZGkokUbizgb67-mLIlSN8FAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"7P_______________________________________38\",\"name\":\"order-two\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"LxEyymGrON_wDy_qMijyTGxx1YCFuA5H4ZUVyyfo0EcEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"reviewer\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"KT7dgoAAa-Von7YTEFKEmcBa7eKJY0QoZawsuxuIwWc\",\"name\":\"mixed-order\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"reviewer\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"WGZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZ1foMElKOKZGbC96bwumT9D2JV-Le3OlgnA9SJn0tBAw\",\"version\":1}"
+        ],
+        "follows": [],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "A non-string schema and excessive nesting are rejected before any field is trusted.",
+      "expect": {
+        "assertions": [],
+        "conflicts": [],
+        "lists": [],
+        "now": 1800000000000,
+        "rejected": [
+          {
+            "code": "invalid_json",
+            "documentId": "sha256:3a7c9e4ecde7949c577b4c67f9df03e48307eed0ef0a8d5f1474e89a6139109f"
+          },
+          {
+            "code": "unsupported_schema",
+            "documentId": "sha256:3ef6356f7de301d34227d2bd8f3782b5c04adf84f297f8ff06f8103eb05b0bd8"
+          },
+          {
+            "code": "unsupported_schema",
+            "documentId": "sha256:e4d6115465425ac9ed3b5e50eebf120f1e1a71b294cf6b68472f6ba9ae193d54"
+          },
+          {
+            "code": "invalid_json",
+            "documentId": "sha256:f2e62f18db8ff930a18cffbb24ed442ccf6634f26e8eb23e773f0412e0458726"
+          }
+        ],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 0,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 4,
+          "duplicateDocuments": 0,
+          "expiredDelegations": 0,
+          "followedLists": 0,
+          "listStates": {
+            "active": 0,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 0,
+          "rejectedDocuments": 4,
+          "rejectionCodes": {
+            "invalid_json": 2,
+            "unsupported_schema": 2
+          },
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {},
+        "rejected": [
+          "invalid_json",
+          "invalid_json",
+          "unsupported_schema",
+          "unsupported_schema"
+        ],
+        "states": {}
+      },
+      "id": "malformed-structure",
+      "input": {
+        "documents": [
+          "{\"schema\":[]}",
+          "{\"schema\":7}",
+          "[[[[[[[[[]]]]]]]]]",
+          "{\"a\":[[[[[[[[]]]]]]]]}"
+        ],
+        "follows": [],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    },
+    {
+      "description": "Each malformed, forged, or out-of-scope document is rejected with a stable code and never contributes.",
+      "expect": {
+        "assertions": [
+          {
+            "appeals": [],
+            "effective": "distrust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "repo:forkmesh/app",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Published a fake advisory",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "distrust",
+                "version": 1
+              }
+            ],
+            "stance": "distrust",
+            "subject": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914"
+          },
+          {
+            "appeals": [],
+            "effective": "trust",
+            "override": null,
+            "role": "security-researcher",
+            "scope": "org:forkmesh",
+            "sources": [
+              {
+                "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+                "note": "Reported CVE-2026-0001 responsibly",
+                "path": [
+                  "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc"
+                ],
+                "stance": "trust",
+                "version": 1
+              }
+            ],
+            "stance": "trust",
+            "subject": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0"
+          }
+        ],
+        "conflicts": [],
+        "lists": [
+          {
+            "cutoffReasons": [],
+            "cutoffVersion": null,
+            "expiresAt": 1807776000000,
+            "followed": true,
+            "headDocumentId": "sha256:69d8af38ae274548f4cc55fb6556973fd3f1ad06dcceae54af5aafdf5b0082ec",
+            "headVersion": 1,
+            "heldVersions": [
+              1
+            ],
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "listId": "urn:forkmesh:trust-list:sha256:0884df378f1a4efcf017d8d667d3c8a9587398d6a18b84395dd68c373079cddc",
+            "name": "security",
+            "reachable": true,
+            "state": "active",
+            "successor": null
+          }
+        ],
+        "now": 1800000000000,
+        "rejected": [
+          {
+            "code": "invalid_json",
+            "documentId": "sha256:133a529108bd1133fecbb222d1486e1dbd19c1e5894040df37b29b1ac920bb01"
+          },
+          {
+            "code": "entry_outside_scope",
+            "documentId": "sha256:374d107caf048438ef54d6c31efd87e3f3edcf19fc8ff4f917a87bbed567a536"
+          },
+          {
+            "code": "invalid_signature",
+            "documentId": "sha256:3c3f06a2675e474ebb689180163c316350a0025a945c2095e1fbc46ccbb63130"
+          },
+          {
+            "code": "invalid_previous",
+            "documentId": "sha256:45ccf2980d229773cf8610f40567aaa653c1ee4b001e070e19327f2542b5fc36"
+          },
+          {
+            "code": "unsupported_schema",
+            "documentId": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          },
+          {
+            "code": "invalid_edge",
+            "documentId": "sha256:6310714fb65faa61d5c1815cef94d50dcb3186b29658235a555c230e47cbfed1"
+          },
+          {
+            "code": "invalid_signature",
+            "documentId": "sha256:69e47413119324ab779dec7ff095fb6ea9c0e3fdbefde23f5f107776e24739d6"
+          },
+          {
+            "code": "invalid_time",
+            "documentId": "sha256:6a5556f012419c0b0ea857a5883277f58e6855a6d87ecf773deccf5e6c52c383"
+          },
+          {
+            "code": "unsupported_schema",
+            "documentId": "sha256:807eb6440b4057c1b6d2568dbf2dea7e5ff64d5a9d09413581386a9281862973"
+          },
+          {
+            "code": "issued_in_future",
+            "documentId": "sha256:84bc4e4e53c3e018e1f56f7a23e8894bea890e65bae74a79cde07678d5aea70f"
+          },
+          {
+            "code": "unsorted_entries",
+            "documentId": "sha256:908766208799b54af0f7e8741a2d0b451ef1621287d4bdd873c1ab41edd55206"
+          },
+          {
+            "code": "invalid_signature",
+            "documentId": "sha256:9b46286ca4240fadf757c571315743211bbc9e785866883b08247aea9c6ad66e"
+          },
+          {
+            "code": "invalid_scope",
+            "documentId": "sha256:a860cdb8dc0ee9fdf98744ac784bc1ca7163fbd8cedbb70089392a5eede4cf6a"
+          },
+          {
+            "code": "invalid_keys",
+            "documentId": "sha256:d74779519ebf645f6fd2696f358f2aadab455c8666a556768f3638cb064ae52f"
+          },
+          {
+            "code": "noncanonical",
+            "documentId": "sha256:d945f310b0c7e0cd70852d7aef68e0413c965d1d4da17ee36b9f8159f37c0bf9"
+          },
+          {
+            "code": "edge_outside_scope",
+            "documentId": "sha256:e590fd43f174a3e0a2d20b53a61b3fe9458c90be486c92db87c9147c03ca0e1e"
+          },
+          {
+            "code": "invalid_revocation_keys",
+            "documentId": "sha256:e94934da99f6251cdc950da9f4be7230e84ca45f68c2301e4971e569d1e1ef34"
+          }
+        ],
+        "schema": "forkmesh-trust-resolution-v1",
+        "telemetry": {
+          "appeals": {
+            "open": 0,
+            "resolved": 0,
+            "unattached": 0
+          },
+          "assertions": 2,
+          "cycleEdges": 0,
+          "depthLimitedEdges": 0,
+          "documents": 18,
+          "duplicateDocuments": 1,
+          "expiredDelegations": 0,
+          "followedLists": 1,
+          "listStates": {
+            "active": 1,
+            "conflicted": 0,
+            "expired": 0,
+            "missing": 0,
+            "recovered": 0,
+            "revoked": 0
+          },
+          "overrides": 0,
+          "reachableLists": 1,
+          "rejectedDocuments": 17,
+          "rejectionCodes": {
+            "edge_outside_scope": 1,
+            "entry_outside_scope": 1,
+            "invalid_edge": 1,
+            "invalid_json": 1,
+            "invalid_keys": 1,
+            "invalid_previous": 1,
+            "invalid_revocation_keys": 1,
+            "invalid_scope": 1,
+            "invalid_signature": 3,
+            "invalid_time": 1,
+            "issued_in_future": 1,
+            "noncanonical": 1,
+            "unsorted_entries": 1,
+            "unsupported_schema": 2
+          },
+          "revocations": 0,
+          "stanceConflicts": 0
+        }
+      },
+      "expectSummary": {
+        "effective": {
+          "bob security-researcher org:forkmesh": "trust",
+          "charlie security-researcher repo:forkmesh/app": "distrust"
+        },
+        "rejected": [
+          "edge_outside_scope",
+          "entry_outside_scope",
+          "invalid_edge",
+          "invalid_json",
+          "invalid_keys",
+          "invalid_previous",
+          "invalid_revocation_keys",
+          "invalid_scope",
+          "invalid_signature",
+          "invalid_signature",
+          "invalid_signature",
+          "invalid_time",
+          "issued_in_future",
+          "noncanonical",
+          "unsorted_entries",
+          "unsupported_schema",
+          "unsupported_schema"
+        ],
+        "states": {
+          "alice/security": "active"
+        },
+        "telemetry": {
+          "duplicateDocuments": 1
+        }
+      },
+      "id": "rejections",
+      "input": {
+        "documents": [
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtWBWBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}",
+          "{ \"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"versio",
+          "[]",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v2\",\"signature\":\"ygVURwQhewi2G3OBnQv7aXjBlX2K8koOCFRUDTKxE6Wnmiy4oq_2tquxIil6QUBodxtF5jXCSW1VV5c_rNHlCw\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"extra\":true,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"TWAUomKhiz5KTNWgWtuSnPSy6AZIAs_khD-y5Szo9W8b0tJ9B-dfJrXxVst69vTth6mn7T8rO8tbqwgeOxPxAw\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCzaHHjKKU7J4XdTAIMUsUYNApo0G8flaFRWIXytuPonGQ\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"wrong-signer\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"qFUM9oGaJ7F_-2kVKOUKBMXFwEZuEwkDgDLpLNp7DBwnBu2zkNXAWtIIG4Ig_HIwTwozsschnfD6zKbMCjaqDQ\",\"version\":1}",
+          "{\"communities\":[\"repo:forkmesh/app\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"outside\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"vE-KWClAPudOeXp5ghjNNW4HJjyMOCai5RQ-Qjt1VPwAXYUOo_ftU9K1kIM2C6NEg0rAE6McsQwIqj31JQRmDg\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"},{\"note\":\"\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"unsorted\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"5NgKUH87MKWI7sA4CaqSLcl5XKmjvhmH4wIsLwclLb32yAtoIFn-uF5z7KUygIOeLR16iGlz0KTnesOZg8pQBA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"no-previous\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"FFWc2M9iTiO73qV2PG6OpijTAXSJhzXpiLNbuwlf-8raRrJFmDL7r9MBYj_8-2wqr2lIXV139IIYGsA5Y1AgBQ\",\"version\":2}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[],\"expiresAt\":1833782400000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"long-lived\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"4fbtIlK7xAxBUM5LZWgHL0zx7ERVrVi_TYnnF0i5hGVRwYs1TUwK89F5STntUjyCw99bxI7N3Q4GfxKJJTBTDA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"org:forkmesh\"],\"expiresAt\":null,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"kind\":\"include\",\"name\":\"self-edge\",\"roles\":[\"security-researcher\"]}],\"entries\":[],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"self-edge\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"7YbsvtY2ILtqTGKWlgiZxtKSCLDi5DVEGpSdx-A34ORL-kJ3e-8HDyEIUcFeZ4OxyxCFOzJl-RjcPRQXqA6aCA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[{\"communities\":[\"org:forkmesh\"],\"expiresAt\":null,\"issuer\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\",\"kind\":\"include\",\"name\":\"other\",\"roles\":[\"reviewer\"]}],\"entries\":[],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"wide-edge\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"-mex39IBBimNvwFUcp--kO01lHcdTT4J7Rx5l3T-MnhFBt0bCUd2qDUHDnJB9aELBOHzQ4NFr_t9r2by9gbzBA\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"own-recovery\",\"previous\":null,\"revocationKeys\":[\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\"],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"FxURYGXS7Op84MNo_EwCnJFQQetYxfnqbk-Hn9buAmIZiBkysRePd164qmSnl95UcA08ffhVL1b1CFyhEStBDg\",\"version\":1}",
+          "{\"communities\":[\"*\"],\"edges\":[],\"entries\":[],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"global\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"ivuTO6V-Upbw0e4uT_gsAWiLEmIHiIomYwlWUjIqlQOJjTXPG-IUXj3d-wpKVX9uWzwEI2ojSbKDxpW2v0AXBQ\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[],\"expiresAt\":1802592000000,\"issuedAt\":1800000600000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"future\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"25jWfQMD9Tq3G-tkpVX9xozj1p_7FZN1JO0epR4kaNTXO8WZV94I6twVL5KSXdCvEwsGLwLeh81o5GBi9WT_DQ\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}",
+          "{\"communities\":[\"org:forkmesh\"],\"edges\":[],\"entries\":[{\"note\":\"Published a fake advisory\",\"role\":\"security-researcher\",\"scope\":\"repo:forkmesh/app\",\"stance\":\"distrust\",\"subject\":\"BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914\"},{\"note\":\"Reported CVE-2026-0001 responsibly\",\"role\":\"security-researcher\",\"scope\":\"org:forkmesh\",\"stance\":\"trust\",\"subject\":\"Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0\"}],\"expiresAt\":1807776000000,\"issuedAt\":1799136000000,\"issuer\":\"zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0\",\"name\":\"security\",\"previous\":null,\"revocationKeys\":[],\"roles\":[\"security-researcher\"],\"schema\":\"forkmesh-trust-list-v1\",\"signature\":\"aGa6jxHDtW5WBnM39NehHp-9QVAWUzyYoQ6G2X9zNCztSIJtD-u2iaG2COA1t2f4AZo0G8flaFRWIXytuPonCQ\",\"version\":1}"
+        ],
+        "follows": [
+          {
+            "communities": null,
+            "issuer": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+            "name": "security",
+            "roles": null
+          }
+        ],
+        "now": 1800000000000,
+        "overrides": []
+      }
+    }
+  ],
+  "reference": "app/src/trust_lists.py",
+  "schema": "forkmesh-trust-list-vectors-v1",
+  "specification": "www/docs/design/scoped-trust-lists.md",
+  "testKeys": {
+    "alice": "zXRx1TfXDzTDatGMgjbGuirVh2N6ghkRQY6At9nbmW0",
+    "alice-recovery": "DYB9zsxtWBdOJoizrjoUmQIy26RwOfZ2RyXo3gtiQds",
+    "alice-successor": "y0_nn1qoDhKj9xbs5-eRc_4kslu0W_STihQr1XXio9I",
+    "bob": "Gu6XjRBWRcpRi61aDGP_I7yly6zRs6WJlICNUbjZjL0",
+    "chain-a": "tnSQaPfCxVzfkWPHk1Pg2wXCslDHQ22OB4lkvIi0waY",
+    "chain-b": "EY4UzvhXLe-9rN0blCBuD42TAokRvM5CQ_6-sGPNWTw",
+    "chain-c": "SquNwnnm8GSCqdwUoAEWYKuy5F8qdV_TiQjb7TiIFeI",
+    "chain-d": "tpjCiRyPBVfzDPb4AXB0tx7SzrvofUE0mhKJOa1l3bw",
+    "chain-e": "m7IcrkSdfs1DtspB6FndAE_LLrky3-KaeLRwQy82aCQ",
+    "charlie": "BabM8b2IDEsm2qaKWCGWsx23wPZazVfSqruZ015-914",
+    "dave": "zqqvYJxAFMfRcAhzw2rQRRjkkcUL-HwNorbk_2ijwwk",
+    "erin": "7JD2_Wa7gM_nxz3EkV3hjm8NwVp9I7UFPl6OgOIfA6E",
+    "maintainer": "GhdD3lGcAU1oqXPMXoDCs1eegIP_D6wgrTNkKjQu0b4",
+    "mallory": "-_dAe00dA6lesvjOdSVo5gMlWIlpYIxTNcjF1XZsJC4",
+    "moderator": "QQbxMgU-padS1lF7xO-VYZYXKnQtCemHbjy9j-kswhM"
+  }
+}

@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Move the bodies of a header's namespace-scope functions into .cpp files.
+
+    move_inline_defs.py <header> <inline_defs.tsv> <out-prefix> <parts>
+
+Every function inline_defs reported without a flag becomes a declaration in
+the header (its comments, attributes and default arguments stay there) and a
+definition in one of <parts> files named <out-prefix>1.cpp ... Functions whose
+definition sits inside an #if block are left alone, as are templates,
+constexpr and deduced-return functions.
+
+Why: the header is the desktop's precompiled header. A change to any inline
+body rebuilt all ~75 MainWindow sources; with the bodies in .cpp files, only
+the one file holding that body recompiles.
+"""
+import os
+import re
+import sys
+
+
+def conditional_depth(data):
+    """Byte offset of each line start -> #if nesting depth before that line."""
+    depth = 0
+    starts = []
+    offset = 0
+    for line in data.split(b"\n"):
+        starts.append((offset, depth))
+        s = line.strip()
+        if re.match(rb"#\s*(if|ifdef|ifndef)\b", s):
+            depth += 1
+        elif re.match(rb"#\s*endif\b", s):
+            depth -= 1
+        offset += len(line) + 1
+    return starts
+
+
+def depth_at(starts, offset):
+    lo, hi = 0, len(starts) - 1
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if starts[mid][0] <= offset:
+            lo = mid
+        else:
+            hi = mid - 1
+    return starts[lo][1]
+
+
+def strip_specifier(sig, word):
+    # Only in the decl-specifiers, i.e. before the first '('.
+    head, paren, tail = sig.partition(b"(")
+    head = re.sub(rb"(^|\s)" + word + rb"\s+", rb"\1", head, count=1)
+    return head + paren + tail
+
+
+def main():
+    header, tsv, prefix, parts = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+    data = open(header, "rb").read()
+    starts = conditional_depth(data)
+    rows = []
+    others = []  # separate declarations: (usr, start, end)
+    for line in open(tsv):
+        f = line.rstrip("\n").split("\t")
+        if f[0] == "P":
+            others.append((f[1], int(f[2]), int(f[3])))
+            continue
+        if f[0] != "F":
+            continue
+        name, ns = f[1], f[2]
+        start, body, end = int(f[3]), int(f[4]), int(f[5])
+        flags, defaults = f[8], f[9]
+        if flags != "-" or depth_at(starts, start) != 0:
+            continue
+        ranges = []
+        if defaults != "-":
+            for r in defaults.split(","):
+                a, b = r.split(":")
+                ranges.append((int(a), int(b)))
+        rows.append((start, body, end, name, ns, ranges, f[10]))
+    rows.sort()
+    # Drop anything overlapping an earlier row (nested definitions).
+    clean = []
+    last_end = -1
+    for r in rows:
+        if r[0] >= last_end:
+            clean.append(r)
+            last_end = r[2]
+    rows = clean
+
+    moved_usrs = {r[6] for r in rows}
+    # Edits in offset order: definitions become declarations, and separate
+    # declarations of moved functions lose `inline`.
+    edits = [(r[0], "def", r) for r in rows]
+    edits += [(s, "decl", (s, e)) for usr, s, e in others if usr in moved_usrs
+              and not any(r[0] <= s < r[2] for r in rows)]
+    edits.sort(key=lambda x: x[0])
+    definitions = []
+    new = bytearray()
+    cursor = 0
+    for _, kind, item in edits:
+        if kind == "decl":
+            s0, e0 = item
+            new += data[cursor:s0] + strip_specifier(data[s0:e0], rb"inline")
+            cursor = e0
+            continue
+        start, body, end, name, ns, ranges, _usr = item
+        sig = data[start:body].rstrip()
+        # Definition: no default arguments, no inline/static.
+        defsig = bytearray()
+        pos = start
+        for a, b in sorted(ranges):
+            defsig += data[pos:a].rstrip()
+            pos = b
+        defsig += data[pos:body]
+        defsig = bytes(defsig).rstrip()
+        for word in (rb"inline", rb"static"):
+            sig = strip_specifier(sig, word)
+            defsig = strip_specifier(defsig, word)
+        new += data[cursor:start] + sig + b";"
+        cursor = end
+        definitions.append((ns, defsig + b"\n" + data[body:end] + b"\n", name))
+    new += data[cursor:]
+
+    total = sum(d[1].count(b"\n") for d in definitions)
+    per_part = total / parts
+    chunks = [[] for _ in range(parts)]
+    running = 0
+    for d in definitions:
+        idx = min(int(running / per_part), parts - 1)
+        chunks[idx].append(d)
+        running += d[1].count(b"\n")
+
+    base = os.path.basename(header)
+    for i, chunk in enumerate(chunks, 1):
+        path = f"{prefix}{i}.cpp"
+        existing = os.path.exists(path)
+        if existing and not chunk:
+            continue
+        out = bytearray()
+        if not existing:
+            out += (b"// Bodies of the helpers declared in " + base.encode() +
+                    b", moved out of that header so\n"
+                    b"// editing one no longer rebuilds every file that uses the precompiled header.\n"
+                    b"// Generated by tools/mainwindow_split/move_inline_defs.py; edit freely.\n"
+                    b"#include \"" + base.encode() + b"\"\n")
+        current = None
+        for ns, text, name in chunk:
+            if ns != current:
+                if current not in (None, "-"):
+                    out += b"\n} // namespace " + current.encode() + b"\n"
+                if ns != "-":
+                    out += b"\nnamespace " + ns.encode() + b" {\n"
+                current = ns
+            out += b"\n" + text
+        if current not in (None, "-"):
+            out += b"\n} // namespace " + current.encode() + b"\n"
+        # Appends to a part that already holds moved bodies (a re-run after a
+        # merge brought new inline helpers into the header).
+        open(path, "ab" if existing else "wb").write(out)
+    open(header, "wb").write(bytes(new))
+    print(f"moved {len(definitions)} function bodies ({total} lines) into "
+          f"{parts} files; header {data.count(b'\n') + 1} -> {new.count(b'\n') + 1} lines")
+
+
+if __name__ == "__main__":
+    main()

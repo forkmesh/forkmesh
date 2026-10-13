@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "SecurityScanner.h",
+    "SecurityScanner.cpp",
+    "SecurityExplanations.h",
+    "SecurityExplanations.cpp",
+    "ComputerSecurityFeature.h",
+    "ComputerSecurityFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_security_scanner.cpp",
+    "SecurityScanner.h",
+    "SecurityScanner.cpp",
+    "SecurityExplanations.h",
+    "SecurityExplanations.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core"
+  ]
+}

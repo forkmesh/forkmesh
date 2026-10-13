@@ -1,0 +1,12 @@
+# Managed by deploy/core/render.py (@@NODE@@). The installer creates
+# /swapfile (1 GiB, 0600, mkswap) once; zram is used first.
+[Unit]
+Description=ForkMesh Next disk swap behind zram
+ConditionPathExists=/swapfile
+
+[Swap]
+What=/swapfile
+Priority=10
+
+[Install]
+WantedBy=swap.target

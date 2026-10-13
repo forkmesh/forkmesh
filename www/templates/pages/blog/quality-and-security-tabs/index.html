@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Quality &amp; Security tabs" %}
+{% set slug = "quality-and-security-tabs" %}
+{% set image = "/assets/blog/features/quality-and-security-tabs.webp" %}
+{% set description = "Per-repository quality and security views keep checks, advisories, and repository health next to the code they describe." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">CI, releases &amp; distribution</p>
+            <h1>Quality &amp; Security tabs</h1>
+            <p class="lede">Per-repository quality and security views keep checks, advisories, and repository health next to the code they describe.</p>
+            <div class="meta"><span class="pill">Feature 45 of 72</span><span>Feature</span><span>CI, releases &amp; distribution</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/quality-and-security-tabs.webp" alt="Abstract ForkMesh artwork for Quality &amp; Security tabs">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Quality &amp; Security tabs gives ForkMesh a concrete mechanism for repository health, checks, and advisories presented next to the code. Per-repository quality and security views keep checks, advisories, and repository health next to the code they describe.</p>
+          <p>Delivery metadata is part of a project, not a separate dashboard that should disappear during a migration. In ForkMesh, quality &amp; Security tabs addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles quality &amp; Security tabs through the same split it uses across the product: ForkMesh keeps runs, logs, artifacts, releases, quality signals, installers, and downloads close to the mirrored repository.</p>
+          <p>The behavior is intentionally narrow: Per-repository quality and security views keep checks, advisories, and repository health next to the code they describe. Outputs can be linked to commits and served by nodes instead of becoming opaque hosted-only assets.</p>
+          <h2>Where it fits</h2>
+          <p>Use quality &amp; Security tabs when shipping, validation, and release assets need to remain attached to the preserved repository.</p>
+          <p>It pairs with the rest of CI, releases &amp; distribution because Quality &amp; Security tabs keeps repository health, checks, and advisories presented next to the code connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/one-line-installer/">← One-line installer</a>
+          <a href="/blog/insights/">Insights →</a>
+        </nav>
+{% endblock %}

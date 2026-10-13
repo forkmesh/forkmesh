@@ -1,0 +1,65 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "branches",
+  "name": "Branches",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Repositories",
+  "version": "1.0.0",
+  "summary": "The Branches tab of every repository: list, compare, create and delete branches. Pull requests depend on it.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Branches plugin card"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:branches",
+    "ios": "builtin:branches",
+    "android": "builtin:branches",
+    "web": "builtin:branches",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "repository.branches",
+      "label": "Read and change branches on repositories you can access",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-11"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

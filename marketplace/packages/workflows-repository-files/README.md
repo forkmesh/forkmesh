@@ -1,0 +1,3 @@
+# Workflows: Repository Files
+
+Adds the Repository view to the [Workflows](../workflows/README.md) package. Open a repository and edit its `.forkmesh/*.yml` actions, `.forkmesh/shortcuts`, `.forkmesh/skills` and `.forkmesh/teammates` special agents as connected steps. Saving writes one commit to the default branch through the repository file editor, so it needs write access. The same view adds the shortcuts, actions, skills and special agents that installed plug-ins ship (`content.shortcut`, `content.action`, `content.skill`, `content.teammate`). Removing this pack hides the Repository view. See `docs/app/workflows.md`.

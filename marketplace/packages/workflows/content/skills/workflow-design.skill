@@ -1,0 +1,14 @@
+# name: Workflow design
+# description: Designs automations, ForkMesh actions and special agents that are small, observable and safe to run unattended.
+
+When this skill is installed:
+
+- Start from the trigger. Name what starts the work (a button, a webhook, a schedule, a push, a pull request, an event) before choosing any step.
+- Keep one workflow to one outcome. Split a long chain into two workflows joined by a webhook instead of one with twenty steps.
+- Put every secret in a credential or an Actions variable. A repository file never holds a token, key or password.
+- Prefer the integration step over a raw HTTP request when one exists; it knows the API's address and authentication.
+- Give every branch an end. An If step's false branch either does something or ends in a No operation step, so the canvas shows the decision was intended.
+- Turn on Continue if this step fails only where the next step checks `$json.error`, and say so in the step name.
+- For a ForkMesh action, keep commands idempotent and read-only unless the action exists to change something, and use `set -eu`.
+- For a special agent, give it the narrowest permissions that work, a playbook shortcut, and a schedule that is off until someone has watched one run.
+- After building, run it once by hand and read every step's output before turning on a webhook or schedule.

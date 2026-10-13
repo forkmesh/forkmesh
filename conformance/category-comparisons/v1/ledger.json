@@ -1,0 +1,915 @@
+{
+  "schema": "forkmesh-category-comparisons-v1",
+  "description": "Evidence ledger for the public category comparison page: every claim, its scope, its evidence, and the date it was last verified.",
+  "documentation": "www/docs/category-comparisons.md",
+  "reviewCadenceDays": 90,
+  "reviewedOn": "2026-09-14",
+  "reviewOwner": "ForkMesh maintainers reviewing issue #509",
+  "subjects": [
+    {
+      "id": "forkmesh-protocol",
+      "label": "ForkMesh protocol and self-hosted software",
+      "kind": "forkmesh",
+      "scope": "protocol",
+      "definition": "The MIT-licensed protocol, mirror node, gateways, and desktop app, run on hosts you or your community operate."
+    },
+    {
+      "id": "forkmesh-hosted",
+      "label": "ForkMesh hosted service",
+      "kind": "forkmesh",
+      "scope": "hosted-service",
+      "definition": "The forkmesh.com and app.forkmesh.com relay, accounts, public index, and website that ForkMesh operates."
+    },
+    {
+      "id": "centralized-hosting",
+      "label": "Centralized Git hosting",
+      "kind": "category",
+      "scope": "category",
+      "definition": "One company runs Git hosting, issues, pull requests, and related services for you, for example GitHub."
+    },
+    {
+      "id": "self-hosted-forge",
+      "label": "Self-hosted forges",
+      "kind": "category",
+      "scope": "category",
+      "definition": "You install and run a complete forge on your own server, for example Gitea."
+    },
+    {
+      "id": "decentralized-collaboration",
+      "label": "Decentralized, Git-native collaboration tools",
+      "kind": "category",
+      "scope": "category",
+      "definition": "Tools that keep issues or reviews inside Git and sync them between copies without a central forge, for example git-bug."
+    },
+    {
+      "id": "replicated-storage",
+      "label": "Replicated storage and Git backups",
+      "kind": "category",
+      "scope": "category",
+      "definition": "Copies of repositories on other disks, buckets, or machines, made with git clone --mirror, bundles, or storage replication."
+    },
+    {
+      "id": "basic-git-server",
+      "label": "Basic Git servers",
+      "kind": "category",
+      "scope": "category",
+      "definition": "A bare repository served over SSH, HTTP, or the Git daemon, with no forge features."
+    }
+  ],
+  "dimensions": [
+    {"id": "ownership", "label": "Ownership", "question": "Who controls the data and can take access away?"},
+    {"id": "availability", "label": "Availability", "question": "What keeps a repository reachable, and who promises it?"},
+    {"id": "workflow", "label": "Workflow compatibility", "question": "Which everyday Git and review workflows work?"},
+    {"id": "operations", "label": "Operations", "question": "Who runs servers, upgrades, and backups?"},
+    {"id": "privacy", "label": "Privacy", "question": "Who can see repository contents and request metadata?"},
+    {"id": "portability", "label": "Portability", "question": "What leaves with you, and how?"},
+    {"id": "cost", "label": "Cost", "question": "What do you pay, and for what?"},
+    {"id": "maturity", "label": "Maturity", "question": "How finished and supported is it today?"},
+    {"id": "failure-modes", "label": "Failure modes", "question": "What happens when a part of it fails?"}
+  ],
+  "sources": [
+    {
+      "id": "git-book-protocols",
+      "publisher": "Git",
+      "title": "Pro Git: Git on the Server — The Protocols",
+      "url": "https://git-scm.com/book/en/v2/Git-on-the-Server-The-Protocols",
+      "verifiedOn": "2026-09-14",
+      "quote": "Git can use four distinct protocols to transfer data: Local, HTTP, Secure Shell (SSH) and Git. … a bare repository is the contents of your project's .git directory and nothing else. … [the Git daemon provides] absolutely no authentication or cryptography."
+    },
+    {
+      "id": "git-clone-mirror",
+      "publisher": "Git",
+      "title": "git-clone documentation, --mirror",
+      "url": "https://git-scm.com/docs/git-clone",
+      "verifiedOn": "2026-09-14",
+      "quote": "Set up a mirror of the source repository. … --mirror not only maps local branches of the source to local branches of the target, it maps all refs (including remote-tracking branches, notes etc.) and sets up a refspec configuration such that all these refs are overwritten by a git remote update in the target repository."
+    },
+    {
+      "id": "git-bundle",
+      "publisher": "Git",
+      "title": "git-bundle documentation",
+      "url": "https://git-scm.com/docs/git-bundle",
+      "verifiedOn": "2026-09-14",
+      "quote": "Bundles are used for the \"offline\" transfer of Git objects without an active \"server\" sitting on the other side of the network connection."
+    },
+    {
+      "id": "github-terms",
+      "publisher": "GitHub",
+      "title": "GitHub Terms of Service, section M (Cancellation and Termination)",
+      "url": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
+      "verifiedOn": "2026-09-14",
+      "quote": "GitHub has the right to suspend or terminate your access to all or any part of the Website at any time, with or without cause, with or without notice, effective immediately."
+    },
+    {
+      "id": "github-backup",
+      "publisher": "GitHub",
+      "title": "Backing up a repository",
+      "url": "https://docs.github.com/en/repositories/archiving-a-github-repository/backing-up-a-repository",
+      "verifiedOn": "2026-09-14",
+      "quote": "You can take a backup of a Git repository, including the revision history, by performing a mirror clone with the Git CLI. … Migration archives do not include all data related to a repository. For example, Git Large File Storage objects, discussions, or packages are not included. … There is no supported, documented way to restore migration archives on GitHub."
+    },
+    {
+      "id": "gitea-backup",
+      "publisher": "Gitea",
+      "title": "Gitea backup and restore",
+      "url": "https://docs.gitea.com/administration/backup-and-restore",
+      "verifiedOn": "2026-09-14",
+      "quote": "Gitea currently has a dump command that will save the installation to a ZIP file. … To ensure the consistency of the Gitea instance, it must be shutdown during backup. … There is currently no support for a recovery command. It is a manual process that mostly involves moving files to their correct locations and restoring a database dump."
+    },
+    {
+      "id": "git-bug-readme",
+      "publisher": "git-bug",
+      "title": "git-bug README",
+      "url": "https://github.com/git-bug/git-bug",
+      "verifiedOn": "2026-09-14",
+      "quote": "Distributed, offline-first bug tracker embedded in git … you only need your git repository to have a bug tracker … use your normal git remote to collaborate, push and pull your bugs … works offline."
+    }
+  ],
+  "matrix": [
+    {
+      "id": "fm-protocol-ownership",
+      "subject": "forkmesh-protocol",
+      "dimension": "ownership",
+      "basis": "evidence",
+      "text": "Repository data stays standard Git objects and refs. Issues, discussions, pull requests, and reviews are signed records stored in the repository under .forkmesh/. The protocol and reference software are MIT-licensed; using, forking, or reimplementing them needs no ForkMesh account or payment.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "the-durable-boundary"},
+        {"kind": "test", "ref": "app/tests/test_business_model_contract.py::test_machine_contract_keeps_protocol_and_portability_rights_free"},
+        {"kind": "test", "ref": "app/tests/test_collaboration_protocol.py::test_every_object_family_folds_with_explicit_conflicts_and_lineage"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-protocol-availability",
+      "subject": "forkmesh-protocol",
+      "dimension": "availability",
+      "basis": "evidence",
+      "text": "Any number of independent mirrors can hold a full copy. A copy counts only while its signed health, integrity, and refs match, and the availability report names single-operator, stale, and single-region risk instead of hiding it. Nobody promises uptime for a self-hosted mirror.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/availability-proof.md", "anchor": "risk-codes"},
+        {"kind": "test", "ref": "app/tests/test_availability_proof.py::test_no_false_quorum"},
+        {"kind": "test", "ref": "app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum"},
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "support-boundary"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-protocol-workflow",
+      "subject": "forkmesh-protocol",
+      "dimension": "workflow",
+      "basis": "evidence",
+      "text": "Stock Git clones, fetches, and pushes over SSH. HTTPS and failover paths are read-only, hooks pushed with a repository never run on a mirror, and partial clone needs Git protocol v2.",
+      "evidence": [
+        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "known-limitations"},
+        {"kind": "product-evidence", "path": "conformance/git/v1/results.json"},
+        {"kind": "test", "ref": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-protocol-operations",
+      "subject": "forkmesh-protocol",
+      "dimension": "operations",
+      "basis": "evidence",
+      "text": "You run the hosts. Of the eight network service roles, none is fully independent yet: six run partly without the hosted service, and search and organization administration are hosted-only. A self-hosted app Worker still needs a Cloudflare account.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"},
+        {"kind": "test", "ref": "app/tests/test_service_roles_contract.py::test_no_role_overclaims_independence"},
+        {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "self-hosting-and-offline-use"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-protocol-privacy",
+      "subject": "forkmesh-protocol",
+      "dimension": "privacy",
+      "basis": "evidence",
+      "text": "Private repository objects are sealed on an authorized device before replication, so a storage operator without a recipient key holds only ciphertext. Any host can mirror a public repository, so a public repository cannot be made private again after it has been copied.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/security/private-repository-confidentiality.md", "anchor": "protected-data"},
+        {"kind": "test", "ref": "app/tests/test_private_repository_control_access.py::test_private_and_missing_repositories_share_a_hidden_result"},
+        {"kind": "product-evidence", "path": "README.md"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-protocol-portability",
+      "subject": "forkmesh-protocol",
+      "dimension": "portability",
+      "basis": "evidence",
+      "text": "A stock Git clone carries the code and the signed .forkmesh/ records; export needs no fee, upgrade, or proprietary verifier. Imports from GitHub, GitLab, and Codeberg resume from checkpoints after an interruption.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "portability-commitments"},
+        {"kind": "test", "ref": "app/tests/test_repository_migration.py::test_interruption_resumes_exact_checkpoint_and_rate_limit_does_not_advance"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-protocol-cost",
+      "subject": "forkmesh-protocol",
+      "dimension": "cost",
+      "basis": "evidence",
+      "text": "No license fee. The operator pays for and supplies capacity, backups, moderation, uptime, and support.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "initial-plans"},
+        {"kind": "test", "ref": "app/tests/test_business_model_contract.py::test_initial_plans_publish_price_availability_limits_and_support"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-protocol-maturity",
+      "subject": "forkmesh-protocol",
+      "dimension": "maturity",
+      "basis": "evidence",
+      "text": "Actively developed and not yet a finished replacement for every centralized forge workflow. Linux x86_64, Windows x86_64, and Android installers are supported; macOS and Linux arm64 are preview, and container and cluster installs are planned.",
+      "evidence": [
+        {"kind": "product-evidence", "path": "README.md"},
+        {"kind": "specification", "path": "www/docs/install-support-matrix.md", "anchor": "profiles"},
+        {"kind": "test", "ref": "app/tests/test_install_lifecycle.py::test_matrix_covers_every_operator_profile_with_a_known_tier"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-protocol-failure-modes",
+      "subject": "forkmesh-protocol",
+      "dimension": "failure-modes",
+      "basis": "evidence",
+      "text": "With no eligible mirror, a clone reports the repository unavailable instead of claiming success. A pack interrupted mid-stream fails as a normal Git error and is retried. Node backup and restore are tested, but you have to run them.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/product-promise.md", "anchor": "expected-failures-and-recovery"},
+        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "a-response-cannot-change-mirrors-mid-stream"},
+        {"kind": "test", "ref": "server/nodeops_test.go::TestNodeBackupRestoresRepositoriesIdentityAndConfiguration"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-ownership",
+      "subject": "forkmesh-hosted",
+      "dimension": "ownership",
+      "basis": "evidence",
+      "text": "ForkMesh operates accounts, the relay, and the public index. Paying gives ForkMesh no authority over protocol objects, independent operators, or exported repositories, and public read, clone, and export cannot become paid entitlements.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "the-durable-boundary"},
+        {"kind": "test", "ref": "app/tests/test_business_model_contract.py::test_machine_contract_keeps_protocol_and_portability_rights_free"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-availability",
+      "subject": "forkmesh-hosted",
+      "dimension": "availability",
+      "basis": "evidence",
+      "text": "Hosted Free is a best-effort public preview with no reserved capacity, contractual uptime, or SLO. Clones are served from developer-operated mirrors, so a repository with one mirror is only as reachable as that host.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "initial-plans"},
+        {"kind": "specification", "path": "www/docs/availability-proof.md", "anchor": "single_operator"},
+        {"kind": "test", "ref": "app/tests/test_git_http.py::test_public_clone_uses_signed_direct_https_and_sticky_selection"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-workflow",
+      "subject": "forkmesh-hosted",
+      "dimension": "workflow",
+      "basis": "evidence",
+      "text": "The web, desktop, and mobile apps share repositories, issues, pull requests, discussions, and chat. GitHub Desktop, Sourcetree, and GitKraken are not certified until their bundled Git versions produce a retained conformance report.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/capability-matrix.md"},
+        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "third-party-desktop-ui-certification-is-not-complete"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-operations",
+      "subject": "forkmesh-hosted",
+      "dimension": "operations",
+      "basis": "evidence",
+      "text": "ForkMesh operates the relay, website, and index on Cloudflare. The hosted edge never stores Git packfiles: repository bytes live on mirrors that someone has to run.",
+      "evidence": [
+        {"kind": "product-evidence", "path": "README.md"},
+        {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "summary"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-privacy",
+      "subject": "forkmesh-hosted",
+      "dimension": "privacy",
+      "basis": "evidence",
+      "text": "Every request to the hosted service passes through Cloudflare, which sees the client IP address, headers, and request path. Relay collaboration rows are encrypted under the instance data key; whoever controls the live Worker and that key is inside the trust boundary.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "summary"},
+        {"kind": "specification", "path": "www/docs/security/private-repository-confidentiality.md", "anchor": "protected-data"},
+        {"kind": "test", "ref": "app/tests/test_external_dependency_map.py::test_privacy_notice_is_checked_against_the_same_manifest"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-portability",
+      "subject": "forkmesh-hosted",
+      "dimension": "portability",
+      "basis": "evidence",
+      "text": "Leaving means cloning the repository with its .forkmesh/ records and pointing clients at another relay. Identity export runs on your device and is authenticated before import; the desktop never silently fails over to a different relay.",
+      "evidence": [
+        {"kind": "product-evidence", "path": "README.md"},
+        {"kind": "specification", "path": "www/docs/portable-identities.md", "anchor": "portable-encrypted-export"},
+        {"kind": "test", "ref": "app/tests/test_portable_identity_export.py::test_export_is_client_side_and_authenticated_before_import"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-cost",
+      "subject": "forkmesh-hosted",
+      "dimension": "cost",
+      "basis": "evidence",
+      "text": "Hosted Free is $0. Supporter is $5 and Pro $10 per member per month. Managed hosting, replicas, and recovery services are a research preview and not for sale.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "initial-plans"},
+        {"kind": "product-evidence", "path": "www/public/business-model.json"},
+        {"kind": "test", "ref": "app/tests/test_business_model_contract.py::test_initial_plans_publish_price_availability_limits_and_support"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-maturity",
+      "subject": "forkmesh-hosted",
+      "dimension": "maturity",
+      "basis": "evidence",
+      "text": "Public preview. Free use and memberships carry no support response time, and private repositories need an independent review before a commercial-GA claim.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "support-boundary"},
+        {"kind": "specification", "path": "www/docs/security/private-repository-confidentiality.md", "anchor": "ga-evidence"},
+        {"kind": "test", "ref": "app/tests/test_business_model_contract.py::test_no_data_sale_and_support_boundaries_are_user_facing"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "fm-hosted-failure-modes",
+      "subject": "forkmesh-hosted",
+      "dimension": "failure-modes",
+      "basis": "evidence",
+      "text": "If Cloudflare or the ForkMesh Worker is down, the website, accounts, and relay stop. Git clone, fetch, and push directly to a mirror, signed collaboration records, and local desktop work continue.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "self-hosting-and-offline-use"},
+        {"kind": "test", "ref": "app/tests/test_external_dependency_map.py::test_mandatory_hosted_dependencies_name_a_self_host_path_and_a_drill"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "central-ownership",
+      "subject": "centralized-hosting",
+      "dimension": "ownership",
+      "basis": "evidence",
+      "text": "The provider's terms govern access to the account. GitHub's terms say it may suspend or terminate access at any time, with or without cause or notice.",
+      "evidence": [{"kind": "source", "id": "github-terms"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "central-availability",
+      "subject": "centralized-hosting",
+      "dimension": "availability",
+      "basis": "no-claim",
+      "text": "No category-wide claim. Uptime and any SLA depend on the provider and plan; read the provider's own status history and agreement."
+    },
+    {
+      "id": "central-workflow",
+      "subject": "centralized-hosting",
+      "dimension": "workflow",
+      "basis": "no-claim",
+      "text": "Not rated. This page compares ForkMesh's compatibility with these workflows in the ForkMesh columns rather than scoring each provider."
+    },
+    {
+      "id": "central-operations",
+      "subject": "centralized-hosting",
+      "dimension": "operations",
+      "basis": "definition",
+      "text": "The provider runs the servers, upgrades, and service backups."
+    },
+    {
+      "id": "central-privacy",
+      "subject": "centralized-hosting",
+      "dimension": "privacy",
+      "basis": "no-claim",
+      "text": "No category-wide claim. Read the provider's privacy policy and data-location terms."
+    },
+    {
+      "id": "central-portability",
+      "subject": "centralized-hosting",
+      "dimension": "portability",
+      "basis": "evidence",
+      "text": "GitHub documents a mirror clone for Git data. Its migration archives omit data such as Git LFS objects, discussions, and packages, and have no supported restore path on GitHub.",
+      "evidence": [{"kind": "source", "id": "github-backup"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "central-cost",
+      "subject": "centralized-hosting",
+      "dimension": "cost",
+      "basis": "no-claim",
+      "text": "No category-wide claim. Prices and free allowances change; read the provider's current pricing page."
+    },
+    {
+      "id": "central-maturity",
+      "subject": "centralized-hosting",
+      "dimension": "maturity",
+      "basis": "no-claim",
+      "text": "Not scored. This page does not rate provider maturity."
+    },
+    {
+      "id": "central-failure-modes",
+      "subject": "centralized-hosting",
+      "dimension": "failure-modes",
+      "basis": "evidence",
+      "text": "A suspended or terminated account loses access through that provider. A local mirror clone keeps Git history; GitHub-hosted discussions and packages are not in its migration archives.",
+      "evidence": [{"kind": "source", "id": "github-terms"}, {"kind": "source", "id": "github-backup"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "forge-ownership",
+      "subject": "self-hosted-forge",
+      "dimension": "ownership",
+      "basis": "definition",
+      "text": "You control the server, its database, and its repositories."
+    },
+    {
+      "id": "forge-availability",
+      "subject": "self-hosted-forge",
+      "dimension": "availability",
+      "basis": "definition",
+      "text": "As reachable as the servers you run; any redundancy is yours to design."
+    },
+    {
+      "id": "forge-workflow",
+      "subject": "self-hosted-forge",
+      "dimension": "workflow",
+      "basis": "no-claim",
+      "text": "Not rated. Feature sets differ by forge and version."
+    },
+    {
+      "id": "forge-operations",
+      "subject": "self-hosted-forge",
+      "dimension": "operations",
+      "basis": "evidence",
+      "text": "Gitea's backup is its dump command, run while the instance is shut down; restoring is a manual process of moving files and importing the database dump.",
+      "evidence": [{"kind": "source", "id": "gitea-backup"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "forge-privacy",
+      "subject": "self-hosted-forge",
+      "dimension": "privacy",
+      "basis": "definition",
+      "text": "Data stays on infrastructure you choose, under your own access controls."
+    },
+    {
+      "id": "forge-portability",
+      "subject": "self-hosted-forge",
+      "dimension": "portability",
+      "basis": "evidence",
+      "text": "A Gitea dump is a ZIP of the configuration, data directory, repositories, and an SQL dump of the database.",
+      "evidence": [{"kind": "source", "id": "gitea-backup"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "forge-cost",
+      "subject": "self-hosted-forge",
+      "dimension": "cost",
+      "basis": "no-claim",
+      "text": "No category-wide claim. Server, backup, and administrator time vary by team."
+    },
+    {
+      "id": "forge-maturity",
+      "subject": "self-hosted-forge",
+      "dimension": "maturity",
+      "basis": "no-claim",
+      "text": "Not scored. This page does not rate forge maturity."
+    },
+    {
+      "id": "forge-failure-modes",
+      "subject": "self-hosted-forge",
+      "dimension": "failure-modes",
+      "basis": "evidence",
+      "text": "Gitea documents that the instance must be shut down for a consistent backup and that there is no recovery command.",
+      "evidence": [{"kind": "source", "id": "gitea-backup"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "decentral-ownership",
+      "subject": "decentralized-collaboration",
+      "dimension": "ownership",
+      "basis": "evidence",
+      "text": "git-bug keeps the bug tracker inside your Git repository; the repository is all you need.",
+      "evidence": [{"kind": "source", "id": "git-bug-readme"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "decentral-availability",
+      "subject": "decentralized-collaboration",
+      "dimension": "availability",
+      "basis": "evidence",
+      "text": "git-bug works offline and moves records with push and pull to ordinary Git remotes, so sharing depends on the remotes collaborators choose.",
+      "evidence": [{"kind": "source", "id": "git-bug-readme"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "decentral-workflow",
+      "subject": "decentralized-collaboration",
+      "dimension": "workflow",
+      "basis": "evidence",
+      "text": "git-bug collaborators sync records with git bug push and git bug pull, or bridge them to another tracker.",
+      "evidence": [{"kind": "source", "id": "git-bug-readme"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "decentral-operations",
+      "subject": "decentralized-collaboration",
+      "dimension": "operations",
+      "basis": "no-claim",
+      "text": "No category-wide claim. Operating needs differ by tool."
+    },
+    {
+      "id": "decentral-privacy",
+      "subject": "decentralized-collaboration",
+      "dimension": "privacy",
+      "basis": "no-claim",
+      "text": "No category-wide claim. Encryption and visibility differ by tool."
+    },
+    {
+      "id": "decentral-portability",
+      "subject": "decentralized-collaboration",
+      "dimension": "portability",
+      "basis": "evidence",
+      "text": "git-bug records travel through your normal Git remote.",
+      "evidence": [{"kind": "source", "id": "git-bug-readme"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "decentral-cost",
+      "subject": "decentralized-collaboration",
+      "dimension": "cost",
+      "basis": "no-claim",
+      "text": "No category-wide claim."
+    },
+    {
+      "id": "decentral-maturity",
+      "subject": "decentralized-collaboration",
+      "dimension": "maturity",
+      "basis": "no-claim",
+      "text": "Not scored. This page does not rate tool maturity."
+    },
+    {
+      "id": "decentral-failure-modes",
+      "subject": "decentralized-collaboration",
+      "dimension": "failure-modes",
+      "basis": "no-claim",
+      "text": "No category-wide claim. Failure behavior has not been verified across these tools."
+    },
+    {
+      "id": "storage-ownership",
+      "subject": "replicated-storage",
+      "dimension": "ownership",
+      "basis": "definition",
+      "text": "You hold the copies wherever you store them."
+    },
+    {
+      "id": "storage-availability",
+      "subject": "replicated-storage",
+      "dimension": "availability",
+      "basis": "evidence",
+      "text": "A mirror clone is overwritten by git remote update, so a copy is only as current as its last update.",
+      "evidence": [{"kind": "source", "id": "git-clone-mirror"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "storage-workflow",
+      "subject": "replicated-storage",
+      "dimension": "workflow",
+      "basis": "evidence",
+      "text": "Bundles carry Git objects offline, with no server on the other side of the transfer.",
+      "evidence": [{"kind": "source", "id": "git-bundle"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "storage-operations",
+      "subject": "replicated-storage",
+      "dimension": "operations",
+      "basis": "definition",
+      "text": "You schedule the copies and test restores yourself."
+    },
+    {
+      "id": "storage-privacy",
+      "subject": "replicated-storage",
+      "dimension": "privacy",
+      "basis": "no-claim",
+      "text": "No category-wide claim. It depends on where the copies are stored and whether they are encrypted."
+    },
+    {
+      "id": "storage-portability",
+      "subject": "replicated-storage",
+      "dimension": "portability",
+      "basis": "evidence",
+      "text": "A mirror clone copies all refs, including notes and remote-tracking branches.",
+      "evidence": [{"kind": "source", "id": "git-clone-mirror"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "storage-cost",
+      "subject": "replicated-storage",
+      "dimension": "cost",
+      "basis": "no-claim",
+      "text": "No category-wide claim. Storage and transfer prices vary."
+    },
+    {
+      "id": "storage-maturity",
+      "subject": "replicated-storage",
+      "dimension": "maturity",
+      "basis": "no-claim",
+      "text": "Not scored."
+    },
+    {
+      "id": "storage-failure-modes",
+      "subject": "replicated-storage",
+      "dimension": "failure-modes",
+      "basis": "evidence",
+      "text": "A mirror clone backs up Git data. GitHub documents that even its migration archives omit Git LFS objects, discussions, and packages.",
+      "evidence": [{"kind": "source", "id": "github-backup"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "gitserver-ownership",
+      "subject": "basic-git-server",
+      "dimension": "ownership",
+      "basis": "definition",
+      "text": "You own the server and the repositories on it."
+    },
+    {
+      "id": "gitserver-availability",
+      "subject": "basic-git-server",
+      "dimension": "availability",
+      "basis": "definition",
+      "text": "As reachable as that server; any redundancy is yours to add."
+    },
+    {
+      "id": "gitserver-workflow",
+      "subject": "basic-git-server",
+      "dimension": "workflow",
+      "basis": "evidence",
+      "text": "Git transfers over local, HTTP, SSH, and Git protocols. A bare repository is the Git data and nothing else, so issues, reviews, and a web interface come from other tools.",
+      "evidence": [{"kind": "source", "id": "git-book-protocols"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "gitserver-operations",
+      "subject": "basic-git-server",
+      "dimension": "operations",
+      "basis": "definition",
+      "text": "You manage accounts, keys, and backups."
+    },
+    {
+      "id": "gitserver-privacy",
+      "subject": "basic-git-server",
+      "dimension": "privacy",
+      "basis": "evidence",
+      "text": "The Git daemon protocol has no authentication or encryption; anyone who can reach it can clone.",
+      "evidence": [{"kind": "source", "id": "git-book-protocols"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "gitserver-portability",
+      "subject": "basic-git-server",
+      "dimension": "portability",
+      "basis": "evidence",
+      "text": "Plain Git: a mirror clone copies every ref to another host.",
+      "evidence": [{"kind": "source", "id": "git-clone-mirror"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "gitserver-cost",
+      "subject": "basic-git-server",
+      "dimension": "cost",
+      "basis": "no-claim",
+      "text": "No category-wide claim. The server is the main cost."
+    },
+    {
+      "id": "gitserver-maturity",
+      "subject": "basic-git-server",
+      "dimension": "maturity",
+      "basis": "no-claim",
+      "text": "Not scored."
+    },
+    {
+      "id": "gitserver-failure-modes",
+      "subject": "basic-git-server",
+      "dimension": "failure-modes",
+      "basis": "definition",
+      "text": "If the server is offline, clones and pushes to it fail until it returns."
+    }
+  ],
+  "notForYou": [
+    {
+      "id": "nfy-https-push",
+      "text": "You need to push over HTTPS or through a read mirror. ForkMesh accepts pushes only over SSH to a gateway.",
+      "instead": ["centralized-hosting", "self-hosted-forge"],
+      "evidence": [
+        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"},
+        {"kind": "test", "ref": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "nfy-slo-support",
+      "text": "You need a contractual uptime SLO, a support response time, or a managed private workspace today. None of these is sold yet.",
+      "instead": ["centralized-hosting"],
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "initial-plans"},
+        {"kind": "test", "ref": "app/tests/test_business_model_contract.py::test_initial_plans_publish_price_availability_limits_and_support"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "nfy-fully-independent",
+      "text": "You need search and organization administration with no hosted service and no Cloudflare account. Those roles are hosted-only today.",
+      "instead": ["self-hosted-forge"],
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"},
+        {"kind": "test", "ref": "app/tests/test_service_roles_contract.py::test_no_role_overclaims_independence"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "nfy-backup-only",
+      "text": "You only want an offline copy of Git data. ForkMesh's mirror health, routing, and signed collaboration would be overhead you do not use.",
+      "instead": ["replicated-storage"],
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/availability-proof.md", "anchor": "evidence"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "nfy-single-server",
+      "text": "You want one private server on an internal network with no independent copies. A single host is exactly the single-operator risk ForkMesh exists to reduce.",
+      "instead": ["basic-git-server", "self-hosted-forge"],
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/availability-proof.md", "anchor": "single_operator"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "nfy-tracker-only",
+      "text": "You want only an issue tracker inside an existing Git repository, with no accounts, relay, or mirror hosts. ForkMesh's collaboration comes with signed identities, a relay, and mirrors to run or trust.",
+      "instead": ["decentralized-collaboration"],
+      "evidence": [
+        {"kind": "product-evidence", "path": "README.md"},
+        {"kind": "specification", "path": "www/docs/portable-identities.md", "anchor": "enroll-and-revoke-authenticators"},
+        {"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "nfy-desktop-clients",
+      "text": "Your team depends on GitHub Desktop, Sourcetree, or GitKraken being certified. They are not yet.",
+      "instead": ["centralized-hosting"],
+      "evidence": [
+        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "third-party-desktop-ui-certification-is-not-complete"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "nfy-platforms",
+      "text": "You need a notarized macOS app, a container image, or a cluster deployment. macOS is preview and containers are planned.",
+      "instead": ["centralized-hosting", "self-hosted-forge"],
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/install-support-matrix.md", "anchor": "profiles"},
+        {"kind": "test", "ref": "app/tests/test_install_lifecycle.py::test_matrix_covers_every_operator_profile_with_a_known_tier"}
+      ],
+      "verifiedOn": "2026-09-14"
+    }
+  ],
+  "limitations": [
+    {
+      "id": "lim-https-read-only",
+      "text": "HTTPS and mirror-failover Git paths are read-only; publish branches with the SSH URL.",
+      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "lim-server-hooks",
+      "text": "Hooks pushed with a repository never run on a mirror; shared checks belong in ForkMesh Actions or another CI system.",
+      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "repository-controlled-server-hooks-are-disabled"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "lim-midstream",
+      "text": "Failover happens only before a response starts; an interrupted fetch must be retried.",
+      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "a-response-cannot-change-mirrors-mid-stream"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "lim-roles",
+      "text": "No network service role is fully independent of the hosted deployment yet.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"},
+        {"kind": "test", "ref": "app/tests/test_service_roles_contract.py::test_no_role_overclaims_independence"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "lim-private-ga",
+      "text": "Private repositories are not commercially generally available until keyless inspection, recovery drills, and an independent review pass.",
+      "evidence": [{"kind": "specification", "path": "www/docs/security/private-repository-confidentiality.md", "anchor": "ga-evidence"}],
+      "verifiedOn": "2026-09-14"
+    }
+  ],
+  "migrationCost": [
+    {
+      "id": "mig-imports",
+      "text": "Imports from GitHub, GitLab, and Codeberg run as resumable jobs with checkpoints; a failed or abandoned import can be recovered or rolled back.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/repository-imports.md", "anchor": "failure-abandonment-and-rollback"},
+        {"kind": "test", "ref": "app/tests/test_repository_migration.py::test_abandon_recover_rollback_and_credential_non_persistence"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "mig-hosted-copy",
+      "text": "A public import stops depending on its provider only after a mirror node hosts it. Nodes refresh every 30 minutes, cap imports at 20 GiB and a first clone at 10 minutes, and never host private imports.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/repository-imports.md", "anchor": "ending-the-provider-dependency"},
+        {"kind": "test", "ref": "app/tests/test_hosted_repository_sync.py::test_prepare_defers_new_clones_once_the_imports_root_is_full"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "mig-remotes",
+      "text": "Everyone who pushes registers an SSH public key and changes their push remote to the SSH URL; reads keep working over HTTPS.",
+      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "mig-forge-sync",
+      "text": "Teams that keep an existing forge can sync issues and comments both ways with GitHub, Gitea, Forgejo, or Codeberg instead of moving everything at once.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/forge-sync.md"},
+        {"kind": "test", "ref": "app/tests/test_forge_sync.py::test_every_registered_adapter_implements_the_whole_contract"}
+      ],
+      "verifiedOn": "2026-09-14"
+    }
+  ],
+  "hostedDependencies": [
+    {
+      "id": "dep-cloudflare",
+      "text": "The hosted service, and any self-hosted app Worker, needs Cloudflare Workers, D1, KV, Durable Objects, and Queues. The Go mirror node does not.",
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "self-hosting-and-offline-use"},
+        {"kind": "test", "ref": "app/tests/test_external_dependency_map.py::test_mandatory_hosted_dependencies_name_a_self_host_path_and_a_drill"}
+      ],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "dep-hosted-only-roles",
+      "text": "Repository search and organization administration run only on the hosted Worker.",
+      "evidence": [{"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"}],
+      "verifiedOn": "2026-09-14"
+    },
+    {
+      "id": "dep-certificates",
+      "text": "A direct-HTTPS mirror needs a certificate authority to issue and renew its certificate.",
+      "evidence": [{"kind": "specification", "path": "www/docs/external-dependency-map.md", "anchor": "summary"}],
+      "verifiedOn": "2026-09-14"
+    }
+  ],
+  "nextSteps": [
+    {
+      "id": "trial",
+      "kind": "trial",
+      "label": "Create a Hosted Free account",
+      "url": "https://app.forkmesh.com/signup?utm_source=docs&utm_medium=comparison&utm_campaign=category_comparison_509",
+      "boundary": "Public preview: best effort, no SLO, no support response time. A 14-day Supporter trial can then be started from account settings; it adds membership perks only.",
+      "measured": true,
+      "evidence": [
+        {"kind": "specification", "path": "www/docs/operations/plan-trials.md"},
+        {"kind": "specification", "path": "www/docs/business-model.md", "anchor": "initial-plans"}
+      ]
+    },
+    {
+      "id": "self-host",
+      "kind": "self-host",
+      "label": "Run your own mirror and service roles",
+      "url": "www/docs/operations/service-roles.md",
+      "boundary": "No role is fully independent yet; search and organization administration still need the hosted service.",
+      "measured": false,
+      "measurementGap": "Documentation pages are static assets that attribution does not capture, so exits to this guide are not counted.",
+      "evidence": [{"kind": "specification", "path": "www/docs/operations/service-roles.md", "anchor": "role-status"}]
+    },
+    {
+      "id": "community",
+      "kind": "community",
+      "label": "Ask in the ForkMesh repository discussions",
+      "url": "https://app.forkmesh.com/forkmesh/forkmesh/discussions?utm_source=docs&utm_medium=comparison&utm_campaign=category_comparison_509",
+      "boundary": "Community support: public and reproducible, with no response or resolution time.",
+      "measured": true,
+      "evidence": [{"kind": "specification", "path": "www/docs/business-model.md", "anchor": "support-boundary"}]
+    }
+  ],
+  "corrections": []
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-labelledby="title desc" role="img">
+  <title id="title">Note icon</title>
+  <desc id="desc">A document note with a folded corner and three text lines.</desc>
+  <path d="M6 3.75h8.5L19.25 8.5V20.25H6A1.25 1.25 0 0 1 4.75 19V5A1.25 1.25 0 0 1 6 3.75Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M14.5 3.75V8.5h4.75" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M8 12h8M8 15h8M8 18h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

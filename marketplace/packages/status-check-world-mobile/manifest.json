@@ -1,0 +1,79 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "status-check-world-mobile",
+  "name": "Status: World Mobile Startup",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Status checks",
+  "version": "1.0.0",
+  "summary": "Adds the World Mobile Startup check to Status Page: World's mobile health endpoint and its entry, scene builder and Three.js modules load.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "A green status dot labelled World Mobile Startup"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "monitor": "content/monitor.json",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "status.monitor",
+      "entrypoint": "monitor",
+      "config": {
+        "label": "World Mobile Startup",
+        "systems": [
+          "world_mobile"
+        ],
+        "prefixes": []
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "network.status.read",
+      "label": "Read this check's one dot from ForkMesh's public /api/status report",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "status-page",
+      "version": "^2.0.0"
+    }
+  ],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

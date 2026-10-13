@@ -1,0 +1,9 @@
+{
+  "category": "Forms and meetings",
+  "integrations": [
+    "calendly",
+    "typeform",
+    "jotform",
+    "zoom"
+  ]
+}

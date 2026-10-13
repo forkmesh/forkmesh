@@ -1,0 +1,54 @@
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+[Unit]
+Description=ForkMesh Office TURN/STUN relay (coturn, node @@NODE@@)
+Wants=network-online.target
+After=network-online.target nftables.service
+ConditionPathExists=@@TURN_BIN@@
+ConditionPathExists=@@CREDS@@/@@TURN_SECRET@@.cred
+
+[Service]
+Type=simple
+User=@@TURN_USER@@
+Group=@@TURN_USER@@
+SupplementaryGroups=fmnext-certsync
+UMask=0077
+LoadCredentialEncrypted=@@TURN_SECRET@@:@@CREDS@@/@@TURN_SECRET@@.cred
+RuntimeDirectory=fmnext-turn
+RuntimeDirectoryMode=0700
+StateDirectory=fmnext-turn
+StateDirectoryMode=0700
+ExecStartPre=+@@OPT@@/bin/fmnext-turn-config
+ExecStart=@@TURN_BIN@@ -c /run/fmnext-turn/turnserver.conf
+ExecReload=/bin/kill -USR2 $MAINPID
+Restart=always
+RestartSec=2s
+MemoryHigh=160M
+MemoryMax=200M
+MemorySwapMax=0
+OOMScoreAdjust=250
+LimitNOFILE=65536
+LimitCORE=0
+IPAddressDeny=@@TURN_IP_DENY@@
+ProtectProc=invisible
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

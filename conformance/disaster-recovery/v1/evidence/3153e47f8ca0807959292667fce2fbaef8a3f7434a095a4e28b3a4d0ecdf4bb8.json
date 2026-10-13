@@ -1,0 +1,90 @@
+{
+  "dataLoss": {
+    "commitsLost": 0,
+    "policy": "none",
+    "refsLost": [],
+    "withinPolicy": true
+  },
+  "fault": null,
+  "missingPrerequisites": [],
+  "mode": "automated-live",
+  "objective": {
+    "automatedBudgetSeconds": 120,
+    "dataLoss": "none",
+    "recoveryMinutes": 30
+  },
+  "platform": {
+    "git": "2.47",
+    "os": "linux",
+    "python": "3.13.5"
+  },
+  "ranAt": "2026-09-14T21:35:05+00:00",
+  "recoveryMs": 4177,
+  "runbookSha256": "b93908faaa80a062ef68b76c01bb1d452bd93cc0b83b821c483e25f0212229ee",
+  "runbookVersion": "1.0.0",
+  "scenario": "offline-bootstrap",
+  "schema": "forkmesh-disaster-drill-report-v1",
+  "steps": [
+    {
+      "action": "verify the carried kit with the network blocked",
+      "ms": 1188,
+      "ok": true,
+      "procedure": "verify-bootstrap-kit"
+    },
+    {
+      "action": "a kit with a changed runbook is refused",
+      "ms": 1032,
+      "ok": true,
+      "procedure": "verify-bootstrap-kit"
+    },
+    {
+      "action": "read mirrors and keys from the verified roster",
+      "ms": 278,
+      "ok": true,
+      "procedure": "discover-from-roster"
+    },
+    {
+      "action": "the kit's tools restore a repository from its media",
+      "ms": 1666,
+      "ok": true,
+      "procedure": "discover-from-roster"
+    }
+  ],
+  "unsafeSteps": {
+    "refused": [
+      {
+        "reason": "digest mismatch: www/docs/disaster-recovery/runbook.md",
+        "step": "run tools from a kit with a changed runbook"
+      }
+    ],
+    "taken": []
+  },
+  "verdict": "pass",
+  "verification": [
+    {
+      "check": "the kit verifies offline against the key on paper",
+      "ok": true
+    },
+    {
+      "check": "verification made no network attempt",
+      "ok": true
+    },
+    {
+      "check": "a tampered kit is refused",
+      "ok": true
+    },
+    {
+      "check": "roster check runs from the kit with no network",
+      "ok": true
+    },
+    {
+      "check": "the kit's offline sync imports verified media",
+      "ok": true
+    },
+    {
+      "check": "connectivity check passes",
+      "ok": true
+    }
+  ],
+  "withinObjective": true
+}

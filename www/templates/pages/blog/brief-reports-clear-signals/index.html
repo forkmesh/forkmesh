@@ -1,0 +1,78 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}Brief reports, clear signals · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="A Reddit scout teammate joins the team, mobile pings get clearer, your phone's accelerometer powers fitness tracking, and iOS relay connections light up. October 2, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/brief-reports-clear-signals/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/brief-reports-clear-signals/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="Brief reports, clear signals">
+    <meta property="og:description" content="A Reddit scout joins the team, phone pings get icons and clearer states, your accelerometer powers fitness tracking, and iOS relay connections display as connected.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/brief-reports-clear-signals.webp">
+    <meta property="og:image:width" content="1672">
+    <meta property="og:image:height" content="941">
+    <meta property="og:image:alt" content="A moonlit tech scene showing a glowing green desktop workstation on the left, a phone on the right with antenna signals and Reddit indicator, four illuminated data nodes in the center, and the official ForkMesh logo with vertical reflection on wet stone">
+    <meta property="article:published_time" content="2026-10-02T19:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Brief reports, clear signals">
+    <meta name="twitter:description" content="Reddit scout teammate, mobile notification polish, accelerometer fitness, and clearer connection indicators.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/brief-reports-clear-signals.webp">
+    <meta name="twitter:image:alt" content="A moonlit tech scene showing a glowing green desktop workstation on the left, a phone on the right with antenna signals and Reddit indicator, four illuminated data nodes in the center, and the official ForkMesh logo with vertical reflection on wet stone">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>Brief reports, clear signals</h1>
+            <p class="lede">A Reddit scout teammate joins the team to watch for threads where ForkMesh belongs. Your phone's notifications now have icons and clear states. Your iPhone's accelerometer powers fitness tracking with HealthKit. And your iOS phone now shows the desktop's relay connection status clearly.</p>
+            <div class="meta"><span class="pill">October 2, 2026</span><span>Product update</span><span>5 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/brief-reports-clear-signals.webp" alt="A moonlit tech scene showing a glowing green desktop workstation on the left, a phone on the right with antenna signals and Reddit indicator, four illuminated data nodes in the center, and the official ForkMesh logo with vertical reflection on wet stone">
+        </section>
+        <article class="body">
+          <p>The last 2 hours have seen 12 merges to main and changes to mobile apps, the web, and a new special agent. The features here are live or available on the next release, marked below.</p>
+
+          <h2>The Reddit scout</h2>
+          <p>Meet a new special agent: the Reddit scout. It's a paused daily agent that watches Reddit for threads where ForkMesh can honestly help. It finds discussions about outages, taking down forges, mirroring, or running multiple coding agents, reads the thread and subreddit rules, checks your account's 9:1 balance and per-subreddit cooldowns, and gives you a brief with evidence and a link.</p>
+          <p>The scout never posts, comments, votes or messages. It reads only. It watches Reddit's public Atom feeds, and can use OAuth when you've added credentials, but it has no write path. You approve it in Settings like any other special agent. It comes with a playbook, a skill that turns any ForkMesh repository into a briefing space, and a charter.</p>
+          <p>Like all special agents, it shows on your Agents list with its own portrait and status. The scout learns from your response: approve a brief and it remembers what made that thread worth flagging. This is live on main.</p>
+
+          <h2>Clearer pings on your phone</h2>
+          <p>Every ping type now has an icon and a label. On both Android and iOS, you can now clear unread pings, read pings, or every ping with one tap. The inbox reorganizes as pings change state. All of that is live on the Android app now and ships with the next iOS release.</p>
+          <p>We'd already added one-tap fixes for problem pings: if a build failed because the Mac was offline, the ping offers "Turn off this action", for example. The desktop learns which fixes you pick and once a fix proves itself, it applies it on its own, tells you, and lets you undo. That's in the next desktop release.</p>
+
+          <h2>Fitness tracking from your phone's motion</h2>
+          <p>Your iPhone now has a Steps tool. It reads your accelerometer in real time to measure stride length, cadence and running detection, then syncs with HealthKit. You see live step counts, distance, and running speed right on the phone. This is only on the native iPhone app for now, which isn't on the App Store yet.</p>
+
+          <h2>Relay connections light up</h2>
+          <p>When your phone controls your desktop through the relay and the connection is healthy, the desktop indicator light now shows it as connected. Before, the light stayed dim even when the relay was working. That small fix means you know at a glance whether your phone's commands are going through direct or via the relay.</p>
+
+          <h2>Polish and smaller things</h2>
+          <ul>
+            <li>iOS home icons are back to the plain look, and badge pill backgrounds take on your Settings accent color.</li>
+            <li>The next desktop release has image diffs: side-by-side image comparison with before and after, and marks a file as viewed once you scroll past it.</li>
+            <li>You can now pick which Claude or Codex account a cloud runner uses from the web picker. The desktop and phone pickers are coming with the next releases.</li>
+          </ul>
+
+          <h2>Coming next</h2>
+          <p>The next desktop release carries the improved relay indicator, image diffs, and agent window control from your phone. The native iPhone app still needs a few steps before App Store submission. Watch this space.</p>
+          <p>If something here doesn't work as described, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a>. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog">All posts</a>
+          <a href="/blog/1-2-7-and-a-phone-that-listens/">1.2.7, and a phone that listens →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

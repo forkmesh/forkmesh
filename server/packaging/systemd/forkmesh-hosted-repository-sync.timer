@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep hosted provider imports synchronized
+Documentation=https://forkmesh.com/docs/repository-imports
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+RandomizedDelaySec=2min
+Persistent=true
+Unit=forkmesh-hosted-repository-sync.service
+
+[Install]
+WantedBy=timers.target

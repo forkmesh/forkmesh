@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Public node profiles" %}
+{% set slug = "public-node-profiles" %}
+{% set image = "/assets/blog/features/public-node-profiles.webp" %}
+{% set description = "Registered nodes can publish a generalized profile, public repositories, and operator-approved status fields." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Accounts &amp; rewards</p>
+            <h1>Public node profiles</h1>
+            <p class="lede">Registered nodes can publish a generalized profile, public repositories, and operator-approved status fields.</p>
+            <div class="meta"><span class="pill">Feature 62 of 72</span><span>Feature</span><span>Accounts, money &amp; rewards</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/public-node-profiles.webp" alt="Abstract ForkMesh artwork for Public node profiles">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Public node profiles give registered operators a place to publish identity and public-repository context. Private repositories and fields disabled by the operator are excluded.</p>
+          <p>Preservation costs time, disk, bandwidth, and maintenance, so incentives need to point at the nodes and people doing the work. In ForkMesh, public node profiles addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles public node profiles through the same split it uses across the product: ForkMesh links node identity, repository activity, public profiles, and Solana payment flows without changing Git ownership.</p>
+          <p>The behavior is intentionally narrow: profiles show the public identity key and only allowed repository, version, platform, status, and activity fields. A profile or online indicator is not evidence that a node is trustworthy.</p>
+          <h2>Where it fits</h2>
+          <p>Use public node profiles when identity, support, and incentives should follow verifiable node and repository activity.</p>
+          <p>It pairs with the rest of Accounts, money &amp; rewards because Public node profiles keeps public identity and repository context for each node connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/anonymous-accounts/">← Guest-first access</a>
+          <a href="/blog/solana-donations/">Solana donations →</a>
+        </nav>
+{% endblock %}

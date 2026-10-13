@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ForkMesh</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; width: 380px; font: 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111; background: #fff; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #e3e6ea; }
+    header strong { font-size: 13px; }
+    main { padding: 12px; display: grid; gap: 10px; }
+    form { display: grid; gap: 8px; }
+    label { display: grid; gap: 3px; font-size: 11px; color: #5f6b7a; }
+    input, select { width: 100%; box-sizing: border-box; border: 1px solid #d7dbe0; border-radius: 6px; padding: 7px 8px; font-size: 12px; background: #fff; color: inherit; }
+    .row { border: 1px solid #e3e6ea; border-radius: 8px; padding: 8px; display: grid; gap: 6px; }
+    .muted { color: #5f6b7a; font-size: 12px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    button { border-radius: 6px; padding: 7px 10px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+    button.primary { background: #2f81f7; color: #fff; }
+    button.secondary { background: #f1f3f5; color: #111; border-color: #d7dbe0; }
+    button.danger { background: transparent; color: #d1242f; border-color: #d1242f; }
+    button[disabled] { opacity: .5; cursor: not-allowed; }
+    .ok { color: #1a7f37; font-size: 12px; margin: 0; }
+    .error { color: #d1242f; font-size: 12px; margin: 0; white-space: pre-wrap; }
+    details summary { cursor: pointer; font-size: 11px; color: #5f6b7a; }
+    details[open] summary { margin-bottom: 6px; }
+    .inline { display: flex; gap: 6px; }
+    .inline input { flex: 1; }
+    ul { margin: 6px 0 0; padding-left: 0; list-style: none; display: grid; gap: 4px; }
+    li { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; }
+    button.link { border: 0; background: none; padding: 0; color: #d1242f; font-size: 11px; font-weight: 600; }
+    .x-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; }
+    .x-grid div { border: 1px solid #e3e6ea; border-radius: 6px; padding: 5px 6px; }
+    .x-grid dt { font-size: 10px; color: #5f6b7a; }
+    .x-grid dd { margin: 0; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    @media (prefers-color-scheme: dark) { .x-grid div { border-color: #2c3239; } .x-grid dt { color: #9aa3ad; } }
+    ul.x-errors li { display: block; color: #d1242f; font-size: 11px; }
+    ul.x-recent li { justify-content: flex-start; align-items: flex-start; }
+    ul.x-recent li > span { display: grid; min-width: 0; flex: 1; }
+    ul.x-recent li a { color: inherit; text-decoration: none; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    ul.x-recent li small { color: #5f6b7a; font-size: 11px; }
+    ul.x-recent .x-thumbs { display: flex; gap: 3px; flex-shrink: 0; }
+    ul.x-recent .x-thumbs img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; background: #f1f3f5; }
+    @media (prefers-color-scheme: dark) { ul.x-recent li small { color: #9aa3ad; } ul.x-recent .x-thumbs img { background: #1d2229; } }
+    ul.marketing-history li { color: inherit; }
+    ul.marketing-history li.failed { color: #d1242f; }
+    ul.reddit-rules li a { color: #2f81f7; font-size: 11px; font-weight: 600; text-decoration: none; }
+    ul.reddit-monitored li { align-items: flex-start; }
+    ul.reddit-monitored li > span { display: grid; min-width: 0; }
+    ul.reddit-monitored li a { color: inherit; font-weight: 600; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    ul.reddit-monitored li small { color: #5f6b7a; font-size: 11px; }
+    @media (prefers-color-scheme: dark) { ul.reddit-monitored li small { color: #9aa3ad; } }
+    footer { padding: 8px 12px; border-top: 1px solid #e3e6ea; font-size: 12px; }
+    footer a { color: #2f81f7; font-weight: 600; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    @media (prefers-color-scheme: dark) { footer { border-color: #2c3239; } }
+    .vault-name { display: grid; min-width: 0; }
+    .vault-name b, .vault-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    li .actions { flex-wrap: nowrap; flex-shrink: 0; }
+    li .actions button { padding: 4px 7px; font-size: 11px; }
+    h2 { margin: 0; font-size: 12px; }
+    [data-vault-state="open"] { display: grid; gap: 8px; }
+    [data-vault-lists] { display: grid; gap: 6px; }
+    [data-vault-lists] ul { margin: 0; }
+    [data-vault-lists] ul:empty { display: none; }
+    /* Dark overrides come last: a base rule after them would win the tie. */
+    @media (prefers-color-scheme: dark) { body { color: #e8eaed; background: #14171c; } input, select { background: #0d1014; color: #e8eaed; border-color: #2c3239; } .row { border-color: #2c3239; } button.secondary { background: #1d2229; color: #e8eaed; border-color: #2c3239; } .muted, label { color: #9aa3ad; } header { border-color: #2c3239; } }
+    .row.here { border-color: #2f81f7; }
+    .row.here p { margin: 0; font-size: 12px; }
+    label.check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: inherit; }
+    label.check input { width: auto; margin: 0; }
+    .refresh-title { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+    .refresh-title span { font-size: 11px; color: #5f6b7a; font-weight: 400; font-variant-numeric: tabular-nums; }
+    ul.refresh-pages { margin: 0; }
+    ul.refresh-pages button { width: 100%; text-align: left; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    li.refresh-page.done button { color: #1a7f37; }
+    li.refresh-page.current button { border-color: #2f81f7; box-shadow: inset 0 0 0 1px #2f81f7; font-weight: 600; }
+    @media (prefers-color-scheme: dark) { .refresh-title span { color: #9aa3ad; } li.refresh-page.done button { color: #4ade80; } }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header><strong>ForkMesh</strong><span data-account class="muted"></span></header>
+  <main>
+    <section data-view="loading"><p class="muted">Loading…</p></section>
+
+    <section data-view="sign-in" hidden>
+      <form data-sign-in-form>
+        <p class="muted">Sign in with your ForkMesh account. The extension keeps a session token in this browser's extension storage and nothing else.</p>
+        <label>Username or email<input data-identifier autocomplete="username" required /></label>
+        <label>Password<input data-password type="password" autocomplete="current-password" required /></label>
+        <label>Two-factor code <span>(if enabled)</span><input data-totp inputmode="numeric" autocomplete="one-time-code" maxlength="10" /></label>
+        <details>
+          <summary>Self-hosted ForkMesh</summary>
+          <label>Server URL<input data-base-url placeholder="https://app.forkmesh.com" /></label>
+          <p class="muted">Chrome asks once to let the extension reach that server.</p>
+        </details>
+        <div class="actions"><button data-sign-in class="primary" type="submit">Sign in</button></div>
+        <p data-error class="error" hidden></p>
+      </form>
+    </section>
+
+    <section data-view="connected" hidden>
+      <div data-here class="row here" hidden></div>
+      <div class="row" data-vault-section>
+        <h2>Password Vault</h2>
+        <div data-vault-state="none" hidden>
+          <p class="muted">An end-to-end encrypted vault for your account. Create it on ForkMesh, then unlock it here to fill and save logins.</p>
+          <div class="actions"><button data-vault-open class="secondary" type="button">Set up your vault</button></div>
+        </div>
+        <form data-vault-state="locked" data-vault-unlock-form hidden>
+          <input data-vault-account type="text" autocomplete="username" hidden />
+          <label>Master password<input data-vault-password type="password" autocomplete="current-password" required /></label>
+          <div class="actions"><button data-vault-unlock class="primary" type="submit">Unlock</button></div>
+          <p class="muted">It is never sent anywhere. The vault locks itself after 15 idle minutes and when the browser closes.</p>
+        </form>
+        <div data-vault-state="open" hidden>
+          <p data-vault-site class="muted"></p>
+          <div data-vault-lists>
+            <ul data-vault-matches></ul>
+            <input data-vault-search type="search" autocomplete="off" placeholder="Search the vault to copy from another login" />
+            <ul data-vault-others></ul>
+          </div>
+          <form data-vault-save-form hidden>
+            <label>Title<input data-vault-save-title maxlength="200" required autocomplete="off" /></label>
+            <label>Website<input data-vault-save-url readonly /></label>
+            <label>Username<input data-vault-save-username maxlength="320" autocomplete="off" /></label>
+            <label>Password<input data-vault-save-password type="password" autocomplete="new-password" maxlength="4096" required /></label>
+            <div class="actions"><button class="primary" type="submit">Save to vault</button><button data-vault-save-cancel class="secondary" type="button">Cancel</button></div>
+          </form>
+          <div class="actions">
+            <button data-vault-capture class="secondary" type="button" title="Reads the username and password typed into this page">Save this page's login</button>
+            <button data-vault-generate class="secondary" type="button">Generate password</button>
+            <button data-vault-open class="secondary" type="button">Open vault</button>
+            <button data-vault-lock class="secondary" type="button">Lock</button>
+          </div>
+        </div>
+        <p data-vault-ok class="ok" hidden></p>
+        <p data-vault-error class="error" hidden></p>
+      </div>
+      <h2>CRM</h2>
+      <div class="row">
+        <label>Organization<select data-organization></select></label>
+        <p data-org-hint class="muted"></p>
+        <label class="check"><input data-track-sent type="checkbox" /> Track emails I send</label>
+        <p data-sent-status class="muted"></p>
+      </div>
+      <div data-panel-host hidden></div>
+      <div data-toot class="row" hidden>
+        <p class="muted">This tab is a Mastodon post on <strong data-toot-host></strong>. Record it to link the toot and the person in it to a contact. Chrome asks once to let the extension read that instance; from then on the CRM header sits on its posts.</p>
+        <div class="actions"><button data-toot-record class="primary" type="button">Record this toot in the CRM</button></div>
+        <p data-toot-error class="error" hidden></p>
+      </div>
+      <p data-mail-hint class="muted" hidden>Open an email in Gmail or Zoho Mail, or a conversation in Mastodon: its contact, pipeline, stage, and owner show here and in a header above the message.</p>
+      <details data-note-section hidden>
+        <summary>Save this page to a contact</summary>
+        <p data-note-page class="muted"></p>
+        <label>Contact<select data-note-contact></select></label>
+        <div class="actions"><button data-note-add class="secondary" type="button">Add link to notes</button></div>
+        <p data-note-status class="ok" hidden></p>
+        <p data-note-error class="error" hidden></p>
+      </details>
+      <details data-x-section>
+        <summary data-x-summary>X profile stats</summary>
+        <p class="muted">Read from the profile's own pages while you have them open on x.com; nothing is added to the page or sent to X. Scroll the profile to read more posts, then press Sync now: the numbers are recorded in Marketing and every post read is added to its posted links with its images, views, likes, replies and reposts.</p>
+        <dl data-x-grid class="x-grid"></dl>
+        <h2 data-x-recent-title hidden>Most recent posts</h2>
+        <ul data-x-recent class="x-recent" hidden></ul>
+        <p data-x-status class="muted"></p>
+        <ul data-x-errors class="x-errors" hidden></ul>
+        <div class="inline">
+          <input data-x-handle placeholder="forkmesh" autocapitalize="off" autocomplete="off" spellcheck="false" />
+          <button data-x-handle-save class="secondary" type="button">Track</button>
+        </div>
+        <div class="actions">
+          <button data-x-open class="secondary" type="button">Open profile</button>
+          <button data-x-sync class="secondary" type="button">Sync now</button>
+          <button data-x-clear class="link" type="button" hidden>Clear errors</button>
+        </div>
+      </details>
+      <details data-marketing-section>
+        <summary data-marketing-summary>Marketing channels</summary>
+        <p class="muted">Every channel in Marketing has an <b>Update</b> button: the extension opens its page, reads the numbers it shows and records them. Or send the page open in this tab to a channel.</p>
+        <label>Channel for this page<select data-marketing-channel></select></label>
+        <div class="actions">
+          <button data-marketing-send class="secondary" type="button">Send this page to Marketing</button>
+          <button data-marketing-allow class="secondary" type="button">Allow channel sites</button>
+          <button data-marketing-open class="secondary" type="button">Open Marketing</button>
+        </div>
+        <p data-marketing-status class="muted"></p>
+        <ul data-marketing-history class="x-errors marketing-history"></ul>
+      </details>
+      <details data-reddit-section>
+        <summary data-reddit-summary>Reddit desk</summary>
+        <p class="muted">Read from the watched subreddits, watched searches, threads and rules pages you open on reddit.com; nothing is added to the page or sent to Reddit. Only <b>Send to Reddit desk</b> records them in Marketing, as threads to review.</p>
+        <dl data-reddit-grid class="x-grid"></dl>
+        <p data-reddit-status class="muted"></p>
+        <ul data-reddit-errors class="x-errors" hidden></ul>
+        <div data-reddit-rules-section hidden>
+          <p class="muted">No rules read yet for these watched subreddits. Open each one's rules page to read them:</p>
+          <ul data-reddit-rules class="reddit-rules"></ul>
+        </div>
+        <p class="muted"><b>Monitored threads</b>: paste a thread or comment link to log it on the desk and follow its views, points and comments, and the comment's. They are read from your own signed-in Reddit tab; Reddit shows view counts only to the account that posted.</p>
+        <div class="inline">
+          <input data-reddit-monitor-url placeholder="https://www.reddit.com/r/…/comments/…" autocapitalize="off" autocomplete="off" spellcheck="false" />
+          <button data-reddit-monitor-add class="secondary" type="button">Monitor</button>
+        </div>
+        <ul data-reddit-monitored class="reddit-monitored"></ul>
+        <p data-reddit-walk-status class="muted" hidden></p>
+        <p class="muted"><b>Your accounts</b>: open one of your Reddit profiles and press <b>Update</b> to record each of its posts and comments, with its link, score and views, in Marketing posts. Add more accounts on the Reddit desk's watch list.</p>
+        <label class="check"><input data-reddit-auto-check type="checkbox" /> Check monitored threads and your posts every 6 hours</label>
+        <div class="actions">
+          <button data-reddit-walk class="secondary" type="button">Walk the watch list</button>
+          <button data-reddit-check class="secondary" type="button">Check now</button>
+          <button data-reddit-refresh class="secondary" type="button">Refresh watch list</button>
+          <button data-reddit-sync class="secondary" type="button">Send to Reddit desk</button>
+          <button data-reddit-open class="secondary" type="button">Open Reddit desk</button>
+          <button data-reddit-clear class="link" type="button" hidden>Clear errors</button>
+        </div>
+      </details>
+      <details data-mastodon-section>
+        <summary>Mastodon instances</summary>
+        <p class="muted">A fediverse instance can be any host, so each one is added here. Chrome asks once to let the extension read that site; open a conversation and the CRM header sits under the post's author.</p>
+        <div class="inline">
+          <input data-mastodon-host placeholder="mastodon.social" autocapitalize="off" autocomplete="off" spellcheck="false" />
+          <button data-mastodon-add class="secondary" type="button">Add</button>
+        </div>
+        <ul data-mastodon-list></ul>
+        <p data-mastodon-error class="error" hidden></p>
+      </details>
+      <div class="actions">
+        <button data-open-crm class="secondary" type="button">Open CRM</button>
+        <button data-sign-out class="danger" type="button">Sign out</button>
+      </div>
+    </section>
+  </main>
+  <footer><a data-membership href="https://forkmesh.com/#membership" target="_blank" rel="noopener">Become a ForkMesh member ↗</a></footer>
+  <script src="refresh-view.js"></script>
+  <script src="panel.js"></script>
+  <script src="popup-vault.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

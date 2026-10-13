@@ -1,0 +1,81 @@
+#!/usr/bin/python3
+# Managed by deploy/core/render.py for node @@NODE@@. Do not edit on the node.
+# Client for the app's unseal socket (app/host/forkmesh_host/vault.py).
+#
+#   fmnext-unseal [--wait SECONDS]   read DATA_KEY from stdin (one line) and
+#                                    unseal the running app
+#   fmnext-unseal --status | --seal | --seal-restart | --reload
+#   fmnext-unseal --ops ACTION ACCOUNT
+#
+# The key is read from stdin only: never an argument, an environment variable
+# or a file. tools/next_vault.py pipes it over SSH from the operator desktop.
+# Prints the app's one-line JSON reply; exit 0 when it says ok.
+import json
+import socket
+import sys
+import time
+
+SOCKET = "@@UNSEAL_SOCKET@@"
+RETRYABLE = {"no_socket", "db_unavailable", "timeout"}
+
+
+def request(lines):
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(30)
+            client.connect(SOCKET)
+            client.sendall(b"".join(line + b"\n" for line in lines))
+            client.shutdown(socket.SHUT_WR)
+            data = b""
+            while not data.endswith(b"\n"):
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+    except (FileNotFoundError, ConnectionRefusedError):
+        return {"ok": False, "error": "no_socket"}
+    except socket.timeout:
+        return {"ok": False, "error": "timeout"}
+    try:
+        return json.loads(data.decode("utf-8") or "{}")
+    except ValueError:
+        return {"ok": False, "error": "bad_reply"}
+
+
+def main(argv):
+    wait = 0.0
+    if argv[:1] == ["--wait"] and len(argv) >= 2:
+        wait = float(argv[1])
+        argv = argv[2:]
+    if argv == ["--status"]:
+        lines = [b"status"]
+    elif argv == ["--seal"]:
+        lines = [b"seal"]
+    elif argv == ["--seal-restart"]:
+        lines = [b"seal-restart"]
+    elif argv == ["--reload"]:
+        lines = [b"reload"]
+    elif len(argv) == 3 and argv[0] == "--ops":
+        lines = [("ops %s %s" % (argv[1], argv[2])).encode()]
+    elif not argv:
+        key = sys.stdin.buffer.readline(4096).rstrip(b"\r\n")
+        if not key:
+            print(json.dumps({"ok": False, "error": "no_key_on_stdin"}))
+            return 2
+        lines = [b"unseal", key]
+    else:
+        sys.stderr.write(__doc__ or "usage: see the header of this file\n")
+        return 2
+    deadline = time.monotonic() + wait
+    while True:
+        reply = request(lines)
+        if reply.get("ok") or reply.get("error") not in RETRYABLE \
+                or time.monotonic() >= deadline:
+            break
+        time.sleep(1)
+    print(json.dumps(reply, sort_keys=True))
+    return 0 if reply.get("ok") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

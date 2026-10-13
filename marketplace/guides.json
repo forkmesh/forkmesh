@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "cloudflare-pages-github",
+      "title": "Move a Cloudflare Pages site off GitHub",
+      "from": "Cloudflare Pages + GitHub",
+      "summary": "Your site deploys to Cloudflare Pages from a GitHub repository. Bring the repository, issues and deploys to ForkMesh; Cloudflare keeps serving the site and your domain does not change.",
+      "pack": "site-mover",
+      "steps": [
+        "In the ForkMesh desktop app open Market, then Guides, and choose Install what you need on this guide.",
+        "On app.forkmesh.com open Repositories, choose New and pick GitHub as the source. Start resumable import brings issues, pull requests and history; Remote clone URL copies a public repository's code. For a private repository choose New repository and run git push --mirror to the address it shows.",
+        "In Cloudflare create an API token with the Cloudflare Pages: Edit permission and note your account ID.",
+        "In the desktop app open Settings, Secrets & Coves and add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and FORKMESH_ACTIONS_ALLOW_NETWORK set to 1.",
+        "Add .forkmesh/deploy.yml to the repository: on push to main, a job that runs your build (for example npm ci && npm run build) and then npx wrangler pages deploy dist --project-name=<your project>.",
+        "In the Cloudflare dashboard open the Pages project, then Settings, Builds & deployments, and turn off automatic deployments from GitHub so only ForkMesh deploys.",
+        "Push a commit and watch the run in Actions. Deploys that use secrets run on your ForkMesh desktop, so keep it signed in and online.",
+        "Open Status Page settings and add a monitor for your site's address so you hear when it goes down."
+      ],
+      "links": [
+        { "label": "Cloudflare: direct upload with Wrangler", "url": "https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/" },
+        { "label": "New repository on ForkMesh", "url": "https://app.forkmesh.com/dashboard/repos/new" }
+      ]
+    },
+    {
+      "id": "vercel-github",
+      "title": "Move a Vercel project off GitHub",
+      "from": "Vercel + GitHub",
+      "summary": "Your app deploys to Vercel from GitHub. Keep Vercel serving it, and let ForkMesh hold the code, the reviews and the deploy button.",
+      "pack": "site-mover",
+      "steps": [
+        "In the ForkMesh desktop app open Market, then Guides, and choose Install what you need on this guide.",
+        "On app.forkmesh.com open Repositories, choose New and import the GitHub repository (or push a private one with git push --mirror to a New repository).",
+        "In Vercel create an access token under Account Settings, Tokens. Run npx vercel link once in a local checkout and copy orgId and projectId from .vercel/project.json.",
+        "In the desktop app open Settings, Secrets & Coves and add VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID and FORKMESH_ACTIONS_ALLOW_NETWORK set to 1.",
+        "Add .forkmesh/deploy.yml: on push to main, run npx vercel pull --yes --environment=production, npx vercel build --prod and npx vercel deploy --prebuilt --prod, each with --token=$VERCEL_TOKEN.",
+        "In Vercel open the project's Settings, Git and disconnect the GitHub repository so pushes there stop deploying.",
+        "Push a commit, follow the run in Actions, then add your production address as a Status Page monitor."
+      ],
+      "links": [
+        { "label": "Vercel: deploying from your own CI", "url": "https://vercel.com/guides/how-can-i-use-github-actions-with-vercel" }
+      ]
+    },
+    {
+      "id": "netlify-github",
+      "title": "Move a Netlify site off GitHub",
+      "from": "Netlify + GitHub",
+      "summary": "Your site builds on Netlify from GitHub. Move the repository to ForkMesh and deploy to the same Netlify site from ForkMesh Actions.",
+      "pack": "site-mover",
+      "steps": [
+        "In the ForkMesh desktop app open Market, then Guides, and choose Install what you need on this guide.",
+        "On app.forkmesh.com open Repositories, choose New and import the GitHub repository (or push a private one with git push --mirror).",
+        "In Netlify create a personal access token under User settings, Applications, and copy the site ID from Site configuration, Site details.",
+        "In the desktop app open Settings, Secrets & Coves and add NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID and FORKMESH_ACTIONS_ALLOW_NETWORK set to 1.",
+        "Add .forkmesh/deploy.yml: on push to main, run your build and then npx netlify-cli deploy --prod --dir=<build folder>.",
+        "In Netlify open Site configuration, Build & deploy and stop builds from the linked GitHub repository.",
+        "Push a commit, follow the run in Actions, then add the site as a Status Page monitor."
+      ],
+      "links": [
+        { "label": "Netlify CLI deploys", "url": "https://docs.netlify.com/cli/get-started/#manual-deploys" }
+      ]
+    },
+    {
+      "id": "aws-s3-cloudfront",
+      "title": "Move an AWS S3 + CloudFront site",
+      "from": "AWS S3 + CloudFront",
+      "summary": "Your static site lives in an S3 bucket behind CloudFront, deployed from GitHub or by hand. ForkMesh holds the repository and runs the upload and cache refresh for you.",
+      "pack": "site-mover",
+      "steps": [
+        "In the ForkMesh desktop app open Market, then Guides, and choose Install what you need on this guide.",
+        "On app.forkmesh.com open Repositories, choose New and import the repository from GitHub, GitLab or Codeberg, or push it with git push --mirror.",
+        "In AWS IAM create a user limited to s3:PutObject, s3:DeleteObject and s3:ListBucket on the bucket and cloudfront:CreateInvalidation on the distribution, then create an access key for it.",
+        "In the desktop app open Settings, Secrets & Coves and add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION, CLOUDFRONT_DISTRIBUTION_ID and FORKMESH_ACTIONS_ALLOW_NETWORK set to 1.",
+        "Add .forkmesh/deploy.yml: on push to main, run your build, then aws s3 sync <build folder> s3://<bucket> --delete and aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths \"/*\".",
+        "Turn off the old GitHub workflow or CodePipeline that deployed the bucket so only ForkMesh writes to it.",
+        "Push a commit, follow the run in Actions, then add the CloudFront address as a Status Page monitor."
+      ],
+      "links": [
+        { "label": "AWS CLI: s3 sync", "url": "https://docs.aws.amazon.com/cli/latest/reference/s3/sync.html" }
+      ]
+    },
+    {
+      "id": "github-pages",
+      "title": "Leave GitHub Pages",
+      "from": "GitHub Pages",
+      "summary": "GitHub Pages only serves repositories that stay on GitHub. Move the repository to ForkMesh and publish the same files to Cloudflare Pages, which has a free plan and keeps your custom domain.",
+      "pack": "site-mover",
+      "steps": [
+        "In the ForkMesh desktop app open Market, then Guides, and choose Install what you need on this guide.",
+        "On app.forkmesh.com open Repositories, choose New and import the GitHub repository with its issues and pull requests.",
+        "In Cloudflare create a Pages project with direct upload, then an API token with the Cloudflare Pages: Edit permission.",
+        "In the desktop app open Settings, Secrets & Coves and add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and FORKMESH_ACTIONS_ALLOW_NETWORK set to 1.",
+        "Add .forkmesh/deploy.yml: on push to main, build the site if it needs it (a Jekyll site runs bundle exec jekyll build) and run npx wrangler pages deploy <output folder> --project-name=<your project>.",
+        "Add your custom domain to the Pages project, point its DNS at Cloudflare as the dashboard shows, then turn off GitHub Pages in the old repository's settings.",
+        "Add the address as a Status Page monitor."
+      ],
+      "links": [
+        { "label": "Cloudflare Pages custom domains", "url": "https://developers.cloudflare.com/pages/configuration/custom-domains/" }
+      ]
+    },
+    {
+      "id": "fly-io-app",
+      "title": "Move a Fly.io app's repository",
+      "from": "Fly.io + GitHub",
+      "summary": "Your server app runs on Fly.io and deploys from GitHub. Keep the machines on Fly.io and run flyctl deploy from ForkMesh Actions instead.",
+      "pack": "site-mover",
+      "packages": ["sentry"],
+      "steps": [
+        "In the ForkMesh desktop app open Market, then Guides, and choose Install what you need on this guide; it adds Sentry for error tracking too.",
+        "On app.forkmesh.com open Repositories, choose New and import the GitHub repository (or push a private one with git push --mirror).",
+        "Run fly tokens create deploy in a local checkout to get a deploy token for the app.",
+        "In the desktop app open Settings, Secrets & Coves and add FLY_API_TOKEN and FORKMESH_ACTIONS_ALLOW_NETWORK set to 1.",
+        "Add .forkmesh/deploy.yml: on push to main, run flyctl deploy --remote-only so the image builds on Fly.io's builders.",
+        "Delete the old GitHub workflow that ran flyctl deploy, push a commit and follow the run in Actions.",
+        "Add the app's health address as a Status Page monitor."
+      ],
+      "links": [
+        { "label": "Fly.io continuous deployment", "url": "https://fly.io/docs/launch/continuous-deployment-with-github-actions/" }
+      ]
+    }
+  ]
+}

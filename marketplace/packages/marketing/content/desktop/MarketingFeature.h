@@ -1,0 +1,533 @@
+#pragma once
+
+#include "NativePackageExtension.h"
+
+#include <QByteArray>
+#include <QColor>
+#include <QFrame>
+#include <QHash>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QList>
+#include <QPixmap>
+#include <QPointer>
+#include <QSet>
+#include <QString>
+#include <QStringList>
+#include <QWidget>
+
+#include <functional>
+
+class QButtonGroup;
+class QComboBox;
+class QCheckBox;
+class QHBoxLayout;
+class QLabel;
+class QLayout;
+class QLineEdit;
+class QNetworkAccessManager;
+class QPlainTextEdit;
+class QPushButton;
+class QScrollArea;
+class QTableWidget;
+class QTimer;
+class QVBoxLayout;
+
+namespace forkmesh::marketing {
+
+class BarRows;
+class DashboardGrid;
+class DashboardPanel;
+class KpiStrip;
+class LineChart;
+class TileGrid;
+
+class MarketingFeature final : public forkmesh::market::NativePackageWidget
+{
+public:
+    using ReplyHandler =
+        std::function<void(bool, const QJsonObject &, const QString &)>;
+    using Request = std::function<void(const QByteArray &, const QString &,
+                                       const QJsonObject &, ReplyHandler)>;
+
+    explicit MarketingFeature(const forkmesh::market::NativePackageHost &host,
+                              QWidget *parent = nullptr);
+    void refresh() override;
+    // The window's top search box lists the organization's content pipeline
+    // and ads; choosing one lands on its row.
+    QList<forkmesh::market::NativePackageSearchHit>
+    searchHits(const QString &query, int limit) const override;
+    void activateSearchHit(const QString &id) override;
+    bool exportData(forkmesh::market::NativePackageReplyHandler done) override;
+    QString railTitle() const override;
+    QList<forkmesh::market::NativePackageRailTile> railTiles() const override;
+    void prepareRail() override;
+    void activateRailStep(const QString &tile, const QString &step) override;
+    void openRailTile(const QString &tile) override;
+    void packageChanged() override;
+
+protected:
+    void changeEvent(QEvent *event) override;
+
+private:
+    void request(const QByteArray &method, const QString &path,
+                 const QJsonObject &body, ReplyHandler handler);
+    QString organizationPath(const QString &suffix = QString()) const;
+    QString pluginPath(const QString &suffix = QString()) const;
+    QJsonObject organizationRecord() const;
+    void refreshOrganizations();
+    void loadOrganization();
+    void railLoadFailed();
+    void railLoaded();
+    bool refreshChannel(const QString &id);
+    void refreshAllChannels();
+    void advanceRefreshQueue();
+    void promptChannelToken(const QString &id);
+    void captureWithExtension(const QString &id);
+    void applyInstallState();
+    void installPlugin();
+    void applyOrganization(const QJsonObject &payload);
+    void renderBrowserActivity();
+    void renderChannels();
+    void updateRefreshButtons();
+    void updateVelocityCharts();
+    void updateSaveButton();
+    void renderCatalog();
+    void renderContent();
+    void addChannel(const QString &id);
+    void deleteChannel(const QString &id);
+    QJsonObject selectedContent() const;
+    void editContent(const QJsonObject &content = QJsonObject());
+    void deleteContent();
+    void addMetric(const QString &channel = QString());
+    void showChannelRow(const QString &id, bool focusLink, bool reveal);
+    void openChannel(const QString &id);
+    void closeChannel();
+    void applyView();
+    void renderChannelDetail();
+    void renderChannelChart();
+    void renderChannelAgents(const QString &channel);
+    void renderChannelDesk(const QString &id);
+    void tagChannelLink(const QString &id);
+    void runSpecialAgentAction(const QString &agentId, const QString &action,
+                               const QString &text = QString());
+    void loadMastodon();
+    void renderMastodon();
+    void followMastodon(const QJsonObject &person);
+    void loadEmailSuggestions();
+    void renderEmailSuggestions();
+    void openEmailSuggestion(const QJsonObject &suggestion);
+    void loadDiscordPosts(bool force = false);
+    void renderDiscordPosts();
+    void loadReadyPost();
+    void applyReadyPost(const QJsonObject &ready);
+    void renderReadyPost();
+    void closeReadyPost(const QString &status);
+    void postReadyPost();
+    QJsonObject readyPostAgent() const;
+    void writeReadyPost(const QString &task, bool automatic);
+    void writeReadyPostWhenNeeded();
+    void renderAds();
+    QJsonObject selectedAd() const;
+    void editAd(const QJsonObject &ad = QJsonObject());
+    void logAdResults();
+    void deleteAd();
+    void openAdConsole();
+    void saveAd(const QString &id, const QJsonObject &body, const QString &done);
+    QJsonArray channelsPayload() const;
+    void clearSentChannelEdits(const QHash<QString, QJsonObject> &sent);
+    void saveChannels(std::function<void()> then = {});
+    void setStatus(const QString &text, bool error = false);
+    void applyTheme();
+    void reveal(QWidget *panel);
+    void openWebDashboard(const QString &query = QString());
+    void loadTraffic();
+    void renderDashboard();
+    void renderKpis();
+    void renderTraffic();
+    void renderKeywords();
+    void renderChannelTiles();
+    void renderChannelBar(const QList<QJsonObject> &items, int active);
+    void renderCampaigns();
+    void renderAssistantCampaigns();
+    void renderAttention();
+    void renderAssistant();
+    void renderFlow();
+    void renderAdsOverview();
+    void renderX();
+    void updateXCount();
+    void renderWeek();
+    void renderChart();
+    void renderLanding();
+    void renderReferrers();
+    QJsonObject campaignById(const QString &id) const;
+    QJsonObject campaignResults(const QJsonObject &campaign) const;
+    QString campaignBrief(const QJsonObject &campaign) const;
+    void editCampaign(const QJsonObject &campaign, const QJsonObject &preset = QJsonObject());
+    void toggleCampaignTask(const QString &id, int index, bool done);
+    void runAssistant(const QString &campaignId = QString());
+    void applyIdea(int index);
+    void runSuggestion(int index);
+    void editKeyword(const QJsonObject &keyword, const QString &term = QString());
+    void composeFromContent(const QJsonObject &content);
+    void postToX();
+    struct ChannelAction {
+        QString label;
+        QString tip;
+        std::function<void()> run;
+        bool refresh = false;
+    };
+    struct ChannelCard {
+        QString id;
+        QString name;
+        QString label;
+        QString state;
+        QString stateTip;
+        QString changeHtml;
+        QString guideLabel;
+        QString guideTip;
+        int guideStep = 0;
+        int guideSteps = 0;
+        QString tip;
+        QStringList facts;
+        QColor stateColor;
+        double value = 0;
+        bool paused = false;
+        QList<ChannelAction> actions;
+    };
+    ChannelCard channelCard(const QJsonObject &item);
+    QWidget *channelTile(const QJsonObject &item);
+    QWidget *channelChip(const QJsonObject &item, const QJsonArray &agents);
+    QString channelLabel(const QString &id) const;
+    void buildPages(QVBoxLayout *outer);
+    void showPage(int page);
+    void renderPages();
+    void loadPerformance();
+    void renderPerformance();
+    void renderChannelHealth();
+    void updateStaleChannels();
+    void renderAdsPage();
+    struct AdAttention {
+        QJsonObject ad;
+        QString label;
+        QString detail;
+        bool urgent = false;
+    };
+    QList<AdAttention> adAttention() const;
+    bool adMatches(const QJsonObject &ad, bool withStatus) const;
+    void renderGrowth();
+    void renderReddit();
+    void editExperiment(const QJsonObject &item = QJsonObject());
+    void editFunnelWeek(const QJsonObject &week = QJsonObject());
+    void deleteFunnelWeek(const QJsonObject &week);
+    void buildLink();
+    void showReport();
+    void editGoals();
+    void editRedditThread(const QJsonObject &item = QJsonObject());
+    void editPostedLink(const QJsonObject &item = QJsonObject(), const QString &channel = QString());
+    int fillPostedLinks(QTableWidget *table, const QString &channel);
+    void renderPostedLinks();
+    void loadPostImage(const QString &url);
+    void postImagesArrived();
+    void editRedditWatch();
+    void monitorRedditThread();
+    void copyRedditRules();
+    void editXConnection();
+    void startXGuide();
+    void pollXGuide();
+    void importKeywords();
+    void editTracking();
+    void saveSettings(const QJsonObject &body, const QString &done);
+
+    struct ChannelRow {
+        QString id;
+        QCheckBox *enabled = nullptr;
+        QLineEdit *displayName = nullptr;
+        QLineEdit *profileUrl = nullptr;
+        QPushButton *refresh = nullptr;
+        QWidget *velocity = nullptr;
+    };
+    void recordChannelEdit(const ChannelRow &row);
+
+    Request m_request;
+    QString m_packageId;
+    std::function<void()> m_searchIndexChanged;
+    std::function<void()> m_railChanged;
+    std::function<QJsonArray()> m_specialAgents;
+    std::function<void(const QString &, const QString &, const QString &,
+                       forkmesh::market::NativePackageSpecialAgentActionHandler)>
+        m_specialAgentAction;
+    QNetworkAccessManager *m_network = nullptr;
+    QHash<QString, QPixmap> m_postImages;
+    QSet<QString> m_postImagesPending;
+    bool m_postImagesRender = false;
+    QComboBox *m_organization = nullptr;
+    QLabel *m_status = nullptr;
+    QLabel *m_browserActivity = nullptr;
+    QJsonArray m_browserActivityItems;
+    QHBoxLayout *m_heading = nullptr;
+    QTableWidget *m_channelsTable = nullptr;
+    QTableWidget *m_catalogTable = nullptr;
+    QTableWidget *m_contentTable = nullptr;
+    QTableWidget *m_adsTable = nullptr;
+    QLabel *m_adsSummary = nullptr;
+    QScrollArea *m_scroll = nullptr;
+    QWidget *m_rangeSwitch = nullptr;
+    QPushButton *m_webButton = nullptr;
+    QButtonGroup *m_rangeGroup = nullptr;
+    KpiStrip *m_kpis = nullptr;
+    DashboardPanel *m_trafficPanel = nullptr;
+    QTableWidget *m_trafficTable = nullptr;
+    QLabel *m_trafficSetup = nullptr;
+    QTableWidget *m_keywordsTable = nullptr;
+    QLabel *m_keywordsEmpty = nullptr;
+    QButtonGroup *m_keywordView = nullptr;
+    QMultiHash<QString, QPointer<QPushButton>> m_tileRefresh;
+    TileGrid *m_campaignGrid = nullptr;
+    QButtonGroup *m_campaignTab = nullptr;
+    DashboardPanel *m_agentPanel = nullptr;
+    QWidget *m_assistantForm = nullptr;
+    QComboBox *m_assistantCampaign = nullptr;
+    QLineEdit *m_assistantQuestion = nullptr;
+    QPushButton *m_assistantRun = nullptr;
+    QVBoxLayout *m_assistantBox = nullptr;
+    DashboardPanel *m_attentionPanel = nullptr;
+    TileGrid *m_attentionGrid = nullptr;
+    QPushButton *m_attentionMore = nullptr;
+    bool m_attentionAll = false;
+    BarRows *m_stages = nullptr;
+    QLabel *m_flowNotes = nullptr;
+    QVBoxLayout *m_adsOverviewBox = nullptr;
+    DashboardPanel *m_xPanel = nullptr;
+    QLabel *m_xStatus = nullptr;
+    QComboBox *m_xContent = nullptr;
+    QPlainTextEdit *m_xText = nullptr;
+    QLabel *m_xCount = nullptr;
+    QPushButton *m_xPost = nullptr;
+    QPushButton *m_xConnect = nullptr;
+    QString m_xContentId;
+    DashboardPanel *m_contentPanel = nullptr;
+    QLineEdit *m_contentSearch = nullptr;
+    QComboBox *m_contentStatus = nullptr;
+    QComboBox *m_contentChannel = nullptr;
+    QVBoxLayout *m_weekBox = nullptr;
+    DashboardPanel *m_weekPanel = nullptr;
+    DashboardPanel *m_chartPanel = nullptr;
+    QButtonGroup *m_chartMetric = nullptr;
+    QLabel *m_chartLegend = nullptr;
+    LineChart *m_chart = nullptr;
+    BarRows *m_landing = nullptr;
+    DashboardPanel *m_referrersPanel = nullptr;
+    BarRows *m_referrers = nullptr;
+    QLabel *m_referrersNote = nullptr;
+    DashboardPanel *m_adsPanel = nullptr;
+    DashboardPanel *m_channelsPanel = nullptr;
+    DashboardPanel *m_catalogPanel = nullptr;
+    QString m_detailChannel;
+    QString m_detailChartChannel;
+    QScrollArea *m_detailScroll = nullptr;
+    QWidget *m_detailHead = nullptr;
+    KpiStrip *m_detailKpis = nullptr;
+    QVBoxLayout *m_detailSteps = nullptr;
+    QVBoxLayout *m_detailHealth = nullptr;
+    QVBoxLayout *m_detailPlaybook = nullptr;
+    DashboardPanel *m_detailAgentPanel = nullptr;
+    DashboardPanel *m_detailDeskPanel = nullptr;
+    TileGrid *m_detailDesk = nullptr;
+    QWidget *m_detailRedditBox = nullptr;
+    QVBoxLayout *m_detailAgent = nullptr;
+    DashboardPanel *m_detailChartPanel = nullptr;
+    QButtonGroup *m_detailMetric = nullptr;
+    LineChart *m_detailChart = nullptr;
+    DashboardPanel *m_detailSnapshotsPanel = nullptr;
+    QTableWidget *m_detailSnapshots = nullptr;
+    DashboardPanel *m_detailContentPanel = nullptr;
+    QTableWidget *m_detailContent = nullptr;
+    DashboardPanel *m_detailAdsPanel = nullptr;
+    QTableWidget *m_detailAds = nullptr;
+    QLabel *m_detailPostsNote = nullptr;
+    QTableWidget *m_detailPosts = nullptr;
+    QPointer<QPushButton> m_detailRefresh;
+    DashboardPanel *m_detailPeoplePanel = nullptr;
+    QVBoxLayout *m_detailPeople = nullptr;
+    DashboardPanel *m_detailSearchesPanel = nullptr;
+    QVBoxLayout *m_detailSearches = nullptr;
+    QJsonObject m_mastodon;
+    QString m_mastodonOrg;
+    QString m_mastodonError;
+    QHash<QString, QString> m_mastodonFollowed;
+    QSet<QString> m_mastodonPending;
+    QSet<QString> m_mastodonOpened;
+    bool m_mastodonLoading = false;
+    DashboardPanel *m_detailEmailsPanel = nullptr;
+    QVBoxLayout *m_detailEmails = nullptr;
+    QJsonObject m_emailSuggestions;
+    QString m_emailSuggestionsOrg;
+    QString m_emailSuggestionsError;
+    QSet<QString> m_emailSuggestionsOpened;
+    bool m_emailSuggestionsLoading = false;
+    DashboardPanel *m_detailDiscordPanel = nullptr;
+    QLabel *m_detailDiscordNote = nullptr;
+    QTableWidget *m_detailDiscord = nullptr;
+    QJsonObject m_discordPosts;
+    QString m_discordPostsOrg;
+    QString m_discordPostsError;
+    qint64 m_discordPostsAt = 0;
+    bool m_discordPostsLoading = false;
+    DashboardPanel *m_detailReadyPanel = nullptr;
+    QVBoxLayout *m_detailReady = nullptr;
+    QJsonObject m_readyPost;
+    QJsonObject m_readyPostOverview;
+    QString m_readyPostOrg;
+    QString m_readyPostSeen;
+    QString m_readyPostError;
+    QString m_readyPostImageId;
+    QPixmap m_readyPostImage;
+    bool m_readyPostLoading = false;
+    bool m_readyPostSaving = false;
+    QTimer *m_readyPostTimer = nullptr;
+    QJsonArray m_metrics;
+    QJsonArray m_campaigns;
+    QJsonArray m_campaignTemplates;
+    QJsonArray m_keywords;
+    QJsonArray m_suggestions;
+    QJsonObject m_referringSites;
+    QJsonObject m_traffic;
+    QJsonObject m_assistant;
+    int m_rangeDays = 30;
+    int m_trafficSerial = 0;
+    bool m_trafficLoaded = false;
+    bool m_assistantAvailable = false;
+    bool m_assistantBusy = false;
+    bool m_themePending = false;
+    QString m_appliedStyle;
+    QWidget *m_installPanel = nullptr;
+    QLabel *m_installNote = nullptr;
+    QPushButton *m_installButton = nullptr;
+    QPushButton *m_newButton = nullptr;
+    QPushButton *m_metricButton = nullptr;
+    QPushButton *m_saveChannelsButton = nullptr;
+    QButtonGroup *m_velocityWindow = nullptr;
+    QTimer *m_velocityTimer = nullptr;
+    QTimer *m_xGuideTimer = nullptr;
+    QTimer *m_railRetry = nullptr;
+    QTimer *m_changedReload = nullptr;
+    int m_railRetryMs = 0;
+    QString m_xGuidePath;
+    qint64 m_xGuideSince = 0;
+    int m_xGuidePolls = 0;
+    QJsonArray m_organizations;
+    QJsonArray m_content;
+    QJsonArray m_channelCatalog;
+    QJsonObject m_playbooks;
+    QJsonArray m_ads;
+    QJsonObject m_adsSummaryData;
+    QJsonObject m_settings;
+    QJsonObject m_summaryData;
+    QList<ChannelRow> m_channelRows;
+    // Unsaved per-channel edits survive every table rebuild until a save
+    // confirms them; the table is rebuilt by loads and refreshes.
+    QHash<QString, QJsonObject> m_channelEdits;
+    QSet<QString> m_refreshingChannels;
+    QStringList m_refreshQueue;
+    QStringList m_refreshBatchErrors;
+    QStringList m_refreshableChannels;
+    QString m_railRow;
+    bool m_railRowFocusLink = false;
+    QList<std::function<void()>> m_afterSave;
+    bool m_refreshBatch = false;
+    bool m_savingChannels = false;
+    bool m_saveQueued = false;
+    bool m_rendering = false;
+    bool m_installed = false;
+    bool m_loading = false;
+    QString m_railProblem;
+    bool m_canManageSettings = false;
+
+    QJsonArray m_experiments;
+    QJsonObject m_experimentsSummary;
+    QJsonArray m_funnel;
+    QJsonObject m_funnelReport;
+    QJsonArray m_redditThreads;
+    QJsonObject m_redditDesk;
+    QJsonArray m_posts;
+    QJsonObject m_postsSummary;
+    DashboardPanel *m_postsPanel = nullptr;
+    QTableWidget *m_postsTable = nullptr;
+    QLabel *m_postsEmpty = nullptr;
+    QJsonObject m_performance;
+    QString m_performanceProject;
+    QString m_adCurrency;
+    QString m_adChannel;
+    int m_performanceDays = 28;
+    int m_performanceSerial = 0;
+    int m_page = 0;
+    QButtonGroup *m_pageGroup = nullptr;
+    QWidget *m_pageNav = nullptr;
+    TileGrid *m_channelBar = nullptr;
+    QList<QPointer<QFrame>> m_channelChips;
+    QList<QScrollArea *> m_pages;
+    QList<QWidget *> m_pageTools;
+    DashboardGrid *m_channelsGrid = nullptr;
+    DashboardGrid *m_adsGrid = nullptr;
+    QButtonGroup *m_performanceRange = nullptr;
+    QComboBox *m_performanceProjectBox = nullptr;
+    KpiStrip *m_performanceKpis = nullptr;
+    QLabel *m_performanceSetup = nullptr;
+    QWidget *m_performanceBody = nullptr;
+    DashboardPanel *m_performanceCampaignsPanel = nullptr;
+    QTableWidget *m_performanceCampaigns = nullptr;
+    DashboardPanel *m_performanceInsightsPanel = nullptr;
+    QVBoxLayout *m_performanceInsights = nullptr;
+    QTableWidget *m_performanceAds = nullptr;
+    QTableWidget *m_performanceLanding = nullptr;
+    DashboardPanel *m_performanceRedditPanel = nullptr;
+    QTableWidget *m_performanceReddit = nullptr;
+    QLabel *m_performanceSource = nullptr;
+    KpiStrip *m_healthKpis = nullptr;
+    QButtonGroup *m_healthFilter = nullptr;
+    QLineEdit *m_channelsSearch = nullptr;
+    QComboBox *m_channelsCategory = nullptr;
+    TileGrid *m_channelGroups = nullptr;
+    QLabel *m_channelsEmpty = nullptr;
+    KpiStrip *m_adsKpis = nullptr;
+    QComboBox *m_adsCurrency = nullptr;
+    DashboardPanel *m_adsSpendPanel = nullptr;
+    BarRows *m_adsSpend = nullptr;
+    DashboardPanel *m_adsAttentionPanel = nullptr;
+    QVBoxLayout *m_adsAttention = nullptr;
+    QButtonGroup *m_adsStatus = nullptr;
+    QLineEdit *m_adsSearch = nullptr;
+    QComboBox *m_adsChannel = nullptr;
+    KpiStrip *m_growthKpis = nullptr;
+    DashboardPanel *m_funnelPanel = nullptr;
+    BarRows *m_funnelBars = nullptr;
+    QLabel *m_bottleneck = nullptr;
+    QLineEdit *m_linkUrl = nullptr;
+    QLineEdit *m_linkSource = nullptr;
+    QLineEdit *m_linkMedium = nullptr;
+    QLineEdit *m_linkCampaign = nullptr;
+    QLineEdit *m_linkContent = nullptr;
+    QLabel *m_linkOutput = nullptr;
+    QPushButton *m_linkCopy = nullptr;
+    QLabel *m_linkChecks = nullptr;
+    DashboardPanel *m_experimentsPanel = nullptr;
+    QLabel *m_experimentNotes = nullptr;
+    QButtonGroup *m_experimentStatus = nullptr;
+    QTableWidget *m_experimentsTable = nullptr;
+    QTableWidget *m_funnelTable = nullptr;
+    QLabel *m_redditSubreddits = nullptr;
+    QLabel *m_redditQueries = nullptr;
+    QLabel *m_redditAccounts = nullptr;
+    DashboardPanel *m_redditIdeasPanel = nullptr;
+    QLabel *m_redditPlaces = nullptr;
+    DashboardPanel *m_redditTopicsPanel = nullptr;
+    QLabel *m_redditTopics = nullptr;
+    DashboardPanel *m_redditRulesPanel = nullptr;
+    QLabel *m_redditRules = nullptr;
+    DashboardPanel *m_redditPanel = nullptr;
+    QButtonGroup *m_redditStatus = nullptr;
+    QTableWidget *m_redditTable = nullptr;
+};
+
+} // namespace forkmesh::marketing

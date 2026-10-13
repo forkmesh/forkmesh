@@ -1,0 +1,54 @@
+[Unit]
+Description=ForkMesh encrypted direct-HTTPS mirror gateway
+Documentation=https://forkmesh.com/docs/operations/direct-https-mirror-gateway
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=forkmesh-mirror
+Group=forkmesh-mirror
+UMask=0077
+Environment=TMPDIR=/var/lib/forkmesh-mirror/runtime-tmp
+ExecStartPre=/usr/bin/python3 -I /opt/forkmesh-mirror/mirror_gateway.py --cleanup-runtime /var/lib/forkmesh-mirror/runtime-tmp
+ExecStartPre=/usr/bin/python3 -I /opt/forkmesh-mirror/mirror_gateway.py --config /var/lib/forkmesh-mirror/gateway/mirror-gateway.json --check
+ExecStart=/usr/bin/python3 /opt/forkmesh-mirror/mirror_gateway.py --config /var/lib/forkmesh-mirror/gateway/mirror-gateway.json
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGINT
+TimeoutStartSec=10min
+TimeoutStopSec=30s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+# The fixed merge executor runs as this same unprivileged service account.  A
+# successful exact-OID merge must atomically update the dedicated bare Git
+# source, then reseal and register state under ForkMesh's private data root.
+# Release CAS data remains read-only.  The two optional source roots cover the
+# packaged and legacy layouts without making an absent alternative fatal.
+# A push-hosting node additionally creates <owner>/<repo>.git under its
+# configured writableRepositoryRoot (inside /srv/forkmesh-git), records the
+# accepted push in gateway/hosted-pushes.json, and drops the coalescing marker
+# that wakes forkmesh-mirror-refresh.path.  The trigger directory is optional
+# so a read-only node without it still starts.
+ReadWritePaths=/var/lib/forkmesh-mirror/identity /var/lib/forkmesh-mirror/encrypted /var/lib/forkmesh-mirror/gateway /var/lib/forkmesh-mirror/runtime-tmp -/var/lib/forkmesh-mirror/source -/srv/forkmesh-git -/run/forkmesh-mirror-refresh
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

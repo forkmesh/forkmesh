@@ -1,0 +1,2760 @@
+// Analytics package: the organization dashboard page.
+// tools/sync_assets.py concatenates src/replay-player.js (window.ForkMeshReplayPlayer)
+// and this file into content/web/page.js. Plain browser JavaScript, no build step.
+//
+// Everything a tracked site's visitor can send (event names, properties, URLs,
+// person properties, error stacks, survey answers) is hostile input. It enters the
+// page only through escapeHtml() or textContent, and a recorded URL is never an href.
+window.ForkMeshDashboard.registerPage("analytics", ({
+  select: $, selectAll: $$, session, escapeHtml, relativeTimeLabel,
+}) => {
+  // ==========================================================================
+  // Constants and state
+  // ==========================================================================
+
+  const DAY = 86400000;
+  const h = escapeHtml;
+  const TABS = ["overview", "insights", "dashboards", "events", "people", "replay",
+    "heatmaps", "flags", "surveys", "errors", "settings"];
+  const SUBS = {
+    insights: ["builder", "saved", "actions", "annotations"],
+    people: ["persons", "groups", "cohorts"],
+    flags: ["flags", "experiments"],
+  };
+  const INSIGHT_KINDS = ["trends", "funnel", "retention", "paths", "stickiness", "lifecycle"];
+  const INSIGHT_LABELS = { trends: "Trends", funnel: "Funnel", retention: "Retention",
+    paths: "Paths", stickiness: "Stickiness", lifecycle: "Lifecycle" };
+  // #analytics/<word> shortcuts that land inside a tab.
+  const HASH_ALIASES = {
+    trends: ["insights", "builder", "trends"], funnels: ["insights", "builder", "funnel"],
+    retention: ["insights", "builder", "retention"], paths: ["insights", "builder", "paths"],
+    stickiness: ["insights", "builder", "stickiness"], lifecycle: ["insights", "builder", "lifecycle"],
+    actions: ["insights", "actions"], annotations: ["insights", "annotations"],
+    groups: ["people", "groups"], cohorts: ["people", "cohorts"],
+    experiments: ["flags", "experiments"],
+  };
+  const RANGE_SPANS = { "24h": DAY, "7d": 7 * DAY, "14d": 14 * DAY, "30d": 30 * DAY, "90d": 90 * DAY };
+  const OPERATOR_LABELS = {
+    exact: "equals", is_not: "does not equal", icontains: "contains",
+    not_icontains: "does not contain", regex: "matches regex", not_regex: "does not match regex",
+    gt: "greater than", gte: "at least", lt: "less than", lte: "at most",
+    is_set: "is set", is_not_set: "is not set",
+  };
+  const MATH_LABELS = {
+    total: "Total count", dau: "Unique users", sessions: "Unique sessions",
+    unique_group: "Unique groups", sum: "Sum of property", avg: "Average of property",
+    min: "Minimum of property", max: "Maximum of property", median: "Median of property",
+    p90: "90th percentile", p95: "95th percentile", p99: "99th percentile",
+  };
+  const PROPERTY_MATHS = new Set(["sum", "avg", "min", "max", "median", "p90", "p95", "p99"]);
+  const EVENT_LABELS = {
+    "*": "All events", $pageview: "Pageview", $pageleave: "Pageleave",
+    $autocapture: "Autocapture", $rageclick: "Rage click", $exception: "Exception",
+    $identify: "Identify", $web_vitals: "Web vitals", $heatmap: "Heatmap sample",
+    $feature_flag_called: "Feature flag called", $groupidentify: "Group identify",
+    $create_alias: "Alias",
+  };
+  const QUESTION_TYPES = { open: "Open text", rating: "Rating", nps: "NPS (0–10)",
+    single: "Single choice", multiple: "Multiple choice", link: "Link" };
+  const PALETTE = [1, 2, 3, 4, 5, 6, 7, 8].map((slot) => `var(--an-s${slot})`);
+  const MAX_CHART_SERIES = PALETTE.length;
+  const LIFECYCLE_COLORS = { new: PALETTE[0], returning: PALETTE[2], resurrecting: PALETTE[3], dormant: PALETTE[7] };
+
+  const state = {
+    organizations: [], organization: "", org: null,
+    projectId: "", project: null, usageHistory: [],
+    range: "7d", filterTest: false,
+    tab: "overview", sub: { insights: "builder", people: "persons", flags: "flags" },
+    loadedTabs: new Set(),
+    taxonomy: { events: [], properties: [], personProperties: [] },
+    objects: {}, objectLoads: {},
+    overview: null, overviewPick: { pages: "pages", referrals: "referringDomains", sources: "sources", tech: "devices" },
+    insight: null, insightResult: null, insightPrevious: null,
+    dashboardId: "",
+    events: { rows: [], nextBefore: 0, name: "", filters: [], open: new Set() },
+    people: { rows: [], nextBefore: 0, total: 0, identified: 0 },
+    groups: [],
+    replay: { rows: [], nextBefore: 0, personId: "", open: "", recording: null, player: null, loadToken: 0 },
+    heatmap: null,
+    errors: [], errorOpen: "",
+    experimentOpen: "", surveyOpen: "",
+    settingsFilters: [],
+  };
+  const controllers = new Map();
+  const customEventRows = new WeakSet();
+  let dialogHandlers = null;
+
+  // ==========================================================================
+  // Shared helpers: requests, scopes, messages, formatting
+  // ==========================================================================
+
+  function humanize(code) {
+    const text = String(code || "").replaceAll("_", " ").trim();
+    return text ? text[0].toUpperCase() + text.slice(1) : "Request failed";
+  }
+  async function request(path, method = "GET", body = null, signal = undefined) {
+    const headers = { accept: "application/json" };
+    const token = session()?.sessionToken;
+    if (token) headers.authorization = `Bearer ${token}`;
+    if (body !== null) headers["content-type"] = "application/json";
+    const response = await fetch(path, { method, headers, cache: "no-store", signal,
+      body: body === null ? undefined : JSON.stringify(body) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+      const error = new Error(humanize(payload.error || `HTTP ${response.status}`));
+      error.status = response.status; error.code = String(payload.error || "");
+      throw error;
+    }
+    return payload;
+  }
+  // One AbortController per named scope: asking again for the same scope, or
+  // leaving the tab or project, cancels what is still in flight.
+  function scope(name) {
+    controllers.get(name)?.abort();
+    const controller = new AbortController();
+    controllers.set(name, controller);
+    return controller.signal;
+  }
+  function abortAll() { controllers.forEach((controller) => controller.abort()); controllers.clear(); }
+  function isAbort(error) { return error?.name === "AbortError"; }
+
+  function setMessage(kind, value = "") {
+    const node = $(`[data-analytics-${kind}]`); if (!node) return;
+    node.textContent = value; node.hidden = !value;
+    if (value && kind === "error") { const notice = $(`[data-analytics-notice]`); if (notice) notice.hidden = true; }
+    if (value && kind === "notice") { const error = $(`[data-analytics-error]`); if (error) error.hidden = true; }
+  }
+  function fail(error, prefix = "") {
+    if (isAbort(error)) return;
+    if (error.status === 401) return setMessage("error", "Sign in to use Analytics.");
+    if (error.status === 409 && error.code === "plugin_not_installed") {
+      const org = selectedOrg(); if (org) org.installed = false;
+      return renderShell();
+    }
+    setMessage("error", prefix ? `${prefix}: ${error.message}` : error.message);
+  }
+  function icons() { window.lucide?.createIcons?.(); }
+  function selectedOrg() { return state.organizations.find((org) => org.name === state.organization); }
+  function canManage() { return Boolean(state.org?.canManage) || ["owner", "admin"].includes(selectedOrg()?.role || ""); }
+  function orgPath(suffix = "") { return `/api/analytics/${encodeURIComponent(state.organization)}${suffix}`; }
+  function projectPath(suffix = "") { return orgPath(`/projects/${encodeURIComponent(state.projectId)}${suffix}`); }
+  function pluginPath(suffix = "") { return `/api/plugins/${encodeURIComponent(state.organization)}/analytics${suffix}`; }
+  function settings() { return state.project?.settings || {}; }
+
+  function fmtInt(value) { return Math.round(Number(value) || 0).toLocaleString(); }
+  function fmtNumber(value) {
+    const number = Number(value) || 0;
+    if (Number.isInteger(number)) return number.toLocaleString();
+    return number.toLocaleString(undefined, { maximumFractionDigits: Math.abs(number) < 10 ? 2 : 1 });
+  }
+  function fmtCompact(value) {
+    const number = Number(value) || 0, size = Math.abs(number);
+    if (size >= 1e6) return `${(number / 1e6).toFixed(size >= 1e7 ? 0 : 1)}M`;
+    if (size >= 1e4) return `${(number / 1e3).toFixed(size >= 1e5 ? 0 : 1)}K`;
+    return fmtNumber(number);
+  }
+  function fmtPct(fraction, digits = 1) { return `${((Number(fraction) || 0) * 100).toFixed(digits)}%`; }
+  function fmtDuration(ms) {
+    const total = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+    if (total < 60) return `${total}s`;
+    if (total < 3600) return `${Math.floor(total / 60)}m ${total % 60}s`;
+    if (total < 86400) return `${Math.floor(total / 3600)}h ${Math.floor((total % 3600) / 60)}m`;
+    return `${Math.floor(total / 86400)}d ${Math.floor((total % 86400) / 3600)}h`;
+  }
+  function fmtClock(ms) {
+    const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    const minutes = Math.floor(total / 60), seconds = String(total % 60).padStart(2, "0");
+    return minutes >= 60 ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+  }
+  function fmtBytes(bytes) {
+    const number = Number(bytes) || 0;
+    if (number >= 1048576) return `${(number / 1048576).toFixed(1)} MB`;
+    if (number >= 1024) return `${Math.round(number / 1024)} KB`;
+    return `${number} B`;
+  }
+  function fmtDate(ts) { return ts ? new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—"; }
+  function fmtDateTime(ts) {
+    return ts ? new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+  }
+  function fmtBucket(ts, interval, long = false) {
+    const date = new Date(ts);
+    if (interval === "hour") return date.toLocaleString(undefined, long
+      ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
+    if (interval === "month") return date.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+    const label = date.toLocaleDateString(undefined, long ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" });
+    return interval === "week" && long ? `Week of ${label}` : label;
+  }
+  function relTime(ts) { return ts ? relativeTimeLabel(ts) || fmtDate(ts) : "—"; }
+  function toDateInput(ts) {
+    const date = new Date(ts);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+  function eventLabel(name) {
+    const value = String(name || "");
+    if (value.startsWith("action:")) return actionById(value.slice(7))?.name || "Action";
+    return EVENT_LABELS[value] || value;
+  }
+  function actionById(id) { return (state.objects.action || []).find((item) => item.id === id); }
+  function shortId(value) { const text = String(value || ""); return text.length > 14 ? `${text.slice(0, 12)}…` : text; }
+  function plainValue(value) {
+    if (value === null || value === undefined) return "";
+    return typeof value === "object" ? JSON.stringify(value) : String(value);
+  }
+  function personName(person) {
+    const properties = person?.properties || {};
+    return plainValue(properties.email || properties.name || properties.username) || person?.distinctIds?.[0] || shortId(person?.id);
+  }
+  function downloadJson(payload, filename) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a"); link.href = url; link.download = filename; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function copyText(text, what) {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const area = document.createElement("textarea"); area.value = text; area.setAttribute("readonly", "");
+        area.style.position = "fixed"; area.style.opacity = "0"; document.body.appendChild(area);
+        area.select(); document.execCommand("copy"); area.remove();
+      }
+      setMessage("notice", `${what} copied.`);
+    } catch (error) { setMessage("error", `Could not copy: ${error.message}`); }
+  }
+  function kvList(object, empty = "None") {
+    const entries = Object.entries(object || {});
+    if (!entries.length) return `<p class="an-hint" style="margin:0">${h(empty)}</p>`;
+    return `<dl class="an-kv">${entries.map(([key, value]) => `<dt>${h(key)}</dt><dd>${h(plainValue(value))}</dd>`).join("")}</dl>`;
+  }
+
+  // Date window of the header controls.
+  function rangeWindow() {
+    const now = Date.now();
+    if (state.range === "custom") {
+      const from = new Date(`${$(`[data-analytics-from]`)?.value || toDateInput(now - 7 * DAY)}T00:00:00`).getTime();
+      const to = new Date(`${$(`[data-analytics-to]`)?.value || toDateInput(now)}T23:59:59.999`).getTime();
+      if (Number.isFinite(from) && Number.isFinite(to) && to > from) return { from, to: Math.min(to, now) };
+      return { from: now - 7 * DAY, to: now };
+    }
+    const span = RANGE_SPANS[state.range] || 7 * DAY;
+    if (span <= DAY) return { from: now - span, to: now };
+    const start = new Date(now - span); start.setHours(0, 0, 0, 0);
+    return { from: start.getTime(), to: now };
+  }
+  function rangeLabel() {
+    const option = $(`[data-analytics-range]`)?.selectedOptions?.[0];
+    if (state.range !== "custom") return option?.textContent || "";
+    const window_ = rangeWindow(); return `${fmtDate(window_.from)} – ${fmtDate(window_.to)}`;
+  }
+  function showTruncated(scanned) {
+    const node = $(`[data-analytics-truncated]`); if (!node) return;
+    node.textContent = scanned ? `Showing the most recent ${fmtInt(scanned)} events in this range. Narrow the date range for complete numbers.` : "";
+    node.hidden = !scanned;
+  }
+  async function query(kind, body = {}, scopeName = kind, windowOverride = null) {
+    const window_ = windowOverride || rangeWindow();
+    const payload = await request(projectPath("/query"), "POST", {
+      kind, from: window_.from, to: window_.to, filterTestAccounts: state.filterTest,
+      tzOffsetMinutes: -new Date().getTimezoneOffset(), ...body,
+    }, scope(scopeName));
+    if (payload.truncated) showTruncated(payload.scannedEvents);
+    return payload.result || {};
+  }
+
+  // Saved objects, cached per kind for the selected project.
+  function loadObjects(kind, force = false) {
+    if (force) delete state.objectLoads[kind];
+    if (!state.objectLoads[kind]) {
+      const projectId = state.projectId;
+      state.objectLoads[kind] = request(projectPath(`/objects?kind=${encodeURIComponent(kind)}`))
+        .then((payload) => {
+          if (projectId === state.projectId) state.objects[kind] = payload.objects || [];
+          return payload.objects || [];
+        })
+        .catch((error) => { delete state.objectLoads[kind]; throw error; });
+    }
+    return state.objectLoads[kind];
+  }
+  async function saveObject(kind, id, data) {
+    const payload = id
+      ? await request(projectPath(`/objects/${encodeURIComponent(id)}`), "PATCH", data)
+      : await request(projectPath("/objects"), "POST", { kind, ...data });
+    const list = state.objects[kind] || (state.objects[kind] = []);
+    const index = list.findIndex((item) => item.id === payload.object.id);
+    if (index >= 0) list[index] = payload.object; else list.unshift(payload.object);
+    return payload.object;
+  }
+  async function deleteObject(kind, id) {
+    await request(projectPath(`/objects/${encodeURIComponent(id)}`), "DELETE", {});
+    state.objects[kind] = (state.objects[kind] || []).filter((item) => item.id !== id);
+  }
+
+  // ==========================================================================
+  // Shared dialog
+  // ==========================================================================
+
+  // openDialog({title, render(body), onSave, saveLabel, onDelete, deleteLabel, narrow, danger}).
+  // onSave may throw (shown inside the dialog) or return false to keep it open.
+  function openDialog(options) {
+    const dialog = $(`[data-analytics-dialog]`); if (!dialog) return;
+    dialogHandlers = options;
+    $(`[data-analytics-dialog-title]`).textContent = options.title || "";
+    const error = $(`[data-analytics-dialog-error]`); error.textContent = ""; error.hidden = true;
+    const body = $(`[data-analytics-dialog-body]`); body.innerHTML = "";
+    options.render?.(body);
+    const save = $(`[data-analytics-dialog-save]`);
+    save.textContent = options.saveLabel || "Save"; save.hidden = !options.onSave; save.disabled = false;
+    save.classList.toggle("an-btn-danger", Boolean(options.danger));
+    save.classList.toggle("an-btn-primary", !options.danger);
+    const remove = $(`[data-analytics-dialog-delete]`);
+    remove.hidden = !options.onDelete; remove.textContent = options.deleteLabel || "Delete";
+    dialog.classList.toggle("an-dialog-narrow", Boolean(options.narrow));
+    if (!dialog.open) dialog.showModal();
+    icons();
+  }
+  function dialogError(text) {
+    const node = $(`[data-analytics-dialog-error]`); if (!node) return;
+    node.textContent = text; node.hidden = !text;
+  }
+  async function runDialog(handler) {
+    if (!handler) return;
+    const save = $(`[data-analytics-dialog-save]`);
+    save.disabled = true; dialogError("");
+    try {
+      const keepOpen = (await handler()) === false;
+      if (!keepOpen) $(`[data-analytics-dialog]`).close();
+    } catch (error) {
+      if (!isAbort(error)) dialogError(error.message);
+    } finally { save.disabled = false; }
+  }
+  function field(label, control, wide = false) {
+    return `<label class="an-field${wide ? " an-field-wide" : ""}">${h(label)}${control}</label>`;
+  }
+  function optionList(entries, selected) {
+    return entries.map(([value, label]) => `<option value="${h(value)}"${String(value) === String(selected) ? " selected" : ""}>${h(label)}</option>`).join("");
+  }
+
+  // ==========================================================================
+  // Shared SVG chart helper: line, area, bar, stacked bar
+  // ==========================================================================
+
+  const chartOptions = new WeakMap();
+  const chartObserver = typeof ResizeObserver === "function" ? new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const saved = chartOptions.get(entry.target);
+      if (saved && entry.contentRect.width > 0 && Math.abs(entry.contentRect.width - saved.width) > 12) drawChart(entry.target, saved.options);
+    }
+  }) : null;
+
+  function niceTicks(low, high, integers) {
+    if (high <= low) high = low + 1;
+    const rough = (high - low) / 4, magnitude = 10 ** Math.floor(Math.log10(rough)), unit = rough / magnitude;
+    let step = (unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10) * magnitude;
+    if (integers) step = Math.max(1, Math.round(step));
+    const first = Math.floor(low / step) * step, last = Math.ceil(high / step) * step, ticks = [];
+    for (let value = first; value <= last + step / 2; value += step) ticks.push(Number(value.toFixed(6)));
+    return ticks;
+  }
+  // A bar whose data end is rounded and whose baseline end is square.
+  function barPath(x, width, from, to) {
+    const radius = Math.min(3, width / 2, Math.abs(to - from)), sign = to < from ? 1 : -1;
+    return `M${x.toFixed(1)},${from.toFixed(1)}V${(to + sign * radius).toFixed(1)}q0,${-sign * radius} ${radius},${-sign * radius}h${(width - 2 * radius).toFixed(1)}q${radius},0 ${radius},${sign * radius}V${from.toFixed(1)}Z`;
+  }
+
+  // drawChart(host, {type, labels, formatLabel(label, long), series: [{name, data, color, dashed}],
+  //   annotations: [{date, content}], timeAxis, formatValue, height, label})
+  function drawChart(host, options) {
+    if (!host) return;
+    const series = options.series || [];
+    const labels = options.labels || [], count = labels.length;
+    const width = Math.max(300, Math.floor(host.clientWidth || 640)), height = options.height || 240;
+    chartOptions.set(host, { options, width });
+    chartObserver?.observe(host);
+    if (!count || !series.length) { host.innerHTML = `<div class="an-empty">No data in this range.</div>`; return; }
+    const type = options.type || "line", bars = type === "bar" || type === "stacked";
+    const formatValue = options.formatValue || fmtNumber;
+    const formatLabel = options.formatLabel || ((label) => String(label));
+    const left = 46, right = 14, top = 16, bottom = 26, plotWidth = width - left - right, plotHeight = height - top - bottom;
+
+    let low = 0, high = 0, integers = true;
+    for (let index = 0; index < count; index += 1) {
+      let up = 0, down = 0;
+      for (const item of series) {
+        const value = Number(item.data[index]) || 0;
+        if (!Number.isInteger(value)) integers = false;
+        if (type === "stacked") { if (value >= 0) up += value; else down += value; }
+        else { high = Math.max(high, value); low = Math.min(low, value); }
+      }
+      if (type === "stacked") { high = Math.max(high, up); low = Math.min(low, down); }
+    }
+    const ticks = niceTicks(low, high, integers), minimum = ticks[0], maximum = ticks[ticks.length - 1];
+    const y = (value) => top + plotHeight - ((value - minimum) / (maximum - minimum)) * plotHeight;
+    const band = plotWidth / count;
+    const x = (index) => bars || count === 1 ? left + band * (index + 0.5) : left + (index * plotWidth) / (count - 1);
+
+    let svg = "";
+    for (const tick of ticks) {
+      svg += `<line class="${tick === 0 ? "an-axis-line" : "an-grid-line"}" x1="${left}" x2="${width - right}" y1="${y(tick).toFixed(1)}" y2="${y(tick).toFixed(1)}"/>`
+        + `<text x="${left - 8}" y="${(y(tick) + 3.5).toFixed(1)}" text-anchor="end">${h(fmtCompact(tick))}</text>`;
+    }
+    const every = Math.max(1, Math.ceil(count / Math.max(2, Math.floor(plotWidth / 78))));
+    for (let index = 0; index < count; index += every) {
+      const anchor = bars || count === 1 ? "middle" : index === 0 ? "start" : index === count - 1 ? "end" : "middle";
+      svg += `<text x="${x(index).toFixed(1)}" y="${height - 8}" text-anchor="${anchor}">${h(formatLabel(labels[index], false))}</text>`;
+    }
+
+    if (type === "stacked") {
+      const barWidth = Math.max(2, Math.min(24, band * 0.7));
+      for (let index = 0; index < count; index += 1) {
+        let up = 0, down = 0;
+        series.forEach((item) => {
+          const value = Number(item.data[index]) || 0; if (!value) return;
+          const from = value >= 0 ? up : down, to = from + value;
+          if (value >= 0) up = to; else down = to;
+          // The 2px surface gap between stacked segments.
+          const gap = Math.abs(y(to) - y(from)) > 4 ? (value >= 0 ? -1 : 1) : 0;
+          svg += `<path d="${barPath(x(index) - barWidth / 2, barWidth, y(from) + gap, y(to) - gap)}" style="fill:${item.color}"/>`;
+        });
+      }
+    } else if (type === "bar") {
+      const barWidth = Math.max(2, Math.min(24, (band * 0.8) / series.length - 2));
+      const groupWidth = series.length * (barWidth + 2) - 2;
+      series.forEach((item, position) => {
+        for (let index = 0; index < count; index += 1) {
+          const value = Number(item.data[index]) || 0; if (!value) continue;
+          svg += `<path d="${barPath(x(index) - groupWidth / 2 + position * (barWidth + 2), barWidth, y(0), y(value))}" style="fill:${item.color}"${item.dashed ? ' fill-opacity=".45"' : ""}/>`;
+        }
+      });
+    } else {
+      series.forEach((item) => {
+        const points = item.data.slice(0, count).map((value, index) => `${x(index).toFixed(1)},${y(Number(value) || 0).toFixed(1)}`);
+        if (type === "area" && !item.dashed && points.length > 1) {
+          svg += `<path d="M${points.join("L")}L${x(points.length - 1).toFixed(1)},${y(0).toFixed(1)}L${x(0).toFixed(1)},${y(0).toFixed(1)}Z" style="fill:${item.color}" fill-opacity=".12"/>`;
+        }
+        svg += `<path d="M${points.join("L")}" fill="none" style="stroke:${item.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${item.dashed ? ' stroke-dasharray="5 4" stroke-opacity=".7"' : ""}/>`;
+        if (points.length === 1 || !item.dashed) {
+          const last = points.length - 1;
+          svg += `<circle cx="${x(last).toFixed(1)}" cy="${y(Number(item.data[last]) || 0).toFixed(1)}" r="4" style="fill:${item.color};stroke:var(--an-card)" stroke-width="2"/>`;
+        }
+      });
+    }
+
+    // Annotations: a dashed rule with a flag, at the bucket that holds the date.
+    const notesAt = new Map();
+    if (options.timeAxis) {
+      const step = count > 1 ? labels[1] - labels[0] : DAY;
+      for (const note of options.annotations || []) {
+        if (note.date < labels[0] || note.date >= labels[count - 1] + step) continue;
+        let index = 0; while (index + 1 < count && labels[index + 1] <= note.date) index += 1;
+        if (!notesAt.has(index)) notesAt.set(index, []);
+        notesAt.get(index).push(note);
+      }
+      notesAt.forEach((_, index) => {
+        const at = x(index).toFixed(1);
+        svg += `<line class="an-note-line" x1="${at}" x2="${at}" y1="${top}" y2="${top + plotHeight}"/><path class="an-note-flag" d="M${at},${top - 10}h9l-3,3.5l3,3.5h-9z"/>`;
+      });
+    }
+    svg += `<line class="an-cross" data-cross x1="0" x2="0" y1="${top}" y2="${top + plotHeight}" opacity="0"/>`
+      + `<rect data-hit x="${left}" y="${top}" width="${plotWidth}" height="${plotHeight}" fill="transparent"/>`;
+
+    host.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" tabindex="0" aria-label="${h(options.label || "Chart")}">${svg}</svg><div class="an-tip" hidden></div>`;
+    const figure = host.querySelector("svg"), tip = host.querySelector(".an-tip"), cross = host.querySelector("[data-cross]");
+
+    // Legend: always for two or more series; text stays in text colours.
+    if (series.length >= 2 || options.legend) {
+      const legend = document.createElement("div"); legend.className = "an-legend";
+      series.forEach((item) => {
+        const entry = document.createElement("span"); entry.className = "an-legend-item";
+        const swatch = document.createElement("span");
+        swatch.className = bars ? "an-swatch" : `an-swatch an-swatch-line${item.dashed ? " an-swatch-dashed" : ""}`;
+        swatch.style.background = item.color; swatch.style.borderColor = item.color;
+        const name = document.createElement("span"); name.textContent = item.name;
+        entry.append(swatch, name);
+        if (item.total !== undefined) { const total = document.createElement("span"); total.textContent = formatValue(item.total); entry.append(total); }
+        legend.append(entry);
+      });
+      host.append(legend);
+    }
+
+    let active = -1;
+    function show(index) {
+      active = index;
+      if (index < 0) { tip.hidden = true; cross.setAttribute("opacity", "0"); return; }
+      const at = x(index);
+      cross.setAttribute("x1", at); cross.setAttribute("x2", at); cross.setAttribute("opacity", ".55");
+      tip.textContent = "";
+      const title = document.createElement("div"); title.className = "an-tip-title"; title.textContent = formatLabel(labels[index], true);
+      tip.append(title);
+      series.forEach((item) => {
+        const row = document.createElement("div"); row.className = "an-tip-row";
+        const key = document.createElement("span"); key.className = `an-tip-key${item.dashed ? " an-tip-key-dashed" : ""}`; key.style.borderTopColor = item.color;
+        const name = document.createElement("span"); name.textContent = item.name;
+        const value = document.createElement("b"); value.textContent = formatValue(Number(item.data[index]) || 0);
+        row.append(key, name, value); tip.append(row);
+      });
+      for (const note of notesAt.get(index) || []) {
+        const line = document.createElement("div"); line.className = "an-tip-note"; line.textContent = `Note: ${note.content}`;
+        tip.append(line);
+      }
+      tip.hidden = false;
+      const scale = (figure.getBoundingClientRect().width || width) / width, px = at * scale;
+      const tipWidth = tip.offsetWidth || 160;
+      tip.style.left = `${Math.max(0, px + 14 + tipWidth > host.clientWidth ? px - tipWidth - 14 : px + 14)}px`;
+      tip.style.top = `${top}px`;
+    }
+    function indexAt(event) {
+      const box = figure.getBoundingClientRect(), px = ((event.clientX - box.left) / (box.width || 1)) * width;
+      const raw = bars || count === 1 ? Math.floor((px - left) / band) : Math.round(((px - left) / plotWidth) * (count - 1));
+      return Math.max(0, Math.min(count - 1, raw));
+    }
+    const hit = host.querySelector("[data-hit]");
+    hit.addEventListener("pointermove", (event) => show(indexAt(event)));
+    hit.addEventListener("pointerdown", (event) => show(indexAt(event)));
+    hit.addEventListener("pointerleave", () => show(-1));
+    figure.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      show(Math.max(0, Math.min(count - 1, (active < 0 ? (event.key === "ArrowLeft" ? count : -1) : active) + (event.key === "ArrowLeft" ? -1 : 1))));
+    });
+    figure.addEventListener("blur", () => show(-1));
+  }
+
+  // Horizontal bars for a list of {value, count}: the label and the number are
+  // always printed, so colour carries nothing on its own.
+  function hbars(rows, total = 0) {
+    const peak = Math.max(1, ...rows.map((row) => Number(row.count) || 0));
+    return rows.map((row) => `<div class="an-hbar"><span class="an-break">${h(row.value)}</span><span class="an-hbar-track"><span style="width:${((Number(row.count) || 0) / peak * 100).toFixed(1)}%"></span></span><b>${h(fmtInt(row.count))}${total ? ` <span class="an-hint">${h(fmtPct((Number(row.count) || 0) / total, 0))}</span>` : ""}</b></div>`).join("");
+  }
+
+  // ==========================================================================
+  // Shared editors: property filters and series
+  // ==========================================================================
+
+  function refreshDatalists() {
+    const fill = (id, rows) => { const node = document.getElementById(id); if (node) node.innerHTML = rows.map((row) => `<option value="${h(row.value)}"></option>`).join(""); };
+    fill("an-events-list", state.taxonomy.events);
+    fill("an-props-list", state.taxonomy.properties);
+    fill("an-person-props-list", state.taxonomy.personProperties);
+  }
+  function filterValueText(filter) {
+    const value = filter.value;
+    return Array.isArray(value) ? value.map(plainValue).join(", ") : plainValue(value);
+  }
+  function parseFilterValue(text, operator) {
+    const value = String(text || "");
+    if (["regex", "not_regex", "gt", "gte", "lt", "lte"].includes(operator)) return [value.trim()];
+    return value.split(",").map((part) => part.trim()).filter(Boolean);
+  }
+  // Filters the server would drop anyway are not sent.
+  function cleanFilters(list) {
+    return (list || []).filter((filter) => filter.type === "cohort" ? Boolean(filter.value) : Boolean(String(filter.property || "").trim()))
+      .map((filter) => ({ ...filter }));
+  }
+
+  // mountFilters(host, filters, {types, onChange, addLabel}) edits `filters` in place.
+  function mountFilters(host, filters, options = {}) {
+    if (!host) return;
+    const types = options.types || ["event", "person", "cohort", "group"];
+    const onChange = options.onChange || (() => {});
+    const operators = state.org?.operators?.length ? state.org.operators : Object.keys(OPERATOR_LABELS);
+    const typeLabels = { event: "Event property", person: "Person property", cohort: "Cohort", group: "Group property" };
+    const cohorts = state.objects.cohort || [];
+    const groupTypes = settings().groupTypes || [];
+    function render() {
+      host.innerHTML = `<div class="an-stack-tight">${filters.map((filter, index) => {
+        const type = types.includes(filter.type) ? filter.type : types[0];
+        const typeSelect = types.length > 1 ? `<select class="an-select" data-f="type" aria-label="Filter on">${optionList(types.map((name) => [name, typeLabels[name]]), type)}</select>` : "";
+        let body;
+        if (type === "cohort") {
+          body = `<select class="an-select" data-f="operator" aria-label="Cohort match">${optionList([["exact", "is in cohort"], ["is_not", "is not in cohort"]], filter.operator === "is_not" ? "is_not" : "exact")}</select>`
+            + `<select class="an-select" data-f="cohort" aria-label="Cohort"><option value="">Choose a cohort…</option>${optionList(cohorts.map((cohort) => [cohort.id, cohort.name || "Untitled cohort"]), filter.value)}</select>`;
+        } else {
+          const valueless = filter.operator === "is_set" || filter.operator === "is_not_set";
+          body = (type === "group" ? `<select class="an-select" data-f="groupType" aria-label="Group type">${optionList([["", "Group type…"], ...groupTypes.map((name) => [name, name])], filter.groupType || "")}</select>` : "")
+            + `<input class="an-input" data-f="property" aria-label="Property" placeholder="Property" autocomplete="off" list="${type === "person" ? "an-person-props-list" : "an-props-list"}" value="${h(filter.property || "")}" />`
+            + `<select class="an-select" data-f="operator" aria-label="Operator">${optionList(operators.map((name) => [name, OPERATOR_LABELS[name] || name]), filter.operator || "exact")}</select>`
+            + (valueless ? "" : `<input class="an-input" data-f="value" aria-label="Value (separate several with commas)" placeholder="Value" autocomplete="off" value="${h(filterValueText(filter))}" />`);
+        }
+        return `<div class="an-filter" data-index="${index}">${typeSelect}${body}<button type="button" class="an-btn an-btn-small" data-f="remove">Remove</button></div>`;
+      }).join("")}<div><button type="button" class="an-btn an-btn-small" data-f="add">+ ${h(options.addLabel || "Add filter")}</button></div></div>`;
+    }
+    host.onchange = (event) => {
+      const control = event.target.closest("[data-f]"), row = event.target.closest("[data-index]");
+      if (!control || !row || control.closest("[data-analytics-filter-host]") !== host) return;
+      const filter = filters[Number(row.dataset.index)]; if (!filter) return;
+      const name = control.dataset.f;
+      if (name === "type") {
+        const type = control.value;
+        Object.keys(filter).forEach((key) => delete filter[key]);
+        Object.assign(filter, type === "cohort" ? { type, property: "id", operator: "exact", value: "" } : { type, property: "", operator: "exact", value: [] });
+        render();
+      } else if (name === "cohort") filter.value = control.value;
+      else if (name === "operator") {
+        filter.operator = control.value;
+        if (filter.type !== "cohort") { filter.value = parseFilterValue(filterValueText(filter), filter.operator); render(); }
+      } else if (name === "value") filter.value = parseFilterValue(control.value, filter.operator);
+      else filter[name] = control.value.trim();
+      onChange();
+    };
+    host.onclick = (event) => {
+      const control = event.target.closest("button[data-f]");
+      if (!control || control.closest("[data-analytics-filter-host]") !== host) return;
+      if (control.dataset.f === "add") {
+        if (filters.length >= 20) return;
+        filters.push(types[0] === "cohort" ? { type: "cohort", property: "id", operator: "exact", value: "" } : { type: types[0], property: "", operator: "exact", value: [] });
+        render(); host.querySelector(`[data-index="${filters.length - 1}"] [data-f="property"]`)?.focus();
+        return;
+      }
+      filters.splice(Number(control.closest("[data-index]").dataset.index), 1);
+      render(); onChange();
+    };
+    host.setAttribute("data-analytics-filter-host", "");
+    render();
+  }
+
+  function eventOptions(current) {
+    const known = new Set(["*"]);
+    const actions = (state.objects.action || []).map((action) => { known.add(`action:${action.id}`); return [`action:${action.id}`, action.name || "Untitled action"]; });
+    const events = state.taxonomy.events.map((row) => { known.add(row.value); return [row.value, EVENT_LABELS[row.value] ? `${EVENT_LABELS[row.value]} (${row.value})` : row.value]; });
+    if (current && !known.has(current)) events.unshift([current, current.startsWith("action:") ? "Deleted action" : current]);
+    return `<option value="*"${current === "*" ? " selected" : ""}>All events</option>`
+      + (actions.length ? `<optgroup label="Actions">${optionList(actions, current)}</optgroup>` : "")
+      + `<optgroup label="Events">${optionList(events, current)}</optgroup><option value="__custom">Custom event name…</option>`;
+  }
+  function newSeries(event = "$pageview") { return { event, label: "", math: "total", mathProperty: "", groupType: "", properties: [] }; }
+
+  // mountSeries(host, list, {noun, min, max, maths, colors, onChange}) edits `list` in place.
+  function mountSeries(host, list, options = {}) {
+    if (!host) return;
+    const noun = options.noun || "Series", minimum = options.min ?? 1, maximum = options.max ?? 10;
+    const onChange = options.onChange || (() => {});
+    const maths = state.org?.maths?.length ? state.org.maths : Object.keys(MATH_LABELS);
+    const groupTypes = settings().groupTypes || [];
+    function render() {
+      host.innerHTML = `<div class="an-stack-tight">${list.map((item, index) => {
+        const custom = customEventRows.has(item);
+        return `<div class="an-series" data-series="${index}">
+          <div class="an-series-head">${options.colors === false ? "" : `<span class="an-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span>`}<span>${h(noun)} ${options.noun === "Step" ? index + 1 : String.fromCharCode(65 + index)}</span>${list.length > minimum ? `<button type="button" class="an-btn an-btn-small" data-s="remove" style="margin-left:auto">Remove</button>` : ""}</div>
+          <div class="an-form-grid">
+            <label class="an-field">Event<select class="an-select" data-s="event">${eventOptions(custom ? "" : item.event).replace('value="__custom"', `value="__custom"${custom ? " selected" : ""}`)}</select></label>
+            ${custom ? `<label class="an-field">Event name<input class="an-input" data-s="custom" list="an-events-list" autocomplete="off" value="${h(item.event === "*" ? "" : item.event)}" /></label>` : ""}
+            ${options.maths === false ? "" : `<label class="an-field">Measure<select class="an-select" data-s="math">${optionList(maths.map((name) => [name, MATH_LABELS[name] || name]), item.math || "total")}</select></label>`}
+            ${options.maths !== false && PROPERTY_MATHS.has(item.math) ? `<label class="an-field">Numeric property<input class="an-input" data-s="mathProperty" list="an-props-list" autocomplete="off" value="${h(item.mathProperty || "")}" /></label>` : ""}
+            ${options.maths !== false && item.math === "unique_group" ? `<label class="an-field">Group type<select class="an-select" data-s="groupType">${optionList([["", "Choose…"], ...groupTypes.map((name) => [name, name])], item.groupType || "")}</select></label>` : ""}
+            <label class="an-field">Label (optional)<input class="an-input" data-s="label" maxlength="120" value="${h(item.label || "")}" /></label>
+          </div>
+          <div data-series-filters="${index}"></div>
+        </div>`;
+      }).join("")}${list.length < maximum ? `<div><button type="button" class="an-btn an-btn-small" data-s="add">+ Add ${h(noun.toLowerCase())}</button></div>` : ""}</div>`;
+      list.forEach((item, index) => {
+        if (!Array.isArray(item.properties)) item.properties = [];
+        mountFilters(host.querySelector(`[data-series-filters="${index}"]`), item.properties, { onChange, addLabel: "Filter this event" });
+      });
+    }
+    host.onchange = (event) => {
+      const control = event.target.closest("[data-s]"); if (!control) return;
+      const item = list[Number(control.closest("[data-series]")?.dataset.series)]; if (!item) return;
+      const name = control.dataset.s;
+      if (name === "event") {
+        if (control.value === "__custom") { customEventRows.add(item); render(); host.querySelector(`[data-series="${list.indexOf(item)}"] [data-s="custom"]`)?.focus(); return; }
+        customEventRows.delete(item); item.event = control.value; render();
+      } else if (name === "custom") item.event = control.value.trim() || "*";
+      else if (name === "math") { item.math = control.value; render(); }
+      else item[name] = control.value.trim();
+      onChange();
+    };
+    host.onclick = (event) => {
+      const control = event.target.closest("button[data-s]"); if (!control) return;
+      if (control.dataset.s === "add") list.push(newSeries(list[list.length - 1]?.event || "$pageview"));
+      else list.splice(Number(control.closest("[data-series]").dataset.series), 1);
+      render(); onChange();
+    };
+    render();
+  }
+  function cleanSeries(list) {
+    return (list || []).map((item) => ({ event: item.event || "*", label: item.label || "", math: item.math || "total",
+      mathProperty: item.mathProperty || "", groupType: item.groupType || "", properties: cleanFilters(item.properties) }));
+  }
+
+  // ==========================================================================
+  // Shell: organization, project, header controls, tabs, deep links
+  // ==========================================================================
+
+  function renderShell() {
+    const org = selectedOrg(), installed = Boolean(org?.installed), hasProject = installed && Boolean(state.projectId);
+    const manager = canManage();
+    $(`[data-analytics-install-panel]`).hidden = !org || installed;
+    $(`[data-analytics-install-org]`).textContent = state.organization;
+    $(`[data-analytics-install]`).hidden = !manager;
+    $(`[data-analytics-install-denied]`).hidden = manager;
+    $(`[data-analytics-no-project]`).hidden = !installed || hasProject || !state.org;
+    $(`[data-analytics-create-first]`).hidden = !manager;
+    $(`[data-analytics-create-denied]`).hidden = manager;
+    $(`[data-analytics-app]`).hidden = !hasProject;
+    $$(`[data-analytics-requires-project]`).forEach((node) => { node.hidden = !hasProject; });
+    $(`[data-analytics-new-project]`).hidden = !(installed && state.org && manager);
+    $(`[data-analytics-custom-range]`).hidden = !(hasProject && state.range === "custom");
+  }
+  function renderProjectSelect() {
+    const select = $(`[data-analytics-project]`);
+    select.innerHTML = (state.org?.projects || []).map((project) => `<option value="${h(project.id)}">${h(project.settings?.name || "Project")}${project.siteDefault ? " · site" : ""}</option>`).join("");
+    select.value = state.projectId;
+  }
+  function resetProjectState() {
+    abortAll();
+    destroyPlayer();
+    Object.assign(state, {
+      project: null, usageHistory: [], loadedTabs: new Set(),
+      taxonomy: { events: [], properties: [], personProperties: [] }, objects: {}, objectLoads: {},
+      overview: null, insight: null, insightResult: null, insightPrevious: null, dashboardId: "",
+      events: { rows: [], nextBefore: 0, name: "", filters: [], open: new Set() },
+      people: { rows: [], nextBefore: 0, total: 0, identified: 0 }, groups: [],
+      replay: { rows: [], nextBefore: 0, personId: "", open: "", recording: null, player: null, loadToken: 0 },
+      heatmap: null, errors: [], errorOpen: "", experimentOpen: "", surveyOpen: "", settingsFilters: [],
+    });
+    showTruncated(0);
+  }
+  async function loadOrganization() {
+    resetProjectState();
+    state.org = null; state.projectId = "";
+    setMessage("error", "");
+    renderShell();
+    if (!selectedOrg()?.installed) return;
+    try {
+      state.org = await request(orgPath(), "GET", null, scope("organization"));
+      const projects = state.org.projects || [];
+      await selectProject((projects.find((project) => project.siteDefault) || projects[0])?.id || "");
+    } catch (error) { fail(error, "Analytics is unavailable"); }
+  }
+  async function selectProject(projectId) {
+    resetProjectState();
+    state.projectId = projectId;
+    state.project = (state.org?.projects || []).find((project) => project.id === projectId) || null;
+    renderProjectSelect(); renderShell();
+    if (!projectId) return;
+    // Pickers everywhere read these; none of them blocks the first paint.
+    void loadTaxonomy();
+    for (const kind of ["action", "cohort", "annotation"]) loadObjects(kind).catch((error) => fail(error));
+    applyHash();
+    await loadTab();
+  }
+  async function loadTaxonomy() {
+    try {
+      const projectId = state.projectId;
+      const payload = await request(projectPath("/query"), "POST", { kind: "taxonomy", ...rangeWindow() });
+      if (projectId !== state.projectId) return;
+      const result = payload.result || {};
+      state.taxonomy = { events: result.events || [], properties: result.properties || [], personProperties: result.personProperties || [] };
+      refreshDatalists();
+      if (state.tab === "insights" && state.insight) renderBuilder();
+    } catch (error) { fail(error, "Could not load event names"); }
+  }
+
+  const TAB_LOADERS = {
+    overview: () => loadOverview(), insights: () => loadInsights(), dashboards: () => loadDashboards(),
+    events: () => loadEvents(false), people: () => loadPeopleTab(), replay: () => loadRecordings(false),
+    heatmaps: () => loadHeatmapTab(), flags: () => loadFlagsTab(), surveys: () => loadSurveys(),
+    errors: () => loadErrors(), settings: () => loadSettings(),
+  };
+  function tabKey() { return `${state.tab}:${state.sub[state.tab] || ""}`; }
+  async function loadTab(force = false) {
+    if (!state.projectId) return;
+    const key = tabKey();
+    if (!force && state.loadedTabs.has(key)) return;
+    const page = $(`[data-analytics-page="${state.tab}"]`);
+    page?.setAttribute("aria-busy", "true");
+    try {
+      await TAB_LOADERS[state.tab]();
+      state.loadedTabs.add(key);
+      setMessage("error", "");
+    } catch (error) { fail(error, "Could not load this view"); }
+    finally { page?.removeAttribute("aria-busy"); icons(); }
+  }
+  function showTab(tab, sub = "", options = {}) {
+    if (!TABS.includes(tab)) tab = "overview";
+    if (tab !== state.tab) { abortAll(); showTruncated(0); setMessage("notice", ""); }
+    if (state.tab === "replay" && tab !== "replay") state.replay.player?.pause();
+    state.tab = tab;
+    if (SUBS[tab]) state.sub[tab] = SUBS[tab].includes(sub) ? sub : state.sub[tab];
+    $$(`[data-analytics-tab]`).forEach((button) => {
+      const selected = button.dataset.analyticsTab === tab;
+      button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected ? 0 : -1;
+    });
+    $$(`[data-analytics-page]`).forEach((page) => { page.hidden = page.dataset.analyticsPage !== tab; });
+    $$(`[data-analytics-sub]`).forEach((button) => {
+      const [owner, name] = button.dataset.analyticsSub.split(":");
+      button.setAttribute("aria-selected", String(state.sub[owner] === name));
+    });
+    $$(`[data-analytics-subpage]`).forEach((page) => {
+      const [owner, name] = page.dataset.analyticsSubpage.split(":");
+      page.hidden = state.sub[owner] !== name;
+    });
+    if (!options.keepHash) writeHash();
+    if (!options.skipLoad) void loadTab();
+  }
+  function writeHash() {
+    let hash = `#analytics/${state.tab}`;
+    if (state.tab === "insights" && state.sub.insights === "builder" && state.insight) {
+      hash = `#analytics/${state.insight.query.kind === "funnel" ? "funnels" : state.insight.query.kind}`;
+    } else if (SUBS[state.tab] && state.sub[state.tab] !== SUBS[state.tab][0]) hash += `/${state.sub[state.tab]}`;
+    if (location.hash !== hash) history.replaceState(history.state, "", hash);
+  }
+  // Reads #analytics/<tab>[/<sub>] or one of the HASH_ALIASES; leaves loading to the caller.
+  function applyHash() {
+    const parts = location.hash.replace(/^#/, "").split("/");
+    if (parts[0] !== "analytics" || !parts[1]) { showTab(state.tab, "", { skipLoad: true, keepHash: true }); return; }
+    const alias = HASH_ALIASES[parts[1]];
+    if (alias) {
+      if (alias[2] && (!state.insight || state.insight.query.kind !== alias[2])) state.insight = blankInsight(alias[2]);
+      showTab(alias[0], alias[1], { skipLoad: true, keepHash: true });
+    } else showTab(parts[1], parts[2] || "", { skipLoad: true, keepHash: true });
+  }
+  function reloadCurrent() {
+    state.loadedTabs.clear(); showTruncated(0);
+    return loadTab(true);
+  }
+
+  async function createProjectDialog() {
+    openDialog({
+      title: "New project", narrow: true, saveLabel: "Create project",
+      render(body) { body.innerHTML = field("Project name", `<input class="an-input" data-d="name" maxlength="80" required placeholder="Marketing site" />`); },
+      async onSave() {
+        const name = $(`[data-analytics-dialog-body] [data-d="name"]`).value.trim();
+        if (!name) throw new Error("Give the project a name.");
+        const payload = await request(orgPath("/projects"), "POST", { name });
+        state.org.projects = [...(state.org.projects || []), payload.project];
+        setMessage("notice", "Project created.");
+        await selectProject(payload.project.id);
+      },
+    });
+  }
+  async function installPlugin() {
+    try {
+      await request(pluginPath("/install"), "POST", {});
+      selectedOrg().installed = true; renderOrganizationSelect();
+      setMessage("notice", "Analytics installed."); await loadOrganization();
+    } catch (error) { fail(error, "Could not install"); }
+  }
+  async function exportOrganization() {
+    try {
+      const payload = await request(pluginPath("/export"));
+      downloadJson(payload.export || {}, payload.filename || "forkmesh-analytics.json");
+    } catch (error) { fail(error, "Export failed"); }
+  }
+  async function uninstallPlugin() {
+    if (!confirm(`Uninstall Analytics from ${state.organization}? An export downloads first, then every project, event, replay, flag, and survey is removed.`)) return;
+    try {
+      const snapshot = await request(pluginPath("/export"));
+      if (snapshot.hasData) downloadJson(snapshot.export || {}, snapshot.filename || "forkmesh-analytics.json");
+      await request(pluginPath("/uninstall"), "POST", {});
+      selectedOrg().installed = false; renderOrganizationSelect();
+      $(`[data-analytics-manage-dialog]`).close();
+      setMessage("notice", "Analytics uninstalled."); await loadOrganization();
+    } catch (error) { fail(error, "Could not uninstall"); }
+  }
+  function renderOrganizationSelect() {
+    const select = $(`[data-analytics-organization]`);
+    select.innerHTML = state.organizations.map((org) => `<option value="${h(org.name)}">${h(org.name)} · ${h(org.role)}${org.installed ? "" : " · not installed"}</option>`).join("");
+    select.value = state.organization;
+  }
+
+  function snippetText() {
+    const origin = location.origin;
+    return `<script src="${origin}/analytics-sdk.js" defer></script>\n<script>\n  window.addEventListener("DOMContentLoaded", function () {\n    window.analytics = ForkMeshAnalyticsSDK.init({\n      key: "${state.project?.writeKey || ""}",\n      apiHost: "${origin}"\n    });\n  });\n</script>`;
+  }
+  function curlText() {
+    const body = JSON.stringify({ key: state.project?.writeKey || "", batch: [{ event: "server started", distinctId: "server-1", properties: { region: "eu" } }] });
+    return `curl -X POST '${location.origin}/api/analytics/_/capture' \\\n  -H 'content-type: text/plain' \\\n  --data '${body}'`;
+  }
+
+  // ==========================================================================
+  // Overview (web analytics)
+  // ==========================================================================
+
+  const KPI_TILES = [
+    ["visitors", "Visitors", fmtCompact, true], ["pageviews", "Pageviews", fmtCompact, true],
+    ["sessions", "Sessions", fmtCompact, true], ["viewsPerSession", "Views / session", fmtNumber, true],
+    ["bounceRate", "Bounce rate", (value) => fmtPct(value), false],
+    ["averageSessionMs", "Avg. session", fmtDuration, true],
+  ];
+  const BREAKDOWN_CARDS = [
+    { key: "pages", title: "Pages", picks: [["pages", "Top"], ["entryPages", "Entry"], ["exitPages", "Exit"]], column: "Path" },
+    { key: "referrals", title: "Referrals", picks: [["referringDomains", "Domain"], ["referringUrls", "Full URL"]], column: "Referrer" },
+    { key: "sources", title: "Campaigns", picks: [["sources", "Source"], ["mediums", "Medium"], ["campaigns", "Campaign"]], column: "Value" },
+    { key: "tech", title: "Technology", picks: [["devices", "Device"], ["browsers", "Browser"], ["os", "OS"], ["screens", "Screen"], ["languages", "Language"]], column: "Name" },
+    { key: "countries", title: "Countries", column: "Country" },
+    { key: "events", title: "Top events", column: "Event" },
+  ];
+  const SESSION_PICKS = new Set(["entryPages", "exitPages", "referringDomains", "referringUrls"]);
+  const CHANNEL_ORDER = ["Direct", "Organic search", "Social", "Referral", "Paid", "Email", "Campaign", "Affiliate"];
+  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  // Core Web Vitals thresholds: [good up to, poor above, unit, digits].
+  const VITALS = { LCP: [2500, 4000, "ms", 0], INP: [200, 500, "ms", 0], CLS: [0.1, 0.25, "", 3], FCP: [1800, 3000, "ms", 0], TTFB: [800, 1800, "ms", 0] };
+  const VITAL_NAMES = { LCP: "Largest contentful paint", INP: "Interaction to next paint", CLS: "Cumulative layout shift", FCP: "First contentful paint", TTFB: "Time to first byte" };
+
+  async function loadOverview() {
+    state.overview = await query("overview");
+    renderOverview();
+  }
+  function countryName(code) {
+    const text = String(code || "");
+    if (!/^[A-Za-z]{2}$/.test(text)) return text;
+    try { return `${new Intl.DisplayNames(undefined, { type: "region" }).of(text.toUpperCase())} (${text.toUpperCase()})`; }
+    catch { return text; }
+  }
+  function withDerived(totals) {
+    return { ...totals, viewsPerSession: totals.sessions ? (Number(totals.pageviews) || 0) / totals.sessions : 0 };
+  }
+  function kpiSeries(data) {
+    const named = Object.fromEntries((data.timeseries?.series || []).map((item) => [item.name, item.data || []]));
+    const views = named.Pageviews || [], sessions = named.Sessions || [];
+    return {
+      visitors: named.Visitors, pageviews: views, sessions,
+      viewsPerSession: views.map((value, index) => sessions[index] ? value / sessions[index] : 0),
+      bounceRate: data.sessionSeries?.bounceRate, averageSessionMs: data.sessionSeries?.averageSessionMs,
+    };
+  }
+  function sparkline(values) {
+    const points = (values || []).map((value) => Number(value) || 0);
+    if (points.length < 2) return "";
+    const low = Math.min(0, ...points), span = (Math.max(...points) - low) || 1;
+    const path = points.map((value, index) => `${(index / (points.length - 1) * 100).toFixed(2)},${(21 - ((value - low) / span) * 19).toFixed(2)}`).join("L");
+    return `<svg class="an-spark" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"><path class="an-spark-fill" d="M0,22L${path}L100,22Z"/><path class="an-spark-line" d="M${path}" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+  const tipHosts = new WeakSet();
+  function attachTips(host) {
+    if (!host || tipHosts.has(host)) return;
+    tipHosts.add(host);
+    host.style.position = "relative";
+    const tipNode = () => {
+      let tip = host.querySelector(":scope > .an-tip[data-tips]");
+      if (!tip) { tip = document.createElement("div"); tip.className = "an-tip"; tip.dataset.tips = ""; tip.hidden = true; host.append(tip); }
+      return tip;
+    };
+    const move = (event) => {
+      const target = event.target.closest?.("[data-tip]"), tip = tipNode();
+      if (!target || !host.contains(target)) { tip.hidden = true; return; }
+      tip.textContent = target.dataset.tip; tip.hidden = false;
+      const box = host.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top, width = tip.offsetWidth || 160;
+      tip.style.left = `${Math.max(0, x + 12 + width > host.clientWidth ? x - width - 12 : x + 12)}px`;
+      tip.style.top = `${Math.max(0, y + 14)}px`;
+    };
+    host.addEventListener("pointermove", move);
+    host.addEventListener("pointerdown", move);
+    host.addEventListener("pointerleave", () => { tipNode().hidden = true; });
+  }
+  function shareBlock(rows, colorOf, noun) {
+    const total = rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+    if (!total) return `<div class="an-empty">Nothing recorded.</div>`;
+    const tip = (row) => `${row.value}: ${fmtInt(row.count)} ${noun} (${fmtPct(row.count / total)})`;
+    return `<div class="an-split-bar" role="img" aria-label="${h(rows.map(tip).join("; "))}">${rows.filter((row) => row.count).map((row) => `<span data-tip="${h(tip(row))}" style="flex:${Number(row.count)};background:${colorOf(row.value)}"></span>`).join("")}</div>`
+      + `<div class="an-share-list">${rows.map((row) => `<div class="an-share-row" data-tip="${h(tip(row))}"><span class="an-swatch" style="background:${colorOf(row.value)}"></span><span class="an-break">${h(row.value)}</span><b>${h(fmtInt(row.count))}</b><span class="an-hint">${h(fmtPct(row.count / total, 0))}</span></div>`).join("")}</div>`;
+  }
+  function channelColor(name) { const at = CHANNEL_ORDER.indexOf(name); return PALETTE[at < 0 ? PALETTE.length - 1 : at]; }
+  function renderOverview() {
+    const data = state.overview; if (!data) return;
+    const totals = withDerived(data.totals || {}), previous = withDerived(data.previous || {});
+    const empty = !totals.events && !previous.events;
+    $(`[data-analytics-onboarding]`).hidden = !empty;
+    $(`[data-analytics-overview-body]`).hidden = empty;
+    if (empty) { $(`[data-analytics-onboarding-snippet]`).textContent = snippetText(); return; }
+
+    const trend = kpiSeries(data);
+    $(`[data-analytics-kpis]`).innerHTML = KPI_TILES.map(([key, label, format, upIsGood]) => {
+      const now = Number(totals[key]) || 0, before = Number(previous[key]) || 0;
+      let delta = `<span>No earlier data</span>`;
+      if (before) {
+        const change = (now - before) / before, flat = Math.abs(change) < 0.0005;
+        const tone = flat ? "" : (change > 0) === upIsGood ? "an-delta-good" : "an-delta-bad";
+        delta = `<span class="${tone}">${flat ? "→" : change > 0 ? "▲" : "▼"} ${h(fmtPct(Math.abs(change)))}</span> <span title="Previous period">vs ${h(format(before))}</span>`;
+      }
+      return `<div class="an-kpi"><div class="an-kpi-label">${h(label)}</div><div class="an-kpi-value">${h(format(now))}</div><div class="an-kpi-delta">${delta}</div>${sparkline(trend[key])}</div>`;
+    }).join("");
+
+    const series = data.timeseries || { labels: [], series: [] }, interval = series.interval || "day";
+    $(`[data-analytics-overview-interval]`).textContent = `${rangeLabel()} · by ${interval}`;
+    drawChart($(`[data-analytics-overview-chart]`), {
+      type: "line", labels: series.labels || [], timeAxis: true, annotations: state.objects.annotation || [],
+      formatLabel: (label, long) => fmtBucket(label, interval, long), height: 210,
+      label: `Visitors, pageviews, and sessions by ${interval}`,
+      series: (series.series || []).map((item, index) => ({ name: item.name, data: item.data || [], total: item.total, color: PALETTE[index] })),
+    });
+
+    const paths = document.getElementById("an-paths-list");
+    if (paths) paths.innerHTML = (data.breakdowns?.pages || []).map((row) => `<option value="${h(row.value)}"></option>`).join("");
+    renderBreakdowns();
+
+    const channels = $(`[data-analytics-channels]`);
+    const channelRows = [...(data.breakdowns?.channels || [])].sort((a, b) => b.count - a.count);
+    channels.innerHTML = shareBlock(channelRows, channelColor, "sessions");
+    attachTips(channels);
+
+    renderHours(data.hours || []);
+
+    const kinds = data.visitorKinds || {}, fresh = Number(kinds.new) || 0, back = Number(kinds.returning) || 0;
+    const kindsHost = $(`[data-analytics-visitor-kinds]`);
+    kindsHost.innerHTML = fresh + back ? `<div class="an-big-pair"><div><span class="an-hint">New</span><b>${h(fmtCompact(fresh))}</b></div><div><span class="an-hint">Returning</span><b>${h(fmtCompact(back))}</b></div></div>`
+      + shareBlock([{ value: "New", count: fresh }, { value: "Returning", count: back }], (name) => name === "New" ? PALETTE[0] : PALETTE[2], "visitors")
+      : `<div class="an-empty">Nothing recorded.</div>`;
+    attachTips(kindsHost);
+
+    for (const [selector, rows, label] of [["[data-analytics-session-depth]", data.sessionDepth, "Sessions by pages viewed"], ["[data-analytics-session-length]", data.sessionLength, "Sessions by length"]]) {
+      const list = rows || [];
+      drawChart($(selector), {
+        type: "bar", labels: list.map((row) => row.value), height: 150, label, formatValue: fmtInt,
+        series: list.some((row) => row.count) ? [{ name: "Sessions", data: list.map((row) => row.count), color: PALETTE[0] }] : [],
+      });
+    }
+
+    const engagement = data.engagement || [];
+    $(`[data-analytics-engagement]`).innerHTML = engagement.length ? `<div class="an-table-wrap an-scroll"><table class="an-table"><thead><tr><th scope="col">Path</th><th scope="col" class="r">Time</th><th scope="col" class="r">Scroll</th></tr></thead><tbody>${engagement.map((row) => {
+      const scroll = row.scroll === null || row.scroll === undefined ? "—" : `<span class="an-scroll-meter"><span style="width:${(row.scroll * 100).toFixed(0)}%"></span></span>${h(fmtPct(row.scroll, 0))}`;
+      return `<tr><th scope="row"><button type="button" class="an-link an-break" data-analytics-heatmap-open="${h(row.value)}" title="${h(`${fmtInt(row.count)} page leaves measured. Open the heatmap`)}">${h(row.value)}</button></th><td class="r">${h(fmtDuration(row.medianMs))}</td><td class="r">${scroll}</td></tr>`;
+    }).join("")}</tbody></table></div>` : `<div class="an-empty">No page leaves in this range.</div>`;
+
+    const vitals = data.webVitals || {};
+    $(`[data-analytics-vitals]`).innerHTML = Object.keys(VITALS).some((key) => vitals[key]) ? `<div class="an-kpis">${Object.entries(VITALS).map(([key, [good, poor, unit, digits]]) => {
+      const entry = vitals[key];
+      if (!entry) return `<div class="an-kpi"><div class="an-kpi-label" title="${h(VITAL_NAMES[key])}">${h(key)} · ${h(VITAL_NAMES[key])}</div><div class="an-kpi-value">—</div><div class="an-kpi-delta">No samples</div></div>`;
+      const value = Number(entry.p75) || 0, level = value <= good ? "good" : value <= poor ? "warn" : "bad";
+      const word = { good: "Good", warn: "Needs improvement", bad: "Poor" }[level];
+      return `<div class="an-kpi"><div class="an-kpi-label" title="${h(VITAL_NAMES[key])}">${h(key)} · ${h(VITAL_NAMES[key])}</div><div class="an-kpi-value">${h(value.toFixed(digits))}${unit ? ` <span class="an-hint">${unit}</span>` : ""}</div><div class="an-kpi-delta"><span class="an-dot an-dot-${level}"></span> ${word} · ${h(fmtInt(entry.samples))} samples</div></div>`;
+    }).join("")}</div>` : `<p class="an-hint" style="margin:0">No web vitals in this range. They are sent when “Web vitals” is on in Settings and a visitor leaves a page.</p>`;
+  }
+  function renderHours(grid) {
+    const host = $(`[data-analytics-hours]`);
+    const peak = Math.max(0, ...grid.flat().map((value) => Number(value) || 0));
+    if (!peak) { host.innerHTML = `<div class="an-empty">Nothing recorded.</div>`; return; }
+    const hourText = (hour) => `${String(hour).padStart(2, "0")}:00`;
+    let busiest = [0, 0];
+    grid.forEach((row, day) => row.forEach((count, hour) => { if (count > grid[busiest[0]][busiest[1]]) busiest = [day, hour]; }));
+    const busiestText = `${WEEKDAYS[busiest[0]]} ${hourText(busiest[1])}, ${fmtInt(peak)} pageviews`;
+    const cells = grid.map((row, day) => `<span class="an-hours-day">${WEEKDAYS[day]}</span>${row.map((count, hour) => `<span class="an-hours-cell" style="--an-heat:${count ? (0.12 + 0.88 * count / peak).toFixed(3) : 0}" data-tip="${h(`${WEEKDAYS[day]} ${hourText(hour)}–${hourText((hour + 1) % 24)} · ${fmtInt(count)} pageviews`)}"></span>`).join("")}`).join("");
+    const axis = `<span></span>${Array.from({ length: 24 }, (_, hour) => `<span>${hour % 3 ? "" : hour}</span>`).join("")}`;
+    host.innerHTML = `<div class="an-hours" role="img" aria-label="${h(`Pageviews by weekday and hour. Busiest: ${busiestText}`)}">${cells}${axis}</div>`
+      + `<div class="an-hours-foot"><span>Busiest: ${h(busiestText)}</span><span>0<span class="an-hours-ramp"></span>${h(fmtInt(peak))}</span></div>`;
+    attachTips(host);
+  }
+  function breakdownUnit(pick) {
+    if (pick === "events") return "Events";
+    return SESSION_PICKS.has(pick) ? "Sessions" : "Views";
+  }
+  function renderBreakdowns() {
+    const breakdowns = state.overview?.breakdowns || {};
+    $(`[data-analytics-breakdowns]`).innerHTML = BREAKDOWN_CARDS.map((card) => {
+      const pick = card.picks ? state.overviewPick[card.key] : card.key;
+      const rows = breakdowns[pick] || [], peak = Math.max(1, ...rows.map((row) => row.count || 0));
+      const unit = breakdownUnit(pick), totals = state.overview?.totals || {};
+      const total = unit === "Sessions" ? Number(totals.sessions) || 0 : unit === "Views" ? Number(totals.pageviews) || 0 : rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+      const withVisitors = pick === "pages";
+      const picker = card.picks ? `<div class="an-seg" role="group" aria-label="${h(card.title)} breakdown">${card.picks.map(([value, label]) => `<button type="button" data-analytics-pick="${h(card.key)}:${h(value)}" aria-pressed="${value === pick}">${h(label)}</button>`).join("")}</div>` : "";
+      const body = rows.length ? `<div class="an-table-wrap an-scroll"><table class="an-table"><thead><tr><th scope="col">${h(card.column)}</th>${withVisitors ? `<th scope="col" class="r">Visitors</th>` : ""}<th scope="col" class="r">${unit}</th><th scope="col" class="r" title="Share of all ${unit.toLowerCase()}">Share</th></tr></thead><tbody>${rows.map((row) => {
+        const text = card.key === "countries" ? countryName(row.value) : card.key === "events" ? eventLabel(row.value) : row.value;
+        let label = `<span class="an-break">${h(text)}</span>`;
+        if (card.key === "pages") label = `<button type="button" class="an-link an-break" data-analytics-heatmap-open="${h(row.value)}" title="Open the heatmap for this page">${h(text)}</button>`;
+        return `<tr><th scope="row" class="an-bar-cell" style="--an-share:${((row.count || 0) / peak * 100).toFixed(1)}%">${label}</th>${withVisitors ? `<td class="r">${h(fmtInt(row.visitors))}</td>` : ""}<td class="r">${h(fmtInt(row.count))}</td><td class="r an-hint">${h(fmtPct(total ? Math.min(1, row.count / total) : 0, 0))}</td></tr>`;
+      }).join("")}</tbody></table></div>` : `<div class="an-empty">${pick.startsWith("referring") ? "No visits from other sites in this range." : "Nothing recorded."}</div>`;
+      return `<section class="an-card"><div class="an-card-head"><h3>${h(card.title)}</h3>${picker}</div>${body}</section>`;
+    }).join("");
+  }
+
+  // ==========================================================================
+  // Insights: query model shared by the builder and by dashboard tiles
+  // ==========================================================================
+
+  function defaultQuery(kind) {
+    const interval = state.range === "24h" ? "hour" : "day";
+    const base = { kind, filters: [] };
+    if (kind === "trends") return { ...base, series: [newSeries()], interval, breakdown: { type: "event", property: "", groupType: "" }, display: { chartType: "line", compare: false } };
+    if (kind === "funnel") return { ...base, steps: [newSeries("$pageview"), newSeries("$autocapture")], windowSeconds: 14 * 86400, order: "ordered", breakdown: { type: "event", property: "", groupType: "" } };
+    if (kind === "retention") return { ...base, targetEvent: newSeries(), returningEvent: newSeries(), period: "week", periods: 8, retentionType: "first_time" };
+    if (kind === "paths") return { ...base, pathType: "$pageview", startPoint: "", endPoint: "", stepLimit: 5, edgeLimit: 50 };
+    return { ...base, series: [newSeries()], interval: interval === "hour" ? "day" : interval };
+  }
+  function blankInsight(kind = "trends") { return { id: "", name: "", description: "", query: defaultQuery(kind) }; }
+  // A stored query is whatever an older client (or another tool) saved: fill every gap.
+  function hydrateQuery(stored) {
+    const kind = INSIGHT_KINDS.includes(stored?.kind) ? stored.kind : "trends";
+    const query_ = { ...defaultQuery(kind), ...JSON.parse(JSON.stringify(stored || {})), kind };
+    const seriesOf = (value) => (Array.isArray(value) ? value : []).map((item) => ({ ...newSeries(), ...item, properties: Array.isArray(item?.properties) ? item.properties : [] }));
+    if (query_.series) query_.series = seriesOf(query_.series).slice(0, 10);
+    if (query_.series && !query_.series.length) query_.series = [newSeries()];
+    if (query_.steps) query_.steps = seriesOf(query_.steps);
+    if (kind === "funnel") while (query_.steps.length < 2) query_.steps.push(newSeries());
+    if (kind === "retention") { query_.targetEvent = seriesOf([query_.targetEvent])[0] || newSeries(); query_.returningEvent = seriesOf([query_.returningEvent])[0] || newSeries(); }
+    if (!Array.isArray(query_.filters)) query_.filters = [];
+    if (kind === "trends" || kind === "funnel") query_.breakdown = { type: "event", property: "", groupType: "", ...(query_.breakdown || {}) };
+    if (kind === "trends") query_.display = { chartType: "line", compare: false, ...(query_.display || {}) };
+    return query_;
+  }
+  // What goes to the server (and into a saved insight): no editor-only fields.
+  function queryBody(query_) {
+    const body = { kind: query_.kind, filters: cleanFilters(query_.filters) };
+    const breakdown = query_.breakdown?.property ? { type: query_.breakdown.type || "event", property: query_.breakdown.property, groupType: query_.breakdown.groupType || "" } : undefined;
+    if (query_.kind === "trends") Object.assign(body, { series: cleanSeries(query_.series), interval: query_.interval, breakdown });
+    else if (query_.kind === "funnel") Object.assign(body, { steps: cleanSeries(query_.steps), windowSeconds: Number(query_.windowSeconds) || 14 * 86400, order: query_.order, breakdown });
+    else if (query_.kind === "retention") Object.assign(body, { targetEvent: cleanSeries([query_.targetEvent])[0], returningEvent: cleanSeries([query_.returningEvent])[0], period: query_.period, periods: Number(query_.periods) || 8, retentionType: query_.retentionType });
+    else if (query_.kind === "paths") Object.assign(body, { pathType: query_.pathType, startPoint: query_.startPoint || "", endPoint: query_.endPoint || "", stepLimit: Number(query_.stepLimit) || 5, edgeLimit: Number(query_.edgeLimit) || 50 });
+    else Object.assign(body, { series: cleanSeries(query_.kind === "lifecycle" ? query_.series.slice(0, 1) : query_.series), interval: query_.interval });
+    return body;
+  }
+  function storedQuery(query_) {
+    const body = queryBody(query_);
+    if (query_.kind === "trends") body.display = { chartType: query_.display?.chartType || "line", compare: Boolean(query_.display?.compare) };
+    return body;
+  }
+  // Runs an insight over the header's date range. "Compare to previous" is a second
+  // query over the window just before it; the two are lined up by bucket position.
+  async function runInsightQuery(query_, scopeName) {
+    const { kind, ...body } = queryBody(query_);
+    const window_ = rangeWindow();
+    const current = query(kind, body, scopeName, window_);
+    const compare = kind === "trends" && query_.display?.compare;
+    const span = window_.to - window_.from;
+    const before = compare ? query(kind, body, `${scopeName}:previous`, { from: window_.from - span, to: window_.from }) : null;
+    return { result: await current, previous: before ? await before : null };
+  }
+
+  function seriesName(item) { return item.breakdown ? `${item.name} · ${item.breakdown}` : item.name; }
+  function renderInsightResult(host, query_, result, previous, options = {}) {
+    if (!host) return;
+    const kind = query_.kind, height = options.compact ? 200 : 280;
+    if (!result) { host.innerHTML = `<div class="an-empty">Run the query to see a result.</div>`; return; }
+    if (kind === "trends") return renderTrends(host, query_, result, previous, height);
+    if (kind === "funnel") return renderFunnel(host, result, options);
+    if (kind === "retention") return renderRetention(host, result);
+    if (kind === "paths") return renderPaths(host, result, options);
+    const interval = result.interval || "day", rows = result.series || [];
+    if (kind === "stickiness") {
+      const unit = interval === "day" ? "day" : interval;
+      host.innerHTML = `<div class="an-chart" data-chart></div><p class="an-hint">How many ${h(unit)}s in this range each person did the event. Most people on the left means occasional use; a long tail to the right means a habit.</p>`;
+      return drawChart(host.querySelector("[data-chart]"), {
+        type: "bar", height, labels: result.labels || [], label: "Stickiness",
+        formatLabel: (label, long) => long ? `${label} ${unit}${label === 1 ? "" : "s"}` : String(label),
+        series: rows.slice(0, MAX_CHART_SERIES).map((item, index) => ({ name: item.name, data: item.data || [], total: item.total, color: PALETTE[index] })),
+        formatValue: (value) => `${fmtInt(value)} people`, legend: true,
+      });
+    }
+    host.innerHTML = `<div class="an-chart" data-chart></div><p class="an-hint">New: first time ever. Returning: also active the ${h(interval)} before. Resurrecting: back after a gap. Dormant (below zero): active the ${h(interval)} before, not this one.</p>`;
+    drawChart(host.querySelector("[data-chart]"), {
+      type: "stacked", height, labels: result.labels || [], timeAxis: true, annotations: state.objects.annotation || [], label: "Lifecycle",
+      formatLabel: (label, long) => fmtBucket(label, interval, long),
+      series: rows.map((item) => ({ name: item.name[0].toUpperCase() + item.name.slice(1), data: item.data || [], color: LIFECYCLE_COLORS[item.name] || PALETTE[4] })),
+    });
+  }
+
+  function renderTrends(host, query_, result, previous, height) {
+    const interval = result.interval || query_.interval || "day", labels = result.labels || [];
+    const all = result.series || [], shown = all.slice(0, MAX_CHART_SERIES);
+    const type = query_.display?.chartType || "line";
+    const before = previous?.series || [];
+    const previousOf = (item) => before.find((other) => other.name === item.name && (other.breakdown || "") === (item.breakdown || ""));
+    const note = all.length > shown.length ? `<p class="an-hint">Charting the top ${shown.length} of ${all.length} series. The table view lists every one.</p>` : "";
+    if (!all.length || !labels.length) { host.innerHTML = `<div class="an-empty">No matching events in this range.</div>`; return; }
+    if (type === "number") {
+      host.innerHTML = `<div class="an-number-tiles">${all.map((item) => {
+        const earlier = previousOf(item);
+        let delta = "";
+        if (earlier && earlier.total) {
+          const change = (item.total - earlier.total) / earlier.total;
+          delta = `<div class="an-kpi-delta">${change > 0 ? "▲" : change < 0 ? "▼" : "→"} ${h(fmtPct(Math.abs(change)))} vs previous period (${h(fmtNumber(earlier.total))})</div>`;
+        } else if (previous) delta = `<div class="an-kpi-delta">No earlier data to compare</div>`;
+        return `<div class="an-kpi"><div class="an-kpi-label an-break">${h(seriesName(item))}</div><div class="an-kpi-value">${h(fmtNumber(item.total))}</div>${delta}</div>`;
+      }).join("")}</div>`;
+      return;
+    }
+    if (type === "table") {
+      host.innerHTML = `<div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Series</th><th scope="col" class="r">Total</th>${labels.map((label) => `<th scope="col" class="r">${h(fmtBucket(label, interval))}</th>`).join("")}</tr></thead><tbody>${all.map((item) => `<tr><th scope="row" class="an-break">${h(seriesName(item))}</th><td class="r"><b>${h(fmtNumber(item.total))}</b></td>${labels.map((_, index) => `<td class="r">${h(fmtNumber(item.data?.[index] || 0))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      return;
+    }
+    host.innerHTML = `<div class="an-chart" data-chart></div>${note}`;
+    const series = [];
+    shown.forEach((item, index) => {
+      series.push({ name: seriesName(item), data: item.data || [], total: item.total, color: PALETTE[index] });
+      const earlier = previous ? previousOf(item) : null;
+      if (earlier) series.push({ name: `${seriesName(item)} (previous period)`, data: earlier.data || [], total: earlier.total, color: PALETTE[index], dashed: true });
+    });
+    drawChart(host.querySelector("[data-chart]"), {
+      type, height, labels, timeAxis: true, annotations: state.objects.annotation || [], series, label: "Trend",
+      formatLabel: (label, long) => fmtBucket(label, interval, long),
+    });
+  }
+
+  function funnelSteps(steps) {
+    return `<div class="an-funnel">${steps.map((step, index) => `<div class="an-funnel-step">
+      <div class="an-funnel-top"><span><b>${index + 1}.</b> <span class="an-break">${h(step.name)}</span></span><span><b>${h(fmtInt(step.count))}</b> people · <b>${h(fmtPct(step.conversion))}</b> of step 1</span></div>
+      <div class="an-funnel-track" role="img" aria-label="${h(fmtPct(step.conversion))} reached this step"><div class="an-funnel-fill" style="width:${(Math.max(0, Math.min(1, step.conversion)) * 100).toFixed(1)}%"></div></div>
+      ${index ? `<div class="an-funnel-meta"><span>${h(fmtPct(step.stepConversion))} from the previous step</span><span>▼ ${h(fmtInt(step.dropoff))} dropped off</span><span>Median time ${h(step.medianTimeMs ? fmtDuration(step.medianTimeMs) : "—")}</span><span>Average ${h(step.averageTimeMs ? fmtDuration(step.averageTimeMs) : "—")}</span></div>` : ""}
+    </div>`).join("")}</div>`;
+  }
+  function renderFunnel(host, result, options) {
+    const steps = result.steps || [];
+    if (result.error || steps.length < 2) { host.innerHTML = `<div class="an-empty">A funnel needs at least two steps.</div>`; return; }
+    if (!steps[0].count) { host.innerHTML = `<div class="an-empty">Nobody entered this funnel in this range.</div>`; return; }
+    const last = steps[steps.length - 1];
+    let html = `<p class="an-sub" style="margin:0 0 .9rem"><b style="color:var(--an-fg)">${h(fmtPct(last.conversion))}</b> of ${h(fmtInt(steps[0].count))} people completed all ${steps.length} steps.</p>${funnelSteps(steps)}`;
+    if (result.breakdown?.length && !options.compact) {
+      html += `<h3 style="margin:1.2rem 0 .5rem;font-size:.8125rem;color:var(--an-fg)">By breakdown</h3><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Value</th>${steps.map((step, index) => `<th scope="col" class="r">${index + 1}. ${h(step.name)}</th>`).join("")}<th scope="col" class="r">Conversion</th></tr></thead><tbody>${result.breakdown.map((row) => `<tr><th scope="row" class="an-break">${h(row.value)}</th>${row.steps.map((step) => `<td class="r">${h(fmtInt(step.count))}</td>`).join("")}<td class="r"><b>${h(fmtPct(row.steps[row.steps.length - 1]?.conversion))}</b></td></tr>`).join("")}</tbody></table></div>`;
+    }
+    host.innerHTML = html;
+  }
+
+  function renderRetention(host, result) {
+    const rows = result.rows || [], period = result.period || "week";
+    if (!rows.some((row) => row.size)) { host.innerHTML = `<div class="an-empty">Nobody did the target event in this range.</div>`; return; }
+    const width = Math.max(...rows.map((row) => row.values.length));
+    const word = period[0].toUpperCase() + period.slice(1);
+    host.innerHTML = `<div class="an-table-wrap"><table class="an-table an-heat"><thead><tr><th scope="col">Cohort</th><th scope="col" class="r">People</th>${Array.from({ length: width }, (_, index) => `<th scope="col">${h(word)} ${index}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr><th scope="row">${h(fmtBucket(row.start, period))}</th><td class="r" style="background:none">${h(fmtInt(row.size))}</td>${Array.from({ length: width }, (_, index) => {
+      if (index >= row.values.length) return `<td style="background:none"></td>`;
+      const share = row.percentages?.[index] || 0;
+      return `<td style="--an-heat:${(0.06 + Math.min(1, share) * 0.5).toFixed(3)}" title="${h(fmtInt(row.values[index]))} of ${h(fmtInt(row.size))} people">${row.size ? h(fmtPct(share, 0)) : "—"}</td>`;
+    }).join("")}</tr>`).join("")}</tbody></table></div><p class="an-hint">Each row is the people who did the target event in that ${h(period)}; each cell is the share who came back. Hover a cell for counts.</p>`;
+  }
+
+  // Paths: one column per step, nodes sized by traffic, links weighted by sessions.
+  function renderPaths(host, result, options) {
+    const edges = result.edges || [];
+    if (!edges.length) { host.innerHTML = `<div class="an-empty">No paths with at least two steps in this range.</div>`; return; }
+    const nodes = new Map();
+    const node = (id) => {
+      if (!nodes.has(id)) {
+        const cut = id.indexOf("_");
+        nodes.set(id, { id, step: Number(id.slice(0, cut)) || 1, name: id.slice(cut + 1), incoming: 0, outgoing: 0, inAt: 0, outAt: 0 });
+      }
+      return nodes.get(id);
+    };
+    for (const edge of edges) { node(edge.source).outgoing += edge.value; node(edge.target).incoming += edge.value; }
+    const columns = [];
+    nodes.forEach((item) => {
+      item.value = Math.max(item.incoming, item.outgoing + (Number(result.dropoffs?.[item.id]) || 0), 1);
+      (columns[item.step - 1] ||= []).push(item);
+    });
+    const used = columns.filter(Boolean), gapY = 10, headerY = 22;
+    const width = Math.max(560, Math.floor(host.clientWidth || 720)), height = options.compact ? 260 : 380;
+    const scale = Math.min(...used.map((column) => (height - headerY - gapY * (column.length - 1)) / column.reduce((sum, item) => sum + item.value, 0)));
+    const columnWidth = width / used.length, nodeWidth = 8;
+    used.forEach((column, index) => {
+      column.sort((a, b) => b.value - a.value);
+      let cursor = headerY;
+      for (const item of column) { item.x = index * columnWidth + 2; item.y = cursor; item.h = Math.max(2, item.value * scale); cursor += item.h + gapY; }
+    });
+    const ordered = edges.slice().sort((a, b) => node(a.source).y - node(b.source).y || node(a.target).y - node(b.target).y);
+    let svg = used.map((column, index) => `<text class="an-path-step" x="${(index * columnWidth + 2).toFixed(1)}" y="11">Step ${column[0].step}</text>`).join("");
+    for (const edge of ordered) {
+      const from = node(edge.source), to = node(edge.target), thick = Math.max(1, edge.value * scale);
+      const y1 = from.y + from.outAt + thick / 2, y2 = to.y + to.inAt + thick / 2;
+      from.outAt += thick; to.inAt += thick;
+      const x1 = from.x + nodeWidth, x2 = to.x, mid = (x1 + x2) / 2;
+      svg += `<path class="an-path-link" stroke-width="${thick.toFixed(1)}" d="M${x1.toFixed(1)},${y1.toFixed(1)}C${mid.toFixed(1)},${y1.toFixed(1)} ${mid.toFixed(1)},${y2.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}"><title>${h(from.name)} → ${h(to.name)}: ${h(fmtInt(edge.value))} sessions</title></path>`;
+    }
+    const room = Math.max(6, Math.floor((columnWidth - nodeWidth - 16) / 6.4));
+    nodes.forEach((item) => {
+      const label = item.name.length > room ? `${item.name.slice(0, room - 1)}…` : item.name;
+      svg += `<rect class="an-path-node" x="${item.x.toFixed(1)}" y="${item.y.toFixed(1)}" width="${nodeWidth}" height="${item.h.toFixed(1)}" rx="2"><title>${h(item.name)}: ${h(fmtInt(item.value))} sessions</title></rect>`
+        + `<text x="${(item.x + nodeWidth + 5).toFixed(1)}" y="${(item.y + Math.min(item.h / 2 + 4, 12)).toFixed(1)}">${h(label)} <tspan style="fill:var(--an-muted)">${h(fmtCompact(item.value))}</tspan></text>`;
+    });
+    const table = options.compact ? "" : `<div class="an-table-wrap" style="margin-top:1rem"><table class="an-table"><thead><tr><th scope="col">Step</th><th scope="col">From</th><th scope="col">To</th><th scope="col" class="r">Sessions</th></tr></thead><tbody>${edges.slice(0, 15).map((edge) => `<tr><td>${node(edge.source).step} → ${node(edge.target).step}</td><td class="an-break">${h(node(edge.source).name)}</td><td class="an-break">${h(node(edge.target).name)}</td><td class="r">${h(fmtInt(edge.value))}</td></tr>`).join("")}</tbody></table></div>`;
+    host.innerHTML = `<p class="an-hint" style="margin:0 0 .5rem">${h(fmtInt(result.sessions))} sessions. Link thickness is the number of sessions that took that step.</p><div class="an-paths an-table-wrap"><svg viewBox="0 0 ${width} ${height}" style="min-width:${width}px;display:block" role="img" aria-label="User paths by step">${svg}</svg></div>${table}`;
+  }
+
+  // ==========================================================================
+  // Insights tab: builder, saved insights, actions, annotations
+  // ==========================================================================
+
+  async function loadInsights() {
+    const sub = state.sub.insights;
+    if (sub === "saved") { await loadObjects("insight"); return renderSavedInsights(); }
+    if (sub === "actions") { await loadObjects("action"); return renderActions(); }
+    if (sub === "annotations") { await loadObjects("annotation"); return renderAnnotations(); }
+    if (!state.insight) state.insight = blankInsight("trends");
+    renderBuilder();
+    await runInsight();
+  }
+  async function runInsight() {
+    const insight = state.insight; if (!insight) return;
+    const host = $(`[data-analytics-insight-result]`);
+    host.style.opacity = ".55";
+    try {
+      const outcome = await runInsightQuery(insight.query, "insight");
+      if (insight !== state.insight) return;
+      state.insightResult = outcome.result; state.insightPrevious = outcome.previous;
+      renderInsightResult(host, insight.query, outcome.result, outcome.previous);
+    } catch (error) { fail(error, "Query failed"); }
+    finally { host.style.opacity = ""; }
+  }
+  function breakdownFields(query_) {
+    const groupTypes = settings().groupTypes || [];
+    return `<fieldset class="an-fieldset"><legend>Breakdown</legend><div class="an-form-grid">
+      ${field("By", `<select class="an-select" data-q="breakdown.type">${optionList([["event", "Event property"], ["person", "Person property"], ["group", "Group property"]], query_.breakdown.type)}</select>`)}
+      ${query_.breakdown.type === "group" ? field("Group type", `<select class="an-select" data-q="breakdown.groupType">${optionList([["", "Choose…"], ...groupTypes.map((name) => [name, name])], query_.breakdown.groupType)}</select>`) : ""}
+      ${field("Property (empty for none)", `<input class="an-input" data-q="breakdown.property" autocomplete="off" list="${query_.breakdown.type === "person" ? "an-person-props-list" : "an-props-list"}" value="${h(query_.breakdown.property || "")}" placeholder="${query_.breakdown.type === "group" ? "$group_key" : "$browser"}" />`)}
+    </div></fieldset>`;
+  }
+  function renderBuilder() {
+    const insight = state.insight, query_ = insight.query, kind = query_.kind;
+    $$(`[data-analytics-insight-type]`).forEach((button) => button.setAttribute("aria-selected", String(button.dataset.analyticsInsightType === kind)));
+    $(`[data-analytics-insight-name]`).textContent = insight.id ? insight.name || "Untitled insight" : "Unsaved";
+    $(`[data-analytics-insight-result-title]`).textContent = `${INSIGHT_LABELS[kind]} · ${rangeLabel()}`;
+    $(`[data-analytics-insight-add-dashboard]`).hidden = !insight.id;
+    const intervals = kind === "trends" ? [["hour", "Hour"], ["day", "Day"], ["week", "Week"], ["month", "Month"]] : [["day", "Day"], ["week", "Week"], ["month", "Month"]];
+    const host = $(`[data-analytics-insight-builder]`);
+    let html = "";
+    if (kind === "trends" || kind === "stickiness" || kind === "lifecycle") {
+      html = `<div data-b="series"></div><div class="an-form-grid">${field(kind === "stickiness" ? "Count active" : "Group by", `<select class="an-select" data-q="interval">${optionList(intervals, query_.interval)}</select>`)}</div>${kind === "trends" ? breakdownFields(query_) : ""}`;
+    } else if (kind === "funnel") {
+      html = `<div data-b="steps"></div><div class="an-form-grid">
+        ${field("Conversion window (days)", `<input class="an-input" type="number" min="1" max="90" data-q="windowDays" value="${Math.max(1, Math.round((Number(query_.windowSeconds) || 0) / 86400))}" />`)}
+        ${field("Step order", `<select class="an-select" data-q="order">${optionList([["ordered", "In order, other events allowed between"], ["strict", "Strict: nothing between steps"], ["unordered", "Any order"]], query_.order)}</select>`)}
+      </div>${breakdownFields(query_)}`;
+    } else if (kind === "retention") {
+      html = `<div data-b="target"></div><div data-b="returning"></div><div class="an-form-grid">
+        ${field("Period", `<select class="an-select" data-q="period">${optionList([["day", "Day"], ["week", "Week"], ["month", "Month"]], query_.period)}</select>`)}
+        ${field("Periods shown", `<input class="an-input" type="number" min="2" max="24" data-q="periods" value="${Number(query_.periods) || 8}" />`)}
+        ${field("Cohort is", `<select class="an-select" data-q="retentionType">${optionList([["first_time", "First time ever doing the event"], ["recurring", "Anyone doing it that period"]], query_.retentionType === "recurring" ? "recurring" : "first_time")}</select>`)}
+      </div><p class="an-hint" style="margin:0">Retention looks at the last “periods shown” ${h(query_.period)}s of the date range.</p>`;
+    } else {
+      html = `<div class="an-form-grid">
+        ${field("Follow", `<select class="an-select" data-q="pathType">${optionList([["$pageview", "Page views"], ["$screen", "Screens"], ["custom", "Custom events"]], query_.pathType)}</select>`)}
+        ${field("Start at (optional)", `<input class="an-input" data-q="startPoint" autocomplete="off" list="an-paths-list" value="${h(query_.startPoint || "")}" placeholder="/pricing" />`)}
+        ${field("End at (optional)", `<input class="an-input" data-q="endPoint" autocomplete="off" list="an-paths-list" value="${h(query_.endPoint || "")}" placeholder="/signup" />`)}
+        ${field("Steps", `<input class="an-input" type="number" min="2" max="10" data-q="stepLimit" value="${Number(query_.stepLimit) || 5}" />`)}
+        ${field("Links shown", `<input class="an-input" type="number" min="5" max="120" data-q="edgeLimit" value="${Number(query_.edgeLimit) || 50}" />`)}
+      </div>`;
+    }
+    html += `<fieldset class="an-fieldset"><legend>Filters on every event</legend><div data-b="filters"></div></fieldset>`;
+    host.innerHTML = html;
+    const rerun = () => void runInsight();
+    if (kind === "trends" || kind === "stickiness") mountSeries(host.querySelector(`[data-b="series"]`), query_.series, { onChange: rerun, max: kind === "trends" ? 10 : 5, maths: kind === "trends" });
+    if (kind === "lifecycle") mountSeries(host.querySelector(`[data-b="series"]`), query_.series, { onChange: rerun, max: 1, maths: false, colors: false, noun: "Event" });
+    if (kind === "funnel") mountSeries(host.querySelector(`[data-b="steps"]`), query_.steps, { onChange: rerun, min: 2, max: 12, maths: false, colors: false, noun: "Step" });
+    if (kind === "retention") {
+      // One-element wrapper lists: the editor mutates the series object itself.
+      mountSeries(host.querySelector(`[data-b="target"]`), [query_.targetEvent], { onChange: rerun, max: 1, maths: false, colors: false, noun: "Target event" });
+      mountSeries(host.querySelector(`[data-b="returning"]`), [query_.returningEvent], { onChange: rerun, max: 1, maths: false, colors: false, noun: "Returning event" });
+    }
+    mountFilters(host.querySelector(`[data-b="filters"]`), query_.filters, { onChange: rerun });
+
+    const display = $(`[data-analytics-insight-display]`);
+    display.innerHTML = kind === "trends" ? `<label class="an-check"><input type="checkbox" data-analytics-insight-compare${query_.display.compare ? " checked" : ""} /> Compare to previous period</label><label class="an-hint" for="an-chart-type">Show as</label><select id="an-chart-type" class="an-select" data-analytics-insight-chart>${optionList([["line", "Line"], ["area", "Area"], ["bar", "Bar"], ["number", "Number"], ["table", "Table"]], query_.display.chartType)}</select>` : "";
+    writeHash();
+  }
+  function onBuilderChange(event) {
+    const control = event.target.closest("[data-q]"); if (!control || !state.insight) return;
+    const query_ = state.insight.query, name = control.dataset.q;
+    if (name === "windowDays") query_.windowSeconds = Math.max(1, Math.min(90, Number(control.value) || 14)) * 86400;
+    else if (name.startsWith("breakdown.")) {
+      query_.breakdown[name.slice(10)] = control.value.trim();
+      if (name === "breakdown.type") { query_.breakdown.property = ""; renderBuilder(); }
+    } else if (control.type === "number") query_[name] = Number(control.value) || 0;
+    else query_[name] = control.value.trim();
+    void runInsight();
+  }
+  function switchInsightKind(kind) {
+    const previous = state.insight?.query, next = blankInsight(kind);
+    // Carry the events over so switching type keeps the question being asked.
+    const carried = previous?.series || previous?.steps || (previous?.targetEvent ? [previous.targetEvent] : null);
+    if (carried?.length) {
+      const copies = JSON.parse(JSON.stringify(carried));
+      if (next.query.series) next.query.series = kind === "lifecycle" ? copies.slice(0, 1) : copies.slice(0, kind === "stickiness" ? 5 : 10);
+      if (next.query.steps) next.query.steps = copies.length >= 2 ? copies : [...copies, newSeries("$autocapture")];
+      if (next.query.targetEvent) { next.query.targetEvent = copies[0]; next.query.returningEvent = JSON.parse(JSON.stringify(copies[0])); }
+    }
+    if (previous?.filters) next.query.filters = JSON.parse(JSON.stringify(previous.filters));
+    state.insight = next; state.insightResult = null;
+    renderBuilder(); void runInsight();
+  }
+  function saveInsightDialog() {
+    const insight = state.insight; if (!insight) return;
+    openDialog({
+      title: insight.id ? "Save insight" : "Save new insight", narrow: true,
+      render(body) {
+        body.innerHTML = field("Name", `<input class="an-input" data-d="name" maxlength="120" required value="${h(insight.name)}" />`)
+          + field("Description", `<textarea class="an-textarea" style="font-family:inherit" data-d="description" rows="3" maxlength="1000">${h(insight.description)}</textarea>`)
+          + (insight.id ? `<label class="an-check"><input type="checkbox" data-d="copy" /> Save as a new insight instead of updating</label>` : "");
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
+        if (!name) throw new Error("Give the insight a name.");
+        const copy = body.querySelector(`[data-d="copy"]`)?.checked;
+        const saved = await saveObject("insight", copy ? "" : insight.id, { name, description: body.querySelector(`[data-d="description"]`).value.trim(), query: storedQuery(insight.query) });
+        Object.assign(insight, { id: saved.id, name: saved.name, description: saved.description || "" });
+        state.loadedTabs.delete("dashboards:");
+        renderBuilder(); setMessage("notice", "Insight saved.");
+      },
+    });
+  }
+  async function addToDashboardDialog() {
+    const insight = state.insight; if (!insight?.id) return;
+    try { await loadObjects("dashboard"); } catch (error) { return fail(error); }
+    const dashboards = state.objects.dashboard || [];
+    openDialog({
+      title: "Add to dashboard", narrow: true, saveLabel: "Add",
+      render(body) {
+        body.innerHTML = field("Dashboard", `<select class="an-select" data-d="dashboard">${optionList([...dashboards.map((item) => [item.id, item.name || "Untitled dashboard"]), ["", "New dashboard…"]], dashboards[0]?.id || "")}</select>`)
+          + `<div data-d="new-wrap"${dashboards.length ? " hidden" : ""}>${field("New dashboard name", `<input class="an-input" data-d="name" maxlength="120" />`)}</div>`
+          + field("Tile width", `<select class="an-select" data-d="width">${optionList([[1, "Quarter"], [2, "Half"], [3, "Three quarters"], [4, "Full width"]], 2)}</select>`);
+        body.querySelector(`[data-d="dashboard"]`).addEventListener("change", (event) => { body.querySelector(`[data-d="new-wrap"]`).hidden = Boolean(event.target.value); });
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), id = body.querySelector(`[data-d="dashboard"]`).value;
+        const tile = { insightId: insight.id, width: Number(body.querySelector(`[data-d="width"]`).value) || 2 };
+        if (id) {
+          const dashboard = dashboards.find((item) => item.id === id);
+          await saveObject("dashboard", id, { tiles: [...(dashboard?.tiles || []), tile] });
+        } else {
+          const name = body.querySelector(`[data-d="name"]`).value.trim();
+          if (!name) throw new Error("Give the new dashboard a name.");
+          state.dashboardId = (await saveObject("dashboard", "", { name, tiles: [tile] })).id;
+        }
+        state.loadedTabs.delete("dashboards:");
+        setMessage("notice", "Added to the dashboard.");
+      },
+    });
+  }
+  function renderSavedInsights() {
+    const items = state.objects.insight || [];
+    $(`[data-analytics-saved-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><button type="button" class="an-link an-break" data-analytics-insight-open="${h(item.id)}">${h(item.name || "Untitled insight")}</button>${item.pinned ? ` <span class="an-badge">Pinned</span>` : ""}${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td>${h(INSIGHT_LABELS[item.query?.kind] || "Trends")}</td><td>${h(relTime(item.updatedAt))}</td><td>${h(item.updatedBy || item.createdBy || "")}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-insight-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-saved-empty]`).hidden = items.length > 0;
+  }
+  function openSavedInsight(id) {
+    const item = (state.objects.insight || []).find((entry) => entry.id === id); if (!item) return;
+    state.insight = { id: item.id, name: item.name || "", description: item.description || "", query: hydrateQuery(item.query) };
+    state.insightResult = null; state.loadedTabs.delete("insights:builder");
+    showTab("insights", "builder");
+  }
+  function editSavedInsightDialog(id) {
+    const item = (state.objects.insight || []).find((entry) => entry.id === id); if (!item) return;
+    openDialog({
+      title: "Edit insight", narrow: true,
+      render(body) {
+        body.innerHTML = field("Name", `<input class="an-input" data-d="name" maxlength="120" required value="${h(item.name || "")}" />`)
+          + field("Description", `<textarea class="an-textarea" style="font-family:inherit" data-d="description" rows="3" maxlength="1000">${h(item.description || "")}</textarea>`)
+          + `<label class="an-check"><input type="checkbox" data-d="pinned"${item.pinned ? " checked" : ""} /> Pinned</label>`;
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
+        if (!name) throw new Error("Give the insight a name.");
+        const saved = await saveObject("insight", id, { name, description: body.querySelector(`[data-d="description"]`).value.trim(), pinned: body.querySelector(`[data-d="pinned"]`).checked });
+        if (state.insight?.id === id) Object.assign(state.insight, { name: saved.name, description: saved.description || "" });
+        renderSavedInsights();
+      },
+      async onDelete() {
+        if (!confirm(`Delete the insight “${item.name || "Untitled insight"}”? Dashboard tiles that show it will be empty.`)) return false;
+        await deleteObject("insight", id);
+        if (state.insight?.id === id) state.insight.id = "";
+        state.loadedTabs.delete("dashboards:"); renderSavedInsights();
+      },
+    });
+  }
+
+  // ---- Actions -------------------------------------------------------------
+
+  function renderActions() {
+    const items = state.objects.action || [];
+    $(`[data-analytics-actions-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><span class="an-break">${h(item.name || "Untitled action")}</span>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td class="an-break">${(item.steps || []).map((step) => h([eventLabel(step.event), step.url && `URL ${step.urlMatching || "contains"} “${step.url}”`, step.text && `text “${step.text}”`, step.selector && `selector ${step.selector}`, step.properties?.length && `${step.properties.length} filter${step.properties.length === 1 ? "" : "s"}`].filter(Boolean).join(" · "))).join("<br>") || "—"}</td><td>${h(relTime(item.updatedAt))}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-action-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-actions-empty]`).hidden = items.length > 0;
+  }
+  function actionDialog(id = "") {
+    const item = (state.objects.action || []).find((entry) => entry.id === id);
+    const draft = JSON.parse(JSON.stringify({ name: item?.name || "", description: item?.description || "", steps: item?.steps?.length ? item.steps : [{ event: "$autocapture", url: "", urlMatching: "contains", selector: "", text: "", properties: [] }] }));
+    function renderSteps(host) {
+      host.innerHTML = draft.steps.map((step, index) => `<fieldset class="an-fieldset" data-step="${index}"><legend>Match ${index + 1}${draft.steps.length > 1 ? " (any match counts)" : ""}</legend><div class="an-form-grid">
+        ${field("Event", `<input class="an-input" data-a="event" list="an-events-list" autocomplete="off" value="${h(step.event)}" />`)}
+        ${field("URL", `<input class="an-input" data-a="url" maxlength="400" value="${h(step.url)}" placeholder="/pricing" />`)}
+        ${field("URL matching", `<select class="an-select" data-a="urlMatching">${optionList([["contains", "Contains"], ["exact", "Exactly"], ["regex", "Regex"]], step.urlMatching)}</select>`)}
+        ${field("Element text contains", `<input class="an-input" data-a="text" maxlength="200" value="${h(step.text)}" placeholder="Start free trial" />`)}
+        ${field("Selector (tag#id.class[attr=\"v\"])", `<input class="an-input an-mono" data-a="selector" maxlength="200" value="${h(step.selector)}" placeholder="button.cta" />`)}
+      </div><div data-step-filters="${index}"></div>${draft.steps.length > 1 ? `<div><button type="button" class="an-btn an-btn-small" data-a="remove">Remove this match</button></div>` : ""}</fieldset>`).join("")
+        + (draft.steps.length < 10 ? `<div><button type="button" class="an-btn an-btn-small" data-a="add">+ Add another match</button></div>` : "");
+      draft.steps.forEach((step, index) => mountFilters(host.querySelector(`[data-step-filters="${index}"]`), step.properties, { types: ["event", "person"], addLabel: "Property filter" }));
+    }
+    openDialog({
+      title: item ? "Edit action" : "New action",
+      render(body) {
+        body.innerHTML = `<div class="an-form-grid">${field("Name", `<input class="an-input" data-d="name" maxlength="120" required value="${h(draft.name)}" />`)}${field("Description", `<input class="an-input" data-d="description" maxlength="1000" value="${h(draft.description)}" />`)}</div><div data-d="steps" class="an-stack-tight"></div>`;
+        const host = body.querySelector(`[data-d="steps"]`); renderSteps(host);
+        host.addEventListener("change", (event) => {
+          const control = event.target.closest("[data-a]"), step = draft.steps[Number(event.target.closest("[data-step]")?.dataset.step)];
+          if (control && step) step[control.dataset.a] = control.value.trim();
+        });
+        host.addEventListener("click", (event) => {
+          const control = event.target.closest("button[data-a]"); if (!control) return;
+          if (control.dataset.a === "add") draft.steps.push({ event: "$autocapture", url: "", urlMatching: "contains", selector: "", text: "", properties: [] });
+          else draft.steps.splice(Number(control.closest("[data-step]").dataset.step), 1);
+          renderSteps(host);
+        });
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
+        if (!name) throw new Error("Give the action a name.");
+        await saveObject("action", id, { name, description: body.querySelector(`[data-d="description"]`).value.trim(), steps: draft.steps.map((step) => ({ ...step, event: step.event || "$autocapture", properties: cleanFilters(step.properties) })) });
+        renderActions();
+      },
+      onDelete: item ? async () => {
+        if (!confirm(`Delete the action “${item.name}”? Insights that use it will match nothing.`)) return false;
+        await deleteObject("action", id); renderActions();
+      } : null,
+    });
+  }
+
+  // ---- Annotations ---------------------------------------------------------
+
+  function renderAnnotations() {
+    const items = (state.objects.annotation || []).slice().sort((a, b) => b.date - a.date);
+    $(`[data-analytics-annotations-list]`).innerHTML = items.map((item) => `<tr><td style="white-space:nowrap">${h(fmtDateTime(item.date))}</td><th scope="row" class="an-break">${h(item.content)}</th><td>${h(item.createdBy || "")}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-annotation-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-annotations-empty]`).hidden = items.length > 0;
+  }
+  function annotationDialog(id = "") {
+    const item = (state.objects.annotation || []).find((entry) => entry.id === id);
+    const when = new Date(item?.date || Date.now());
+    const local = `${toDateInput(when.getTime())}T${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
+    openDialog({
+      title: item ? "Edit annotation" : "New annotation", narrow: true,
+      render(body) {
+        body.innerHTML = field("Note", `<input class="an-input" data-d="content" maxlength="400" required value="${h(item?.content || "")}" placeholder="Released 2.1" />`)
+          + field("When", `<input class="an-input" type="datetime-local" data-d="date" required value="${h(local)}" />`);
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), content = body.querySelector(`[data-d="content"]`).value.trim();
+        const date = new Date(body.querySelector(`[data-d="date"]`).value).getTime();
+        if (!content || !Number.isFinite(date)) throw new Error("An annotation needs a note and a date.");
+        await saveObject("annotation", id, { content, date });
+        renderAnnotations();
+      },
+      onDelete: item ? async () => { await deleteObject("annotation", id); renderAnnotations(); } : null,
+    });
+  }
+
+  // ==========================================================================
+  // Dashboards
+  // ==========================================================================
+
+  function currentDashboard() { return (state.objects.dashboard || []).find((item) => item.id === state.dashboardId); }
+  async function loadDashboards() {
+    await Promise.all([loadObjects("dashboard"), loadObjects("insight")]);
+    const dashboards = state.objects.dashboard || [];
+    if (!currentDashboard()) state.dashboardId = (dashboards.find((item) => item.pinned) || dashboards[0])?.id || "";
+    renderDashboardSelect();
+    await renderDashboard();
+  }
+  function renderDashboardSelect() {
+    const dashboards = (state.objects.dashboard || []).slice().sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
+    const select = $(`[data-analytics-dashboard-select]`);
+    select.innerHTML = dashboards.length ? optionList(dashboards.map((item) => [item.id, `${item.pinned ? "★ " : ""}${item.name || "Untitled dashboard"}`]), state.dashboardId) : `<option value="">No dashboards</option>`;
+    select.disabled = !dashboards.length;
+    $(`[data-analytics-dashboard-edit]`).hidden = !currentDashboard();
+  }
+  // Tiles run one after another: each query opens the same event batches, and
+  // a burst of them is exactly what the instance's daily budget does not need.
+  async function renderDashboard() {
+    const dashboard = currentDashboard(), tilesHost = $(`[data-analytics-dashboard-tiles]`), empty = $(`[data-analytics-dashboard-empty]`);
+    const description = $(`[data-analytics-dashboard-description]`);
+    description.textContent = dashboard?.description || ""; description.hidden = !dashboard?.description;
+    const tiles = dashboard?.tiles || [];
+    empty.hidden = Boolean(tiles.length);
+    empty.textContent = dashboard ? "This dashboard has no tiles. Open a saved insight and press “Add to dashboard”." : "No dashboards yet. Create one, then add saved insights to it.";
+    tilesHost.innerHTML = tiles.map((tile, index) => {
+      const insight = (state.objects.insight || []).find((item) => item.id === tile.insightId);
+      return `<section class="an-card an-tile" style="--an-tile-span:${Math.max(1, Math.min(4, Number(tile.width) || 2))}"><div class="an-card-head"><h3 class="an-break">${insight ? `<button type="button" class="an-link" data-analytics-insight-open="${h(insight.id)}">${h(insight.name || "Untitled insight")}</button>` : "Deleted insight"}</h3><span class="an-hint">${h(insight ? INSIGHT_LABELS[insight.query?.kind] || "Trends" : "")}</span></div><div class="an-pad" data-analytics-tile="${index}">${insight ? `<div class="an-empty">Loading…</div>` : `<div class="an-empty">The insight behind this tile was deleted. Remove the tile under Edit.</div>`}</div></section>`;
+    }).join("");
+    for (const [index, tile] of tiles.entries()) {
+      const insight = (state.objects.insight || []).find((item) => item.id === tile.insightId); if (!insight) continue;
+      const host = tilesHost.querySelector(`[data-analytics-tile="${index}"]`), query_ = hydrateQuery(insight.query);
+      try {
+        const outcome = await runInsightQuery(query_, `tile:${index}`);
+        renderInsightResult(host, query_, outcome.result, outcome.previous, { compact: true });
+      } catch (error) {
+        if (isAbort(error)) throw error;
+        host.innerHTML = `<div class="an-empty">${h(error.message)}</div>`;
+      }
+    }
+  }
+  function dashboardDialog(id = "") {
+    const item = (state.objects.dashboard || []).find((entry) => entry.id === id);
+    const draft = { tiles: JSON.parse(JSON.stringify(item?.tiles || [])) };
+    const insights = state.objects.insight || [];
+    function renderTiles(host) {
+      host.innerHTML = (draft.tiles.length ? draft.tiles.map((tile, index) => `<div class="an-row" data-tile="${index}"><span class="an-grow an-break">${h(insights.find((entry) => entry.id === tile.insightId)?.name || "Deleted insight")}</span><select class="an-select" data-t="width" aria-label="Tile width">${optionList([[1, "Quarter"], [2, "Half"], [3, "Three quarters"], [4, "Full width"]], tile.width)}</select><button type="button" class="an-btn an-btn-small" data-t="up"${index ? "" : " disabled"}>Move up</button><button type="button" class="an-btn an-btn-small" data-t="remove">Remove</button></div>`).join("") : `<p class="an-hint" style="margin:0">No tiles yet.</p>`)
+        + (insights.length ? `<div class="an-row"><select class="an-select an-grow" data-t="pick" aria-label="Insight to add"><option value="">Add a saved insight…</option>${optionList(insights.map((entry) => [entry.id, entry.name || "Untitled insight"]), "")}</select></div>` : "");
+    }
+    openDialog({
+      title: item ? "Edit dashboard" : "New dashboard",
+      render(body) {
+        body.innerHTML = `<div class="an-form-grid">${field("Name", `<input class="an-input" data-d="name" maxlength="120" required value="${h(item?.name || "")}" />`)}${field("Description", `<input class="an-input" data-d="description" maxlength="1000" value="${h(item?.description || "")}" />`)}</div><label class="an-check"><input type="checkbox" data-d="pinned"${item?.pinned ? " checked" : ""} /> Pinned (opens first)</label><fieldset class="an-fieldset"><legend>Tiles</legend><div data-d="tiles" class="an-stack-tight"></div></fieldset>`;
+        const host = body.querySelector(`[data-d="tiles"]`); renderTiles(host);
+        host.addEventListener("change", (event) => {
+          const control = event.target.closest("[data-t]"); if (!control) return;
+          if (control.dataset.t === "pick") { if (control.value && draft.tiles.length < 40) draft.tiles.push({ insightId: control.value, width: 2 }); renderTiles(host); }
+          else draft.tiles[Number(control.closest("[data-tile]").dataset.tile)].width = Number(control.value) || 2;
+        });
+        host.addEventListener("click", (event) => {
+          const control = event.target.closest("button[data-t]"); if (!control) return;
+          const index = Number(control.closest("[data-tile]").dataset.tile);
+          if (control.dataset.t === "up" && index > 0) draft.tiles.splice(index - 1, 0, draft.tiles.splice(index, 1)[0]);
+          else if (control.dataset.t === "remove") draft.tiles.splice(index, 1);
+          renderTiles(host);
+        });
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
+        if (!name) throw new Error("Give the dashboard a name.");
+        const saved = await saveObject("dashboard", id, { name, description: body.querySelector(`[data-d="description"]`).value.trim(), pinned: body.querySelector(`[data-d="pinned"]`).checked, tiles: draft.tiles });
+        state.dashboardId = saved.id; renderDashboardSelect();
+        renderDashboard().catch((error) => fail(error));
+      },
+      onDelete: item ? async () => {
+        if (!confirm(`Delete the dashboard “${item.name}”? Its insights are kept.`)) return false;
+        await deleteObject("dashboard", id); state.dashboardId = "";
+        state.loadedTabs.delete("dashboards:"); void loadTab(true);
+      } : null,
+    });
+  }
+
+  // ==========================================================================
+  // Events explorer
+  // ==========================================================================
+
+  async function loadEvents(append) {
+    const view = state.events;
+    const body = { event: view.name, filters: cleanFilters(view.filters), limit: 100 };
+    if (append && view.nextBefore) body.before = view.nextBefore;
+    const result = await query("events", body, "events");
+    view.rows = append ? view.rows.concat(result.events || []) : result.events || [];
+    if (!append) view.open = new Set();
+    view.nextBefore = result.nextBefore || 0;
+    renderEvents();
+  }
+  function eventPlace(properties) {
+    return plainValue(properties?.$current_url || properties?.$pathname || properties?.$screen_name || "");
+  }
+  function renderEvents() {
+    const view = state.events;
+    $(`[data-analytics-events-list]`).innerHTML = view.rows.map((row, index) => {
+      const open = view.open.has(index);
+      const detail = open ? `<tr><td colspan="5"><div class="an-stack-tight">
+        <dl class="an-kv"><dt>Distinct id</dt><dd class="an-mono">${h(row.distinctId)}</dd><dt>Session</dt><dd>${row.sessionId ? `<span class="an-mono">${h(row.sessionId)}</span> · <button type="button" class="an-link" data-analytics-replay-open="${h(row.sessionId)}">Watch replay</button>` : "—"}</dd>${Object.keys(row.groups || {}).length ? `<dt>Groups</dt><dd>${h(Object.entries(row.groups).map(([type, key]) => `${type}: ${key}`).join(", "))}</dd>` : ""}</dl>
+        <pre class="an-pre">${h(JSON.stringify(row.properties || {}, null, 2))}</pre></div></td></tr>` : "";
+      return `<tr><th scope="row"><span class="an-break">${h(eventLabel(row.event))}</span>${EVENT_LABELS[row.event] ? ` <span class="an-hint an-mono">${h(row.event)}</span>` : ""}</th><td><button type="button" class="an-link an-mono" data-analytics-person-open="${h(row.personId)}" title="Open this person">${h(shortId(row.distinctId))}</button></td><td><div class="an-clip" title="${h(eventPlace(row.properties))}">${h(eventPlace(row.properties)) || "—"}</div></td><td style="white-space:nowrap" title="${h(fmtDateTime(row.timestamp))}">${h(fmtDateTime(row.timestamp))}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-event-toggle="${index}" aria-expanded="${open}">${open ? "Hide" : "Details"}</button></td></tr>${detail}`;
+    }).join("");
+    $(`[data-analytics-events-empty]`).hidden = view.rows.length > 0;
+    $(`[data-analytics-events-more-wrap]`).hidden = !view.nextBefore;
+  }
+
+  // ==========================================================================
+  // People, groups, cohorts
+  // ==========================================================================
+
+  function loadPeopleTab() {
+    if (state.sub.people === "groups") return loadGroups();
+    if (state.sub.people === "cohorts") return loadObjects("cohort").then(renderCohorts);
+    return loadPeople(false);
+  }
+  async function loadPeople(append) {
+    const view = state.people, parameters = new URLSearchParams();
+    const search = $(`[data-analytics-people-search]`).value.trim();
+    if (search) parameters.set("search", search);
+    if ($(`[data-analytics-people-identified]`).checked) parameters.set("identified", "1");
+    if (append && view.nextBefore) parameters.set("before", String(view.nextBefore));
+    const payload = await request(projectPath(`/persons?${parameters}`), "GET", null, scope("people"));
+    view.rows = append ? view.rows.concat(payload.persons || []) : payload.persons || [];
+    Object.assign(view, { nextBefore: payload.nextBefore || 0, total: payload.total || 0, identified: payload.identified || 0 });
+    renderPeople();
+  }
+  function renderPeople() {
+    const view = state.people;
+    $(`[data-analytics-people-total]`).textContent = `${fmtInt(view.total)} people · ${fmtInt(view.identified)} identified`;
+    $(`[data-analytics-people-list]`).innerHTML = view.rows.map((person) => {
+      const properties = Object.entries(person.properties || {}).slice(0, 4);
+      return `<tr><th scope="row"><button type="button" class="an-link an-break" data-analytics-person-open="${h(person.id)}">${h(personName(person))}</button><div class="an-hint">${person.identified ? "Identified" : "Anonymous"} · ${h(fmtInt((person.distinctIds || []).length))} id${(person.distinctIds || []).length === 1 ? "" : "s"}</div></th><td class="an-break">${properties.length ? properties.map(([key, value]) => `<span class="an-hint">${h(key)}</span> ${h(plainValue(value).slice(0, 60))}`).join("<br>") : `<span class="an-hint">—</span>`}</td><td style="white-space:nowrap">${h(fmtDate(person.firstSeen))}</td><td style="white-space:nowrap">${h(relTime(person.lastSeen))}</td><td class="r">${h(fmtInt(person.events))}</td></tr>`;
+    }).join("");
+    $(`[data-analytics-people-empty]`).hidden = view.rows.length > 0;
+    $(`[data-analytics-people-more-wrap]`).hidden = !view.nextBefore;
+  }
+  async function openPerson(personId) {
+    if (!/^[0-9a-f]{32}$/.test(String(personId))) return;
+    const drawer = $(`[data-analytics-drawer]`), body = $(`[data-analytics-drawer-body]`);
+    $(`[data-analytics-drawer-title]`).textContent = "Person";
+    body.innerHTML = `<div class="an-empty">Loading…</div>`;
+    if (!drawer.open) drawer.showModal();
+    try {
+      const payload = await request(projectPath(`/persons/${personId}`), "GET", null, scope("person"));
+      const person = payload.person || {};
+      $(`[data-analytics-drawer-title]`).textContent = personName(person);
+      body.innerHTML = `
+        <dl class="an-kv"><dt>Status</dt><dd>${person.identified ? "Identified" : "Anonymous"}</dd><dt>First seen</dt><dd>${h(fmtDateTime(person.firstSeen))}</dd><dt>Last seen</dt><dd>${h(fmtDateTime(person.lastSeen))}</dd><dt>Events</dt><dd>${h(fmtInt(person.events))}</dd><dt>Distinct ids</dt><dd class="an-mono">${(person.distinctIds || []).map((id) => h(id)).join("<br>") || "—"}</dd></dl>
+        <section class="an-card"><div class="an-card-head"><h3>Properties</h3></div><div class="an-pad">${kvList(person.properties, "No person properties. Set them with identify() or setPersonProperties().")}</div></section>
+        <section class="an-card"><div class="an-card-head"><h3>Recordings</h3>${(payload.recordings || []).length ? `<button type="button" class="an-btn an-btn-small" data-analytics-person-recordings="${h(person.id)}">All of this person's recordings</button>` : ""}</div>${(payload.recordings || []).length ? `<div class="an-event-list">${payload.recordings.map((recording) => `<button type="button" class="an-event-item" data-analytics-replay-open="${h(recording.sessionId)}"><span>${h(fmtDateTime(recording.startedAt))}</span><span class="an-hint">${h(fmtDuration(recording.durationMs))} · ${h(fmtInt(recording.clicks))} clicks${recording.errors ? ` · ${h(fmtInt(recording.errors))} errors` : ""}</span></button>`).join("")}</div>` : `<div class="an-empty">No recordings.</div>`}</section>
+        <section class="an-card"><div class="an-card-head"><h3>Recent events</h3><span class="an-hint">Last 30 days, newest first</span></div>${(payload.events || []).length ? `<div class="an-table-wrap" style="max-height:24rem;overflow-y:auto"><table class="an-table"><thead><tr><th scope="col">Event</th><th scope="col">Where</th><th scope="col">Time</th></tr></thead><tbody>${payload.events.map((row) => `<tr><th scope="row" class="an-break">${h(eventLabel(row.event))}</th><td><div class="an-clip" style="max-width:14rem">${h(eventPlace(row.properties)) || "—"}</div></td><td style="white-space:nowrap">${h(fmtDateTime(row.timestamp))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="an-empty">No events in the last 30 days.</div>`}</section>
+        ${canManage() ? `<div class="an-row an-row-end"><button type="button" class="an-btn an-btn-danger" data-analytics-person-delete="${h(person.id)}">Delete person and data…</button></div>` : ""}`;
+    } catch (error) {
+      if (!isAbort(error)) body.innerHTML = `<div class="an-banner an-banner-error">${h(error.message)}</div>`;
+    }
+  }
+  async function deletePerson(personId) {
+    if (!confirm("Delete this person, their events, and their recordings? This is the right-to-erasure delete and cannot be undone.")) return;
+    try {
+      const payload = await request(projectPath(`/persons/${personId}`), "DELETE", {});
+      $(`[data-analytics-drawer]`).close();
+      setMessage("notice", `Person deleted. ${fmtInt(payload.eventsRemoved)} events removed.`);
+      state.people.rows = state.people.rows.filter((person) => person.id !== personId);
+      state.loadedTabs.clear(); renderPeople();
+    } catch (error) { fail(error, "Could not delete the person"); }
+  }
+  async function loadGroups() {
+    const select = $(`[data-analytics-group-type]`), type = select.value;
+    const payload = await request(projectPath(`/groups${type ? `?type=${encodeURIComponent(type)}` : ""}`), "GET", null, scope("groups"));
+    state.groups = payload.groups || [];
+    const types = [...new Set([...(settings().groupTypes || []), ...(payload.types || []), type].filter(Boolean))].sort();
+    select.innerHTML = `<option value="">All types</option>${optionList(types.map((name) => [name, name]), type)}`;
+    $(`[data-analytics-groups-list]`).innerHTML = state.groups.map((group) => `<tr><td>${h(group.type)}</td><th scope="row" class="an-break">${h(group.key)}</th><td class="an-break">${Object.entries(group.properties || {}).slice(0, 6).map(([key, value]) => `<span class="an-hint">${h(key)}</span> ${h(plainValue(value).slice(0, 60))}`).join("<br>") || `<span class="an-hint">—</span>`}</td><td style="white-space:nowrap">${h(fmtDate(group.firstSeen))}</td><td style="white-space:nowrap">${h(relTime(group.lastSeen))}</td></tr>`).join("");
+    $(`[data-analytics-groups-empty]`).hidden = state.groups.length > 0;
+  }
+  function cohortSummary(cohort) {
+    if (cohort.static) return `${fmtInt((cohort.distinctIds || []).length)} pasted ids`;
+    const parts = (cohort.conditions || []).map((condition) => condition.kind === "event"
+      ? `${condition.performed === false ? "did not do" : "did"} ${eventLabel(condition.event)} ≥ ${condition.minCount}× in ${condition.days}d`
+      : `${condition.property} ${OPERATOR_LABELS[condition.operator] || condition.operator} ${filterValueText(condition)}`.trim());
+    return parts.join(cohort.match === "any" ? " OR " : " AND ") || "No conditions";
+  }
+  function renderCohorts() {
+    const items = state.objects.cohort || [];
+    $(`[data-analytics-cohorts-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><span class="an-break">${h(item.name || "Untitled cohort")}</span>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td>${item.static ? "Static" : "Dynamic"}</td><td class="an-break">${h(cohortSummary(item))}</td><td>${h(relTime(item.updatedAt))}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-cohort-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-cohorts-empty]`).hidden = items.length > 0;
+  }
+  function cohortDialog(id = "") {
+    const item = (state.objects.cohort || []).find((entry) => entry.id === id);
+    const conditions = JSON.parse(JSON.stringify(item?.conditions || []));
+    const draft = {
+      static: Boolean(item?.static), match: item?.match === "any" ? "any" : "all",
+      properties: conditions.filter((condition) => condition.kind !== "event").map((condition) => ({ type: "person", property: condition.property, operator: condition.operator, value: condition.value })),
+      events: conditions.filter((condition) => condition.kind === "event"),
+    };
+    function renderEventsPart(host) {
+      host.innerHTML = draft.events.map((condition, index) => `<div class="an-filter" data-condition="${index}">
+        <select class="an-select" data-c="performed" aria-label="Did or did not">${optionList([["yes", "Did"], ["no", "Did not do"]], condition.performed === false ? "no" : "yes")}</select>
+        <input class="an-input" data-c="event" aria-label="Event" list="an-events-list" autocomplete="off" value="${h(condition.event)}" />
+        <label class="an-hint">at least <input class="an-input" style="width:4.5rem" type="number" min="1" max="10000" data-c="minCount" value="${Number(condition.minCount) || 1}" /> times</label>
+        <label class="an-hint">in the last <input class="an-input" style="width:4.5rem" type="number" min="1" max="400" data-c="days" value="${Number(condition.days) || 30}" /> days</label>
+        <button type="button" class="an-btn an-btn-small" data-c="remove">Remove</button></div>`).join("")
+        + `<div><button type="button" class="an-btn an-btn-small" data-c="add">+ Add behaviour</button></div>`;
+    }
+    openDialog({
+      title: item ? "Edit cohort" : "New cohort",
+      render(body) {
+        body.innerHTML = `<div class="an-form-grid">${field("Name", `<input class="an-input" data-d="name" maxlength="120" required value="${h(item?.name || "")}" />`)}${field("Description", `<input class="an-input" data-d="description" maxlength="1000" value="${h(item?.description || "")}" />`)}
+          ${field("Kind", `<select class="an-select" data-d="kind">${optionList([["dynamic", "Dynamic: everyone matching conditions"], ["static", "Static: a pasted list of distinct ids"]], draft.static ? "static" : "dynamic")}</select>`)}</div>
+          <div data-d="static-part"${draft.static ? "" : " hidden"}>${field("Distinct ids (one per line, up to 2,000)", `<textarea class="an-textarea" data-d="ids" rows="8">${h((item?.distinctIds || []).join("\n"))}</textarea>`, true)}<p class="an-hint">Static cohorts can also target feature flags.</p></div>
+          <div data-d="dynamic-part" class="an-stack-tight"${draft.static ? " hidden" : ""}>
+            ${field("People must match", `<select class="an-select" data-d="match">${optionList([["all", "All conditions"], ["any", "Any condition"]], draft.match)}</select>`)}
+            <fieldset class="an-fieldset"><legend>Person properties</legend><div data-d="properties"></div></fieldset>
+            <fieldset class="an-fieldset"><legend>Behaviour</legend><div data-d="events" class="an-stack-tight"></div></fieldset>
+          </div>`;
+        mountFilters(body.querySelector(`[data-d="properties"]`), draft.properties, { types: ["person"], addLabel: "Add property condition" });
+        const host = body.querySelector(`[data-d="events"]`); renderEventsPart(host);
+        body.querySelector(`[data-d="kind"]`).addEventListener("change", (event) => {
+          draft.static = event.target.value === "static";
+          body.querySelector(`[data-d="static-part"]`).hidden = !draft.static; body.querySelector(`[data-d="dynamic-part"]`).hidden = draft.static;
+        });
+        host.addEventListener("change", (event) => {
+          const control = event.target.closest("[data-c]"), condition = draft.events[Number(event.target.closest("[data-condition]")?.dataset.condition)];
+          if (!control || !condition) return;
+          const name = control.dataset.c;
+          if (name === "performed") condition.performed = control.value === "yes";
+          else if (name === "event") condition.event = control.value.trim();
+          else condition[name] = Math.max(1, Number(control.value) || 1);
+        });
+        host.addEventListener("click", (event) => {
+          const control = event.target.closest("button[data-c]"); if (!control) return;
+          if (control.dataset.c === "add") draft.events.push({ kind: "event", event: "$pageview", performed: true, minCount: 1, days: 30 });
+          else draft.events.splice(Number(control.closest("[data-condition]").dataset.condition), 1);
+          renderEventsPart(host);
+        });
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
+        if (!name) throw new Error("Give the cohort a name.");
+        const data = { name, description: body.querySelector(`[data-d="description"]`).value.trim(), static: draft.static, match: body.querySelector(`[data-d="match"]`).value, distinctIds: [], conditions: [] };
+        if (draft.static) {
+          data.distinctIds = [...new Set(body.querySelector(`[data-d="ids"]`).value.split(/[\n,]+/).map((part) => part.trim()).filter(Boolean))].slice(0, 2000);
+          if (!data.distinctIds.length) throw new Error("Paste at least one distinct id.");
+        } else {
+          data.conditions = [...cleanFilters(draft.properties).map((filter) => ({ kind: "property", property: filter.property, operator: filter.operator, value: filter.value })),
+            ...draft.events.filter((condition) => condition.event).map((condition) => ({ ...condition, kind: "event" }))];
+          if (!data.conditions.length) throw new Error("Add at least one condition.");
+        }
+        await saveObject("cohort", id, data); renderCohorts();
+      },
+      onDelete: item ? async () => {
+        if (!confirm(`Delete the cohort “${item.name}”? Filters and flags that use it will stop matching.`)) return false;
+        await deleteObject("cohort", id); renderCohorts();
+      } : null,
+    });
+  }
+
+  // ==========================================================================
+  // Session replay
+  // ==========================================================================
+
+  const SESSION_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+  const MAX_REPLAY_PAGES = 60;
+
+  function destroyPlayer() {
+    const replay = state.replay;
+    replay.loadToken += 1;
+    replay.player?.destroy();
+    replay.player = null; replay.recording = null;
+  }
+  function deviceText(device) {
+    return [device?.browser, device?.os, device?.type].map(plainValue).filter(Boolean).join(" · ") || "—";
+  }
+  function showReplayView(player) {
+    $(`[data-analytics-replay-list-view]`).hidden = player;
+    $(`[data-analytics-replay-player-view]`).hidden = !player;
+  }
+  async function loadRecordings(append) {
+    if (!state.replay.open) showReplayView(false);
+    const view = state.replay, parameters = new URLSearchParams();
+    $(`[data-analytics-replay-disabled]`).hidden = Boolean(settings().replay?.enabled);
+    const minimum = Number($(`[data-analytics-replay-duration]`).value) || 0;
+    if (minimum) parameters.set("minDurationMs", String(minimum));
+    if ($(`[data-analytics-replay-errors]`).checked) parameters.set("errors", "1");
+    if (view.personId) parameters.set("personId", view.personId);
+    if (append && view.nextBefore) parameters.set("before", String(view.nextBefore));
+    const badge = $(`[data-analytics-replay-person]`);
+    badge.hidden = !view.personId; badge.textContent = view.personId ? `One person: ${shortId(view.personId)}` : "";
+    $(`[data-analytics-replay-person-clear]`).hidden = !view.personId;
+    const payload = await request(projectPath(`/recordings?${parameters}`), "GET", null, scope("recordings"));
+    view.rows = append ? view.rows.concat(payload.recordings || []) : payload.recordings || [];
+    view.nextBefore = payload.nextBefore || 0;
+    renderRecordings();
+  }
+  function renderRecordings() {
+    const view = state.replay;
+    $(`[data-analytics-replay-list]`).innerHTML = view.rows.map((row) => `<tr>
+      <th scope="row"><button type="button" class="an-link an-mono" data-analytics-replay-open="${h(row.sessionId)}">${h(shortId(row.distinctId || row.sessionId))}</button><div class="an-hint an-clip" title="${h(row.startUrl)}">${h(row.startUrl) || "—"}</div></th>
+      <td style="white-space:nowrap" title="${h(fmtDateTime(row.startedAt))}">${h(relTime(row.startedAt))}</td>
+      <td class="r">${h(fmtDuration(row.durationMs))}</td><td class="r">${h(fmtDuration(row.activeMs))}</td>
+      <td class="r">${h(fmtInt(row.clicks))}</td><td class="r">${h(fmtInt(row.keys))}</td>
+      <td class="r">${row.errors ? `<span class="an-badge an-badge-bad">${h(fmtInt(row.errors))}</span>` : "0"}</td>
+      <td>${h(deviceText(row.device))}</td></tr>`).join("");
+    $(`[data-analytics-replay-empty]`).hidden = view.rows.length > 0;
+    $(`[data-analytics-replay-more-wrap]`).hidden = !view.nextBefore;
+  }
+
+  function setReplayNote(text) {
+    const node = $(`[data-analytics-replay-note]`); if (!node) return;
+    node.textContent = text; node.hidden = !text;
+  }
+  function replayControls(enabled) {
+    $(`[data-analytics-replay-toggle]`).disabled = !enabled;
+    $(`[data-analytics-replay-seek]`).disabled = !enabled;
+  }
+  function renderReplayTime(offset) {
+    const player = state.replay.player, duration = player?.duration || 0;
+    const seek = $(`[data-analytics-replay-seek]`);
+    if (document.activeElement !== seek) seek.value = String(Math.round(offset));
+    $(`[data-analytics-replay-time]`).textContent = `${fmtClock(offset)} / ${fmtClock(duration)}`;
+  }
+  function renderReplayTrack(player) {
+    const duration = Math.max(1, player.duration);
+    const at = (offset) => `${Math.max(0, Math.min(100, (offset / duration) * 100)).toFixed(2)}%`;
+    $(`[data-analytics-replay-track]`).innerHTML = player.idle.map(([from, to]) => `<span class="an-scrub-idle" style="left:${at(from)};width:calc(${at(to)} - ${at(from)})"></span>`).join("");
+    // Hundreds of click marks are one smear; keep every error and page change.
+    const marks = player.marks, clicks = marks.filter((mark) => mark.kind === "click");
+    const shown = marks.filter((mark) => mark.kind !== "click").concat(clicks.length > 150 ? clicks.filter((_, index) => index % Math.ceil(clicks.length / 150) === 0) : clicks);
+    $(`[data-analytics-replay-marks]`).innerHTML = shown.map((mark) => `<span class="an-scrub-mark" data-kind="${h(mark.kind)}" style="left:${at(mark.at)}" title="${h(`${fmtClock(mark.at)} · ${mark.label}`)}"></span>`).join("");
+    const seek = $(`[data-analytics-replay-seek]`);
+    seek.max = String(Math.round(player.duration)); seek.value = "0";
+  }
+  function renderReplayMeta(recording) {
+    const parts = [
+      `<span>${h(fmtDateTime(recording.startedAt))}</span>`,
+      `<span>${h(fmtDuration(recording.durationMs))} · ${h(fmtDuration(recording.activeMs))} active</span>`,
+      recording.personId ? `<button type="button" class="an-link an-mono" data-analytics-person-open="${h(recording.personId)}">${h(shortId(recording.distinctId || recording.personId))}</button>` : "",
+      `<span>${h(deviceText(recording.device))}</span>`,
+      recording.viewport?.width ? `<span>${h(fmtInt(recording.viewport.width))}×${h(fmtInt(recording.viewport.height))}</span>` : "",
+      `<span>${h(fmtBytes(recording.bytes))}</span>`,
+      recording.startUrl ? `<span class="an-break" title="Start URL">${h(recording.startUrl)}</span>` : "",
+    ];
+    $(`[data-analytics-replay-meta]`).innerHTML = parts.filter(Boolean).join("<span aria-hidden=\"true\">·</span>");
+  }
+  async function loadReplayEvents(recording, player) {
+    const host = $(`[data-analytics-replay-events]`);
+    host.innerHTML = `<div class="an-empty">Loading…</div>`;
+    try {
+      const result = await query("events", { sessionId: recording.sessionId, limit: 200 }, "replay-events",
+        { from: recording.startedAt - 60000, to: (recording.lastAt || recording.startedAt) + 60000 });
+      if (state.replay.player !== player) return;
+      const rows = (result.events || []).slice().reverse();
+      host.innerHTML = rows.length ? rows.map((row) => {
+        const offset = Math.max(0, row.timestamp - player.start);
+        const error = row.event === "$exception";
+        return `<button type="button" class="an-event-item" data-analytics-replay-jump="${Math.round(offset)}"><span>${error ? `<span class="an-dot an-dot-bad"></span> ` : ""}<b class="an-mono">${h(fmtClock(offset))}</b> ${h(eventLabel(row.event))}</span><span class="an-hint an-clip">${h(error ? plainValue(row.properties?.$exception_message) : eventPlace(row.properties)) || "—"}</span></button>`;
+      }).join("") : `<div class="an-empty">No analytics events were sent in this session.</div>`;
+    } catch (error) {
+      if (!isAbort(error)) host.innerHTML = `<div class="an-empty">${h(error.message)}</div>`;
+    }
+  }
+  async function openRecording(sessionId) {
+    if (!SESSION_ID_RE.test(String(sessionId))) return;
+    $(`[data-analytics-drawer]`)?.open && $(`[data-analytics-drawer]`).close();
+    destroyPlayer();
+    const replay = state.replay, token = replay.loadToken;
+    replay.open = sessionId;
+    if (state.tab !== "replay") showTab("replay");
+    showReplayView(true); replayControls(false);
+    $(`[data-analytics-replay-toggle]`).textContent = "Play";
+    $(`[data-analytics-replay-meta]`).textContent = "";
+    $(`[data-analytics-replay-events]`).innerHTML = "";
+    $(`[data-analytics-replay-track]`).innerHTML = ""; $(`[data-analytics-replay-marks]`).innerHTML = "";
+    renderReplayTime(0);
+    setReplayNote("Loading the recording…");
+    try {
+      let after = -1, recording = null;
+      const events = [];
+      const signal = scope("recording");
+      for (let page = 0; page < MAX_REPLAY_PAGES; page += 1) {
+        const payload = await request(projectPath(`/recordings/${encodeURIComponent(sessionId)}?afterSeq=${after}`), "GET", null, signal);
+        if (token !== replay.loadToken) return;
+        recording = payload.recording || recording;
+        for (const chunk of payload.chunks || []) events.push(...await window.ForkMeshReplayPlayer.decodeChunk(chunk));
+        if (token !== replay.loadToken) return;
+        after = payload.nextAfterSeq;
+        if (after === undefined || after < 0) break;
+        setReplayNote(`Loading the recording… ${fmtInt(events.length)} steps so far`);
+      }
+      replay.recording = recording;
+      renderReplayMeta(recording || { sessionId });
+      const player = window.ForkMeshReplayPlayer.create($(`[data-analytics-replay-stage]`), {
+        onTime: (offset) => { if (replay.player === player) renderReplayTime(offset); },
+        onState: (playing) => { if (replay.player === player) $(`[data-analytics-replay-toggle]`).textContent = playing ? "Pause" : "Play"; },
+        onNote: (text) => { if (replay.player === player || !replay.player) setReplayNote(text); },
+      });
+      replay.player = player;
+      player.setSpeed($(`[data-analytics-replay-speed]`).value);
+      player.setSkipInactivity($(`[data-analytics-replay-skip]`).checked);
+      const ready = player.load(events);
+      renderReplayTrack(player); renderReplayTime(0);
+      replayControls(ready);
+      if (recording) void loadReplayEvents(recording, player);
+    } catch (error) {
+      if (isAbort(error)) return;
+      setReplayNote(error.message === "gzip_unsupported"
+        ? "This browser cannot decompress recordings. Open the replay in a current version of Chrome, Edge, Firefox, or Safari."
+        : `Could not load the recording: ${error.message}`);
+    }
+  }
+  function closeRecording() {
+    destroyPlayer();
+    state.replay.open = "";
+    showReplayView(false);
+    setReplayNote("");
+    if (!state.loadedTabs.has("replay:")) void loadTab();
+  }
+  async function deleteRecording() {
+    const recording = state.replay.recording; if (!recording) return;
+    if (!confirm("Delete this recording? The session's analytics events are kept.")) return;
+    try {
+      await request(projectPath(`/recordings/${encodeURIComponent(recording.sessionId)}`), "DELETE", {});
+      state.replay.rows = state.replay.rows.filter((row) => row.sessionId !== recording.sessionId);
+      closeRecording(); renderRecordings();
+      setMessage("notice", "Recording deleted.");
+    } catch (error) { fail(error, "Could not delete the recording"); }
+  }
+
+  // ==========================================================================
+  // Heatmaps
+  // ==========================================================================
+
+  // [min, max] viewport width and the page width the map is drawn at.
+  const HEATMAP_VIEWPORTS = { all: [0, 10000, 1280], mobile: [0, 767, 390], tablet: [768, 1023, 834], desktop: [1024, 10000, 1440] };
+  const HEATMAP_WIDTH = 600, HEATMAP_MAX_HEIGHT = 9000;
+  // Cool to hot, drawn over the card colour.
+  const HEAT_STOPS = [[0, [57, 135, 229]], [0.35, [25, 158, 112]], [0.6, [230, 190, 40]], [0.8, [235, 120, 40]], [1, [220, 40, 40]]];
+
+  function heatColor(value) {
+    const level = Math.max(0, Math.min(1, value));
+    for (let index = 1; index < HEAT_STOPS.length; index += 1) {
+      const [top, high] = HEAT_STOPS[index];
+      if (level <= top) {
+        const [bottom, low] = HEAT_STOPS[index - 1], mix = (level - bottom) / (top - bottom || 1);
+        return low.map((channel, position) => Math.round(channel + (high[position] - channel) * mix));
+      }
+    }
+    return HEAT_STOPS[HEAT_STOPS.length - 1][1];
+  }
+  function loadHeatmapTab() {
+    const input = $(`[data-analytics-heatmap-path]`);
+    if (!input.value.trim()) input.value = state.overview?.breakdowns?.pages?.[0]?.value || "/";
+    return loadHeatmap();
+  }
+  async function loadHeatmap() {
+    const path = $(`[data-analytics-heatmap-path]`).value.trim() || "/";
+    const type = $(`[data-analytics-heatmap-type]`).value;
+    const viewport = HEATMAP_VIEWPORTS[$(`[data-analytics-heatmap-viewport]`).value] || HEATMAP_VIEWPORTS.all;
+    const result = await query("heatmap", { path, type, viewportMin: viewport[0], viewportMax: viewport[1] }, "heatmap");
+    state.heatmap = { ...result, pageWidth: viewport[2] };
+    renderHeatmap();
+  }
+  function renderHeatmap() {
+    const data = state.heatmap; if (!data) return;
+    const canvas = $(`[data-analytics-heatmap-canvas]`), context = canvas.getContext("2d");
+    const scale = HEATMAP_WIDTH / data.pageWidth;
+    const points = data.points || [], scroll = data.scroll || [];
+    const deepest = Math.max(data.pageHeight || 0, ...points.map((point) => point[1] + 20), ...scroll.map((row) => row.y), 800);
+    const height = Math.min(HEATMAP_MAX_HEIGHT, Math.ceil(deepest * scale));
+    canvas.width = HEATMAP_WIDTH; canvas.height = height;
+    canvas.style.width = `${HEATMAP_WIDTH}px`;
+    const styles = getComputedStyle(canvas);
+    const card = styles.backgroundColor || "#fff", line = styles.borderTopColor || "#ccc";
+    context.fillStyle = card; context.fillRect(0, 0, HEATMAP_WIDTH, height);
+    // Page outline: a rule every 500 px of page, and the first screen.
+    context.strokeStyle = line; context.fillStyle = line; context.lineWidth = 1;
+    context.font = "11px ui-monospace, monospace";
+    for (let y = 500; y * scale < height; y += 500) {
+      context.beginPath(); context.setLineDash([4, 4]);
+      context.moveTo(0, y * scale + 0.5); context.lineTo(HEATMAP_WIDTH, y * scale + 0.5); context.stroke();
+      context.fillText(`${y}px`, 4, y * scale - 4);
+    }
+    context.setLineDash([]);
+    let total = 0;
+    if (data.type === "scroll") {
+      for (let index = 0; index < scroll.length; index += 1) {
+        const row = scroll[index], next = scroll[index + 1];
+        const top = row.y * scale, bottom = next ? next.y * scale : height;
+        const [red, green, blue] = heatColor(row.reached);
+        context.fillStyle = `rgba(${red}, ${green}, ${blue}, .55)`;
+        context.fillRect(0, top, HEATMAP_WIDTH, Math.max(1, bottom - top));
+      }
+      context.fillStyle = styles.color || "#000"; context.font = "600 12px system-ui, sans-serif";
+      for (const fraction of [0.75, 0.5, 0.25]) {
+        const row = scroll.find((item) => item.reached < fraction);
+        if (!row) continue;
+        const y = row.y * scale;
+        context.fillRect(0, y, HEATMAP_WIDTH, 2);
+        context.fillText(`${Math.round(fraction * 100)}% of visitors scrolled this far`, 8, Math.max(14, y - 6));
+      }
+    } else if (points.length) {
+      // Intensity as alpha on a scratch canvas, then coloured through the ramp.
+      const scratch = document.createElement("canvas"); scratch.width = HEATMAP_WIDTH; scratch.height = height;
+      const ink = scratch.getContext("2d");
+      const peak = Math.max(...points.map((point) => point[2]));
+      const radius = data.type === "move" ? 22 : 16;
+      for (const [x, y, count] of points) {
+        total += count;
+        const cx = ((x + 0.5) / 100) * HEATMAP_WIDTH, cy = (y + 10) * scale;
+        if (cy > height) continue;
+        const gradient = ink.createRadialGradient(cx, cy, 0, cx, cy, radius);
+        gradient.addColorStop(0, `rgba(0,0,0,${Math.min(1, 0.25 + (count / peak) * 0.75).toFixed(3)})`);
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+        ink.fillStyle = gradient; ink.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+      }
+      const image = ink.getImageData(0, 0, HEATMAP_WIDTH, height), pixels = image.data;
+      for (let index = 0; index < pixels.length; index += 4) {
+        const alpha = pixels[index + 3]; if (!alpha) continue;
+        const [red, green, blue] = heatColor(alpha / 255);
+        pixels[index] = red; pixels[index + 1] = green; pixels[index + 2] = blue;
+        pixels[index + 3] = Math.min(230, 60 + alpha);
+      }
+      ink.putImageData(image, 0, 0);
+      context.drawImage(scratch, 0, 0);
+    }
+    const typeLabel = { click: "clicks", rageclick: "rage clicks", move: "mouse positions", scroll: "scroll depth" }[data.type] || data.type;
+    canvas.setAttribute("aria-label", `Heatmap of ${typeLabel} on ${data.path}`);
+    const ramp = `<span class="an-ramp" style="background:linear-gradient(90deg,${HEAT_STOPS.map(([at, rgb]) => `rgb(${rgb.join(",")}) ${at * 100}%`).join(",")})"></span>`;
+    const scrollRows = [0.25, 0.5, 0.75, 1].map((fraction) => {
+      const y = Math.round((data.pageHeight || deepest) * fraction);
+      const reached = scroll.filter((row) => row.y <= y).pop()?.reached;
+      return `<tr><td>${h(fmtInt(y))} px (${Math.round(fraction * 100)}% of page)</td><td class="r">${reached === undefined ? "—" : h(fmtPct(reached, 0))}</td></tr>`;
+    }).join("");
+    const empty = data.type === "scroll" ? !scroll.length : !points.length;
+    $(`[data-analytics-heatmap-summary]`).innerHTML = `
+      <dl class="an-kv"><dt>Page</dt><dd class="an-mono">${h(data.path)}</dd><dt>Pageviews</dt><dd>${h(fmtInt(data.pageviews))}</dd><dt>Page height</dt><dd>${data.pageHeight ? `${h(fmtInt(data.pageHeight))} px (90th percentile)` : "Unknown"}</dd>${data.type === "scroll" ? "" : `<dt>Recorded ${h(typeLabel)}</dt><dd>${h(fmtInt(total))}</dd>`}<dt>Drawn at</dt><dd>${h(fmtInt(data.pageWidth))} px wide</dd></dl>
+      <p class="an-hint" style="margin:0">Fewer ${ramp} more</p>
+      ${empty ? `<div class="an-empty">No ${h(typeLabel)} recorded for this page in this range.${data.type === "move" && !settings().heatmaps ? " Mouse movement heatmaps are off in Settings." : ""}</div>` : ""}
+      ${data.type === "scroll" && scroll.length ? `<table class="an-table"><thead><tr><th scope="col">Depth</th><th scope="col" class="r">Visitors reaching</th></tr></thead><tbody>${scrollRows}</tbody></table>` : ""}`;
+  }
+  function openHeatmap(path) {
+    $(`[data-analytics-heatmap-path]`).value = path;
+    state.loadedTabs.delete("heatmaps:");
+    showTab("heatmaps");
+  }
+
+  // ==========================================================================
+  // Feature flags and experiments
+  // ==========================================================================
+
+  async function loadFlagsTab() {
+    if (state.sub.flags === "experiments") {
+      await Promise.all([loadObjects("experiment"), loadObjects("flag")]);
+      return renderExperiments();
+    }
+    await loadObjects("flag");
+    renderFlags();
+  }
+  function flagRelease(flag) {
+    const conditions = flag.conditions || [];
+    if (!conditions.length) return "Nobody";
+    return conditions.map((condition) => {
+      const who = (condition.properties || []).length ? `${condition.properties.length} condition${condition.properties.length === 1 ? "" : "s"}` : "everyone";
+      return `${condition.rolloutPercent}% of ${who}${condition.variant ? ` → ${condition.variant}` : ""}`;
+    }).join("; ");
+  }
+  function renderFlags() {
+    const items = state.objects.flag || [];
+    $(`[data-analytics-flags-list]`).innerHTML = items.map((item) => `<tr>
+      <th scope="row"><span class="an-mono an-break">${h(item.key)}</span>${item.name ? `<div class="an-hint an-break">${h(item.name)}</div>` : ""}</th>
+      <td>${(item.variants || []).length ? `Multivariate (${h(String(item.variants.length))})` : "Boolean"}</td>
+      <td class="an-break">${h(flagRelease(item))}</td>
+      <td>${h(relTime(item.updatedAt))}</td>
+      <td><label class="an-check"><input type="checkbox" data-analytics-flag-active="${h(item.id)}"${item.active ? " checked" : ""} /> <span class="sr-only">Active</span>${item.active ? "On" : "Off"}</label></td>
+      <td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-flag-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-flags-empty]`).hidden = items.length > 0;
+  }
+  async function toggleFlag(id, active) {
+    try { await saveObject("flag", id, { active }); }
+    catch (error) { fail(error, "Could not update the flag"); }
+    renderFlags();
+  }
+  function flagDialog(id = "") {
+    const item = (state.objects.flag || []).find((entry) => entry.id === id);
+    const draft = JSON.parse(JSON.stringify({
+      variants: item?.variants || [],
+      conditions: item?.conditions?.length ? item.conditions : [{ properties: [], rolloutPercent: 100, variant: "" }],
+    }));
+    function renderVariants(host) {
+      const sum = draft.variants.reduce((total, variant) => total + (Number(variant.percent) || 0), 0);
+      host.innerHTML = (draft.variants.length ? draft.variants.map((variant, index) => `<div class="an-row" data-variant="${index}">
+          <input class="an-input an-mono" data-v="key" aria-label="Variant key" maxlength="80" placeholder="${index ? `variant-${index}` : "control"}" value="${h(variant.key)}" />
+          <label class="an-hint"><input class="an-input" style="width:5rem" type="number" min="0" max="100" data-v="percent" value="${Number(variant.percent) || 0}" /> %</label>
+          <button type="button" class="an-btn an-btn-small" data-v="remove">Remove</button></div>`).join("")
+        + `<p class="an-hint" style="margin:0" data-v="sum">Split total: <b>${sum}%</b>${sum === 100 ? "" : " (must be 100%)"}. Name one variant <span class="an-mono">control</span> so experiments have a baseline.</p>`
+        : `<p class="an-hint" style="margin:0">No variants: the flag is simply on or off.</p>`)
+        + (draft.variants.length < 10 ? `<div><button type="button" class="an-btn an-btn-small" data-v="add">+ Add variant</button></div>` : "");
+    }
+    function renderConditions(host) {
+      host.innerHTML = draft.conditions.map((condition, index) => `<fieldset class="an-fieldset" data-condition="${index}"><legend>Release condition ${index + 1}</legend>
+          <div data-condition-filters="${index}"></div>
+          <div class="an-form-grid">
+            ${field("Roll out to (% of matching people)", `<input class="an-input" type="number" min="0" max="100" data-k="rolloutPercent" value="${Number(condition.rolloutPercent) || 0}" />`)}
+            ${draft.variants.length ? field("Force variant (optional)", `<select class="an-select" data-k="variant">${optionList([["", "Use the split"], ...draft.variants.filter((variant) => variant.key).map((variant) => [variant.key, variant.key])], condition.variant || "")}</select>`) : ""}
+          </div>${draft.conditions.length > 1 ? `<div><button type="button" class="an-btn an-btn-small" data-k="remove">Remove condition</button></div>` : ""}</fieldset>`).join("")
+        + (draft.conditions.length < 10 ? `<div><button type="button" class="an-btn an-btn-small" data-k="add">+ Add condition</button></div>` : "")
+        + `<p class="an-hint" style="margin:0">Conditions are checked in order; the first one a person matches decides. No person filters means everyone.</p>`;
+      draft.conditions.forEach((condition, index) => mountFilters(host.querySelector(`[data-condition-filters="${index}"]`), condition.properties, { types: ["person", "cohort"], addLabel: "Match person property or cohort" }));
+    }
+    openDialog({
+      title: item ? "Edit feature flag" : "New feature flag",
+      render(body) {
+        body.innerHTML = `<div class="an-form-grid">
+            ${field("Key (used in code)", `<input class="an-input an-mono" data-d="key" maxlength="80" required pattern="[A-Za-z0-9_\\-]+" value="${h(item?.key || "")}" placeholder="new-onboarding" />`)}
+            ${field("Name", `<input class="an-input" data-d="name" maxlength="120" value="${h(item?.name || "")}" />`)}
+            ${field("Description", `<input class="an-input" data-d="description" maxlength="1000" value="${h(item?.description || "")}" />`, true)}
+          </div>
+          <label class="an-check"><input type="checkbox" data-d="active"${!item || item.active ? " checked" : ""} /> Active</label>
+          <fieldset class="an-fieldset"><legend>Variants</legend><div data-d="variants" class="an-stack-tight"></div></fieldset>
+          <div data-d="conditions" class="an-stack-tight"></div>
+          ${field("Payloads (JSON object keyed by variant, or by \"true\" for an on/off flag)", `<textarea class="an-textarea" data-d="payloads" rows="4" placeholder='{"true": {"banner": "Welcome"}}'>${h(Object.keys(item?.payloads || {}).length ? JSON.stringify(item.payloads, null, 2) : "")}</textarea>`, true)}
+          <p class="an-hint" style="margin:0">In code: <code class="an-mono">analytics.isFeatureEnabled("key")</code>, <code class="an-mono">analytics.getFeatureFlag("key")</code>, <code class="an-mono">analytics.getFeatureFlagPayload("key")</code>.</p>`;
+        const variants = body.querySelector(`[data-d="variants"]`), conditions = body.querySelector(`[data-d="conditions"]`);
+        renderVariants(variants); renderConditions(conditions);
+        variants.addEventListener("change", (event) => {
+          const control = event.target.closest("[data-v]"), variant = draft.variants[Number(event.target.closest("[data-variant]")?.dataset.variant)];
+          if (!control || !variant) return;
+          if (control.dataset.v === "percent") { variant.percent = Math.max(0, Math.min(100, Number(control.value) || 0)); renderVariants(variants); }
+          else { variant.key = control.value.trim(); renderConditions(conditions); }
+        });
+        variants.addEventListener("click", (event) => {
+          const control = event.target.closest("button[data-v]"); if (!control) return;
+          if (control.dataset.v === "add") {
+            draft.variants.push({ key: draft.variants.length ? `variant-${draft.variants.length}` : "control", percent: 0 });
+            // Re-split evenly: the common case, and always totals 100.
+            const share = Math.floor(100 / draft.variants.length);
+            draft.variants.forEach((variant, index) => { variant.percent = index === 0 ? 100 - share * (draft.variants.length - 1) : share; });
+          } else draft.variants.splice(Number(control.closest("[data-variant]").dataset.variant), 1);
+          renderVariants(variants); renderConditions(conditions);
+        });
+        conditions.addEventListener("change", (event) => {
+          const control = event.target.closest("[data-k]"), condition = draft.conditions[Number(event.target.closest("[data-condition]")?.dataset.condition)];
+          if (!control || !condition) return;
+          if (control.dataset.k === "rolloutPercent") condition.rolloutPercent = Math.max(0, Math.min(100, Number(control.value) || 0));
+          else if (control.dataset.k === "variant") condition.variant = control.value;
+        });
+        conditions.addEventListener("click", (event) => {
+          const control = event.target.closest("button[data-k]"); if (!control) return;
+          if (control.dataset.k === "add") draft.conditions.push({ properties: [], rolloutPercent: 100, variant: "" });
+          else draft.conditions.splice(Number(control.closest("[data-condition]").dataset.condition), 1);
+          renderConditions(conditions);
+        });
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`);
+        const key = body.querySelector(`[data-d="key"]`).value.trim();
+        if (!/^[A-Za-z0-9_-]{1,80}$/.test(key)) throw new Error("A flag key uses letters, digits, - and _ only.");
+        const variants = draft.variants.filter((variant) => variant.key);
+        if (variants.some((variant) => !/^[A-Za-z0-9_-]{1,80}$/.test(variant.key))) throw new Error("Variant keys use letters, digits, - and _ only.");
+        if (new Set(variants.map((variant) => variant.key)).size !== variants.length) throw new Error("Variant keys must be different.");
+        if (variants.length && variants.reduce((total, variant) => total + variant.percent, 0) !== 100) throw new Error("Variant percentages must add up to 100.");
+        let payloads = {};
+        const text = body.querySelector(`[data-d="payloads"]`).value.trim();
+        if (text) {
+          try { payloads = JSON.parse(text); } catch { throw new Error("Payloads must be valid JSON."); }
+          if (!payloads || typeof payloads !== "object" || Array.isArray(payloads)) throw new Error("Payloads must be a JSON object.");
+        }
+        await saveObject("flag", id, {
+          key, name: body.querySelector(`[data-d="name"]`).value.trim(), description: body.querySelector(`[data-d="description"]`).value.trim(),
+          active: body.querySelector(`[data-d="active"]`).checked, variants, payloads,
+          conditions: draft.conditions.map((condition) => ({ properties: cleanFilters(condition.properties), rolloutPercent: condition.rolloutPercent, variant: condition.variant || "" })),
+        });
+        renderFlags();
+      },
+      onDelete: item ? async () => {
+        if (!confirm(`Delete the flag “${item.key}”? Code that checks it will see it as off.`)) return false;
+        await deleteObject("flag", id); renderFlags();
+      } : null,
+    });
+  }
+
+  const EXPERIMENT_STATUS = { draft: ["Draft", ""], running: ["Running", "an-badge-good"], stopped: ["Stopped", "an-badge-warn"] };
+  function renderExperiments() {
+    const items = state.objects.experiment || [];
+    $(`[data-analytics-experiments-list]`).innerHTML = items.map((item) => {
+      const [label, tone] = EXPERIMENT_STATUS[item.status] || EXPERIMENT_STATUS.draft;
+      return `<tr><th scope="row"><button type="button" class="an-link an-break" data-analytics-experiment-open="${h(item.id)}">${h(item.name || "Untitled experiment")}</button>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th>
+        <td class="an-mono an-break">${h(item.flagKey)}</td><td class="an-break">${h(eventLabel(item.goal?.event))}</td>
+        <td><span class="an-badge ${tone}">${h(label)}</span>${item.startedAt ? `<div class="an-hint">${h(fmtDate(item.startedAt))}${item.endedAt ? ` – ${h(fmtDate(item.endedAt))}` : ""}</div>` : ""}</td>
+        <td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-experiment-edit="${h(item.id)}">Edit…</button></td></tr>`;
+    }).join("");
+    $(`[data-analytics-experiments-empty]`).hidden = items.length > 0;
+    if (state.experimentOpen && !items.some((item) => item.id === state.experimentOpen)) {
+      state.experimentOpen = ""; $(`[data-analytics-experiment-results]`).hidden = true;
+    }
+  }
+  function experimentDialog(id = "") {
+    const item = (state.objects.experiment || []).find((entry) => entry.id === id);
+    const flags = state.objects.flag || [];
+    const goal = [item?.goal ? { ...newSeries(), ...JSON.parse(JSON.stringify(item.goal)) } : newSeries("$pageview")];
+    openDialog({
+      title: item ? "Edit experiment" : "New experiment",
+      render(body) {
+        body.innerHTML = `<div class="an-form-grid">
+            ${field("Name", `<input class="an-input" data-d="name" maxlength="120" required value="${h(item?.name || "")}" />`)}
+            ${field("Feature flag", flags.length ? `<select class="an-select" data-d="flagKey">${optionList(flags.map((flag) => [flag.key, `${flag.key}${(flag.variants || []).length ? ` (${flag.variants.length} variants)` : " (on/off)"}`]), item?.flagKey || flags.find((flag) => (flag.variants || []).length)?.key || "")}</select>` : `<input class="an-input an-mono" data-d="flagKey" maxlength="80" value="${h(item?.flagKey || "")}" placeholder="Create the flag first" />`)}
+            ${field("Status", `<select class="an-select" data-d="status">${optionList([["draft", "Draft"], ["running", "Running"], ["stopped", "Stopped"]], item?.status || "draft")}</select>`)}
+            ${field("Hypothesis", `<input class="an-input" data-d="description" maxlength="1000" value="${h(item?.description || "")}" />`, true)}
+          </div><fieldset class="an-fieldset"><legend>Goal: a person converts when they do</legend><div data-d="goal"></div></fieldset>
+          <p class="an-hint" style="margin:0">Exposure is the first <span class="an-mono">$feature_flag_called</span> for this flag, which the SDK sends whenever code reads it. Results count only goal events after exposure.</p>`;
+        mountSeries(body.querySelector(`[data-d="goal"]`), goal, { max: 1, maths: false, colors: false, noun: "Goal" });
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
+        const flagKey = body.querySelector(`[data-d="flagKey"]`).value.trim();
+        if (!name) throw new Error("Give the experiment a name.");
+        if (!flagKey) throw new Error("Choose the feature flag the experiment splits on.");
+        const status = body.querySelector(`[data-d="status"]`).value, now = Date.now();
+        const data = { name, flagKey, status, description: body.querySelector(`[data-d="description"]`).value.trim(), goal: cleanSeries(goal)[0] };
+        if (status === "running" && !item?.startedAt) data.startedAt = now;
+        if (status === "running" && item?.endedAt) data.endedAt = 0;
+        if (status === "stopped" && !item?.endedAt) data.endedAt = now;
+        const saved = await saveObject("experiment", id, data);
+        renderExperiments();
+        if (state.experimentOpen === saved.id) void openExperiment(saved.id);
+      },
+      onDelete: item ? async () => {
+        if (!confirm(`Delete the experiment “${item.name}”? The flag and its events are kept.`)) return false;
+        await deleteObject("experiment", id); renderExperiments();
+      } : null,
+    });
+  }
+  async function openExperiment(id) {
+    const item = (state.objects.experiment || []).find((entry) => entry.id === id); if (!item) return;
+    state.experimentOpen = id;
+    const host = $(`[data-analytics-experiment-results]`);
+    host.hidden = false;
+    host.innerHTML = `<div class="an-card-head"><h2 class="an-break">${h(item.name || "Experiment")}</h2><span class="an-hint">Loading…</span></div>`;
+    const window_ = item.startedAt ? { from: item.startedAt, to: item.endedAt || Date.now() } : rangeWindow();
+    try {
+      const result = await query("experiment", { flagKey: item.flagKey, goal: item.goal }, "experiment", window_);
+      if (state.experimentOpen !== id) return;
+      const rows = result.variants || [];
+      const best = Math.max(0, ...rows.map((row) => row.conversionRate || 0));
+      const winner = rows.find((row) => row.significant && (row.probabilityToBeatControl || 0) >= 0.975);
+      const verdict = !rows.length ? "Nobody has been exposed to this flag in this window yet."
+        : winner ? `“${winner.variant}” beats the control with ${fmtPct(winner.probabilityToBeatControl)} probability.`
+          : rows.some((row) => row.significant) ? "A variant is significantly worse than the control."
+            : "No significant difference yet. Significance needs at least 100 exposed people in each arm.";
+      host.innerHTML = `<div class="an-card-head"><h2 class="an-break">${h(item.name || "Experiment")}</h2><span class="an-hint">${h(fmtDate(window_.from))} – ${h(fmtDate(window_.to))} · goal: ${h(result.goal || eventLabel(item.goal?.event))}</span></div>
+        <div class="an-pad an-stack-tight"><p class="an-sub" style="margin:0"><b style="color:var(--an-fg)">${h(verdict)}</b> ${h(fmtInt(result.exposed))} people exposed.</p>
+        ${rows.length ? `<div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Variant</th><th scope="col" class="r">Exposed</th><th scope="col" class="r">Converted</th><th scope="col">Conversion</th><th scope="col" class="r">Lift</th><th scope="col" class="r">Chance to beat control</th><th scope="col">Significant</th></tr></thead><tbody>${rows.map((row) => `<tr>
+          <th scope="row" class="an-mono an-break">${h(row.variant)}</th><td class="r">${h(fmtInt(row.exposures))}</td><td class="r">${h(fmtInt(row.conversions))}</td>
+          <td style="min-width:9rem"><div class="an-row" style="flex-wrap:nowrap"><div class="an-meter an-grow" style="min-width:4rem"><span style="width:${best ? ((row.conversionRate || 0) / best * 100).toFixed(1) : 0}%"></span></div><b>${h(fmtPct(row.conversionRate))}</b></div></td>
+          <td class="r">${row.lift === undefined || row.lift === null ? "—" : `${row.lift > 0 ? "+" : ""}${h(fmtPct(row.lift))}`}</td>
+          <td class="r">${row.probabilityToBeatControl === null || row.probabilityToBeatControl === undefined ? "Baseline" : h(fmtPct(row.probabilityToBeatControl))}</td>
+          <td>${row.significant ? `<span class="an-badge an-badge-good">Yes</span>` : `<span class="an-hint">No</span>`}</td></tr>`).join("")}</tbody></table></div>` : ""}</div>`;
+    } catch (error) {
+      if (!isAbort(error)) host.innerHTML = `<div class="an-pad"><div class="an-banner an-banner-error">${h(error.message)}</div></div>`;
+    }
+  }
+
+  // ==========================================================================
+  // Surveys
+  // ==========================================================================
+
+  async function loadSurveys() {
+    await loadObjects("survey");
+    loadObjects("flag").catch(() => {});
+    renderSurveys();
+  }
+  function surveyTargeting(survey) {
+    const target = survey.targeting || {};
+    const parts = [target.url && `URL ${target.urlMatching || "contains"} “${target.url}”`, target.selector && `on ${target.selector}`,
+      target.flagKey && `flag ${target.flagKey}`, target.event && `after ${eventLabel(target.event)}`, target.delaySeconds && `after ${target.delaySeconds}s`];
+    return parts.filter(Boolean).join(" · ") || "Every visitor";
+  }
+  function renderSurveys() {
+    const items = state.objects.survey || [];
+    $(`[data-analytics-surveys-list]`).innerHTML = items.map((item) => `<tr>
+      <th scope="row"><button type="button" class="an-link an-break" data-analytics-survey-open="${h(item.id)}">${h(item.name || "Untitled survey")}</button>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th>
+      <td>${h(fmtInt((item.questions || []).length))} · ${h([...new Set((item.questions || []).map((question) => QUESTION_TYPES[question.type] || question.type))].join(", ") || "—")}</td>
+      <td class="an-break">${h(surveyTargeting(item))}</td><td>${h(relTime(item.updatedAt))}</td>
+      <td><label class="an-check"><input type="checkbox" data-analytics-survey-active="${h(item.id)}"${item.active ? " checked" : ""} /> ${item.active ? "On" : "Off"}</label></td>
+      <td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-survey-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-surveys-empty]`).hidden = items.length > 0;
+    if (state.surveyOpen && !items.some((item) => item.id === state.surveyOpen)) {
+      state.surveyOpen = ""; $(`[data-analytics-survey-results]`).hidden = true;
+    }
+  }
+  async function toggleSurvey(id, active) {
+    try { await saveObject("survey", id, { active }); } catch (error) { fail(error, "Could not update the survey"); }
+    renderSurveys();
+  }
+  function blankQuestion(type = "open") {
+    return { type, question: "", description: "", choices: [], scale: type === "nps" ? 10 : 5, lowLabel: "", highLabel: "", link: "", buttonText: "", optional: false };
+  }
+  function surveyDialog(id = "") {
+    const item = (state.objects.survey || []).find((entry) => entry.id === id);
+    const draft = JSON.parse(JSON.stringify({ questions: item?.questions?.length ? item.questions : [blankQuestion("open")] }));
+    const target = item?.targeting || {}, look = item?.appearance || {};
+    const flags = state.objects.flag || [];
+    function renderQuestions(host) {
+      host.innerHTML = draft.questions.map((question, index) => {
+        const type = question.type;
+        return `<fieldset class="an-fieldset" data-question="${index}"><legend>Question ${index + 1}</legend><div class="an-form-grid">
+          ${field("Type", `<select class="an-select" data-q2="type">${optionList(Object.entries(QUESTION_TYPES), type)}</select>`)}
+          ${field("Question", `<input class="an-input" data-q2="question" maxlength="300" value="${h(question.question)}" placeholder="How likely are you to recommend us?" />`, true)}
+          ${field("Description (optional)", `<input class="an-input" data-q2="description" maxlength="500" value="${h(question.description)}" />`, true)}
+          ${type === "single" || type === "multiple" ? field("Choices (one per line, up to 12)", `<textarea class="an-textarea" style="font-family:inherit" data-q2="choices" rows="4">${h((question.choices || []).join("\n"))}</textarea>`, true) : ""}
+          ${type === "rating" ? field("Scale", `<select class="an-select" data-q2="scale">${optionList([[3, "1–3"], [5, "1–5"], [7, "1–7"], [10, "1–10"]], question.scale)}</select>`) : ""}
+          ${type === "rating" || type === "nps" ? field("Low label", `<input class="an-input" data-q2="lowLabel" maxlength="60" value="${h(question.lowLabel)}" placeholder="Unlikely" />`) + field("High label", `<input class="an-input" data-q2="highLabel" maxlength="60" value="${h(question.highLabel)}" placeholder="Very likely" />`) : ""}
+          ${type === "link" ? field("Link (https only)", `<input class="an-input" data-q2="link" maxlength="500" value="${h(question.link)}" placeholder="https://example.com/interview" />`) + field("Button text", `<input class="an-input" data-q2="buttonText" maxlength="40" value="${h(question.buttonText)}" placeholder="Book a call" />`) : ""}
+        </div><div class="an-row"><label class="an-check"><input type="checkbox" data-q2="optional"${question.optional ? " checked" : ""} /> Optional</label>${index ? `<button type="button" class="an-btn an-btn-small" data-q2="up">Move up</button>` : ""}${draft.questions.length > 1 ? `<button type="button" class="an-btn an-btn-small" data-q2="remove">Remove</button>` : ""}</div></fieldset>`;
+      }).join("") + (draft.questions.length < 10 ? `<div><button type="button" class="an-btn an-btn-small" data-q2="add">+ Add question</button></div>` : "");
+    }
+    openDialog({
+      title: item ? "Edit survey" : "New survey",
+      render(body) {
+        body.innerHTML = `<div class="an-form-grid">
+            ${field("Name", `<input class="an-input" data-d="name" maxlength="120" required value="${h(item?.name || "")}" />`)}
+            ${field("Description (internal)", `<input class="an-input" data-d="description" maxlength="1000" value="${h(item?.description || "")}" />`)}
+          </div>
+          <label class="an-check"><input type="checkbox" data-d="active"${item?.active ? " checked" : ""} /> Active (shown to matching visitors)</label>
+          <div data-d="questions" class="an-stack-tight"></div>
+          <fieldset class="an-fieldset"><legend>Who sees it</legend><div class="an-form-grid">
+            ${field("URL", `<input class="an-input" data-t="url" maxlength="300" value="${h(target.url || "")}" placeholder="/pricing (empty: every page)" />`)}
+            ${field("URL matching", `<select class="an-select" data-t="urlMatching">${optionList([["contains", "Contains"], ["exact", "Exactly"], ["regex", "Regex"]], target.urlMatching || "contains")}</select>`)}
+            ${field("Only when this element exists", `<input class="an-input an-mono" data-t="selector" maxlength="200" value="${h(target.selector || "")}" placeholder="#checkout" />`)}
+            ${field("Only when this flag is on", `<select class="an-select" data-t="flagKey">${optionList([["", "No flag"], ...flags.map((flag) => [flag.key, flag.key]), ...(target.flagKey && !flags.some((flag) => flag.key === target.flagKey) ? [[target.flagKey, target.flagKey]] : [])], target.flagKey || "")}</select>`)}
+            ${field("Only after this event", `<input class="an-input" data-t="event" list="an-events-list" autocomplete="off" maxlength="200" value="${h(target.event || "")}" placeholder="plan upgraded" />`)}
+            ${field("Delay (seconds)", `<input class="an-input" type="number" min="0" max="600" data-t="delaySeconds" value="${Number(target.delaySeconds) || 0}" />`)}
+            ${field("Wait before asking the same person again (days)", `<input class="an-input" type="number" min="0" max="365" data-t="waitDays" value="${target.waitDays === undefined ? 30 : Number(target.waitDays) || 0}" />`)}
+          </div></fieldset>
+          <fieldset class="an-fieldset"><legend>Appearance</legend><div class="an-form-grid">
+            ${field("Position", `<select class="an-select" data-a2="position">${optionList([["right", "Bottom right"], ["center", "Bottom centre"], ["left", "Bottom left"]], look.position || "right")}</select>`)}
+            ${field("Accent colour", `<input class="an-input" type="color" data-a2="accent" value="${h(/^#[0-9a-fA-F]{6}$/.test(look.accent || "") ? look.accent : "#2a78d6")}" />`)}
+            ${field("Thank-you message", `<input class="an-input" data-a2="thankYou" maxlength="200" value="${h(look.thankYou || "Thank you!")}" />`, true)}
+          </div></fieldset>`;
+        const host = body.querySelector(`[data-d="questions"]`); renderQuestions(host);
+        host.addEventListener("change", (event) => {
+          const control = event.target.closest("[data-q2]"), question = draft.questions[Number(event.target.closest("[data-question]")?.dataset.question)];
+          if (!control || !question) return;
+          const name = control.dataset.q2;
+          if (name === "type") { Object.assign(question, blankQuestion(control.value), { question: question.question, description: question.description, optional: question.optional }); renderQuestions(host); }
+          else if (name === "choices") question.choices = control.value.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 12);
+          else if (name === "scale") question.scale = Number(control.value) || 5;
+          else if (name === "optional") question.optional = control.checked;
+          else question[name] = control.value.trim();
+        });
+        host.addEventListener("click", (event) => {
+          const control = event.target.closest("button[data-q2]"); if (!control) return;
+          const index = Number(control.closest("[data-question]")?.dataset.question);
+          if (control.dataset.q2 === "add") draft.questions.push(blankQuestion("open"));
+          else if (control.dataset.q2 === "remove") draft.questions.splice(index, 1);
+          else if (control.dataset.q2 === "up" && index > 0) draft.questions.splice(index - 1, 0, draft.questions.splice(index, 1)[0]);
+          renderQuestions(host);
+        });
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
+        if (!name) throw new Error("Give the survey a name.");
+        if (draft.questions.some((question) => !question.question)) throw new Error("Every question needs its text.");
+        if (draft.questions.some((question) => (question.type === "single" || question.type === "multiple") && question.choices.length < 2)) throw new Error("A choice question needs at least two choices.");
+        if (draft.questions.some((question) => question.type === "link" && !/^https:\/\//.test(question.link))) throw new Error("A link question needs an https:// link.");
+        const value = (selector) => body.querySelector(selector).value.trim();
+        await saveObject("survey", id, {
+          name, description: value(`[data-d="description"]`), active: body.querySelector(`[data-d="active"]`).checked,
+          questions: draft.questions,
+          targeting: { url: value(`[data-t="url"]`), urlMatching: value(`[data-t="urlMatching"]`), selector: value(`[data-t="selector"]`), flagKey: value(`[data-t="flagKey"]`), event: value(`[data-t="event"]`), delaySeconds: Number(value(`[data-t="delaySeconds"]`)) || 0, waitDays: Number(value(`[data-t="waitDays"]`)) || 0 },
+          appearance: { position: value(`[data-a2="position"]`), accent: value(`[data-a2="accent"]`), thankYou: value(`[data-a2="thankYou"]`) },
+        });
+        renderSurveys();
+        if (state.surveyOpen === id) void openSurvey(id);
+      },
+      onDelete: item ? async () => {
+        if (!confirm(`Delete the survey “${item.name}”? Its responses stay in the event data.`)) return false;
+        await deleteObject("survey", id); renderSurveys();
+      } : null,
+    });
+  }
+  async function openSurvey(id) {
+    const item = (state.objects.survey || []).find((entry) => entry.id === id); if (!item) return;
+    state.surveyOpen = id;
+    const host = $(`[data-analytics-survey-results]`);
+    host.hidden = false;
+    host.innerHTML = `<div class="an-card-head"><h2 class="an-break">${h(item.name || "Survey")}</h2><span class="an-hint">Loading…</span></div>`;
+    try {
+      const result = await query("survey", { surveyId: id }, "survey");
+      if (state.surveyOpen !== id) return;
+      const kpis = [["Shown", fmtInt(result.shown)], ["Dismissed", fmtInt(result.dismissed)], ["Answered", fmtInt(result.sent)], ["Response rate", fmtPct(result.responseRate)]];
+      const questions = (item.questions || []).map((question, index) => {
+        const answers = (result.questions || {})[String(index)] || { counts: [], texts: [] };
+        let body;
+        if (question.type === "nps" && answers.nps !== undefined) {
+          const byScore = Array.from({ length: 11 }, (_, score) => ({ value: String(score), count: (answers.counts || []).find((row) => row.value === String(score))?.count || 0 }));
+          body = `<p class="an-sub" style="margin:0">NPS <b style="color:var(--an-fg)">${h(fmtNumber(answers.nps))}</b> · average ${h(fmtNumber(answers.average))}</p>${hbars(byScore)}`;
+        } else if (question.type === "rating" && answers.average !== undefined) {
+          const byScore = Array.from({ length: Number(question.scale) || 5 }, (_, score) => ({ value: String(score + 1), count: (answers.counts || []).find((row) => row.value === String(score + 1))?.count || 0 }));
+          body = `<p class="an-sub" style="margin:0">Average <b style="color:var(--an-fg)">${h(fmtNumber(answers.average))}</b> of ${h(String(question.scale))}</p>${hbars(byScore)}`;
+        } else if ((answers.counts || []).length) body = hbars(answers.counts, Number(result.sent) || 0);
+        else body = "";
+        if ((answers.texts || []).length) {
+          body += `<div class="an-event-list" style="max-height:16rem">${answers.texts.map((entry) => `<div class="an-event-item" style="cursor:default"><span class="an-break">${h(entry.text)}</span><span class="an-hint">${h(relTime(entry.timestamp))}</span></div>`).join("")}</div>`;
+        }
+        return `<section class="an-stack-tight"><h3 style="margin:0;font-size:.8125rem;color:var(--an-fg)" class="an-break">${index + 1}. ${h(question.question)} <span class="an-hint">${h(QUESTION_TYPES[question.type] || question.type)}</span></h3>${body || `<div class="an-empty">No answers yet.</div>`}</section>`;
+      }).join("");
+      host.innerHTML = `<div class="an-card-head"><h2 class="an-break">${h(item.name || "Survey")}</h2><span class="an-hint">${h(rangeLabel())}</span></div>
+        <div class="an-pad an-stack"><div class="an-kpis">${kpis.map(([label, value]) => `<div class="an-kpi"><div class="an-kpi-label">${h(label)}</div><div class="an-kpi-value">${h(value)}</div></div>`).join("")}</div>${questions}</div>`;
+    } catch (error) {
+      if (!isAbort(error)) host.innerHTML = `<div class="an-pad"><div class="an-banner an-banner-error">${h(error.message)}</div></div>`;
+    }
+  }
+
+  // ==========================================================================
+  // Errors
+  // ==========================================================================
+
+  async function loadErrors() {
+    const result = await query("errors", {}, "errors");
+    state.errors = result.groups || [];
+    renderErrors();
+  }
+  function renderErrors() {
+    $(`[data-analytics-errors-list]`).innerHTML = state.errors.map((group) => `<tr${group.fingerprint === state.errorOpen ? ` aria-current="true"` : ""}>
+      <th scope="row"><button type="button" class="an-link an-break" data-analytics-error-open="${h(group.fingerprint)}"><b>${h(group.type)}</b>${group.message ? `: ${h(group.message)}` : ""}</button>${group.url ? `<div class="an-hint an-clip" title="${h(group.url)}">${h(group.url)}</div>` : ""}</th>
+      <td class="r">${h(fmtInt(group.count))}</td><td class="r">${h(fmtInt(group.users))}</td><td class="r">${h(fmtInt(group.sessions))}</td>
+      <td style="white-space:nowrap">${h(fmtDate(group.firstSeen))}</td><td style="white-space:nowrap">${h(relTime(group.lastSeen))}</td></tr>`).join("");
+    $(`[data-analytics-errors-empty]`).hidden = state.errors.length > 0;
+    const group = state.errors.find((entry) => entry.fingerprint === state.errorOpen);
+    const detail = $(`[data-analytics-error-detail]`);
+    detail.hidden = !group;
+    if (!group) return;
+    detail.innerHTML = `<div class="an-card-head"><h2 class="an-break">${h(group.type)}</h2>${group.sessionId && settings().replay?.enabled ? `<button type="button" class="an-btn an-btn-small" data-analytics-replay-open="${h(group.sessionId)}"><i data-lucide="play-circle"></i>Watch the latest session</button>` : ""}</div>
+      <div class="an-pad an-stack-tight">
+        <dl class="an-kv"><dt>Message</dt><dd>${h(group.message) || "—"}</dd><dt>Occurrences</dt><dd>${h(fmtInt(group.count))} from ${h(fmtInt(group.users))} people in ${h(fmtInt(group.sessions))} sessions</dd><dt>First seen</dt><dd>${h(fmtDateTime(group.firstSeen))}</dd><dt>Last seen</dt><dd>${h(fmtDateTime(group.lastSeen))}</dd><dt>Last URL</dt><dd class="an-break">${h(group.url) || "—"}</dd><dt>Browser</dt><dd>${h(group.browser) || "—"}</dd><dt>Fingerprint</dt><dd class="an-mono">${h(group.fingerprint)}</dd></dl>
+        ${group.stack ? `<pre class="an-pre" style="max-height:22rem;overflow:auto">${h(group.stack)}</pre>` : `<p class="an-hint" style="margin:0">No stack trace was sent.</p>`}
+      </div>`;
+    icons();
+  }
+
+  // ==========================================================================
+  // Settings, install, usage
+  // ==========================================================================
+
+  function dayStart(day) {
+    const value = Number(day) || 0;
+    return Date.UTC(Math.floor(value / 10000), Math.floor(value / 100) % 100 - 1, value % 100);
+  }
+  function applyProject(project) {
+    state.project = project;
+    const list = state.org?.projects || [];
+    const index = list.findIndex((item) => item.id === project.id);
+    if (index >= 0) list[index] = project;
+    if (project.siteDefault) list.forEach((item) => { if (item.id !== project.id) item.siteDefault = false; });
+    renderProjectSelect();
+  }
+  async function loadSettings() {
+    const payload = await request(projectPath(), "GET", null, scope("settings"));
+    applyProject(payload.project);
+    state.usageHistory = payload.usageHistory || [];
+    renderSettings();
+  }
+  function renderSettings() {
+    const project = state.project; if (!project) return;
+    const current = settings(), replay = current.replay || {}, manager = canManage();
+    const set = (name, value) => { const node = $(`[data-analytics-set-${name}]`); if (!node) return; if (node.type === "checkbox") node.checked = Boolean(value); else node.value = value ?? ""; };
+    set("name", current.name); set("timezone", current.timezoneOffsetMinutes || 0);
+    set("origins", (current.allowedOrigins || []).join("\n")); set("group-types", (current.groupTypes || []).join(", "));
+    set("site-default", project.siteDefault);
+    set("autocapture", current.autocapture); set("heatmaps", current.heatmaps);
+    set("errors", current.captureErrors); set("performance", current.capturePerformance);
+    set("replay-enabled", replay.enabled); set("replay-mask-text", replay.maskAllText); set("replay-mask-inputs", replay.maskAllInputs);
+    set("replay-sample", replay.sampleRate); set("replay-min", replay.minDurationMs);
+    set("event-quota", current.eventQuota); set("replay-quota", Math.round((Number(current.replayQuota) || 0) / 1048576));
+    set("retention", current.retentionDays); set("replay-retention", current.replayRetentionDays);
+    $(`[data-analytics-set-site-default-wrap]`).hidden = !state.org?.instanceAdmin;
+    state.settingsFilters = JSON.parse(JSON.stringify(current.testAccountFilters || []));
+    mountFilters($(`[data-analytics-set-test-filters]`), state.settingsFilters, { types: ["event", "person"], addLabel: "Add test account filter" });
+    $(`[data-analytics-settings-readonly]`).hidden = manager;
+    $(`[data-analytics-settings-form]`).querySelectorAll("input, textarea, select, button").forEach((control) => { control.disabled = !manager; });
+    $(`[data-analytics-write-key]`).textContent = project.writeKey || "";
+    $(`[data-analytics-key-rotate]`).hidden = !manager;
+    $(`[data-analytics-project-delete]`).hidden = !manager;
+    $(`[data-analytics-manage]`).hidden = !manager;
+    $(`[data-analytics-snippet]`).textContent = snippetText();
+    $(`[data-analytics-curl]`).textContent = curlText();
+    renderUsage();
+  }
+  function renderUsage() {
+    const current = settings(), history = state.usageHistory.slice().sort((a, b) => a.day - b.day);
+    const used = state.project?.usage || {};
+    const meter = (label, value, limit, format) => {
+      const share = limit ? Math.min(1, value / limit) : 0;
+      const level = share >= 0.95 ? "bad" : share >= 0.75 ? "warn" : "";
+      return `<div class="an-stack-tight"><div class="an-row" style="justify-content:space-between"><span class="an-hint">${h(label)}</span><span><b>${h(format(value))}</b> <span class="an-hint">of ${h(limit ? format(limit) : "no limit")}</span></span></div><div class="an-meter" role="img" aria-label="${h(`${label}: ${fmtPct(share, 0)} of today's quota`)}"${level ? ` data-level="${level}"` : ""}><span style="width:${(share * 100).toFixed(1)}%"></span></div></div>`;
+    };
+    $(`[data-analytics-usage-today]`).innerHTML = meter("Events today", Number(used.events) || 0, Number(current.eventQuota) || 0, fmtInt)
+      + meter("Replay data today", Number(used.replayBytes) || 0, Number(current.replayQuota) || 0, fmtBytes);
+    drawChart($(`[data-analytics-usage-chart]`), {
+      type: "bar", height: 180, label: "Events accepted per day, last 30 days",
+      labels: history.map((row) => dayStart(row.day)),
+      formatLabel: (label, long) => fmtBucket(label, "day", long),
+      series: [{ name: "Events", data: history.map((row) => row.events), color: PALETTE[0] }],
+    });
+  }
+  async function saveSettings(event) {
+    event.preventDefault();
+    if (!canManage()) return;
+    const get = (name) => $(`[data-analytics-set-${name}]`);
+    const body = {
+      name: get("name").value.trim(), timezoneOffsetMinutes: Number(get("timezone").value) || 0,
+      allowedOrigins: get("origins").value.split(/[\n,]+/).map((line) => line.trim().replace(/\/+$/, "")).filter(Boolean),
+      groupTypes: get("group-types").value.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean).slice(0, 5),
+      autocapture: get("autocapture").checked, heatmaps: get("heatmaps").checked,
+      captureErrors: get("errors").checked, capturePerformance: get("performance").checked,
+      replay: { enabled: get("replay-enabled").checked, maskAllText: get("replay-mask-text").checked, maskAllInputs: get("replay-mask-inputs").checked,
+        sampleRate: Number(get("replay-sample").value) || 0, minDurationMs: Number(get("replay-min").value) || 0 },
+      eventQuota: Number(get("event-quota").value) || 0, replayQuota: Math.round((Number(get("replay-quota").value) || 0) * 1048576),
+      retentionDays: Number(get("retention").value) || 1, replayRetentionDays: Number(get("replay-retention").value) || 1,
+      testAccountFilters: cleanFilters(state.settingsFilters),
+    };
+    const bad = body.allowedOrigins.find((origin) => !/^https?:\/\/[a-z0-9.-]+(?::\d{1,5})?$/i.test(origin));
+    if (bad) return setMessage("error", `“${bad}” is not an origin. Use the scheme and host only, like https://example.com.`);
+    if (state.org?.instanceAdmin && get("site-default").checked !== Boolean(state.project?.siteDefault)) body.siteDefault = get("site-default").checked;
+    const button = $(`[data-analytics-settings-save]`); button.disabled = true;
+    try {
+      const payload = await request(projectPath(), "PATCH", body);
+      applyProject(payload.project);
+      // Everything else reads these settings; drop what was drawn with the old ones.
+      state.loadedTabs = new Set(["settings:"]);
+      renderSettings();
+      setMessage("notice", "Settings saved. Sites pick up capture changes within about five minutes.");
+    } catch (error) { fail(error, "Could not save settings"); }
+    finally { button.disabled = !canManage(); }
+  }
+  async function rotateKey() {
+    if (!confirm("Rotate the write key? Every site still using the old key stops sending data until its snippet is updated.")) return;
+    try {
+      const payload = await request(projectPath("/rotate-key"), "POST", {});
+      applyProject(payload.project); renderSettings();
+      setMessage("notice", "Write key rotated. Update the snippet on your sites.");
+    } catch (error) { fail(error, "Could not rotate the key"); }
+  }
+  async function deleteProject() {
+    const name = settings().name || "Project";
+    const typed = prompt(`Delete the project “${name}” with all of its events, people, replays, flags, and surveys? This cannot be undone.\n\nType the project name to confirm.`);
+    if (typed === null) return;
+    if (typed.trim() !== name) { setMessage("error", "The name did not match; nothing was deleted."); return; }
+    try {
+      await request(projectPath(), "DELETE", {});
+      state.org.projects = (state.org.projects || []).filter((project) => project.id !== state.projectId);
+      setMessage("notice", `Project “${name}” deleted.`);
+      await selectProject(state.org.projects[0]?.id || "");
+    } catch (error) { fail(error, "Could not delete the project"); }
+  }
+  async function exportEvents() {
+    try {
+      const payload = await request(projectPath("/export"), "GET", null, scope("export"));
+      downloadJson(payload, `forkmesh-analytics-${(settings().name || "project").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-events.json`);
+      if (payload.truncated) setMessage("notice", "The export holds the most recent events only; it was capped.");
+    } catch (error) { fail(error, "Export failed"); }
+  }
+
+  // ==========================================================================
+  // Wiring
+  // ==========================================================================
+
+  let mountedEventFilters = null;
+  function ensureEventFilters() {
+    if (mountedEventFilters === state.events.filters) return;
+    mountedEventFilters = state.events.filters;
+    mountFilters($(`[data-analytics-events-filters]`), state.events.filters, { types: ["event", "person", "cohort"] });
+  }
+  const loadEventsTab = TAB_LOADERS.events;
+  TAB_LOADERS.events = () => { ensureEventFilters(); return loadEventsTab(); };
+
+  // One delegated click handler for the whole view: rows and tiles are re-rendered constantly.
+  const CLICKS = [
+    ["[data-analytics-tab]", (node) => showTab(node.dataset.analyticsTab)],
+    ["[data-analytics-sub]", (node) => { const [owner, name] = node.dataset.analyticsSub.split(":"); showTab(owner, name); }],
+    ["[data-analytics-pick]", (node) => { const [key, value] = node.dataset.analyticsPick.split(":"); state.overviewPick[key] = value; renderBreakdowns(); }],
+    ["[data-analytics-heatmap-open]", (node) => openHeatmap(node.dataset.analyticsHeatmapOpen)],
+    ["[data-analytics-insight-type]", (node) => switchInsightKind(node.dataset.analyticsInsightType)],
+    ["[data-analytics-insight-new]", () => { state.insight = blankInsight(state.insight?.query.kind || "trends"); state.insightResult = null; renderBuilder(); void runInsight(); }],
+    ["[data-analytics-insight-save]", () => saveInsightDialog()],
+    ["[data-analytics-insight-add-dashboard]", () => void addToDashboardDialog()],
+    ["[data-analytics-insight-open]", (node) => openSavedInsight(node.dataset.analyticsInsightOpen)],
+    ["[data-analytics-insight-edit]", (node) => editSavedInsightDialog(node.dataset.analyticsInsightEdit)],
+    ["[data-analytics-action-new]", () => actionDialog()],
+    ["[data-analytics-action-edit]", (node) => actionDialog(node.dataset.analyticsActionEdit)],
+    ["[data-analytics-annotation-new]", () => annotationDialog()],
+    ["[data-analytics-annotation-edit]", (node) => annotationDialog(node.dataset.analyticsAnnotationEdit)],
+    ["[data-analytics-dashboard-new]", () => void loadObjects("insight").then(() => dashboardDialog(), (error) => fail(error))],
+    ["[data-analytics-dashboard-edit]", () => dashboardDialog(state.dashboardId)],
+    ["[data-analytics-events-apply]", () => { state.events.name = $(`[data-analytics-events-name]`).value.trim(); void loadEvents(false).catch((error) => fail(error)); }],
+    ["[data-analytics-events-more]", () => void loadEvents(true).catch((error) => fail(error))],
+    ["[data-analytics-event-toggle]", (node) => { const index = Number(node.dataset.analyticsEventToggle), open = state.events.open; if (open.has(index)) open.delete(index); else open.add(index); renderEvents(); }],
+    ["[data-analytics-person-open]", (node) => void openPerson(node.dataset.analyticsPersonOpen)],
+    ["[data-analytics-person-delete]", (node) => void deletePerson(node.dataset.analyticsPersonDelete)],
+    ["[data-analytics-people-more]", () => void loadPeople(true).catch((error) => fail(error))],
+    ["[data-analytics-cohort-new]", () => cohortDialog()],
+    ["[data-analytics-cohort-edit]", (node) => cohortDialog(node.dataset.analyticsCohortEdit)],
+    ["[data-analytics-replay-open]", (node) => void openRecording(node.dataset.analyticsReplayOpen)],
+    ["[data-analytics-replay-more]", () => void loadRecordings(true).catch((error) => fail(error))],
+    ["[data-analytics-replay-person-clear]", () => { state.replay.personId = ""; void loadRecordings(false).catch((error) => fail(error)); }],
+    ["[data-analytics-replay-back]", () => closeRecording()],
+    ["[data-analytics-replay-delete]", () => void deleteRecording()],
+    ["[data-analytics-replay-toggle]", () => state.replay.player?.toggle()],
+    ["[data-analytics-replay-jump]", (node) => { const player = state.replay.player; if (!player) return; player.seek(Number(node.dataset.analyticsReplayJump) || 0); if (!player.playing) player.play(); }],
+    ["[data-analytics-flag-new]", () => flagDialog()],
+    ["[data-analytics-flag-edit]", (node) => flagDialog(node.dataset.analyticsFlagEdit)],
+    ["[data-analytics-experiment-new]", () => void loadObjects("flag").then(() => experimentDialog(), (error) => fail(error))],
+    ["[data-analytics-experiment-edit]", (node) => experimentDialog(node.dataset.analyticsExperimentEdit)],
+    ["[data-analytics-experiment-open]", (node) => void openExperiment(node.dataset.analyticsExperimentOpen)],
+    ["[data-analytics-survey-new]", () => surveyDialog()],
+    ["[data-analytics-survey-edit]", (node) => surveyDialog(node.dataset.analyticsSurveyEdit)],
+    ["[data-analytics-survey-open]", (node) => void openSurvey(node.dataset.analyticsSurveyOpen)],
+    ["[data-analytics-error-open]", (node) => { const fingerprint = node.dataset.analyticsErrorOpen; state.errorOpen = state.errorOpen === fingerprint ? "" : fingerprint; renderErrors(); }],
+    ["[data-analytics-onboarding-copy]", () => void copyText(snippetText(), "Snippet")],
+    ["[data-analytics-onboarding-settings]", () => showTab("settings")],
+    ["[data-analytics-snippet-copy]", () => void copyText(snippetText(), "Snippet")],
+    ["[data-analytics-curl-copy]", () => void copyText(curlText(), "Command")],
+    ["[data-analytics-key-copy]", () => void copyText(state.project?.writeKey || "", "Write key")],
+    ["[data-analytics-key-rotate]", () => void rotateKey()],
+    ["[data-analytics-project-delete]", () => void deleteProject()],
+    ["[data-analytics-export-events]", () => void exportEvents()],
+    ["[data-analytics-manage]", () => $(`[data-analytics-manage-dialog]`).showModal()],
+    ["[data-analytics-export-all]", () => void exportOrganization()],
+    ["[data-analytics-uninstall]", () => void uninstallPlugin()],
+    ["[data-analytics-new-project]", () => void createProjectDialog()],
+    ["[data-analytics-create-first]", () => void createProjectDialog()],
+    ["[data-analytics-install]", () => void installPlugin()],
+    ["[data-analytics-refresh]", () => { void loadTaxonomy(); void reloadCurrent(); }],
+    ["[data-analytics-dialog-delete]", () => void runDialog(dialogHandlers?.onDelete)],
+    ["[data-analytics-dialog-close]", (node) => node.closest("dialog")?.close()],
+  ];
+  const CHANGES = [
+    ["[data-analytics-organization]", (node) => { state.organization = node.value; void loadOrganization(); }],
+    ["[data-analytics-project]", (node) => void selectProject(node.value)],
+    ["[data-analytics-range]", (node) => {
+      state.range = node.value;
+      if (state.range === "custom") {
+        const from = $(`[data-analytics-from]`), to = $(`[data-analytics-to]`);
+        if (!from.value) from.value = toDateInput(Date.now() - 7 * DAY);
+        if (!to.value) to.value = toDateInput(Date.now());
+      }
+      renderShell(); void reloadCurrent();
+    }],
+    ["[data-analytics-from], [data-analytics-to]", () => void reloadCurrent()],
+    ["[data-analytics-filter-test]", (node) => { state.filterTest = node.checked; void reloadCurrent(); }],
+    ["[data-analytics-insight-builder]", (_, event) => onBuilderChange(event)],
+    ["[data-analytics-insight-compare]", (node) => { if (!state.insight) return; state.insight.query.display.compare = node.checked; void runInsight(); }],
+    ["[data-analytics-insight-chart]", (node) => { if (!state.insight) return; state.insight.query.display.chartType = node.value; renderInsightResult($(`[data-analytics-insight-result]`), state.insight.query, state.insightResult, state.insightPrevious); }],
+    ["[data-analytics-dashboard-select]", (node) => { state.dashboardId = node.value; renderDashboardSelect(); void renderDashboard().catch((error) => fail(error)); }],
+    ["[data-analytics-group-type]", () => void loadGroups().catch((error) => fail(error))],
+    ["[data-analytics-replay-duration], [data-analytics-replay-errors]", () => void loadRecordings(false).catch((error) => fail(error))],
+    ["[data-analytics-replay-speed]", (node) => state.replay.player?.setSpeed(node.value)],
+    ["[data-analytics-replay-skip]", (node) => state.replay.player?.setSkipInactivity(node.checked)],
+    ["[data-analytics-flag-active]", (node) => void toggleFlag(node.dataset.analyticsFlagActive, node.checked)],
+    ["[data-analytics-survey-active]", (node) => void toggleSurvey(node.dataset.analyticsSurveyActive, node.checked)],
+  ];
+
+  function bind() {
+    const root = $(`[data-view="analytics"]`); if (!root) return;
+    root.addEventListener("click", (event) => {
+      for (const [selector, handler] of CLICKS) {
+        const node = event.target.closest(selector);
+        if (node && root.contains(node) && !node.disabled) { handler(node, event); return; }
+      }
+    });
+    root.addEventListener("change", (event) => {
+      for (const [selector, handler] of CHANGES) {
+        const node = event.target.closest(selector);
+        if (node && root.contains(node)) { handler(node, event); return; }
+      }
+    });
+    // Arrow keys move between tabs (the tablist pattern).
+    $(`[data-analytics-tabs]`).addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      const tabs = $$(`[data-analytics-tab]`), at = tabs.findIndex((tab) => tab.dataset.analyticsTab === state.tab);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (at + (event.key === "ArrowLeft" ? -1 : 1) + tabs.length) % tabs.length;
+      event.preventDefault(); showTab(tabs[next].dataset.analyticsTab); tabs[next].focus();
+    });
+    const seek = $(`[data-analytics-replay-seek]`);
+    seek.addEventListener("input", () => { const player = state.replay.player; if (player) { player.seek(Number(seek.value) || 0); renderReplayTime(Number(seek.value) || 0); } });
+    $(`[data-analytics-events-name]`).addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault(); state.events.name = event.target.value.trim(); void loadEvents(false).catch((error) => fail(error));
+    });
+    $(`[data-analytics-people-form]`).addEventListener("submit", (event) => { event.preventDefault(); void loadPeople(false).catch((error) => fail(error)); });
+    $(`[data-analytics-heatmap-form]`).addEventListener("submit", (event) => { event.preventDefault(); void loadHeatmap().catch((error) => fail(error, "Could not load the heatmap")); });
+    $(`[data-analytics-settings-form]`).addEventListener("submit", (event) => void saveSettings(event));
+    $(`[data-analytics-dialog-form]`).addEventListener("submit", (event) => { event.preventDefault(); void runDialog(dialogHandlers?.onSave); });
+    $(`[data-analytics-dialog]`).addEventListener("close", () => { dialogHandlers = null; });
+    window.addEventListener("hashchange", () => {
+      if (!state.projectId || !location.hash.startsWith("#analytics")) return;
+      applyHash(); void loadTab();
+    });
+  }
+
+  // People → "Recordings" in the person drawer can list one person's sessions.
+  function recordingsFor(personId) {
+    state.replay.personId = personId;
+    state.loadedTabs.delete("replay:");
+    showTab("replay");
+  }
+  CLICKS.unshift(["[data-analytics-person-recordings]", (node) => { $(`[data-analytics-drawer]`).close(); recordingsFor(node.dataset.analyticsPersonRecordings); }]);
+
+  async function init() {
+    bind();
+    if (!session()?.sessionToken) { setMessage("error", "Sign in to use Analytics."); return; }
+    try {
+      const payload = await request("/api/analytics", "GET", null, scope("organizations"));
+      state.organizations = payload.organizations || [];
+      if (!state.organizations.length) { setMessage("error", "Join or create an organization before using Analytics."); return; }
+      const wanted = new URLSearchParams(location.search).get("org");
+      state.organization = (state.organizations.find((org) => org.name === wanted)
+        || state.organizations.find((org) => org.installed) || state.organizations[0]).name;
+      renderOrganizationSelect();
+      await loadOrganization();
+    } catch (error) { fail(error, "Analytics is unavailable"); }
+  }
+  return init();
+});

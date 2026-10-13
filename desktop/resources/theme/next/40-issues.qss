@@ -1,0 +1,77 @@
+#issueTable, #notesList, #issueBoardList {
+    selection-background-color: @surfaceActive; selection-color: @fg;
+}
+#issueTable::item:selected { background-color: @surfaceActive; color: @fg; }
+QTableWidget#issueTable[repositoryGrid="true"]::item:selected {
+    background-color: @surfaceRaised; color: @fg;
+}
+#repoRowActions, #networkRepoCommitActivityChart, #networkRepoMergeActivityChart {
+    background: transparent;
+}
+#repoRowActions QPushButton {
+    padding: 5px 6px; border-radius: 6px; font-size: 13px; font-weight: 500;
+}
+#repoRowActions QPushButton#ghostButton {
+    background-color: transparent; border: 1px solid @border; color: @fgSecondary;
+}
+#repoRowActions QPushButton#ghostButton:hover {
+    background-color: @surfaceActive; border-color: @borderStrong; color: @fg;
+}
+#repoRowActions QPushButton:disabled {
+    background-color: transparent; border-color: @border; color: @fgSubtle;
+}
+#issueTable QHeaderView::section {
+    color: @fgMuted; border-right: none; border-bottom: 1px solid @border; font-weight: 500;
+}
+#notesList::item:hover { background-color: @surfaceRaised; }
+#notesList::item:selected { background-color: @surfaceActive; color: @fg; }
+#issueBoardList::item:selected {
+    background-color: @surfaceActive; border-color: @borderStrong; color: @fg;
+}
+
+QLineEdit#issueSearch, QComboBox#issueControlSm {
+    background-color: @surface; border: 1px solid @borderStrong;
+}
+QLineEdit#issueSearch:focus, QComboBox#issueControlSm:focus { border-color: @accent; }
+
+#issueStatusPill[status="open"], QLabel#issueDependencyStatus[status="open"] {
+    color: @success; background-color: @successSubtle;
+}
+#issueStatusPill[status="closed"], QLabel#issueDependencyStatus[status="closed"] {
+    color: @accentFg; background-color: @accentSubtle;
+}
+
+#issueCommentCard, #issueTimelineCard { border: 1px solid @border; }
+#issueTimelineHeader { background-color: @surfaceRaised; border-bottom: 1px solid @border; }
+
+QToolButton#issueActionButton:hover, QPushButton#issueActionButton:hover {
+    background-color: @surfaceRaised;
+}
+QPushButton#issueChecklistDrag:hover, QPushButton#issueChecklistDrag:focus {
+    background-color: @surfaceRaised; color: @fgSecondary;
+}
+QPushButton#issueChecklistConvert:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong; color: @fg;
+}
+QPushButton#issueChecklistAttached {
+    background-color: @accentSubtle; border-color: transparent; color: @accentFg;
+}
+QPushButton#issueChecklistAttached:hover {
+    background-color: @accentSubtle; border-color: @accent; color: @accentFg;
+}
+
+#calendarAgentCard { background-color: @surface; border: 1px solid @border; border-radius: 12px; }
+
+QPushButton#chatAddChannelButton:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong; color: @accentFg;
+}
+QPushButton#chatIntegrationButton { color: @fgSecondary; }
+QPushButton#chatIntegrationButton:hover {
+    background-color: @surfaceRaised; border-color: @borderStrong; color: @fg;
+}
+QPushButton#chatIntegrationButton[connected="true"] { border-color: @border; color: @success; }
+QPushButton#chatIntegrationButton[bad="true"] { border-color: @border; color: @danger; }
+#firewallBanner { background-color: @warningSubtle; border-bottom: 1px solid @border; }
+#firewallBannerLabel { color: @warning; }
+#chatUnreadBanner { background-color: @accentSubtle; border-bottom: 1px solid @border; }
+#composerInputRow { background-color: @surface; border: 1px solid @border; border-radius: 12px; }

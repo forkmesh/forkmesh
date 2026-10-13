@@ -1,0 +1,4 @@
+# Managed by deploy/core/render.py (@@NODE@@). /etc/default/earlyoom
+# Act at 5 % free RAM and 10 % free swap; never pick the database, the
+# gateway or sshd, prefer the app/git processes (systemd restarts them).
+EARLYOOM_ARGS="-m 5 -s 10 -r 3600 --avoid '^(rqlited|sshd|systemd|systemd-journal|caddy|wg-quick)$' --prefer '^(python.*|git.*)$'"

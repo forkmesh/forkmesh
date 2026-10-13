@@ -1,0 +1,94 @@
+{
+  "schema": "forkmesh-git-conformance-results-v1",
+  "suite": {
+    "id": "forkmesh-stock-git",
+    "version": "1.0.0"
+  },
+  "attested": "2026-09-14",
+  "runs": [
+    {
+      "id": "df83f9aadd86159a",
+      "evidence": "evidence/df83f9aadd86159a.json",
+      "finishedAt": "2026-09-14T15:58:35.903689+00:00",
+      "date": "2026-09-14",
+      "testedCommit": "c792b91e35e78b54871d6814d77d8fcfb7621591",
+      "client": {
+        "label": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "platformRelease": "6.12.107+deb13-amd64",
+        "machine": "x86_64",
+        "protocolVersion": "2",
+        "transportMode": "http"
+      },
+      "summary": {
+        "status": "pass",
+        "pass": 15,
+        "fail": 0,
+        "notRun": 0
+      },
+      "reproduction": {
+        "checkout": [
+          "git",
+          "checkout",
+          "c792b91e35e78b54871d6814d77d8fcfb7621591"
+        ],
+        "command": [
+          "python3",
+          "tools/git_conformance.py",
+          "run",
+          "--protocol-version",
+          "2",
+          "--transport",
+          "http",
+          "--client-label",
+          "Debian system Git",
+          "--output",
+          "artifacts/git-conformance-v2.json"
+        ]
+      }
+    },
+    {
+      "id": "f80323565e1c9af0",
+      "evidence": "evidence/f80323565e1c9af0.json",
+      "finishedAt": "2026-09-14T15:58:29.769295+00:00",
+      "date": "2026-09-14",
+      "testedCommit": "c792b91e35e78b54871d6814d77d8fcfb7621591",
+      "client": {
+        "label": "Debian system Git",
+        "gitVersion": "git version 2.47.3",
+        "platform": "Linux",
+        "platformRelease": "6.12.107+deb13-amd64",
+        "machine": "x86_64",
+        "protocolVersion": "0",
+        "transportMode": "http"
+      },
+      "summary": {
+        "status": "pass",
+        "pass": 15,
+        "fail": 0,
+        "notRun": 0
+      },
+      "reproduction": {
+        "checkout": [
+          "git",
+          "checkout",
+          "c792b91e35e78b54871d6814d77d8fcfb7621591"
+        ],
+        "command": [
+          "python3",
+          "tools/git_conformance.py",
+          "run",
+          "--protocol-version",
+          "0",
+          "--transport",
+          "http",
+          "--client-label",
+          "Debian system Git",
+          "--output",
+          "artifacts/git-conformance-v0.json"
+        ]
+      }
+    }
+  ]
+}

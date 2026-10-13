@@ -1,0 +1,110 @@
+{
+  "dataLoss": {
+    "commitsLost": 0,
+    "policy": "none",
+    "refsLost": [],
+    "withinPolicy": true
+  },
+  "fault": null,
+  "missingPrerequisites": [],
+  "mode": "automated-live",
+  "objective": {
+    "automatedBudgetSeconds": 120,
+    "dataLoss": "none",
+    "recoveryMinutes": 120
+  },
+  "platform": {
+    "git": "2.47",
+    "os": "linux",
+    "python": "3.13.5"
+  },
+  "ranAt": "2026-09-14T21:34:45+00:00",
+  "recoveryMs": 6419,
+  "runbookSha256": "b93908faaa80a062ef68b76c01bb1d452bd93cc0b83b821c483e25f0212229ee",
+  "runbookVersion": "1.0.0",
+  "scenario": "key-loss",
+  "schema": "forkmesh-disaster-drill-report-v1",
+  "steps": [
+    {
+      "action": "the lost key tries to sign its own replacement",
+      "ms": 311,
+      "ok": true,
+      "procedure": "rotate-lost-export-key"
+    },
+    {
+      "action": "the first custodian signs; one signature is below the threshold",
+      "ms": 1494,
+      "ok": true,
+      "procedure": "rotate-lost-export-key"
+    },
+    {
+      "action": "further custodians cosign and the rotation is applied",
+      "ms": 2412,
+      "ok": true,
+      "procedure": "rotate-lost-export-key"
+    },
+    {
+      "action": "re-export with the successor key",
+      "ms": 323,
+      "ok": true,
+      "procedure": "carry-removable-media"
+    },
+    {
+      "action": "import media signed by the revoked key",
+      "ms": 901,
+      "ok": true,
+      "procedure": "carry-removable-media"
+    },
+    {
+      "action": "import media signed by the successor key",
+      "ms": 960,
+      "ok": true,
+      "procedure": "carry-removable-media"
+    }
+  ],
+  "unsafeSteps": {
+    "refused": [
+      {
+        "reason": "signer_not_recovery_key",
+        "step": "let the lost key sign its replacement"
+      },
+      {
+        "reason": "below_threshold",
+        "step": "apply a rotation below the recovery threshold"
+      },
+      {
+        "reason": "the export was signed by a key that is not trusted",
+        "step": "import media signed by the revoked key"
+      }
+    ],
+    "taken": []
+  },
+  "verdict": "pass",
+  "verification": [
+    {
+      "check": "the lost key cannot sign its replacement",
+      "ok": true
+    },
+    {
+      "check": "a rotation below the threshold is refused",
+      "ok": true
+    },
+    {
+      "check": "the lost key is revoked",
+      "ok": true
+    },
+    {
+      "check": "media signed by the revoked key is refused and changes nothing",
+      "ok": true
+    },
+    {
+      "check": "connectivity check passes",
+      "ok": true
+    },
+    {
+      "check": "the change signed with the stolen key is absent",
+      "ok": true
+    }
+  ],
+  "withinObjective": true
+}

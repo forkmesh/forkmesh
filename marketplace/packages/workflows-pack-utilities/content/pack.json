@@ -1,0 +1,10 @@
+{
+  "category": "Utilities",
+  "integrations": [
+    "bitly",
+    "openweathermap",
+    "wikipedia",
+    "homeAssistant",
+    "zapier"
+  ]
+}

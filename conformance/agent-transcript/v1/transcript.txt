@@ -1,0 +1,72 @@
+
+> check in on the background agents and tell me where things stand
+
+I'll check the runner fix and the Mac build.
+
+[Agent {"description":"Fix runner OOM and tmp leak","prompt":"Fix the runner OOMs.","run_in_background":true}]
+
+[Bash git log --oneline -3]
+
+[Read /home/dev/projects/forkmesh/src/docs/RUNNERS.md]
+
+[Grep server]
+
+[mcp__forkmesh__list_tasks {"limit":20,"status":"open"}]
+
+==> Task update: Monitor event: "1.2.5 macOS desktop build on the Mac (stage lines, EXIT, errors)"
+    [macos-universal] 23:51:03 nghttp3 1.18.0 (static, arm64)
+
+==> Task failed: Background command "Wait for download and verify signature" failed with exit code 144
+
+==> Task completed: Agent "Fix runner OOM and tmp leak" finished
+    I've fixed the runner OOMs and the `sshd-unix-local.socket` warning. Everything is committed as `91565f70e` on the new branch `fix/runner-oom-tmp` in the worktree. Nothing was pushed or deployed, and nothing on the live nodes was changed. My only SSH use was read-only inspection of the runner.
+
+    **Runner OOM (the tmpfs `/tmp`)**
+    - **Daemon unit** (`deploy/core/templates/forkmesh-mirror-node.service`, `deploy/core/render.py`): on the runner, `PrivateTmp=true` is replaced by `PrivateTmp=false` plus `BindPaths=/var/lib/forkmesh-runner/tmp:/tmp /var/lib/forkmesh-runner/tmp:/var/tmp`. The daemon and its jobs now get a `/tmp` on disk, still separate from the host's. The directory is root-owned, mode 1777. Cores keep `PrivateTmp=true`.
+    - **Creating that directory** (`tools/next_fleet.py`): the `base` and `files` steps create it before the `daemon-reload`.
+    - **Per-job temp dir** (`server/sandbox.go`): every sandboxed command now gets a temp dir on disk. Session jobs keep `<home>/tmp`. Other commands get `<workRoot>/.tmp/<scope unit>`, owned by the job user and removed when the scope ends. `CLAUDE_CODE_TMPDIR` is set to the same path. Claude Code ignores `TMPDIR` for `/tmp/claude-<uid>`; the variable exists in the installed CLI binary.
+
+    …more (2553 characters not shown)
+
+> ⟵ ForkMesh (phone): Test from the app to steering please give me status on tasks
+
+> ⟵ a-13: ping from a
+
+The runner fix is live on `fmnext-run-1` as of 22:28 UTC. The dry run was clean and so was the deploy. Nothing was running on the runner at the time, so no job was interrupted.
+
+| | Before | After |
+|---|---|---|
+| Runner `/tmp` | in RAM, 419 MB of job leftovers | on disk, empty |
+| Available memory | 256 MB | 670 MB |
+| Job swap | 0 | up to 1 GB (RAM limit still 600 MB) |
+| `sshd-unix-local.socket` | running, warning on every reload | stopped |
+
+The daemon came back up on the new unit. The 419 MB of leftovers were freed when it restarted.
+
+On the board, the runner task is now "[Verify]" at 90%. Two things are left on it:
+- **Confirm it holds:** tomorrow, check that the runner has logged no new out-of-memory kills.
+- **The cores:** they still log the socket warning until their next roll. It's harmless, so I didn't roll them now.
+
+The fix is merged into `main` locally but *not pushed*.
+
+==> Conversation compacted
+
+> and the mac build?
+
+## Where each item stands
+
+| Item | Status |
+| :--- | ---: |
+| **iOS verification build** | Archiving since 22:24 |
+| **Widget** | Waiting on a teammate |
+
+The task board answered:
+
+```json
+{"tasks":[{"id":733,"title":"Runner OOM","status":"verify","progress":90},{"id":741,"title":"Widget App Group","status":"blocked","assignee":null}],"open":2}
+```
+
+1. Merge `fix/runner-oom-tmp`
+2. Roll the cores
+
+See [the runbook](https://forkmesh.com/docs/runners) for details.

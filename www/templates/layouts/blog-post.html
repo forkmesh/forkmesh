@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="{{ description }}">
+    <link rel="canonical" href="https://forkmesh.com/blog/{{ slug }}/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/{{ slug }}/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="{{ heading }}">
+{% if share_description %}
+    <meta property="og:description" content="{{ share_description }}">
+{% else %}
+    <meta property="og:description" content="{{ description }}">
+{% endif %}
+    <meta property="og:image" content="https://forkmesh.com{{ image }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://forkmesh.com{{ image }}">
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css">
+{% block post_chrome %}
+{% include "partials/site-header.html" %}
+{% include "partials/site-footer.html" %}
+{% endblock %}
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+{% block post_head %}
+{% endblock %}
+{% endblock %}
+{% block chrome %}
+{% endblock %}
+{% block body %}
+    <div data-forkmesh-header="simple"></div>
+    <div class="shell">
+      <main>
+{% block content %}
+{% endblock %}
+      </main>
+    </div>
+    <div data-forkmesh-footer="standard"></div>
+{% endblock %}

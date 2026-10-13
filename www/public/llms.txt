@@ -1,0 +1,62 @@
+# ForkMesh
+
+> ForkMesh is an open-source developer platform for publishing, browsing, mirroring, discussing and shipping software across independent hosts, so no single hosting provider owns a project. Git stays the source of truth, any node can mirror a public repository, and issues, pull requests, reviews and releases are signed records stored in the repository.
+
+- Git repository bytes live on developer-operated hosts and server mirrors. Clones are served from a live, signed, integrity-checked mirror, so a repository stays reachable when its source host goes offline.
+- Public repositories can be read and cloned with stock Git and no account: `git clone https://forkmesh.com/<owner>/<repo>`. ForkMesh's own source is `https://forkmesh.com/forkmesh/forkmesh`.
+- Collaboration records (issues, discussions, pull requests, reviews, projects, milestones, releases) live under `.forkmesh/` in the repository and are signed with each node's Ed25519 identity.
+- The desktop app (Qt, Linux, macOS, Windows) is a full node: it hosts and mirrors repositories, and runs Codex or Claude Code agents in isolated worktrees whose work becomes pull requests. The iPhone and Android apps are access clients.
+- The protocol, self-hosting, public read and clone, and portable Git data are free; only bounded hosted services are paid.
+- Hosts: forkmesh.com is the website and docs, app.forkmesh.com is the web app and HTTP API, world.forkmesh.com is the 3D ForkMesh World.
+- Install the desktop node on Linux or macOS: `curl -fsSL https://forkmesh.com/install.sh | bash`
+
+## Docs
+
+- [Documentation overview](https://forkmesh.com/docs/): install, quickstart, the ForkMesh mental model, APIs and self-hosting
+- [Getting started](https://forkmesh.com/docs/getting-started/): first run, creating or adding a repository, chat and a first change
+- [Reading and cloning without an account](https://forkmesh.com/docs/accountless-reading/): what anonymous visitors and stock Git can do
+- [Stock Git compatibility](https://forkmesh.com/docs/git-compatibility/): supported clone, fetch, push, partial-clone, bundle, submodule and signed-commit workflows
+- [Repositories created on the web](https://forkmesh.com/docs/hosted-repositories/): push over HTTPS to a hosted repository
+- [Repository imports](https://forkmesh.com/docs/repository-imports/): bring a repository from another forge, with resumable migration
+- [Two-way forge sync](https://forkmesh.com/docs/forge-sync/): keep issues and comments in step with GitHub, Gitea or Forgejo
+- [Product promise proof](https://forkmesh.com/docs/product-promise/): collaborate, add a mirror, take the source offline and clone again
+- [Desktop client](https://forkmesh.com/docs/qt-client/): the Qt desktop application
+- [Team onboarding](https://forkmesh.com/docs/onboarding/): bring a team onto ForkMesh
+- [Terminology](https://forkmesh.com/docs/terminology/): the Git words ForkMesh keeps and the network ideas it adds, such as mirrors and seeding
+
+## API and integrations
+
+- [Integration contract (v1)](https://forkmesh.com/docs/integrations/): the stable HTTP resources, authentication, webhooks, signatures and pagination
+- [OpenAPI description](https://app.forkmesh.com/api/openapi.json): every route the app serves; only the integration contract routes are stable
+- [Service status](https://app.forkmesh.com/api/status): machine-readable status of each system
+
+## Protocol
+
+- [Protocol spec](https://forkmesh.com/docs/protocol/): signed collaboration objects, routing and the wire format
+- [Signatures and authentication](https://forkmesh.com/docs/protocol/signatures-and-authentication/): how records and requests are signed and verified
+- [Threat model](https://forkmesh.com/docs/protocol/threat-model/): what the protocol defends against
+- [Portable identities and recovery](https://forkmesh.com/docs/portable-identities/): node keys, accounts and recovery
+- [Transports and anonymity postures](https://forkmesh.com/docs/transports/): the network paths a node can use
+- [Offline and low-bandwidth sync](https://forkmesh.com/docs/offline-sync/): bundles, removable media and slow links
+
+## Product
+
+- [Features](https://forkmesh.com/features): everything the mesh can do
+- [Desktop downloads](https://forkmesh.com/desktop): native packages from the signed release manifest
+- [Mobile](https://forkmesh.com/mobile): agents, Git and code review on iPhone and iPad
+- [Market](https://forkmesh.com/market): extensions, agents, themes and virtual goods
+- [When ForkMesh fits, and when it does not](https://forkmesh.com/docs/category-comparisons/): comparison with other forges
+- [Free protocol, paid services](https://forkmesh.com/docs/business-model/): what is always free and what is paid
+- [Changelog](https://forkmesh.com/changelog): released changes
+- [Blog](https://forkmesh.com/blog): product announcements
+
+## Optional
+
+- [Documentation library](https://forkmesh.com/docs/library/): every guide, design note, runbook and schema
+- [Capability matrix](https://forkmesh.com/docs/capability-matrix/): which surface (desktop, web, mobile, headless) supports what
+- [Installation support matrix](https://forkmesh.com/docs/install-support-matrix/): installable builds, how they are verified, and upgrade, rollback and uninstall
+- [Running a mirror node](https://forkmesh.com/docs/operations/mirror-node/): operate a headless server mirror
+- [Private repository confidentiality](https://forkmesh.com/docs/security/private-repository-confidentiality/): how private repositories are protected
+- [About](https://forkmesh.com/about): the team and the project
+- [Report a vulnerability](https://forkmesh.com/security-report): private security disclosure
+- [ForkMesh World](https://world.forkmesh.com/): a 3D view of repositories, nodes, agents and activity

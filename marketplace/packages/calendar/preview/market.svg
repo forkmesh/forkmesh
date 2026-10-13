@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#090d13"/><rect x="50" y="48" width="1180" height="624" rx="18" fill="#0d1117" stroke="#30363d"/>
+  <text x="88" y="105" fill="#f0f6fc" font-family="system-ui" font-size="30" font-weight="700">Calendar</text><text x="88" y="137" fill="#8b949e" font-family="system-ui" font-size="16">August 2026 · personal, team, commits, merges</text>
+  <g transform="translate(86 174)" font-family="system-ui"><rect width="1108" height="438" rx="12" fill="#161b22" stroke="#30363d"/>
+  <g fill="#8b949e" font-size="13" font-weight="700"><text x="44" y="35">SUN</text><text x="202" y="35">MON</text><text x="360" y="35">TUE</text><text x="518" y="35">WED</text><text x="676" y="35">THU</text><text x="834" y="35">FRI</text><text x="992" y="35">SAT</text></g>
+  <g stroke="#30363d"><path d="M0 52H1108M0 148H1108M0 244H1108M0 340H1108M158 52V438M316 52V438M474 52V438M632 52V438M790 52V438M948 52V438"/></g>
+  <g fill="#c9d1d9" font-size="13"><text x="14" y="73">2</text><text x="172" y="73">3</text><text x="330" y="73">4</text><text x="488" y="73">5</text><text x="646" y="73">6</text><text x="804" y="73">7</text><text x="962" y="73">8</text><text x="14" y="169">9</text><text x="172" y="169">10</text><text x="330" y="169">11</text><text x="488" y="169">12</text><text x="646" y="169">13</text></g>
+  <rect x="174" y="84" width="138" height="26" rx="6" fill="#1f6feb"/><text x="184" y="102" fill="white" font-size="12">Team planning · 10:00</text>
+  <rect x="332" y="180" width="138" height="26" rx="6" fill="#238636"/><text x="342" y="198" fill="white" font-size="12">18 commits</text>
+  <rect x="490" y="116" width="138" height="26" rx="6" fill="#8250df"/><text x="500" y="134" fill="white" font-size="12">Release v0.8</text>
+  <rect x="648" y="276" width="138" height="26" rx="6" fill="#9e6a03"/><text x="658" y="294" fill="white" font-size="12">Mirror review · 14:30</text>
+  <rect x="806" y="372" width="138" height="26" rx="6" fill="#2da44e"/><text x="816" y="390" fill="white" font-size="12">PR #66 merged</text></g>
+</svg>

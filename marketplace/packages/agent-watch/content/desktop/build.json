@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "AgentActivityModel.h",
+    "AgentActivityModel.cpp",
+    "AgentActivityView.h",
+    "AgentActivityView.cpp",
+    "AgentNetworkSampler.h",
+    "AgentNetworkSampler.cpp",
+    "AgentTrafficWindow.h",
+    "AgentTrafficWindow.cpp",
+    "AgentWatchFeature.h",
+    "AgentWatchFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_agent_watch.cpp",
+    "tests/test_agent_activity.cpp",
+    "tests/test_agent_activity_view.cpp",
+    "AgentActivityModel.h",
+    "AgentActivityModel.cpp",
+    "AgentActivityView.h",
+    "AgentActivityView.cpp",
+    "AgentNetworkSampler.h",
+    "AgentNetworkSampler.cpp",
+    "AgentTrafficWindow.h",
+    "AgentTrafficWindow.cpp"
+  ],
+  "testHostSources": [
+    "AgentSonifier.h",
+    "AgentSonifier.cpp",
+    "SystemStats.h",
+    "SystemStats.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Widgets"
+  ]
+}

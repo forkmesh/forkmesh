@@ -1,0 +1,443 @@
+{
+  "schemaVersion": 1,
+  "definitionOfDone": "www/docs/engineering/definition-of-done.md",
+  "requiredPullRequestEvidence": [
+    {
+      "id": "threat-review",
+      "heading": "Threat review"
+    },
+    {
+      "id": "abuse-privacy-review",
+      "heading": "Abuse and privacy review"
+    },
+    {
+      "id": "benchmark-evidence",
+      "heading": "Benchmark and budget evidence"
+    },
+    {
+      "id": "regression-evidence",
+      "heading": "Regression-test evidence"
+    },
+    {
+      "id": "operational-evidence",
+      "heading": "Operational evidence"
+    }
+  ],
+  "performanceBudgets": [
+    {
+      "id": "worker-catalog-3000",
+      "metric": "wall-seconds",
+      "maximum": 0.5,
+      "enforcedBy": "app/tests/test_perf_budgets.py::test_catalog_get_is_linear_and_bounded_at_scale"
+    },
+    {
+      "id": "collaboration-fold-corpus-25",
+      "metric": "wall-seconds",
+      "maximum": 3.0,
+      "enforcedBy": "app/tests/test_collaboration_protocol.py::test_fold_hot_path_budget_after_signature_cache_is_warm"
+    },
+    {
+      "id": "repository-migration-setup-p50",
+      "metric": "milliseconds",
+      "maximum": 180000,
+      "enforcedBy": "app/tests/test_repository_migration.py::test_setup_p50_and_p95_are_reported_separately_from_transfer"
+    },
+    {
+      "id": "daily-startup",
+      "metric": "milliseconds",
+      "maximum": 2500,
+      "enforcedBy": "app/browser_tests/tests/daily-interface.spec.js::daily interface startup and repository browse stay within budget"
+    },
+    {
+      "id": "daily-repository-browse",
+      "metric": "milliseconds",
+      "maximum": 1000,
+      "enforcedBy": "app/browser_tests/tests/daily-interface.spec.js::daily interface startup and repository browse stay within budget"
+    },
+    {
+      "id": "daily-search",
+      "metric": "milliseconds",
+      "maximum": 100,
+      "enforcedBy": "app/browser_tests/tests/daily-interface.spec.js::daily interface startup and repository browse stay within budget"
+    },
+    {
+      "id": "daily-diff-render",
+      "metric": "milliseconds",
+      "maximum": 500,
+      "enforcedBy": "app/browser_tests/tests/dashboard-pull-files-deep-link.spec.js::daily interface diff rendering is addressable, readable, and within budget"
+    },
+    {
+      "id": "daily-navigation",
+      "metric": "milliseconds",
+      "maximum": 250,
+      "enforcedBy": "app/browser_tests/tests/dashboard-pull-files-deep-link.spec.js::daily interface diff rendering is addressable, readable, and within budget"
+    },
+    {
+      "id": "daily-feedback",
+      "metric": "milliseconds",
+      "maximum": 100,
+      "enforcedBy": "app/browser_tests/tests/daily-interface.spec.js::daily interface command palette is keyboard complete and restores focus"
+    }
+  ],
+  "gates": [
+    {
+      "id": "python-syntax",
+      "category": "regression",
+      "command": [
+        "{python}",
+        "-m",
+        "compileall",
+        "-q",
+        "app/src",
+        "tools"
+      ]
+    },
+    {
+      "id": "security-privacy-contracts",
+      "category": "security",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_non_custodial_surfaces.py",
+        "app/tests/test_public_security_claims.py",
+        "app/tests/test_private_repository_control_access.py",
+        "app/tests/test_sensitive_mutation_audit.py",
+        "app/tests/test_secret_gate.py"
+      ]
+    },
+    {
+      "id": "performance-budgets",
+      "category": "performance",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_perf_budgets.py"
+      ]
+    },
+    {
+      "id": "quality-gate-contract",
+      "category": "operations",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_quality_gates.py"
+      ]
+    },
+    {
+      "id": "daily-interface-contract",
+      "category": "accessibility",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_daily_interface_contract.py",
+        "app/tests/test_dashboard_bundle.py"
+      ]
+    },
+    {
+      "id": "business-model-contract",
+      "category": "operations",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_business_model_contract.py",
+        "app/tests/test_unit_economics.py",
+        "app/tests/test_admin_usage_report.py",
+        "app/tests/test_first_party_analytics.py",
+        "app/tests/test_installer_release.py",
+        "app/tests/test_mirror_serving.py",
+        "app/tests/test_https_mirror_routing_integration.py",
+        "app/tests/test_mirror_service_recovery.py"
+      ]
+    },
+    {
+      "id": "incentive-independence",
+      "category": "operations",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_incentive_independence.py",
+        "app/tests/test_marketplace_governance.py",
+        "app/tests/test_non_custodial_surfaces.py",
+        "app/tests/test_public_interest_funding.py"
+      ]
+    },
+    {
+      "id": "public-interest-funding",
+      "category": "operations",
+      "command": [
+        "{python}",
+        "tools/public_interest_funding.py",
+        "gate"
+      ]
+    },
+    {
+      "id": "collaboration-conformance",
+      "category": "security",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_collaboration_protocol.py",
+        "app/tests/test_protocol_suite.py",
+        "app/tests/test_protocol_certification.py",
+        "app/tests/test_trust_lists.py",
+        "app/tests/test_protocol_governance.py"
+      ]
+    },
+    {
+      "id": "protocol-certification",
+      "category": "release",
+      "command": [
+        "{python}",
+        "tools/protocol_certification.py",
+        "gate"
+      ]
+    },
+    {
+      "id": "protocol-governance",
+      "category": "release",
+      "command": [
+        "{python}",
+        "tools/protocol_governance.py",
+        "gate"
+      ]
+    },
+    {
+      "id": "social-signal-portability",
+      "category": "release",
+      "command": [
+        "{python}",
+        "tools/social_signals.py",
+        "gate"
+      ]
+    },
+    {
+      "id": "private-surface-confidentiality",
+      "category": "security",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_private_surface_audit.py",
+        "app/tests/test_private_repository_control_access.py",
+        "app/tests/test_https_mirror_routing_integration.py",
+        "app/tests/test_security_controls.py",
+        "app/tests/test_sentry_worker.py",
+        "-k",
+        "private or error_logs"
+      ]
+    },
+    {
+      "id": "git-compatibility-conformance",
+      "category": "regression",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_git_workflow_conformance.py"
+      ]
+    },
+    {
+      "id": "dependency-workflow-conformance",
+      "category": "regression",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_dependency_workflows.py"
+      ]
+    },
+    {
+      "id": "git-compatibility-evidence",
+      "category": "release",
+      "command": [
+        "{python}",
+        "tools/git_conformance.py",
+        "gate"
+      ]
+    },
+    {
+      "id": "repository-migration-conformance",
+      "category": "release",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_repository_migration.py",
+        "app/tests/test_repository_imports.py",
+        "app/tests/test_dashboard_bundle.py"
+      ]
+    },
+    {
+      "id": "offline-sync-conformance",
+      "category": "release",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_offline_sync.py"
+      ]
+    },
+    {
+      "id": "transport-conformance",
+      "category": "release",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_transports.py"
+      ]
+    },
+    {
+      "id": "disaster-recovery-conformance",
+      "category": "release",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_disaster_recovery.py"
+      ]
+    },
+    {
+      "id": "terminology-contract",
+      "category": "regression",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_terminology_contract.py"
+      ]
+    },
+    {
+      "id": "service-role-contract",
+      "category": "operations",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_service_roles_contract.py"
+      ]
+    },
+    {
+      "id": "world-browser",
+      "category": "regression",
+      "command": [
+        "npm",
+        "--prefix",
+        "app/browser_tests",
+        "test"
+      ]
+    },
+    {
+      "id": "category-comparison-claims",
+      "category": "operations",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_category_comparisons.py"
+      ]
+    },
+    {
+      "id": "external-dependency-map",
+      "category": "security",
+      "command": [
+        "{python}",
+        "-m",
+        "pytest",
+        "-q",
+        "app/tests/test_external_dependency_map.py"
+      ]
+    }
+  ],
+  "profiles": {
+    "core": [
+      "python-syntax",
+      "security-privacy-contracts",
+      "private-surface-confidentiality",
+      "external-dependency-map",
+      "collaboration-conformance",
+      "protocol-certification",
+      "protocol-governance",
+      "social-signal-portability",
+      "git-compatibility-conformance",
+      "dependency-workflow-conformance",
+      "repository-migration-conformance",
+      "offline-sync-conformance",
+      "transport-conformance",
+      "disaster-recovery-conformance",
+      "performance-budgets",
+      "daily-interface-contract",
+      "quality-gate-contract",
+      "business-model-contract",
+      "category-comparison-claims",
+      "incentive-independence",
+      "public-interest-funding",
+      "terminology-contract",
+      "service-role-contract"
+    ],
+    "release": [
+      "python-syntax",
+      "security-privacy-contracts",
+      "private-surface-confidentiality",
+      "external-dependency-map",
+      "collaboration-conformance",
+      "protocol-certification",
+      "protocol-governance",
+      "social-signal-portability",
+      "git-compatibility-conformance",
+      "dependency-workflow-conformance",
+      "git-compatibility-evidence",
+      "repository-migration-conformance",
+      "offline-sync-conformance",
+      "transport-conformance",
+      "disaster-recovery-conformance",
+      "performance-budgets",
+      "daily-interface-contract",
+      "quality-gate-contract",
+      "business-model-contract",
+      "category-comparison-claims",
+      "incentive-independence",
+      "public-interest-funding",
+      "terminology-contract",
+      "service-role-contract",
+      "world-browser"
+    ]
+  },
+  "budgetChangePolicy": {
+    "waiverDirectory": "www/docs/engineering/quality-gate-waivers",
+    "requiredFields": [
+      "budgetId",
+      "previousValue",
+      "requestedValue",
+      "reason",
+      "riskReview",
+      "expiresAt",
+      "approvedBy"
+    ],
+    "rule": "Removing a budget or making a maximum larger requires a matching, time-limited waiver."
+  }
+}

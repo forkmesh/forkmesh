@@ -1,0 +1,14775 @@
+  function commitSummaryField(commit, ...keys) {
+    for (const key of keys) {
+      const value = commit?.[key];
+      if (value !== undefined && value !== null && String(value).trim()) {
+        return String(value).trim();
+      }
+    }
+    return "";
+  }
+
+  function updateRepoCommitSummary(commit, repo) {
+    const summary = $("[data-repo-commit-summary]");
+    if (!summary) return;
+    const data = commit && typeof commit === "object" ? commit : {};
+    const hash = commitSummaryField(data, "hash", "commitHash", "commit")
+      || String(repo.rootCommit || repo.latestCommit || repo.commit || "");
+    const subject = commitSummaryField(data, "subject", "message", "commitMessage");
+    const author = commitSummaryField(data, "author", "committer", "name")
+      || String(repo.maintainer || repo.owner || "maintainer");
+    const matchingMirror = (state.repoMirrors || []).find((mirror) => {
+      const mirrorCommit = String(mirror?.commit || "").trim().toLowerCase();
+      return hash && mirrorCommit === hash.trim().toLowerCase()
+        && Number(mirror?.lastCommitAt) > 0;
+    });
+    const exactMirrorDate = matchingMirror?.lastCommitAt || "";
+    const date = exactMirrorDate
+      || commitSummaryField(data, "date", "committedAt", "updatedAt")
+      || String(repo.updatedAt || repo.lastSync || "");
+    if (commit && typeof commit === "object") state.repoLatestCommit = commit;
+    const avatar = summary.querySelector("[data-repo-commit-avatar]");
+    const authorNode = summary.querySelector("[data-repo-commit-author]");
+    const messageNode = summary.querySelector("[data-repo-commit-message]");
+    const hashNode = summary.querySelector("[data-repo-commit-hash]");
+    const dateNode = summary.querySelector("[data-repo-commit-date]");
+    if (avatar) avatar.textContent = (author[0] || repo.owner?.[0] || "F").toUpperCase();
+    if (authorNode) authorNode.textContent = author;
+    if (messageNode) messageNode.textContent = subject || "published latest mirror metadata";
+    if (hashNode) hashNode.textContent = hash ? hash.slice(0, 7) : "live";
+    if (dateNode) dateNode.textContent = formatTimeAgo(date);
+  }
+
+  function mdSafeUrl(url) {
+    const trimmed = String(url || "").trim();
+    if (/[\u0000-\u001f\u007f]/.test(trimmed)) return "#";
+    if (/^(https?:|mailto:|#|\/)/i.test(trimmed)) return trimmed;
+    if (/^[a-z0-9][a-z0-9+.-]*:/i.test(trimmed)) return "#";
+    return trimmed;
+  }
+
+  // The web issue form embeds attached and pasted images in the signed body as
+  // base64 data: URLs (07-repo-compose-branch.js), so that is the only address
+  // those images have. mdSafeUrl() turns every non-http scheme into "#", which
+  // rendered each of them as a broken image (#684). Raster types pass - never
+  // svg+xml - and only as an <img> source, never as a link target.
+  const MD_DATA_IMAGE_URL =
+    /^data:image\/(?:png|apng|jpeg|jpg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/]+={0,2}$/i;
+
+  // A markdown image URL that is a bare repo path ("logo.png") is not a URL
+  // this origin serves; it resolves against the repository the README came
+  // from, through the same /raw route the file viewer shows images with.
+  function mdImageSource(url, context) {
+    const source = String(url || "").replace(/^\.\//, "");
+    if (MD_DATA_IMAGE_URL.test(source)) return source;
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(source)) return mdSafeUrl(source);
+    if (!context?.repo) return "";
+    const directory = String(context.basePath || "").includes("/")
+      ? String(context.basePath).replace(/\/[^/]*$/, "/")
+      : "";
+    return escapeHtml(repoRawUrl(context.repo, `${directory}${source}`));
+  }
+
+  // GitHub-style heading anchor: "## 2. Add an independent mirror" is reached
+  // by "#2-add-an-independent-mirror".
+  function mdHeadingSlug(text) {
+    return String(text || "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/&[a-z0-9#]+;/gi, "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+      .replace(/\s/g, "-");
+  }
+
+  // Relative README links point at files in the repository, not at a path
+  // relative to the dashboard page currently displaying the README. They
+  // resolve to the repository's blob route (tree for a trailing "/") and open
+  // in place; "#section" links jump to a heading of the same document. The
+  // url arrives already escaped by renderMarkdownInline's caller.
+  function mdLinkHtml(labelHtml, url, context) {
+    const linkClass = "dashboard-accent-link underline underline-offset-2 hover:text-foreground";
+    const source = String(url || "").trim();
+    if (source.startsWith("#")) {
+      const anchor = mdHeadingSlug(source.slice(1));
+      return `<a href="${source}" data-repo-markdown-anchor="${anchor}" class="${linkClass}">${labelHtml}</a>`;
+    }
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(source) || !context?.repo) {
+      return `<a href="${mdSafeUrl(source)}" class="${linkClass}" target="_blank" rel="noopener noreferrer nofollow ugc">${labelHtml}</a>`;
+    }
+    const hashIndex = source.indexOf("#");
+    const target = hashIndex >= 0 ? source.slice(0, hashIndex) : source;
+    const hash = hashIndex >= 0 ? source.slice(hashIndex) : "";
+    const basePath = String(context.basePath || "");
+    const base = basePath.includes("/") ? basePath.replace(/\/[^/]*$/, "/") : "";
+    const normalized = [];
+    for (const part of `${base}${target}`.split("/")) {
+      if (!part || part === ".") continue;
+      if (part === "..") normalized.pop();
+      else normalized.push(part);
+    }
+    const path = normalized.join("/");
+    const kind = !target || target.endsWith("/") || !path ? "tree" : "blob";
+    const href = path ? repoLinkUrl(context.repo, kind, path) : `/${context.repo.owner}/${context.repo.name}`;
+    const anchor = hash ? mdHeadingSlug(hash.slice(1)) : "";
+    return `<a href="${escapeHtml(href)}${hash}" data-repo-markdown-link="${kind}" data-repo-markdown-path="${escapeHtml(path)}"${anchor ? ` data-repo-markdown-anchor="${anchor}"` : ""} class="${linkClass}">${labelHtml}</a>`;
+  }
+
+  // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
+  // the declared width in a "#w=" fragment and it is read back here.
+  function mdImageHtml(alt, url, context) {
+    const hint = /#w=(\d{1,4})$/.exec(url);
+    const source = mdImageSource(hint ? url.slice(0, hint.index) : url, context);
+    if (!source) return alt;
+    return `<img src="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
+      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" />';
+  }
+
+  // Operates on already-`escapeHtml`d text so the captured groups (urls,
+  // labels, code) are safe to splice back into HTML without re-escaping.
+  //
+  // Markup this pass emits is parked behind a sentinel until the very end.
+  // Without that the emphasis rules ran over the HTML of everything before
+  // them: two links in one paragraph turned the `target="_blank" … "_blank`
+  // between them into an <em>, and a code span reading `a_b_c` lost its
+  // underscores. Link labels are rendered before their whole anchor is parked,
+  // preserving emphasis without allowing record references to become nested links.
+  function renderMarkdownInline(escapedText, context, linkRecordReferences = true) {
+    const parked = [];
+    const park = (html) => `\u0001${parked.push(html) - 1}\u0001`;
+    const recordReference = (whole, prefix, label, kind, number) => {
+      if (!linkRecordReferences) return whole;
+      const repo = context?.repo || state.selectedRepo;
+      if (!repo) return whole;
+      const href = escapeHtml(repoRecordUrl(repo, kind, Number(number)));
+      return `${prefix}${park(`<a href="${href}" class="dashboard-accent-link underline underline-offset-2 hover:text-foreground">${label}</a>`)}`;
+    };
+    return escapedText
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) => park(mdImageHtml(alt, url, context)))
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
+        park(mdLinkHtml(renderMarkdownInline(label, context, false), url, context)))
+      .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
+      .replace(/(^|[^\w&])((?:pull[-\s]+request|pull|pr)[-\s]*#([1-9]\d*))\b/gi,
+        (whole, prefix, label, number) => recordReference(whole, prefix, label, "pulls", number))
+      .replace(/(^|[^\w&])(issue[-\s]*#([1-9]\d*))\b/gi,
+        (whole, prefix, label, number) => recordReference(whole, prefix, label, "issues", number))
+      .replace(/(^|[^\w&])#([1-9]\d*)\b/g, (whole, prefix, number) => {
+        if (!linkRecordReferences) return whole;
+        const repo = context?.repo || state.selectedRepo;
+        if (!repo) return whole;
+        const href = escapeHtml(repoRecordUrl(repo, "issues", Number(number)));
+        return `${prefix}${park(`<a href="${href}" class="dashboard-accent-link underline underline-offset-2 hover:text-foreground">#${number}</a>`)}`;
+      })
+      .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "<del>$1</del>")
+      .replace(/(\*\*|__)(.+?)\1/g, "<strong>$2</strong>")
+      .replace(/(^|[^\w*])\*(?!\*)([^*]+)\*(?!\*)/g, "$1<em>$2</em>")
+      .replace(/(^|[^\w_])_(?!_)([^_]+)_(?!_)/g, "$1<em>$2</em>")
+      .split(MD_HARD_BREAK).join("<br />")
+      .replace(/\u0001(\d+)\u0001/g, (_, index) => parked[Number(index)]);
+  }
+
+  function htmlTagAttr(tag, name) {
+    const match = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
+    return match ? (match[1] ?? match[2] ?? match[3] ?? "") : "";
+  }
+
+  const MD_ENTITIES = {
+    nbsp: " ", lt: "<", gt: ">", quot: '"', apos: "'", middot: "·", bull: "•",
+    mdash: "—", ndash: "–", hellip: "…", rarr: "→", copy: "©", amp: "&",
+  };
+
+  function decodeHtmlEntities(text) {
+    // One pass, so "&amp;lt;" decodes to the literal text "&lt;".
+    return String(text)
+      .replace(/&#(x?)([0-9a-fA-F]+);/g, (whole, hex, digits) => {
+        const point = parseInt(digits, hex ? 16 : 10);
+        return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : whole;
+      })
+      .replace(/&([a-z]+);/gi, (whole, name) => MD_ENTITIES[name.toLowerCase()] ?? whole);
+  }
+
+  // Line breaks survive the "join the wrapped lines of a block" step as this
+  // sentinel: it is not one of the characters escapeHtml touches, so it comes
+  // out the far end of the inline renderer intact.
+  const MD_HARD_BREAK = "\u0000";
+
+  // READMEs ship raw HTML - a centred logo, a badge row, <br> breaks, a
+  // <details> block - which this renderer used to escape and print as tag
+  // soup. Rewrite the subset that carries meaning as the markdown it stands
+  // for. Nothing is passed through: the result still goes through escapeHtml
+  // and the inline renderer, so no mirror-served markup reaches innerHTML.
+  function flattenMarkdownHtml(text) {
+    return decodeHtmlEntities(String(text)
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<img\b[^>]*>/gi, (tag) => {
+        const source = htmlTagAttr(tag, "src");
+        if (!source) return "";
+        const width = parseInt(htmlTagAttr(tag, "width"), 10);
+        const hint = width > 0 && !source.includes("#") ? `#w=${width}` : "";
+        return `![${htmlTagAttr(tag, "alt")}](${source}${hint})`;
+      })
+      .replace(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi, (whole, attributes, label) => {
+        const text = label.trim();
+        const href = htmlTagAttr(attributes, "href");
+        if (!text) return "";
+        return href ? `[${text}](${href})` : text;
+      })
+      .replace(/<\/?(?:strong|b)\s*>/gi, "**")
+      .replace(/<\/?(?:em|i)\s*>/gi, "*")
+      .replace(/<\/?(?:code|tt)\s*>/gi, "`")
+      .replace(/<\/?(?:del|s|strike)\s*>/gi, "~~")
+      // The flattener runs after the wrapped lines of a block are joined,
+      // so a <br> becomes the hard-break sentinel directly.
+      .replace(/<br\s*\/?>/gi, MD_HARD_BREAK)
+      .replace(/<hr\s*\/?>/gi, "\n\n---\n\n")
+      .replace(/<h([1-6])\b[^>]*>/gi, (whole, level) => `\n\n${"#".repeat(Number(level))} `)
+      .replace(/<li\b[^>]*>/gi, "\n- ")
+      .replace(/<\/?(?:p|div|center|section|summary|details|ul|ol|table|tbody|thead|tr|blockquote|h[1-6])\b[^>]*>/gi, "\n\n")
+      .replace(/<\/?(?:td|th)\b[^>]*>/gi, " ")
+      .replace(/<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)?\/?>/g, ""));
+  }
+
+  // Inline tags turn up mid-paragraph too, but never inside `code spans` -
+  // there the tag is the content.
+  function flattenOutsideCode(text) {
+    return String(text).split(/(`+[^`]*`+)/)
+      .map((part, index) => (index % 2 ? part : flattenMarkdownHtml(part)))
+      .join("");
+  }
+
+  // The line starts a new block, so it cannot be a wrapped continuation of the
+  // paragraph or list item above it.
+  const MD_BLOCK_START =
+    /^\s*(?:#{1,6}\s|```|~~~|>|(?:[-*+]|\d+[.)])\s|(?:-{3,}|\*{3,}|_{3,})\s*$|<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)?>)/;
+
+  // The wrapped lines of one paragraph or list item, joined back together.
+  // README prose is hard-wrapped at ~80 columns; treating every wrapped line
+  // as its own block turned each bullet into a bullet plus a stray paragraph.
+  function takeWrappedLines(lines, start) {
+    const taken = [];
+    let i = start;
+    while (i < lines.length && lines[i].trim() && !MD_BLOCK_START.test(lines[i])) {
+      taken.push(lines[i]);
+      i++;
+    }
+    return { taken, next: i };
+  }
+
+  function joinWrappedLines(parts) {
+    return parts
+      .map((part, index) =>
+        (index < parts.length - 1 && /\s{2,}$/.test(part) ? `${part.trim()}${MD_HARD_BREAK}` : part.trim()))
+      .join(" ")
+      .split(`${MD_HARD_BREAK} `).join(MD_HARD_BREAK);
+  }
+
+  // Small, dependency-free markdown renderer: headings, fenced code blocks,
+  // block quotes, nested ordered/unordered lists, tables, hr, raw HTML blocks,
+  // and paragraphs, with basic inline formatting, links and images. Not a full
+  // CommonMark implementation - readmes just need to look reasonable, not
+  // pixel-match GitHub. `context` carries the repository a README came from so
+  // its relative images resolve; `depth` bounds the re-render of flattened
+  // HTML blocks.
+  function renderMarkdown(raw, context, depth = 0) {
+    const lines = String(raw ?? "").replace(/\r\n?/g, "\n").split("\n");
+    const out = [];
+    const inline = (text) => renderMarkdownInline(escapeHtml(flattenOutsideCode(text)), context);
+    const issueTasks = depth === 0 && context?.issueTasks?.enabled
+      ? context.issueTasks
+      : null;
+    let issueTaskListSequence = 0;
+    // Open lists, outermost first, so an indented item nests inside the item
+    // above it instead of restarting the list.
+    const open = [];
+    const headingSlugs = new Map();
+    // A GFM task item ("- [x] shipped") carries its state in the first cell of
+    // the item, not in the list. It renders as a real disabled checkbox and
+    // drops its bullet, the way a pull request's checklist reads on GitHub;
+    // without this the box printed as the literal characters "[x]".
+    const issueTaskRelationship = (item) => {
+      if (!item.subIssueNumber) return "";
+      const contents = `<i data-lucide="git-branch" class="h-3 w-3"></i>Sub-issue #${item.subIssueNumber}`;
+      return context?.repo
+        ? `<a href="${escapeHtml(repoRecordUrl(context.repo, "issues", item.subIssueNumber))}" class="issue-task-attached" title="Open attached sub-issue">${contents}</a>`
+        : `<span class="issue-task-attached">${contents}</span>`;
+    };
+    const issueTaskHtml = (item, list) => {
+      const editable = Boolean(issueTasks?.editable);
+      const checked = item.checked ? " checked" : "";
+      const toggleAttrs = editable
+        ? `data-repo-issue-task-toggle="${item.line}"`
+        : "disabled";
+      const dragHandle = editable ? `
+          <button type="button" draggable="true" data-repo-issue-task-drag data-repo-issue-task-line="${item.line}" class="issue-task-drag" title="Drag to reorder · Arrow keys also work" aria-label="Reorder ${escapeHtml(item.rawLabel)}. Use Arrow Up or Arrow Down." aria-keyshortcuts="ArrowUp ArrowDown"><i data-lucide="grip-vertical" class="h-4 w-4"></i></button>` : "";
+      const relationship = issueTaskRelationship(item);
+      const convertAction = editable && !item.subIssueNumber ? `
+          <span class="issue-task-hover-actions">
+            <button type="button" data-repo-issue-create-subissues data-repo-issue-task-subissue="${item.line}" class="issue-task-convert" title="Turn this task into an attached issue"><i data-lucide="list-tree" class="h-3.5 w-3.5"></i><span>Sub-issue</span></button>
+          </span>` : "";
+      return `<li class="issue-task-row -ml-5 list-none${item.checked ? " is-complete" : ""}" data-repo-issue-task-row data-repo-issue-task-line="${item.line}" data-repo-issue-task-group="${list.id}">
+        <div class="issue-task-shell">
+          ${dragHandle}
+          <label class="issue-task-control">
+            <input type="checkbox" ${toggleAttrs}${checked} class="issue-task-toggle" aria-label="${item.checked ? "Mark incomplete" : "Mark complete"}: ${escapeHtml(item.rawLabel)}" />
+            <span class="issue-task-box" aria-hidden="true"><i data-lucide="check" class="issue-task-checkmark"></i></span>
+          </label>
+          <div data-repo-issue-task-label class="issue-task-label min-w-0">${item.html}</div>
+          ${relationship}${convertAction}
+          <span data-repo-issue-task-status class="sr-only" aria-live="polite"></span>
+        </div>
+      </li>`;
+    };
+    const listHtml = (list) =>
+      `<${list.type} class="${list.type === "ol" ? "list-decimal" : "list-disc"} my-2 ml-5 space-y-1${issueTasks ? " issue-task-list" : ""}">`
+      + list.items.map((item) => (item.task
+        ? (issueTasks
+          ? issueTaskHtml(item, list)
+          : `<li class="-ml-5 list-none"><div class="flex items-start gap-2"><input type="checkbox" disabled${item.checked ? " checked" : ""} class="mt-1 h-3.5 w-3.5 shrink-0 accent-primary" /><div class="min-w-0">${item.html}</div></div></li>`)
+        : `<li>${item.html}</li>`)).join("")
+      + `</${list.type}>`;
+    const closeListsDeeperThan = (indent) => {
+      while (open.length && open[open.length - 1].indent > indent) {
+        const done = open.pop();
+        const parent = open[open.length - 1];
+        if (parent) parent.items[parent.items.length - 1].html += listHtml(done);
+        else out.push(listHtml(done));
+      }
+    };
+    const closeLists = () => closeListsDeeperThan(-1);
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const fence = line.match(/^\s*(```|~~~)/);
+      if (fence) {
+        closeLists();
+        const code = [];
+        i++;
+        while (i < lines.length && !new RegExp(`^\\s*${fence[1]}`).test(lines[i])) { code.push(lines[i]); i++; }
+        i++;
+        out.push(`<pre class="my-3 overflow-auto rounded-md border border-border bg-secondary/40 p-3 text-xs"><code class="font-mono">${escapeHtml(code.join("\n"))}</code></pre>`);
+        continue;
+      }
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        closeLists();
+        const level = heading[1].length;
+        const size = { 1: "text-2xl", 2: "text-xl", 3: "text-lg", 4: "text-base", 5: "text-sm", 6: "text-xs" }[level];
+        const text = heading[2].replace(/\s+#+\s*$/, "");
+        // Repeated headings get "-1", "-2" suffixes, as GitHub numbers them.
+        const baseSlug = mdHeadingSlug(escapeHtml(text.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")));
+        const seen = headingSlugs.get(baseSlug) || 0;
+        headingSlugs.set(baseSlug, seen + 1);
+        const slug = seen ? `${baseSlug}-${seen}` : baseSlug;
+        out.push(`<h${level} data-repo-markdown-heading="${slug}" class="${size} font-semibold text-foreground mt-5 mb-2 first:mt-0">${inline(text)}</h${level}>`);
+        i++;
+        continue;
+      }
+      if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        closeLists();
+        out.push('<hr class="my-4 border-border" />');
+        i++;
+        continue;
+      }
+      // A pipe row followed by a |---|---| delimiter is a GFM table.
+      if (line.includes("|") && /^\s*\|?[\s:|-]*-[\s:|-]*\|[\s:|-]*$/.test(lines[i + 1] || "")) {
+        closeLists();
+        const cells = (row) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+        const header = cells(line);
+        const body = [];
+        i += 2;
+        while (i < lines.length && lines[i].includes("|") && lines[i].trim()) { body.push(cells(lines[i])); i++; }
+        const cellHtml = (text, tag) =>
+          `<${tag} class="border border-border px-2 py-1 text-left align-top${tag === "th" ? " font-semibold" : ""}">${inline(text)}</${tag}>`;
+        out.push('<div class="my-3 overflow-x-auto"><table class="w-full border-collapse text-xs">'
+          + `<thead><tr>${header.map((cell) => cellHtml(cell, "th")).join("")}</tr></thead>`
+          + `<tbody>${body.map((row) => `<tr>${row.map((cell) => cellHtml(cell, "td")).join("")}</tr>`).join("")}</tbody>`
+          + "</table></div>");
+        continue;
+      }
+      if (/^>\s?/.test(line)) {
+        closeLists();
+        const quote = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) { quote.push(lines[i].replace(/^>\s?/, "")); i++; }
+        out.push(`<blockquote class="my-3 border-l-2 border-border pl-3 text-muted-foreground">${inline(quote.join(" "))}</blockquote>`);
+        continue;
+      }
+      // A block of raw HTML: flatten it to markdown and render that, so a
+      // centred logo/badge row arrives as an image and links, centred.
+      if (depth < 2 && /^\s*<[a-zA-Z!/]/.test(line)) {
+        closeLists();
+        const block = [];
+        while (i < lines.length && lines[i].trim()) { block.push(lines[i]); i++; }
+        const source = block.join("\n");
+        const rendered = renderMarkdown(flattenMarkdownHtml(source), context, depth + 1);
+        const centred = /<center\b|\balign\s*=\s*["']?center/i.test(source);
+        out.push(centred ? `<div class="text-center">${rendered}</div>` : rendered);
+        continue;
+      }
+      const item = line.match(/^(\s*)(?:[-*+]|(\d+)[.)])\s+(.*)$/);
+      if (item) {
+        const indent = item[1].replace(/\t/g, "  ").length;
+        const type = item[2] ? "ol" : "ul";
+        closeListsDeeperThan(indent);
+        let current = open[open.length - 1];
+        if (current && current.indent === indent && current.type !== type) {
+          closeListsDeeperThan(indent - 1);
+          current = open[open.length - 1];
+        }
+        if (!current || current.indent < indent) {
+          open.push({ type, indent, items: [], id: issueTaskListSequence += 1 });
+        }
+        const wrapped = takeWrappedLines(lines, i + 1);
+        const text = joinWrappedLines([item[3], ...wrapped.taken]);
+        const task = type === "ul" ? /^\[([ xX])\]\s+(.*)$/.exec(text) : null;
+        const subIssue = task
+          ? /\s+\(sub-issue\s+#([1-9]\d*)\)\s*$/i.exec(task[2])
+          : null;
+        const taskLabel = task && issueTasks && subIssue
+          ? task[2].slice(0, subIssue.index).trimEnd()
+          : task?.[2];
+        open[open.length - 1].items.push(task
+          ? {
+              html: issueTasks
+                ? `<span class="issue-task-label-copy">${inline(taskLabel)}</span>`
+                : inline(taskLabel),
+              task: true,
+              checked: task[1].toLowerCase() === "x",
+              line: i,
+              rawLabel: taskLabel,
+              subIssueNumber: issueTasks && subIssue ? Number(subIssue[1]) : 0,
+            }
+          : { html: inline(text), task: false });
+        i = wrapped.next;
+        continue;
+      }
+      if (!line.trim()) {
+        // A blank line does not end a list: items may be separated by one.
+        i++;
+        continue;
+      }
+      closeLists();
+      const paragraph = takeWrappedLines(lines, i + 1);
+      out.push(`<p class="my-2 leading-6">${inline(joinWrappedLines([line, ...paragraph.taken]))}</p>`);
+      i = paragraph.next;
+    }
+    closeLists();
+    return out.join("");
+  }
+
+  // Rendered markdown carries its own block margins, so the first and last
+  // block must not stack theirs on top of the card's padding.
+  const MD_BODY_CLASS =
+    "text-sm leading-6 text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0";
+
+  // Issue, pull and discussion bodies are markdown the same way a README is -
+  // headings, fenced code, GFM tables, task lists, links. They used to be
+  // printed verbatim inside a `whitespace-pre-wrap` box, so a pull description
+  // read as its own source ("## Change", "| API | Qt 6.4.2 header |"). Relative
+  // image paths resolve against the repository the record came from, exactly as
+  // they do in the README pane; nothing mirror-served reaches innerHTML
+  // unescaped, since renderMarkdown() escapes before it formats.
+  function renderRecordMarkdown(body, repo, options = {}) {
+    const text = String(body || "");
+    if (!text.trim()) return "";
+    return renderMarkdown(text, {
+      repo: repo || state.selectedRepo || null,
+      issueTasks: options.issueTasks
+        ? { enabled: true, editable: Boolean(options.interactiveTasks) }
+        : null,
+    });
+  }
+
+  // Skeleton placeholder for the file tree while the live mirror answers. Mirrors
+  // the real row grid (icon / name / commit message / date) so the panel keeps
+  // its shape and shimmers into the content, instead of a bare one-line spinner.
+  // Bars use muted-foreground/20 so they stay visible in both light and dark.
+  function repoTreeSkeletonHtml(rows = 8) {
+    const nameWidths = ["w-40", "w-28", "w-52", "w-36", "w-44", "w-24", "w-48", "w-32"];
+    const bar = "rounded bg-muted-foreground/20";
+    const cells = Array.from({ length: rows }).map((_, i) => `
+        <div class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-2.5 sm:grid-cols-[1.5rem_minmax(9rem,0.8fr)_minmax(0,1fr)_8rem]">
+          <span class="h-4 w-4 shrink-0 ${bar}"></span>
+          <span class="h-3.5 ${nameWidths[i % nameWidths.length]} max-w-full ${bar}"></span>
+          <span class="hidden h-3 w-3/4 ${bar} sm:block"></span>
+          <span class="h-3 w-16 shrink-0 ${bar}"></span>
+        </div>`).join("");
+    return `<div class="animate-pulse" role="status" aria-label="Loading tree…">${cells}<span class="sr-only">Loading tree…</span></div>`;
+  }
+
+  // Rows for the cached code-tree listing, narrowed by the header search box
+  // (adhoc #37). Matches the entry name and its path within the repo, so a
+  // directory you can still walk into survives the filter. Nothing refetches.
+  function renderRepoTreeRows() {
+    const view = state.repoTreeView;
+    const treeBody = $("[data-repo-detail]")?.querySelector("[data-repo-tree]");
+    if (!treeBody || !view || !view.entries?.length) return;
+    const { repo, path } = view;
+    const queries = pageFilterQueries("");
+    const entries = queries.length
+      ? view.entries.filter((entry) => {
+          const haystack = [entry.name, repoChildPath(path, entry.name)]
+            .join(" ").toLowerCase();
+          return queries.every((query) => haystack.includes(query));
+        })
+      : view.entries;
+    treeBody.innerHTML = entries.length
+      ? entries.map((entry) => {
+        const childPath = repoChildPath(path, entry.name);
+        const isTree = entry.type === "tree";
+        const message = entry.message || entry.commitMessage || entry.subject || "mirrored repository object";
+        const date = formatTimeAgo(entry.date || entry.updatedAt || entry.committedAt || entry.commitDate || entry.mtime || repo.updatedAt || repo.lastSync);
+        return `
+            <button data-dashboard-${isTree ? "tree" : "blob"}-path="${escapeHtml(childPath)}" class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-2.5 text-left text-sm hover:bg-secondary/40 transition-colors sm:grid-cols-[1.5rem_minmax(9rem,0.8fr)_minmax(0,1fr)_8rem]">
+              ${fileIconHtml(entry, "h-4 w-4 shrink-0")}
+              <span class="min-w-0 truncate font-medium text-foreground">${escapeHtml(entry.name || "entry")}</span>
+              <span data-repo-tree-commit-message class="hidden w-full min-w-0 truncate text-left text-xs text-muted-foreground sm:block" style="justify-self:stretch;text-align:left">${escapeHtml(message)}</span>
+              <span class="w-full shrink-0 text-right text-xs tabular-nums text-muted-foreground font-mono" style="justify-self:end;text-align:right">${escapeHtml(date)}</span>
+            </button>`;
+      }).join("")
+      : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyListHtml("No files in this directory.")}</div>`;
+    window.lucide?.createIcons();
+  }
+
+  // The repo page's response to the header search box. Each list re-renders
+  // from what its tab already fetched, so a tab opened later picks the filter
+  // up on its own first render instead of needing to be told.
+  // Issues and Pull requests are not here: they have their own search box and
+  // ignore the header one (localFilterQueries, issue #673).
+  function renderRepoPageFilter() {
+    renderRepoTreeRows();
+    renderRepoCollection("discussions");
+    // Only the session list, not renderRepoAgentsList: both draw into
+    // [data-repo-agents], and the Agents tab is showing the org panel that
+    // wraps this list. The pane beside it is left alone so a prompt being
+    // typed there survives the keystroke that filtered the rows.
+    renderOrgAgentSessions(state.selectedRepo, { redrawPane: false });
+  }
+
+  // Rows the open tab is showing after the filter, for the header notice, or
+  // null on a tab the search box does not filter (insights, mirrors, ...) so
+  // the notice stays quiet rather than claiming "0 matches".
+  function repoPageFilterCount() {
+    const tab = state.activeRepoTab || "code";
+    if (tab === "code") {
+      const detail = $("[data-repo-detail]");
+      const panel = detail?.querySelector("[data-repo-tree-panel]");
+      // A file is open, so the listing this filters is off screen.
+      if (!panel || panel.classList.contains("hidden")) return null;
+      // Scoped to the file table: the Files sidebar renders the same path
+      // buttons and would double every count.
+      return detail.querySelectorAll(
+        "[data-repo-tree] [data-dashboard-tree-path], [data-repo-tree] [data-dashboard-blob-path]").length;
+    }
+    if (tab === "discussions") {
+      const container = $(`[data-repo-${tab}]`);
+      return container ? container.querySelectorAll("[data-repo-record-number]").length : null;
+    }
+    if (tab === "agents") {
+      // The session list stays on screen beside an open session (adhoc #2120),
+      // so the filtered rows are always there to be counted.
+      const container = $("[data-repo-agents]");
+      if (!container || !state.agentsView?.canViewSessions) return null;
+      return container.querySelectorAll(
+        "[data-org-agent-session], [data-repo-agent-open]").length;
+    }
+    return null;
+  }
+
+  async function loadRepositoryTree(repo, path = "", options = {}) {
+    // background: warm the Code tab's tree/README underneath another visible
+    // tab. A refresh on /owner/repo/issues restores the Issues tab first and
+    // then preloads the tree — that preload must not steal the visible tab
+    // (setRepoTab) or rewrite the address bar back to the repo root
+    // (navigateHistory), which is what used to snap every refreshed feature
+    // tab back to the main repo page.
+    const background = options.background === true;
+    const detail = $("[data-repo-detail]");
+    if (!detail) return;
+    const treeBody = detail.querySelector("[data-repo-tree]");
+    const treePanel = detail.querySelector("[data-repo-tree-panel]");
+    const viewer = detail.querySelector("[data-repo-blob]");
+    const readmePanel = detail.querySelector("[data-repo-readme]");
+    if (!treeBody) return;
+
+    if (!background) setRepoTab("code");
+    treePanel?.classList.remove("hidden");
+    viewer?.classList.add("hidden");
+    readmePanel?.classList.toggle("hidden", Boolean(path));
+    setRepoExplorerFocusMode(Boolean(path));
+    // The root/README view keeps the two-column layout: the About rail is a
+    // permanent right-hand column (the old full-width README override that
+    // dropped it below the content was removed, owner decision 2026-07-11).
+    renderRepoBreadcrumb(repo, path);
+
+    treeBody.innerHTML = repoTreeSkeletonHtml();
+    renderRepoExplorer(repo, path, []);
+    try {
+      const requestedAt = performance.now();
+      // A live-mirror read: fetch fresh (fetchRepoJson, no-store) like every
+      // other HTTPS data surface (issues/pulls/releases/README), never the browser-
+      // cached, account-scoped fetchJson. The router round-robins browse across
+      // whichever mirrors are online, so a cached copy could pin the page to a
+      // node that has since gone offline — the "served by mirror" view must
+      // reflect the mirror that actually answered this request.
+      const data = await fetchRepoJson(repoLiveUrl(repo, "tree", { path }));
+      renderRepoServedBy(data.servedBy, performance.now() - requestedAt);
+      updateRepoCommitSummary(data.latestCommit, repo);
+      const entries = Array.isArray(data.entries) ? data.entries.slice() : [];
+      if (!path && data.counts) { updateRepoLiveCounts(repo, data.counts); applyServedCounts(data.counts); }
+      entries.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "tree" ? -1 : 1;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+      renderRepoExplorer(repo, path, entries);
+      setRepoExplorerSelection(path, "tree");
+      // Held so the header search box can re-filter this listing in place
+      // (adhoc #37) instead of re-reading the tree from the mirror.
+      state.repoTreeView = { repo, path, entries };
+      if (!entries.length) {
+        treeBody.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">This directory is empty.</div>';
+        if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
+        window.lucide?.createIcons();
+        return;
+      }
+      renderRepoTreeRows();
+      if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
+      window.lucide?.createIcons();
+      if (!path) {
+        const readmeEntry = entries.find((e) => e.type === "blob" && /^readme(\.md|\.txt|\.rst)?$/i.test(String(e.name || "")));
+        const readmeBody = detail.querySelector("[data-repo-readme-body]");
+        const readmeFilename = detail.querySelector("[data-repo-readme-filename]");
+        const readmeLink = detail.querySelector("[data-repo-readme-link]");
+        if (readmeBody) {
+          if (readmeEntry) {
+            if (readmeLink) {
+              readmeLink.href = repoLinkUrl(repo, "blob", readmeEntry.name);
+              readmeLink.dataset.repoReadmePath = readmeEntry.name;
+            }
+            if (readmeFilename) readmeFilename.innerHTML = `<i data-lucide="book-open" class="h-3.5 w-3.5 text-muted-foreground"></i>${escapeHtml(readmeEntry.name)}`;
+            try {
+              const blob = await fetchRepoJson(repoLiveUrl(repo, "blob", { path: readmeEntry.name }));
+              const text = blobText(blob);
+              if (/\.(txt)$/i.test(readmeEntry.name)) {
+                readmeBody.className = "whitespace-pre-wrap p-4 font-mono text-xs leading-5 text-foreground";
+                readmeBody.textContent = text;
+              } else {
+                readmeBody.className = "p-4 text-sm text-foreground";
+                readmeBody.innerHTML = renderMarkdown(text, { repo, basePath: readmeEntry.name });
+              }
+            } catch (_) {
+              readmeBody.className = "p-4 text-sm leading-6 text-muted-foreground";
+              readmeBody.innerHTML = `<p class="mt-1">${escapeHtml(repo.description || "This repository has not published a README preview yet.")}</p>`;
+            }
+          } else {
+            readmeBody.className = "p-4 text-sm leading-6 text-muted-foreground";
+            readmeBody.innerHTML = `<p class="text-foreground font-medium">${escapeHtml(repo.name || "repository")}</p><p class="mt-1">${escapeHtml(repo.description || "This repository has not published a README preview yet.")}</p>`;
+          }
+          window.lucide?.createIcons();
+        }
+      }
+    } catch (error) {
+      // The tree fetch drives the commit summary; if no mirror answered, still
+      // resolve the loading skeleton to the repo-derived fallback metadata.
+      updateRepoCommitSummary(null, repo);
+      // Every mirror agreeing the path is absent is the repository's answer,
+      // not an outage — say which one it is instead of blaming the fleet.
+      treeBody.innerHTML = isMissingMirrorFolder(error)
+        ? `<div class="px-4 py-3 text-sm text-muted-foreground">${escapeHtml(path ? `${path} is not in this repository at this revision.` : "This repository has no files at this revision.")}</div>`
+        : '<div class="px-4 py-3 text-sm text-muted-foreground">No reachable mirror host is serving this repository tree right now.</div>';
+      if (!path) {
+        const readmeBody = detail.querySelector("[data-repo-readme-body]");
+        if (readmeBody) {
+          readmeBody.className = "p-4 text-sm leading-6 text-muted-foreground";
+          readmeBody.innerHTML = `<p class="mt-1">${escapeHtml(repo.description || "This repository has not published a README preview yet.")}</p>`;
+        }
+      }
+    }
+  }
+
+  async function loadRepositoryBlob(repo, path) {
+    const detail = $("[data-repo-detail]");
+    const viewer = detail?.querySelector("[data-repo-blob]");
+    const treePanel = detail?.querySelector("[data-repo-tree-panel]");
+    const readmePanel = detail?.querySelector("[data-repo-readme]");
+    if (!viewer) return;
+    setRepoTab("code");
+    treePanel?.classList.add("hidden");
+    readmePanel?.classList.add("hidden");
+    setRepoExplorerFocusMode(repoPathParts(path).length > 1);
+    viewer.classList.remove("hidden");
+    viewer.innerHTML = `<div class="py-3 text-sm text-muted-foreground">${loadingHtml("Loading file...")}</div>`;
+    renderRepoBreadcrumb(repo, path, "blob");
+    setRepoExplorerSelection(path, "blob");
+    try {
+      const pathPreview = repoPreviewKindFromPath(path);
+      if (pathPreview && pathPreview.kind !== "csv") {
+        if (renderRepoPreview(viewer, repo, path, {})) return;
+      }
+      const requestedAt = performance.now();
+      // Fresh live-mirror read (see loadRepositoryTree): the blob must come from
+      // the mirror serving this request, not a stale browser cache.
+      const data = await fetchRepoJson(repoLiveUrl(repo, "blob", { path }));
+      renderRepoServedBy(data.servedBy, performance.now() - requestedAt);
+      if (renderRepoPreview(viewer, repo, path, data)) return;
+      const content = data.content || data.text || "";
+      const lines = String(content).split(/\r\n|\r|\n/);
+      const loc = lines.filter((line) => line.trim()).length;
+      const meta = {
+        content,
+        loc,
+        repo,
+        oid: String(data.oid || data.sha || data.blob || ""),
+        commitId: data.commit || data.commitId || repo.rootCommit || repo.latestCommit || repo.commit || "live",
+        author: repo.maintainer || repo.owner || "mirror",
+        owner: repo.owner || "owner",
+      };
+      const markdownPreview = repoFileSupportsMarkdownPreview(path);
+      viewer.innerHTML = `
+        <div data-repo-file-shell class="overflow-hidden rounded-lg border border-border bg-background">
+          <div data-repo-file-toolbar class="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/40 px-3 py-2">
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
+              <div data-repo-file-modes class="inline-flex overflow-hidden rounded-md border border-border bg-background p-0.5">
+                <button type="button" data-repo-file-mode="code" aria-pressed="${markdownPreview ? "false" : "true"}" class="${repoFileModeButtonClass(!markdownPreview)}">Code</button>
+                ${markdownPreview ? `<button type="button" data-repo-file-mode="preview" aria-pressed="true" class="${repoFileModeButtonClass(true)}">Preview</button>` : ""}
+                <button type="button" data-repo-file-mode="blame" aria-pressed="false" class="${repoFileModeButtonClass(false)}">Blame</button>
+              </div>
+              <span class="font-mono text-[10px] text-muted-foreground">${formatCount(lines.length)} lines</span>
+              <span class="font-mono text-[10px] text-muted-foreground">(${formatCount(loc)} loc)</span>
+              <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(formatSize(content.length))}</span>
+              <span data-repo-file-status class="min-w-0 font-mono text-[10px] text-muted-foreground">Code view - highlighted source.</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="Edit file" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="raw" class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[10px] font-medium text-foreground hover:bg-secondary transition-colors">Raw</button>
+              <button type="button" data-repo-file-action="copy" aria-label="Copy file contents" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="copy" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="download" aria-label="Download file" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="fullscreen" aria-label="Open full screen" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="maximize-2" class="h-3.5 w-3.5"></i></button>
+            </div>
+          </div>
+          <div data-repo-file-content></div>
+        </div>`;
+      setRepoFileMode(viewer, markdownPreview ? "preview" : "code", lines, path, meta);
+      bindRepoFileToolbar(viewer, repo, path, content, lines, meta);
+      navigateHistory(repoLinkUrl(repo, "blob", path));
+      window.lucide?.createIcons();
+    } catch (_) {
+      // A markdown link to a folder ("[docs](www/docs)") has no trailing slash
+      // to say so. When the path lists as a tree, show that folder instead of
+      // a dead file view.
+      if (!repoPreviewKindFromPath(path)) {
+        try {
+          const tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path }));
+          if (Array.isArray(tree?.entries) && tree.entries.length) {
+            viewer.classList.add("hidden");
+            viewer.innerHTML = "";
+            await loadRepositoryTree(repo, path);
+            return;
+          }
+        } catch (_) {
+          // Not a folder either; fall through to the file error.
+        }
+      }
+      viewer.innerHTML = '<div class="py-3 text-sm text-muted-foreground">Could not load this file from a live host.</div>';
+    }
+  }
+
+  function scrollRepoMarkdownHeading(scope, anchor) {
+    if (!scope || !anchor) return false;
+    const heading = scope.querySelector(`[data-repo-markdown-heading="${CSS.escape(anchor)}"]`);
+    if (!heading) return false;
+    heading.scrollIntoView({ block: "start", behavior: "smooth" });
+    return true;
+  }
+
+  // Opens a link rendered by mdLinkHtml(): a same-document "#section" jump, or
+  // a repository file/folder loaded in the Code tab (then its "#section").
+  async function openRepoMarkdownLink(repo, link) {
+    const kind = link.dataset.repoMarkdownLink || "";
+    const anchor = link.dataset.repoMarkdownAnchor || "";
+    if (!kind) {
+      let scope = link.parentElement;
+      while (scope && !scope.querySelector(`[data-repo-markdown-heading="${CSS.escape(anchor)}"]`)) {
+        scope = scope.parentElement;
+      }
+      if (scrollRepoMarkdownHeading(scope, anchor)) {
+        history.replaceState(history.state, "", `${location.pathname}${location.search}#${anchor}`);
+      }
+      return;
+    }
+    const path = link.dataset.repoMarkdownPath || "";
+    setRepoTab("code");
+    if (kind === "tree" || !path) await loadRepositoryTree(repo, path);
+    else await loadRepositoryBlob(repo, path);
+    const detail = $("[data-repo-detail]");
+    const viewer = detail?.querySelector("[data-repo-blob]:not(.hidden)");
+    if (anchor && scrollRepoMarkdownHeading(viewer, anchor)) return;
+    const target = viewer || detail?.querySelector("[data-repo-tree-panel]");
+    if (target && target.getBoundingClientRect().top < 0) target.scrollIntoView({ block: "start" });
+  }
+
+  function parseFrontMatter(markdown) {
+    const text = String(markdown || "");
+    if (!text.startsWith("---\n") && !text.startsWith("---\r\n")) {
+      return { values: {}, body: text.trim() };
+    }
+    const normalized = text.replace(/\r\n/g, "\n");
+    const end = normalized.indexOf("\n---\n", 4);
+    if (end < 0) return { values: {}, body: text.trim() };
+    const values = {};
+    normalized.slice(4, end).split("\n").forEach((line) => {
+      const colon = line.indexOf(":");
+      if (colon <= 0) return;
+      values[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+    });
+    return { values, body: normalized.slice(end + 5).trim() };
+  }
+
+  function parseFrontMatterList(value) {
+    const text = String(value || "").trim();
+    if (!text.startsWith("[") || !text.endsWith("]")) return [];
+    return text.slice(1, -1).split(",").map((item) => item.trim()).filter(Boolean);
+  }
+
+  // Issues are split by status into .forkmesh/issues/open/<n>/ and
+  // .forkmesh/issues/closed/<n>/ (adhoc #14); pre-split mirrors keep the
+  // numbered folder directly under the root (no subdir).
+  function issueJsonPath(number, subdir) {
+    const base = subdir ? `.forkmesh/issues/${subdir}` : ".forkmesh/issues";
+    return `${base}/${Number(number)}/issue-${Number(number)}.json`;
+  }
+
+  // Every path issue <number>'s record may live at, most likely first.
+  function issueJsonCandidatePaths(number) {
+    return ["open", "closed", ""].map((subdir) => issueJsonPath(number, subdir));
+  }
+
+  async function fetchRepoIssueBlob(repo, number) {
+    const paths = issueJsonCandidatePaths(number);
+    let blobs = {};
+    try {
+      blobs = await fetchRepoBlobs(repo, paths);
+    } catch (_) {
+      blobs = {};
+    }
+    const found = paths.find((path) => blobs[path]);
+    if (found) return blobs[found];
+    let lastError = null;
+    for (const path of paths) {
+      try {
+        return await fetchRepoJson(repoLiveUrl(repo, "blob", { path }));
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error("not_found");
+  }
+
+  function parseIssueJson(text, fallbackNumber) {
+    let issue = {};
+    try {
+      const parsed = JSON.parse(String(text || "{}"));
+      if (parsed && typeof parsed === "object") issue = parsed;
+    } catch (_) {
+      issue = {};
+    }
+    const number = Number(issue.number || fallbackNumber);
+    const events = Array.isArray(issue.events) ? issue.events : [];
+    const open = events.find((event) => event && event.type === "open") || {};
+    const latestEdits = new Map();
+    events.forEach((event) => {
+      if (event?.type === "edit" && event.target) {
+        latestEdits.set(String(event.target), event);
+      }
+    });
+    const effectiveOpen = latestEdits.get(String(open.id || "")) || open;
+    // Deletion is shown, not hidden (adhoc #16), and classified by who signed it,
+    // mirroring the desktop (Issue::isDeleted / hasUnauthorizedDeleteAttempt).
+    // A delete/self signed by the issue's own creator deletes it; one signed by
+    // anyone else is an unauthorized attempt that leaves the issue open but
+    // flagged.
+    const creator = open.author || "";
+    const deletes = events.filter(
+      (event) => event && event.type === "delete" && event.target === "self");
+    const deleted = deletes.some((event) => event.author && event.author === creator);
+    const deleteAttempted = !deleted &&
+      deletes.some((event) => event.author && event.author !== creator);
+    const updatedAt = events.reduce((latest, event) => {
+      const ts = Number(event?.ts || 0);
+      return Number.isFinite(ts) && ts > latest ? ts : latest;
+    }, Number(issue.updatedAt || issue.createdAt || open.ts || 0));
+    // The top-level state is a cached summary, while status events are the
+    // signed source of truth. Folding them here keeps issue relationships in
+    // step with a parent that was just closed or reopened on another node.
+    let status = issue.status || issue.state || "open";
+    events.forEach((event) => {
+      if (event?.type === "status" && event.status) status = event.status;
+    });
+    const labelsList = (Array.isArray(issue.labels)
+      ? issue.labels
+      : parseFrontMatterList(issue.labels)).map((value) => String(value));
+    const labels = labelsList.join(", ");
+    const deletedEventIds = new Set(events
+      .filter((event) => event?.type === "delete" && event.target && event.target !== "self")
+      .map((event) => String(event.target)));
+    const commentCount = events.filter((event) => event?.type === "comment"
+      && !deletedEventIds.has(String(event.id || ""))).length;
+    return {
+      number,
+      events,
+      creator,
+      title: issue.title || open.title || `issue #${number}`,
+      status,
+      deleted,
+      deleteAttempted,
+      author: issue.authorName || open.authorName || issue.author || open.author || "unknown",
+      date: formatRecordDate(updatedAt || issue.createdAt || open.ts),
+      labels: labelsList,
+      meta: [status, labels, issue.milestone].filter(Boolean).join(" · "),
+      body: effectiveOpen.body || issue.body || "",
+      commentCount,
+      wantsAgent: Boolean(issue.wantsAgent),
+      milestone: String(issue.milestone || ""),
+      priority: Number(issue.priority || 0) || 0,
+      progress: Number(issue.progress || 0) || 0,
+      assignees: Array.isArray(issue.assignees)
+        ? issue.assignees.map((value) => String(value))
+        : [],
+      startDate: Number(issue.startDate || 0) || 0,
+      endDate: Number(issue.endDate || 0) || 0,
+      votes: Number(issue.votes || events.filter((event) => event?.type === "vote").length) || 0,
+      openEventId: String(open.id || ""),
+      openAttachments: Array.isArray(effectiveOpen.attachments)
+        ? effectiveOpen.attachments.map((value) => String(value))
+        : [],
+      creatorKey: String(creator || ""),
+      createdAtMs: Number(issue.createdAt || open.ts || 0) || 0,
+      updatedAtMs: updatedAt || 0,
+    };
+  }
+
+  // Sub-issues are portable rather than index-backed: their opening
+  // description says "Parent issue: #N". Accept the plural spelling too so a
+  // hand-authored issue can depend on more than one parent. Keep the parser
+  // deliberately line-based; a random issue reference elsewhere in prose is
+  // a link, not a dependency. Planning templates write the line as a list item
+  // ("- Depends on: #481, #484") or in bold, so a bullet and ** are allowed.
+  function issueDependencyNumbers(body) {
+    const numbers = [];
+    const seen = new Set();
+    const relation = /^\s*(?:[-*+]\s+)?(?:\*\*)?(?:parent\s+issues?|depends?\s+on)(?:\*\*)?\s*:(?:\*\*)?\s*(.+)$/gim;
+    for (const match of String(body || "").matchAll(relation)) {
+      for (const reference of match[1].matchAll(/#([1-9]\d*)\b/g)) {
+        const number = Number(reference[1]);
+        if (!seen.has(number)) {
+          seen.add(number);
+          numbers.push(number);
+        }
+        if (numbers.length === 25) return numbers;
+      }
+    }
+    return numbers;
+  }
+
+  // Every bare #N in Markdown prose, first-seen order. Fenced and inline code
+  // are skipped, the way the desktop reference autolinker skips them, and a #N
+  // glued to a word, path, or HTML entity is not a reference.
+  function issueReferenceNumbers(body) {
+    const numbers = [];
+    const seen = new Set();
+    let fence = "";
+    for (const rawLine of String(body || "").split("\n")) {
+      const trimmed = rawLine.trim();
+      const fenceLine = trimmed.startsWith("```") || trimmed.startsWith("~~~");
+      if (fence) {
+        if (fenceLine && trimmed.startsWith(fence)) fence = "";
+        continue;
+      }
+      if (fenceLine) {
+        fence = trimmed.slice(0, 3);
+        continue;
+      }
+      const line = rawLine.replace(/`+[^`]*`+/g, " ");
+      for (const match of line.matchAll(/(?<![\w&#/])#([1-9]\d{0,8})\b/g)) {
+        const number = Number(match[1]);
+        if (!seen.has(number)) {
+          seen.add(number);
+          numbers.push(number);
+        }
+      }
+    }
+    return numbers;
+  }
+
+  // Children of a parent: issues whose description names it on a relationship
+  // line, plus checklist rows the parent itself linked with "(sub-issue #N)"
+  // (the child record may not be in the loaded set yet). Ascending by number.
+  function issueSubIssueNumbers(issues, parentNumber, parentBody) {
+    const parent = Number(parentNumber);
+    const numbers = new Set();
+    (Array.isArray(issues) ? issues : []).forEach((issue) => {
+      const number = Number(issue?.number);
+      if (!issue || issue.deleted || number === parent) return;
+      if (issueDependencyNumbers(issue.body).includes(parent)) numbers.add(number);
+    });
+    for (const match of String(parentBody || "").matchAll(/\(sub-issue\s+#([1-9]\d*)\)/gi)) {
+      const number = Number(match[1]);
+      if (number !== parent) numbers.add(number);
+    }
+    return Array.from(numbers).sort((a, b) => a - b);
+  }
+
+  // Other issues referencing this one in a description or live comment, one
+  // entry per source issue and author, oldest first. Derived from the signed
+  // text on read, so every existing mention shows without rewriting history.
+  function issueMentionsOf(issues, number) {
+    const target = Number(number);
+    const mentions = [];
+    for (const source of Array.isArray(issues) ? issues : []) {
+      if (!source || source.deleted || Number(source.number) === target) continue;
+      const events = Array.isArray(source.events) ? source.events.filter(Boolean) : [];
+      const edits = new Map();
+      const deleted = new Set();
+      events.forEach((event) => {
+        if (event.type === "edit" && event.target) edits.set(String(event.target), event.body);
+        else if (event.type === "delete" && event.target) deleted.add(String(event.target));
+      });
+      const credited = new Set();
+      for (const event of events) {
+        const opening = event.type === "open";
+        if (!opening && event.type !== "comment") continue;
+        const id = String(event.id || "");
+        if (id && deleted.has(id)) continue;
+        const body = id && edits.has(id) ? edits.get(id) : event.body;
+        if (!issueReferenceNumbers(body).includes(target)) continue;
+        // parseIssueJson folds a signed reporter re-credit into source.author.
+        const who = (opening ? source.author : "") || event.authorName || event.author || "unknown";
+        if (credited.has(who)) continue;
+        credited.add(who);
+        mentions.push({
+          _mention: true,
+          ts: Number(event.ts) || 0,
+          author: event.author || "",
+          authorName: who,
+          sourceNumber: Number(source.number),
+          sourceTitle: String(source.title || ""),
+          sourceStatus: String(source.status || "open"),
+        });
+      }
+    }
+    return mentions.sort((a, b) => a.ts - b.ts);
+  }
+
+  function issueRelationStatusPill(status) {
+    const value = String(status || "").toLowerCase();
+    const label = value === "closed" ? "Closed" : value === "unknown" ? "Not synced" : "Open";
+    const tone = value === "open" || !value
+      ? "bg-primary/15 text-primary"
+      : "bg-secondary text-muted-foreground";
+    return `<span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}">${label}</span>`;
+  }
+
+  // The parents a sub-issue names, shown in the hero right under its title.
+  function renderRepoIssueParents(repo, parents) {
+    const rows = Array.isArray(parents) ? parents.filter(Boolean) : [];
+    if (!rows.length) return "";
+    return `
+          <p data-repo-issue-parents class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-muted-foreground"><i data-lucide="list-tree" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Sub-issue of</span>${rows.map((parent) => `<a href="${escapeHtml(repoRecordUrl(repo, "issues", parent.number))}" class="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-1 hover:bg-secondary"><span class="font-mono text-muted-foreground">#${escapeHtml(parent.number)}</span><span class="min-w-0 truncate font-medium text-foreground">${escapeHtml(parent.title || `issue #${parent.number}`)}</span>${issueRelationStatusPill(parent.status)}</a>`).join("")}</p>`;
+  }
+
+  // The parent's list of children with each one's full status: open/closed,
+  // progress, priority, and assignees.
+  function renderRepoIssueSubIssues(repo, number, subIssues, canAdd, subtaskCount = 0) {
+    const rows = Array.isArray(subIssues) ? subIssues.filter(Boolean) : [];
+    if (!rows.length && !canAdd && !subtaskCount) return "";
+    const closed = rows.filter((issue) => String(issue.status || "").toLowerCase() === "closed").length;
+    const row = (issue) => {
+      const synced = String(issue.status || "") !== "unknown";
+      const progress = Math.max(0, Math.min(100, Number(issue.progress) || 0));
+      const assignees = Array.isArray(issue.assignees) ? issue.assignees : [];
+      const closedChild = String(issue.status || "").toLowerCase() === "closed";
+      return `<li><a href="${escapeHtml(repoRecordUrl(repo, "issues", issue.number))}" data-repo-issue-subissue="${escapeHtml(issue.number)}" class="flex min-w-0 flex-wrap items-center gap-2 px-4 py-2 text-[12px] hover:bg-[rgb(var(--dashboard-subtle-rgb))]"><i data-lucide="${closedChild ? "circle-check" : "circle-dot"}" class="h-4 w-4 shrink-0 ${closedChild ? "text-muted-foreground" : "text-[var(--dashboard-open)]"}"></i><span class="min-w-0 flex-1 truncate text-[14px] ${closedChild ? "text-muted-foreground" : "text-foreground"}">${escapeHtml(issue.title || `issue #${issue.number}`)} <span class="text-muted-foreground">#${escapeHtml(issue.number)}</span></span>${synced ? `${Number(issue.priority) > 0 ? `<span class="font-mono text-muted-foreground">P${escapeHtml(Number(issue.priority))}</span>` : ""}<span class="inline-flex items-center gap-1.5 text-muted-foreground" title="${progress}% complete"><span class="inline-block h-1.5 w-12 overflow-hidden rounded-full bg-[var(--dashboard-counter)]"><span class="block h-full rounded-full bg-[var(--dashboard-open)]" style="width:${progress}%"></span></span><span class="font-mono">${progress}%</span></span><span class="max-w-[10rem] truncate text-muted-foreground">${escapeHtml(assignees.length ? assignees.join(", ") : "Unassigned")}</span>` : ""}${issueRelationStatusPill(issue.status)}</a></li>`;
+    };
+    const done = rows.length ? Math.round((closed / rows.length) * 100) : 0;
+    return `
+                  <section data-repo-issue-subissues class="overflow-hidden rounded-md border border-border bg-background sm:ml-14">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2">
+                      <span class="inline-flex items-center gap-2 text-[14px] font-semibold text-foreground"><i data-lucide="list-tree" class="h-4 w-4 text-muted-foreground"></i>Sub-issues${rows.length ? `<span data-repo-issue-subissue-count class="text-[12px] font-normal text-muted-foreground">${closed} of ${rows.length} closed</span><span class="inline-block h-2 w-20 overflow-hidden rounded-full bg-[var(--dashboard-counter)]" title="${done}% closed"><span class="block h-full rounded-full bg-[var(--dashboard-open)]" style="width:${done}%"></span></span>` : ""}</span>
+                      <span class="inline-flex items-center gap-2">
+                        ${subtaskCount ? `<button type="button" data-repo-issue-create-subissues class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-semibold text-foreground hover:bg-secondary"><i data-lucide="list-tree" class="h-3.5 w-3.5"></i>${subtaskCount === 1 ? "Create from 1 task" : `Create from ${subtaskCount} tasks`}</button>` : ""}
+                        ${canAdd ? `<button type="button" data-repo-issue-add-subissue="${escapeHtml(number)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-semibold text-foreground hover:bg-secondary"><i data-lucide="plus" class="h-3.5 w-3.5"></i>Add sub-issue</button>` : ""}
+                      </span>
+                    </div>
+                    ${rows.length
+                      ? `<ul class="divide-y divide-border" aria-label="Sub-issues">${rows.map(row).join("")}</ul>`
+                      : `<p class="px-4 py-2.5 text-[12px] text-muted-foreground">No sub-issues yet.</p>`}
+                  </section>`;
+  }
+
+  // Parsed issues by number, reusing `known` rows and probing every canonical
+  // location for the rest. A number no mirror serves resolves to null.
+  async function loadRepoIssueSummaries(repo, numbers, known = []) {
+    const byNumber = new Map((Array.isArray(known) ? known : [])
+      .filter(Boolean)
+      .map((issue) => [Number(issue.number), issue]));
+    const issues = await Promise.all(numbers.map(async (number) => {
+      if (byNumber.has(Number(number))) return byNumber.get(Number(number));
+      try {
+        const blob = await fetchRepoIssueBlob(repo, number);
+        return parseIssueJson(blobText(blob), number);
+      } catch (_) {
+        return null;
+      }
+    }));
+    return issues;
+  }
+
+  // Mentions and sub-issues are read across the repository's issues. The
+  // Issues list already holds them when it was opened for this repository
+  // (closed history too, once paged in); otherwise read the open issues once
+  // per minute. The closed history is not paged in just for this - it is often
+  // far larger - so a closed child is still found through its parent's
+  // "(sub-issue #N)" checklist link.
+  async function loadRepoIssueRelationIndex(repo) {
+    const view = state.issuesView || {};
+    if (view.repo && repoKey(view.repo) === repoKey(repo) && Array.isArray(view.items)) {
+      return view.items;
+    }
+    const cached = state.issueRelationIndex;
+    if (cached && cached.key === repoKey(repo) && Date.now() - cached.at < 60_000) {
+      return cached.items;
+    }
+    try {
+      const tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/issues/open" }));
+      const commit = immutableGitCommit(tree.commit);
+      const pathByNumber = new Map();
+      (Array.isArray(tree.entries) ? tree.entries : [])
+        .filter((entry) => entry.type === "tree" && /^\d+$/.test(String(entry.name || "")))
+        .forEach((entry) => pathByNumber.set(
+          Number(entry.name), issueJsonPath(Number(entry.name), "open")));
+      const numbers = Array.from(pathByNumber.keys()).sort((a, b) => b - a);
+      const { items } = await fetchIssuePages(
+        repo, pathByNumber, numbers, commit ? { ref: commit } : {});
+      state.issueRelationIndex = { key: repoKey(repo), at: Date.now(), items };
+      return items;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function loadRepoIssueSubIssues(repo, number, body, index) {
+    const numbers = issueSubIssueNumbers(index, number, body);
+    const issues = await loadRepoIssueSummaries(repo, numbers, index);
+    return numbers
+      .map((child, position) => issues[position] || { number: child, title: "", status: "unknown" })
+      .filter((issue) => !issue.deleted);
+  }
+
+  // Relationship metadata is kept in the signed description so it remains
+  // portable across clients, but it is presentation chrome rather than prose.
+  // Leave it in the editor while keeping the rendered description from showing
+  // the same dependency once as plain text and again in the relationship list.
+  function issueDescriptionWithoutDependencies(body) {
+    // "Depends on: None" names nothing, so it stays readable prose.
+    return String(body || "")
+      .replace(/^\s*(?:[-*+]\s+)?(?:\*\*)?(?:parent\s+issues?|depends?\s+on)(?:\*\*)?\s*:(?=.*#[1-9]).+$/gim, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  // Adapt an issue-N.json blob into the { values, body } shape that
+  // renderRepoRecordDetail consumes for pulls/discussions front matter, so the
+  // issue detail view renders from the same JSON the Issues list already reads.
+  function issueDetailParsed(text, fallbackNumber) {
+    const issue = parseIssueJson(text, fallbackNumber);
+    return {
+      values: {
+        title: issue.title,
+        status: issue.status,
+        authorName: issue.author,
+        author: issue.creatorKey,
+        milestone: issue.milestone,
+        labels: `[${(issue.labels || []).join(", ")}]`,
+        priority: issue.priority,
+        progress: issue.progress,
+        assignees: `[${issue.assignees.join(", ")}]`,
+        startDate: issue.startDate,
+        endDate: issue.endDate,
+        votes: issue.votes,
+        createdAt: issue.createdAtMs,
+      },
+      body: issue.body,
+      issueCreator: issue.creatorKey,
+      issueOpenEventId: issue.openEventId,
+      issueOpenAttachments: issue.openAttachments,
+      issueDeleted: issue.deleted,
+      // Every signed event on the issue (comment, status, labels, milestone,
+      // assignees, agent, title, dates, progress, bounty, edit, delete, vote)
+      // so the detail view can render the full activity timeline, not just the
+      // opening comment.
+      issueEvents: issue.events,
+    };
+  }
+
+  function issueDateInputValue(value) {
+    let milliseconds = Number(value) || 0;
+    if (!milliseconds) return "";
+    if (milliseconds < 10_000_000_000) milliseconds *= 1000;
+    const date = new Date(milliseconds);
+    return Number.isNaN(date.getTime())
+      ? ""
+      : date.toISOString().slice(0, 10);
+  }
+
+  // Icon + human-readable description for a non-comment issue event, mirroring
+  // the desktop timeline (MainWindowIssues.cpp addActivity). The default branch
+  // still surfaces unknown/future event types so the detail view shows every
+  // action the JSON carries rather than silently dropping it.
+  function issueEventIcon(type) {
+    return ({
+      status: "circle-dot",
+      labels: "tag",
+      milestone: "milestone",
+      priority: "flag",
+      assignees: "user-plus",
+      claim: "user-check",
+      agent: "bot",
+      title: "pencil",
+      progress: "gauge",
+      dates: "calendar",
+      bounty: "coins",
+      edit: "pencil",
+      delete: "trash-2",
+      vote: "thumbs-up",
+    })[type] || "activity";
+  }
+
+  // The reaction vocabulary the desktop signs into issue threads. Slugs travel
+  // on the wire, not literal emoji, so a chip means the same thing on every
+  // client; desktop/src/ReactionCatalog.h is the same table drawn by hand
+  // there, for hosts with no emoji font.
+  const ISSUE_REACTION_EMOJI = Object.freeze({
+    like: "\u{1F44D}", love: "\u2764\uFE0F", laugh: "\u{1F602}",
+    celebrate: "\u{1F389}", hot: "\u{1F525}", thanks: "\u{1F64F}",
+    smile: "\u{1F642}", wink: "\u{1F609}", cool: "\u{1F60E}",
+    thinking: "\u{1F914}", surprised: "\u{1F62E}", sad: "\u{1F622}",
+    angry: "\u{1F621}", dislike: "\u{1F44E}", eyes: "\u{1F440}",
+    star: "\u2B50", rocket: "\u{1F680}", check: "\u2705",
+  });
+
+  // Live reactions per event id. A reaction is an ordinary signed event naming
+  // the event it lands on, and taking one back is a delete event naming the
+  // reaction, so the fold has to run the deletes first - the same fold as
+  // IssueStore::reactionsForEvent on the desktop.
+  function foldIssueReactions(events) {
+    const rows = Array.isArray(events) ? events.filter(Boolean) : [];
+    const retracted = new Set(rows
+      .filter((ev) => ev.type === "delete" && ev.target && ev.target !== "self")
+      .map((ev) => String(ev.target)));
+    const byTarget = new Map();
+    const counted = new Set();
+    for (const ev of rows) {
+      if (ev.type !== "reaction" || !ev.target || !ev.reaction) continue;
+      if (retracted.has(String(ev.id))) continue;
+      const who = String(ev.authorName || ev.author || "unknown").trim() || "unknown";
+      const key = `${ev.target}\u0000${ev.reaction}\u0000${ev.author}\u0000${who}`;
+      if (counted.has(key)) continue;
+      counted.add(key);
+      const target = String(ev.target);
+      const tallies = byTarget.get(target) || [];
+      let tally = tallies.find((entry) => entry.value === String(ev.reaction));
+      if (!tally) {
+        tally = { value: String(ev.reaction), names: [] };
+        tallies.push(tally);
+      }
+      tally.names.push(who);
+      byTarget.set(target, tallies);
+    }
+    return byTarget;
+  }
+
+  // A slug this build has never heard of still renders: the chip falls back to
+  // the slug itself rather than an empty pill.
+  function renderIssueReactionChips(tallies) {
+    if (!Array.isArray(tallies) || !tallies.length) return "";
+    const chips = tallies.map((tally) => `<span title="${escapeHtml(tally.names.join(", "))}" class="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[12px] text-foreground"><span>${escapeHtml(ISSUE_REACTION_EMOJI[tally.value] || tally.value)}</span><span class="text-muted-foreground">${tally.names.length}</span></span>`).join("");
+    return `<div class="flex flex-wrap items-center gap-1.5 px-4 pb-3">${chips}</div>`;
+  }
+
+  function issueEventDescription(ev) {
+    switch (ev.type) {
+      case "status":
+        return ev.status === "closed" ? "closed this issue" : "reopened this issue";
+      case "labels":
+        return Array.isArray(ev.labels) && ev.labels.length
+          ? `set labels: ${ev.labels.join(", ")}` : "cleared the labels";
+      case "milestone":
+        return ev.milestone ? `set milestone: ${ev.milestone}` : "cleared the milestone";
+      case "priority":
+        return Number(ev.priority) > 0 ? `set priority: ${Number(ev.priority)}` : "cleared the priority";
+      case "assignees":
+        return Array.isArray(ev.assignees) && ev.assignees.length
+          ? `set assignees: ${ev.assignees.join(", ")}` : "cleared the assignees";
+      case "claim":
+        return ev.claimState === "released"
+          ? "unassigned themselves" : "assigned themselves";
+      case "title":
+        return ev.title ? `changed the title to "${ev.title}"` : "cleared the title";
+      case "progress":
+        return `set progress to ${Number(ev.progress) || 0}%`;
+      case "dates":
+        return "updated the schedule dates";
+      case "bounty":
+        return Number(ev.bountyUsd) > 0
+          ? `set a $${Number(ev.bountyUsd)} bounty${ev.bountyStatus ? ` (${ev.bountyStatus})` : ""}`
+          : "cleared the bounty";
+      case "agent": {
+        const sid = Number(ev.agentSessionId) || 0;
+        if (sid <= 0 || ev.agentStatus === "cleared") return "cleared the agent assignment";
+        let text = `assigned ${ev.agentProvider || "an"} agent session #${sid}`;
+        if (ev.agentCreatePr) text += " with PR creation requested";
+        if (ev.agentStatus) text += ` (${ev.agentStatus})`;
+        return text;
+      }
+      case "edit":
+        return ev.target ? "edited a comment" : "edited the description";
+      case "delete":
+        return ev.target === "self" ? "deleted this issue" : "deleted a comment";
+      case "vote":
+        return "voted on this issue";
+      default:
+        return ev.type ? `recorded a ${ev.type} action` : "recorded an action";
+    }
+  }
+
+  function renderIssueTimelineComment(ev) {
+    const who = ev.authorName || ev.author || "unknown";
+    const when = formatTimeAgo(ev.ts);
+    const fullWhen = formatRecordDateTime(ev.ts);
+    const body = String(ev.body || "").trim();
+    return `
+      <div data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+        <span class="hidden sm:block">${issueActorAvatarHtml(who, ev.author, "h-10 w-10")}</span>
+        <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
+          <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
+            <span class="font-semibold text-foreground">${escapeHtml(who)}</span>
+            <span>commented</span><time datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">${escapeHtml(when)}</time>${ev._edited ? "<span>· edited</span>" : ""}
+            ${ev._canManage && ev.id ? `<span class="ml-auto inline-flex items-center gap-0.5">
+              <button type="button" data-repo-issue-comment-edit="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Edit comment"><i data-lucide="pencil" class="h-4 w-4"></i></button>
+              <button type="button" data-repo-issue-comment-delete="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete comment"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
+            </span>` : ""}
+          </div>
+          ${body ? `<div class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>` : ""}
+          ${ev._reactions || ""}
+        </div>
+      </div>`;
+  }
+
+  // One line on the timeline rail: a round icon badge sitting on the rail,
+  // then who did what and when.
+  function renderIssueTimelineEvent(icon, who, author, descriptionHtml, ts, attrs = "", agent = false) {
+    const fullWhen = formatRecordDateTime(ts);
+    return `
+        <div ${attrs} data-repo-issue-event class="relative flex min-h-10 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 py-1.5 pl-12 text-[14px] text-muted-foreground sm:ml-14">
+          <span aria-hidden="true" class="absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[rgb(var(--dashboard-canvas-rgb))] bg-secondary text-muted-foreground"><i data-lucide="${icon}" class="h-4 w-4"></i></span>
+          ${issueActorAvatarHtml(who, author, "h-5 w-5", agent)}
+          <span class="font-semibold text-foreground">${escapeHtml(who)}</span>
+          <span class="inline-flex min-w-0 flex-wrap items-center gap-1">${descriptionHtml}</span>
+          <time datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">${escapeHtml(formatTimeAgo(ts))}</time>
+        </div>`;
+  }
+
+  // The same sentence as issueEventDescription, with the named things drawn
+  // as what they are: label pills, the priority chip, the milestone in bold.
+  function issueEventDescriptionHtml(ev) {
+    if (ev.type === "labels" && Array.isArray(ev.labels) && ev.labels.length) {
+      return `added ${ev.labels.map((label) => renderIssueLabelChip(label)).join(" ")}`;
+    }
+    if (ev.type === "milestone" && ev.milestone) {
+      return `added this to the <span class="font-semibold text-foreground">${escapeHtml(ev.milestone)}</span> milestone`;
+    }
+    if (ev.type === "priority" && Number(ev.priority) > 0) {
+      return `set priority <span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(ev.priority)}</span>`;
+    }
+    return escapeHtml(issueEventDescription(ev));
+  }
+
+  // Full issue activity timeline: comment events render as bodied cards and
+  // every other event as an activity line, in chronological order, so the
+  // detail view shows every action stored in the issue JSON (adhoc #45). The
+  // opening event is omitted here since it's already shown as the issue body.
+  function renderIssueTimeline(events) {
+    const options = arguments[1] || {};
+    // Mentions from other issues join the history at the time they were
+    // written. They are derived rows, flagged so no signed event is mistaken
+    // for one.
+    const mentions = (Array.isArray(options.mentions) ? options.mentions : [])
+      .filter((mention) => mention && mention._mention);
+    const rows = (Array.isArray(events) ? events : [])
+      .filter(Boolean)
+      .map((event) => (event._mention ? { ...event, _mention: false } : event))
+      .concat(mentions)
+      .sort((a, b) => (Number(a.ts) || 0) - (Number(b.ts) || 0));
+    const deletedComments = new Set(
+      rows.filter((ev) => ev.type === "delete" && ev.target && ev.target !== "self")
+        .map((ev) => ev.target));
+    const edits = new Map();
+    rows.filter((ev) => ev.type === "edit" && ev.target)
+      .forEach((ev) => edits.set(String(ev.target), ev));
+    const reactionsByTarget = foldIssueReactions(rows);
+    const reactionIds = new Set(rows.filter((ev) => ev.type === "reaction")
+      .map((ev) => String(ev.id)));
+    const items = [];
+    for (const rawEvent of rows) {
+      let ev = rawEvent;
+      if (ev.type === "open") continue;
+      // Reactions are drawn on the event they landed on, and an un-react is a
+      // delete naming one - neither is a line in the activity feed.
+      if (ev.type === "reaction") continue;
+      if (ev.type === "delete" && reactionIds.has(String(ev.target))) continue;
+      const who = ev.authorName || ev.author || "unknown";
+      const when = formatTimeAgo(ev.ts);
+      const fullWhen = formatRecordDateTime(ev.ts);
+      if (ev._mention) {
+        const href = options.repo
+          ? repoRecordUrl(options.repo, "issues", ev.sourceNumber)
+          : `#issue-${ev.sourceNumber}`;
+        items.push(renderIssueTimelineEvent("link", who, ev.author,
+          `<span>mentioned this in</span><a href="${escapeHtml(href)}" class="min-w-0 font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(ev.sourceNumber)} ${escapeHtml(ev.sourceTitle || `issue #${ev.sourceNumber}`)}</a>${String(ev.sourceStatus).toLowerCase() === "closed" ? "<span>(closed)</span>" : ""}`,
+          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`));
+        continue;
+      }
+      if (ev.type === "comment") {
+        if (deletedComments.has(ev.id)) continue;
+        const edit = edits.get(String(ev.id || ""));
+        ev = {
+          ...ev,
+          ...(edit ? { body: edit.body } : {}),
+          _canManage: Boolean(options.canManage),
+          _edited: Boolean(edit),
+          _reactions: renderIssueReactionChips(
+            reactionsByTarget.get(String(ev.id || ""))),
+        };
+        items.push(renderIssueTimelineComment(ev));
+        continue;
+      }
+      items.push(renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
+        issueEventDescriptionHtml(ev), ev.ts));
+    }
+    return items.join("");
+  }
+
+  function projectJsonPath(number) {
+    return `.forkmesh/projects/${Number(number)}/project-${Number(number)}.json`;
+  }
+
+  // Projects (issue #384) are stored like issues - one signed-event JSON per
+  // numbered folder under .forkmesh/projects/ - and carry gantt start/end
+  // dates, an optional milestone link, and a list of linked issue numbers.
+  function parseProjectJson(text, fallbackNumber) {
+    let project = {};
+    try {
+      const parsed = JSON.parse(String(text || "{}"));
+      if (parsed && typeof parsed === "object") project = parsed;
+    } catch (_) {
+      project = {};
+    }
+    const number = Number(project.number || fallbackNumber);
+    const issues = (Array.isArray(project.issues) ? project.issues : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    return {
+      number,
+      title: project.title || `project #${number}`,
+      status: project.status || "open",
+      body: project.body || "",
+      author: project.authorName || project.author || "unknown",
+      date: formatRecordDate(project.updatedAt || project.createdAt),
+      milestone: String(project.milestone || ""),
+      issues,
+      startDate: Number(project.startDate || 0) || 0,
+      endDate: Number(project.endDate || 0) || 0,
+      createdAtMs: Number(project.createdAt || 0) || 0,
+    };
+  }
+
+  function formatRecordDate(value) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) {
+      return formatDate(number < 1000000000000 ? number * 1000 : number);
+    }
+    return value ? formatDate(value) : "unknown";
+  }
+
+  function formatRecordDateTime(value) {
+    const date = parseFlexibleDate(value);
+    if (!date) return { iso: "", label: "Unknown date and time" };
+    return { iso: date.toISOString(), label: date.toLocaleString() };
+  }
+
+  async function fetchRepoJson(path, options = {}) {
+    const seeded = await seededRepoRead(path);
+    if (seeded) return seeded;
+    const early = await earlyRepoRead(path);
+    if (early) return early;
+    const direct = directRepoRequestCandidates(path);
+    let response = null;
+    for (const candidate of direct) {
+      try {
+        const attempted = await fetch(candidate, {
+          credentials: "omit",
+          headers: { accept: "application/json" },
+          signal: options.signal,
+        });
+        if (attempted.ok) {
+          response = attempted;
+          break;
+        }
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+      }
+    }
+    if (!response) {
+      // no-cache, not no-store: the answer is always revalidated with the
+      // server (a node that reads the repository locally sends an ETag and
+      // answers an unchanged tree or file with 304), but a revisit no longer
+      // downloads the same bytes again.
+      response = await fetch(path, {
+        cache: "no-cache",
+        headers: { accept: "application/json" },
+        signal: options.signal,
+      });
+    }
+    if (response.headers.get("X-ForkMesh-Local-Reads") === "1") state.localRepoReads = true;
+    const data = await response.json().catch(() => ({}));
+    const servedBy = String(
+      response.headers.get("X-ForkMesh-Served-By") || "",
+    ).trim();
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      // Trust routing provenance from the Worker's response header, never an
+      // upstream JSON field. A metadata-cache hit intentionally has no header,
+      // so remove any body claim instead of presenting it as a live selection.
+      if (servedBy) data.servedBy = servedBy;
+      else delete data.servedBy;
+    }
+    if (!response.ok || data.ok === false) {
+      const error = new Error(data.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = data.error || "";
+      throw error;
+    }
+    return data;
+  }
+
+  // Reads the node assembled for a pull request, issue or discussion view in
+  // one answer (app/host/forkmesh_host/repo_views.py): the page's head script
+  // starts fetching the bundle (window.__forkmeshView) and in-app navigation
+  // primes it (primeRepoViewReads). A read is taken from it only on an exact
+  // match of repository, operation and query (repoReadSeedKey builds the key
+  // the node used). Reads pinned to a commit are immutable and stay usable;
+  // reads at a named ref (main, forkmesh/pulls) are used once, within a
+  // minute, so an explicit refresh still reaches the node.
+  const REPO_READ_SEED_NAMED_MS = 60000;
+  const REPO_READ_SEED_WAIT_MS = 2500;
+  const repoReadSeeds = { entries: new Map(), views: new Map() };
+
+  function repoReadSeedKey(path) {
+    let request;
+    try { request = new URL(path, location.origin); } catch (_) { return null; }
+    if (request.origin !== location.origin) return null;
+    const match = /^(\/api\/repo\/[^/]+\/[^/]+)\/([^/]+)$/.exec(request.pathname);
+    if (!match) return null;
+    const pairs = [];
+    for (const [name, value] of request.searchParams) {
+      if (["viewer", "ts", "sig"].includes(name)) return null;
+      if (name !== "fmv" && name !== "_") pairs.push([name, value]);
+    }
+    pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+    let operation;
+    try { operation = decodeURIComponent(match[2]); } catch (_) { return null; }
+    return `${match[1].toLowerCase()}|${operation}?${pairs.map(([name, value]) => `${name}=${value}`).join("&")}`;
+  }
+
+  function mergeRepoReadSeeds(bundle) {
+    if (!bundle || typeof bundle !== "object" || !bundle.reads || typeof bundle.base !== "string") return;
+    const at = Date.now();
+    Object.entries(bundle.reads).forEach(([key, data]) => {
+      if (data && typeof data === "object") {
+        repoReadSeeds.entries.set(`${bundle.base}|${key}`, { data, servedBy: String(bundle.servedBy || ""), at });
+      }
+    });
+    repoReadSeeds.views.set(`${bundle.base}|${bundle.view}|${Number(bundle.number) || 0}`, at);
+  }
+
+  function repoReadSeedImmutable(key) {
+    const fields = key.slice(key.indexOf("?") + 1).split("&");
+    const value = (name) => {
+      const field = fields.find((item) => item.startsWith(`${name}=`));
+      return field === undefined ? "" : field.slice(name.length + 1);
+    };
+    const commit = (text) => /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(text);
+    const operation = key.slice(key.indexOf("|") + 1, key.indexOf("?"));
+    return operation === "compare"
+      ? commit(value("base")) && commit(value("head"))
+      : commit(value("ref"));
+  }
+
+  async function seededRepoRead(path) {
+    const key = repoReadSeedKey(path);
+    if (!key) return null;
+    const page = globalThis.__forkmeshView;
+    if (page?.pending && !page.merged && key.startsWith(`${page.base}|`)) {
+      const bundle = await Promise.race([page.pending, new Promise((resolve) => setTimeout(() => resolve(undefined), REPO_READ_SEED_WAIT_MS))]);
+      if (bundle !== undefined && !page.merged) {
+        page.merged = true;
+        mergeRepoReadSeeds(bundle);
+      }
+    }
+    const entry = repoReadSeeds.entries.get(key);
+    if (!entry) return null;
+    if (!repoReadSeedImmutable(key)) {
+      repoReadSeeds.entries.delete(key);
+      if (Date.now() - entry.at > REPO_READ_SEED_NAMED_MS) return null;
+    }
+    if (entry.data.__seedError) {
+      const error = new Error(String(entry.data.__seedError.error || "not_found"));
+      error.status = Number(entry.data.__seedError.status) || 404;
+      error.code = error.message;
+      throw error;
+    }
+    const data = cloneJson(entry.data);
+    if (entry.servedBy) data.servedBy = entry.servedBy;
+    else delete data.servedBy;
+    return data;
+  }
+
+  // One request for every read a view needs, before its loader runs, when
+  // this origin reads the repository locally (the only nodes that answer
+  // /page-reads). A view the page itself was rendered for is already coming.
+  async function primeRepoViewReads(repo, view, number = 0) {
+    if (!repo || repo.isPrivate) return;
+    if (!(state.localRepoReads || globalThis.__forkmeshEarly?.local)) return;
+    if (new URLSearchParams(location.search || "").has("sig")) return;
+    const base = repoApiBase(repo).toLowerCase();
+    const viewKey = `${base}|${view}|${Number(number) || 0}`;
+    const page = globalThis.__forkmeshView;
+    if (page && !page.merged && `${page.base}|${page.view}|${Number(page.number) || 0}` === viewKey) return;
+    const seen = repoReadSeeds.views.get(viewKey);
+    if (seen && Date.now() - seen < REPO_READ_SEED_NAMED_MS) return;
+    const query = new URLSearchParams({ view });
+    if (number) query.set("number", String(number));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REPO_READ_SEED_WAIT_MS);
+    try {
+      const response = await fetch(`${repoApiBase(repo)}/page-reads?${query.toString()}`, {
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (response.ok) mergeRepoReadSeeds(await response.json());
+    } catch (_) {
+      // The loaders read everything themselves.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // Tree/README/file/history reads the repository page started before this
+  // script ran (partials/repo-early-reads.html). Only an exact match is used:
+  // same repository, operation, path and ref, no other query field, within a
+  // minute of the page load. The answer is copied so callers may mutate it.
+  const EARLY_REPO_READ_MAX_AGE_MS = 60000;
+  const EARLY_REPO_READ_WAIT_MS = 2500;
+  async function earlyRepoRead(path) {
+    const early = globalThis.__forkmeshEarly;
+    if (!early?.tree || Date.now() - early.at > EARLY_REPO_READ_MAX_AGE_MS) return null;
+    let request;
+    try { request = new URL(path, location.origin); } catch (_) { return null; }
+    const match = /^(\/api\/repo\/[^/]+\/[^/]+)\/(tree|blob|history)$/.exec(request.pathname);
+    if (!match || request.origin !== location.origin || match[1].toLowerCase() !== early.base) return null;
+    for (const key of request.searchParams.keys()) {
+      if (!["path", "ref", "fmv"].includes(key)) return null;
+    }
+    const ref = request.searchParams.get("ref") || "";
+    if (!ref) return null;
+    await Promise.race([early.tree, new Promise((resolve) => setTimeout(resolve, EARLY_REPO_READ_WAIT_MS))]);
+    const pending = early.reads[`${match[2]}|${request.searchParams.get("path") || ""}|${ref}`];
+    const result = pending ? await pending : null;
+    if (!result?.data || typeof result.data !== "object" || result.data.ok === false) return null;
+    const data = cloneJson(result.data);
+    if (result.servedBy) data.servedBy = result.servedBy;
+    else delete data.servedBy;
+    return data;
+  }
+
+  // Collaboration events are already Ed25519-signed by their composer. Send
+  // them to a healthy direct mirror first so opening/commenting continues when
+  // the controller is unavailable. The shared HttpOnly portable cookie is
+  // included for manager-only events; a rejecting/offline mirror is skipped,
+  // and the canonical route remains the final compatibility fallback.
+  // A mirror materializes synchronously, but one that stops answering must not
+  // hold the submitter's form open indefinitely: give up on it and move on. A
+  // late commit on that mirror is harmless — every materializer dedupes signed
+  // events by signature, so the same event arriving twice lands once.
+  const REPO_MUTATION_MIRROR_TIMEOUT_MS = 20000;
+  // Transient canonical-route failures (a dropped connection, an edge 5xx or an
+  // HTML error page, a momentarily unavailable number reservation) are retried
+  // with the SAME signed payload, so a retry can never file a second issue.
+  const REPO_MUTATION_RETRY_DELAYS_MS = [800, 2000, 4000];
+  // A retried canonical attempt that never answers must not hold the form on
+  // "retrying…" forever (#698). The retry replays the same signed event and
+  // the relay answers a replay with the number it already queued, so giving
+  // up on a slow attempt cannot file the issue twice.
+  const REPO_MUTATION_CANONICAL_TIMEOUT_MS = 30000;
+  const REPO_MUTATION_RETRYABLE_CODES = new Set([
+    "number_unavailable", "alias_unresolved", "mirror_unavailable",
+  ]);
+
+  function repoMutationAttemptSignal(outer, timeoutMs) {
+    if (!timeoutMs) return { signal: outer, done() {} };
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const timer = setTimeout(abort, timeoutMs);
+    if (outer?.aborted) controller.abort();
+    else outer?.addEventListener("abort", abort, { once: true });
+    return {
+      signal: controller.signal,
+      done() {
+        clearTimeout(timer);
+        outer?.removeEventListener("abort", abort);
+      },
+    };
+  }
+
+  async function postRepoMutation(url, payload, options = {}) {
+    const attempt = repoMutationAttemptSignal(options.signal, options.timeoutMs);
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        ...(options.credentials ? { credentials: options.credentials } : {}),
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(payload),
+        signal: attempt.signal,
+      });
+      let data = null;
+      try { data = await response.json(); } catch (_) { data = null; }
+      if (response.ok && data && typeof data === "object" && data.ok !== false) {
+        return { data };
+      }
+      const code = String(data?.error || "");
+      const error = new Error(code || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = code;
+      // A body that is not the API's JSON (an edge error page, an isolate
+      // crash) says nothing about the submission itself.
+      error.transient = !data || response.status >= 500
+        || REPO_MUTATION_RETRYABLE_CODES.has(code);
+      return { error };
+    } catch (cause) {
+      if (options.signal?.aborted) throw cause;
+      const code = attempt.signal?.aborted ? "timeout" : "network_error";
+      const error = new Error(code);
+      error.status = 0;
+      error.code = code;
+      error.transient = true;
+      error.cause = cause;
+      return { error };
+    } finally {
+      attempt.done();
+    }
+  }
+
+  async function fetchRepoMutation(repo, operation, payload, options = {}) {
+    const path = `${repoApiBase(repo)}/${operation}`;
+    const candidates = directRepoRequestCandidates(path, { mutation: true });
+    // The first definitive refusal a mirror gave (bad signature, quota, too
+    // large). If the canonical route then cannot be reached at all, that answer
+    // is far more useful to the submitter than a bare network failure.
+    let mirrorRefusal = null;
+    for (let index = 0; index < candidates.length; index += 1) {
+      options.onProgress?.({
+        phase: "delivering",
+        route: "mirror",
+        retry: index > 0,
+      });
+      const { data, error } = await postRepoMutation(candidates[index], payload, {
+        credentials: "include",
+        signal: options.signal,
+        timeoutMs: REPO_MUTATION_MIRROR_TIMEOUT_MS,
+      });
+      if (data) return data;
+      if (!mirrorRefusal && error.code && !error.transient
+          && !["not_found", "POST required"].includes(error.code)) {
+        mirrorRefusal = error;
+      }
+    }
+    const retryDelays = options.retryTransient ? REPO_MUTATION_RETRY_DELAYS_MS : [];
+    let lastError = null;
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt - 1]));
+        if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      }
+      options.onProgress?.({
+        phase: "delivering",
+        route: "repository",
+        retry: attempt > 0,
+        attempt: attempt + 1,
+        attempts: retryDelays.length + 1,
+        lastError,
+      });
+      const { data, error } = await postRepoMutation(path, payload, {
+        signal: options.signal,
+        timeoutMs: options.retryTransient ? REPO_MUTATION_CANONICAL_TIMEOUT_MS : 0,
+      });
+      if (data) return data;
+      lastError = error;
+      if (!error.transient) break;
+    }
+    if (lastError?.transient && mirrorRefusal) throw mirrorRefusal;
+    throw lastError;
+  }
+
+  const PULL_METADATA_BRANCH = "forkmesh/pulls";
+  const PULL_BRANCH_PREFIX = "forkmesh/pull/";
+
+  function immutableGitCommit(value) {
+    const commit = String(value || "").trim();
+    return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(commit) ? commit : "";
+  }
+
+  function repoPullMetadataCacheKey(repo) {
+    return [
+      repoKey(repo).toLowerCase(),
+      repoDataVersion(repo),
+    ].join("@");
+  }
+
+  async function resolveRepoPullMetadataCommit(repo) {
+    // Named private repository routes intentionally remain inert. Private
+    // bytes use the opaque encrypted-replica transport and must never become
+    // discoverable through this public branch lookup.
+    if (!repo || repo.isPrivate) {
+      throw new Error("pull_metadata_unavailable");
+    }
+    const key = repoPullMetadataCacheKey(repo);
+    const cached = immutableGitCommit(state.repoPullMetadataCommits[key]);
+    if (cached) return cached;
+    if (state.repoPullMetadataInflight[key]) {
+      return state.repoPullMetadataInflight[key];
+    }
+    const pending = (async () => {
+      // The public branch picker intentionally hides ForkMesh's collaboration
+      // refs, including forkmesh/pulls. Resolve that named ref through the tree
+      // endpoint instead: its response carries the immutable commit that every
+      // subsequent tree/blob read pins. Looking for the hidden ref in /branches
+      // made every healthy repository appear to have zero pull requests.
+      const data = await fetchRepoJson(repoLiveUrl(repo, "tree", {
+        path: ".forkmesh/pulls",
+        ref: PULL_METADATA_BRANCH,
+      }));
+      const commit = immutableGitCommit(data?.commit || data?.analysis?.commit);
+      if (!commit) throw new Error("pull_metadata_absent");
+      state.repoPullMetadataCommits[key] = commit;
+      return commit;
+    })();
+    state.repoPullMetadataInflight[key] = pending;
+    try {
+      return await pending;
+    } finally {
+      if (state.repoPullMetadataInflight[key] === pending) {
+        delete state.repoPullMetadataInflight[key];
+      }
+    }
+  }
+
+  // A pull's own forkmesh/pull/<n> branch is authoritative over the aggregate
+  // index. Resolve it the same way - the tree reply carries the immutable
+  // commit - for a pull the index has not caught up with (issue #683).
+  async function resolveRepoPullBranchCommit(repo, number) {
+    if (!repo || repo.isPrivate) {
+      throw new Error("pull_metadata_unavailable");
+    }
+    const pull = Number(number);
+    if (!Number.isInteger(pull) || pull <= 0) {
+      throw new Error("pull_metadata_absent");
+    }
+    const data = await fetchRepoJson(repoLiveUrl(repo, "tree", {
+      path: `.forkmesh/pulls/${pull}`,
+      ref: `${PULL_BRANCH_PREFIX}${pull}`,
+    }));
+    const commit = immutableGitCommit(data?.commit || data?.analysis?.commit);
+    if (!commit) throw new Error("pull_metadata_absent");
+    return commit;
+  }
+
+  // An authoritative "the repository does not hold this" answer, as opposed to
+  // "nothing could answer". Mirrors report a missing tree path as 404
+  // not_found, and the Worker only collapses to that code once every endpoint
+  // it reached said the same thing — a 503 mirror_unavailable still means a
+  // genuine routing outage and must keep surfacing as one.
+  function isMissingMirrorFolder(error) {
+    const message = String(error?.code || error?.message || "").toLowerCase();
+    return message.includes("not_found")
+      || message.includes("_absent")
+      || message.includes("not a valid object name")
+      || message.includes("pathspec")
+      || message.includes("does not exist")
+      || message.includes("unknown revision");
+  }
+
+  const repoCollectionConfig = {
+    issues: {
+      label: "Issues",
+      itemLabel: "issue",
+      dir: ".forkmesh/issues", file: (number) => `issue-${Number(number)}.json`,
+      icon: "circle-dot",
+      tone: "text-muted-foreground",
+      empty: "No issues have been committed to this mirror yet.",
+      meta(values) {
+        const labels = Array.isArray(values.labels)
+          ? values.labels.slice(0, 3).join(", ")
+          : parseFrontMatterList(values.labels).slice(0, 3).join(", ");
+        return [values.status || "open", labels, values.milestone].filter(Boolean).join(" · ");
+      },
+    },
+    pulls: {
+      label: "Pull requests",
+      itemLabel: "pull request",
+      dir: ".forkmesh/pulls", file: "pull.md",
+      icon: "git-pull-request",
+      tone: "text-muted-foreground",
+      empty: "No pull requests have been committed to this mirror yet.",
+      meta(values) {
+        return [values.status || "open", values.base && values.head ? `${values.base} ← ${values.head}` : ""].filter(Boolean).join(" · ");
+      },
+    },
+    discussions: {
+      label: "Discussions",
+      itemLabel: "discussion",
+      dir: ".forkmesh/discussions", file: "discussion.md",
+      icon: "message-square",
+      tone: "text-muted-foreground",
+      empty: "No discussions have been committed to this mirror yet.",
+      meta(values) {
+        return values.category || "discussion";
+      },
+    },
+  };
+
+  function blobText(data) {
+    const content = data.content || data.text || "";
+    if (data.encoding === "base64") {
+      try {
+        return decodeURIComponent(escape(atob(content)));
+      } catch (_) {
+        return "";
+      }
+    }
+    return String(content || "");
+  }
+
+  async function fetchRepoBlobs(repo, paths, options = {}) {
+    // Batched file read: ONE request returns every path (repeated ?path=
+    // params); the Worker fans the reads out over authenticated HTTPS mirrors.
+    // Fetching each record as its own /blob call flooded the relay with 50+
+    // parallel requests per page view and tripped the per-repo rate limit.
+    // Missing/unreadable paths come back null.
+    if (!paths.length) return {};
+    const query = new URLSearchParams();
+    paths.forEach((path) => query.append("path", path));
+    const current = new URLSearchParams(location.search || "");
+    ["viewer", "ts", "sig"].forEach((key) => {
+      const value = current.get(key);
+      if (value) query.set(key, value);
+    });
+    // Same ref override contract as repoLiveUrl. Pull readers pass the exact
+    // immutable forkmesh/pulls OID resolved by
+    // resolveRepoPullMetadataCommit().
+    if (!("ref" in options)) query.set("ref", repoSelectedBranch(repo));
+    else if (options.ref) query.set("ref", options.ref);
+    const version = repoDataVersion(repo);
+    if (version) query.set("fmv", version);
+    const requestedAt = performance.now();
+    const data = await fetchRepoJson(`${repoApiBase(repo)}/blobs?${query.toString()}`);
+    renderRepoServedBy(data.servedBy, performance.now() - requestedAt);
+    return data.blobs || {};
+  }
+
+  // An upstream timeout can make an otherwise successful batch response omit
+  // a few paths. Retry only those misses through normal single-blob routing,
+  // four at a time, so another healthy mirror can satisfy them without the old
+  // 50-request burst that the batch endpoint was built to prevent.
+  async function fetchMissingRepoBlobs(repo, paths, options = {}) {
+    const found = {};
+    for (let offset = 0; offset < paths.length; offset += 4) {
+      const group = paths.slice(offset, offset + 4);
+      const results = await Promise.all(group.map(async (path) => {
+        try {
+          const blob = await fetchRepoJson(repoLiveUrl(repo, "blob", {
+            path,
+            ...options,
+          }));
+          return [path, blob];
+        } catch (_) {
+          return [path, null];
+        }
+      }));
+      results.forEach(([path, blob]) => {
+        if (blob) found[path] = blob;
+      });
+    }
+    return found;
+  }
+
+  async function loadRepoRecordsFromMirror(repo, config) {
+    // Pull requests moved to the dedicated forkmesh/pulls metadata branch
+    // (issue #399). Resolve it once, then pin the tree and every batched blob
+    // read to the same immutable commit. Never fall back to main: an absent
+    // metadata branch means zero pull requests, not main's stale copy of them.
+    let refParams = {};
+    if (config.dir === ".forkmesh/pulls") {
+      try {
+        refParams = { ref: await resolveRepoPullMetadataCommit(repo) };
+      } catch (error) {
+        // No ledger branch at all => no pull requests yet. Anything else (a
+        // failed branch listing) is a real outage and keeps propagating.
+        if (isMissingMirrorFolder(error)) return [];
+        throw error;
+      }
+    }
+    let tree;
+    try {
+      tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: config.dir, ...refParams }));
+    } catch (error) {
+      if (isMissingMirrorFolder(error)) return [];
+      throw error;
+    }
+    const listedDirs = (Array.isArray(tree.entries) ? tree.entries : [])
+      .filter((entry) => entry.type === "tree" && /^\d+$/.test(String(entry.name || "")))
+      .sort((a, b) => Number(b.name) - Number(a.name));
+    // Pulls default to the open-only view, so every listed pull's status must
+    // be known before filtering and counting. Other generic collections keep
+    // their historical 50-record cap.
+    const dirs = config.dir === ".forkmesh/pulls"
+      ? listedDirs
+      : listedDirs.slice(0, 50);
+    // Per-pull forkmesh/pull/<n> branches are authoritative and the aggregate
+    // index can lag them; the served openPulls badge already counts their
+    // union. Read each pull the index is missing from its own immutable
+    // commit, or the list shows fewer open pulls than its badge (issue #683).
+    const pullRefs = config.dir === ".forkmesh/pulls"
+      && tree.pullRefs && typeof tree.pullRefs === "object"
+      ? tree.pullRefs
+      : {};
+    const indexedNames = new Set(listedDirs.map((entry) => String(entry.name)));
+    const branchOnlyDirs = Object.keys(pullRefs)
+      .filter((name) => /^\d+$/.test(name) && !indexedNames.has(name)
+        && immutableGitCommit(pullRefs[name]))
+      .map((name) => ({ name, type: "tree", ref: immutableGitCommit(pullRefs[name]) }));
+    const recordPath = (entry) => {
+      const file = typeof config.file === "function"
+        ? config.file(Number(entry.name))
+        : config.file;
+      return `${config.dir}/${entry.name}/${file}`;
+    };
+    // Bounded batched requests for every record file instead of a per-record
+    // fan-out. Pull collections can be larger than one gateway batch.
+    const paths = dirs.map(recordPath);
+    const blobs = {};
+    for (let offset = 0; offset < paths.length; offset += 50) {
+      Object.assign(blobs, await fetchRepoBlobs(
+        repo, paths.slice(offset, offset + 50), refParams));
+    }
+    const missingPaths = paths.filter((path) => !blobs[path]);
+    if (missingPaths.length) {
+      Object.assign(blobs, await fetchMissingRepoBlobs(
+        repo, missingPaths, refParams));
+    }
+    for (let offset = 0; offset < branchOnlyDirs.length; offset += 4) {
+      const group = branchOnlyDirs.slice(offset, offset + 4);
+      const found = await Promise.all(group.map((entry) =>
+        fetchMissingRepoBlobs(repo, [recordPath(entry)], { ref: entry.ref })));
+      found.forEach((result) => Object.assign(blobs, result));
+    }
+    const records = dirs.concat(branchOnlyDirs).map((entry) => {
+      const number = Number(entry.name);
+      const blob = blobs[recordPath(entry)];
+      if (!blob) {
+        if (config.dir !== ".forkmesh/pulls") return null;
+        return {
+          number,
+          title: "Metadata unavailable",
+          state: "unknown",
+          author: "unknown",
+          date: "unknown",
+          meta: "unknown",
+          body: "",
+          unavailable: true,
+          wantsAgent: false,
+        };
+      }
+      const parsed = parseFrontMatter(blobText(blob));
+      const values = parsed.values || {};
+      return {
+        number,
+        title: values.title || `${config.itemLabel} #${number}`,
+        state: values.status || values.state || values.category || "open",
+        author: values.authorName || values.author || "unknown",
+        date: formatRecordDate(values.updatedAt || values.createdAt || values.ts),
+        updatedAtMs: Number(values.updatedAt || values.createdAt || values.ts || 0) || 0,
+        meta: config.meta(values),
+        body: parsed.body || "",
+        wantsAgent: config.dir === "issues" ? Boolean(values.wantsAgent) : false,
+      };
+    });
+    return records.filter(Boolean).sort((a, b) => {
+      const stamp = (item) => {
+        let value = Number(item.updatedAtMs || item.createdAtMs || 0);
+        if (value > 0 && value < 10_000_000_000) value *= 1000;
+        return Number.isFinite(value) ? value : 0;
+      };
+      return stamp(b) - stamp(a) || Number(b.number) - Number(a.number);
+    });
+  }
+
+  function renderRepoCollectionPagination(kind, page, totalPages, totalItems) {
+    const previousDisabled = page <= 1;
+    const nextDisabled = page >= totalPages;
+    const pages = Array.from({ length: totalPages }, (_, index) => index + 1).slice(0, 7);
+    return `
+      <nav data-repo-collection-pagination="${kind}" class="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-[14px]" aria-label="${escapeHtml(repoCollectionConfig[kind]?.label || "Records")} pagination">
+        <span class="text-[12px] text-muted-foreground">Page ${page} of ${totalPages} · ${formatCount(totalItems)} total</span>
+        <div class="flex min-w-0 flex-wrap items-center gap-1">
+          <button type="button" data-repo-collection-page="${kind}" data-repo-collection-page-target="${page - 1}" ${previousDisabled ? "disabled" : ""} class="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[var(--dashboard-link)] transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:text-muted-foreground disabled:hover:bg-transparent"><i data-lucide="chevron-left" class="h-4 w-4"></i>Previous</button>
+          ${pages.map((number) => `<button type="button" data-repo-collection-page="${kind}" data-repo-collection-page-target="${number}" aria-current="${number === page ? "page" : "false"}" class="inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 transition-colors ${number === page ? "bg-[#1f6feb] font-semibold text-white" : "text-foreground hover:bg-secondary"}">${number}</button>`).join("")}
+          <button type="button" data-repo-collection-page="${kind}" data-repo-collection-page-target="${page + 1}" ${nextDisabled ? "disabled" : ""} class="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[var(--dashboard-link)] transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:text-muted-foreground disabled:hover:bg-transparent">Next<i data-lucide="chevron-right" class="h-4 w-4"></i></button>
+        </div>
+      </nav>`;
+  }
+
+  // Labels carry no stored colour, so each one gets a stable hue hashed from
+  // its name: "infra" is the same tint on every page and every mirror. Purple
+  // is not a ForkMesh colour, so that band is never produced.
+  function issueLabelHue(label) {
+    const name = String(label || "").trim().toLowerCase();
+    let hash = 2166136261;
+    for (let index = 0; index < name.length; index += 1) {
+      hash ^= name.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    const hue = (hash >>> 0) % 360;
+    // Indigo through magenta reads as purple on the dark canvas; fold that
+    // band onto the cyan-to-blue range instead.
+    return hue >= 235 && hue < 320 ? 190 + ((hue - 235) % 30) : hue;
+  }
+
+  function renderIssueLabelChip(label, attrs = "") {
+    return `<span ${attrs} class="issue-label" style="--label-h:${issueLabelHue(label)}">${escapeHtml(label)}</span>`;
+  }
+
+  // An issue row's right-hand metadata sits in fixed-width slots so priority,
+  // comments and assignees line up from one row to the next.
+  function renderIssueRowAvatars(item) {
+    const assignees = (Array.isArray(item.assignees) ? item.assignees : [])
+      .map((name) => String(name || "").trim()).filter(Boolean);
+    const faces = assignees.slice(0, item.wantsAgent ? 2 : 3)
+      .map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false));
+    // An agent assignment is a participant, not a warning: a bot face in the
+    // stack replaces the old yellow zap.
+    if (item.wantsAgent) faces.unshift(issueActorAvatarHtml("Agent", "", "h-5 w-5", true, false));
+    if (!faces.length) return "";
+    return `<span data-repo-issue-row-assignees class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml([item.wantsAgent ? "Agent" : "", ...assignees].filter(Boolean).join(", "))}">${faces.join("")}</span>`;
+  }
+
+  function renderRepoRecordList(items, config, kind) {
+    const totalPages = Math.max(1, Math.ceil(items.length / REPO_COLLECTION_PAGE_SIZE));
+    const page = state.repoCollectionPages[kind] || 1;
+    const safePage = Math.min(Math.max(1, page), totalPages);
+    state.repoCollectionPages[kind] = safePage;
+    const start = (safePage - 1) * REPO_COLLECTION_PAGE_SIZE;
+    const end = start + REPO_COLLECTION_PAGE_SIZE;
+    const pageItems = ["issues", "pulls"].includes(kind)
+      ? items.slice(start, end)
+      : items;
+    const rows = pageItems.map((item) => {
+      const isIssue = kind === "issues";
+      const numberLabel = `#${formatCount(item.number)}`;
+      const stateLabel = item.state || item.status || "open";
+      const labelParts = String(item.meta || "")
+        .split(" · ")
+        .map((part) => part.trim())
+        .filter((part) => part && part !== stateLabel)
+        .slice(0, 3);
+      const issueLabels = Array.isArray(item.labels) ? item.labels : [];
+      const commentCount = Number(item.commentCount || 0);
+      const openedAt = item.createdAtMs || item.updatedAtMs || 0;
+      const openedWhen = formatRecordDateTime(openedAt);
+      const content = isIssue ? `
+          <i data-lucide="${item.status === "closed" ? "circle-check" : "circle-dot"}" class="mt-1 h-4 w-4 ${item.status === "closed" ? "text-muted-foreground" : "text-[var(--dashboard-open)]"}"></i>
+          <span class="min-w-0">
+            <span class="block min-w-0 leading-6">
+              <span data-repo-issue-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
+              ${item.deleted ? '<span class="issue-label ml-1 align-[2px]" style="--label-h:210;filter:saturate(0)" title="Deleted by its author.">deleted</span>' : ""}
+              ${item.deleteAttempted ? '<span class="ml-1 inline-flex items-center gap-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 align-[2px] text-[12px] font-medium leading-[18px] text-yellow-600" title="Someone who did not open this issue tried to delete it; the deletion was not applied."><i data-lucide="triangle-alert" class="h-3 w-3"></i>unauthorized deletion</span>' : ""}
+              ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
+            </span>
+            <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
+              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
+              ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
+            </span>
+          </span>
+          <span class="flex shrink-0 items-start pt-0.5 text-[12px] text-muted-foreground">
+            <span class="hidden w-14 justify-end sm:flex">${Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px] text-muted-foreground" title="Priority ${Number(item.priority)} — 1 is highest">P${Number(item.priority)}</span>` : ""}</span>
+            <span class="flex w-12 justify-end">${commentCount ? `<span class="inline-flex items-center gap-1 leading-5 hover:text-[var(--dashboard-link)]" title="${formatCount(commentCount)} comment${commentCount === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(commentCount)}</span>` : ""}</span>
+            <span class="hidden w-[4.5rem] justify-end sm:flex">${renderIssueRowAvatars(item)}</span>
+          </span>` : `
+          <span aria-hidden="true" class="mt-0.5 h-4 w-4 rounded border border-border bg-background"></span>
+          <i data-lucide="${config.icon}" class="mt-0.5 h-4 w-4 ${config.tone}"></i>
+          <span class="min-w-0">
+            <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span class="min-w-0 truncate text-sm font-semibold text-foreground">${escapeHtml(item.title)}</span>
+              ${labelParts.map((label) => `<span class="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">${escapeHtml(label)}</span>`).join("")}
+            </span>
+            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(numberLabel)} opened by ${escapeHtml(item.author)} ${escapeHtml(item.date)}${item.body ? ` - ${escapeHtml(item.body).slice(0, 140)}` : ""}</span>
+          </span>
+          <span class="self-start flex shrink-0 items-center gap-3">
+            ${item.wantsAgent ? '<i data-lucide="zap" class="h-4 w-4 text-yellow-500" title="Assigned to agent"></i>' : ''}
+            <span class="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex"><i data-lucide="message-square" class="h-3.5 w-3.5"></i>0</span>
+            <span data-repo-record-state class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(stateLabel)}</span>
+          </span>`;
+      const rowGrid = isIssue
+        ? "grid-cols-[1rem_minmax(0,1fr)_auto]"
+        : "grid-cols-[1rem_1.25rem_minmax(0,1fr)_auto]";
+      if (item.unavailable) {
+        return `
+          <div data-repo-record-unavailable="${escapeHtml(kind)}" data-repo-record-number="${escapeHtml(item.number)}" role="group" aria-disabled="true" aria-label="${escapeHtml(`${config.itemLabel} #${item.number} metadata unavailable`)}" class="grid w-full ${rowGrid} gap-3 border-t border-border bg-secondary/20 px-4 py-3 text-left">
+            ${content}
+          </div>`;
+      }
+      // A real link, not a bare button: middle-click and ctrl/cmd-click then
+      // open the record in its own tab the way every other link on the page
+      // does. A plain left click is still caught by the delegated
+      // [data-repo-record-kind] handler and routed in-app, so opening a record
+      // from the list stays a no-reload navigation. Records with no mirror
+      // number yet aren't addressable, so those rows stay href-less.
+      const recordHref = state.selectedRepo && /^\d+$/.test(String(item.number))
+        ? repoRecordUrl(state.selectedRepo, kind, item.number, "conversation")
+        : "";
+      return `
+        <a ${recordHref ? `href="${escapeHtml(recordHref)}" ` : ""}data-repo-record-kind="${escapeHtml(kind)}" data-repo-record-number="${escapeHtml(item.number)}" class="${isIssue ? "group grid w-full cursor-pointer gap-x-2 border-t border-border px-4 py-2 text-left first-of-type:border-t-0 transition-colors hover:bg-[rgb(var(--dashboard-subtle-rgb))]" : `grid w-full cursor-pointer gap-3 border-t border-border px-4 py-3 text-left transition-colors hover:bg-secondary/40`} ${rowGrid}">
+          ${content}
+        </a>`;
+    }).join("");
+    const unavailableCount = kind === "pulls"
+      ? items.filter((item) => item.unavailable === true).length
+      : 0;
+    const unavailableWarning = unavailableCount
+      ? `<p data-repo-record-unavailable-warning="pulls" role="status" class="border-t border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-5 text-muted-foreground"><strong class="text-amber-300">Metadata unavailable.</strong> ${unavailableCount === 1 ? "1 pull-request record is listed by the tree but its metadata is unavailable. It cannot be opened." : `${formatCount(unavailableCount)} pull-request records are listed by the tree but their metadata is unavailable. They cannot be opened.`}</p>`
+      : "";
+    const pagination = ["issues", "pulls"].includes(kind)
+      ? renderRepoCollectionPagination(kind, safePage, totalPages, items.length)
+      : "";
+    return rows + unavailableWarning + pagination;
+  }
+
+  // Shared unified-diff parser used by both the commit diff and the pull
+  // patch views. Groups lines per file and tracks real old/new line numbers
+  // per hunk so the viewer can render a GitHub-style dual gutter instead of
+  // a single running index.
+  function parseDiffFiles(rawText) {
+    const lines = String(rawText || "").split("\n");
+    if (lines.length && lines[lines.length - 1] === "") lines.pop();
+    const files = [];
+    let current = null;
+    let oldLine = 0;
+    let newLine = 0;
+    lines.forEach((line) => {
+      if (line.startsWith("diff --git ")) {
+        const match = line.match(/^diff --git a\/(.*?) b\/(.*)$/);
+        current = { oldPath: match?.[1] || "", newPath: match?.[2] || match?.[1] || "file", status: "modified", binary: false, adds: 0, dels: 0, rows: [] };
+        files.push(current);
+        oldLine = 0;
+        newLine = 0;
+        return;
+      }
+      if (!current) return;
+      if (line.startsWith("new file mode")) { current.status = "added"; return; }
+      if (line.startsWith("deleted file mode")) { current.status = "deleted"; return; }
+      if (line.startsWith("rename from ")) { current.status = "renamed"; current.oldPath = line.slice("rename from ".length); return; }
+      if (line.startsWith("rename to ")) { current.newPath = line.slice("rename to ".length); return; }
+      if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) { current.binary = true; return; }
+      if (line.startsWith("similarity index") || line.startsWith("index ") ||
+          line.startsWith("old mode") || line.startsWith("new mode") ||
+          line.startsWith("--- ") || line.startsWith("+++ ")) return;
+      if (line.startsWith("@@")) {
+        const match = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (match) { oldLine = Number(match[1]); newLine = Number(match[2]); }
+        current.rows.push({ type: "hunk", text: line });
+        return;
+      }
+      const marker = line[0];
+      if (marker === "+") { current.rows.push({ type: "add", newLine: newLine++, text: line.slice(1) }); current.adds += 1; return; }
+      if (marker === "-") { current.rows.push({ type: "del", oldLine: oldLine++, text: line.slice(1) }); current.dels += 1; return; }
+      if (marker === "\\") { current.rows.push({ type: "meta", text: line }); return; }
+      current.rows.push({ type: "ctx", oldLine: oldLine++, newLine: newLine++, text: line.slice(1) });
+    });
+    return { files };
+  }
+
+  function parsePatchStats(patch) {
+    return parseDiffFiles(patch).files.map((file) => ({
+      path: file.newPath || file.oldPath || "file",
+      oldPath: file.oldPath || "",
+      status: file.status,
+      binary: file.binary,
+      adds: file.adds,
+      dels: file.dels,
+    }));
+  }
+
+  function pullViewedStorageKey(repo, number, metadataCommit) {
+    const commit = immutableGitCommit(metadataCommit);
+    const owner = String(repo?.owner || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim().toLowerCase();
+    return owner && name && Number(number) > 0 && commit
+      ? `forkmesh.pull-viewed.v1:${owner}/${name}@${commit}#${Number(number)}`
+      : "";
+  }
+
+  function loadRepoPullViewed(repo, number, metadataCommit) {
+    const key = pullViewedStorageKey(repo, number, metadataCommit);
+    if (!key) return new Set();
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || "[]");
+      return new Set(
+        (Array.isArray(value) ? value : [])
+          .filter((path) => typeof path === "string" && path.length <= 500)
+          .slice(0, 1000),
+      );
+    } catch (_) {
+      return new Set();
+    }
+  }
+
+  function saveRepoPullViewed(repo, number, metadataCommit, viewed) {
+    const key = pullViewedStorageKey(repo, number, metadataCommit);
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify([...viewed].slice(0, 1000)));
+    } catch (_) {}
+  }
+
+  // A branch comparison (/owner/repo/compare/base...head) keeps its own viewed
+  // marks, keyed by the exact pair of commits the mirror compared: a push to
+  // either branch is a different diff and starts the reader over, the way a
+  // pull's marks are keyed by its metadata commit.
+  function compareViewedStorageKey(repo, comparison) {
+    const base = immutableGitCommit(comparison?.baseOid || "");
+    const head = immutableGitCommit(comparison?.headOid || "");
+    const owner = String(repo?.owner || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim().toLowerCase();
+    return owner && name && base && head
+      ? `forkmesh.compare-viewed.v1:${owner}/${name}@${base}..${head}`
+      : "";
+  }
+
+  function loadRepoCompareViewed(repo, compare) {
+    if (compare?.viewed instanceof Set) return compare.viewed;
+    const key = compareViewedStorageKey(repo, compare?.result);
+    let viewed = new Set();
+    if (key) {
+      try {
+        const value = JSON.parse(localStorage.getItem(key) || "[]");
+        viewed = new Set(
+          (Array.isArray(value) ? value : [])
+            .filter((path) => typeof path === "string" && path.length <= 500)
+            .slice(0, 1000),
+        );
+      } catch (_) {}
+    }
+    // Held on the comparison so an unkeyed read (no OIDs from the mirror)
+    // still toggles for the rest of the visit.
+    if (compare) compare.viewed = viewed;
+    return viewed;
+  }
+
+  function saveRepoCompareViewed(repo, compare, viewed) {
+    if (compare) compare.viewed = viewed;
+    const key = compareViewedStorageKey(repo, compare?.result);
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify([...viewed].slice(0, 1000)));
+    } catch (_) {}
+  }
+
+  // How the review surface is laid out (hierarchy vs flat explorer, unified vs
+  // side-by-side diff) is a reader preference rather than repository data, so
+  // it rides in localStorage next to the per-pull viewed set.
+  const pullLayoutStorageKey = "forkmesh.pull-layout.v1";
+
+  function pullLayoutPrefs() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(pullLayoutStorageKey) || "{}");
+      return {
+        explorer: stored?.explorer === "list" ? "list" : "tree",
+        diff: stored?.diff === "split" ? "split" : "unified",
+      };
+    } catch (_) {
+      return { explorer: "tree", diff: "unified" };
+    }
+  }
+
+  function setPullLayoutPref(key, value) {
+    const next = { ...pullLayoutPrefs(), [key]: value };
+    try {
+      localStorage.setItem(pullLayoutStorageKey, JSON.stringify(next));
+    } catch (_) {}
+    return next;
+  }
+
+  function toggleRepoPullViewed(repo, path) {
+    // The open pull's Files changed pane or a branch comparison: whichever
+    // review surface is on the page owns the mark.
+    const context = repoPullFilesContext();
+    if (!repo || !context || !path) return;
+    const viewed = context.viewed;
+    if (viewed.has(path)) viewed.delete(path);
+    else viewed.add(path);
+    context.saveViewed(viewed);
+
+    const section = context.section;
+    const selected = viewed.has(path);
+    section.querySelectorAll("[data-repo-pull-file]").forEach((row) => {
+      if (row.dataset.repoPullFile !== path) return;
+      setRepoPullFileRowViewed(row, selected);
+    });
+    section.querySelectorAll("[data-repo-pull-diff-file]").forEach((block) => {
+      if (block.dataset.repoPullDiffFile !== path) return;
+      setRepoPullDiffBlockViewed(block, selected);
+    });
+    const summary = section.querySelector("[data-repo-pull-viewed-summary]");
+    if (summary) {
+      summary.textContent = `${formatCount(viewed.size)} of ${formatCount(context.files.length)} viewed`;
+    }
+    window.lucide?.createIcons();
+  }
+
+  // Lucide swaps every `<i data-lucide>` placeholder for an `<svg>` and drops the
+  // attribute while doing it, so an icon that changes after the first paint has
+  // to be re-seeded through its holder rather than re-tagged in place.
+  function swapLucideIcon(holder, name, cls) {
+    if (!holder) return;
+    holder.innerHTML = `<i data-lucide="${name}" class="${cls}"></i>`;
+  }
+
+  function setRepoPullFileRowViewed(row, selected) {
+    row.dataset.viewed = selected ? "true" : "false";
+    const meta = pullFileStatusMeta(row.dataset.repoPullFileStatus || "modified");
+    swapLucideIcon(
+      row.querySelector("[data-repo-pull-file-icon]"),
+      selected ? "check-circle-2" : meta.icon,
+      `h-3.5 w-3.5 ${selected ? "text-foreground" : meta.tone}`,
+    );
+    const name = row.querySelector("[data-repo-pull-file-name]");
+    if (name) {
+      name.classList.toggle("text-muted-foreground", selected);
+      name.classList.toggle("line-through", selected);
+      name.classList.toggle("text-foreground", !selected);
+    }
+  }
+
+  // Marking a file viewed folds its diff away, the way the desktop review pane
+  // does, so a long pull collapses down to the files still needing attention.
+  function setRepoPullDiffBlockViewed(block, selected) {
+    block.dataset.viewed = selected ? "true" : "false";
+    block.classList.toggle("border-border", selected);
+    block.classList.toggle("border-border", !selected);
+    const button = block.querySelector("[data-repo-pull-viewed]");
+    if (button) {
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+      button.classList.toggle("border-border", selected);
+      button.classList.toggle("text-foreground", selected);
+      button.classList.toggle("text-muted-foreground", !selected);
+      swapLucideIcon(
+        button.querySelector("[data-repo-pull-viewed-icon]"),
+        selected ? "check-circle-2" : "circle",
+        "h-3.5 w-3.5",
+      );
+    }
+    setRepoPullDiffBlockCollapsed(block, selected);
+  }
+
+  function scrollContainerOf(node) {
+    for (let el = node?.parentElement; el; el = el.parentElement) {
+      const overflow = getComputedStyle(el).overflowY;
+      if ((overflow === "auto" || overflow === "scroll") && el.scrollHeight > el.clientHeight) return el;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  function keepPullDiffHeaderInPlace(button, change) {
+    const block = button?.closest("[data-repo-pull-diff-file]");
+    const header = block?.firstElementChild || button;
+    const before = header?.getBoundingClientRect().top;
+    const scroller = header ? scrollContainerOf(header) : null;
+    const anchor = scroller?.style.overflowAnchor ?? "";
+    if (scroller) scroller.style.overflowAnchor = "none";
+    if (block) block.style.contentVisibility = "visible";
+    change();
+    if (header?.isConnected && before !== undefined) {
+      const shift = header.getBoundingClientRect().top - before;
+      if (Math.abs(shift) >= 1) scroller.scrollTop += shift;
+    }
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      if (block) block.style.contentVisibility = "auto";
+      if (scroller) scroller.style.overflowAnchor = anchor;
+    }));
+  }
+
+  function setRepoPullDiffBlockCollapsed(block, collapsed) {
+    block.dataset.collapsed = collapsed ? "true" : "false";
+    block.querySelector("[data-repo-pull-diff-body]")?.classList.toggle("hidden", collapsed);
+    swapLucideIcon(
+      block.querySelector("[data-repo-pull-diff-collapse-icon]"),
+      collapsed ? "chevron-right" : "chevron-down",
+      "h-3.5 w-3.5",
+    );
+  }
+
+  function pullFileStatusMeta(status) {
+    if (status === "added") return { icon: "file-plus", tone: "text-primary", label: "added" };
+    if (status === "deleted") return { icon: "file-minus", tone: "text-destructive", label: "deleted" };
+    if (status === "renamed") return { icon: "file-symlink", tone: "text-amber-400", label: "renamed" };
+    return { icon: "file-text", tone: "text-muted-foreground", label: "modified" };
+  }
+
+  // GitHub's five-square diff meter: how much of a file's churn is additions.
+  function renderDiffStatBar(adds, dels) {
+    const total = (Number(adds) || 0) + (Number(dels) || 0);
+    let green = total ? Math.round(((Number(adds) || 0) / total) * 5) : 0;
+    if (adds > 0 && green === 0) green = 1;
+    if (dels > 0 && green === 5) green = 4;
+    const cells = Array.from({ length: 5 }, (_, index) => {
+      const tone = total === 0 ? "bg-border" : index < green ? "bg-emerald-500" : "bg-red-500";
+      return `<span class="h-2 w-2 rounded-[2px] ${tone}"></span>`;
+    }).join("");
+    return `<span class="hidden shrink-0 items-center gap-0.5 sm:inline-flex" aria-hidden="true">${cells}</span>`;
+  }
+
+  function pullExplorerRowIndent(depth) {
+    return `padding-left:${(0.5 + depth * 0.85).toFixed(2)}rem`;
+  }
+
+  // The changed-file explorer. Hierarchy mode mirrors the repository layout the
+  // way GitHub, GitLab and the desktop review pane do; list mode flattens it to
+  // full paths for a pull that touches one file per directory. Either way each
+  // row keeps the whole path, so it still targets the matching diff block.
+  function renderRepoPullFiles(files, viewed = new Set(), options = {}) {
+    const mode = options.mode === "list" ? "list" : "tree";
+    const query = String(options.filter || "").trim();
+    const needle = query.toLowerCase();
+    const all = (Array.isArray(files) ? files : []).map((file) => {
+      const path = String(file?.path || "file");
+      return { ...file, path, name: path.split("/").filter(Boolean).at(-1) || path };
+    });
+    if (!all.length) return '<div class="px-4 py-3 text-sm text-muted-foreground">No changed files are available from this mirror.</div>';
+    const rows = needle ? all.filter((file) => file.path.toLowerCase().includes(needle)) : all;
+    if (!rows.length) {
+      return `<div class="px-4 py-6 text-center text-xs text-muted-foreground">No changed file matches <span class="font-mono text-foreground">${escapeHtml(query)}</span>.</div>`;
+    }
+
+    const renderFile = (file, depth, showDir) => {
+      const isViewed = viewed.has(file.path);
+      const meta = pullFileStatusMeta(file.status);
+      // Flat mode squeezes only the head of the directory. Paths in one pull
+      // share a long prefix and differ at the tail, so truncating the whole
+      // thing would leave a column of identical "app/public/das… index.html".
+      const segments = file.path.split("/").slice(0, -1);
+      const dirHead = showDir && segments.length > 1 ? `${segments.slice(0, -1).join("/")}/` : "";
+      const dirTail = showDir && segments.length ? `${segments.at(-1)}/` : "";
+      return `
+        <button type="button" data-repo-pull-file="${escapeHtml(file.path)}" data-repo-pull-file-status="${escapeHtml(file.status || "modified")}" data-viewed="${isViewed ? "true" : "false"}" title="${escapeHtml(file.path)} · ${meta.label}" style="${pullExplorerRowIndent(depth)}" class="grid w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md py-1.5 pr-2 text-left text-xs transition-colors hover:bg-secondary">
+          <span data-repo-pull-file-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : meta.icon}" class="h-3.5 w-3.5 ${isViewed ? "text-foreground" : meta.tone}"></i></span>
+          <span data-repo-pull-file-name class="flex min-w-0 overflow-hidden font-mono ${isViewed ? "text-muted-foreground line-through" : "text-foreground"}">${dirHead ? `<span class="truncate text-muted-foreground">${escapeHtml(dirHead)}</span>` : ""}${dirTail ? `<span class="shrink-0 text-muted-foreground">${escapeHtml(dirTail)}</span>` : ""}<span class="shrink-0">${escapeHtml(file.name)}</span></span>
+          <span class="shrink-0 font-mono text-[10px] tabular-nums"><span class="text-primary">+${formatCount(file.adds || 0)}</span> <span class="text-destructive">-${formatCount(file.dels || 0)}</span></span>
+        </button>`;
+    };
+
+    if (mode === "list") {
+      const list = [...rows]
+        .sort((left, right) => left.path.localeCompare(right.path))
+        .map((file) => renderFile(file, 0, true))
+        .join("");
+      return `<div data-repo-pull-file-tree data-mode="list" class="grid gap-0.5 p-2">${list}</div>`;
+    }
+
+    const root = { dirs: new Map(), files: [] };
+    rows.forEach((file) => {
+      const parts = file.path.split("/").filter(Boolean);
+      let node = root;
+      parts.slice(0, -1).forEach((part) => {
+        if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
+        node = node.dirs.get(part);
+      });
+      node.files.push(file);
+    });
+    // A directory holding nothing but one more directory collapses into a single
+    // "app/public/dashboard" row, so a deep source tree does not burn four indent
+    // levels before the first changed file appears.
+    const collapseChain = (name, node) => {
+      let label = name;
+      let current = node;
+      while (!current.files.length && current.dirs.size === 1) {
+        const [childName, child] = [...current.dirs.entries()][0];
+        label += `/${childName}`;
+        current = child;
+      }
+      return [label, current];
+    };
+    const countFiles = (node) => node.files.length
+      + [...node.dirs.values()].reduce((sum, child) => sum + countFiles(child), 0);
+    const renderNode = (node, depth) => {
+      const directories = [...node.dirs.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([name, child]) => {
+          const [label, target] = collapseChain(name, child);
+          return `
+          <details open data-repo-pull-file-dir class="group">
+            <summary style="${pullExplorerRowIndent(depth)}" class="flex cursor-pointer list-none items-center gap-1.5 rounded-md py-1.5 pr-2 text-xs font-medium text-foreground hover:bg-secondary">
+              <i data-lucide="chevron-right" class="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"></i>
+              <i data-lucide="folder" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+              <span class="min-w-0 flex-1 truncate font-mono" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+              <span class="shrink-0 font-mono text-[10px] text-muted-foreground">${formatCount(countFiles(target))}</span>
+            </summary>
+            <div>${renderNode(target, depth + 1)}</div>
+          </details>`;
+        }).join("");
+      const fileRows = [...node.files]
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((file) => renderFile(file, depth, false))
+        .join("");
+      return directories + fileRows;
+    };
+    return `<div data-repo-pull-file-tree data-mode="tree" class="grid gap-0.5 p-2">${renderNode(root, 0)}</div>`;
+  }
+
+  // Pull-request badge (adhoc #44): a visual fingerprint of the PR. One tile
+  // per changed file — a file-type glyph over a green/red bar showing that
+  // file's additions:deletions ratio — grouped by directory with a labeled
+  // connector line. Mirrors the SVG the worker attaches to federated
+  // PR-opened notes (src/pull_badge.py) and the desktop Badge tab.
+  const fileBadgeStyles = {
+    ts: ["TS", "#3178c6"], tsx: ["TSX", "#3178c6"],
+    js: ["JS", "#f1e05a"], mjs: ["JS", "#f1e05a"], cjs: ["JS", "#f1e05a"],
+    jsx: ["JSX", "#61dafb"], py: ["PY", "#4b8bbe"], pyw: ["PY", "#4b8bbe"],
+    rb: ["RB", "#cc342d"], rs: ["RS", "#dea584"], go: ["GO", "#00add8"],
+    java: ["JAVA", "#b07219"], kt: ["KT", "#a97bff"], swift: ["SWFT", "#f05138"],
+    cs: ["C#", "#178600"], c: ["C", "#9cdcfe"], h: ["H", "#9cdcfe"],
+    cpp: ["C++", "#f34b7d"], cc: ["C++", "#f34b7d"], cxx: ["C++", "#f34b7d"],
+    hpp: ["H++", "#f34b7d"], php: ["PHP", "#777bb3"], dart: ["DART", "#00b4ab"],
+    vue: ["VUE", "#41b883"], svelte: ["SVLT", "#ff3e00"],
+    html: ["</>", "#e34c26"], htm: ["</>", "#e34c26"], css: ["CSS", "#563d7c"],
+    scss: ["SCSS", "#c6538c"], less: ["LESS", "#1d365d"],
+    md: ["MD", "#519aba"], markdown: ["MD", "#519aba"],
+    json: ["{ }", "#cbcb41"], yaml: ["YAML", "#cb4b4b"], yml: ["YAML", "#cb4b4b"],
+    toml: ["TOML", "#9c4221"], xml: ["XML", "#e37933"], ini: ["CFG", "#6d8086"],
+    cfg: ["CFG", "#6d8086"], conf: ["CFG", "#6d8086"], env: ["ENV", "#6d8086"],
+    sh: [">_", "#89e051"], bash: [">_", "#89e051"], zsh: [">_", "#89e051"],
+    bat: [">_", "#c1f12e"], ps1: [">_", "#012456"], sql: ["SQL", "#e38c00"],
+    svg: ["SVG", "#ffb13b"], png: ["IMG", "#a074c4"], jpg: ["IMG", "#a074c4"],
+    jpeg: ["IMG", "#a074c4"], gif: ["IMG", "#a074c4"], webp: ["IMG", "#a074c4"],
+    avif: ["IMG", "#a074c4"], ico: ["IMG", "#a074c4"], pdf: ["PDF", "#f40f02"],
+    txt: ["TXT", "#8b949e"], lock: ["LOCK", "#8b949e"], qrc: ["QRC", "#41cd52"],
+    ui: ["UI", "#41cd52"], cmake: ["CMK", "#649ad2"],
+  };
+  const fileBadgeNames = {
+    dockerfile: ["DOCK", "#2496ed"], makefile: ["MAKE", "#6d8086"],
+    "cmakelists.txt": ["CMK", "#649ad2"], license: ["LIC", "#d0b44c"],
+    "readme.md": ["MD", "#519aba"], ".gitignore": ["GIT", "#f14e32"],
+    ".gitattributes": ["GIT", "#f14e32"], ".gitmodules": ["GIT", "#f14e32"],
+    "package.json": ["NPM", "#cb3837"], "package-lock.json": ["NPM", "#cb3837"],
+  };
+
+  // Directory connector labels show just the folder name (not the whole
+  // path) capped to 8 chars, e.g. "one/two/three" -> "three".
+  function dirBadgeLabel(dir) {
+    const name = dir === "/" ? "/" : dir.slice(dir.lastIndexOf("/") + 1);
+    return name.length > 8 ? `${name.slice(0, 8)}…` : name;
+  }
+
+  function fileBadgeGlyph(path) {
+    const name = String(path || "").split("/").pop().toLowerCase();
+    if (fileBadgeNames[name]) return fileBadgeNames[name];
+    const stem = name.replace(/^\.+/, "");
+    const ext = stem.includes(".") ? stem.split(".").pop() : "";
+    if (fileBadgeStyles[ext]) return fileBadgeStyles[ext];
+    return [ext.toUpperCase().slice(0, 4) || "FILE", "#8b949e"];
+  }
+
+  function renderPullBadgeTile(file) {
+    const [label, color] = fileBadgeGlyph(file.path);
+    const adds = file.adds || 0;
+    const dels = file.dels || 0;
+    const total = adds + dels;
+    const addPct = total ? Math.round((adds / total) * 100) : 0;
+    // Tiny per-file diff strip, same height as the glyph square: a green
+    // slice on top sized to the addition share, red below for deletions.
+    const diffStrip = total
+      ? `<span class="block w-full" style="height:${addPct}%;background:#3fb950"></span><span class="block w-full" style="height:${100 - addPct}%;background:#f85149"></span>`
+      : '<span class="block h-full w-full" style="background:#30363d"></span>';
+    return `
+      <div class="flex w-16 shrink-0 gap-1.5" title="${escapeHtml(file.path || "file")} +${formatCount(adds)} -${formatCount(dels)}">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-secondary/60 font-mono text-[11px] font-bold" style="color:${color}">${escapeHtml(label)}</div>
+        <div class="flex h-10 w-1.5 shrink-0 flex-col overflow-hidden rounded-full">${diffStrip}</div>
+      </div>`;
+  }
+
+  // Deterministic hue per author name so the icon is stable across loads
+  // without needing an avatar fetch (mirrors loadRepoAboutContributors).
+  function badgeAuthorAvatarHtml(author) {
+    const name = String(author || "unknown");
+    let hash = 0;
+    for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+    const hue = hash % 360;
+    const initial = escapeHtml((name[0] || "?").toUpperCase());
+    return `<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-background font-mono text-[10px] font-semibold text-white" style="background-color:hsl(${hue} 55% 42%)">${initial}</span>`;
+  }
+
+  function renderRepoPullBadge(title, number, author, files) {
+    const rows = Array.isArray(files) ? files : [];
+    if (!rows.length) return '<div class="px-4 py-3 text-sm text-muted-foreground">The badge appears once the pull request\'s committed patch is available from the live mirror.</div>';
+    const additions = rows.reduce((sum, file) => sum + (file.adds || 0), 0);
+    const deletions = rows.reduce((sum, file) => sum + (file.dels || 0), 0);
+    // Cluster files by directory, preserving a sorted order so each directory
+    // forms one contiguous group under its labeled connector line.
+    const groups = [];
+    [...rows].sort((a, b) => String(a.path || "").localeCompare(String(b.path || ""))).forEach((file) => {
+      const path = String(file.path || "file");
+      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "/";
+      if (groups.length && groups[groups.length - 1].dir === dir) groups[groups.length - 1].files.push(file);
+      else groups.push({ dir, files: [file] });
+    });
+    const stat = (value, caption, cls) => `
+      <div class="text-right">
+        <div class="font-mono text-lg font-bold ${cls}">${value}</div>
+        <div class="text-[10px] text-muted-foreground">${caption}</div>
+      </div>`;
+    return `
+      <div class="grid gap-5 rounded-lg border border-border p-4">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="min-w-0">
+            <div class="truncate text-2xl font-bold text-foreground">${escapeHtml(title || "Pull request")}</div>
+            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${escapeHtml(author || "unknown")}</span></div>
+          </div>
+          <div class="flex shrink-0 gap-6">
+            ${stat(`+${formatCount(additions)}`, "Additions", "text-emerald-400")}
+            ${stat(`-${formatCount(deletions)}`, "Deletions", "text-red-400")}
+            ${stat(formatCount(rows.length), "Files changed", "text-foreground")}
+          </div>
+        </div>
+        <div class="flex flex-wrap items-end gap-x-8 gap-y-6">
+          ${groups.map((group) => `
+            <div class="flex flex-col gap-1.5">
+              <div class="flex max-w-full flex-wrap gap-2">${group.files.map(renderPullBadgeTile).join("")}</div>
+              <div class="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span class="h-px min-w-3 flex-1 bg-border"></span>
+                <span class="font-mono" title="${escapeHtml(group.dir)}">${escapeHtml(dirBadgeLabel(group.dir))}</span>
+                <span class="font-mono">…${formatCount(group.files.length)}</span>
+                <span class="h-px min-w-3 flex-1 bg-border"></span>
+              </div>
+            </div>`).join("")}
+        </div>
+      </div>`;
+  }
+
+  // Tint the row, not the text: colouring whole lines green and red the way the
+  // old renderer did costs contrast on exactly the lines being reviewed. These
+  // are the shades the desktop diff view uses (MainWindowShared diffStyleSheet),
+  // expressed as theme-independent alpha so light mode gets them too.
+  function diffRowClass(type) {
+    if (type === "add") return "bg-emerald-500/10 text-foreground";
+    if (type === "del") return "bg-red-500/10 text-foreground";
+    if (type === "hunk") return "bg-sky-500/10 text-sky-400";
+    if (type === "meta") return "text-muted-foreground";
+    return "text-foreground";
+  }
+
+  // The line-number colour stays neutral rather than tinted: the dashboard themes
+  // through CSS variables, not Tailwind's `dark:` variant, so a fixed light-green
+  // number would vanish against the light theme's tint.
+  function diffGutterClass(type) {
+    if (type === "add") return "bg-emerald-500/15 text-muted-foreground";
+    if (type === "del") return "bg-red-500/15 text-muted-foreground";
+    return "bg-secondary/40 text-muted-foreground/70";
+  }
+
+  function diffRowSign(type) {
+    if (type === "add") return '<span class="select-none text-center font-mono text-primary">+</span>';
+    if (type === "del") return '<span class="select-none text-center font-mono text-destructive">-</span>';
+    return '<span class="select-none"></span>';
+  }
+
+  function diffCodeCell(text, extra = "") {
+    return `<span class="whitespace-pre-wrap break-words py-px pr-3 font-mono ${extra}">${escapeHtml(text || " ")}</span>`;
+  }
+
+  function pullInlineThreadKey(path, side, line) {
+    const detail = state.repoRecordDetail;
+    const context = pullReviewContextKey(
+      detail?.repo || state.selectedRepo, detail?.number || 0);
+    return `${context}:${encodeURIComponent(path)}:${side}:${Number(line) || 0}`;
+  }
+
+  function currentPullReviewDrafts() {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "pulls") return [];
+    const repo = detail.repo || state.selectedRepo;
+    const repoKey = `${String(repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}`;
+    return (state.repoPullReviewDrafts || []).filter((draft) =>
+      draft.repoKey === repoKey && String(draft.number) === String(detail.number));
+  }
+
+  function pullInlineCommentsForPath(path) {
+    const conversation = state.repoRecordDetail?.kind === "pulls"
+      ? state.repoRecordDetail.parsed?.pullConversation || []
+      : [];
+    const submitted = conversation.filter((event) =>
+      (event?.type === "line-comment" || event?.type === "thread-comment")
+      && event.path === path);
+    return [...submitted, ...currentPullReviewDrafts().filter((draft) => draft.path === path)];
+  }
+
+  // --- Patchset anchors -----------------------------------------------------
+  // A line-anchored review event may carry `patchset` (the head commit the
+  // reviewer's diff was cut against) and `anchorLines` (the exact commented
+  // text). Both are signed. They let a thread follow its code when the diff is
+  // re-cut, or say plainly that the code is gone, instead of the thread landing
+  // on whatever now has its line number. Mirrors PullReviewModel.cpp.
+  const PULL_ANCHOR_MAX_LINES = 12;
+
+  function pullCurrentPatchsetId() {
+    // The web renders the pull's signed creation diff (changes.patch or the
+    // creation-OID compare), so that head names the patchset on screen.
+    return immutableGitCommit(state.repoRecordDetail?.parsed?.values?.creationHeadOid) || "";
+  }
+
+  function pullDiffFileFor(path) {
+    const patch = state.repoRecordDetail?.kind === "pulls"
+      ? String(state.repoRecordDetail.parsed?.pullPatch?.patch || "")
+      : "";
+    if (!patch) return null;
+    if (state.repoPullDiffIndex?.patch !== patch) {
+      state.repoPullDiffIndex = { patch, files: parseDiffFiles(patch).files };
+    }
+    return state.repoPullDiffIndex.files.find((file) => (file.newPath || file.oldPath) === path) || null;
+  }
+
+  // One side of one file: [{ line, text }] in diff order (ascending; gaps
+  // between hunks).
+  function pullDiffSideLines(path, side) {
+    const file = pullDiffFileFor(path);
+    if (!file || file.binary) return [];
+    const wantOld = side === "old";
+    const out = [];
+    file.rows.forEach((row) => {
+      if (wantOld && (row.type === "del" || row.type === "ctx")) out.push({ line: row.oldLine, text: row.text });
+      if (!wantOld && (row.type === "add" || row.type === "ctx")) out.push({ line: row.newLine, text: row.text });
+    });
+    return out;
+  }
+
+  function pullAnchorLinesFor(path, side, lineStart, lineEnd) {
+    const lines = pullDiffSideLines(path, side);
+    const first = lines.findIndex((entry) => entry.line === lineStart);
+    if (first < 0) return "";
+    const wanted = Math.min(Math.max(lineEnd, lineStart) - lineStart + 1, PULL_ANCHOR_MAX_LINES);
+    const out = [];
+    for (let i = 0; i < wanted; i += 1) {
+      const entry = lines[first + i];
+      if (!entry || entry.line !== lineStart + i) break;
+      out.push(entry.text);
+    }
+    return out.join("\n");
+  }
+
+  // The line where `anchorLines` occurs as a run of consecutive lines, nearest
+  // to `preferred`; -1 when the text is not in this side of the diff.
+  function nearestPullAnchorMatch(lines, anchorLines, preferred) {
+    const want = String(anchorLines).split("\n");
+    let best = -1;
+    for (let i = 0; i + want.length <= lines.length; i += 1) {
+      if (lines[i].text !== want[0]) continue;
+      let ok = true;
+      for (let k = 1; k < want.length; k += 1) {
+        if (lines[i + k].text !== want[k] || lines[i + k].line !== lines[i].line + k) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const line = lines[i].line;
+      if (best < 0 || Math.abs(line - preferred) < Math.abs(best - preferred)) best = line;
+      if (line >= preferred) break;
+    }
+    return best;
+  }
+
+  // Where an inline comment sits in the diff on screen. `placement` is one of
+  // "current" (its patchset, or its text at the same lines), "moved" (its text
+  // now at other lines), "outdated" (its text left the diff) or "legacy" (no
+  // anchor; painted where it says while that line exists).
+  function placePullInlineComment(event, lines) {
+    const side = event.side === "old" ? "old" : "new";
+    const lineStart = Number(event.lineStart || event.line || 0);
+    const lineEnd = Math.max(Number(event.lineEnd || event.line || lineStart), lineStart);
+    const span = lineEnd - lineStart;
+    const placed = (placement, start) => ({
+      side, lineStart, lineEnd, placement,
+      currentLineStart: start, currentLineEnd: start ? start + span : 0,
+    });
+    if (!event.path || !lineStart) return placed("legacy", lineStart);
+    const sideLines = lines || pullDiffSideLines(event.path, side);
+    const lineExists = sideLines.some((entry) => entry.line === lineStart);
+    const patchset = String(event.patchset || "");
+    const anchorLines = String(event.anchorLines || "");
+    if (!patchset && !anchorLines) return lineExists ? placed("legacy", lineStart) : placed("outdated", 0);
+    const current = pullCurrentPatchsetId();
+    if (patchset && current && patchset.toLowerCase() === current.toLowerCase()) return placed("current", lineStart);
+    if (anchorLines) {
+      const at = nearestPullAnchorMatch(sideLines, anchorLines, lineStart);
+      if (at < 0) return placed("outdated", 0);
+      return placed(at === lineStart ? "current" : "moved", at);
+    }
+    return !current && lineExists ? placed("current", lineStart) : placed("outdated", 0);
+  }
+
+  function pullInlineCommentAnchor(event) {
+    return placePullInlineComment(event);
+  }
+
+  function pullPlacementLabel(anchor) {
+    if (anchor.placement === "outdated") return "Outdated";
+    if (anchor.placement === "moved") {
+      return anchor.lineEnd > anchor.lineStart
+        ? `Moved from lines ${anchor.lineStart}-${anchor.lineEnd}`
+        : `Moved from line ${anchor.lineStart}`;
+    }
+    return "";
+  }
+
+  // Threads grouped by the line they are painted on now; outdated ones under
+  // the file-level key so they stay in view at the top of the file.
+  function pullOutdatedThreadKey(path) {
+    return pullInlineThreadKey(path, "file", 0);
+  }
+
+  function groupPullInlineComments(path) {
+    const groups = new Map();
+    // Most files carry no thread: skip walking their rows for anchor text.
+    const comments = pullInlineCommentsForPath(path);
+    if (!comments.length) return groups;
+    const sideLines = { old: pullDiffSideLines(path, "old"), new: pullDiffSideLines(path, "new") };
+    comments.forEach((event) => {
+      const anchor = placePullInlineComment(event, sideLines[event.side === "old" ? "old" : "new"]);
+      if (!anchor.lineEnd) return;
+      const key = anchor.placement === "outdated"
+        ? pullOutdatedThreadKey(path)
+        : pullInlineThreadKey(path, anchor.side, anchor.currentLineEnd);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(event);
+    });
+    return groups;
+  }
+
+  function renderPullOutdatedThreads(path, comments) {
+    if (!comments?.length) return "";
+    const cards = comments.map((event) => renderPullInlineThreadCard(path, event)).join("");
+    return `<div data-repo-pull-outdated-threads="${escapeHtml(path)}" class="border-b border-border/30 bg-secondary/30 px-3 py-3 sm:pl-4">
+      <div class="mb-2 text-[11px] text-muted-foreground">${comments.length === 1 ? "An outdated review thread" : `${comments.length} outdated review threads`}: the code it commented on is no longer in this diff, so it is shown here instead of on a line it did not talk about.</div>
+      <div class="grid gap-2">${cards}</div>
+    </div>`;
+  }
+
+  function renderPullInlineCommentIndicator(path, side, line, comments) {
+    if (!comments?.length) return "";
+    const key = pullInlineThreadKey(path, side, line);
+    const label = `${comments.length} inline ${comments.length === 1 ? "comment" : "comments"}`;
+    return `<button type="button" data-repo-pull-inline-thread-toggle="${escapeHtml(key)}" aria-expanded="${state.repoPullInlineOpenThreads.has(key) ? "true" : "false"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" class="absolute left-0 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"><i data-lucide="user-round" class="h-2.5 w-2.5"></i></button>`;
+  }
+
+  function renderDiffLineGutter(path, side, line, type, comments, extra = "") {
+    if (!line) return `<span data-repo-pull-diff-gutter class="select-none ${extra} ${diffGutterClass(type)}"></span>`;
+    return `<span data-repo-pull-diff-gutter class="relative flex min-w-0 select-none items-center justify-end px-2 font-mono ${extra} ${diffGutterClass(type)}">
+      ${renderPullInlineCommentIndicator(path, side, line, comments)}
+      <button type="button" data-repo-pull-diff-line data-path="${escapeHtml(path)}" data-side="${side}" data-line="${line}" aria-label="Select ${side} line ${line} to comment" title="Select ${side} line ${line} to comment" class="min-w-0 flex-1 cursor-pointer text-right hover:text-foreground">${line}</button>
+    </span>`;
+  }
+
+  function renderPullInlineThreadCard(path, event) {
+    const anchor = pullInlineCommentAnchor(event);
+    const author = event.authorName || event.author || "unknown";
+    const range = anchor.lineStart !== anchor.lineEnd
+      ? `${anchor.lineStart}-${anchor.lineEnd}`
+      : `${anchor.lineEnd}`;
+    const placement = pullPlacementLabel(anchor);
+    const placementBadge = placement
+      ? `<span data-repo-pull-thread-placement="${anchor.placement}" title="${escapeHtml(event.patchset ? `Written against revision ${String(event.patchset).slice(0, 10)}` : "Written against an earlier revision")}" class="rounded border ${anchor.placement === "outdated" ? "border-border text-muted-foreground" : "border-sky-500/40 text-sky-400"} px-1.5 py-0.5 font-semibold uppercase">${escapeHtml(placement)}</span>`
+      : "";
+    return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-amber-500/40 bg-amber-500/10" : "border-border bg-background"} p-3">
+      ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${escapeHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-amber-500/40 px-1.5 py-0.5 font-semibold uppercase text-amber-400">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
+        <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
+      </div>
+    </article>`;
+  }
+
+  function renderPullInlineThread(path, side, line, comments) {
+    if (!comments?.length) return "";
+    const key = pullInlineThreadKey(path, side, line);
+    const open = state.repoPullInlineOpenThreads.has(key);
+    const cards = comments.map((event) => renderPullInlineThreadCard(path, event)).join("");
+    return `<div data-repo-pull-inline-thread="${escapeHtml(key)}" class="${open ? "" : "hidden "}border-y border-border/30 bg-primary/5 px-3 py-3 sm:pl-4">
+      <div class="grid gap-2">${cards}</div>
+    </div>`;
+  }
+
+  function renderDiffFileRowsUnified(rows, options = {}) {
+    const path = options.path || "";
+    const reviewable = Boolean(options.reviewable && path);
+    const commentGroups = reviewable ? groupPullInlineComments(path) : new Map();
+    return rows.map((row) => {
+      if (row.type === "hunk" || row.type === "meta") {
+        return `<div data-repo-pull-diff-grid="hunk" class="grid grid-cols-[7.5rem_minmax(0,1fr)] ${diffRowClass(row.type)}">
+          <span class="select-none border-r border-border/60 bg-secondary/40"></span>
+          ${diffCodeCell(row.text, "px-3")}
+        </div>`;
+      }
+      const oldComments = commentGroups.get(pullInlineThreadKey(path, "old", row.oldLine)) || [];
+      const newComments = commentGroups.get(pullInlineThreadKey(path, "new", row.newLine)) || [];
+      const oldGutter = reviewable
+        ? renderDiffLineGutter(path, "old", row.oldLine, row.type, oldComments)
+        : `<span data-repo-pull-diff-gutter class="select-none px-2 text-right font-mono ${diffGutterClass(row.type)}">${row.oldLine ?? ""}</span>`;
+      const newGutter = reviewable
+        ? renderDiffLineGutter(path, "new", row.newLine, row.type, newComments, "border-r border-border/60")
+        : `<span data-repo-pull-diff-gutter class="select-none border-r border-border/60 px-2 text-right font-mono ${diffGutterClass(row.type)}">${row.newLine ?? ""}</span>`;
+      return `<div data-repo-pull-diff-row class="${diffRowClass(row.type)}">
+        <div data-repo-pull-diff-grid="unified" class="grid grid-cols-[3.5rem_3.5rem_1.25rem_minmax(0,1fr)]">
+          ${oldGutter}
+          ${newGutter}
+          ${diffRowSign(row.type)}
+          ${diffCodeCell(row.text)}
+        </div>
+        <div data-repo-pull-inline-slot></div>
+        ${renderPullInlineThread(path, "old", row.oldLine, oldComments)}
+        ${renderPullInlineThread(path, "new", row.newLine, newComments)}
+      </div>`;
+    }).join("");
+  }
+
+  // Side-by-side needs the deletions of a hunk paired against its additions, so
+  // buffer each run and flush it as aligned rows the moment context resumes —
+  // the same pairing the desktop split view performs.
+  function pairDiffRows(rows) {
+    const paired = [];
+    let dels = [];
+    let adds = [];
+    const flush = () => {
+      const height = Math.max(dels.length, adds.length);
+      for (let index = 0; index < height; index += 1) {
+        paired.push({ type: "pair", old: dels[index] || null, new: adds[index] || null });
+      }
+      dels = [];
+      adds = [];
+    };
+    rows.forEach((row) => {
+      if (row.type === "del") { dels.push(row); return; }
+      if (row.type === "add") { adds.push(row); return; }
+      flush();
+      if (row.type === "ctx") paired.push({ type: "pair", old: row, new: row });
+      else paired.push(row);
+    });
+    flush();
+    return paired;
+  }
+
+  function renderDiffFileRowsSplit(rows, options = {}) {
+    const path = options.path || "";
+    const reviewable = Boolean(options.reviewable && path);
+    const commentGroups = reviewable ? groupPullInlineComments(path) : new Map();
+    return pairDiffRows(rows).map((row) => {
+      if (row.type !== "pair") {
+        return `<div class="grid grid-cols-[minmax(0,1fr)] ${diffRowClass(row.type)}">${diffCodeCell(row.text, "px-3")}</div>`;
+      }
+      const side = (entry, kind) => {
+        const rule = kind === "add" ? "border-l border-border/60" : "";
+        if (!entry) {
+          return `<span class="select-none bg-secondary/40 ${rule}"></span><span class="bg-secondary/20"></span>`;
+        }
+        const type = entry.type === "ctx" ? "ctx" : kind;
+        const line = kind === "del" ? entry.oldLine : entry.newLine;
+        const sideName = kind === "del" ? "old" : "new";
+        const comments = commentGroups.get(pullInlineThreadKey(path, sideName, line)) || [];
+        const gutter = reviewable
+          ? renderDiffLineGutter(path, sideName, line, type, comments, rule)
+          : `<span data-repo-pull-diff-gutter class="select-none px-2 text-right font-mono ${rule} ${diffGutterClass(type)}">${line ?? ""}</span>`;
+        return `${gutter}${diffCodeCell(entry.text, diffRowClass(type))}`;
+      };
+      const oldLine = row.old?.oldLine;
+      const newLine = row.new?.newLine;
+      const oldComments = commentGroups.get(pullInlineThreadKey(path, "old", oldLine)) || [];
+      const newComments = commentGroups.get(pullInlineThreadKey(path, "new", newLine)) || [];
+      return `<div data-repo-pull-diff-row>
+        <div data-repo-pull-diff-grid="split" class="grid grid-cols-[3.5rem_minmax(0,1fr)_3.5rem_minmax(0,1fr)]">
+          ${side(row.old, "del")}
+          ${side(row.new, "add")}
+        </div>
+        <div data-repo-pull-inline-slot></div>
+        ${renderPullInlineThread(path, "old", oldLine, oldComments)}
+        ${renderPullInlineThread(path, "new", newLine, newComments)}
+      </div>`;
+    }).join("");
+  }
+
+  function renderDiffFileRows(rows, mode = "unified", options = {}) {
+    if (!rows.length) return '<div class="px-3 py-2 text-xs text-muted-foreground">No line changes.</div>';
+    return mode === "split"
+      ? renderDiffFileRowsSplit(rows, options)
+      : renderDiffFileRowsUnified(rows, options);
+  }
+
+  function diffFileHeaderPath(file) {
+    if (file.status === "renamed" && file.oldPath && file.newPath && file.oldPath !== file.newPath) {
+      return `${escapeHtml(file.oldPath)} &rarr; ${escapeHtml(file.newPath)}`;
+    }
+    return escapeHtml(file.newPath || file.oldPath || "file");
+  }
+
+  function diffFileStatusBadge(file) {
+    if (file.status === "added") return '<span class="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] uppercase text-emerald-300">added</span>';
+    if (file.status === "deleted") return '<span class="shrink-0 rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[10px] uppercase text-red-300">deleted</span>';
+    if (file.status === "renamed") return '<span class="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">renamed</span>';
+    return "";
+  }
+
+  function renderDiffImagePreview(image) {
+    const frame = (label, data) => `
+      <figure class="m-0 grid gap-1">
+        ${/^[A-Za-z0-9+/]+={0,2}$/.test(String(data || ""))
+          ? `<img src="data:${escapeHtml(image.mime)};base64,${data}" alt="${label}" class="max-h-64 w-full rounded border border-border bg-background object-contain" />`
+          : '<div class="flex h-32 items-center justify-center rounded border border-dashed border-border text-xs text-muted-foreground">Not present</div>'}
+        <figcaption class="text-center text-[10px] text-muted-foreground">${label}</figcaption>
+      </figure>`;
+    return `<div class="grid gap-3 border-b border-border bg-background p-3 sm:grid-cols-2">${frame("Before", image.old)}${frame("After", image.new)}</div>`;
+  }
+
+  // Large diffs used to be replaced by a "Diff hidden for speed" notice because
+  // laying out every changed file at once is what made a big PR page crawl. Each
+  // file block instead opts into `content-visibility: auto`, so the browser lays
+  // out and paints only the files inside (or near) the visible window and skips
+  // the rest until they scroll in — the whole diff is present for find-in-page
+  // and anchors, and nothing offscreen costs layout (adhoc #421). The intrinsic
+  // size keeps the scrollbar honest: ~1.25rem per rendered row. Blocks scroll
+  // with the page now rather than inside their own 34rem window, so the estimate
+  // tracks the real height instead of the old clamp, bounded only so a runaway
+  // generated file cannot claim an absurd slice of the scrollbar. It is declared
+  // height-only on purpose: the shorthand applies one length to *both* axes, so a
+  // skipped block would claim that estimate as its width and burst the column.
+  // Rows wrap rather than scroll, so a row is as many lines as its text needs
+  // at the code column's width: on a phone most lines of real code take two or
+  // three. Counting that in keeps a skipped block's placeholder close to its
+  // real height, so blocks rendering as they scroll in do not shove the page
+  // (Safari has no scroll anchoring to hide the shove) and a jump to a file
+  // lands on it (issue #722).
+  function diffFileBlockIntrinsicSize(file, wrapColumns = 0) {
+    let lines = 6;
+    if (!file.binary) {
+      lines = 0;
+      (file.rows || []).forEach((row) => {
+        const length = String(row.text || "").length;
+        lines += wrapColumns > 0 && length > wrapColumns ? Math.ceil(length / wrapColumns) : 1;
+      });
+      lines = Math.max(1, lines);
+    }
+    return `${Math.min(1200, 3 + lines * 1.25).toFixed(2)}rem`;
+  }
+
+  // How many monospace characters fit in one code column, from the viewport:
+  // the review pane's gutters, padding and (on wide screens) the explorer
+  // column come off first, and split mode halves what is left. text-xs
+  // monospace is ~7.2px a character.
+  function diffWrapColumns(mode) {
+    const viewport = Math.max(320, Number(window.innerWidth) || 1280);
+    let code = viewport >= 1024 ? viewport - 720 : viewport - 150;
+    if (mode === "split") code = code / 2 - 60;
+    return Math.max(24, Math.floor(code / 7.2));
+  }
+
+  // Side-by-side needs room for two code columns; on a phone it leaves each
+  // side a dozen characters. The saved preference is kept for wide screens and
+  // the narrow layout always reads unified (the toggle is hidden there too).
+  const PULL_DIFF_NARROW_QUERY = "(max-width: 767px)";
+
+  function effectivePullDiffMode(mode) {
+    if (mode !== "split") return "unified";
+    return window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.matches ? "unified" : "split";
+  }
+
+  function renderDiffFileBlock(file, image, viewed = new Set(), mode = "unified", reviewable = false, wrapColumns = 0) {
+    const path = file.newPath || file.oldPath || "file";
+    const isViewed = viewed.has(path);
+    // `content-visibility: auto` implies paint containment, which makes the block
+    // its own sticky boundary: the header rides along while its file is on screen
+    // and is pushed off by the next one, exactly like the GitHub review pane.
+    return `
+      <div data-repo-pull-diff-file="${escapeHtml(path)}" data-viewed="${isViewed ? "true" : "false"}" data-collapsed="${isViewed ? "true" : "false"}" class="scroll-mt-3 rounded-lg border ${isViewed ? "border-border" : "border-border"}" style="content-visibility:auto;contain-intrinsic-height:auto ${diffFileBlockIntrinsicSize(file, wrapColumns)}">
+        <div class="sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-lg border-b border-border bg-secondary px-2 py-2">
+          <span class="inline-flex min-w-0 flex-1 items-center gap-2">
+            <button type="button" data-repo-pull-diff-collapse="${escapeHtml(path)}" aria-expanded="${isViewed ? "false" : "true"}" title="Collapse or expand this file" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"><span data-repo-pull-diff-collapse-icon class="inline-flex"><i data-lucide="${isViewed ? "chevron-right" : "chevron-down"}" class="h-3.5 w-3.5"></i></span></button>
+            <span class="min-w-0 truncate font-mono text-xs font-medium text-foreground" title="${escapeHtml(path)}">${diffFileHeaderPath(file)}</span>
+            ${diffFileStatusBadge(file)}
+          </span>
+          <span class="inline-flex shrink-0 items-center gap-2.5">
+            <span class="font-mono text-[10px] tabular-nums"><span class="text-primary">+${formatCount(file.adds)}</span><span class="ml-1 text-destructive">-${formatCount(file.dels)}</span></span>
+            ${renderDiffStatBar(file.adds, file.dels)}
+            <button type="button" data-repo-pull-viewed="${escapeHtml(path)}" aria-pressed="${isViewed ? "true" : "false"}" class="inline-flex h-7 items-center gap-1.5 rounded-md border ${isViewed ? "border-border" : "border-border"} bg-background px-2 text-[10px] font-semibold ${isViewed ? "text-foreground" : "text-muted-foreground"} hover:bg-secondary"><span data-repo-pull-viewed-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : "circle"}" class="h-3.5 w-3.5"></i></span>Viewed</button>
+          </span>
+        </div>
+        <div data-repo-pull-diff-body class="${isViewed ? "hidden " : ""}overflow-x-auto rounded-b-lg">
+          ${image ? renderDiffImagePreview(image) : ""}
+          ${reviewable ? renderPullOutdatedThreads(path, groupPullInlineComments(path).get(pullOutdatedThreadKey(path))) : ""}
+          ${file.binary
+            ? (image ? "" : '<div class="px-3 py-3 text-xs text-muted-foreground">Binary file not shown.</div>')
+            : `<div class="text-xs leading-5">${renderDiffFileRows(file.rows, mode, { path, reviewable })}</div>`}
+        </div>
+      </div>`;
+  }
+
+  // A two-button segmented control; the pressed half carries the surface colour
+  // so the current mode reads at a glance without a separate label.
+  function pullToolbarToggle(attribute, current, entries, label) {
+    const buttons = entries.map(([value, icon, text]) => {
+      const active = current === value;
+      return `<button type="button" ${attribute}="${value}" aria-pressed="${active ? "true" : "false"}" class="inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] font-semibold transition-colors ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60"}"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${text}</button>`;
+    }).join('<span class="w-px bg-border"></span>');
+    return `<span role="group" aria-label="${label}" class="inline-flex overflow-hidden rounded-md border border-border bg-background">${buttons}</span>`;
+  }
+
+  function pullReviewContextKey(repo, number) {
+    return `${String(repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}#${Number(number) || 0}`;
+  }
+
+  function renderPullReviewBatchBar() {
+    const drafts = currentPullReviewDrafts();
+    if (!drafts.length) return "";
+    return `<div class="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+      <span class="inline-flex items-center gap-2 text-xs text-foreground"><i data-lucide="messages-square" class="h-3.5 w-3.5 text-amber-400"></i><strong>${formatCount(drafts.length)} draft ${drafts.length === 1 ? "comment" : "comments"}</strong><span data-repo-pull-review-batch-hint class="text-muted-foreground">Review the marked lines or submit them together.</span></span>
+      <span class="inline-flex items-center gap-2">
+        <button type="button" data-repo-pull-review-batch-discard class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Discard</button>
+        <button type="button" data-repo-pull-review-batch-submit class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-3.5 w-3.5"></i>Submit review (${formatCount(drafts.length)})</button>
+      </span>
+    </div>`;
+  }
+
+  function updatePullReviewBatchBar() {
+    const holder = document.querySelector("[data-repo-pull-review-batch]");
+    if (!holder) return;
+    holder.innerHTML = renderPullReviewBatchBar();
+    window.lucide?.createIcons();
+  }
+
+  function renderPullInlineComposer(selection) {
+    const start = Math.min(selection.startLine, selection.endLine);
+    const end = Math.max(selection.startLine, selection.endLine);
+    const range = start === end ? `line ${start}` : `lines ${start}-${end}`;
+    if (!state.session?.nodeName) {
+      return `<div data-repo-pull-inline-composer class="border-y border-border/30 bg-primary/5 px-3 py-3 sm:pl-4">
+        <div class="rounded-md border border-border/40 bg-background p-3 text-xs text-muted-foreground"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-semibold text-accent hover:underline">Log in</a> to comment on ${escapeHtml(selection.path)} ${range}.</div>
+      </div>`;
+    }
+    return `<form data-repo-pull-inline-composer data-repo-pull-inline-comment-form data-path="${escapeHtml(selection.path)}" data-side="${selection.side}" data-line-start="${start}" data-line-end="${end}" class="grid gap-3 border-y border-border/30 bg-primary/5 px-3 py-3 sm:pl-4">
+      <div class="rounded-md border border-border/40 bg-background p-3 shadow-sm">
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <span class="inline-flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="message-square-plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Comment on ${escapeHtml(selection.path)} · ${selection.side} ${range}</span>
+          <button type="button" data-repo-pull-inline-cancel aria-label="Cancel inline comment" class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>
+        </div>
+        <textarea data-repo-pull-inline-body rows="4" autofocus placeholder="Leave feedback for the agent. Markdown is supported." class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent"></textarea>
+        <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <span data-repo-pull-inline-hint class="text-[11px] text-muted-foreground">Send this comment now or add it to a review batch.</span>
+          <span class="inline-flex flex-wrap items-center gap-2">
+            <button type="submit" data-repo-pull-inline-action="batch" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-semibold text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="list-plus" class="h-3.5 w-3.5"></i>Add to review</button>
+            <button type="submit" data-repo-pull-inline-action="now" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-3.5 w-3.5"></i>Comment now</button>
+          </span>
+        </div>
+      </div>
+    </form>`;
+  }
+
+  function pullInlineSelectionFromForm(form) {
+    return {
+      path: form.dataset.path || "",
+      side: form.dataset.side === "old" ? "old" : "new",
+      startLine: Number(form.dataset.lineStart || 0),
+      endLine: Number(form.dataset.lineEnd || 0),
+    };
+  }
+
+  function pullInlineEventFields(selection, body) {
+    const start = Math.min(selection.startLine, selection.endLine);
+    const end = Math.max(selection.startLine, selection.endLine);
+    const fields = start === end
+      ? { type: "line-comment", path: selection.path, side: selection.side, line: start, body }
+      : { type: "thread-comment", path: selection.path, side: selection.side, lineStart: start, lineEnd: end, body };
+    // Pin the comment to the diff the reviewer is looking at: the patchset on
+    // screen and the exact text of the selected lines (both signed).
+    const patchset = pullCurrentPatchsetId();
+    const anchorLines = pullAnchorLinesFor(selection.path, selection.side, start, end);
+    if (patchset) fields.patchset = patchset;
+    if (anchorLines) fields.anchorLines = anchorLines;
+    return fields;
+  }
+
+  function paintPullDiffSelection() {
+    const selection = state.repoPullDiffSelection;
+    document.querySelectorAll("[data-repo-pull-diff-line]").forEach((button) => {
+      const line = Number(button.dataset.line || 0);
+      const selected = Boolean(selection)
+        && button.dataset.path === selection.path
+        && button.dataset.side === selection.side
+        && line >= Math.min(selection.startLine, selection.endLine)
+        && line <= Math.max(selection.startLine, selection.endLine);
+      button.dataset.selected = selected ? "true" : "false";
+      button.closest("span")?.classList.toggle("bg-sky-500/10", selected);
+      button.closest("span")?.classList.toggle("text-foreground", selected);
+    });
+  }
+
+  function beginPullDiffSelection(button, pointerId = null) {
+    const line = Number(button?.dataset.line || 0);
+    const path = button?.dataset.path || "";
+    const side = button?.dataset.side === "old" ? "old" : "new";
+    if (!line || !path) return false;
+    document.querySelectorAll("[data-repo-pull-inline-composer]").forEach((composer) => composer.remove());
+    state.repoPullDiffSelection = {
+      path, side, startLine: line, endLine: line, pointerId,
+      block: button.closest("[data-repo-pull-diff-file]"),
+    };
+    paintPullDiffSelection();
+    return true;
+  }
+
+  function extendPullDiffSelection(button) {
+    const selection = state.repoPullDiffSelection;
+    const line = Number(button?.dataset.line || 0);
+    if (!selection || !line || button.dataset.path !== selection.path
+        || button.dataset.side !== selection.side) return;
+    selection.endLine = line;
+    paintPullDiffSelection();
+  }
+
+  function finishPullDiffSelection(options = {}) {
+    const selection = state.repoPullDiffSelection;
+    if (!selection) return;
+    const bottom = Math.max(selection.startLine, selection.endLine);
+    const buttons = Array.from(selection.block?.querySelectorAll("[data-repo-pull-diff-line]") || []);
+    const anchor = buttons.find((button) =>
+      button.dataset.path === selection.path
+      && button.dataset.side === selection.side
+      && Number(button.dataset.line) === bottom);
+    const slot = anchor?.closest("[data-repo-pull-diff-row]")
+      ?.querySelector("[data-repo-pull-inline-slot]");
+    if (!slot) {
+      clearPullDiffSelection();
+      return;
+    }
+    document.querySelectorAll("[data-repo-pull-inline-composer]").forEach((composer) => composer.remove());
+    slot.innerHTML = renderPullInlineComposer(selection);
+    window.lucide?.createIcons();
+    const input = slot.querySelector("[data-repo-pull-inline-body]");
+    if (input && options.draft) input.value = options.draft;
+    if (options.touch) {
+      // Focusing would raise the on-screen keyboard on every tap, including the
+      // ones that only move the range; bring the composer into view and let
+      // the reader tap into it when they are ready to type.
+      const hint = slot.querySelector("[data-repo-pull-inline-hint]");
+      if (hint) hint.textContent = "Tap another line number to extend the range.";
+      window.requestAnimationFrame(() => slot.firstElementChild?.scrollIntoView({ block: "nearest" }));
+      return;
+    }
+    window.setTimeout(() => input?.focus(), 0);
+  }
+
+  // Touch has no hover-drag: a tap on a line number selects that line, a tap on
+  // another line number on the same side of the same file stretches the range
+  // to it (keeping whatever was typed), and a tap on the lone selected line
+  // closes the composer again.
+  function tapPullDiffLine(button) {
+    const selection = state.repoPullDiffSelection;
+    const line = Number(button?.dataset.line || 0);
+    const composer = document.querySelector("[data-repo-pull-inline-composer]");
+    if (selection && composer && line
+        && button.dataset.path === selection.path
+        && button.dataset.side === selection.side) {
+      if (selection.startLine === line && selection.endLine === line) {
+        clearPullDiffSelection();
+        composer.remove();
+        return;
+      }
+      const draft = composer.querySelector("[data-repo-pull-inline-body]")?.value || "";
+      selection.endLine = line;
+      paintPullDiffSelection();
+      finishPullDiffSelection({ touch: true, draft });
+      return;
+    }
+    if (beginPullDiffSelection(button)) finishPullDiffSelection({ touch: true });
+  }
+
+  function clearPullDiffSelection() {
+    state.repoPullDiffSelection = null;
+    document.querySelectorAll("[data-repo-pull-diff-line][data-selected='true']").forEach((button) => {
+      button.dataset.selected = "false";
+      button.closest("span")?.classList.remove("bg-sky-500/10", "text-foreground");
+    });
+  }
+
+  function refreshPullConversationProjection() {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "pulls") return;
+    const parsed = detail.parsed;
+    const conversation = parsed.pullConversation || [];
+    parsed.pullTimeline = buildRepoPullTimeline(
+      parsed.values || {}, conversation, parsed.pullCommits || [], parsed.pullAgents || [],
+    );
+    const list = document.querySelector("[data-repo-pull-conversation]");
+    if (list) {
+      list.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
+      list.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
+    }
+    const count = document.querySelector("[data-repo-pull-timeline-count]");
+    if (count) count.textContent = formatCount(parsed.pullTimeline.length);
+  }
+
+  function appendPendingPullInlineComment(event, refresh = true) {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "pulls") return;
+    const pending = { ...event, pending: true };
+    detail.parsed.pullConversation = [...(detail.parsed.pullConversation || []), pending];
+    const anchor = pullInlineCommentAnchor(pending);
+    state.repoPullInlineOpenThreads.add(
+      pullInlineThreadKey(pending.path || "", anchor.side, anchor.lineEnd));
+    if (refresh) {
+      refreshPullConversationProjection();
+      refreshRepoPullDiff();
+    }
+  }
+
+  async function submitPullInlineEvent(repo, number, selection, body) {
+    const fields = pullInlineEventFields(selection, body);
+    const result = await submitWebPullEvent(repo, number, fields.type, fields);
+    return result?.event || fields;
+  }
+
+  function queuePullInlineComment(repo, number, selection, body) {
+    const fields = pullInlineEventFields(selection, body);
+    const draft = {
+      ...fields,
+      id: `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      repoKey: pullReviewContextKey(repo, number).split("#")[0],
+      number,
+      author: "",
+      authorName: state.session?.nodeName || "you",
+      draft: true,
+    };
+    state.repoPullReviewDrafts.push(draft);
+    const anchor = pullInlineCommentAnchor(draft);
+    state.repoPullInlineOpenThreads.add(
+      pullInlineThreadKey(draft.path, anchor.side, anchor.lineEnd));
+    clearPullDiffSelection();
+    refreshRepoPullDiff();
+    updatePullReviewBatchBar();
+  }
+
+  async function submitPullInlineCommentForm(repo, form, action) {
+    const detail = state.repoRecordDetail;
+    const number = Number(detail?.number || 0);
+    const selection = pullInlineSelectionFromForm(form);
+    const input = form.querySelector("[data-repo-pull-inline-body]");
+    const hint = form.querySelector("[data-repo-pull-inline-hint]");
+    const body = String(input?.value || "").trim();
+    if (!number || !selection.path || !selection.startLine) return;
+    if (!body) {
+      if (hint) {
+        hint.textContent = "Write a comment before continuing.";
+        hint.className = "text-[11px] text-destructive";
+      }
+      input?.focus();
+      return;
+    }
+    if (action === "batch") {
+      queuePullInlineComment(repo, number, selection, body);
+      return;
+    }
+    const buttons = form.querySelectorAll("button");
+    buttons.forEach((button) => { button.disabled = true; });
+    if (hint) hint.textContent = "Signing and sending this comment…";
+    try {
+      const event = await submitPullInlineEvent(repo, number, selection, body);
+      clearPullDiffSelection();
+      appendPendingPullInlineComment(event);
+    } catch (error) {
+      buttons.forEach((button) => { button.disabled = false; });
+      if (hint) {
+        hint.textContent = String(error?.message || "") === "inbox_full"
+          ? "The maintainer's inbox is full. Try again later."
+          : "Could not send this comment. Please try again.";
+        hint.className = "text-[11px] text-destructive";
+      }
+    }
+  }
+
+  async function submitPullReviewBatch(repo) {
+    const detail = state.repoRecordDetail;
+    const number = Number(detail?.number || 0);
+    const drafts = [...currentPullReviewDrafts()];
+    if (!repo || !number || !drafts.length) return;
+    const holder = document.querySelector("[data-repo-pull-review-batch]");
+    const hint = holder?.querySelector("[data-repo-pull-review-batch-hint]");
+    holder?.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    if (hint) hint.textContent = `Signing and sending ${drafts.length} comments…`;
+    let sent = 0;
+    try {
+      for (const draft of drafts) {
+        const selection = {
+          path: draft.path, side: draft.side,
+          startLine: draft.lineStart || draft.line,
+          endLine: draft.lineEnd || draft.line,
+        };
+        const event = await submitPullInlineEvent(repo, number, selection, draft.body);
+        state.repoPullReviewDrafts = state.repoPullReviewDrafts.filter((item) => item.id !== draft.id);
+        appendPendingPullInlineComment(event, false);
+        sent += 1;
+      }
+      refreshPullConversationProjection();
+      refreshRepoPullDiff();
+      updatePullReviewBatchBar();
+    } catch (_) {
+      refreshPullConversationProjection();
+      refreshRepoPullDiff();
+      updatePullReviewBatchBar();
+      const nextHint = document.querySelector("[data-repo-pull-review-batch-hint]");
+      if (nextHint) {
+        nextHint.textContent = `${sent} sent; the remaining ${drafts.length - sent} could not be submitted. Try again.`;
+        nextHint.className = "text-destructive";
+      }
+    }
+  }
+
+  function discardPullReviewDraft(id = "") {
+    const currentIds = new Set(currentPullReviewDrafts().map((draft) => draft.id));
+    state.repoPullReviewDrafts = (state.repoPullReviewDrafts || []).filter((draft) =>
+      !currentIds.has(draft.id) || (id && draft.id !== id));
+    refreshRepoPullDiff();
+    updatePullReviewBatchBar();
+  }
+
+  // ``options.reviewable`` (default true) draws the line-number gutters that
+  // start an inline review comment. A branch comparison passes false: it is
+  // the same pane, but there is no pull request for a comment to belong to.
+  function renderRepoPullFilesSection(pullPatch, viewed, options = {}) {
+    const startedAt = interfaceNow();
+    const reviewable = options.reviewable !== false;
+    const files = pullPatch.files || [];
+    const layout = pullLayoutPrefs();
+    const adds = files.reduce((sum, file) => sum + (file.adds || 0), 0);
+    const dels = files.reduce((sum, file) => sum + (file.dels || 0), 0);
+    const html = `
+        <section data-repo-pull-files class="rounded-lg border border-border">
+          <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-t-lg border-b border-border bg-secondary/50 px-3 py-2.5">
+            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground">
+              <i data-lucide="files" class="h-3.5 w-3.5 text-muted-foreground"></i>${formatCount(files.length)} files changed
+              <span class="font-mono text-[10px] tabular-nums"><span class="text-primary">+${formatCount(adds)}</span> <span class="text-destructive">-${formatCount(dels)}</span></span>
+            </span>
+            <span class="flex flex-wrap items-center gap-2">
+              <span class="relative inline-flex items-center">
+                <i data-lucide="search" class="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground"></i>
+                <input data-repo-pull-file-filter type="search" autocomplete="off" placeholder="Filter changed files" aria-label="Filter changed files" class="h-7 w-48 rounded-md border border-border bg-background pl-7 pr-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-accent" />
+              </span>
+              ${pullToolbarToggle("data-repo-pull-explorer-mode", layout.explorer, [
+                ["tree", "folder-tree", "Tree"],
+                ["list", "list", "List"],
+              ], "Changed file explorer layout")}
+              <span data-repo-pull-diff-mode-group class="inline-flex">${pullToolbarToggle("data-repo-pull-diff-mode", layout.diff, [
+                ["unified", "align-justify", "Unified"],
+                ["split", "columns-2", "Split"],
+              ], "Diff layout")}</span>
+              <span data-repo-pull-viewed-summary class="font-mono text-[10px] text-muted-foreground">${formatCount(viewed.size)} of ${formatCount(files.length)} viewed</span>
+            </span>
+          </div>
+          <div data-repo-pull-review-batch>${renderPullReviewBatchBar()}</div>
+          <div class="grid min-w-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
+            <nav data-repo-pull-file-list aria-label="Changed files" class="max-h-72 overflow-auto rounded-bl-lg border-b border-border bg-secondary/20 lg:sticky lg:top-3 lg:max-h-[80vh] lg:self-start lg:border-b-0 lg:border-r">${renderRepoPullFiles(files, viewed, { mode: layout.explorer })}</nav>
+            <div data-repo-pull-diff-list data-diff-mode="${effectivePullDiffMode(layout.diff)}" class="min-w-0">${reviewable
+              ? renderRepoPullPatch(pullPatch.patch, viewed, effectivePullDiffMode(layout.diff))
+              : renderRepoComparePatch(pullPatch.patch, viewed, effectivePullDiffMode(layout.diff))}</div>
+          </div>
+        </section>`;
+    recordInterfaceMetric("diff", startedAt);
+    return html;
+  }
+
+  // The review surface on the page and the data behind it. An open pull's
+  // Files changed pane comes first; otherwise the branch comparison
+  // (openRepoCompare) that painted the same pane, which is not reviewable -
+  // its viewed marks and layout toggles work, its line gutters do not open a
+  // comment composer.
+  function repoPullFilesContext() {
+    const section = document.querySelector("[data-repo-pull-files]");
+    if (!section) return null;
+    const detail = state.repoRecordDetail;
+    if (detail?.kind === "pulls") {
+      const repo = detail.repo || state.selectedRepo;
+      const metadataCommit = detail.parsed?.pullMetadataCommit || "";
+      return {
+        section,
+        reviewable: true,
+        files: detail.parsed?.pullPatch?.files || [],
+        patch: detail.parsed?.pullPatch?.patch || "",
+        viewed: loadRepoPullViewed(repo, detail.number, metadataCommit),
+        saveViewed: (viewed) => saveRepoPullViewed(repo, detail.number, metadataCommit, viewed),
+      };
+    }
+    const compare = state.repoCompare;
+    if (compare?.result && section.closest("[data-repo-compare]")) {
+      const repo = state.selectedRepo;
+      return {
+        section,
+        reviewable: false,
+        files: compare.result.files || [],
+        patch: compare.result.patch || "",
+        viewed: loadRepoCompareViewed(repo, compare),
+        saveViewed: (viewed) => saveRepoCompareViewed(repo, compare, viewed),
+      };
+    }
+    return null;
+  }
+
+  function refreshRepoPullExplorer() {
+    const context = repoPullFilesContext();
+    if (!context) return;
+    const nav = context.section.querySelector("[data-repo-pull-file-list]");
+    if (!nav) return;
+    const filter = context.section.querySelector("[data-repo-pull-file-filter]")?.value || "";
+    nav.innerHTML = renderRepoPullFiles(context.files, context.viewed, {
+      mode: pullLayoutPrefs().explorer,
+      filter,
+    });
+    window.lucide?.createIcons();
+  }
+
+  function setRepoPullExplorerMode(mode) {
+    const next = mode === "list" ? "list" : "tree";
+    setPullLayoutPref("explorer", next);
+    const section = document.querySelector("[data-repo-pull-files]");
+    section?.querySelectorAll("[data-repo-pull-explorer-mode]").forEach((button) => {
+      setPullToolbarToggleState(button, button.dataset.repoPullExplorerMode === next);
+    });
+    refreshRepoPullExplorer();
+  }
+
+  function setRepoPullDiffMode(mode) {
+    const next = mode === "split" ? "split" : "unified";
+    setPullLayoutPref("diff", next);
+    clearPullDiffSelection();
+    const context = repoPullFilesContext();
+    if (!context) return;
+    context.section.querySelectorAll("[data-repo-pull-diff-mode]").forEach((button) => {
+      setPullToolbarToggleState(button, button.dataset.repoPullDiffMode === next);
+    });
+    refreshRepoPullDiff();
+  }
+
+  function refreshRepoPullDiff() {
+    const context = repoPullFilesContext();
+    if (!context) return;
+    const list = context.section.querySelector("[data-repo-pull-diff-list]");
+    if (list) {
+      const mode = effectivePullDiffMode(pullLayoutPrefs().diff);
+      list.innerHTML = context.reviewable
+        ? renderRepoPullPatch(context.patch, context.viewed, mode)
+        : renderRepoComparePatch(context.patch, context.viewed, mode);
+      list.dataset.diffMode = mode;
+    }
+    updatePullReviewBatchBar();
+    window.lucide?.createIcons();
+  }
+
+  function setPullToolbarToggleState(button, active) {
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.classList.toggle("bg-secondary", active);
+    button.classList.toggle("text-foreground", active);
+    button.classList.toggle("text-muted-foreground", !active);
+    button.classList.toggle("hover:bg-secondary/60", !active);
+  }
+
+  // Clicking a file in the explorer jumps the diff pane to it; scrolling the diff
+  // pane pushes the highlight back the other way, so the two panes never disagree
+  // about which file is being read.
+  function setRepoPullActiveFile(path, options = {}) {
+    const section = document.querySelector("[data-repo-pull-files]");
+    if (!section) return;
+    let active = null;
+    section.querySelectorAll("[data-repo-pull-file]").forEach((button) => {
+      const current = button.dataset.repoPullFile === path;
+      if (current) active = button;
+      button.classList.toggle("bg-secondary", current);
+      if (current) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+    });
+    if (active && options.revealRow) {
+      // A collapsed parent directory would otherwise hide the active row.
+      let parent = active.parentElement?.closest("details");
+      while (parent) {
+        parent.open = true;
+        parent = parent.parentElement?.closest("details");
+      }
+      // Nudge the explorer's own scrollbar rather than calling scrollIntoView,
+      // which would also scroll the page and fight the smooth jump that follows
+      // a click on a file.
+      const nav = active.closest("[data-repo-pull-file-list]");
+      if (nav) {
+        const navBox = nav.getBoundingClientRect();
+        const rowBox = active.getBoundingClientRect();
+        if (rowBox.top < navBox.top) nav.scrollTop -= navBox.top - rowBox.top;
+        else if (rowBox.bottom > navBox.bottom) nav.scrollTop += rowBox.bottom - navBox.bottom;
+      }
+    }
+    if (!options.revealDiff) return;
+    const target = Array.from(section.querySelectorAll("[data-repo-pull-diff-file]"))
+      .find((block) => block.dataset.repoPullDiffFile === path);
+    if (!target) return;
+    if (target.dataset.collapsed === "true") setRepoPullDiffBlockCollapsed(target, false);
+    scrollRepoPullDiffBlockIntoView(target);
+  }
+
+  // A smooth scroll aims at where the block sat when it started, but the files
+  // it passes are placeholders sized by estimate (content-visibility) and grow
+  // or shrink to their real height as they render on the way, so the scroll
+  // could finish thousands of pixels from the file that was tapped. Once the
+  // motion settles, snap to the block for real, and repeat until the snap no
+  // longer moves it. Any touch, wheel or key from the reader hands the scroll
+  // back to them (see the listeners beside the scroll-spy).
+  function scrollRepoPullDiffBlockIntoView(target) {
+    const jump = { target };
+    state.repoPullDiffJump = jump;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    const startedAt = interfaceNow();
+    let lastTop = Number.NaN;
+    let still = 0;
+    let snaps = 0;
+    const settle = () => {
+      if (state.repoPullDiffJump !== jump) return;
+      if (!target.isConnected) {
+        // The diff was re-rendered under the jump; stop, and give the
+        // scroll-spy back.
+        state.repoPullDiffJump = null;
+        return;
+      }
+      const top = target.getBoundingClientRect().top;
+      still = Math.abs(top - lastTop) < 1 ? still + 1 : 0;
+      lastTop = top;
+      if (still < 4 && interfaceNow() - startedAt < 2500) {
+        window.requestAnimationFrame(settle);
+        return;
+      }
+      target.scrollIntoView({ block: "start" });
+      const after = target.getBoundingClientRect().top;
+      if (Math.abs(after - top) >= 1 && snaps < 6) {
+        snaps += 1;
+        still = 0;
+        lastTop = after;
+        window.requestAnimationFrame(settle);
+        return;
+      }
+      state.repoPullDiffJump = null;
+    };
+    window.requestAnimationFrame(settle);
+  }
+
+  function cancelRepoPullDiffJump() {
+    state.repoPullDiffJump = null;
+  }
+
+  // Which file the reader is actually looking at: the last diff block whose
+  // header has reached the top of the scrolling pane. Blocks are in page order,
+  // so a binary search reads a handful of rects per frame instead of one per
+  // file, and the blocks come from their container's children rather than a
+  // selector walk over every diff row.
+  function syncRepoPullActiveFileFromScroll() {
+    if (state.repoPullDiffJump) return;
+    const section = document.querySelector("[data-repo-pull-files]");
+    if (!section || !section.offsetParent) return;
+    const blocks = section.querySelector("[data-repo-pull-diff-blocks]")?.children;
+    if (!blocks?.length) return;
+    const edge = (section.closest("[data-view]")?.getBoundingClientRect().top || 0) + 24;
+    let low = 0;
+    let high = blocks.length - 1;
+    let index = 0;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      if (blocks[middle].getBoundingClientRect().top <= edge) {
+        index = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
+    }
+    const current = blocks[index];
+    const path = current.dataset.repoPullDiffFile || "";
+    if (section.dataset.activeFile === path) return;
+    section.dataset.activeFile = path;
+    setRepoPullActiveFile(path, { revealRow: true });
+  }
+
+  function renderDiffFiles(parsed, imageDiffs, viewed = new Set(), mode = "unified", reviewable = false) {
+    const { files } = parsed;
+    if (!files.length) return '<div class="px-4 py-3 text-sm text-muted-foreground">No changes to display.</div>';
+    const images = new Map();
+    (Array.isArray(imageDiffs) ? imageDiffs : []).forEach((item) => {
+      if (item?.path && item?.mime) images.set(item.path, item);
+    });
+    // An explicit minmax(0,1fr) column: `break-words` does not lower a long code
+    // line's min-content width, so an implicit auto track would let one file's
+    // longest line push every block past the edge of the review pane.
+    const wrapColumns = diffWrapColumns(mode);
+    return `<div data-repo-pull-diff-blocks class="grid grid-cols-[minmax(0,1fr)] gap-3 p-3">${files.map((file) => renderDiffFileBlock(file, images.get(file.newPath) || images.get(file.oldPath), viewed, mode, reviewable, wrapColumns)).join("")}</div>`;
+  }
+
+  function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified") {
+    if (!String(patch || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">The diff is unavailable from the current mirror.</div>';
+    return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), [], viewed, mode, true)}</div>`;
+  }
+
+  // The branch comparison's diff: the pull review's file blocks (viewed
+  // folds, unified or split rows, stat bars) without the review gutters.
+  function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified") {
+    if (!String(patch || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this comparison.</div>';
+    return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), [], viewed, mode, false)}</div>`;
+  }
+
+  async function loadRepoPullPatch(repo, number, metadataCommit = "", values = {}) {
+    if (String(values?.status || "open").toLowerCase() !== "open") {
+      return { patch: "", files: [], unavailable: true };
+    }
+    const patchPath = `.forkmesh/pulls/${number}/changes.patch`;
+    try {
+      const commit = immutableGitCommit(metadataCommit)
+        || await resolveRepoPullMetadataCommit(repo);
+      const blob = await fetchRepoJson(repoLiveUrl(repo, "blob", {
+        path: patchPath,
+        ref: commit,
+      }));
+      const patch = blobText(blob);
+      if (patch.trim()) return { patch, files: parsePatchStats(patch), unavailable: false };
+    } catch (_) {}
+
+    // Current branch-backed pull requests intentionally do not commit a large
+    // changes.patch to the collaboration branch. Reconstruct their immutable
+    // review diff from the creation OIDs through the mirror's bounded compare
+    // endpoint, the same endpoint used while opening a web pull request.
+    const base = immutableGitCommit(values.creationBaseOid);
+    const head = immutableGitCommit(values.creationHeadOid);
+    if (!base || !head) return { patch: "", files: [], unavailable: true };
+    try {
+      const comparison = await fetchRepoJson(repoLiveUrl(repo, "compare", {
+        base,
+        head,
+        ref: "",
+      }));
+      const patch = String(comparison?.patch || "");
+      return { patch, files: parsePatchStats(patch), unavailable: false };
+    } catch (_) {
+      return { patch: "", files: [], unavailable: true };
+    }
+  }
+
+  // A pull's conversation is an append-only, signed event log stored as
+  // .forkmesh/pulls/<N>/NNNN-<type>.md files alongside pull.md (see PullStore.h on the
+  // desktop client). Types: comment, review, line-comment, thread-comment,
+  // thread-reply, thread-state, suggestion-state.
+  function pullEventTypeMeta(ev) {
+    const neutral = "border-border bg-secondary/60 text-muted-foreground";
+    if (ev.type === "open") return { label: "opened", tone: neutral };
+    if (ev.type === "commit") return { label: "commit", tone: "border-border bg-secondary/60 text-muted-foreground" };
+    if (ev.type === "agent") {
+      const status = String(ev.status || "active").replace(/_/g, " ");
+      const active = pullAgentStatusIsActive(ev.status);
+      return {
+        label: `agent ${status}`,
+        tone: active
+          ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+          : ev.status === "completed"
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+            : "border-border bg-secondary/60 text-muted-foreground",
+      };
+    }
+    if (ev.type === "review") {
+      if (ev.state === "approved") return { label: "approved", tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" };
+      if (ev.state === "changes_requested") return { label: "requested changes", tone: "border-red-500/30 bg-red-500/10 text-red-300" };
+      return { label: "reviewed", tone: neutral };
+    }
+    if (ev.type === "line-comment") return { label: "line comment", tone: neutral };
+    if (ev.type === "thread-comment") return { label: "review thread", tone: neutral };
+    if (ev.type === "thread-reply") return { label: "reply", tone: neutral };
+    if (ev.type === "thread-state") return { label: `thread ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
+    if (ev.type === "suggestion-state") return { label: `suggestion ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
+    return { label: "comment", tone: neutral };
+  }
+
+  // Approve/request-changes/comment state per reviewer, derived the same way
+  // the desktop's PullStore::reviewSummary() does: the *last* review event
+  // per author wins.
+  function pullReviewSummary(events) {
+    const rows = Array.isArray(events) ? events : [];
+    const byAuthor = new Map();
+    for (const ev of rows) {
+      if (ev.type !== "review" || !ev.state) continue;
+      const key = ev.author || ev.authorName || "";
+      if (!key) continue;
+      byAuthor.set(key, {
+        author: ev.author || "",
+        authorName: ev.authorName || ev.author || "unknown",
+        state: ev.state,
+      });
+    }
+    return Array.from(byAuthor.values());
+  }
+
+  function pullReviewPolicy(events, pullAuthor = "") {
+    const authorKey = String(pullAuthor || "").trim();
+    const latest = new Map();
+    for (const ev of Array.isArray(events) ? events : []) {
+      // Inbox reviews are not authoritative merge evidence until the owner
+      // node drains, validates, commits, and republishes them on the pinned
+      // pull-metadata ref.
+      if (ev?.type !== "review" || ev.pending === true) continue;
+      const key = String(ev.author || "").trim();
+      if (!key || key === authorKey) continue;
+      if (ev.state === "approved" || ev.state === "changes_requested") {
+        latest.set(key, ev.state);
+      } else {
+        latest.delete(key);
+      }
+    }
+    const approvals = Array.from(latest.values())
+      .filter((stateName) => stateName === "approved").length;
+    const blockers = Array.from(latest.values())
+      .filter((stateName) => stateName === "changes_requested").length;
+    return {
+      approvals,
+      blockers,
+      ready: approvals >= 1 && blockers === 0,
+    };
+  }
+
+  function renderPullReviewers(events, pullAuthor = "") {
+    const reviewers = pullReviewSummary(events);
+    const policy = pullReviewPolicy(events, pullAuthor);
+    const gateTone = policy.ready ? "text-emerald-400" : "text-amber-400";
+    const gate = `<span class="mb-2 flex items-center justify-between gap-2"><strong class="${gateTone}">${policy.ready ? "Review requirement met" : "Independent review required"}</strong><span>${policy.approvals} approved${policy.blockers ? ` · ${policy.blockers} blocking` : ""}</span></span>`;
+    if (!reviewers.length) return `${gate}<span>No reviews yet</span>`;
+    // sidebarSection wraps this in a <p>, so rows must stay phrasing content
+    // (span, not div) or the browser silently closes the paragraph early.
+    return gate + reviewers.map((reviewer) => {
+      const tone = reviewer.state === "approved" ? "text-emerald-400" : reviewer.state === "changes_requested" ? "text-red-400" : "text-muted-foreground";
+      const label = reviewer.state === "approved" ? "Approved" : reviewer.state === "changes_requested" ? "Requested changes" : "Commented";
+      return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}<span class="truncate font-medium text-foreground">${escapeHtml(reviewer.authorName)}</span></span><span class="shrink-0 text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span>`;
+    }).join("");
+  }
+
+  function pullEventAnchorLabel(ev) {
+    if (!ev.path) return "";
+    let label = ev.path;
+    if (ev.lineStart) {
+      const range = ev.lineEnd && ev.lineEnd !== ev.lineStart ? `${ev.lineStart}-${ev.lineEnd}` : `${ev.lineStart}`;
+      label = `${ev.path}:${range}`;
+    } else if (ev.line) {
+      label = `${ev.path}:${ev.line}`;
+    } else {
+      return label;
+    }
+    if (ev.type === "line-comment" || ev.type === "thread-comment") {
+      const placement = pullPlacementLabel(placePullInlineComment(ev));
+      if (placement) label += ` (${placement.toLowerCase()})`;
+    }
+    return label;
+  }
+
+  function renderPullConversationEvent(ev) {
+    const meta = pullEventTypeMeta(ev);
+    const anchor = pullEventAnchorLabel(ev);
+    const author = ev.authorName || ev.author || (ev.type === "agent" ? "Agent" : "unknown");
+    const date = formatRecordDate(ev.ts);
+    const body = String(ev.body || "").trim();
+    const commit = String(ev.hash || "").slice(0, 12);
+    const detail = ev.type === "commit" && commit
+      ? `<span class="font-mono text-[10px]">${escapeHtml(commit)}</span>`
+      : ev.type === "agent" && ev.branchName
+        ? `<span class="font-mono text-[10px]">${escapeHtml(ev.branchName)}</span>`
+        : "";
+    const fullDate = formatRecordDateTime(ev.ts);
+    return `
+      <div class="grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-3 border-t border-border px-4 py-3 text-sm first:border-t-0">
+        ${issueActorAvatarHtml(author, ev.author, "h-7 w-7", ev.type === "agent")}
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span class="font-medium text-foreground">${escapeHtml(author)}</span>
+            <span class="rounded-md border px-1.5 py-0.5 text-[10px] uppercase ${meta.tone}">${escapeHtml(meta.label)}</span>
+            ${detail}
+            ${anchor ? `<span class="truncate font-mono">${escapeHtml(anchor)}</span>` : ""}
+            <span>&middot;</span>
+            <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>
+          </div>
+          ${body ? `<div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function renderRepoPullConversation(events) {
+    const rows = Array.isArray(events) ? events : [];
+    if (!rows.length) return '<div class="px-4 py-3 text-sm text-muted-foreground">No conversation yet on this pull request.</div>';
+    return rows.map(renderPullConversationEvent).join("");
+  }
+
+  function pullTimestamp(value) {
+    const numeric = Number(value) || 0;
+    if (numeric) return numeric < 1000000000000 ? numeric * 1000 : numeric;
+    const parsed = Date.parse(String(value || ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  // commits.mbox is authoritative for patch-backed pulls. Branch-backed pulls
+  // deliberately omit it, so their bounded head history is used only when it
+  // reaches the immutable creation base; this prevents unrelated branch
+  // history being presented as pull activity.
+  function parsePullCommitMbox(mbox) {
+    const messages = String(mbox || "").split(/(?=^From [0-9a-f]{7,64} )/mi);
+    return messages.map((message) => {
+      const hash = (message.match(/^From ([0-9a-f]{7,64}) /mi) || [])[1] || "";
+      if (!hash) return null;
+      const header = (name) => {
+        const match = message.match(new RegExp(`^${name}:\\s*([^\\n]*(?:\\n[ \\t][^\\n]*)*)`, "mi"));
+        // mbox folds a long header across continuation lines; unfold them back
+        // onto one line rather than rendering the embedded newline.
+        return match ? match[1].replace(/\n[ \t]+/g, " ").trim() : "";
+      };
+      return {
+        id: `commit:${hash}`,
+        type: "commit",
+        hash,
+        authorName: header("From") || "unknown",
+        ts: pullTimestamp(header("Date")),
+        body: header("Subject").replace(/^\[PATCH[^\]]*\]\s*/i, "") || "Commit",
+      };
+    }).filter(Boolean);
+  }
+
+  // "changes" while no commit is readable from this mirror yet, so the header
+  // never claims a count it does not have.
+  function pullCommitPhrase(count) {
+    return count
+      ? `${escapeHtml(formatCount(count))} commit${count === 1 ? "" : "s"}`
+      : "changes";
+  }
+
+  function renderRepoPullCommits(commits) {
+    if (!commits.length) {
+      return `<div class="px-4 py-3 text-sm text-muted-foreground">No pull-specific commits are available from this mirror yet.</div>`;
+    }
+    return commits.map((commit) => `<div class="grid gap-1 px-4 py-3"><span class="text-sm font-medium text-foreground">${escapeHtml(commit.body || "Commit")}</span><span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(String(commit.hash || "").slice(0, 12))} · ${escapeHtml(commit.authorName || "unknown")}</span></div>`).join("");
+  }
+
+  function normalizePullHistoryCommit(commit) {
+    const hash = String(commit?.hash || commit?.sha || "").trim();
+    if (!hash) return null;
+    return {
+      id: `commit:${hash}`,
+      type: "commit",
+      hash,
+      authorName: String(commit.author || commit.authorName || "unknown"),
+      ts: pullTimestamp(commit.timestamp || commit.date || commit.committedAt),
+      body: String(commit.subject || commit.message || "Commit"),
+    };
+  }
+
+  // pull.md records the head as the plain branch name for same-repo pulls and
+  // as "<contributor>:<branch>" for forked ones. Only the branch segment names
+  // a ref this mirror can resolve.
+  function pullHeadBranchRef(values) {
+    const head = String(values?.head || "").trim();
+    return (head.includes(":") ? head.slice(head.lastIndexOf(":") + 1) : head).trim();
+  }
+
+  // Bounded head history, kept only when it still reaches the pull's immutable
+  // creation base; that guard is what stops an unrelated branch of the same
+  // name being presented as this pull's activity.
+  async function loadRepoPullBranchCommits(repo, ref, base) {
+    const data = await fetchRepoJson(repoLiveUrl(repo, "history", { ref }));
+    const history = (Array.isArray(data?.commits) ? data.commits : [])
+      .map(normalizePullHistoryCommit).filter(Boolean);
+    const baseIndex = history.findIndex((commit) =>
+      commit.hash.toLowerCase() === base.toLowerCase());
+    return baseIndex >= 0 ? history.slice(0, baseIndex) : [];
+  }
+
+  // /history is a bounded window (the newest 60 commits) and the guard above
+  // discards all of it when the pull's creation base falls outside that window,
+  // so a long-running branch reported no commits at all. compare() resolves the
+  // exact base..head range on the mirror and returns the whole authored series
+  // as an mbox — the same shape commits.mbox has — so the Commits tab and the
+  // "wants to merge N commits" phrase describe the real change set.
+  async function loadRepoPullCompareCommits(repo, base, head) {
+    const comparison = await fetchRepoJson(repoLiveUrl(repo, "compare", {
+      base, head, ref: "",
+    }));
+    if (immutableGitCommit(comparison?.baseOid) !== base) return [];
+    return parsePullCommitMbox(String(comparison?.commits || ""));
+  }
+
+  async function loadRepoPullCommits(repo, number, metadataCommit, values) {
+    const metadataRef = immutableGitCommit(metadataCommit)
+      || await resolveRepoPullMetadataCommit(repo);
+    try {
+      const blob = await fetchRepoJson(repoLiveUrl(repo, "blob", {
+        path: `.forkmesh/pulls/${number}/commits.mbox`, ref: metadataRef,
+      }));
+      const commits = parsePullCommitMbox(blobText(blob));
+      if (commits.length) return commits;
+    } catch (_) { /* branch-backed pulls have no mbox */ }
+
+    const base = immutableGitCommit(values?.creationBaseOid);
+    if (!base) return [];
+    // An agent working the head branch keeps pushing after the pull was
+    // opened, so the live branch tip is read first and the immutable creation
+    // head is the fallback for branches that are gone or have been rebased
+    // off the recorded base.
+    const branch = pullHeadBranchRef(values);
+    const refs = [];
+    if (branch && String(values?.status || "open").toLowerCase() === "open") {
+      refs.push(branch);
+    }
+    const head = immutableGitCommit(values?.creationHeadOid);
+    if (head) refs.push(head);
+    for (const ref of refs) {
+      // compare() first: it is exact and complete. format-patch omits merge
+      // commits, so a merged-in branch still falls back to the bounded window.
+      try {
+        const commits = await loadRepoPullCompareCommits(repo, base, ref);
+        if (commits.length) return commits;
+      } catch (_) { /* fall back to the bounded history window */ }
+      try {
+        const commits = await loadRepoPullBranchCommits(repo, ref, base);
+        if (commits.length) return commits;
+      } catch (_) { /* try the immutable creation head instead */ }
+    }
+    return [];
+  }
+
+  function pullAgentStatusIsActive(status) {
+    return ["security_pending", "queued", "running"].includes(
+      String(status || "").toLowerCase(),
+    );
+  }
+
+  // Organization sessions keep execution details under agentInfo. Flatten only
+  // the non-sensitive routing/status fields for the branch badge and pull
+  // timeline; prompts and transcripts never leave their dedicated view.
+  function repoAgentStatusSnapshot(session) {
+    const info = session?.agentInfo && typeof session.agentInfo === "object"
+      ? session.agentInfo : {};
+    return {
+      ...session,
+      status: String(info.status || session?.status || ""),
+      provider: String(info.provider || session?.provider || ""),
+      branchName: String(info.branchName || session?.branchName || ""),
+      prNumber: Number(info.prNumber || session?.prNumber || 0),
+      lastError: String(info.lastError || session?.lastError || ""),
+    };
+  }
+
+  const REPO_AGENT_ACTIVE_STATUSES = new Set(["queued", "running", "security_pending"]);
+
+  function keepRepoAgentsBeyondWindow(previous, fresh, finishedBefore) {
+    const cutoff = Number(finishedBefore) || 0;
+    if (cutoff <= 0 || !Array.isArray(previous) || !previous.length) return fresh;
+    const listed = new Set(fresh.map((session) => String(session?.id || "")));
+    const kept = previous.filter((session) => {
+      const updatedAt = Number(session?.updatedAt) || 0;
+      return !listed.has(String(session?.id || "")) &&
+        updatedAt > 0 && updatedAt <= cutoff &&
+        !REPO_AGENT_ACTIVE_STATUSES.has(String(session?.status || "").toLowerCase());
+    });
+    if (!kept.length) return fresh;
+    return [...fresh, ...kept].sort(
+      (a, b) => (Number(b?.updatedAt) || 0) - (Number(a?.updatedAt) || 0));
+  }
+
+  function pullAgentActivityEvent(session, number, headBranch) {
+    const snapshot = repoAgentStatusSnapshot(session);
+    const info = session?.agentInfo && typeof session.agentInfo === "object"
+      ? session.agentInfo : {};
+    const branchName = snapshot.branchName.trim();
+    const prNumber = snapshot.prNumber;
+    if (prNumber !== Number(number) &&
+        branchName.toLowerCase() !== String(headBranch || "").toLowerCase()) {
+      return null;
+    }
+    const status = String(snapshot.status || "unknown").toLowerCase();
+    const provider = String(snapshot.provider || "agent");
+    const error = snapshot.lastError.trim();
+    return {
+      id: `agent:${session.id || branchName}:${session.updatedAt || info.finishedAt || info.startedAt || ""}`,
+      type: "agent",
+      status,
+      authorName: provider,
+      branchName,
+      ts: Number(info.finishedAt || info.startedAt || session.updatedAt || session.createdAt || 0),
+      body: error || `Status: ${status.replace(/_/g, " ")}.`,
+    };
+  }
+
+  async function loadRepoPullAgentActivity(repo, number, values) {
+    if (!state.session?.sessionToken) return [];
+    try {
+      const payload = await orgAgentRequest("GET", orgAgentEndpoint(repo));
+      const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+      state.agentsView.agents = sessions.map(repoAgentStatusSnapshot);
+      if (state.selectedRepo && repoMatchesKey(state.selectedRepo, repoKey(repo))) {
+        updateRepoBranchControls(repo, null);
+      }
+      const events = [];
+      sessions.forEach((session) => {
+        const current = pullAgentActivityEvent(session, number, pullHeadBranchRef(values));
+        if (!current) return;
+        // The server keeps bounded agent history.  Render only its lifecycle
+        // state (not the encrypted/private prompt or transcript) so the pull
+        // timeline records queued/running/completed transitions as well as the
+        // current status.
+        const history = Array.isArray(session.history) ? session.history : [];
+        history.forEach((entry, index) => {
+          const status = String(entry?.state || "").toLowerCase();
+          if (!status) return;
+          events.push({
+            ...current,
+            id: `agent:${session.id || current.branchName}:history:${index}:${entry.at || ""}`,
+            status,
+            ts: Number(entry.at || 0),
+            body: `Status: ${status.replace(/_/g, " ")}.`,
+          });
+        });
+        events.push(current);
+      });
+      return events;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function buildRepoPullTimeline(values, conversation, commits, agents) {
+    const opener = {
+      id: "open",
+      type: "open",
+      author: values?.author || "",
+      authorName: values?.authorName || values?.author || "unknown",
+      ts: values?.ts || values?.createdAt || 0,
+      body: "",
+    };
+    return [opener, ...(commits || []), ...(conversation || []), ...(agents || [])]
+      .filter(Boolean)
+      .sort((left, right) => pullTimestamp(left.ts) - pullTimestamp(right.ts));
+  }
+
+  function stopRepoPullActivityRefresh() {
+    if (state.repoPullActivityRefreshTimer) {
+      window.clearTimeout(state.repoPullActivityRefreshTimer);
+      state.repoPullActivityRefreshTimer = 0;
+    }
+  }
+
+  function pullDetailIsCurrent(repo, number) {
+    const detail = state.repoRecordDetail;
+    return detail?.kind === "pulls" && Number(detail.number) === Number(number)
+      && state.selectedRepo && repoMatchesKey(state.selectedRepo, repoKey(repo));
+  }
+
+  function pullAgentSignature(events) {
+    return (events || []).map((event) => `${event.id}:${event.status}`).join("|");
+  }
+
+  // Two cadences. While an agent is working the branch every read repeats, so
+  // its status and any commit it pushes land within seconds. Otherwise only the
+  // (cheap, worker-side) session list is watched, so an agent started after
+  // this page opened still gets noticed without re-reading the mirror on a
+  // timer.
+  async function refreshRepoPullActivity(repo, number, agentsOnly = false) {
+    const detail = state.repoRecordDetail;
+    if (!detail || !pullDetailIsCurrent(repo, number)) return;
+    const parsed = detail.parsed || {};
+    let values = parsed.values || {};
+    let watched = null;
+    if (agentsOnly) {
+      watched = await loadRepoPullAgentActivity(repo, number, values);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      if (!watched.some((event) => pullAgentStatusIsActive(event.status))
+        && pullAgentSignature(watched) === pullAgentSignature(parsed.pullAgents)) {
+        scheduleRepoPullActivityRefresh(repo, number, false);
+        return;
+      }
+    }
+    // The pull ledger moves under an open page — the owner merging, a review
+    // landing from another node, the desktop closing a branch that already
+    // landed. Each full tick re-resolves the served forkmesh/pulls tip (the
+    // session cache would pin the page to the tip it opened on) and, when it
+    // moved, re-reads pull.md so a status flip re-renders the whole detail.
+    const pinnedCommit = immutableGitCommit(parsed.pullMetadataCommit) || "";
+    delete state.repoPullMetadataCommits[repoPullMetadataCacheKey(repo)];
+    let servedCommit = "";
+    try {
+      servedCommit = await resolveRepoPullMetadataCommit(repo);
+    } catch (_) {
+      servedCommit = "";
+    }
+    if (!pullDetailIsCurrent(repo, number)) return;
+    if (servedCommit && servedCommit !== pinnedCommit) {
+      let record = null;
+      try {
+        record = await fetchRepoJson(repoLiveUrl(repo, "blob", {
+          path: `.forkmesh/pulls/${number}/pull.md`, ref: servedCommit,
+        }));
+      } catch (_) {
+        record = null;
+      }
+      if (!pullDetailIsCurrent(repo, number)) return;
+      // Only re-pin when the index actually holds this pull: one opened from
+      // its own forkmesh/pull/<n> branch keeps that commit until it does.
+      if (record) {
+        parsed.pullMetadataCommit = servedCommit;
+        const freshParsed = parseFrontMatter(blobText(record));
+        const freshValues = freshParsed.values || {};
+        const statusChanged =
+          (freshValues.status || "open") !== (values.status || "open");
+        parsed.values = freshValues;
+        if (freshParsed.body) parsed.body = freshParsed.body;
+        values = freshValues;
+        if (statusChanged) {
+          const container = $("[data-repo-pulls]");
+          if (container) {
+            container.innerHTML = renderRepoRecordDetail(repo, "pulls", number, parsed);
+            window.lucide?.createIcons();
+          }
+        }
+      }
+    }
+    const [conversation, commits, agents] = await Promise.all([
+      loadRepoPullConversation(repo, number, parsed.pullMetadataCommit || ""),
+      loadRepoPullCommits(repo, number, parsed.pullMetadataCommit || "", values),
+      // The escalating tick already has this read in hand; only the steady
+      // active poll needs a fresh one.
+      watched || loadRepoPullAgentActivity(repo, number, values),
+    ]);
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.pullConversation = conversation;
+    parsed.pullCommits = commits;
+    parsed.pullAgents = agents;
+    parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
+    const timeline = $("[data-repo-pull-conversation]");
+    if (timeline) {
+      timeline.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
+      timeline.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
+    }
+    const count = $("[data-repo-pull-timeline-count]");
+    if (count) count.textContent = formatCount(parsed.pullTimeline.length);
+    // An agent pushing to the head branch also grows the Commits tab, which
+    // stays mounted (hidden) behind the conversation.
+    const commitList = $("[data-repo-pull-commits]");
+    if (commitList) commitList.innerHTML = renderRepoPullCommits(commits);
+    const commitCount = $("[data-repo-pull-commit-count]");
+    if (commitCount) commitCount.textContent = formatCount(commits.length);
+    const commitPhrase = $("[data-repo-pull-commit-phrase]");
+    if (commitPhrase) commitPhrase.innerHTML = pullCommitPhrase(commits.length);
+    const reviewers = $("[data-repo-pull-reviewers]");
+    if (reviewers) reviewers.innerHTML = renderPullReviewers(
+      conversation, values.author || "",
+    );
+    // Keep committed line threads in step with the activity poll. Do not tear
+    // down a composer somebody is actively typing in; its next submit/cancel
+    // refreshes the diff from this already-updated conversation state.
+    if (!document.querySelector("[data-repo-pull-inline-comment-form]")) {
+      refreshRepoPullDiff();
+    }
+    // The base branch moves under an open pull just as often as the head does,
+    // so behind/conflict state is re-tried every tick rather than pinned to
+    // whatever was true when the page opened. Checks follow the head commit
+    // readiness just resolved, so a push retires the previous run's verdict.
+    const readiness = await loadRepoPullReadiness(repo, number, values);
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.pullReadiness = readiness;
+    parsed.pullMergeBase = await loadRepoPullMergeBase(repo, values);
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.pullChecks = await loadRepoPullChecks(repo, values, readiness);
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.pullRules = await loadRepoPullRules(repo, number, readiness);
+    if (!pullDetailIsCurrent(repo, number)) return;
+    const rulesSlot = $("[data-repo-pull-rules-slot]");
+    if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
+    const checkList = $("[data-repo-pull-checks]");
+    if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks);
+    const checkCount = $("[data-repo-pull-check-count]");
+    if (checkCount) {
+      checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
+    }
+    updateRepoPullReadinessPanel(repo, number, parsed);
+    updateRepoPullMergePanel(repo, number, parsed);
+    window.lucide?.createIcons();
+    scheduleRepoPullActivityRefresh(repo, number,
+      agents.some((event) => pullAgentStatusIsActive(event.status)));
+  }
+
+  function scheduleRepoPullActivityRefresh(repo, number, active) {
+    stopRepoPullActivityRefresh();
+    if (!pullDetailIsCurrent(repo, number)) return;
+    // A short poll keeps a running branch agent's status current without a
+    // long-lived socket or a background request after the user leaves the PR;
+    // the idle watch backs right off so an untouched pull page is not a timer
+    // pointed at the mirrors.
+    const delay = active
+      ? (document.hidden ? 15000 : 3000)
+      : (document.hidden ? 120000 : 30000);
+    state.repoPullActivityRefreshTimer = window.setTimeout(() => {
+      state.repoPullActivityRefreshTimer = 0;
+      refreshRepoPullActivity(repo, number, !active);
+    }, delay);
+  }
+
+  async function loadRepoPullConversation(repo, number, metadataCommit = "") {
+    const commit = immutableGitCommit(metadataCommit)
+      || await resolveRepoPullMetadataCommit(repo);
+    let tree;
+    try {
+      tree = await fetchRepoJson(repoLiveUrl(repo, "tree", {
+        path: `.forkmesh/pulls/${number}`,
+        ref: commit,
+      }));
+    } catch (_) {
+      return [];
+    }
+    const files = (Array.isArray(tree.entries) ? tree.entries : [])
+      .filter((entry) => entry.type !== "tree" && /^\d+-/.test(String(entry.name || "")))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    if (!files.length) return [];
+    const blobs = await fetchRepoBlobs(
+      repo,
+      files.map((entry) => `.forkmesh/pulls/${number}/${entry.name}`),
+      { ref: commit },
+    );
+    return files.map((entry) => {
+      const blob = blobs[`.forkmesh/pulls/${number}/${entry.name}`];
+      if (!blob) return null;
+      const parsed = parseFrontMatter(blobText(blob));
+      const values = parsed.values || {};
+      return {
+        type: values.type || "comment",
+        id: values.id || "",
+        author: values.author || "",
+        authorName: values.authorName || "",
+        ts: values.ts || "",
+        state: values.state || "",
+        path: values.path || "",
+        side: values.side || "",
+        line: Number(values.line || 0),
+        lineStart: Number(values.lineStart || 0),
+        lineEnd: Number(values.lineEnd || 0),
+        body: parsed.body || "",
+      };
+    }).filter(Boolean);
+  }
+
+  // A discussion's replies are an append-only, signed event log stored as
+  // .forkmesh/discussions/<N>/NNNN-comment.md files alongside discussion.md (see
+  // DiscussionStore.cpp on the desktop client). Reuses the pull conversation
+  // row renderer since a discussion comment event has the same shape.
+  function renderRepoDiscussionConversation(events) {
+    const rows = Array.isArray(events) ? events : [];
+    if (!rows.length) return '<div class="px-4 py-3 text-sm text-muted-foreground">No replies yet on this discussion.</div>';
+    return rows.map(renderPullConversationEvent).join("");
+  }
+
+  async function loadRepoDiscussionConversation(repo, number) {
+    let tree;
+    try {
+      tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: `.forkmesh/discussions/${number}` }));
+    } catch (_) {
+      return [];
+    }
+    const files = (Array.isArray(tree.entries) ? tree.entries : [])
+      .filter((entry) => entry.type !== "tree" && /^\d+-comment\.md$/.test(String(entry.name || "")))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    if (!files.length) return [];
+    const blobs = await fetchRepoBlobs(repo, files.map((entry) => `.forkmesh/discussions/${number}/${entry.name}`));
+    return files.map((entry) => {
+      const blob = blobs[`.forkmesh/discussions/${number}/${entry.name}`];
+      if (!blob) return null;
+      const parsed = parseFrontMatter(blobText(blob));
+      const values = parsed.values || {};
+      return {
+        type: "comment",
+        author: values.author || "",
+        authorName: values.authorName || "",
+        ts: values.ts || "",
+        body: parsed.body || "",
+      };
+    }).filter(Boolean);
+  }
+
+  // GitHub's comment box: Write / Preview, a formatting toolbar, and the
+  // lifecycle button beside Comment. With nothing written, the lifecycle
+  // button closes or reopens on its own; with a draft it does both.
+  function renderIssueCommentForm(number) {
+    if (!state.session?.nodeName) {
+      return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to join this conversation.</div>`;
+    }
+    const detail = state.repoRecordDetail;
+    const canManage = Boolean(detail?.parsed?.issueMutationAuthorized);
+    const issueOpen = String(detail?.parsed?.values?.status || "open") !== "closed";
+    const tool = (format, icon, label) => `<button type="button" data-repo-issue-comment-format="${format}" aria-label="${label}" title="${label}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-[var(--dashboard-link)]"><i data-lucide="${icon}" class="h-4 w-4"></i></button>`;
+    const tabClass = "h-10 border-r border-border px-4 text-[14px] text-muted-foreground aria-selected:-mb-px aria-selected:bg-background aria-selected:font-medium aria-selected:text-foreground";
+    return `
+      <div class="grid min-w-0 gap-4 border-t-2 border-border pt-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+        <span class="hidden sm:block">${issueActorAvatarHtml(state.session.nodeName, state.session.nodeName, "h-10 w-10")}</span>
+        <form data-repo-issue-comment-form data-repo-issue-comment-number="${escapeHtml(number)}" class="grid min-w-0 gap-2">
+          <h2 class="text-[16px] font-semibold text-foreground">Add a comment</h2>
+          <div class="overflow-hidden rounded-md border border-border focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
+            <div class="flex min-w-0 flex-wrap items-center justify-between gap-1 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] pr-2">
+              <div role="tablist" aria-label="Comment editor" class="flex">
+                <button type="button" role="tab" data-repo-issue-comment-tab="write" aria-selected="true" class="${tabClass}">Write</button>
+                <button type="button" role="tab" data-repo-issue-comment-tab="preview" aria-selected="false" class="${tabClass}">Preview</button>
+              </div>
+              <div data-repo-issue-comment-toolbar class="flex flex-wrap items-center">
+                ${tool("heading", "heading", "Add heading")}${tool("bold", "bold", "Add bold text")}${tool("italic", "italic", "Add italic text")}
+                <span aria-hidden="true" class="mx-1 h-4 w-px bg-border"></span>
+                ${tool("quote", "text-quote", "Insert a quote")}${tool("code", "code", "Insert code")}${tool("link", "link", "Add a link")}
+                <span aria-hidden="true" class="mx-1 h-4 w-px bg-border"></span>
+                ${tool("list", "list", "Add a bulleted list")}${tool("tasks", "list-checks", "Add a task list")}${tool("mention", "at-sign", "Mention someone")}
+              </div>
+            </div>
+            <textarea data-repo-issue-comment-body rows="5" aria-label="Comment body" placeholder="Use Markdown to format your comment" class="block min-h-[6.5rem] w-full resize-y border-0 bg-background px-3 py-2 text-[14px] text-foreground outline-none placeholder:text-muted-foreground"></textarea>
+            <div data-repo-issue-comment-preview hidden class="min-h-[6.5rem] px-4 py-3 ${MD_BODY_CLASS}"></div>
+            <div class="flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground">
+              <span class="inline-flex items-center gap-1.5"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Signed with your node key · Markdown is supported</span>
+              <span data-repo-issue-comment-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            ${canManage ? `<button type="submit" data-repo-issue-comment-action="${issueOpen ? "close" : "open"}" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="${issueOpen ? "circle-check" : "rotate-ccw"}" class="h-4 w-4 text-muted-foreground"></i><span data-repo-issue-comment-close-label data-empty-label="${issueOpen ? "Close issue" : "Reopen issue"}" data-draft-label="${issueOpen ? "Close with comment" : "Reopen with comment"}">${issueOpen ? "Close issue" : "Reopen issue"}</span></button>` : ""}
+            <button type="submit" data-repo-issue-comment-submit data-repo-issue-comment-action="comment" class="inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"><span data-repo-issue-comment-spinner hidden class="fm-spinner" aria-hidden="true"></span>Comment<kbd class="hidden font-sans text-[11px] opacity-80 sm:inline">${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘↵" : "Ctrl↵"}</kbd></button>
+          </div>
+        </form>
+      </div>`;
+  }
+
+  // Wraps or prefixes the textarea's selection with Markdown, GitHub-style.
+  function applyIssueCommentFormat(textarea, format) {
+    if (!textarea) return;
+    const { selectionStart: start, selectionEnd: end, value } = textarea;
+    const selected = value.slice(start, end);
+    const wrap = (before, after = before, placeholder = "") => {
+      const inner = selected || placeholder;
+      return { text: `${before}${inner}${after}`, caret: [start + before.length, start + before.length + inner.length] };
+    };
+    const prefix = (marker) => {
+      const lines = (selected || "").split("\n").map((line) => `${marker}${line}`).join("\n");
+      const lead = start > 0 && value[start - 1] !== "\n" ? "\n" : "";
+      return { text: `${lead}${lines}`, caret: [start + lead.length + marker.length, start + lead.length + lines.length] };
+    };
+    const edit = ({
+      heading: () => prefix("### "),
+      bold: () => wrap("**", "**", "bold text"),
+      italic: () => wrap("_", "_", "italic text"),
+      quote: () => prefix("> "),
+      code: () => (selected.includes("\n") ? wrap("```\n", "\n```") : wrap("`", "`", "code")),
+      link: () => ({ text: `[${selected || "text"}](url)`, caret: [start + (selected || "text").length + 3, start + (selected || "text").length + 6] }),
+      list: () => prefix("- "),
+      tasks: () => prefix("- [ ] "),
+      mention: () => wrap("@", "", ""),
+    })[format]?.();
+    if (!edit) return;
+    textarea.setRangeText(edit.text, start, end, "end");
+    textarea.setSelectionRange(edit.caret[0], edit.caret[1]);
+    textarea.focus();
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function setIssueCommentTab(form, tab) {
+    if (!form) return;
+    const preview = tab === "preview";
+    form.querySelectorAll("[data-repo-issue-comment-tab]").forEach((button) => {
+      button.setAttribute("aria-selected", button.dataset.repoIssueCommentTab === tab ? "true" : "false");
+    });
+    const body = form.querySelector("[data-repo-issue-comment-body]");
+    const pane = form.querySelector("[data-repo-issue-comment-preview]");
+    const toolbar = form.querySelector("[data-repo-issue-comment-toolbar]");
+    if (pane) {
+      pane.innerHTML = preview
+        ? renderRecordMarkdown(String(body?.value || ""), state.selectedRepo) || '<p class="text-muted-foreground">Nothing to preview</p>'
+        : "";
+      pane.hidden = !preview;
+    }
+    if (body) body.hidden = preview;
+    toolbar?.classList.toggle("invisible", preview);
+    if (!preview) body?.focus();
+  }
+
+  function renderDiscussionReplyForm(number) {
+    if (!state.session?.nodeName) {
+      return `<div class="border-t border-border bg-secondary/20 px-4 py-3 text-xs text-muted-foreground"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-accent hover:underline">Log in</a> to reply to this discussion.</div>`;
+    }
+    return `
+      <form data-repo-discussion-reply-form data-repo-discussion-reply-number="${escapeHtml(number)}" class="grid gap-2 border-t border-border bg-secondary/20 p-4">
+        ${composeIdentityHtml(state.session, "Replying")}
+        <label class="grid gap-1 text-xs font-medium text-muted-foreground">Reply
+          <textarea data-repo-discussion-reply-body rows="3" placeholder="Write a reply. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
+        </label>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <span data-repo-discussion-reply-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+          <button type="submit" data-repo-discussion-reply-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Reply</button>
+        </div>
+      </form>`;
+  }
+
+  function renderPullReviewForm(number) {
+    if (!state.session?.nodeName) {
+      return `<div class="border-t border-border bg-secondary/20 px-4 py-3 text-xs text-muted-foreground"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-accent hover:underline">Log in</a> to comment or review this pull request.</div>`;
+    }
+    return `
+      <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid gap-2 border-t border-border bg-secondary/20 p-4">
+        ${composeIdentityHtml(state.session, "Reviewing")}
+        <label class="grid gap-1 text-xs font-medium text-muted-foreground">Review
+          <textarea data-repo-pull-review-body rows="3" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
+        </label>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"><i data-lucide="circle-x" class="h-4 w-4"></i>Request changes</button>
+            <button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"><i data-lucide="circle-check" class="h-4 w-4"></i>Approve</button>
+            <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Comment</button>
+          </div>
+        </div>
+      </form>`;
+  }
+
+  async function handlePullReviewSubmit(repo, form, action) {
+    if (!repo || !form) return;
+    const number = Number(form.dataset.repoPullReviewNumber || 0);
+    const bodyInput = form.querySelector("[data-repo-pull-review-body]");
+    const buttons = form.querySelectorAll("[data-repo-pull-review-action]");
+    const hint = form.querySelector("[data-repo-pull-review-hint]");
+    const setHint = (text, tone) => {
+      if (hint) hint.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-muted-foreground" : "text-muted-foreground"}`;
+      if (hint) hint.textContent = text;
+    };
+    const body = String(bodyInput?.value || "").trim();
+    if (!number) {
+      setHint("This pull request hasn't finished loading yet.", "bad");
+      return;
+    }
+    const isReview = action === "approved" || action === "changes_requested";
+    if (!isReview && !body) {
+      setHint("Write a comment before sending.", "bad");
+      bodyInput?.focus();
+      return;
+    }
+    buttons.forEach((button) => { button.disabled = true; });
+    setHint("Signing and sending…");
+    try {
+      let result;
+      if (isReview) {
+        result = await submitWebPullReview(repo, number, action, body);
+      } else {
+        result = await submitWebPullComment(repo, number, body);
+      }
+      const signedEvent = result?.event || {};
+      const newEvent = {
+        type: isReview ? "review" : "comment",
+        state: isReview ? action : "",
+        authorName: state.session?.nodeName || "you",
+        author: signedEvent.author || "",
+        ts: Math.floor(Date.now() / 1000),
+        body,
+        pending: true,
+      };
+      if (state.repoRecordDetail?.kind === "pulls" && String(state.repoRecordDetail.number) === String(number)) {
+        const conversation = [...(state.repoRecordDetail.parsed.pullConversation || []), newEvent];
+        state.repoRecordDetail.parsed.pullConversation = conversation;
+        const parsed = state.repoRecordDetail.parsed;
+        parsed.pullTimeline = buildRepoPullTimeline(
+          parsed.values || {}, conversation, parsed.pullCommits || [], parsed.pullAgents || [],
+        );
+        const list = form.parentElement?.querySelector("[data-repo-pull-conversation]");
+        if (list) {
+          list.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
+          list.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
+        }
+        const count = $("[data-repo-pull-timeline-count]");
+        if (count) count.textContent = formatCount(parsed.pullTimeline.length);
+        const reviewers = document.querySelector("[data-repo-pull-reviewers]");
+        if (reviewers) {
+          reviewers.innerHTML = renderPullReviewers(
+            conversation,
+            state.repoRecordDetail.parsed.values?.author || "",
+          );
+        }
+        updateRepoPullMergePanel(
+          repo,
+          number,
+          state.repoRecordDetail.parsed,
+        );
+      }
+      if (bodyInput) bodyInput.value = "";
+      buttons.forEach((button) => { button.disabled = false; });
+      setHint(isReview ? "Review sent to the maintainer's inbox for review." : "Comment sent to the maintainer's inbox for review.", "good");
+    } catch (error) {
+      buttons.forEach((button) => { button.disabled = false; });
+      const code = String(error?.message || "");
+      setHint(
+        code === "inbox_full" ? "The maintainer's inbox is full. Try again later."
+          : code === "author_quota" ? "You've reached the submission limit for this repository."
+          : code === "event_too_large" ? "The comment is too large - please shorten it."
+          : code === "bad_signature" ? "Could not verify the review's signature."
+          : "Could not send the review. Please try again.",
+        "bad");
+    }
+  }
+
+  async function loadRepoPullMergeAuthorization(repo) {
+    if (!repo || !state.session?.sessionToken) return false;
+    try {
+      const profile = await orgApiRequest(
+        "GET",
+        `/api/orgs/${encodeURIComponent(repo.owner || "")}`,
+      );
+      return profile?.viewerRole === "owner";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function loadRepoIssueMutationAuthorization(repo) {
+    if (!repo || !state.session?.sessionToken) return false;
+    if (isRepoOwner(repo) || state.session?.isAdmin) return true;
+    try {
+      const profile = await orgApiRequest(
+        "GET",
+        `/api/orgs/${encodeURIComponent(repo.owner || "")}`,
+      );
+      return ["owner", "admin"].includes(String(profile?.viewerRole || ""));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // The exact object ids an organization owner's merge pins. A branch-backed
+  // pull merges the CURRENT tips of its base and head branches — the same
+  // tips the readiness trial on the mirror just resolved, so what the owner
+  // sees is what lands, even after main moved since the pull was opened. A
+  // patch-backed pull (a cross-node or web submission whose commits travel
+  // as commits.mbox / changes.patch in the pulls ledger) pins its reviewed
+  // payload through the ledger commit itself: the head pin IS that commit,
+  // and the mirror replays the series onto the current base tip. Everything
+  // is verified again by the mirror, which refuses a stale or moved ref.
+  function repoPullMergeContext(repo, number, parsed) {
+    const values = parsed?.values || {};
+    const pullNumber = Number(number);
+    const expectedPullsOid = immutableGitCommit(parsed?.pullMetadataCommit);
+    if (
+      !Number.isInteger(pullNumber)
+      || pullNumber <= 0
+      || String(values.status || "open").toLowerCase() !== "open"
+      || !expectedPullsOid
+    ) {
+      return null;
+    }
+    const readiness = parsed?.pullReadiness;
+    const mergeBase = parsed?.pullMergeBase;
+    const branchBacked = values.derive === "branch";
+    let expectedBaseOid = "";
+    let expectedHeadOid = "";
+    if (branchBacked) {
+      expectedBaseOid = immutableGitCommit(
+        readiness?.available ? readiness.baseOid : mergeBase?.baseOid,
+      );
+      expectedHeadOid = immutableGitCommit(
+        readiness?.available ? readiness.headOid : mergeBase?.headOid,
+      ) || immutableGitCommit(values.creationHeadOid);
+      if (readiness?.available && readiness.clean !== true) return null;
+    } else {
+      if (!repoPullHasPatchPayload(parsed)) return null;
+      expectedBaseOid = immutableGitCommit(mergeBase?.baseOid);
+      expectedHeadOid = expectedPullsOid;
+    }
+    if (
+      !expectedBaseOid
+      || !expectedHeadOid
+      || new Set([
+        expectedBaseOid.length,
+        expectedHeadOid.length,
+        expectedPullsOid.length,
+      ]).size !== 1
+    ) {
+      return null;
+    }
+    return {
+      number: pullNumber,
+      branchBacked,
+      expectedBaseOid,
+      expectedHeadOid,
+      expectedPullsOid,
+    };
+  }
+
+  // A patch-backed pull can only be merged from the payload the ledger
+  // committed with it: the diff the review tab shows (changes.patch) or the
+  // authored commit series (commits.mbox) the Commits tab parsed.
+  function repoPullHasPatchPayload(parsed) {
+    if (parsed?.values?.derive === "branch") return false;
+    if (String(parsed?.pullPatch?.patch || "").trim()) return true;
+    return Array.isArray(parsed?.pullCommits) && parsed.pullCommits.length > 0;
+  }
+
+  // The current tips an owner merge would pin when the mirror's readiness
+  // trial is unavailable (a read-only mirror without merge-preview) or when
+  // the pull is patch-backed and has no head branch to trial at all.
+  async function loadRepoPullMergeBase(repo, values) {
+    const unavailable = { available: false, baseOid: "", headOid: "" };
+    if (!repo || String(values?.status || "open").toLowerCase() !== "open") {
+      return unavailable;
+    }
+    const baseOid = await repoPullBaseTip(repo, values);
+    if (!baseOid) return unavailable;
+    let headOid = "";
+    if (values?.derive === "branch") {
+      const branchName = pullHeadBranchRef(values);
+      if (branchName) {
+        try {
+          const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`);
+          const branch = (Array.isArray(data?.branches) ? data.branches : [])
+            .map(normalizeRepoBranch)
+            .filter(Boolean)
+            .find((candidate) => candidate.name === branchName);
+          headOid = immutableGitCommit(branch?.commit);
+        } catch (_) {
+          headOid = "";
+        }
+      }
+      headOid = headOid || immutableGitCommit(values?.creationHeadOid);
+    }
+    return { available: true, baseOid, headOid };
+  }
+
+  function createRepoPullMergeRequestId() {
+    const bytes = new Uint8Array(18);
+    crypto.getRandomValues(bytes);
+    return `dashboard_${Array.from(bytes, (value) =>
+      value.toString(16).padStart(2, "0")).join("")}`;
+  }
+
+  // The tip of the branch this pull actually targets. The repository record
+  // carries only the DEFAULT branch's commit, so trusting it would measure a
+  // pull that targets a release branch against main — reporting conflicts and
+  // a behind-count for a merge nobody proposed. The branch list is the same
+  // read resolveRepoPullMetadataCommit already makes, so this costs nothing
+  // extra on the common path; the record tip is used only when the pull does
+  // not name a base at all.
+  async function repoPullBaseTip(repo, values) {
+    const branchName = String(values?.base || "").trim();
+    if (branchName) {
+      try {
+        const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`);
+        const branch = (Array.isArray(data?.branches) ? data.branches : [])
+          .map(normalizeRepoBranch)
+          .filter(Boolean)
+          .find((candidate) => candidate.name === branchName);
+        const commit = immutableGitCommit(branch?.commit);
+        // A named base that the mirror does not advertise is not a reason to
+        // fall back to the default branch — it means readiness is unknown.
+        return commit || "";
+      } catch (_) {
+        return "";
+      }
+    }
+    return immutableGitCommit(
+      repo?.commit || repo?.rootCommit || repo?.latestCommit,
+    );
+  }
+
+  // Readiness is a real merge trial on the mirror that would run the merge, not
+  // a guess: merge-preview resolves both refs, counts each side of the merge
+  // base, and reports the paths a three-way merge would leave conflicted. A
+  // mirror that does not advertise the operation yields `available: false`, and
+  // every control below then says nothing rather than something untrue.
+  async function loadRepoPullReadiness(repo, number, values) {
+    const unavailable = { available: false };
+    if (
+      !repo
+      || String(values?.status || "open").toLowerCase() !== "open"
+      || values?.derive !== "branch"
+    ) {
+      return unavailable;
+    }
+    const base = await repoPullBaseTip(repo, values);
+    const head = pullHeadBranchRef(values)
+      || immutableGitCommit(values?.creationHeadOid);
+    if (!base || !head) return unavailable;
+    try {
+      const preview = await fetchRepoJson(repoLiveUrl(repo, "merge-preview", {
+        base, head, ref: "",
+      }));
+      const baseOid = immutableGitCommit(preview?.baseOid);
+      const headOid = immutableGitCommit(preview?.headOid);
+      if (!baseOid || !headOid || baseOid !== base) return unavailable;
+      return {
+        available: true,
+        baseOid,
+        headOid,
+        mergeBaseOid: immutableGitCommit(preview?.mergeBaseOid),
+        ahead: Math.max(0, Number(preview?.ahead) || 0),
+        behind: Math.max(0, Number(preview?.behind) || 0),
+        clean: preview?.clean === true,
+        conflicts: (Array.isArray(preview?.conflicts) ? preview.conflicts : [])
+          .map((path) => String(path || "")).filter(Boolean).slice(0, 200),
+      };
+    } catch (_) {
+      return unavailable;
+    }
+  }
+
+  async function loadRepoPullRules(repo, number, readiness) {
+    const unavailable = { available: false, rules: [], organizations: [] };
+    const base = immutableGitCommit(readiness?.baseOid);
+    const head = immutableGitCommit(readiness?.headOid);
+    if (!repo || readiness?.available !== true || !base || !head) return unavailable;
+    try {
+      const query = new URLSearchParams({ base, head });
+      const response = await fetch(
+        `${repoApiBase(repo)}/pulls/${encodeURIComponent(number)}/rules?${query.toString()}`,
+        { cache: "no-store", headers: { accept: "application/json" } },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok !== true) return unavailable;
+      const report = payload.rules && typeof payload.rules === "object" ? payload.rules : {};
+      return {
+        available: report.available === true,
+        passed: report.passed === true,
+        blocked: report.blocked === true,
+        headOid: head,
+        rules: Array.isArray(report.rules) ? report.rules.slice(0, 64) : [],
+        organizations: Array.isArray(payload.organizations) ? payload.organizations.map(String) : [],
+      };
+    } catch (_) {
+      return unavailable;
+    }
+  }
+
+  function renderRepoPullRules(report) {
+    if (!report) return "";
+    const rules = report.rules || [];
+    if (!report.available) {
+      if (!(report.organizations || []).length) return "";
+      return `<section data-repo-pull-rules class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-xs leading-5 text-muted-foreground"><span class="font-semibold text-amber-300">Pull request rules could not be checked.</span> ${escapeHtml((report.organizations || []).join(", "))} require rules on this repository, and no repository host evaluated them just now. Merging stays locked until one does.</section>`;
+    }
+    if (!rules.length) return "";
+    const blocking = rules.filter((rule) => rule.status !== "passed" && rule.enforcement === "block").length;
+    const warnings = rules.filter((rule) => rule.status !== "passed" && rule.enforcement !== "block").length;
+    const summary = blocking
+      ? `${blocking} required rule${blocking === 1 ? "" : "s"} not met${warnings ? `, ${warnings} flagged` : ""}`
+      : warnings
+        ? `${warnings} rule${warnings === 1 ? "" : "s"} flagged; nothing blocks the merge`
+        : `All ${rules.length} rule${rules.length === 1 ? "" : "s"} pass`;
+    const tone = blocking ? "text-destructive" : warnings ? "text-amber-300" : "text-emerald-400";
+    const frame = blocking ? "border-destructive/40" : warnings ? "border-amber-500/40" : "border-border";
+    const rows = rules.map((rule) => {
+      const failed = rule.status !== "passed";
+      const blocks = rule.enforcement === "block";
+      const icon = !failed ? "check-circle-2" : blocks ? "x-circle" : "alert-triangle";
+      const iconTone = !failed ? "text-emerald-400" : blocks ? "text-destructive" : "text-amber-300";
+      const problems = (rule.problems || []).map((problem) => `<li>${escapeHtml(String(problem))}</li>`).join("");
+      return `
+        <div data-repo-pull-rule="${escapeHtml(String(rule.id || ""))}" class="grid gap-1 px-4 py-3">
+          <span class="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground"><i data-lucide="${icon}" class="h-3.5 w-3.5 ${iconTone}"></i>${escapeHtml(String(rule.title || rule.id || "Rule"))}<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">${rule.source === "organization" ? "Organization" : "Repository"}</span>${failed ? `<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${iconTone}">${blocks ? "Blocks merge" : "Flagged"}</span>` : ""}</span>
+          ${problems ? `<ul class="ml-5 list-disc text-xs leading-5 text-muted-foreground">${problems}</ul>` : ""}
+          ${failed && rule.suggestion ? `<p class="ml-5 text-xs leading-5 text-foreground"><span class="font-semibold">How to fix:</span> ${escapeHtml(String(rule.suggestion))}</p>` : ""}
+        </div>`;
+    }).join("");
+    return `
+      <section data-repo-pull-rules class="overflow-hidden rounded-lg border ${frame}">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
+          <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Pull request rules</span>
+          <span class="text-[11px] font-semibold ${tone}">${escapeHtml(summary)}</span>
+        </div>
+        <div class="divide-y divide-border">${rows}</div>
+      </section>`;
+  }
+
+  // Live checks come from the same attested mirror executor the Actions view
+  // reads. Only runs pinned to this pull's current head commit are shown: a run
+  // for an older push describes code that is no longer under review.
+  async function loadRepoPullChecks(repo, values, readiness) {
+    const unavailable = { available: false, runs: [] };
+    if (!repo || !state.session?.sessionToken) return unavailable;
+    const headOid = immutableGitCommit(readiness?.headOid)
+      || immutableGitCommit(values?.creationHeadOid);
+    if (!headOid) return unavailable;
+    let payload = null;
+    try {
+      payload = await orgAgentRequest(
+        "GET", `${repoApiBase(repo)}/actions/runs`);
+    } catch (_) {
+      return unavailable;
+    }
+    if (payload?.ok !== true) return unavailable;
+    const runs = (Array.isArray(payload.runs) ? payload.runs : [])
+      .filter((run) => immutableGitCommit(run?.commit) === headOid)
+      .map((run) => ({
+        id: Number(run?.id) || 0,
+        workflow: String(run?.workflow || "workflow"),
+        commit: headOid,
+        ref: String(run?.ref || ""),
+        status: String(run?.status || "").toLowerCase(),
+        startedAt: Number(run?.startedAt) || 0,
+        finishedAt: Number(run?.finishedAt) || 0,
+        logTail: String(run?.logTail || ""),
+      }))
+      .sort((left, right) =>
+        (right.finishedAt || right.startedAt) - (left.finishedAt || left.startedAt));
+    return { available: true, headOid, runs };
+  }
+
+  // The executor's own status vocabulary, verbatim — the worker rejects any run
+  // whose status falls outside it, so this table is the whole domain. `outcome`
+  // is what the one-line summary counts: a run that was rejected, cancelled or
+  // skipped never ran to a verdict, so it is neither a pass nor a failure and
+  // must not be silently folded into either.
+  const PULL_CHECK_STATES = {
+    success: {
+      label: "passed", icon: "check-circle-2",
+      tone: "text-emerald-300", outcome: "passed",
+    },
+    failed: {
+      label: "failed", icon: "x-circle",
+      tone: "text-red-300", outcome: "failed",
+    },
+    rejected: {
+      label: "rejected", icon: "shield-x",
+      tone: "text-red-300", outcome: "failed",
+    },
+    running: {
+      label: "running", icon: "loader-circle",
+      tone: "text-amber-300", outcome: "pending",
+    },
+    queued: {
+      label: "queued", icon: "clock",
+      tone: "text-amber-300", outcome: "pending",
+    },
+    "awaiting-approval": {
+      label: "awaiting approval", icon: "clock",
+      tone: "text-amber-300", outcome: "pending",
+    },
+    cancelled: {
+      label: "cancelled", icon: "circle-slash",
+      tone: "text-muted-foreground", outcome: "inconclusive",
+    },
+    skipped: {
+      label: "skipped", icon: "circle-slash",
+      tone: "text-muted-foreground", outcome: "inconclusive",
+    },
+  };
+
+  function pullCheckStateMeta(status) {
+    return PULL_CHECK_STATES[status] || {
+      label: status || "unknown", icon: "circle",
+      tone: "text-muted-foreground", outcome: "inconclusive",
+    };
+  }
+
+  function pullCheckOutcomeCount(runs, outcome) {
+    return runs.filter(
+      (run) => pullCheckStateMeta(run.status).outcome === outcome).length;
+  }
+
+  // One honest sentence for the conversation column: a count per outcome, or
+  // an explicit "no checks" rather than an implied green.
+  function pullChecksSummary(checks) {
+    const runs = checks?.runs || [];
+    if (!checks?.available) return { tone: "muted", text: "" };
+    if (!runs.length) {
+      return {
+        tone: "muted",
+        text: "No workflow run on this mirror is pinned to the current head commit.",
+      };
+    }
+    const failed = pullCheckOutcomeCount(runs, "failed");
+    const pending = pullCheckOutcomeCount(runs, "pending");
+    const passed = pullCheckOutcomeCount(runs, "passed");
+    const total = formatCount(runs.length);
+    const plural = runs.length === 1 ? "" : "s";
+    if (failed) {
+      return {
+        tone: "bad",
+        text: `${formatCount(failed)} of ${total} check${plural} failed on the current head commit.`,
+      };
+    }
+    if (pending) {
+      return {
+        tone: "pending",
+        text: `${formatCount(pending)} of ${total} check${plural} still running on the current head commit.`,
+      };
+    }
+    // Everything that remains either passed or never reached a verdict. Only
+    // the all-passed case earns a green sentence; anything else says how many
+    // runs were inconclusive instead of rounding them up into a pass.
+    if (passed === runs.length) {
+      return {
+        tone: "good",
+        text: `${formatCount(passed)} check${plural} passed on the current head commit.`,
+      };
+    }
+    return {
+      tone: "muted",
+      text: `${formatCount(passed)} of ${total} check${plural} passed on the current head commit; ${formatCount(runs.length - passed)} did not run to a verdict.`,
+    };
+  }
+
+  function renderRepoPullChecks(checks) {
+    if (!checks?.available) {
+      return `<div class="px-4 py-3 text-sm text-muted-foreground">Live checks appear for organization members once a mirror publishes an attested Actions executor for this repository.</div>`;
+    }
+    const runs = checks.runs || [];
+    if (!runs.length) {
+      return `<div class="px-4 py-3 text-sm text-muted-foreground">No workflow run is pinned to this pull request's current head commit ${escapeHtml(String(checks.headOid || "").slice(0, 12))}.</div>`;
+    }
+    return runs.map((run) => {
+      const meta = pullCheckStateMeta(run.status);
+      const when = run.finishedAt || run.startedAt;
+      return `
+        <div class="grid gap-1 px-4 py-3">
+          <span class="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground"><i data-lucide="${meta.icon}" class="h-3.5 w-3.5 ${meta.tone}"></i>${escapeHtml(run.workflow)}<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${meta.tone}">${escapeHtml(meta.label)}</span></span>
+          <span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(String(run.commit).slice(0, 12))}${run.ref ? ` · ${escapeHtml(run.ref)}` : ""}${when ? ` · ${escapeHtml(formatRecordDate(when))}` : ""}</span>
+          ${run.logTail ? `<pre class="mt-1 max-h-44 overflow-auto rounded-md border border-border bg-secondary/30 px-2 py-1 font-mono text-[10px] leading-4 text-muted-foreground">${escapeHtml(run.logTail)}</pre>` : ""}
+        </div>`;
+    }).join("");
+  }
+
+  // The update transaction pins the *current* base and head tips, unlike the
+  // merge context which pins the immutable creation OIDs: the whole point of
+  // updating is that the base branch has moved on since the pull was opened.
+  function repoPullUpdateContext(repo, number, values, metadataCommit, readiness) {
+    const pullNumber = Number(number);
+    const expectedBaseOid = immutableGitCommit(readiness?.baseOid);
+    const expectedHeadOid = immutableGitCommit(readiness?.headOid);
+    const expectedPullsOid = immutableGitCommit(metadataCommit);
+    if (
+      !Number.isInteger(pullNumber)
+      || pullNumber <= 0
+      || values?.status !== "open"
+      || values?.derive !== "branch"
+      || readiness?.available !== true
+      || readiness.behind <= 0
+      || readiness.clean !== true
+      || !expectedBaseOid
+      || !expectedHeadOid
+      || !expectedPullsOid
+      || new Set([
+        expectedBaseOid.length,
+        expectedHeadOid.length,
+        expectedPullsOid.length,
+      ]).size !== 1
+    ) {
+      return null;
+    }
+    return {
+      number: pullNumber,
+      expectedBaseOid,
+      expectedHeadOid,
+      expectedPullsOid,
+    };
+  }
+
+  const PULL_UPDATE_MESSAGES = {
+    forbidden: "Only an organization owner can update this branch through a mirror.",
+    already_current: "This branch already contains the base branch.",
+    merge_conflict: "The base branch conflicts with this branch; resolve it locally and push.",
+    stale_base: "The base branch moved again; reload to review the new state.",
+    stale_head: "The head branch moved; reload before updating it again.",
+    stale_pull_metadata: "The pull-request metadata changed; reload before updating.",
+    unsupported_pull: "This pull request cannot be updated through a mirror.",
+    pull_not_found: "The mirror could not read this pull request's record.",
+    merge_node_unavailable: "No eligible online mirror can update this branch right now.",
+  };
+
+  // Answers that mean "not yet" rather than "no": the relay's pins trail every
+  // push for a minute or two, the mirror is still running the job, or the
+  // relay could not read its own job row back. The same request id makes a
+  // repeat idempotent, so the browser waits these out instead of reporting
+  // the first one. A fleet with no merge executor is the one "unavailable"
+  // that waiting cannot fix.
+  const PULL_MUTATION_RETRY_ERRORS = new Set([
+    "merge_node_unavailable",
+    "merge_status_pending",
+    "merge_state_unavailable",
+    "mirror_unavailable",
+    "merge_queue_full",
+  ]);
+  const PULL_MUTATION_WAIT_MS = 150000;
+
+  // Submits one exact-OID pull mutation and follows it to an answer. Resolves
+  // to the last response; `waiting` means the time budget ran out first.
+  async function postRepoPullMutation(endpoint, request, onWait) {
+    const started = Date.now();
+    let backoff = 1000;
+    for (;;) {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${state.session?.sessionToken || ""}`,
+          "content-type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify(request),
+      });
+      const payload = await response.json().catch(() => ({}));
+      const processing = response.status === 202
+        && payload?.status === "processing"
+        && payload?.requestId === request.requestId;
+      const retry = !processing
+        && !response.ok
+        && PULL_MUTATION_RETRY_ERRORS.has(payload?.error)
+        && payload?.reason !== "no_merge_executor";
+      if (!processing && !retry) return { response, payload, waiting: false };
+      if (Date.now() - started >= PULL_MUTATION_WAIT_MS) {
+        return { response, payload, waiting: true };
+      }
+      onWait?.(processing);
+      await new Promise((resolve) => window.setTimeout(
+        resolve, processing ? 750 : backoff,
+      ));
+      if (!processing) backoff = Math.min(backoff * 2, 8000);
+    }
+  }
+
+  function renderRepoPullReadiness(repo, number, parsed) {
+    const readiness = parsed.pullReadiness;
+    // Unknown readiness renders nothing at all: an absent panel is honest,
+    // a panel claiming "up to date" from no data is not.
+    if (!readiness?.available) return "";
+    const values = parsed.values || {};
+    const baseBranch = values.base || "the base branch";
+    const update = parsed.pullUpdate || {};
+    const context = repoPullUpdateContext(
+      repo, number, values, parsed.pullMetadataCommit || "", readiness,
+    );
+    const state_ = String(update.state || "");
+    const processing = state_ === "processing";
+    const updated = state_ === "updated";
+    const behind = readiness.behind;
+    const rows = [];
+    if (!readiness.clean) {
+      const shown = readiness.conflicts.slice(0, 10);
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-red-300">Conflicts with ${escapeHtml(baseBranch)}.</strong> ${readiness.conflicts.length ? `${formatCount(readiness.conflicts.length)} file${readiness.conflicts.length === 1 ? "" : "s"} must be resolved locally: ` : ""}${shown.map((path) => `<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(path)}</span>`).join("")}${readiness.conflicts.length > shown.length ? `and ${formatCount(readiness.conflicts.length - shown.length)} more.` : ""}</p>`);
+    } else if (behind) {
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-amber-300">Out of date.</strong> This branch is ${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
+    } else {
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-emerald-300">Up to date.</strong> This branch already contains ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
+    }
+    if (updated) {
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground">The mirror published the branch update. Normal repository sync carries it back to the source of truth.</p>`);
+    } else if (update.message) {
+      rows.push(`<p class="text-xs leading-5 text-red-300">${escapeHtml(update.message)}</p>`);
+    }
+    // The control exists only when a real, signed, exact-OID update can be
+    // dispatched right now by an actor the worker will actually authorize.
+    // Otherwise the panel reports state and offers nothing to press: a button
+    // that can only ever answer 403 is a worse answer than no button.
+    const action = context && !updated && parsed.pullMergeAuthorized === true
+      ? `<button type="button" data-repo-pull-update ${processing ? "disabled" : ""} style="min-height:44px" class="inline-flex shrink-0 items-center gap-2 rounded-md border border-border bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="${processing ? "loader-circle" : "git-merge"}" class="h-4 w-4"></i>${processing ? "Updating branch…" : `Update branch from ${escapeHtml(baseBranch)}`}</button>`
+      : "";
+    const summary = pullChecksSummary(parsed.pullChecks);
+    const checksRow = summary.text
+      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-red-300" : summary.tone === "pending" ? "text-amber-300" : summary.tone === "good" ? "text-emerald-300" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
+      : "";
+    return `
+      <div data-repo-pull-readiness role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border ${readiness.clean ? "border-border" : "border-destructive/40"} bg-secondary/30 p-4">
+        <div class="grid min-w-0 flex-1 gap-1">
+          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(readiness.headOid.slice(0, 12))} · ${formatCount(readiness.ahead)} ahead · ${formatCount(behind)} behind</span>
+          ${rows.join("")}
+          ${checksRow}
+        </div>
+        ${action}
+      </div>`;
+  }
+
+  // The slot is mounted (possibly empty) by the detail render, so readiness
+  // that only becomes available on a later tick still has somewhere to land —
+  // and readiness that becomes unavailable empties the slot rather than leaving
+  // a stale panel describing refs that have since moved.
+  function updateRepoPullReadinessPanel(repo, number, parsed) {
+    const slot = document.querySelector("[data-repo-pull-readiness-slot]");
+    if (!slot) return;
+    slot.innerHTML = renderRepoPullReadiness(repo, number, parsed);
+    window.lucide?.createIcons();
+  }
+
+  async function handleRepoPullUpdate(repo) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls") return;
+    const parsed = detail.parsed || {};
+    if (!parsed.pullMergeAuthorized) return;
+    const context = repoPullUpdateContext(
+      repo,
+      detail.number,
+      parsed.values || {},
+      parsed.pullMetadataCommit || "",
+      parsed.pullReadiness,
+    );
+    if (!context) return;
+    const existing = parsed.pullUpdate || {};
+    const requestId = existing.requestId || createRepoPullMergeRequestId();
+    const request = {
+      schemaVersion: 1,
+      type: "forkmesh.pull-update-v1",
+      pullNumber: context.number,
+      requestId,
+      expectedBaseOid: context.expectedBaseOid,
+      expectedHeadOid: context.expectedHeadOid,
+      expectedPullsOid: context.expectedPullsOid,
+    };
+    parsed.pullUpdate = { state: "processing", requestId, message: "" };
+    updateRepoPullReadinessPanel(repo, detail.number, parsed);
+    const endpoint = `${repoApiBase(repo)}/pulls/${context.number}/update`;
+    let result;
+    try {
+      result = await postRepoPullMutation(endpoint, request);
+    } catch (_) {
+      parsed.pullUpdate = {
+        state: "failed",
+        requestId,
+        message: "The branch update request could not reach the relay.",
+      };
+      updateRepoPullReadinessPanel(repo, detail.number, parsed);
+      return;
+    }
+    const { response, payload, waiting } = result;
+    if (waiting && payload?.status === "processing") {
+      parsed.pullUpdate = {
+        state: "failed",
+        requestId,
+        message: "The mirror is still processing. Retry to check the same update request.",
+      };
+      updateRepoPullReadinessPanel(repo, detail.number, parsed);
+      return;
+    }
+    if (
+      response.ok
+      && payload?.status === "updated"
+      && payload?.published === true
+      && payload?.requestId === requestId
+      && immutableGitCommit(payload.baseBefore) === context.expectedBaseOid
+      && immutableGitCommit(payload.head) === context.expectedHeadOid
+      && immutableGitCommit(payload.pullsBefore) === context.expectedPullsOid
+      && immutableGitCommit(payload.headAfter)
+    ) {
+      parsed.pullUpdate = { state: "updated", requestId, message: "" };
+    } else {
+      parsed.pullUpdate = {
+        state: "failed",
+        requestId,
+        message: PULL_UPDATE_MESSAGES[payload?.error]
+          || "The mirror branch update could not be confirmed.",
+      };
+    }
+    updateRepoPullReadinessPanel(repo, detail.number, parsed);
+    // Either outcome changes what the refs say, so re-read readiness and
+    // the commit series rather than leaving the panel to describe the past.
+    refreshRepoPullActivity(repo, detail.number);
+  }
+
+  function renderRepoPullMergeControl(repo, number, parsed) {
+    if (!parsed.pullMergeAuthorized) return "";
+    const merge = parsed.pullMerge || {};
+    const context = repoPullMergeContext(repo, number, parsed);
+    const reviewPolicy = pullReviewPolicy(
+      parsed.pullConversation || [],
+      parsed.values?.author || "",
+    );
+    if (!context) {
+      const readiness = parsed.pullReadiness;
+      const conflicted = readiness?.available && readiness.clean !== true;
+      const reason = conflicted
+        ? "This pull request conflicts with its base branch; it can be merged once the conflicts are resolved and pushed."
+        : parsed.values?.derive !== "branch" && !repoPullHasPatchPayload(parsed)
+          ? "This pull request carries no committed patch or commit series, so a mirror cannot replay it."
+          : "Merging needs the current base branch tip and the pull-request ledger commit from an online mirror; reload once a mirror answers.";
+      return `
+        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="rounded-lg border border-border bg-secondary/30 p-4 text-xs text-muted-foreground">
+          ${escapeHtml(reason)}
+        </div>`;
+    }
+    const stateName = String(merge.state || "ready");
+    const processing = stateName === "processing";
+    const merged = stateName === "merged";
+    const failed = stateName === "failed";
+    const baseBranch = String(parsed.values?.base || "main").trim() || "main";
+    const rules = parsed.pullRules;
+    const rulesLocked = !merged && !processing && rules?.headOid === context.expectedHeadOid
+      && (rules.blocked === true || (rules.available !== true && (rules.organizations || []).length > 0));
+    if (rulesLocked) {
+      const unmet = (rules.rules || []).filter((rule) => rule.status !== "passed" && rule.enforcement === "block").length;
+      const reason = rules.available === true
+        ? `This pull request does not meet ${unmet} required rule${unmet === 1 ? "" : "s"}. Fix what the rules list above, push, and the merge unlocks; the repository host enforces the same rules, so it cannot be waived here.`
+        : "The organization's pull request rules have not been checked on a repository host yet, so the merge stays locked. Reload in a moment.";
+      return `
+        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-secondary/30 p-4">
+          <span class="min-w-0 text-xs leading-5 text-muted-foreground">${escapeHtml(reason)}</span>
+          <button type="button" data-repo-pull-merge disabled style="min-height:44px" class="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="shield-x" class="h-4 w-4"></i>Rules not met</button>
+        </div>`;
+    }
+    // The peer gate is advice to the owner, not a lock on them: this panel
+    // renders only for an organization owner, and that same owner can already
+    // merge the pull unreviewed from the desktop client. An unmet gate keeps
+    // its amber warning and its own button wording, but leaves the merge
+    // reachable as an explicit waiver the relay records.
+    const waiveReview = !reviewPolicy.ready && !merged;
+    const reviewReason = reviewPolicy.blockers
+      ? `${reviewPolicy.blockers} independent reviewer${reviewPolicy.blockers === 1 ? " has" : "s have"} requested changes.`
+      : "No peer other than the pull-request author has approved it.";
+    const label = merged
+      ? "Merged"
+      : processing
+        ? "Merging…"
+        : failed
+          ? "Retry merge"
+          : waiveReview
+            ? "Merge without review"
+            : "Merge pull request";
+    const status = merged
+      ? `Merged into ${escapeHtml(baseBranch)}. The merged state is pinned as current and every mirror is syncing it; the source of truth picks it up the next time it connects.`
+      : processing
+        ? merge.queued
+          ? "Waiting for an online mirror to take this merge. No mirror has accepted it yet."
+          : "An online mirror is merging the exact reviewed commits."
+        : failed
+          ? escapeHtml(merge.message || "The mirror could not confirm the merge. Retrying reuses the same idempotent request.")
+          : waiveReview
+            ? `<strong class="text-amber-300">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As an organization owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
+            : `As an organization owner you can merge this pull request into ${escapeHtml(baseBranch)} now. An online mirror lands the exact reviewed commits, the relay pins that state, and the rest of the mirrors — and the source of truth when it reconnects — sync to it.`;
+    const frame = failed
+      ? "border-destructive/40 bg-secondary/30"
+      : waiveReview
+        ? "border-amber-500/40 bg-amber-500/10"
+        : "border-border bg-secondary/30";
+    return `
+      <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border ${frame} p-4">
+        <span class="min-w-0 text-xs leading-5 text-muted-foreground">${status}</span>
+        <button type="button" data-repo-pull-merge ${processing || merged ? "disabled" : ""} style="min-height:44px" class="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="${merged ? "check-circle-2" : waiveReview ? "shield-alert" : "git-merge"}" class="h-4 w-4"></i>${label}</button>
+      </div>`;
+  }
+
+  function updateRepoPullMergePanel(repo, number, parsed) {
+    const current = document.querySelector("[data-repo-pull-merge-panel]");
+    if (!current) return;
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = renderRepoPullMergeControl(repo, number, parsed);
+    const replacement = wrapper.firstElementChild;
+    if (replacement) current.replaceWith(replacement);
+    window.lucide?.createIcons();
+  }
+
+  async function handleRepoPullMerge(repo) {
+    const detail = state.repoRecordDetail;
+    if (
+      !repo
+      || detail?.kind !== "pulls"
+      || !detail.parsed?.pullMergeAuthorized
+    ) {
+      return;
+    }
+    const parsed = detail.parsed;
+    const context = repoPullMergeContext(repo, detail.number, parsed);
+    if (!context) return;
+    // Derived here, not read back off the button, so a retry of an in-flight
+    // request keeps asking for exactly what the first attempt asked for.
+    const waiveReview = !pullReviewPolicy(
+      parsed.pullConversation || [],
+      parsed.values?.author || "",
+    ).ready;
+    const existing = parsed.pullMerge || {};
+    if (
+      waiveReview
+      && !existing.requestId
+      && !window.confirm(
+        `Merge pull request #${context.number} without an independent peer approval? The waiver is recorded in the audit log and in the pull-request ledger.`,
+      )
+    ) {
+      return;
+    }
+    const requestId = existing.requestId || createRepoPullMergeRequestId();
+    const request = {
+      schemaVersion: 1,
+      type: "forkmesh.pull-merge-v1",
+      pullNumber: context.number,
+      requestId,
+      expectedBaseOid: context.expectedBaseOid,
+      expectedHeadOid: context.expectedHeadOid,
+      expectedPullsOid: context.expectedPullsOid,
+      // Absent unless waived: the same request id must never mean a reviewed
+      // merge on one attempt and an unreviewed one on the next.
+      ...(waiveReview ? { overrideReview: true } : {}),
+    };
+    parsed.pullMerge = { state: "processing", requestId };
+    updateRepoPullMergePanel(repo, detail.number, parsed);
+    const endpoint =
+      `${repoApiBase(repo)}/pulls/${context.number}/merge`;
+    let result;
+    try {
+      result = await postRepoPullMutation(endpoint, request, (accepted) => {
+        if (parsed.pullMerge?.requestId !== requestId) return;
+        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
+        parsed.pullMerge = { state: "processing", requestId, queued: !accepted };
+        updateRepoPullMergePanel(repo, detail.number, parsed);
+      });
+    } catch (_) {
+      parsed.pullMerge = {
+        state: "failed",
+        requestId,
+        message: "The mirror merge could not reach the relay.",
+      };
+      updateRepoPullMergePanel(repo, detail.number, parsed);
+      return;
+    }
+    const { response, payload, waiting } = result;
+    if (waiting && payload?.status === "processing") {
+      parsed.pullMerge = {
+        state: "failed",
+        requestId,
+        message: "The mirror is still processing. Retry to check the same merge.",
+      };
+    } else if (
+      response.ok
+      && payload?.status === "merged"
+      && payload?.published === true
+      && payload?.requestId === requestId
+      && immutableGitCommit(payload.baseBefore) === context.expectedBaseOid
+      && immutableGitCommit(payload.head) === context.expectedHeadOid
+      && immutableGitCommit(payload.pullsBefore) === context.expectedPullsOid
+    ) {
+      parsed.pullMerge = { state: "merged", requestId };
+    } else {
+      const messages = {
+        forbidden: "Only an organization owner can merge this pull request on the web.",
+        merge_conflict: "The exact reviewed commits do not apply cleanly to the base branch.",
+        stale_base: "The base branch changed; reload and review the new state.",
+        stale_head: "The pull-request head changed; reload and review it again.",
+        stale_pull_metadata: "The pull-request metadata changed; reload before merging.",
+        merge_node_unavailable: payload?.reason === "no_merge_executor"
+          ? "No online mirror runs the merge executor. Mirrors on an older node build advertise no merge capability; merge from the desktop, or retry once an updated mirror is online."
+          : "No online mirror could take this merge in the last few minutes. Try again shortly.",
+        merge_status_pending: "A mirror took this merge but has not confirmed it yet. Retry to check the same merge.",
+        merge_queue_full: "The merge queue is full; try again in a moment.",
+        review_required: "The mirror read no independent review on the published pull-request ledger. Reload to re-read the review history, then merge again to waive the gate as the owner.",
+        rules_required: payload?.message || "This pull request does not meet the repository's or organization's pull request rules. Fix what the rules list above and push again.",
+        checks_required: "This repository requires signed status checks, and the head being merged has no fresh passing result from a runner the base branch trusts. Run the checks, or change .forkmesh/required-checks.json on the base branch.",
+        unsupported_pull: "This pull request cannot be merged on the web; merge it from the desktop client.",
+        pull_not_found: "The mirror could not read this pull request's record.",
+      };
+      parsed.pullMerge = {
+        state: "failed",
+        requestId,
+        message: messages[payload?.error] || "The mirror merge could not be confirmed.",
+      };
+    }
+    updateRepoPullMergePanel(repo, detail.number, parsed);
+  }
+
+  // Owner-authored contributor reward estimate. Both pull.md and issue-<n>.json
+  // carry it verbatim, and the public ledger links its entries straight back
+  // here, so the record itself has to say the same thing the ledger says.
+  const rewardStateLabels = {
+    pending_merge: "pays on merge",
+    pending_wallet: "awaiting the recipient's wallet",
+    ready: "ready to pay",
+    submitted: "payment submitted",
+    paid: "paid",
+    cancelled: "cancelled",
+  };
+
+  function formatRewardSol(lamports) {
+    const amount = Math.trunc(Number(lamports));
+    if (!isFinite(amount) || amount <= 0) return "";
+    const fraction = String(amount % 1000000000).padStart(9, "0").replace(/0+$/, "");
+    return `${Math.trunc(amount / 1000000000)}.${fraction || "0"} SOL`;
+  }
+
+  function renderRecordRewardEstimate(values) {
+    const amount = formatRewardSol(values.rewardEstimateLamports);
+    const status = String(values.rewardStatus || "").trim();
+    if (!amount && !status) return "";
+    const state = rewardStateLabels[status]
+      || (String(values.rewardCondition || "").trim() === "merged"
+        ? "pays on merge"
+        : "estimated");
+    const recipient = String(values.rewardRecipient || "").trim();
+    const tone = status === "paid"
+      ? "text-emerald-400"
+      : status === "cancelled"
+        ? "text-muted-foreground"
+        : status === "ready" || status === "submitted"
+          ? "text-primary"
+          : "text-amber-300";
+    return `<span class="font-semibold ${tone}">${escapeHtml(amount || "Reward")}</span> · ${escapeHtml(state)}${recipient ? ` · to ${escapeHtml(recipient)}` : ""}`;
+  }
+
+  function recordDetailMeta(kind, values) {
+    if (kind === "pulls") {
+      return [
+        ["Base", values.base || "unknown"],
+        ["Head", values.head || "unknown"],
+        ["Status", values.status || values.state || "open"],
+        ["Author", values.authorName || values.author || "unknown"],
+      ];
+    }
+    if (kind === "discussions") {
+      return [
+        ["Category", values.category || "discussion"],
+        ["Status", values.status || values.state || "open"],
+        ["Author", values.authorName || values.author || "unknown"],
+      ];
+    }
+    return [
+      ["Status", values.status || values.state || "open"],
+      ["Labels", parseFrontMatterList(values.labels).join(", ") || "none"],
+      ["Milestone", values.milestone || "none"],
+      ["Author", values.authorName || values.author || "unknown"],
+    ];
+  }
+
+  function safeFederatedUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      return url.protocol === "https:" && !url.username && !url.password
+        ? url.href
+        : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function renderFederatedReplies(items) {
+    if (!items.length) {
+      return '<p class="px-4 py-4 text-sm text-muted-foreground">No remote ActivityPub replies yet.</p>';
+    }
+    return items.map((item) => {
+      const lifecycle = String(item.lifecycle || (item.tombstone ? "tombstoned" : item.moderated ? "moderated" : item.edited ? "edited" : "active"));
+      const author = item.authorName || item.author || "remote participant";
+      const instance = item.sourceInstance || item.provenance?.instance || "";
+      const software = item.sourceSoftware || item.provenance?.software || "ActivityPub";
+      const backlink = safeFederatedUrl(item.url || item.backlink || item.remoteId);
+      const depth = Math.min(8, Math.max(0, Number(item.depth) || 0));
+      const status = lifecycle === "tombstoned"
+        ? "Deleted on the remote instance"
+        : lifecycle === "moderated"
+          ? "Hidden by remote moderation"
+          : lifecycle === "awaiting-redelivery"
+            ? "Restored remotely; awaiting a safe redelivery"
+            : "";
+      const body = status || String(item.body || "");
+      const timestamp = item.ts || item.publishedAt || item.createdAt || item.published;
+      const when = timestamp ? formatTimeAgo(timestamp) : "";
+      const fullWhen = formatRecordDateTime(timestamp);
+      const edited = lifecycle === "edited" ? '<span class="text-[10px] text-muted-foreground">(edited)</span>' : "";
+      const backlinkHtml = backlink
+        ? `<a href="${escapeHtml(backlink)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-accent hover:underline">Open original <i data-lucide="external-link" class="h-3 w-3"></i></a>`
+        : "";
+      return `
+        <article class="grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-3 border-t border-border px-4 py-3 first:border-t-0" style="margin-left:${depth * 1.25}rem" data-federated-reply data-native-event="false">
+          ${issueActorAvatarHtml(author, item.author, "h-7 w-7")}
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <span class="font-semibold text-foreground">${escapeHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
+              <span class="font-mono text-muted-foreground">${escapeHtml(software)}${instance ? ` · ${escapeHtml(instance)}` : ""}</span>
+            </div>
+            <p class="mt-2 whitespace-pre-wrap text-sm leading-6 ${status ? "italic text-muted-foreground" : "text-foreground"}">${escapeHtml(body)}</p>
+            <div class="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+              <span>Remote ActivityPub reply · not a signed ForkMesh event</span>
+              ${backlinkHtml}
+            </div>
+          </div>
+        </article>`;
+    }).join("");
+  }
+
+  async function loadFederatedReplies(repo, kind, number, root) {
+    const container = root?.querySelector?.("[data-repo-federated-replies]");
+    // Private repositories have no ActivityPub actor; never ask about them.
+    if (!container || !repo || repo.isPrivate || !number) return;
+    const apiKind = kind === "issues" ? "issue" : kind === "pulls" ? "pull" : "discussion";
+    container.innerHTML = '<p class="px-4 py-4 text-sm text-muted-foreground">Loading remote ActivityPub replies…</p>';
+    try {
+      const response = await fetch(
+        `${repoApiBase(repo)}/fedi-comments?kind=${encodeURIComponent(apiKind)}&number=${encodeURIComponent(number)}`,
+        { headers: { accept: "application/json" } },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      const comments = Array.isArray(data.comments) ? data.comments : Array.isArray(data.items) ? data.items : [];
+      container.innerHTML = renderFederatedReplies(comments);
+    } catch (_) {
+      container.innerHTML = '<p class="px-4 py-4 text-sm text-muted-foreground">Remote replies are currently unavailable.</p>';
+    } finally {
+      window.lucide?.createIcons();
+    }
+  }
+
+  // The connector token is a locally minted bearer string, so nothing has to
+  // be fetched to have one: the first copy mints it right here in the desktop's
+  // own format, remembers it, and the copied prompt carries the lines that
+  // install it on the node. Copying is one click and never opens a dialog.
+  // Shift-clicking the button still opens the paste box, which is what a node
+  // that already published a connector needs (its own token wins).
+  const MCP_CONNECTOR_TOKEN_KEY = "forkmesh.mcpConnectorToken";
+  const MCP_CONNECTOR_TOKEN_PLACEHOLDER =
+    "PASTE_CONNECTOR_TOKEN_FROM_FORKMESH_DESKTOP_SETTINGS_MCP";
+  // Matches desktop/src/McpConnector.cpp: "fmcp_" + 32 CSPRNG bytes,
+  // base64url, unpadded — the shape isWellFormedToken() accepts.
+  const MCP_CONNECTOR_TOKEN_BYTES = 32;
+
+  function generateMcpConnectorToken() {
+    try {
+      const bytes = new Uint8Array(MCP_CONNECTOR_TOKEN_BYTES);
+      window.crypto.getRandomValues(bytes);
+      let binary = "";
+      bytes.forEach((byte) => {
+        binary += String.fromCharCode(byte);
+      });
+      return (
+        "fmcp_" +
+        btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+      );
+    } catch (_) {
+      // No CSPRNG (ancient or locked-down browser): fall back to the
+      // placeholder rather than to a guessable token.
+      return "";
+    }
+  }
+
+  function loadMcpConnectorToken() {
+    try {
+      return String(localStorage.getItem(MCP_CONNECTOR_TOKEN_KEY) || "").trim().slice(0, 200);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function saveMcpConnectorToken(token) {
+    try {
+      if (token) localStorage.setItem(MCP_CONNECTOR_TOKEN_KEY, token);
+      else localStorage.removeItem(MCP_CONNECTOR_TOKEN_KEY);
+    } catch (_) {}
+  }
+
+  // The token for this copy. A plain click never asks anything: a remembered
+  // token is reused, otherwise one is generated on the spot and kept. Only a
+  // shift-click opens the paste box, for the node that already published its
+  // own connector; an empty answer there rotates to a freshly generated token
+  // rather than leaving the prompt carrying a placeholder.
+  function ensureMcpConnectorToken(options) {
+    let token = loadMcpConnectorToken();
+    if (options?.replaceToken) {
+      const entered = window.prompt(
+        "Paste the connector token this node already published (ForkMesh desktop app -> Settings -> MCP). Leave it empty to generate a fresh one instead - the copied prompt tells the agent how to install it.",
+        token,
+      );
+      if (entered === null) return token;
+      token = String(entered).trim().slice(0, 200) || generateMcpConnectorToken();
+      saveMcpConnectorToken(token);
+      return token;
+    }
+    if (!token) {
+      token = generateMcpConnectorToken();
+      saveMcpConnectorToken(token);
+    }
+    return token;
+  }
+
+  // "Copy MCP prompt" on the issue detail page: one paste block that points an
+  // MCP-capable coding agent at the forkmesh MCP server so it pulls this issue,
+  // works it on a dedicated branch, submits the pull request, and reports back
+  // which model it ran as and its thinking setting. The block carries the whole
+  // connection — the mcpServers entry the desktop's Settings -> MCP tab shows
+  // (python3, tools/forkmesh_mcp_server.py, the repo checkout) plus the
+  // connector token the signed write tools require — so nothing has to be
+  // assembled by hand before the agent can run.
+  function issueMcpPrompt(repo, number, values, token) {
+    const repoSlug = `${repo.owner || "owner"}/${repo.name || "repo"}`;
+    const title = String(values?.title || "").trim();
+    const titleSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+    const branch = titleSlug ? `issue-${number}-${titleSlug}` : `issue-${number}`;
+    const issueUrl = `${publicSiteOrigin()}${repoLinkUrl(repo)}/issues/${number}`;
+    const repoCloneUrl = cloneUrl(repo);
+    const forkmeshCloneUrl = `${publicSiteOrigin()}/forkmesh/forkmesh`;
+    const serverScript = "<FORKMESH_CHECKOUT>/tools/forkmesh_mcp_server.py";
+    const repoCheckout = `<CHECKOUT_OF_${repoSlug}>`;
+    const connectorToken = token || MCP_CONNECTOR_TOKEN_PLACEHOLDER;
+    // The same file tools/forkmesh_mcp_server.py reads (FORKMESH_MCP_CONNECTOR
+    // overrides it) and the desktop's Settings -> MCP tab writes.
+    const connectorFile =
+      "$XDG_DATA_HOME/ForkMesh/ForkMesh/mcp/connector.json (default ~/.local/share/ForkMesh/ForkMesh/mcp/connector.json)";
+    const configuration = {
+      mcpServers: {
+        forkmesh: {
+          command: "python3",
+          args: [serverScript],
+          env: {
+            FORKMESH_REPO: repoCheckout,
+            FORKMESH_MCP_TOKEN: connectorToken,
+          },
+        },
+      },
+    };
+    // The token was minted in the browser, so it only unlocks the write tools
+    // once this machine's connector file holds it. An existing connector is
+    // never overwritten: that would demote every other agent config still
+    // holding the old string, and the node owner already has a token to use.
+    const tokenNote = token
+      ? [
+          `FORKMESH_MCP_TOKEN above is a connector token minted for this prompt. Activate it before step 1: if ${connectorFile} does not exist, create it (mode 0600) containing {"version": 1, "token": "${connectorToken}", "node": "", "label": "copied MCP prompt", "created_ms": <epoch milliseconds>} - the same record the desktop app writes. If that file already exists, leave it exactly as it is and use its own "token" value in the configuration above instead - the node already published a connector and overwriting it would revoke every other agent.`,
+          "Treat the token as a secret - never print it in logs, commits, pull requests, or chat.",
+        ].join("\n")
+      : `FORKMESH_MCP_TOKEN above is a placeholder: replace ${MCP_CONNECTOR_TOKEN_PLACEHOLDER} with the connector token the ForkMesh desktop app mints under Settings -> MCP -> Generate token, otherwise the write tools stay read-only. Treat it as a secret - never print it in logs, commits, pull requests, or chat.`;
+    return [
+      `Work ForkMesh issue #${number} in ${repoSlug} end to end through the "forkmesh" MCP server.`,
+      "",
+      `Issue: ${title || `#${number}`}`,
+      `Issue page: ${issueUrl}`,
+      `Repository: git clone ${repoCloneUrl}`,
+      "",
+      'Connect the "forkmesh" MCP server first - it is the stdio server that carries every ForkMesh tool (whoami, search_issues, read_file, comment_on_issue, open_pr_from_branch). Add this to your agent\'s MCP configuration, replacing each <...> with an absolute path on this machine and cloning whatever is missing:',
+      "",
+      JSON.stringify(configuration, null, 2),
+      "",
+      `<FORKMESH_CHECKOUT> is a checkout of ForkMesh itself, which ships the server script: git clone ${forkmeshCloneUrl}. ${repoCheckout} is your local checkout of ${repoSlug}: git clone ${repoCloneUrl}.`,
+      `In Claude Code that is one command: claude mcp add forkmesh --scope user --env FORKMESH_REPO=${repoCheckout} --env FORKMESH_MCP_TOKEN=${connectorToken} -- python3 ${serverScript}`,
+      tokenNote,
+      "",
+      `1. Call whoami on the forkmesh MCP server to confirm it answers and reaches ${repoSlug} with write access. If it is missing or read-only, fix the configuration above and retry; use the forkmesh MCP server for every ForkMesh read and write rather than any other issue tracker.`,
+      "2. Pull this issue with search_issues and read every file it references with read_file before planning.",
+      `3. Work in the local checkout of ${repoSlug} that the connector exposes. Create a dedicated branch named ${branch} from the latest main; never commit to main directly.`,
+      `4. Implement the smallest complete fix, run the repository's tests and required checks, and commit with a clear message referencing issue #${number}.`,
+      `5. Submit the work with open_pr_from_branch: branch ${branch}, base main, a title referencing issue #${number}, and a description that summarizes the change and the test results.`,
+      `6. Report back with comment_on_issue on issue #${number}: link the new pull request, then state exactly which model you ran as (model name/id) and your thinking setting (extended thinking on or off, or the reasoning-effort level). Repeat the same model and thinking report in the pull request description. Do not skip this report.`,
+      "",
+      "If the connector is read-only, tests fail, or anything else blocks a safe submission, stop and report the blocker instead of forcing the pull request.",
+    ].join("\n");
+  }
+
+  async function copyIssueMcpPrompt(button, options) {
+    const detail = state.repoRecordDetail;
+    const repo = state.selectedRepo;
+    if (!button || !repo || detail?.kind !== "issues") return false;
+    // The button renders for signed-out visitors too; the prompt itself is
+    // only handed out to an authenticated account. Bounce through login and
+    // land back on this exact issue.
+    if (!state.session?.sessionToken) {
+      location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+      return false;
+    }
+    const token = ensureMcpConnectorToken(options);
+    const prompt = issueMcpPrompt(repo, detail.number, detail.parsed?.values, token);
+    const copied = await copyTextToClipboard(prompt);
+    if (!copied) {
+      button.title = "Could not access the clipboard";
+      return false;
+    }
+    const original = button.innerHTML;
+    button.innerHTML = '<i data-lucide="check" class="h-3.5 w-3.5"></i>Prompt copied';
+    window.lucide?.createIcons();
+    window.setTimeout(() => {
+      if (!document.body.contains(button)) return;
+      button.innerHTML = original;
+      window.lucide?.createIcons();
+    }, 1600);
+    return true;
+  }
+
+  function renderRepoRecordDetail(repo, kind, number, parsed) {
+    // Issues have their own GitHub-style page; pulls and discussions keep the
+    // shared record layout below.
+    if (kind === "issues") return renderRepoIssueDetail(repo, number, parsed);
+    const config = repoCollectionConfig[kind] || repoCollectionConfig.issues;
+    const values = parsed.values || {};
+    const title = values.title || `${config.itemLabel} #${number}`;
+    const recordState = values.status || values.state || values.category || "open";
+    const author = values.authorName || values.author || "unknown";
+    const timestamp = values.updatedAt || values.createdAt || values.ts;
+    const date = isFinite(Number(timestamp)) || timestamp
+      ? formatTimeAgo(timestamp)
+      : "unknown";
+    const fullDate = formatRecordDateTime(timestamp);
+    // An empty description stays empty (issue #651): substituting placeholder
+    // copy here guaranteed the opening block always had a padded body to show,
+    // so a title-only issue rendered a large card saying nothing.
+    const body = parsed.body || "";
+    const recordLabel = `#${escapeHtml(number)}`;
+    const isPulls = kind === "pulls";
+    const isDiscussions = kind === "discussions";
+    const displayBody = body;
+    const hasBody = Boolean(String(body).trim());
+    const baseBranch = values.base || "main";
+    const headRef = values.head || "contributor:branch";
+    const headBranch = headRef.includes(":")
+      ? headRef.slice(headRef.lastIndexOf(":") + 1)
+      : headRef;
+    // pull.md carries no head-repository field: the record lives in the target
+    // repo (so the base repo is the one being viewed), and a cross-node pull
+    // only records the contributor as a "<node>:" prefix on head. A fork keeps
+    // the repository name, so the contributor's namespace plus this repo's name
+    // names the source repository.
+    const baseRepoLabel = `${repo.owner || "owner"}/${repo.name || "repo"}`;
+    const headOwner = headRef.includes(":")
+      ? headRef.slice(0, headRef.lastIndexOf(":")).trim()
+      : "";
+    const headRepoLabel = headOwner
+      ? (headOwner.includes("/") ? headOwner : `${headOwner}/${repo.name || "repo"}`)
+      : baseRepoLabel;
+    // "owner/repo:branch" in one chip, repo muted so the branch still reads first.
+    const pullRefChip = (repoLabel, branch) => `<span class="inline-block max-w-full truncate rounded-md bg-secondary px-1.5 py-0.5 font-mono text-foreground"><span class="text-muted-foreground">${escapeHtml(repoLabel)}</span>:${escapeHtml(branch)}</span>`;
+    const labels = parseFrontMatterList(values.labels || values.reviewLabels);
+    const metadata = recordDetailMeta(kind, values);
+    const rewardValue = renderRecordRewardEstimate(values);
+    // The record hero already shows the opening author's avatar and name, so
+    // the opening block is the description alone (issue #651). Pull requests
+    // keep a slim "opened" line because their hero spends that row naming the
+    // merge refs instead.
+    const openedLine = isPulls
+      ? `opened <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>`
+      : "";
+    const openingBlock = hasBody
+      ? `<div data-repo-record-description="body" class="overflow-hidden rounded-lg border border-border bg-background">
+                      ${openedLine ? `<div class="border-b border-border/40 bg-primary/10 px-4 py-2.5 text-xs text-muted-foreground">${openedLine}</div>` : ""}
+                      <div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo) || `<p class="italic text-muted-foreground">No description provided.</p>`}</div>
+                    </div>`
+      : `<p data-repo-record-description="empty" class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">${openedLine ? `<span>${openedLine}</span><span>&middot;</span>` : ""}<span class="italic">No description provided.</span></p>`;
+    // The conversation column opts out of the row stretch, the way the sidebar
+    // beside it already does. Without that it is grown to whichever of the two
+    // columns is taller and hands the surplus height down through its own
+    // grids, so whatever sits at the top of it inflates to meet the sidebar -
+    // the other half of the padded opening box that was reported (issue #651).
+    const recordColumnClass = "grid min-w-0 gap-4 self-start";
+    const pullPatch = parsed.pullPatch || { patch: "", files: [], unavailable: false };
+    const pullConversation = parsed.pullConversation || [];
+    const pullTimeline = parsed.pullTimeline || buildRepoPullTimeline(
+      values, pullConversation, parsed.pullCommits || [], parsed.pullAgents || [],
+    );
+    const pullCommitCount = (parsed.pullCommits || []).length;
+    const pullCheckCount = (parsed.pullChecks?.runs || []).length;
+    const pullViewed = isPulls
+      ? loadRepoPullViewed(repo, number, parsed.pullMetadataCommit || "")
+      : new Set();
+    // The timeline and the review box are one card, the way the discussion
+    // replies already are: as bare siblings of the opening comment they read as
+    // loose strips of border with no left edge to line their avatars up on.
+    const pullConversationSection = isPulls ? `
+          <section class="overflow-hidden rounded-lg border border-border">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
+              <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="message-square" class="h-3.5 w-3.5 text-muted-foreground"></i>Activity</span>
+              <span class="text-[10px] text-muted-foreground">Signed reviews, comments and commits on this pull request</span>
+            </div>
+            <div data-repo-pull-conversation data-empty="${pullTimeline.length ? "false" : "true"}">${renderRepoPullConversation(pullTimeline)}</div>
+            ${renderPullReviewForm(number)}
+          </section>` : "";
+    const pullFilesSection = isPulls
+      ? renderRepoPullFilesSection(pullPatch, pullViewed)
+      : "";
+    const discussionConversation = parsed.discussionConversation || [];
+    const discussionConversationSection = isDiscussions ? `
+        <section class="overflow-hidden rounded-lg border border-border" data-repo-record-conversation>
+          <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
+            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="message-square" class="h-3.5 w-3.5 text-muted-foreground"></i>Replies</span>
+            <span class="font-mono text-[10px] text-muted-foreground">${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}</span>
+          </div>
+          <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation)}</div>
+          ${renderDiscussionReplyForm(number)}
+        </section>` : "";
+    // The open section comes from the URL (/owner/repo/pulls/93/files), so a
+    // shared link and a re-render both land on the same tab the sender saw.
+    const activeSection = isPulls
+      ? normalizeRepoRecordSection(state.repoRecordSection)
+      : "conversation";
+    const recordTabAttrs = (name) => (name === activeSection
+      ? `aria-selected="true" class="inline-flex h-11 items-center gap-2 border-b-2 border-border px-3 text-xs font-semibold text-foreground"`
+      : `aria-selected="false" class="inline-flex h-11 items-center gap-2 border-b-2 border-transparent px-3 text-xs font-semibold text-muted-foreground"`);
+    const recordPanelClass = (name) => (name === activeSection ? "min-w-0" : "hidden min-w-0");
+    const recordTabs = isPulls ? `
+        <nav class="flex min-w-0 overflow-x-auto border-b border-border" aria-label="Pull request sections">
+          <button type="button" data-repo-record-tab="conversation" ${recordTabAttrs("conversation")}><i data-lucide="message-square" class="h-3.5 w-3.5"></i>Conversation<span data-repo-pull-timeline-count class="rounded-full bg-secondary px-1.5 py-0.5 font-mono text-[10px]">${formatCount(pullTimeline.length)}</span></button>
+          <button type="button" data-repo-record-tab="commits" ${recordTabAttrs("commits")}><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5"></i>Commits<span data-repo-pull-commit-count class="rounded-full bg-secondary px-1.5 py-0.5 font-mono text-[10px]">${formatCount(pullCommitCount)}</span></button>
+          <button type="button" data-repo-record-tab="checks" ${recordTabAttrs("checks")}><i data-lucide="circle-check" class="h-3.5 w-3.5"></i>Checks<span data-repo-pull-check-count class="rounded-full bg-secondary px-1.5 py-0.5 font-mono text-[10px]">${formatCount(pullCheckCount)}</span></button>
+          <button type="button" data-repo-record-tab="files" ${recordTabAttrs("files")}><i data-lucide="files" class="h-3.5 w-3.5"></i>Files changed<span class="rounded-full bg-secondary px-1.5 py-0.5 font-mono text-[10px]">${formatCount(pullPatch.files.length)}</span></button>
+          <button type="button" data-repo-record-tab="badge" ${recordTabAttrs("badge")}><i data-lucide="fingerprint" class="h-3.5 w-3.5"></i>Badge</button>
+        </nav>` : "";
+    const sidebarSection = (label, value) => `
+      <div class="border-t border-border py-3 first:border-t-0 first:pt-0">
+        <h4 class="text-xs font-semibold text-muted-foreground">${label}</h4>
+        <p class="mt-2 text-xs text-foreground">${value}</p>
+      </div>`;
+    const labelValue = labels.length
+      ? labels.map((label) => `<span class="mr-1 mt-1 inline-flex rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">${escapeHtml(label)}</span>`).join("")
+      : "No labels";
+    return `
+      <article data-repo-record-detail="${escapeHtml(kind)}" class="grid gap-4 bg-background py-4 pl-4 pr-2 sm:pr-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <button type="button" data-repo-record-back="${escapeHtml(kind)}" class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to ${escapeHtml(config.label)}</button>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <span class="font-mono text-xs text-muted-foreground">${escapeHtml(repo.owner || "owner")}/${escapeHtml(repo.name || "repo")} · ${recordLabel}</span>
+          </div>
+        </div>
+        <header data-repo-record-hero class="grid gap-3">
+          <h2 class="text-2xl font-semibold leading-tight text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></h2>
+          <p class="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span data-repo-record-state class="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground"><i data-lucide="${config.icon}" class="h-3.5 w-3.5"></i>${escapeHtml(recordState)}</span>
+            ${issueActorAvatarHtml(author, values.author, "h-6 w-6")}
+            <span><span class="font-semibold text-foreground">${escapeHtml(author)}</span> ${isPulls ? `wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${pullRefChip(baseRepoLabel, baseBranch)} from ${pullRefChip(headRepoLabel, headBranch)}` : `opened this ${escapeHtml(config.itemLabel)} <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>`}</span>
+            <span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Contributor</span>
+          </p>
+          ${recordTabs}
+        </header>
+        <div data-repo-record-layout class="grid gap-4 ${activeSection === "conversation" ? "lg:grid-cols-[minmax(0,1fr)_18rem]" : "lg:grid-cols-1"}">
+          <div class="${recordColumnClass}">
+            <div data-repo-record-panel="conversation" class="${activeSection === "conversation" ? "" : "hidden "}grid min-w-0 gap-4">
+              ${isDiscussions ? discussionConversationSection : `
+                <section data-repo-record-conversation class="grid gap-3">
+                  ${openingBlock}
+                  ${pullConversationSection}
+                </section>`}
+              ${isPulls ? `<div data-repo-pull-readiness-slot>${renderRepoPullReadiness(repo, number, parsed)}</div>` : ""}
+              ${isPulls ? `<div data-repo-pull-rules-slot>${renderRepoPullRules(parsed.pullRules)}</div>` : ""}
+              ${isPulls ? renderRepoPullMergeControl(repo, number, parsed) : ""}
+              ${repo.isPrivate ? "" : `<section class="overflow-hidden rounded-lg border border-border" data-repo-federated-thread>
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
+                  <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="radio" class="h-3.5 w-3.5 text-muted-foreground"></i>Fediverse thread</span>
+                  <span class="text-[10px] text-muted-foreground">Remote provenance · separate from signed native history</span>
+                </div>
+                <div data-repo-federated-replies></div>
+              </section>`}
+            </div>
+            ${isPulls ? `
+              <div data-repo-record-panel="commits" class="${recordPanelClass("commits")}">
+                <section class="overflow-hidden rounded-lg border border-border">
+                  <div class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Pull request commits</div>
+                  <div data-repo-pull-commits class="divide-y divide-border">${renderRepoPullCommits(parsed.pullCommits || [])}</div>
+                </section>
+              </div>
+              <div data-repo-record-panel="checks" class="${recordPanelClass("checks")}">
+                <section class="overflow-hidden rounded-lg border border-border">
+                  <div class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="circle-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Checks on the current head commit</div>
+                  <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks)}</div>
+                </section>
+              </div>
+              <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}</div>
+              <div data-repo-record-panel="badge" class="${recordPanelClass("badge")}">
+                <section class="overflow-hidden rounded-lg border border-border">
+                  <div class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="fingerprint" class="h-3.5 w-3.5 text-muted-foreground"></i>Badge</div>
+                  ${renderRepoPullBadge(title, number, author, pullPatch.files)}
+                </section>
+              </div>` : ""}
+          </div>
+          <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start text-xs lg:border-l lg:border-border lg:pl-4">
+            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
+            ${sidebarSection("Assignees", "No one assigned")}
+            ${sidebarSection("Labels", labelValue)}
+            ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
+            ${sidebarSection("Type", isPulls ? "Pull request" : "Discussion")}
+            ${sidebarSection("Fields", "No fields configured")}
+            ${sidebarSection("Projects", "No projects")}
+            ${sidebarSection("Milestone", metadata.find(([label]) => label === "Milestone")?.[1] || "No milestone")}
+            ${sidebarSection("Relationships", "None yet")}
+            ${sidebarSection("Development", isPulls ? "Successfully merging this pull request may close these issues." : "No branches or pull requests")}
+            ${sidebarSection("Participants", `1 participant - ${escapeHtml(author)}`)}
+          </aside>
+        </div>
+      </article>`;
+  }
+
+  // Everyone who acted on an issue, in order of first appearance: the opener,
+  // then commenters, voters, reactors and anyone who changed its metadata.
+  function issueParticipants(parsed) {
+    const values = parsed.values || {};
+    const names = new Map();
+    const add = (name) => {
+      const label = String(name || "").trim();
+      if (label && label !== "unknown" && !names.has(label.toLowerCase())) {
+        names.set(label.toLowerCase(), label);
+      }
+    };
+    add(values.authorName || values.author);
+    (Array.isArray(parsed.issueEvents) ? parsed.issueEvents : [])
+      .forEach((event) => add(event?.authorName));
+    return Array.from(names.values());
+  }
+
+  function issueCommentCount(events) {
+    const rows = Array.isArray(events) ? events.filter(Boolean) : [];
+    const deleted = new Set(rows
+      .filter((event) => event.type === "delete" && event.target && event.target !== "self")
+      .map((event) => String(event.target)));
+    return rows.filter((event) => event.type === "comment" && !deleted.has(String(event.id || ""))).length;
+  }
+
+  // GitHub's issue page: a large title with the state pill under it, the
+  // opening comment as the first card of the conversation (the only place the
+  // author is named, issue #651), the composer at the foot of the thread, and
+  // metadata in the sidebar. Rare actions live at the bottom of the sidebar.
+  function renderRepoIssueDetail(repo, number, parsed) {
+    const values = parsed.values || {};
+    const title = values.title || `Issue #${number}`;
+    const status = String(values.status || values.state || "open");
+    const closed = status === "closed";
+    const author = values.authorName || values.author || "unknown";
+    const openedAt = values.createdAt || values.updatedAt || values.ts;
+    const opened = formatRecordDateTime(openedAt);
+    const body = parsed.body || "";
+    const hasBody = Boolean(String(body).trim());
+    const canManage = Boolean(parsed.issueMutationAuthorized);
+    const events = Array.isArray(parsed.issueEvents) ? parsed.issueEvents : [];
+    const commentCount = issueCommentCount(events);
+    const participants = issueParticipants(parsed);
+    const labels = parseFrontMatterList(values.labels);
+    const subtaskCount = issueSubtaskCandidates(body).length;
+    const recordLabel = `#${escapeHtml(number)}`;
+    const isOwner = String(repo.owner || "").toLowerCase() === String(author).toLowerCase();
+    const stateLabel = closed ? "Closed" : status === "open" ? "Open" : status.charAt(0).toUpperCase() + status.slice(1);
+    const issueUrl = `${publicSiteOrigin()}${repoRecordUrl(repo, "issues", number)}`;
+
+    const timeline = renderIssueTimeline(events, {
+      canManage,
+      mentions: parsed.issueMentions,
+      repo,
+    });
+    const bodyReactions = renderIssueReactionChips(foldIssueReactions(events)
+      .get(String(parsed.issueOpenEventId || "")));
+    const reactionRow = `<div data-repo-issue-reactions class="flex flex-wrap items-center gap-1.5 px-4 pb-4">
+          <button type="button" data-repo-issue-vote title="Vote for this issue" class="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[12px] text-foreground transition-colors hover:border-[var(--dashboard-link)] hover:bg-[color-mix(in_srgb,var(--dashboard-link)_12%,transparent)]"><i data-lucide="arrow-big-up" class="h-4 w-4 text-muted-foreground"></i>Vote<span data-repo-issue-vote-count class="text-muted-foreground">${formatCount(Number(values.votes) || 0)}</span></button>
+          ${bodyReactions.replace(/^<div class="[^"]*">/, "").replace(/<\/div>$/, "")}
+        </div>`;
+
+    const descriptionForm = `
+                      <form data-repo-issue-description-form class="hidden grid gap-2 border-t border-border p-4">
+                        <textarea data-repo-issue-description-input rows="10" class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)]">${escapeHtml(body)}</textarea>
+                        <div class="flex justify-end gap-2"><button type="button" data-repo-issue-description-cancel class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Cancel</button><button type="submit" class="h-8 rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground">Update comment</button></div>
+                      </form>`;
+    const description = hasBody
+      ? `<div data-repo-record-description="body">
+                      <div data-repo-record-body data-repo-issue-task-list class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(issueDescriptionWithoutDependencies(body), repo, { issueTasks: true, interactiveTasks: canManage })}</div>
+                      ${reactionRow}
+                    </div>${canManage ? descriptionForm : ""}`
+      : canManage
+        ? `<div data-repo-record-description="add" class="px-4 py-2"><button type="button" data-repo-issue-description-edit class="inline-flex h-7 items-center gap-1.5 rounded-md px-1 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="plus" class="h-4 w-4"></i>Add a description</button></div>${descriptionForm}`
+        : `<p data-repo-record-description="empty" class="px-4 py-2 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+
+    const openingCard = `
+                <div data-repo-issue-opening class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+                  <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
+                  <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
+                    <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
+                      <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
+                      ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
+                    </div>
+                    ${description}
+                  </div>
+                </div>`;
+
+    const subIssues = renderRepoIssueSubIssues(repo, number, parsed.issueSubIssues,
+      Boolean(state.session?.nodeName), canManage ? subtaskCount : 0);
+
+    // Each sidebar section a manager can change carries a settings button that
+    // opens a picker (openIssuePicker); the picker writes into the hidden
+    // metadata form below and submits it, so every change is signed by the
+    // one metadata handler.
+    const sidebarSection = (label, value, picker = "") => `
+      <div ${picker ? `data-repo-issue-picker-section="${picker}" ` : ""}class="relative border-b border-border py-4 first:pt-0">
+        <h4 class="mb-2 flex items-center justify-between gap-2 text-[12px] font-semibold text-muted-foreground">${label}${picker && canManage ? `<button type="button" data-repo-issue-picker-open="${picker}" aria-haspopup="dialog" aria-expanded="false" aria-label="Edit ${escapeHtml(String(label).toLowerCase())}" title="Edit ${escapeHtml(String(label).toLowerCase())}" class="-my-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-[var(--dashboard-link)]"><i data-lucide="settings-2" class="h-4 w-4"></i></button>` : ""}</h4>
+        <div class="text-[12px] text-foreground">${value}</div>
+      </div>`;
+    const issueAssignees = webIssueAssigneesWithClaims(parseFrontMatterList(values.assignees), events);
+    const viewerAccount = String(state.session?.nodeName || "").trim();
+    const viewerAssigned = Boolean(viewerAccount) && issueAssignees.some(
+      (assignee) => assignee.trim().toLowerCase() === viewerAccount.toLowerCase());
+    // Self-assignment is open to every visitor, not only issue managers
+    // (issue #570): a claim moves only the caller's own name. Signed-out
+    // clicks route through /login.
+    const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
+    const assigneeValue = `${issueAssignees.length
+      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}<span class="truncate font-semibold">${escapeHtml(assignee)}</span></span>`).join("")}</div>`
+      : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
+    const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
+    const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
+      ? `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(latestAgentEvent.agentProvider || "Agent", "", "h-5 w-5", true)}<span class="font-semibold">${escapeHtml(latestAgentEvent.agentProvider || "Agent")}</span><span class="text-muted-foreground">session #${escapeHtml(latestAgentEvent.agentSessionId)}</span>${latestAgentEvent.agentStatus ? `<span class="rounded-full border border-amber-500/40 px-1.5 font-mono text-[11px] leading-[18px] text-amber-500">${escapeHtml(latestAgentEvent.agentStatus)}</span>` : ""}</span>`
+      : `<span class="text-muted-foreground">No agent assigned</span>`}
+        <button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy MCP prompt</button>`;
+    const labelValue = labels.length
+      ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>`
+      : `<span class="text-muted-foreground">No labels</span>`;
+    const rewardValue = renderRecordRewardEstimate(values);
+    const progress = Math.max(0, Math.min(100, Number(values.progress) || 0));
+    const fieldsValue = `<dl class="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+          <dt class="text-muted-foreground">Priority</dt><dd>${Number(values.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(values.priority)}</span>` : `<span class="text-muted-foreground">None</span>`}</dd>
+          <dt class="text-muted-foreground">Progress</dt><dd class="flex items-center gap-2"><span class="inline-block h-2 w-24 overflow-hidden rounded-full bg-[var(--dashboard-counter)]"><span class="block h-full rounded-full bg-[var(--dashboard-open)]" style="width:${progress}%"></span></span>${progress}%</dd>
+          <dt class="text-muted-foreground">Start</dt><dd>${values.startDate ? escapeHtml(formatDate(values.startDate)) : `<span class="text-muted-foreground">None</span>`}</dd>
+          <dt class="text-muted-foreground">Due</dt><dd>${values.endDate ? escapeHtml(formatDate(values.endDate)) : `<span class="text-muted-foreground">None</span>`}</dd>
+        </dl>`;
+    // A milestone's bar counts the loaded issues that share it.
+    const milestoneName = String(values.milestone || "").trim();
+    const milestoneIssues = milestoneName
+      ? (state.issuesView?.items || []).filter((issue) => !issue.deleted
+        && String(issue.milestone || "").trim().toLowerCase() === milestoneName.toLowerCase())
+      : [];
+    const milestoneClosed = milestoneIssues.filter((issue) => issue.status === "closed").length;
+    const milestoneValue = milestoneName
+      ? `${milestoneIssues.length ? `<span class="mb-1.5 block h-2 overflow-hidden rounded-full bg-[var(--dashboard-counter)]" title="${milestoneClosed} of ${milestoneIssues.length} loaded issues closed"><span class="block h-full rounded-full bg-[var(--dashboard-open)]" style="width:${Math.round((milestoneClosed / milestoneIssues.length) * 100)}%"></span></span>` : ""}<span class="font-semibold">${escapeHtml(milestoneName)}</span>`
+      : `<span class="text-muted-foreground">No milestone</span>`;
+    // Pull requests that name this issue, once the Pull requests list is loaded.
+    const mentionPattern = new RegExp(`(^|[^\\w&])#${Number(number)}(?!\\d)`);
+    const linkedPulls = (Array.isArray(state.repoCollectionItems?.pulls) ? state.repoCollectionItems.pulls : [])
+      .filter((pull) => pull && /^\d+$/.test(String(pull.number))
+        && mentionPattern.test(`${pull.title || ""}\n${pull.body || ""}`));
+    const developmentValue = linkedPulls.length
+      ? `<div class="grid gap-1.5">${linkedPulls.slice(0, 6).map((pull) => `<a href="${escapeHtml(repoRecordUrl(repo, "pulls", pull.number))}" class="flex min-w-0 items-center gap-1.5 hover:text-[var(--dashboard-link)]"><i data-lucide="git-pull-request" class="h-4 w-4 shrink-0 text-muted-foreground"></i><span class="min-w-0 truncate">${escapeHtml(pull.title || `Pull request #${pull.number}`)}</span><span class="shrink-0 text-muted-foreground">#${escapeHtml(pull.number)}</span></a>`).join("")}</div>`
+      : `<span class="text-muted-foreground">No linked pull requests</span>`;
+    const participantsValue = `<div class="flex flex-wrap gap-1" aria-label="${formatCount(participants.length)} participants">${participants.slice(0, 12).map((name) => issueActorAvatarHtml(name, name, "h-6 w-6")).join("")}</div>`;
+    // The hidden form every picker writes into; handleWebIssueMetadataSubmit
+    // diffs it against the issue and signs one event per changed field.
+    const metadataForm = canManage ? `
+      <form data-repo-issue-metadata-form hidden>
+        <input type="hidden" data-repo-issue-assignees value="${escapeHtml(issueAssignees.join(", "))}" />
+        <input type="hidden" data-repo-issue-labels value="${escapeHtml(labels.join(", "))}" />
+        <input type="hidden" data-repo-issue-milestone-edit value="${escapeHtml(values.milestone || "")}" />
+        <input type="hidden" data-repo-issue-priority value="${Number(values.priority) || 0}" />
+        <input type="hidden" data-repo-issue-progress value="${Number(values.progress) || 0}" />
+        <input type="hidden" data-repo-issue-start-date value="${issueDateInputValue(values.startDate)}" />
+        <input type="hidden" data-repo-issue-end-date value="${issueDateInputValue(values.endDate)}" />
+        <button type="submit" data-repo-issue-metadata-save>Save</button>
+      </form>` : "";
+
+    return `
+      <article data-repo-record-detail="issues" class="min-w-0 bg-background">
+        <div data-repo-issue-sticky aria-hidden="true" class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start overflow-visible sm:-mx-5">
+          <div data-repo-issue-sticky-bar class="flex w-full -translate-y-full items-center gap-2 border-b border-border bg-background/95 px-3 py-2 opacity-0 backdrop-blur transition duration-150 sm:px-5">
+            <span class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${closed ? "bg-[#6e7681]" : "bg-primary"} px-2 text-[12px] font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-3.5 w-3.5"></i>${stateLabel}</span>
+            <span class="min-w-0 truncate text-[14px] font-semibold text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></span>
+          </div>
+        </div>
+        <header data-repo-record-hero class="border-b border-border pb-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <h1 data-repo-issue-title-heading class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
+            ${canManage ? `<form data-repo-issue-title-form class="hidden min-w-0 basis-full flex-wrap items-center gap-2 sm:flex-1 sm:flex-nowrap">
+              <input data-repo-issue-title-input value="${escapeHtml(title)}" maxlength="240" aria-label="Issue title" class="h-11 min-w-0 basis-full rounded-md border border-border bg-background px-3 text-[20px] text-foreground outline-none focus:border-[var(--dashboard-link)] sm:flex-1" />
+              <button type="submit" class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Save</button>
+              <button type="button" data-repo-issue-title-cancel class="h-8 rounded-md px-3 text-[14px] text-[var(--dashboard-link)] hover:underline">Cancel</button>
+            </form>` : ""}
+            <div class="flex shrink-0 items-center gap-2 pt-1">
+              ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
+              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground hover:bg-primary/90">New issue</button>
+              <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
+            </div>
+          </div>
+          ${renderRepoIssueParents(repo, parsed.issueDependencies)}
+          <p class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[14px] text-muted-foreground">
+            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-primary"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${stateLabel}</span>
+            <span>${formatCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}</span>
+            <span aria-hidden="true">·</span>
+            <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
+          </p>
+        </header>
+        <div data-repo-record-layout class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
+          <div class="grid min-w-0 gap-4 self-start">
+            <section data-repo-record-conversation class="grid min-w-0 gap-4">
+              ${openingCard}
+              ${subIssues}
+              <div data-repo-issue-timeline data-empty="${timeline ? "false" : "true"}" class="grid gap-2">${timeline}</div>
+              ${renderIssueCommentForm(number)}
+            </section>
+            ${repo.isPrivate ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
+              <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[14px] text-muted-foreground">
+                <i data-lucide="radio" class="h-4 w-4"></i><span class="font-semibold text-foreground">Fediverse thread</span><span class="text-[12px]">· remote provenance, separate from signed history</span><i data-lucide="chevron-down" class="ml-auto h-4 w-4 transition-transform group-open:rotate-180"></i>
+              </summary>
+              <div data-repo-federated-replies class="border-t border-border"></div>
+            </details>`}
+          </div>
+          <aside data-repo-record-sidebar class="min-w-0 self-start">
+            ${metadataForm}
+            <p data-repo-issue-metadata-hint role="status" aria-live="polite" class="mb-2 text-[11px] text-muted-foreground empty:hidden"></p>
+            ${sidebarSection("Assignees", assigneeValue, "assignees")}
+            ${sidebarSection("Agent", agentValue)}
+            ${sidebarSection("Labels", labelValue, "labels")}
+            ${sidebarSection("Type", "Issue")}
+            ${sidebarSection("Fields", fieldsValue, "fields")}
+            ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
+            ${sidebarSection("Milestone", milestoneValue, "milestone")}
+            ${sidebarSection("Development", developmentValue)}
+            ${sidebarSection("Notifications", `<button type="button" data-repo-issue-subscription="${parsed.issueSubscribed ? "unsubscribe" : "subscribe"}" class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-[12px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="${parsed.issueSubscribed ? "bell-off" : "bell"}" class="h-4 w-4 text-muted-foreground"></i>${parsed.issueSubscribed ? "Unsubscribe" : "Subscribe"}</button><p class="mt-2 text-[12px] text-muted-foreground">${parsed.issueSubscribed ? "You're receiving notifications because you're subscribed to this thread." : "You're not receiving notifications from this thread."}</p>`)}
+            ${sidebarSection(`${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}`, participantsValue)}
+            <div data-repo-issue-sidebar-actions class="grid gap-0.5 py-3">
+              ${canManage ? `<button type="button" data-repo-issue-delete class="flex h-8 items-center gap-2 rounded-md px-1 text-left text-[12px] font-semibold text-destructive hover:underline"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete issue</button>` : ""}
+            </div>
+          </aside>
+        </div>
+      </article>`;
+  }
+
+  // What an issue page looks like before the mirror answers. The row that was
+  // clicked already knows the title, state, labels, author and milestone, so
+  // those paint at once in their final places; only the description, history
+  // and the rest of the sidebar shimmer until the record arrives. A deep link
+  // with no list loaded gets the same frame with the header shimmering too.
+  function renderRepoIssueDetailSkeleton(repo, number) {
+    const item = (state.issuesView?.items || [])
+      .find((issue) => String(issue.number) === String(number)) || null;
+    const bar = (width, height = "h-3") => `<span aria-hidden="true" class="block ${height} ${width} animate-pulse rounded bg-muted-foreground/20 motion-reduce:animate-none"></span>`;
+    const closed = item?.status === "closed";
+    const openedAt = item?.createdAtMs || item?.updatedAtMs || 0;
+    const opened = formatRecordDateTime(openedAt);
+    const section = (label, value) => `
+      <div class="border-b border-border py-4 first:pt-0">
+        <h4 class="mb-2 text-[12px] font-semibold text-muted-foreground">${label}</h4>
+        <div class="text-[12px] text-foreground">${value}</div>
+      </div>`;
+    const labels = Array.isArray(item?.labels) ? item.labels : [];
+    const assignees = Array.isArray(item?.assignees) ? item.assignees : [];
+    return `
+      <article data-repo-issue-skeleton="${escapeHtml(number)}" aria-busy="true" aria-label="Loading issue #${escapeHtml(number)}" class="min-w-0">
+        <header class="border-b border-border pb-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            ${item
+              ? `<h1 class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(item.title)} <span class="font-light text-muted-foreground">#${escapeHtml(number)}</span></h1>`
+              : `<div class="grid min-w-0 flex-1 gap-2 pt-2">${bar("w-2/3", "h-7")}</div>`}
+            <div class="flex shrink-0 items-center gap-2 pt-1">
+              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground hover:bg-primary/90">New issue</button>
+            </div>
+          </div>
+          <p class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[14px] text-muted-foreground">
+            ${item
+              ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-primary"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
+              : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
+          </p>
+        </header>
+        <div class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
+          <div class="grid min-w-0 gap-4 self-start">
+            <div class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+              <span class="hidden sm:block">${item ? issueActorAvatarHtml(item.author, item.author, "h-10 w-10") : bar("w-10", "h-10 rounded-full")}</span>
+              <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
+                <div class="flex items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] text-muted-foreground">
+                  ${item ? `<span><span class="font-semibold text-foreground">${escapeHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
+                </div>
+                <div class="grid gap-2.5 px-4 py-4">
+                  ${bar("w-1/4", "h-5")}${bar("w-11/12")}${bar("w-10/12")}${bar("w-7/12")}
+                  <span class="h-1"></span>${bar("w-1/5", "h-5")}${bar("w-9/12")}${bar("w-8/12")}
+                </div>
+              </div>
+            </div>
+            <div class="grid gap-2 sm:ml-14">
+              <div class="flex items-center gap-2 py-1.5">${bar("w-8", "h-8 rounded-full")}${bar("w-72")}</div>
+              <div class="flex items-center gap-2 py-1.5">${bar("w-8", "h-8 rounded-full")}${bar("w-56")}</div>
+              <p role="status" class="flex items-center gap-2 py-1.5 text-[14px] text-muted-foreground">${loadingHtml(`Loading issue #${escapeHtml(number)} from the live mirror...`)}</p>
+            </div>
+          </div>
+          <aside class="min-w-0 self-start">
+            ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}<span class="font-semibold">${escapeHtml(name)}</span></span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
+            ${section("Agent", bar("w-2/3"))}
+            ${section("Labels", item ? (labels.length ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>` : `<span class="text-muted-foreground">No labels</span>`) : bar("w-3/4"))}
+            ${section("Fields", item && Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(item.priority)}</span>` : bar("w-1/2"))}
+            ${section("Milestone", item ? (item.milestone ? `<span class="font-semibold">${escapeHtml(item.milestone)}</span>` : `<span class="text-muted-foreground">No milestone</span>`) : bar("w-2/3"))}
+            ${section("Development", bar("w-3/4"))}
+          </aside>
+        </div>
+      </article>`;
+  }
+
+  // The list chrome (views sidebar, heading, search) steps aside while one
+  // issue fills the tab, so the page reads as the issue at its own URL.
+  function setRepoIssueRecordOpen(open) {
+    $$("[data-repo-issues-layout]").forEach((layout) => {
+      layout.dataset.recordOpen = open ? "true" : "false";
+    });
+  }
+
+  // --- Sidebar pickers ------------------------------------------------------
+  // GitHub's metadata menus: open from a section's settings button, filter as
+  // you type, toggle entries, and apply when the menu closes (click outside,
+  // Escape, or the close button). A milestone applies on the first choice.
+  let issuePicker = null;
+
+  const ISSUE_PICKER_COPY = {
+    assignees: { title: "Assign up to 10 people to this issue", search: "Filter assignees", add: "Assign", multiple: true },
+    labels: { title: "Apply labels to this issue", search: "Filter labels", add: "Create label", multiple: true },
+    milestone: { title: "Set milestone", search: "Filter milestones", add: "Set milestone", multiple: false },
+    fields: { title: "Edit fields" },
+  };
+
+  function issuePickerForm() {
+    return $("[data-repo-issue-metadata-form]");
+  }
+
+  function issuePickerInput(field) {
+    const selector = {
+      assignees: "[data-repo-issue-assignees]",
+      labels: "[data-repo-issue-labels]",
+      milestone: "[data-repo-issue-milestone-edit]",
+    }[field];
+    return selector ? issuePickerForm()?.querySelector(selector) : null;
+  }
+
+  // What to offer first. Assignees (issue #688): people already on the
+  // issue, you, everyone who took part here, the repository owner, then the
+  // people most active across the loaded issues.
+  function issuePickerCandidates(field) {
+    const detail = state.repoRecordDetail;
+    const parsed = detail?.parsed || {};
+    const items = state.issuesView?.items || [];
+    const entries = new Map();
+    const add = (value, reason, note = "") => {
+      const name = String(value || "").trim();
+      const key = name.toLowerCase();
+      if (!name || name === "unknown" || entries.has(key)) return;
+      entries.set(key, { value: name, reason, note });
+    };
+    const tally = (pick) => {
+      const counts = new Map();
+      items.forEach((issue) => {
+        const seen = new Set();
+        pick(issue).map((value) => String(value || "").trim()).filter(Boolean).forEach((value) => {
+          const key = value.toLowerCase();
+          if (seen.has(key)) return;
+          seen.add(key);
+          const entry = counts.get(key) || { value, count: 0 };
+          entry.count += 1;
+          counts.set(key, entry);
+        });
+      });
+      return Array.from(counts.values())
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+    };
+    if (field === "assignees") {
+      splitWebIssueList(issuePickerInput("assignees")?.value).forEach((name) => add(name, "assigned"));
+      add(state.session?.nodeName, "you");
+      issueParticipants(parsed).forEach((name) => add(name, "participant", "Took part in this issue"));
+      add(detail?.repo?.owner, "owner", "Repository owner");
+      tally((issue) => [issue.author, ...(issue.assignees || []),
+        ...(Array.isArray(issue.events) ? issue.events : []).map((event) => event?.authorName)])
+        .forEach(({ value, count }) => add(value, "active", `Active on ${count} ${count === 1 ? "issue" : "issues"}`));
+      // The directory is long, so it only joins once a name is being typed.
+      if (String(issuePicker?.query || "").trim()) {
+        (repoIssueAssigneeDirectory || []).forEach((name) => add(name, "user", "ForkMesh user"));
+      }
+    } else if (field === "labels") {
+      splitWebIssueList(issuePickerInput("labels")?.value).forEach((label) => add(label, ""));
+      tally((issue) => issue.labels || [])
+        .forEach(({ value, count }) => add(value, "", `${count} ${count === 1 ? "issue" : "issues"}`));
+    } else if (field === "milestone") {
+      add(issuePickerInput("milestone")?.value, "");
+      tally((issue) => [issue.milestone])
+        .forEach(({ value, count }) => add(value, "", `${count} ${count === 1 ? "issue" : "issues"}`));
+    }
+    return Array.from(entries.values());
+  }
+
+  function renderIssuePickerOptions() {
+    if (!issuePicker) return "";
+    const { field, selected, query } = issuePicker;
+    const copy = ISSUE_PICKER_COPY[field];
+    const needle = query.trim().toLowerCase();
+    const isSelected = (value) => selected.some((item) => item.toLowerCase() === value.toLowerCase());
+    const candidates = issuePickerCandidates(field)
+      .filter((entry) => !needle || entry.value.toLowerCase().includes(needle)
+        || entry.note.toLowerCase().includes(needle));
+    const leading = (value) => field === "assignees"
+      ? issueActorAvatarHtml(value, value, "h-5 w-5", false, false)
+      : field === "labels"
+        ? `<span aria-hidden="true" class="h-3.5 w-3.5 rounded-full" style="background:hsl(${issueLabelHue(value)} 70% 55%)"></span>`
+        : '<i data-lucide="milestone" class="h-4 w-4 text-muted-foreground"></i>';
+    const row = (value, label, note = "", reason = "") => `
+      <button type="button" role="option" aria-selected="${value && isSelected(value) ? "true" : "false"}" data-repo-issue-picker-option="${escapeHtml(value)}" class="grid w-full grid-cols-[16px_20px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary focus:bg-secondary focus:outline-none">
+        <i data-lucide="check" class="h-4 w-4 text-foreground ${value && isSelected(value) ? "" : "invisible"}"></i>
+        <span class="flex items-center justify-center">${value ? leading(value) : '<i data-lucide="x" class="h-4 w-4 text-muted-foreground"></i>'}</span>
+        <span class="min-w-0"><span class="block truncate text-[14px] font-semibold text-foreground">${escapeHtml(label)}</span>${note ? `<span class="block truncate text-[12px] text-muted-foreground">${escapeHtml(note)}</span>` : ""}</span>
+        ${reason ? `<span class="rounded-full border border-border px-1.5 text-[11px] leading-[18px] text-muted-foreground">${escapeHtml(reason)}</span>` : "<span></span>"}
+      </button>`;
+    const rows = candidates.slice(0, 30).map((entry) => row(entry.value, entry.value, entry.note,
+      field === "assignees" && !["assigned", "user"].includes(entry.reason) ? entry.reason : ""));
+    if (field === "milestone" && !needle && selected.length) rows.unshift(row("", "No milestone", "Clear the milestone"));
+    const exact = candidates.some((entry) => entry.value.toLowerCase() === needle);
+    if (needle && !exact) rows.push(row(query.trim(), `${copy.add} “${query.trim()}”`));
+    return rows.length
+      ? rows.join("")
+      : `<p class="px-3 py-4 text-center text-[12px] text-muted-foreground">Nothing to suggest yet. Type a name.</p>`;
+  }
+
+  function renderIssueFieldsPicker() {
+    const form = issuePickerForm();
+    const value = (selector) => escapeHtml(form?.querySelector(selector)?.value || "");
+    const input = "h-8 w-full rounded-md border border-border bg-background px-2 text-[14px] font-normal text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]";
+    return `
+      <div class="grid gap-3 border-t border-border p-3">
+        <div class="grid grid-cols-2 gap-2">
+          <label class="grid gap-1 text-[12px] font-semibold text-muted-foreground">Priority<input data-repo-issue-picker-field="priority" type="number" min="0" max="99" value="${value("[data-repo-issue-priority]")}" class="${input}" /></label>
+          <label class="grid gap-1 text-[12px] font-semibold text-muted-foreground">Progress %<input data-repo-issue-picker-field="progress" type="number" min="0" max="100" value="${value("[data-repo-issue-progress]")}" class="${input}" /></label>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="grid gap-1 text-[12px] font-semibold text-muted-foreground">Start<input data-repo-issue-picker-field="start-date" type="date" value="${value("[data-repo-issue-start-date]")}" class="${input}" /></label>
+          <label class="grid gap-1 text-[12px] font-semibold text-muted-foreground">Due<input data-repo-issue-picker-field="end-date" type="date" value="${value("[data-repo-issue-end-date]")}" class="${input}" /></label>
+        </div>
+        <button type="button" data-repo-issue-picker-apply class="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground hover:bg-primary/90">Save fields</button>
+      </div>`;
+  }
+
+  function openIssuePicker(field) {
+    closeIssuePicker({ apply: true });
+    const section = $(`[data-repo-issue-picker-section="${field}"]`);
+    const copy = ISSUE_PICKER_COPY[field];
+    if (!section || !copy || !issuePickerForm()) return;
+    const selected = field === "milestone"
+      ? [String(issuePickerInput("milestone")?.value || "").trim()].filter(Boolean)
+      : field === "fields" ? [] : splitWebIssueList(issuePickerInput(field)?.value);
+    issuePicker = { field, selected, original: selected.join(","), query: "" };
+    if (field === "assignees") loadRepoIssueAssigneeDirectory();
+    section.insertAdjacentHTML("beforeend", `
+      <div data-repo-issue-picker="${field}" role="dialog" aria-label="${escapeHtml(copy.title)}" class="absolute right-0 top-10 z-40 w-[19rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-[rgb(var(--dashboard-popover-rgb))] text-left shadow-2xl">
+        <div class="flex items-center justify-between gap-2 py-2 pl-3 pr-2">
+          <span class="text-[14px] font-semibold text-foreground">${escapeHtml(copy.title)}</span>
+          <button type="button" data-repo-issue-picker-close aria-label="Close" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="x" class="h-4 w-4"></i></button>
+        </div>
+        ${field === "fields" ? renderIssueFieldsPicker() : `
+        <div class="px-3 pb-2">
+          <input data-repo-issue-picker-search type="text" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(copy.search)}" aria-label="${escapeHtml(copy.search)}" class="h-8 w-full rounded-md border border-border bg-background px-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]" />
+        </div>
+        <div data-repo-issue-picker-list role="listbox" aria-multiselectable="${copy.multiple ? "true" : "false"}" class="max-h-72 overflow-y-auto border-t border-border p-1">${renderIssuePickerOptions()}</div>`}
+      </div>`);
+    section.querySelector("[data-repo-issue-picker-open]")?.setAttribute("aria-expanded", "true");
+    window.lucide?.createIcons();
+    section.querySelector("[data-repo-issue-picker-search], [data-repo-issue-picker-field]")?.focus();
+  }
+
+  function refreshIssuePickerList() {
+    const list = $("[data-repo-issue-picker-list]");
+    if (!list || !issuePicker) return;
+    list.innerHTML = renderIssuePickerOptions();
+    window.lucide?.createIcons();
+  }
+
+  function setIssuePickerQuery(query) {
+    if (!issuePicker) return;
+    issuePicker.query = String(query || "");
+    refreshIssuePickerList();
+  }
+
+  function toggleIssuePickerOption(value) {
+    if (!issuePicker) return;
+    const { field } = issuePicker;
+    if (!ISSUE_PICKER_COPY[field].multiple) {
+      issuePicker.selected = value ? [value] : [];
+      closeIssuePicker({ apply: true });
+      return;
+    }
+    const index = issuePicker.selected.findIndex((item) => item.toLowerCase() === value.toLowerCase());
+    if (index >= 0) issuePicker.selected.splice(index, 1);
+    else if (field !== "assignees" || issuePicker.selected.length < 10) issuePicker.selected.push(value);
+    issuePicker.query = "";
+    const search = $("[data-repo-issue-picker-search]");
+    if (search) {
+      search.value = "";
+      search.focus();
+    }
+    refreshIssuePickerList();
+  }
+
+  function closeIssuePicker({ apply = true } = {}) {
+    const open = issuePicker;
+    $$("[data-repo-issue-picker]").forEach((node) => node.remove());
+    $$("[data-repo-issue-picker-open]").forEach((button) => button.setAttribute("aria-expanded", "false"));
+    issuePicker = null;
+    if (!open || !apply || open.field === "fields") return;
+    if (open.selected.join(",") === open.original) return;
+    const input = issuePickerInput(open.field);
+    const form = issuePickerForm();
+    if (!input || !form) return;
+    input.value = open.selected.join(", ");
+    form.requestSubmit();
+  }
+
+  function applyIssueFieldsPicker() {
+    const form = issuePickerForm();
+    const picker = $('[data-repo-issue-picker="fields"]');
+    if (!form || !picker) return;
+    picker.querySelectorAll("[data-repo-issue-picker-field]").forEach((field) => {
+      const target = form.querySelector(`[data-repo-issue-${field.dataset.repoIssuePickerField}]`);
+      if (target) target.value = field.value;
+    });
+    closeIssuePicker({ apply: false });
+    form.requestSubmit();
+  }
+
+  // The compact title bar slides in once the full header scrolls away.
+  function mountIssueStickyHeader(container) {
+    const hero = container?.querySelector?.('[data-repo-record-detail="issues"] [data-repo-record-hero]');
+    const bar = container?.querySelector?.("[data-repo-issue-sticky-bar]");
+    state.issueStickyObserver?.disconnect?.();
+    if (!hero || !bar || typeof IntersectionObserver !== "function") return;
+    state.issueStickyObserver = new IntersectionObserver(([entry]) => {
+      const show = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+      bar.classList.toggle("opacity-0", !show);
+      bar.classList.toggle("-translate-y-full", !show);
+      bar.parentElement?.classList.toggle("pointer-events-none", !show);
+      bar.parentElement?.setAttribute("aria-hidden", show ? "false" : "true");
+    });
+    state.issueStickyObserver.observe(hero);
+  }
+
+  function optimisticRepoRecordKey(repo, kind, number) {
+    return `${String(repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}:${kind}:${number}`;
+  }
+
+  // A web submission is a real, numbered record the moment the relay answers:
+  // the durable number is reserved before any mirror has committed the git
+  // blob, so the browser holds the signed projection here and renders it as an
+  // ordinary row rather than a "pending" placeholder (issue #609). That
+  // projection has to outlive the page — a submitter who reloads the Issues tab
+  // a second after filing must still see their issue, not a list that silently
+  // drops it until a mirror converges — so it is persisted per browser, bounded
+  // by age, count and serialized size (a body can carry inline images and a
+  // pull projection carries its patch). Each entry is forgotten the instant a
+  // mirror actually serves that record.
+  const OPTIMISTIC_RECORD_STORAGE = "forkmesh.repoOptimisticRecords";
+  const OPTIMISTIC_RECORD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const OPTIMISTIC_RECORD_LIMIT = 40;
+  const OPTIMISTIC_RECORD_BYTES = 512 * 1024;
+  let optimisticRecordsHydrated = false;
+
+  function optimisticRepoRecords() {
+    if (!optimisticRecordsHydrated) {
+      optimisticRecordsHydrated = true;
+      let stored = null;
+      try {
+        stored = JSON.parse(localStorage.getItem(OPTIMISTIC_RECORD_STORAGE) || "null");
+      } catch (_) { stored = null; }
+      const cutoff = Date.now() - OPTIMISTIC_RECORD_TTL_MS;
+      const restored = {};
+      Object.entries(stored && typeof stored === "object" ? stored : {})
+        .forEach(([key, entry]) => {
+          if (entry && typeof entry === "object" && Number(entry.savedAt) > cutoff) {
+            restored[key] = entry;
+          }
+        });
+      // Anything written during this session is newer than the stored copy.
+      state.repoOptimisticRecords = {
+        ...restored,
+        ...(state.repoOptimisticRecords || {}),
+      };
+    }
+    return state.repoOptimisticRecords;
+  }
+
+  function persistOptimisticRepoRecords() {
+    const records = state.repoOptimisticRecords || {};
+    const keys = Object.keys(records).sort(
+      (a, b) => Number(records[b]?.savedAt || 0) - Number(records[a]?.savedAt || 0));
+    // Bound the session's own map, not just the browser store: a CSV import
+    // files a whole batch of issues through here in one pass.
+    keys.slice(OPTIMISTIC_RECORD_LIMIT).forEach((key) => { delete records[key]; });
+    const kept = {};
+    let bytes = 0;
+    for (const key of keys.slice(0, OPTIMISTIC_RECORD_LIMIT)) {
+      let size = 0;
+      try {
+        size = JSON.stringify(records[key]).length + key.length;
+      } catch (_) { continue; }
+      // Newest first, so an oversized projection costs only itself: it stays
+      // in memory for this session and simply isn't restored after a reload.
+      if (bytes + size > OPTIMISTIC_RECORD_BYTES) continue;
+      bytes += size;
+      kept[key] = records[key];
+    }
+    try {
+      localStorage.setItem(OPTIMISTIC_RECORD_STORAGE, JSON.stringify(kept));
+    } catch (_) { /* private mode or a full quota — the session copy still works */ }
+  }
+
+  function rememberOptimisticRepoRecord(repo, kind, number, record) {
+    optimisticRepoRecords()[optimisticRepoRecordKey(repo, kind, number)] = {
+      ...record,
+      savedAt: Date.now(),
+    };
+    persistOptimisticRepoRecords();
+  }
+
+  function forgetOptimisticRepoRecord(repo, kind, number) {
+    const records = optimisticRepoRecords();
+    const key = optimisticRepoRecordKey(repo, kind, number);
+    if (!(key in records)) return;
+    delete records[key];
+    persistOptimisticRepoRecords();
+  }
+
+  // A close or reopen signed here is accepted into the owner's inbox, but the
+  // mirror keeps serving the old status until the owner node drains it and the
+  // mirror syncs that commit. Held only in page memory, the change was undone
+  // by the next mirror read - reopening the issue from the list, the list's
+  // own reload, a page refresh - so a just-closed issue read as open again and
+  // got closed a second and third time (issue #715). Each signed status event
+  // is therefore kept per browser and laid over what the mirror serves until
+  // the mirror carries that event, or a newer status change from anywhere
+  // supersedes it.
+  const PENDING_ISSUE_STATUS_STORAGE = "forkmesh.repoPendingIssueStatus";
+  const PENDING_ISSUE_STATUS_LIMIT = 100;
+  let pendingIssueStatusHydrated = false;
+
+  function pendingIssueStatuses() {
+    if (!pendingIssueStatusHydrated) {
+      pendingIssueStatusHydrated = true;
+      let stored = null;
+      try {
+        stored = JSON.parse(localStorage.getItem(PENDING_ISSUE_STATUS_STORAGE) || "null");
+      } catch (_) { stored = null; }
+      const cutoff = Date.now() - OPTIMISTIC_RECORD_TTL_MS;
+      const restored = {};
+      Object.entries(stored && typeof stored === "object" ? stored : {})
+        .forEach(([key, event]) => {
+          if (event && typeof event === "object" && event.type === "status"
+              && Number(event.ts) > cutoff) {
+            restored[key] = event;
+          }
+        });
+      state.repoPendingIssueStatus = {
+        ...restored,
+        ...(state.repoPendingIssueStatus || {}),
+      };
+    }
+    return state.repoPendingIssueStatus;
+  }
+
+  function persistPendingIssueStatuses() {
+    const pending = pendingIssueStatuses();
+    Object.keys(pending)
+      .sort((a, b) => Number(pending[b]?.ts || 0) - Number(pending[a]?.ts || 0))
+      .slice(PENDING_ISSUE_STATUS_LIMIT)
+      .forEach((key) => { delete pending[key]; });
+    try {
+      localStorage.setItem(PENDING_ISSUE_STATUS_STORAGE, JSON.stringify(pending));
+    } catch (_) { /* private mode or a full quota — the session copy still works */ }
+  }
+
+  function rememberPendingIssueStatus(repo, number, event) {
+    if (event?.type !== "status" || !event.id) return;
+    pendingIssueStatuses()[optimisticRepoRecordKey(repo, "issues", number)] = event;
+    persistPendingIssueStatuses();
+  }
+
+  // The status event still waiting on the mirror for this issue, given the
+  // signed events the mirror served for it; null once there is none. A served
+  // copy that carries the event, or a status event at least as new, retires it.
+  function pendingIssueStatusFor(repo, number, servedEvents) {
+    const pending = pendingIssueStatuses();
+    const key = optimisticRepoRecordKey(repo, "issues", number);
+    const event = pending[key];
+    if (!event) return null;
+    const served = Array.isArray(servedEvents) ? servedEvents : [];
+    const settled = Number(event.ts) <= Date.now() - OPTIMISTIC_RECORD_TTL_MS
+      || served.some((existing) => existing?.id === event.id
+        || (existing?.type === "status"
+          && Number(existing.ts || 0) >= Number(event.ts || 0)));
+    if (settled) {
+      delete pending[key];
+      persistPendingIssueStatuses();
+      return null;
+    }
+    return event;
+  }
+
+  // Lay a pending status over a served issue detail (issueDetailParsed shape).
+  function withPendingIssueStatus(repo, number, parsed) {
+    const events = Array.isArray(parsed?.issueEvents) ? parsed.issueEvents : [];
+    const event = pendingIssueStatusFor(repo, number, events);
+    if (!event) return parsed;
+    parsed.issueEvents = [...events, event];
+    parsed.values = { ...(parsed.values || {}), status: event.status };
+    return parsed;
+  }
+
+  // The same for list rows (parseIssueJson shape). Returns the rows whose
+  // status moved, keyed by number, with the status the mirror served, so the
+  // caller can correct counts it derived from the folder listing.
+  function applyPendingIssueStatuses(repo, items) {
+    const moved = new Map();
+    (Array.isArray(items) ? items : []).forEach((issue) => {
+      const event = pendingIssueStatusFor(repo, issue.number, issue.events);
+      if (!event || issue.status === event.status) return;
+      moved.set(Number(issue.number), issue.status);
+      issue.events = [...(Array.isArray(issue.events) ? issue.events : []), event];
+      issue.status = event.status;
+      issue.state = event.status;
+    });
+    return moved;
+  }
+
+  // Numbers in the mirror's closed/ listing that this browser has reopened.
+  function pendingReopenedIssueNumbers(repo, closedPaths) {
+    const prefix = optimisticRepoRecordKey(repo, "issues", "");
+    return Object.entries(pendingIssueStatuses())
+      .filter(([key, event]) => key.startsWith(prefix) && event?.status === "open")
+      .map(([key]) => Number(key.slice(prefix.length)))
+      .filter((number) => closedPaths instanceof Map && closedPaths.has(number));
+  }
+
+  // The list row for a record this browser filed that no mirror serves yet.
+  // Same shape parseIssueJson produces, so it renders and sorts identically to
+  // a served issue — the reader sees their issue, not a placeholder.
+  function optimisticIssueListItem(number, record) {
+    const values = record?.values || {};
+    const labels = Array.isArray(values.labels) ? values.labels.map(String) : [];
+    const status = String(values.status || "open");
+    const milestone = String(values.milestone || "");
+    const events = Array.isArray(record?.issueEvents) ? record.issueEvents : [];
+    const creator = String(record?.issueCreator || values.author || "");
+    return {
+      number,
+      events,
+      creator,
+      creatorKey: creator,
+      title: String(values.title || `issue #${number}`),
+      status,
+      state: status,
+      deleted: false,
+      deleteAttempted: false,
+      author: String(values.authorName || values.author || "you"),
+      date: formatRecordDate(Number(values.ts || 0)),
+      labels,
+      meta: [status, labels.join(", "), milestone].filter(Boolean).join(" · "),
+      body: String(record?.body || ""),
+      wantsAgent: Boolean(values.wantsAgent),
+      milestone,
+      priority: Number(values.priority || 0) || 0,
+      progress: 0,
+      assignees: Array.isArray(values.assignees) ? values.assignees.map(String) : [],
+      startDate: 0,
+      endDate: 0,
+      votes: 0,
+      openEventId: String(events.find((event) => event?.type === "open")?.id || ""),
+      openAttachments: [],
+      createdAtMs: Number(values.ts || 0) || 0,
+    };
+  }
+
+  function optimisticOpenEventId(record) {
+    const events = Array.isArray(record?.issueEvents) ? record.issueEvents : [];
+    return String(events.find((event) => event?.type === "open")?.id || "");
+  }
+
+  // Fold this browser's not-yet-served issue submissions into a freshly loaded
+  // list. A record the mirror now carries is dropped from the store instead of
+  // rendering a second time next to the real row. Two ways it can be carried:
+  //
+  //   * its number is in the mirror's own folder listing (open AND closed);
+  //   * the same signed open event landed under a different number, because the
+  //     owner node found the relay's reserved slot already taken and assigned
+  //     the next free one (IssueStore::applyRemoteEvent). The event id is what
+  //     survives that reassignment, so it is what retires the projection —
+  //     otherwise the row would linger as a phantom next to the real issue.
+  function withOptimisticIssues(repo, items, servedNumbers) {
+    const records = optimisticRepoRecords();
+    const prefix = optimisticRepoRecordKey(repo, "issues", "");
+    const served = servedNumbers instanceof Set ? servedNumbers : new Set();
+    const servedEvents = new Set(
+      items.map((issue) => String(issue.openEventId || "")).filter(Boolean));
+    const pending = [];
+    let converged = false;
+    Object.keys(records).forEach((key) => {
+      if (!key.startsWith(prefix)) return;
+      const number = Number(key.slice(prefix.length));
+      if (!Number.isInteger(number) || number <= 0) return;
+      const record = records[key];
+      if (served.has(number)
+          || servedEvents.has(optimisticOpenEventId(record))) {
+        delete records[key];
+        converged = true;
+        return;
+      }
+      pending.push(optimisticIssueListItem(number, record));
+    });
+    if (converged) persistOptimisticRepoRecords();
+    return pending.length ? [...pending, ...items] : items;
+  }
+
+  function showOptimisticRepoRecord(repo, kind, number, parsed, container) {
+    if (kind === "issues") withPendingIssueStatus(repo, number, parsed);
+    state.repoRecordDetail = { repo, kind, number, parsed };
+    if (kind === "issues") setRepoIssueRecordOpen(true);
+    container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+    if (kind === "issues") mountIssueStickyHeader(container);
+    window.lucide?.createIcons();
+  }
+
+  async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
+    const numbers = issueDependencyNumbers(body)
+      .filter((number) => Number(number) !== Number(currentNumber));
+    const dependencies = await loadRepoIssueSummaries(repo, numbers, known);
+    return dependencies.filter(Boolean);
+  }
+
+  // A record this browser just filed is polled until a mirror serves it. The
+  // polls run behind the optimistic detail already on screen, so they must stay
+  // invisible: painting the loading state and re-rendering on every miss made
+  // the page flash as if it were reloading until the mirror converged - forever
+  // when it never did (issue #675). One timer at a time, backing off.
+  function stopRepoRecordConvergeRetry() {
+    if (state.repoRecordConvergeTimer) {
+      window.clearTimeout(state.repoRecordConvergeTimer);
+      state.repoRecordConvergeTimer = 0;
+    }
+  }
+
+  function repoRecordDetailOnScreen(repo, kind, number, container) {
+    const detail = state.repoRecordDetail;
+    return Boolean(detail && detail.kind === kind
+      && String(detail.number) === String(number)
+      && repoKey(detail.repo) === repoKey(repo)
+      && container.querySelector(`[data-repo-record-detail="${kind}"]`));
+  }
+
+  function scheduleRepoRecordConvergeRetry(repo, kind, number, container) {
+    stopRepoRecordConvergeRetry();
+    const attempt = state.repoRecordConvergeAttempt;
+    state.repoRecordConvergeAttempt = attempt + 1;
+    state.repoRecordConvergeTimer = window.setTimeout(() => {
+      state.repoRecordConvergeTimer = 0;
+      if (repoRecordDetailOnScreen(repo, kind, number, container)) {
+        void loadRepoRecordDetail(repo, kind, number, true);
+      }
+    }, Math.min(1500 * 2 ** attempt, 30000));
+  }
+
+  async function loadRepoRecordDetail(repo, kind, number, preferMirror = false) {
+    const config = repoCollectionConfig[kind];
+    const container = $(`[data-repo-${kind}]`);
+    if (!repo || !config || !container || !number) return;
+    stopRepoPullActivityRefresh();
+    stopRepoRecordConvergeRetry();
+    if (!preferMirror) state.repoRecordConvergeAttempt = 0;
+    const optimistic = optimisticRepoRecords()[
+      optimisticRepoRecordKey(repo, kind, number)];
+    if (optimistic && !preferMirror) {
+      showOptimisticRepoRecord(repo, kind, number, optimistic, container);
+      scheduleRepoRecordConvergeRetry(repo, kind, number, container);
+      return;
+    }
+    const quietRefresh = Boolean(optimistic)
+      && repoRecordDetailOnScreen(repo, kind, number, container);
+    if (kind === "issues") setRepoIssueRecordOpen(true);
+    const recordFile = typeof config.file === "function" ? config.file(Number(number)) : config.file;
+    const recordPath = `${config.dir}/${number}/${recordFile}`;
+    if (!quietRefresh) {
+      // An issue opens straight onto its page frame, drawn from the list row
+      // where one was clicked; pulls and discussions keep the loading line.
+      container.innerHTML = kind === "issues"
+        ? renderRepoIssueDetailSkeleton(repo, number)
+        : `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml(`Loading ${escapeHtml(config.itemLabel)} #${escapeHtml(number)} from the live mirror...`)}</div>`;
+      if (kind === "issues") window.lucide?.createIcons();
+    }
+    try {
+      await primeRepoViewReads(repo, { pulls: "pull", issues: "issue", discussions: "discussion" }[kind], number);
+      let pullMetadataCommit = "";
+      if (kind === "pulls") {
+        try {
+          pullMetadataCommit = await resolveRepoPullMetadataCommit(repo);
+        } catch (_) {
+          pullMetadataCommit = await resolveRepoPullBranchCommit(repo, number);
+        }
+      }
+      const refParams = pullMetadataCommit
+        ? { ref: pullMetadataCommit }
+        : {};
+      let blob;
+      if (kind === "issues") {
+        blob = await fetchRepoIssueBlob(repo, Number(number));
+      } else {
+        try {
+          blob = await fetchRepoJson(repoLiveUrl(repo, "blob", { path: recordPath, ...refParams }));
+        } catch (error) {
+          // The list also shows pulls that so far live only on their own
+          // forkmesh/pull/<n> branch; open those from that branch.
+          if (kind !== "pulls") throw error;
+          const branchCommit = await resolveRepoPullBranchCommit(repo, number);
+          if (branchCommit === pullMetadataCommit) throw error;
+          pullMetadataCommit = branchCommit;
+          blob = await fetchRepoJson(repoLiveUrl(repo, "blob", { path: recordPath, ref: pullMetadataCommit }));
+        }
+      }
+      // Issues are signed-event JSON (issue-N.json), not markdown front matter,
+      // so parse them the same way the list does and map into the shape the
+      // detail renderer expects. Any live mirror serving .forkmesh/issues/
+      // answers this blob read, so the detail loads whenever the list does.
+      const parsed = kind === "issues"
+        ? withPendingIssueStatus(repo, number, issueDetailParsed(blobText(blob), number))
+        : parseFrontMatter(blobText(blob));
+      if (kind === "issues") {
+        const relationIndex = await loadRepoIssueRelationIndex(repo);
+        const [dependencies, subIssues] = await Promise.all([
+          loadRepoIssueDependencies(repo, parsed.body, number, relationIndex),
+          loadRepoIssueSubIssues(repo, number, parsed.body, relationIndex),
+        ]);
+        parsed.issueDependencies = dependencies;
+        parsed.issueSubIssues = subIssues;
+        parsed.issueMentions = issueMentionsOf(relationIndex, number);
+      }
+      const pullPatch = kind === "pulls"
+        ? await loadRepoPullPatch(repo, number, pullMetadataCommit, parsed.values || {})
+        : null;
+      if (pullPatch) parsed.pullPatch = pullPatch;
+      if (kind === "pulls") {
+        parsed.pullMetadataCommit = pullMetadataCommit;
+        const [conversation, commits, agents] = await Promise.all([
+          loadRepoPullConversation(repo, number, pullMetadataCommit),
+          loadRepoPullCommits(repo, number, pullMetadataCommit, parsed.values || {}),
+          loadRepoPullAgentActivity(repo, number, parsed.values || {}),
+        ]);
+        parsed.pullConversation = conversation;
+        parsed.pullCommits = commits;
+        parsed.pullAgents = agents;
+        parsed.pullTimeline = buildRepoPullTimeline(
+          parsed.values || {}, conversation, commits, agents,
+        );
+        parsed.pullMergeAuthorized = await loadRepoPullMergeAuthorization(repo);
+        // Readiness is the merge trial the mirror would actually run, so it
+        // gates the update control below; checks are keyed to the head commit
+        // that trial resolved. Both degrade to "unavailable" rather than to a
+        // reassuring default, so neither blocks the detail from rendering.
+        parsed.pullReadiness = await loadRepoPullReadiness(
+          repo, number, parsed.values || {},
+        );
+        parsed.pullMergeBase = await loadRepoPullMergeBase(
+          repo, parsed.values || {},
+        );
+        parsed.pullChecks = await loadRepoPullChecks(
+          repo, parsed.values || {}, parsed.pullReadiness,
+        );
+        parsed.pullRules = await loadRepoPullRules(
+          repo, number, parsed.pullReadiness,
+        );
+      }
+      if (kind === "issues") {
+        parsed.issueMutationAuthorized =
+          await loadRepoIssueMutationAuthorization(repo);
+        parsed.issueSubscribed = await loadWebIssueSubscription(repo, number);
+      }
+      if (kind === "discussions") parsed.discussionConversation = await loadRepoDiscussionConversation(repo, number);
+      if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
+      // The reader may have left the optimistic detail while this poll ran.
+      if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
+      const commentDraft = quietRefresh
+        ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
+        : "";
+      state.repoRecordDetail = { repo, kind, number, parsed };
+      container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+      if (kind === "issues") mountIssueStickyHeader(container);
+      if (commentDraft) {
+        const commentBody = container.querySelector("[data-repo-issue-comment-body]");
+        if (commentBody) commentBody.value = commentDraft;
+      }
+      loadFederatedReplies(repo, kind, number, container);
+      // Members watch an open pull for agent activity; signed-out visitors
+      // cannot read organization sessions at all, so they get no timer.
+      if (kind === "pulls" && state.session?.sessionToken) {
+        scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
+          (event) => pullAgentStatusIsActive(event.status)));
+      }
+    } catch (_) {
+      // The relay already accepted this numbered record. Keep its complete
+      // detail visible while the mirror commit converges, then retry quietly.
+      if (optimistic) {
+        if (!quietRefresh) {
+          showOptimisticRepoRecord(repo, kind, number, optimistic, container);
+        }
+        scheduleRepoRecordConvergeRetry(repo, kind, number, container);
+      } else {
+        container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">This ${escapeHtml(config.itemLabel)} is unavailable until a reachable mirror host serves ${escapeHtml(recordPath)}.</div>`;
+      }
+    } finally {
+      window.lucide?.createIcons();
+    }
+  }
+
+  function setRepoTabCount(tab, count) {
+    const badge = $(`[data-dashboard-repo-tab-count="${tab}"]`);
+    if (!badge) return;
+    const number = Number(count);
+    if (tab === "discussions" && (!Number.isFinite(number) || number <= 0)) {
+      badge.classList.add("hidden");
+      return;
+    }
+    badge.classList.remove("hidden");
+    badge.textContent = formatCount(Number.isFinite(number) ? number : 0);
+  }
+
+  // Star/unstar a repo (GET/POST/DELETE /api/repo/o/r/star). A star is a
+  // plain per-account preference, not part of the owner-signed catalog
+  // record, so it's fetched and toggled separately from the rest of the
+  // repo's data.
+  function setRepoStarButtonState(button, starred, count) {
+    if (!button) return;
+    button.setAttribute("aria-pressed", starred ? "true" : "false");
+    const icon = button.querySelector("[data-repo-star-icon]");
+    if (icon) {
+      icon.classList.toggle("fill-yellow-400", starred);
+      icon.classList.toggle("text-yellow-400", starred);
+      icon.classList.toggle("text-muted-foreground", !starred);
+    }
+    const label = button.querySelector("[data-repo-star-label]");
+    if (label) label.textContent = starred ? "Starred" : "Star";
+    const countEl = button.querySelector("[data-repo-star-count]");
+    if (countEl) countEl.textContent = formatCount(Number(count) || 0);
+  }
+
+  async function loadRepoStarState(repo, button) {
+    if (!button) return;
+    try {
+      const headers = { accept: "application/json" };
+      if (state.session?.sessionToken) headers.authorization = "Bearer " + state.session.sessionToken;
+      const response = await fetch(`${repoApiBase(repo)}/star`, { headers });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false || !document.body.contains(button)) return;
+      setRepoStarButtonState(button, Boolean(data.starred), data.count);
+    } catch (_) {
+      /* offline relay — star count stays at its initial placeholder */
+    }
+  }
+
+  // Hydrates every rendered star button in `root` (repo list cards, profile
+  // rows) with its real starred state + count, one request per distinct repo.
+  async function hydrateRepoStarButtons(root) {
+    const buttons = Array.from((root || document).querySelectorAll("[data-repo-star-button][data-repo-key]"));
+    const byKey = new Map();
+    buttons.forEach((button) => {
+      const key = button.dataset.repoKey || "";
+      if (!key) return;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(button);
+    });
+    await Promise.all(Array.from(byKey.entries()).map(async ([key, els]) => {
+      const repo = findRepository(key);
+      if (!repo) return;
+      await loadRepoStarState(repo, els[0]);
+      const applied = els[0] && document.body.contains(els[0])
+        ? { starred: els[0].getAttribute("aria-pressed") === "true", count: els[0].querySelector("[data-repo-star-count]")?.textContent }
+        : null;
+      if (applied) els.slice(1).forEach((el) => setRepoStarButtonState(el, applied.starred, applied.count));
+    }));
+  }
+
+  async function toggleRepoStar(button) {
+    const key = button.dataset.repoKey || "";
+    const repo = findRepository(key)
+      || (state.selectedRepo && repoKey(state.selectedRepo) === key ? state.selectedRepo : null);
+    if (!repo) return;
+    if (!state.session?.sessionToken) {
+      location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const nextStarred = button.getAttribute("aria-pressed") !== "true";
+    button.disabled = true;
+    try {
+      const response = await fetch(`${repoApiBase(repo)}/star`, {
+        method: nextStarred ? "POST" : "DELETE",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ sessionToken: state.session.sessionToken }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      setRepoStarButtonState(button, Boolean(data.starred), data.count);
+    } catch (_) {
+      /* best-effort — button keeps its last known state */
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  // Who forked this repo (GET /api/repo/o/r/forks): fills the fork button's
+  // badge and the list its popover opens. A fork edge is published by the
+  // fork's own node inside its signed catalog record, so this is a plain
+  // public read with no viewer state to toggle - unlike Star, the button is a
+  // disclosure, not an action.
+  function repoForkPath(rawUrl, owner, name) {
+    return /^\/[^/\\]/.test(rawUrl) && !/[\u0000-\u0020\\]/.test(rawUrl)
+      ? rawUrl
+      : `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+  }
+
+  function repoForkRowHtml(fork) {
+    const owner = String(fork?.owner || "");
+    const name = String(fork?.name || "");
+    if (!owner || !name) return "";
+    // Same-origin repo paths only; never render a URL the row could redirect
+    // off-site (or into a javascript: scheme) with.
+    const url = repoForkPath(String(fork?.url || ""), owner, name);
+    const rawProfile = String(fork?.profileUrl || "");
+    const profileUrl = fediverseHttpsUrl(rawProfile) ||
+      (/^\/@[^/]/.test(rawProfile) ? rawProfile : "");
+    const avatar = String(fork?.avatarPng || "");
+    const portrait = avatar
+      ? `<img src="data:image/png;base64,${escapeHtml(avatar)}" alt="" class="h-5 w-5 shrink-0 rounded-full object-cover" />`
+      : `<span class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[10px] text-muted-foreground">${escapeHtml(owner.slice(0, 1).toUpperCase())}</span>`;
+    const who = profileUrl
+      ? `<a href="${escapeHtml(profileUrl)}" class="shrink-0 hover:underline">${escapeHtml(owner)}</a>`
+      : `<span class="shrink-0">${escapeHtml(owner)}</span>`;
+    return `<div class="flex items-center gap-1.5 py-0.5">${portrait}${who}<span class="text-muted-foreground/60">/</span><a href="${escapeHtml(url)}" class="min-w-0 truncate text-foreground hover:underline">${escapeHtml(name)}</a></div>`;
+  }
+
+  async function loadRepoForks(repo) {
+    const list = $("[data-repo-fork-list]");
+    try {
+      const response = await fetch(`${repoApiBase(repo)}/forks`, {
+        headers: { accept: "application/json" },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false || !repoAboutStillCurrent(repo)) return;
+      $$("[data-repo-fork-count]").forEach((el) => {
+        el.textContent = formatCount(Number(data.count) || 0);
+      });
+      if (!list) return;
+      const rows = (Array.isArray(data.forks) ? data.forks : [])
+        .map(repoForkRowHtml).filter(Boolean);
+      list.innerHTML = rows.length
+        ? rows.join("")
+        : `<p class="px-1 py-0.5">Nobody has forked this repository yet.</p>`;
+    } catch (_) {
+      // Offline relay: leave the badge at its placeholder and say so in the
+      // popover rather than showing an empty "no forks" list.
+      if (list) {
+        list.innerHTML = `<p class="px-1 py-0.5">The fork list is unavailable right now.</p>`;
+      }
+    }
+  }
+
+  function repoRemoteForkRowHtml(fork, canManage) {
+    const url = String(fork?.url || "");
+    if (!/^https:\/\/[^/]+\/[^/]+\/[^/]+$/.test(url)) return "";
+    const label = String(fork?.label || fork?.host || "");
+    const path = `${String(fork?.owner || "")}/${String(fork?.name || "")}`;
+    const remove = canManage
+      ? `<button type="button" data-repo-remote-fork-remove="${escapeHtml(url)}" aria-label="Remove ${escapeHtml(url)}" class="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i></button>`
+      : "";
+    return `<div class="flex items-center gap-1.5 py-0.5"><i data-lucide="globe" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(url)}" class="min-w-0 truncate text-foreground hover:underline"><span class="text-muted-foreground">${escapeHtml(label)}</span> ${escapeHtml(path)}</a>${remove}</div>`;
+  }
+
+  function renderRepoRemoteForks() {
+    const list = $("[data-repo-remote-fork-list]");
+    const form = $("[data-repo-remote-fork-form]");
+    const data = state.repoRemoteForks;
+    if (form) form.hidden = !data.canManage;
+    if (!list) return;
+    const rows = data.forks.map((fork) => repoRemoteForkRowHtml(fork, data.canManage)).filter(Boolean);
+    list.innerHTML = rows.length
+      ? rows.join("")
+      : `<p class="px-1 py-0.5">${data.loaded ? "No forks on other instances saved yet." : "Loading…"}</p>`;
+    window.lucide?.createIcons();
+  }
+
+  function repoRemoteForksRequestInit(method, payload) {
+    const token = String(state.session?.sessionToken || "");
+    const bearer = token && token !== "cookie" ? token : "";
+    return {
+      method,
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        ...(payload ? { "content-type": "application/json" } : {}),
+        ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+      },
+      ...(payload ? { body: JSON.stringify({ ...payload, ...(bearer ? { sessionToken: bearer } : {}) }) } : {}),
+    };
+  }
+
+  async function loadRepoRemoteForks(repo, { force = false } = {}) {
+    const key = repoKey(repo).toLowerCase();
+    const current = state.repoRemoteForks;
+    if (!force && current.loaded && current.key === key) return current.forks;
+    if (current.key !== key) {
+      state.repoRemoteForks = { key, forks: [], canManage: false, loaded: false };
+    }
+    try {
+      const response = await fetch(`${repoApiBase(repo)}/remote-forks`, repoRemoteForksRequestInit("GET"));
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+      if (state.repoRemoteForks.key !== key) return [];
+      state.repoRemoteForks = {
+        key,
+        forks: Array.isArray(data.forks) ? data.forks : [],
+        canManage: Boolean(data.canManage),
+        loaded: true,
+      };
+    } catch (_) {
+      if (state.repoRemoteForks.key === key) state.repoRemoteForks.loaded = true;
+    }
+    if (repoAboutStillCurrent(repo)) renderRepoRemoteForks();
+    return state.repoRemoteForks.forks;
+  }
+
+  async function saveRepoRemoteFork(repo, method, url) {
+    const status = $("[data-repo-remote-fork-status]");
+    if (status) status.textContent = method === "DELETE" ? "Removing…" : "Saving…";
+    try {
+      const response = await fetch(`${repoApiBase(repo)}/remote-forks`, repoRemoteForksRequestInit(method, { url }));
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.message || (response.status === 403
+          ? "Only the repository's owner can change its forks on other instances."
+          : data.error || `HTTP ${response.status}`));
+      }
+      state.repoRemoteForks = {
+        key: repoKey(repo).toLowerCase(),
+        forks: Array.isArray(data.forks) ? data.forks : [],
+        canManage: true,
+        loaded: true,
+      };
+      if (status) status.textContent = method === "DELETE" ? "Removed." : "Saved. Pick it under Send to in a new pull request.";
+      renderRepoRemoteForks();
+      return true;
+    } catch (error) {
+      if (status) status.textContent = String(error?.message || "That did not work. Try again.");
+      return false;
+    }
+  }
+
+  async function createRepoForkFromWebsite(button) {
+    const repo = state.selectedRepo;
+    if (!button || !repo) return;
+    if (!state.session?.sessionToken) {
+      location.href = "/login?next=" + encodeURIComponent(
+        `${location.pathname}${location.search}`,
+      );
+      return;
+    }
+    const status = $("[data-repo-fork-status]");
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>Creating fork…';
+    if (status) status.textContent = "Recording the fork on your managed mirror…";
+    try {
+      const token = String(state.session.sessionToken || "");
+      const response = await fetch(`${repoApiBase(repo)}/forks`, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          ...(token && token !== "cookie"
+            ? { authorization: `Bearer ${token}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          ...(token && token !== "cookie" ? { sessionToken: token } : {}),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        location.href = "/login?next=" + encodeURIComponent(
+          `${location.pathname}${location.search}`,
+        );
+        return;
+      }
+      if (!response.ok || data.ok === false || !data.fork) {
+        const error = new Error(data.message || data.error || `HTTP ${response.status}`);
+        error.code = data.error || "";
+        throw error;
+      }
+      const fork = data.fork || {};
+      const rawUrl = String(fork.url || "");
+      const forkUrl = /^\/[A-Za-z0-9._:%-]+\/[A-Za-z0-9._:%-]+$/.test(rawUrl)
+        ? rawUrl
+        : "";
+      button.innerHTML = data.queued
+        ? '<i data-lucide="clock-3" class="h-3.5 w-3.5"></i>Fork queued'
+        : '<i data-lucide="check" class="h-3.5 w-3.5"></i>Fork created';
+      if (status) {
+        const message = data.queued
+          ? `Queued on ${String(fork.owner || "your mirror")}. It will finish as soon as that mirror can reach any copy of the source.`
+          : "Your fork is ready.";
+        status.innerHTML = `${escapeHtml(message)}${forkUrl ? ` <a href="${escapeHtml(forkUrl)}" class="font-medium text-accent hover:underline">Open fork</a>` : ""}`;
+      }
+    } catch (error) {
+      button.disabled = false;
+      button.innerHTML = original;
+      if (status) {
+        const code = String(error?.code || "");
+        status.textContent = code === "headless_mirror_required"
+          ? "Link a managed headless mirror in Settings first. It may be offline when you create the fork."
+          : String(error?.message || "The fork could not be queued. Try again.");
+      }
+    } finally {
+      window.lucide?.createIcons();
+    }
+  }
+
+  // Refreshes the "N Open" / "N Closed" counts shown in an issues/pulls panel
+  // header once the real records are loaded (the initial render only knows a
+  // bundled total, not the open/closed split).
+  function setRepoCollectionCounts(kind, openCount, closedCount) {
+    const openEl = $(`[data-repo-collection-open-count="${kind}"]`);
+    if (openEl) openEl.textContent = tabCountLabel(openCount);
+    const closedEl = $(`[data-repo-collection-closed-count="${kind}"]`);
+    if (closedEl) closedEl.textContent = tabCountLabel(closedCount);
+  }
+
+  function applyServedCounts(counts) {
+    if (!counts || typeof counts !== "object") return;
+    // The Issues header shows OPEN issues only (issue #397): closed issues are
+    // opt-in behind the Closed filter, so the tab badge counts the open issues
+    // the host serves (counts.openIssues), and the panel's "N Open / N Closed"
+    // split is filled from the served open/closed tallies. Older hosts that only
+    // report a bundled total fall back to that total; the first view of the
+    // Issues tab still refines the badge to the open count once issues load.
+    const servedOpen = Number.isFinite(Number(counts.openIssues))
+      ? Number(counts.openIssues)
+      : Number(counts.issues);
+    if (Number.isFinite(servedOpen)) {
+      // Issues filed from this browser stay out of the mirror until the owner
+      // node drains its inbox, so the served tally alone reads one short right
+      // after "Submit new issue" - and opening the Issues tab races this
+      // refresh against loadRepoIssues, letting it overwrite the list's own
+      // count (issue #716). Keep those submissions counted on top.
+      const view = state.issuesView;
+      const unserved = Math.max(0, Number(view?.unservedOpen) || 0);
+      const openIssues = servedOpen + unserved;
+      const closedIssues = Number(counts.closedIssues);
+      setRepoTabCount("issues", openIssues);
+      if (Number.isFinite(closedIssues))
+        setRepoCollectionCounts("issues", openIssues, closedIssues);
+      // The list's Open/Closed strip renders from these, so a later repaint
+      // must not bring back the number the header just replaced.
+      if (Number.isFinite(Number(counts.openIssues))
+          && Number.isFinite(view?.openCount)) {
+        view.openCount = openIssues;
+        if (Number.isFinite(closedIssues)) view.closedCount = closedIssues;
+      }
+    }
+    const openPulls = Number.isFinite(Number(counts.openPulls))
+      ? Number(counts.openPulls)
+      : Number(counts.pulls);
+    if (Number.isFinite(openPulls)) {
+      setRepoTabCount("pulls", openPulls);
+      if (Number.isFinite(Number(counts.closedPulls)))
+        setRepoCollectionCounts("pulls", openPulls, Number(counts.closedPulls));
+    }
+    if (Number.isFinite(Number(counts.discussions))) setRepoTabCount("discussions", Number(counts.discussions));
+  }
+
+  // The tab badges are seeded from the catalog's last-published tallies, which
+  // lag the live mirror (e.g. issues opened since the owner node last
+  // republished). The authoritative served counts ride only on the ROOT tree
+  // reply (RepoHost::rootCountsFor, gated on path.isEmpty()), so a deep link
+  // straight into a subfolder — e.g. browsing .forkmesh/issues/open — fetches a
+  // subpath tree that carries no counts, leaving the Issues badge stuck on the
+  // stale seed (showing 7 while the open/ folder holds 11). Refresh from the
+  // mirror's root counts in that one case; best-effort, so an offline mirror
+  // just keeps the catalog seed.
+  async function refreshServedCounts(repo) {
+    try {
+      const data = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: "" }));
+      if (data && data.counts && repoAboutStillCurrent(repo)) {
+        updateRepoLiveCounts(repo, data.counts);
+        applyServedCounts(data.counts);
+      }
+    } catch (_) {
+      /* offline mirror — badges keep their catalog seed */
+    }
+  }
+
+  // Free-text issue search: substring match (case-insensitive) over the
+  // number, title, body snippet, author, and the status/labels/milestone
+  // meta string — everything renderRepoRecordList already shows per row, so
+  // "matches the search" and "matches what's visibly displayed" stay the
+  // same thing. Runs client-side over the already-loaded (batched) issue set
+  // rather than a new network call, per the existing loadRepoIssues contract.
+  function issueMatchesQuery(issue, query) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return true;
+    const haystack = [
+      "#" + issue.number, String(issue.number), issue.title, issue.body,
+      issue.author, issue.meta,
+    ].join(" ").toLowerCase();
+    return haystack.includes(q);
+  }
+
+  // The collection toolbar's four issue metadata selects used to be visual
+  // placeholders: their choices were hard-coded, no change listener read them,
+  // and renderRepoIssues never consulted them. Keep their values separate from
+  // the free-text query so a person can combine (for example) an author and a
+  // label without either control rewriting what they typed in the search box.
+  const ISSUE_FILTER_NONE = "__forkmesh_none__";
+  const ISSUE_FILTER_ME = "__forkmesh_me__";
+  const ISSUE_FILTER_ASSIGNED = "__forkmesh_assigned__";
+
+  function issueFilterState() {
+    const filters = state.issuesView?.filters;
+    if (filters && typeof filters === "object") return filters;
+    state.issuesView.filters = {
+      author: "", label: "", milestone: "", assignee: "",
+      mentions: "", involves: "", type: "", sort: "recently_updated",
+    };
+    return state.issuesView.filters;
+  }
+
+  function issueFilterValues(field) {
+    const values = new Map();
+    const add = (raw) => {
+      const value = String(raw || "").trim();
+      const key = value.toLowerCase();
+      if (value && !values.has(key)) values.set(key, value);
+    };
+    // A value chosen from a view or typed as a qualifier stays selectable even
+    // when no loaded issue carries it yet ("Created by me" with no issues).
+    const requested = String(issueFilterState()[field] || "");
+    if (requested && !requested.startsWith("__forkmesh_")) add(requested);
+    (state.issuesView?.items || []).forEach((issue) => {
+      if (field === "author") add(issue.author);
+      else if (field === "label") (issue.labels || []).forEach(add);
+      else if (field === "milestone") add(issue.milestone);
+      else if (field === "assignee") (issue.assignees || []).forEach(add);
+    });
+    return Array.from(values.values()).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }
+
+  // The public ForkMesh user directory, loaded once when the assignee picker
+  // first opens, so a maintainer can find someone who has not touched this
+  // repository yet (issue #688).
+  let repoIssueAssigneeDirectory = null;
+  let repoIssueAssigneeDirectoryLoad = null;
+
+  function loadRepoIssueAssigneeDirectory() {
+    if (repoIssueAssigneeDirectory || repoIssueAssigneeDirectoryLoad) return;
+    repoIssueAssigneeDirectoryLoad = fetch("/api/accounts/users", { cache: "no-store", headers: { accept: "application/json" } })
+      .then((response) => (response.ok ? response.json() : {}))
+      .then((payload) => {
+        repoIssueAssigneeDirectory = (Array.isArray(payload?.users) ? payload.users : [])
+          .map((user) => String(user?.name || "").trim()).filter(Boolean);
+      })
+      .catch(() => { repoIssueAssigneeDirectory = []; })
+      .finally(() => {
+        repoIssueAssigneeDirectoryLoad = null;
+        // A picker already open on assignees picks the directory up at once.
+        if (issuePicker?.field === "assignees") refreshIssuePickerList();
+      });
+  }
+
+  function issueFilterOptions(field) {
+    if (field === "author") {
+      return [
+        { value: "", label: "Any author" },
+        ...issueFilterValues(field).map((value) => ({ value, label: value })),
+      ];
+    }
+    if (field === "label") {
+      return [
+        { value: "", label: "Any label" },
+        ...issueFilterValues(field).map((value) => ({ value, label: value })),
+      ];
+    }
+    if (field === "milestone") {
+      return [
+        { value: "", label: "Any milestone" },
+        { value: ISSUE_FILTER_NONE, label: "No milestone" },
+        ...issueFilterValues(field).map((value) => ({ value, label: value })),
+      ];
+    }
+    if (field === "assignee") {
+      return [
+        { value: "", label: "Anyone" },
+        { value: ISSUE_FILTER_ME, label: "Assigned to me" },
+        { value: ISSUE_FILTER_ASSIGNED, label: "Anyone assigned" },
+        { value: ISSUE_FILTER_NONE, label: "Unassigned" },
+        ...issueFilterValues(field).map((value) => ({ value, label: value })),
+      ];
+    }
+    if (field === "type") {
+      return [
+        { value: "", label: "All types" },
+        { value: "standard", label: "Standard issues" },
+        { value: "agent", label: "Agent tasks" },
+      ];
+    }
+    if (field === "sort") {
+      return [
+        { value: "recently_updated", label: "Recently updated" },
+        { value: "newest", label: "Newest" },
+        { value: "oldest", label: "Oldest" },
+        { value: "priority", label: "Highest priority" },
+        { value: "comments", label: "Most commented" },
+      ];
+    }
+    return [];
+  }
+
+  function syncIssueFilterControls() {
+    const filters = issueFilterState();
+    $$('[data-repo-issue-filter]').forEach((select) => {
+      const field = select.dataset.repoIssueFilter || "";
+      const options = issueFilterOptions(field);
+      const requested = String(filters[field] || "");
+      const selected = options.some((option) => option.value === requested)
+        ? requested : "";
+      if (selected !== requested) filters[field] = "";
+      const unchanged = select.options.length === options.length
+        && options.every((option, index) =>
+          select.options[index]?.value === option.value
+          && select.options[index]?.text === option.label);
+      if (!unchanged) {
+        const fragment = document.createDocumentFragment();
+        options.forEach(({ value, label }) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          fragment.append(option);
+        });
+        select.replaceChildren(fragment);
+      }
+      select.value = selected;
+    });
+  }
+
+  function issueMatchesFilters(issue, filters = issueFilterState()) {
+    const same = (left, right) => String(left || "").trim().toLowerCase()
+      === String(right || "").trim().toLowerCase();
+    const has = (values, wanted) => (Array.isArray(values) ? values : [])
+      .some((value) => same(value, wanted));
+
+    if (filters.author && !same(issue.author, filters.author)) return false;
+    if (filters.label && !has(issue.labels, filters.label)) return false;
+    if (filters.milestone === ISSUE_FILTER_NONE) {
+      if (String(issue.milestone || "").trim()) return false;
+    } else if (filters.milestone
+        && !same(issue.milestone, filters.milestone)) return false;
+    if (filters.assignee === ISSUE_FILTER_NONE) {
+      if ((Array.isArray(issue.assignees) ? issue.assignees : [])
+          .some((value) => String(value || "").trim()))
+        return false;
+    } else if (filters.assignee === ISSUE_FILTER_ASSIGNED) {
+      if (!(Array.isArray(issue.assignees) ? issue.assignees : [])
+          .some((value) => String(value || "").trim())) return false;
+    } else if (filters.assignee === ISSUE_FILTER_ME) {
+      const account = String(state.session?.nodeName || "").trim();
+      if (!account || !has(issue.assignees, account)) return false;
+    } else if (filters.assignee
+        && !has(issue.assignees, filters.assignee)) return false;
+    if (filters.type === "agent" && !issue.wantsAgent) return false;
+    if (filters.type === "standard" && issue.wantsAgent) return false;
+    if (filters.mentions === ISSUE_FILTER_ME
+        && !issueMentionsAccount(issue, state.session?.nodeName)) return false;
+    if (filters.involves === ISSUE_FILTER_ME
+        && !issueInvolvesAccount(issue, state.session?.nodeName)) return false;
+    return true;
+  }
+
+  // "@name" in the description or any comment, the way GitHub's Mentioned
+  // view reads it. The account has to stand alone, so @sam never matches
+  // @samantha.
+  function issueMentionsAccount(issue, account) {
+    const name = String(account || "").trim();
+    if (!name) return false;
+    const pattern = new RegExp(
+      `(^|[^\\w@])@${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "i");
+    const bodies = [issue.body, ...(Array.isArray(issue.events) ? issue.events : [])
+      .filter((event) => event?.type === "comment").map((event) => event.body)];
+    return bodies.some((body) => pattern.test(String(body || "")));
+  }
+
+  // Recent activity: anything this account opened, is assigned to, acted on in
+  // the signed history, or was mentioned in.
+  function issueInvolvesAccount(issue, account) {
+    const name = String(account || "").trim().toLowerCase();
+    if (!name) return false;
+    const same = (value) => String(value || "").trim().toLowerCase() === name;
+    return same(issue.author)
+      || (Array.isArray(issue.assignees) ? issue.assignees : []).some(same)
+      || (Array.isArray(issue.events) ? issue.events : []).some((event) => same(event?.authorName))
+      || issueMentionsAccount(issue, account);
+  }
+
+  function setIssueCollectionFilter(field, value) {
+    if (!["author", "label", "milestone", "assignee", "mentions", "involves", "type", "sort"].includes(field)) return;
+    issueFilterState()[field] = String(value || "");
+    state.repoCollectionPages.issues = 1;
+    renderRepoIssues();
+  }
+
+  function issueSortItems(items, sort = issueFilterState().sort) {
+    const stamp = (item, field) => {
+      let value = Number(item[field] || 0);
+      if (value > 0 && value < 10_000_000_000) value *= 1000;
+      return Number.isFinite(value) ? value : 0;
+    };
+    const stableNewest = (a, b) => Number(b.number) - Number(a.number);
+    if (sort === "newest") {
+      return items.sort((a, b) => stamp(b, "createdAtMs")
+        - stamp(a, "createdAtMs") || stableNewest(a, b));
+    }
+    if (sort === "oldest") {
+      return items.sort((a, b) => stamp(a, "createdAtMs")
+        - stamp(b, "createdAtMs") || Number(a.number) - Number(b.number));
+    }
+    if (sort === "priority") {
+      const rank = (item) => Number(item.priority) > 0
+        ? Number(item.priority) : Number.MAX_SAFE_INTEGER;
+      return items.sort((a, b) => rank(a) - rank(b)
+        || stamp(b, "updatedAtMs") - stamp(a, "updatedAtMs")
+        || stableNewest(a, b));
+    }
+    if (sort === "comments") {
+      return items.sort((a, b) => Number(b.commentCount || 0)
+        - Number(a.commentCount || 0)
+        || stamp(b, "updatedAtMs") - stamp(a, "updatedAtMs")
+        || stableNewest(a, b));
+    }
+    return items.sort((a, b) => stamp(b, "updatedAtMs")
+      - stamp(a, "updatedAtMs") || stableNewest(a, b));
+  }
+
+  // The Issues sidebar: GitHub's saved views, each a set of filters. A view is
+  // active when the current filters are exactly that view's filters, so a
+  // qualifier typed into the search box lights up the matching entry too.
+  const ISSUE_VIEWS = [
+    { id: "issues", icon: "circle-dot", label: "Issues" },
+    { id: "assigned", icon: "user-round", label: "Assigned to me", filters: { assignee: ISSUE_FILTER_ME } },
+    { id: "created", icon: "smile", label: "Created by me", filters: { author: ISSUE_FILTER_ME } },
+    { id: "mentioned", icon: "at-sign", label: "Mentioned", filters: { mentions: ISSUE_FILTER_ME } },
+    { id: "recent", icon: "history", label: "Recent activity", filters: { involves: ISSUE_FILTER_ME } },
+  ];
+  const ISSUE_VIEW_FIELDS = ["author", "assignee", "mentions", "involves"];
+
+  function issueViewFilters(view) {
+    const account = String(state.session?.nodeName || "");
+    const filters = { author: "", assignee: "", mentions: "", involves: "" };
+    Object.entries(view.filters || {}).forEach(([field, value]) => {
+      // Author filters compare names, so "me" is spelled as the account.
+      filters[field] = field === "author" && value === ISSUE_FILTER_ME ? account : value;
+    });
+    return filters;
+  }
+
+  function activeIssueView() {
+    const filters = issueFilterState();
+    return ISSUE_VIEWS.find((view) => {
+      const wanted = issueViewFilters(view);
+      return ISSUE_VIEW_FIELDS.every((field) => String(filters[field] || "").toLowerCase()
+        === String(wanted[field] || "").toLowerCase());
+    }) || null;
+  }
+
+  function setIssueView(id) {
+    const view = ISSUE_VIEWS.find((entry) => entry.id === id) || ISSUE_VIEWS[0];
+    if (view.id !== "issues" && !state.session?.nodeName) {
+      location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    // A view replaces the whole search, as GitHub's does; only the sort stays.
+    Object.assign(issueFilterState(), issueViewFilters(view), { label: "", milestone: "", type: "" });
+    state.issuesView.query = "";
+    if (view.id === "recent") issueFilterState().sort = "recently_updated";
+    setIssueFilter(view.id === "recent" ? "all" : "open");
+  }
+
+  function renderIssueViewsNav() {
+    const items = (state.issuesView?.items || [])
+      .filter((issue) => issue.status !== "closed" && !issue.deleted);
+    const current = activeIssueView();
+    const filters = issueFilterState();
+    const viewCount = (view) => {
+      if (view.id === "issues" || !state.session?.nodeName) return null;
+      const wanted = { ...filters, ...issueViewFilters(view), label: "", milestone: "", type: "" };
+      return items.filter((issue) => issueMatchesFilters(issue, wanted)).length;
+    };
+    const tally = (field) => {
+      const counts = new Map();
+      items.forEach((issue) => {
+        const values = field === "label" ? (issue.labels || []) : [issue.milestone];
+        values.map((value) => String(value || "").trim()).filter(Boolean)
+          .forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+      });
+      return Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
+    };
+    const row = (attrs, active, icon, label, count) => `<button type="button" ${attrs} aria-current="${active ? "true" : "false"}" class="relative flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary${active ? " bg-secondary font-semibold" : ""}">${icon}<span class="min-w-0 flex-1 truncate">${escapeHtml(label)}</span>${count === null || count === undefined ? "" : `<span class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px]">${formatCount(count)}</span>`}</button>`;
+    const labels = tally("label");
+    const milestones = tally("milestone");
+    const section = (title, rows) => rows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">${title}</h3>${rows.join("")}` : "";
+    return `
+      <div class="grid gap-0.5">
+        ${ISSUE_VIEWS.map((view) => row(`data-repo-issue-view="${view.id}"`, current?.id === view.id,
+          `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
+      </div>
+      <div class="my-3 border-t border-border"></div>
+      <div class="grid gap-0.5">
+        <a${state.selectedRepo ? ` href="${escapeHtml(`${repoLinkUrl(state.selectedRepo)}/projects`)}"` : ""} data-dashboard-repo-tab="projects" class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="table-2" class="h-4 w-4 text-muted-foreground"></i>Projects</a>
+        ${section("Labels", labels.map(([label, count]) => row(`data-repo-issue-label-view="${escapeHtml(label)}"`,
+          String(filters.label || "").toLowerCase() === label.toLowerCase(),
+          `<span aria-hidden="true" class="h-3 w-3 shrink-0 rounded-full" style="background:hsl(${issueLabelHue(label)} 70% 55%)"></span>`, label, count)))}
+        ${section("Milestones", milestones.map(([milestone, count]) => row(`data-repo-issue-milestone-view="${escapeHtml(milestone)}"`,
+          String(filters.milestone || "").toLowerCase() === milestone.toLowerCase(),
+          `<i data-lucide="milestone" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, milestone, count)))}
+      </div>
+      <div class="mt-3 border-t border-border pt-2">
+        <button type="button" data-repo-issue-views-toggle class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"><i data-lucide="panel-left-close" class="h-4 w-4"></i>Collapse sidebar</button>
+      </div>`;
+  }
+
+  // The search box shows the active filters as GitHub-style qualifiers and
+  // accepts them back: is:issue state:open author:alice label:"help wanted".
+  // state.issuesView.query keeps only the free text, so every other reader of
+  // it (local filter terms, "clear search") keeps working unchanged.
+  const ISSUE_QUERY_SORTS = {
+    recently_updated: "updated-desc",
+    newest: "created-desc",
+    oldest: "created-asc",
+    priority: "priority",
+    comments: "comments-desc",
+  };
+
+  function issueQueryValue(value) {
+    const text = String(value || "").replace(/"/g, "");
+    return /\s/.test(text) ? `"${text}"` : text;
+  }
+
+  function serializeIssueQuery() {
+    const filters = issueFilterState();
+    const parts = ["is:issue", `state:${state.issuesView.filter || "open"}`];
+    if (filters.author) parts.push(`author:${issueQueryValue(filters.author)}`);
+    if (filters.assignee === ISSUE_FILTER_ME) parts.push("assignee:@me");
+    else if (filters.assignee === ISSUE_FILTER_NONE) parts.push("no:assignee");
+    else if (filters.assignee === ISSUE_FILTER_ASSIGNED) parts.push("has:assignee");
+    else if (filters.assignee) parts.push(`assignee:${issueQueryValue(filters.assignee)}`);
+    if (filters.mentions === ISSUE_FILTER_ME) parts.push("mentions:@me");
+    if (filters.involves === ISSUE_FILTER_ME) parts.push("involves:@me");
+    if (filters.label) parts.push(`label:${issueQueryValue(filters.label)}`);
+    if (filters.milestone === ISSUE_FILTER_NONE) parts.push("no:milestone");
+    else if (filters.milestone) parts.push(`milestone:${issueQueryValue(filters.milestone)}`);
+    if (filters.type) parts.push(`type:${filters.type}`);
+    if (filters.sort && filters.sort !== "recently_updated") {
+      parts.push(`sort:${ISSUE_QUERY_SORTS[filters.sort] || filters.sort}`);
+    }
+    const free = String(state.issuesView.query || "").trim();
+    return `${parts.join(" ")}${free ? ` ${free}` : ""}`;
+  }
+
+  function issueQueryTokens(text) {
+    return String(text || "").match(/[a-z]+:"[^"]*"?|[a-z]+:\S*|"[^"]*"?|\S+/gi) || [];
+  }
+
+  function parseIssueQuery(text) {
+    const filters = {
+      author: "", label: "", milestone: "", assignee: "",
+      mentions: "", involves: "", type: "", sort: "recently_updated",
+    };
+    // With no state qualifier the search spans every issue, as on GitHub.
+    let status = "all";
+    const free = [];
+    const sorts = Object.fromEntries(Object.entries(ISSUE_QUERY_SORTS)
+      .map(([key, value]) => [value, key]));
+    issueQueryTokens(text).forEach((token) => {
+      const match = /^([a-z]+):(.*)$/i.exec(token);
+      if (!match) {
+        free.push(token.replace(/"/g, ""));
+        return;
+      }
+      const key = match[1].toLowerCase();
+      const value = match[2].replace(/"/g, "").trim();
+      const lower = value.toLowerCase();
+      if (key === "is" && ["open", "closed"].includes(lower)) status = lower;
+      else if (key === "is" && lower === "issue") { /* the whole tab is issues */ }
+      else if (key === "state" && ["open", "closed", "all"].includes(lower)) status = lower;
+      else if (key === "author") filters.author = lower === "@me" ? String(state.session?.nodeName || "") : value;
+      else if (key === "assignee") filters.assignee = lower === "@me" ? ISSUE_FILTER_ME : value;
+      else if (key === "no" && lower === "assignee") filters.assignee = ISSUE_FILTER_NONE;
+      else if (key === "has" && lower === "assignee") filters.assignee = ISSUE_FILTER_ASSIGNED;
+      else if (key === "mentions" && lower === "@me") filters.mentions = ISSUE_FILTER_ME;
+      else if (key === "involves" && lower === "@me") filters.involves = ISSUE_FILTER_ME;
+      else if (key === "label") filters.label = value;
+      else if (key === "milestone") filters.milestone = value;
+      else if (key === "no" && lower === "milestone") filters.milestone = ISSUE_FILTER_NONE;
+      else if (key === "type" && ["agent", "standard"].includes(lower)) filters.type = lower;
+      else if (key === "sort" && sorts[lower]) filters.sort = sorts[lower];
+      else free.push(token.replace(/"/g, ""));
+    });
+    return { status, filters, query: free.join(" ") };
+  }
+
+  function applyIssueQueryText(text) {
+    const parsed = parseIssueQuery(text);
+    Object.assign(issueFilterState(), parsed.filters);
+    state.issuesView.query = parsed.query;
+    setIssueFilter(parsed.status);
+  }
+
+  function renderIssueQueryHighlight(input) {
+    const layer = input?.parentElement?.querySelector("[data-repo-issue-query-highlight]");
+    if (!layer) return;
+    // One inline run: loose text nodes inside the flex layer would lose the
+    // spaces between qualifiers.
+    layer.innerHTML = issueQueryTokens(input.value).length
+      ? `<span class="whitespace-pre">${String(input.value).split(/(\s+)/).map((part) => {
+          const match = /^([a-z]+:)(.+)$/i.exec(part);
+          return match
+            ? `<span>${escapeHtml(match[1])}</span><span class="rounded-sm bg-[color-mix(in_srgb,var(--dashboard-link)_14%,transparent)] text-[var(--dashboard-link)]">${escapeHtml(match[2])}</span>`
+            : escapeHtml(part);
+        }).join("")}</span>`
+      : "";
+    layer.style.transform = `translateX(${-input.scrollLeft}px)`;
+  }
+
+  // Rewrite the box from the filters unless the person is typing in it: a
+  // rewrite mid-keystroke would move their caret.
+  function syncIssueQueryBox({ force = false } = {}) {
+    const input = $('[data-repo-filter-query="issues"]');
+    if (!input) return;
+    if (force || document.activeElement !== input) {
+      input.value = `${serializeIssueQuery()} `;
+    }
+    renderIssueQueryHighlight(input);
+  }
+
+  function setIssueViewsCollapsed(collapsed) {
+    try {
+      localStorage.setItem("forkmesh.issue-views-collapsed.v1", collapsed ? "1" : "0");
+    } catch (_) { /* storage unavailable: the toggle still applies now */ }
+    $$("[data-repo-issues-layout]").forEach((layout) => {
+      layout.dataset.viewsCollapsed = collapsed ? "true" : "false";
+    });
+  }
+
+  function issueViewsCollapsed() {
+    try {
+      return localStorage.getItem("forkmesh.issue-views-collapsed.v1") === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function renderRepoIssues() {
+    const container = $("[data-repo-issues]");
+    if (!container) return;
+    const issuesView = state.issuesView;
+    const filtered = issuesView.items.filter((issue) => {
+      // A deleted issue (its creator tombstoned it) is shown only under "All",
+      // badged, so it doesn't pad the Open/Closed lists the tab count tracks
+      // (adhoc #16). An unauthorized deletion attempt leaves the issue in its
+      // normal Open/Closed list, flagged.
+      if (issue.deleted && issuesView.filter !== "all") return false;
+      if (issuesView.filter === "all") return true;
+      // "Open" means "not closed", matching the desktop advert and served counts
+      // (RepoHost::countOpenIssues / mirrorOpenIssueCount both use status !=
+      // "closed"). A strict status === "open" test dropped issues with any other
+      // non-closed status (e.g. "reopened") from the Open view, so the tab and
+      // list showed fewer issues than the Mirror nodes count (adhoc #96).
+      if (issuesView.filter === "open") return issue.status !== "closed";
+      return issue.status === "closed";
+    }).filter((issue) => issueMatchesFilters(issue, issueFilterState()))
+      .filter((issue) => localFilterQueries(issuesView.query)
+      .every((query) => issueMatchesQuery(issue, query)));
+    // The list stays an activity feed by default (newest update first), while
+    // the visible Sort control can deliberately switch to creation time,
+    // priority, or comment activity. Every mode keeps the durable issue number
+    // as its final stable tie-breaker.
+    issueSortItems(filtered);
+    const config = repoCollectionConfig.issues;
+    const loadedOpen = issuesView.items.filter(
+      (issue) => issue.status !== "closed" && !issue.deleted).length;
+    const loadedClosed = issuesView.items.filter(
+      (issue) => issue.status === "closed" && !issue.deleted).length;
+    const openCount = issuesView.openCount !== null
+      && Number.isFinite(Number(issuesView.openCount))
+      ? Number(issuesView.openCount) : loadedOpen;
+    const closedCount = issuesView.closedCount !== null
+      && Number.isFinite(Number(issuesView.closedCount))
+      ? Number(issuesView.closedCount) : loadedClosed;
+    // GitHub's strip is Open and Closed. "All" (the only place a deleted
+    // issue is listed) is reached with state:all in the search box.
+    const statusTabs = [
+      ["open", "circle-dot", "Open", openCount],
+      ["closed", "check", "Closed", closedCount],
+    ];
+    const listFilters = [
+      ["Author", "author"],
+      ["Labels", "label"],
+      ["Milestones", "milestone"],
+      ["Assignees", "assignee"],
+      ["Types", "type"],
+      [issueFilterOptions("sort").find(
+        (option) => option.value === issueFilterState().sort)?.label || "Sort", "sort"],
+    ];
+    const filterBar = `<div data-repo-issue-list-header class="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-t-md border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-2">
+      <div class="flex min-w-0 flex-wrap items-center gap-1">
+        ${statusTabs.map(([stateName, icon, label, count]) => `<button type="button" data-dashboard-issue-filter="${stateName}" aria-pressed="${stateName === issuesView.filter ? "true" : "false"}" class="${issueStateTabClass(stateName === issuesView.filter)}"><i data-lucide="${icon}" class="h-4 w-4"></i>${label}<span class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px]">${formatCount(count)}</span></button>`).join("")}
+      </div>
+      <div class="flex min-w-0 flex-wrap items-center justify-end">
+        ${listFilters.map(([label, field]) => renderRepoCollectionFilter(
+          label, issueFilterOptions(field), field, true)).join("")}
+      </div>
+    </div>`;
+    // When the mirror is counting issues we couldn't fetch (unreadable blobs),
+    // surface the gap with a Retry button instead of letting the tab quietly
+    // disagree with the Mirror nodes count. Older issues remain reachable via
+    // the collection pagination and do not need a warning here.
+    const missing = issuesView.missing || [];
+    const warnParts = [];
+    if (missing.length) {
+      warnParts.push(`${missing.length} issue${missing.length === 1 ? "" : "s"} (#${missing.slice(0, 12).join(", #")}${missing.length > 12 ? ", ..." : ""}) couldn't be read from the live mirror`);
+    }
+    const warnBar = warnParts.length
+      ? `<div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-yellow-500/10 px-4 py-2 text-xs text-foreground">
+          <span class="inline-flex items-center gap-1.5"><i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0 text-yellow-500"></i>${escapeHtml(warnParts.join(" · "))}.</span>
+          <button type="button" data-repo-issues-reload class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2.5 font-medium text-foreground hover:bg-secondary"><i data-lucide="refresh-cw" class="h-3 w-3"></i>Retry</button>
+        </div>`
+      : "";
+    // While the closed history is still being paged in (issue #427), show a
+    // loader in place of the "No issues" empty state so the Closed view doesn't
+    // flash empty before its rows arrive.
+    const emptyLabel = issuesView.closedLoading
+      ? loadingHtml("Loading closed issues from the live mirror...")
+      : emptyListHtml(
+        `No ${issuesView.filter === "all" ? "" : issuesView.filter + " "}issues.`,
+        issuesView.query,
+        localFilterQueries(issuesView.query));
+    const allHint = issuesView.filter === "closed"
+      ? `<p class="border-t border-border px-4 py-2 text-[12px] text-muted-foreground">Deleted issues are listed with <button type="button" data-repo-issue-query-set="state:all" class="font-mono text-[var(--dashboard-link)] hover:underline">state:all</button>.</p>`
+      : "";
+    setRepoIssueRecordOpen(false);
+    container.innerHTML = filterBar + warnBar + (filtered.length
+      ? renderRepoRecordList(filtered, config, "issues")
+      : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`) + allHint;
+    const viewsNav = $("[data-repo-issue-views]");
+    if (viewsNav) viewsNav.innerHTML = renderIssueViewsNav();
+    const heading = $("[data-repo-issue-view-title]");
+    if (heading) heading.textContent = activeIssueView()?.id === "issues" || !activeIssueView()
+      ? "All issues" : activeIssueView().label;
+    const viewSelect = $("[data-repo-issue-view-select]");
+    if (viewSelect) viewSelect.value = activeIssueView()?.id || "";
+    syncIssueQueryBox();
+    syncIssueFilterControls();
+    window.lucide?.createIcons();
+  }
+
+  // GitHub's Open / Closed switch: plain text, white and bold when selected,
+  // grey otherwise, with no raised chip.
+  function issueStateTabClass(active) {
+    return `inline-flex h-8 items-center gap-2 rounded-md px-2 text-[14px] transition-colors ${active ? "font-semibold text-foreground" : "font-normal text-muted-foreground hover:text-foreground"}`;
+  }
+
+  function setIssueFilter(filter) {
+    state.issuesView.filter = filter;
+    state.repoCollectionPages.issues = 1;
+    $$("[data-dashboard-issue-filter]").forEach((btn) => {
+      const active = btn.dataset.dashboardIssueFilter === filter;
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+      btn.className = issueStateTabClass(active);
+    });
+    // Closed issues are paged in lazily (issue #427); fetch them the first time
+    // the Closed or All view is opened. loadClosedIssues renders a loading state
+    // and then the results itself.
+    if ((filter === "closed" || filter === "all")
+        && !state.issuesView.closedLoaded && !state.issuesView.closedLoading) {
+      loadClosedIssues();
+      return;
+    }
+    renderRepoIssues();
+  }
+
+  function setRepoIssuesRefreshing(refreshing) {
+    state.issuesView.loading = Boolean(refreshing);
+    $$('[data-repo-issues-refresh]').forEach((button) => {
+      button.disabled = Boolean(refreshing);
+      button.setAttribute("aria-busy", refreshing ? "true" : "false");
+      button.querySelector("[data-repo-issues-refresh-icon]")
+        ?.classList.toggle("animate-spin", Boolean(refreshing));
+      const label = button.querySelector("[data-repo-issues-refresh-label]");
+      if (label) label.textContent = refreshing ? "Refreshing" : "Refresh";
+    });
+  }
+
+  async function loadRepoIssues(repo) {
+    const container = $("[data-repo-issues]");
+    if (!container) return;
+    // A background refresh arrives through this same loader. Replacing the
+    // container with its loading state while the New issue form owns it
+    // destroys the author's unsaved title, body, and queued images. The form
+    // has no visible Refresh action, so defer the list read until it is closed
+    // or submitted instead of treating background metadata as navigation.
+    if (container.querySelector("[data-repo-issue-form]")) return;
+    // This same fresh mirror read owns the initial Issues-page load, the
+    // explicit Refresh button, tab re-entry, and the unreadable-row Retry.
+    // Keep both spinners tied to the actual request so every attempt has
+    // visible feedback and no caller can accidentally repaint cached rows.
+    setRepoIssuesRefreshing(true);
+    setRepoIssueRecordOpen(false);
+    container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading issues from the live mirror...")}</div>`;
+    try {
+      await primeRepoViewReads(repo, "issues");
+      let tree;
+      try {
+        // List the git tree under .forkmesh/issues/ (which also reveals the
+        // open//closed/ status subdirs), then read one issue-${number}.json
+        // blob for each issue from wherever it lives.
+        tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/issues" }));
+      } catch (error) {
+        if (isMissingMirrorFolder(error)) {
+          // No issues have been committed to the mirror yet - which is the
+          // normal state right after the very first issue is filed online, so
+          // this browser's own accepted submissions still list (issue #609).
+          state.issuesView.items = withOptimisticIssues(repo, [], new Set());
+          state.issuesView.missing = [];
+          state.issuesView.repo = repo;
+          state.issuesView.ref = "";
+          state.issuesView.closedPaths = new Map();
+          state.issuesView.closedLoaded = true;
+          state.issuesView.closedLoading = false;
+          // Only when there is something to count: an empty mirror folder
+          // otherwise keeps whatever seed the badge already had, so there is
+          // no reliable open/closed split for syncWebIssueListStatus to move.
+          state.issuesView.openCount = null;
+          state.issuesView.closedCount = null;
+          state.issuesView.unservedOpen = state.issuesView.items.filter(
+            (issue) => issue.status !== "closed").length;
+          if (state.issuesView.items.length) {
+            setRepoTabCount("issues", state.issuesView.items.length);
+          }
+          renderRepoIssues();
+          return;
+        }
+        throw error;
+      }
+      // Every request below must describe the same repository snapshot. The
+      // visitor gateway may route consecutive reads to different mirrors, and
+      // those mirrors can briefly be on different commits while converging.
+      // Without this pin, a stale folder listing followed by a newer blob read
+      // produces false "couldn't load from mirror" rows for deleted issues.
+      const issueCommit = immutableGitCommit(tree.commit);
+      const issueReadOptions = issueCommit ? { ref: issueCommit } : {};
+      const rootEntries = Array.isArray(tree.entries) ? tree.entries : [];
+      // number -> record path, split by status. The open/ and closed/ subdirs
+      // (adhoc #14) hold the numbered folders; pre-split legacy mirrors keep
+      // them directly under the root with no status until their blob is read.
+      // A number living in a status subdir supersedes a stale legacy copy.
+      const openPaths = new Map();
+      const closedPaths = new Map();
+      const legacyPaths = new Map();
+      rootEntries
+        .filter((entry) => entry.type === "tree" && /^\d+$/.test(String(entry.name || "")))
+        .forEach((entry) => legacyPaths.set(Number(entry.name), issueJsonPath(Number(entry.name))));
+      const statusDirs = rootEntries
+        .filter((entry) => entry.type === "tree" && ["open", "closed"].includes(String(entry.name || "")))
+        .map((entry) => String(entry.name));
+      for (const statusDir of statusDirs) {
+        let subTree = null;
+        try {
+          subTree = await fetchRepoJson(repoLiveUrl(repo, "tree", {
+            path: `.forkmesh/issues/${statusDir}`,
+            ...issueReadOptions,
+          }));
+        } catch (error) {
+          if (!isMissingMirrorFolder(error)) throw error;
+        }
+        const target = statusDir === "closed" ? closedPaths : openPaths;
+        (Array.isArray(subTree?.entries) ? subTree.entries : [])
+          .filter((entry) => entry.type === "tree" && /^\d+$/.test(String(entry.name || "")))
+          .forEach((entry) => {
+            const number = Number(entry.name);
+            target.set(number, issueJsonPath(Number(entry.name), statusDir));
+            legacyPaths.delete(number);
+          });
+      }
+      // The Issues tab defaults to Open (issue #427): load only the open (and
+      // unknown-status legacy) titles now, and defer the closed history - often
+      // far larger - to loadClosedIssues, run the first time the Closed/All
+      // filter is opened. Legacy folders ride the open load and get reclassified
+      // once their blob reveals a status.
+      const pathByNumber = new Map([...legacyPaths, ...openPaths]);
+      // A reopen signed from this browser can still sit in closed/ on the
+      // mirror; read those rows now so the pending status can list them as open.
+      pendingReopenedIssueNumbers(repo, closedPaths).forEach((number) => {
+        pathByNumber.set(number, closedPaths.get(number));
+      });
+      const numbered = Array.from(pathByNumber.keys()).sort((a, b) => b - a);
+      const { items, missing } = await fetchIssuePages(
+        repo, pathByNumber, numbered, issueReadOptions);
+      items.sort((a, b) => Number(b.number) - Number(a.number));
+      // Issues filed from this browser that the mirror has not committed yet
+      // still belong in the list (issue #609). Served-or-not is decided by the
+      // folder listing, not by `items`: the closed history is paged in lazily,
+      // so a submission the owner has since closed is already converged even
+      // though no closed blob has been read yet.
+      const servedNumbers = new Set([
+        ...pathByNumber.keys(), ...closedPaths.keys(),
+      ]);
+      state.issuesView.items = withOptimisticIssues(repo, items, servedNumbers);
+      // Closes and reopens the mirror has not caught up with yet (issue #715).
+      const pendingMoves = applyPendingIssueStatuses(repo, state.issuesView.items);
+      pendingMoves.forEach((servedStatus, number) => {
+        if (servedStatus === "closed") closedPaths.delete(number);
+      });
+      state.issuesView.missing = missing;
+      state.issuesView.repo = repo;
+      state.issuesView.ref = issueCommit;
+      state.issuesView.closedPaths = closedPaths;
+      // Closed folders live only in closed/; there is nothing left to lazy-load
+      // once that subdir is empty (a pure-legacy mirror keeps its closed items
+      // in `items` already, classified by status).
+      state.issuesView.closedLoaded = closedPaths.size === 0;
+      state.issuesView.closedLoading = false;
+      // Counts come from the folder listing, not the fetched blobs, so they
+      // match the folder-based tally the Mirror nodes tab shows (adhoc #96 /
+      // issue #397). Legacy pre-split folders carry no status in the tree, so
+      // fold in their loaded split - a creator-deleted issue is excluded, an
+      // unauthorized deletion attempt still counts (adhoc #16).
+      const loadedLegacy = items.filter((issue) => legacyPaths.has(Number(issue.number)));
+      const legacyOpen = loadedLegacy.filter(
+        (issue) => issue.status !== "closed" && !issue.deleted).length;
+      const legacyClosed = loadedLegacy.filter(
+        (issue) => issue.status === "closed" && !issue.deleted).length;
+      // Rows the list shows but the folder listing cannot know about yet: a
+      // badge that disagrees with the visible list reads as "your issue didn't
+      // land", which is exactly what withOptimisticIssues is here to prevent.
+      const notYetServed = state.issuesView.items.filter(
+        (issue) => !servedNumbers.has(Number(issue.number))
+          && issue.status !== "closed").length;
+      // A pending status moved these folder-counted rows across the split.
+      let pendingOpened = 0;
+      let pendingClosed = 0;
+      pendingMoves.forEach((servedStatus, number) => {
+        if (legacyPaths.has(number) || !servedNumbers.has(number)) return;
+        if (servedStatus === "closed") pendingOpened += 1;
+        else pendingClosed += 1;
+      });
+      const openIssues = openPaths.size + legacyOpen + notYetServed
+        + pendingOpened - pendingClosed;
+      const closedIssues = closedPaths.size + legacyClosed + pendingClosed;
+      // Kept so a close or reopen made from the detail view can move the badge
+      // by one without re-reading the folder listing (syncWebIssueListStatus).
+      state.issuesView.openCount = openIssues;
+      state.issuesView.closedCount = closedIssues;
+      // applyServedCounts adds these back onto a served tally (issue #716).
+      state.issuesView.unservedOpen = notYetServed;
+      setRepoTabCount("issues", openIssues);
+      setRepoCollectionCounts("issues", openIssues, closedIssues);
+      // renderRepoDetail owns the clean defaults for a newly opened repo.
+      // Reloads (explicit Refresh or leaving and returning to this tab) keep
+      // the current status, search text, and metadata filters. If that status
+      // needs the lazily-loaded closed history, finish loading it before the
+      // refresh completes instead of briefly showing an empty Closed/All view.
+      if (["closed", "all"].includes(state.issuesView.filter)
+          && !state.issuesView.closedLoaded) {
+        await loadClosedIssues({ renderLoading: false });
+      } else {
+        renderRepoIssues();
+      }
+    } catch (_) {
+      container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Issues are unavailable until a reachable mirror host serves the .forkmesh/issues/ folder.</div>';
+    } finally {
+      setRepoIssuesRefreshing(false);
+    }
+  }
+
+  // Reads and parses the issue-N.json blobs for a page of numbered folders in
+  // ONE batched request. A batched read can drop entries under relay load, so
+  // retry just the misses once - a transient gap must not quietly shrink the
+  // count vs the Mirror nodes tab (whose issueCount lists every folder).
+  // Anything still unreadable is reported once by the collection warning;
+  // never invent a fake issue row or metadata for a folder we could not read.
+  // Returns { items, missing } (missing = still-unreadable numbers).
+  async function fetchIssuePage(repo, pathByNumber, dirs, options = {}) {
+    const items = [];
+    let missing = [];
+    if (!dirs.length) return { items, missing };
+    const blobs = await fetchRepoBlobs(
+      repo, dirs.map((number) => pathByNumber.get(number)), options);
+    dirs.forEach((number) => {
+      const blob = blobs[pathByNumber.get(number)];
+      if (blob) items.push(parseIssueJson(blobText(blob), number));
+      else missing.push(number);
+    });
+    if (missing.length) {
+      const retry = await fetchRepoBlobs(
+        repo, missing.map((number) => pathByNumber.get(number)), options).catch(() => ({}));
+      const stillMissing = [];
+      missing.forEach((number) => {
+        const blob = retry[pathByNumber.get(number)];
+        if (blob) items.push(parseIssueJson(blobText(blob), number));
+        else stillMissing.push(number);
+      });
+      missing = stillMissing;
+    }
+    if (missing.length) {
+      const fallback = await fetchMissingRepoBlobs(
+        repo, missing.map((number) => pathByNumber.get(number)), options);
+      const stillMissing = [];
+      missing.forEach((number) => {
+        const blob = fallback[pathByNumber.get(number)];
+        if (blob) items.push(parseIssueJson(blobText(blob), number));
+        else stillMissing.push(number);
+      });
+      missing = stillMissing;
+    }
+    return { items, missing };
+  }
+
+  // Fetch every numbered issue while keeping each /blobs request below the
+  // gateway's batch limit. The record list applies its own 25-row pagination,
+  // so all fetched issues remain reachable without overwhelming one request.
+  async function fetchIssuePages(repo, pathByNumber, numbers, options = {}) {
+    const items = [];
+    const missing = [];
+    for (let offset = 0; offset < numbers.length; offset += 50) {
+      const page = await fetchIssuePage(
+        repo, pathByNumber, numbers.slice(offset, offset + 50), options);
+      items.push(...page.items);
+      missing.push(...page.missing);
+    }
+    return { items, missing };
+  }
+
+  // Lazily pages in the closed issues the first time the Closed or All filter is
+  // opened (issue #427). The initial Issues load only pages the open set for
+  // speed, so this fills the closed history in on demand, appends it to the
+  // already-loaded open items, and re-renders. The open/closed counts are not
+  // touched - they were already derived from the full folder listing.
+  async function loadClosedIssues({ renderLoading = true } = {}) {
+    const view = state.issuesView;
+    if (view.closedLoaded || view.closedLoading) return;
+    const closedPaths = view.closedPaths instanceof Map ? view.closedPaths : new Map();
+    const numbers = Array.from(closedPaths.keys()).sort((a, b) => b - a);
+    if (!numbers.length) {
+      view.closedLoaded = true;
+      renderRepoIssues();
+      return;
+    }
+    view.closedLoading = true;
+    // A tab re-entry already has loadRepoIssues' full-width loading state on
+    // screen. Do not render its open-only intermediate array: doing so would
+    // make syncIssueFilterControls discard a valid selection carried only by
+    // one of the closed issues we are about to append.
+    if (renderLoading) renderRepoIssues();
+    try {
+      const { items, missing } = await fetchIssuePages(
+        view.repo || state.selectedRepo,
+        closedPaths,
+        numbers,
+        view.ref ? { ref: view.ref } : {},
+      );
+      // A number already loaded (e.g. a legacy closed copy) keeps its existing
+      // row; the status-subdir copy would be identical.
+      const have = new Set((view.items || []).map((issue) => Number(issue.number)));
+      const fresh = items.filter((issue) => !have.has(Number(issue.number)));
+      view.items = [...(view.items || []), ...fresh];
+      view.items.sort((a, b) => Number(b.number) - Number(a.number));
+      if (missing.length) view.missing = [...(view.missing || []), ...missing];
+      view.closedLoaded = true;
+    } catch (_) {
+      /* leave closedLoaded false so a later toggle retries */
+    } finally {
+      view.closedLoading = false;
+      renderRepoIssues();
+    }
+  }
+
+  // --- Projects tab (issue #384) -------------------------------------------
+
+  function ganttDayLabel(ms) {
+    return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  // Percent of a project's linked issues that are closed; falls back to the
+  // linked milestone's issues (within the loaded window) when nothing is
+  // linked directly. Returns -1 when there is nothing to measure.
+  function projectProgress(project, issues) {
+    const linked = issues.filter((issue) => project.issues.includes(issue.number));
+    const pool = linked.length
+      ? linked
+      : (project.milestone ? issues.filter((issue) => issue.milestone === project.milestone) : []);
+    if (!pool.length) return -1;
+    return Math.round(pool.filter((issue) => issue.status !== "open").length * 100 / pool.length);
+  }
+
+  async function loadRepoProjects(repo) {
+    const container = $("[data-repo-projects]");
+    if (!container) return;
+    container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading projects from the live mirror...")}</div>`;
+    try {
+      let tree;
+      try {
+        tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/projects" }));
+      } catch (error) {
+        if (isMissingMirrorFolder(error)) {
+          state.projectsView.items = [];
+          state.projectsView.issues = [];
+          renderRepoProjects();
+          return;
+        }
+        throw error;
+      }
+      const dirs = (Array.isArray(tree.entries) ? tree.entries : [])
+        .filter((entry) => entry.type === "tree" && /^\d+$/.test(String(entry.name || "")))
+        .sort((a, b) => Number(b.name) - Number(a.name))
+        .slice(0, 50);
+      // Consecutive public reads may be served by mirrors at adjacent commits
+      // while a push is converging. Keep the project records (and their linked
+      // issue records) on the exact revision that supplied this folder list;
+      // otherwise a valid directory from one mirror can make a blob lookup on
+      // another look like the projects service is unavailable.
+      const projectCommit = immutableGitCommit(tree.commit);
+      const projectReadOptions = projectCommit ? { ref: projectCommit } : {};
+      const blobs = await fetchRepoBlobs(
+        repo, dirs.map((entry) => projectJsonPath(Number(entry.name))), projectReadOptions);
+      const projects = dirs.map((entry) => {
+        const number = Number(entry.name);
+        const blob = blobs[projectJsonPath(number)];
+        if (!blob) return null;
+        return parseProjectJson(blobText(blob), number);
+      }).filter(Boolean);
+      // The gantt rows and progress bars need the linked issues' dates and
+      // states, so read exactly those issue files in one batched request.
+      const linkedNumbers = [...new Set(projects.flatMap((project) => project.issues))]
+        .filter((number) => Number.isFinite(number) && number > 0);
+      let issues = [];
+      if (linkedNumbers.length) {
+        // Each record lives at open/<n>/, closed/<n>/, or the pre-split legacy
+        // <n>/; ask for every candidate in the one batch and keep whichever
+        // answered.
+        const issueBlobs = await fetchRepoBlobs(
+          repo, linkedNumbers.flatMap((number) => issueJsonCandidatePaths(number)),
+          projectReadOptions);
+        issues = linkedNumbers
+          .map((number) => {
+            const path = issueJsonCandidatePaths(number).find((candidate) => issueBlobs[candidate]);
+            return path ? parseIssueJson(blobText(issueBlobs[path]), number) : null;
+          })
+          .filter(Boolean);
+      }
+      // Milestone-linked progress reads whatever issues the Issues tab already
+      // loaded (its most-recent window) - good enough for an overview ratio.
+      (state.issuesView.items || []).forEach((issue) => {
+        if (!issues.some((existing) => existing.number === issue.number)) issues.push(issue);
+      });
+      state.projectsView.items = projects;
+      state.projectsView.issues = issues;
+      renderRepoProjects();
+    } catch (_) {
+      container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Projects are unavailable until a reachable mirror host serves the .forkmesh/projects/ folder.</div>';
+    }
+  }
+
+  function renderRepoProjects() {
+    const container = $("[data-repo-projects]");
+    if (!container) return;
+    const view = state.projectsView;
+    const items = view.items || [];
+    const filtered = items.filter((project) => {
+      if (view.filter === "all") return true;
+      if (view.filter === "open") return project.status === "open";
+      return project.status !== "open";
+    });
+    const filterBar = `<div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+      <div class="flex items-center gap-1">
+        ${["open", "closed", "all"].map((name) => `<button type="button" data-dashboard-project-filter="${name}" aria-pressed="${name === view.filter ? "true" : "false"}" class="inline-flex h-7 items-center rounded-md px-2.5 text-xs font-medium transition-colors ${name === view.filter ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}">${name[0].toUpperCase() + name.slice(1)}</button>`).join("")}
+      </div>
+      <div class="flex items-center gap-1 rounded-md border border-border p-0.5">
+        ${[["gantt", "chart-gantt", "Gantt"], ["list", "list", "List"]].map(([mode, icon, label]) => `<button type="button" data-dashboard-project-view="${mode}" aria-pressed="${mode === view.mode ? "true" : "false"}" class="inline-flex h-6 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors ${mode === view.mode ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${label}</button>`).join("")}
+      </div>
+    </div>`;
+    const emptyLabel = items.length
+      ? `No ${view.filter === "all" ? "" : view.filter + " "}projects.`
+      : "No projects have been committed to this mirror yet. Create them from the desktop client's Projects tab.";
+    container.innerHTML = filterBar + (filtered.length
+      ? (view.mode === "gantt"
+        ? renderRepoProjectsGantt(filtered, view.issues || [])
+        : renderRepoProjectsList(filtered, view.issues || []))
+      : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`);
+    window.lucide?.createIcons();
+  }
+
+  function setProjectFilter(filter) {
+    state.projectsView.filter = filter;
+    renderRepoProjects();
+  }
+
+  function setProjectView(mode) {
+    state.projectsView.mode = mode === "list" ? "list" : "gantt";
+    renderRepoProjects();
+  }
+
+  function renderRepoProjectsList(projects, issues) {
+    const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
+    return projects.map((project) => {
+      const progress = projectProgress(project, issues);
+      const dates = project.startDate || project.endDate
+        ? `${project.startDate ? ganttDayLabel(project.startDate) : "…"} → ${project.endDate ? ganttDayLabel(project.endDate) : "…"}`
+        : "";
+      const chips = project.issues.slice(0, 12).map((number) => {
+        const issue = issueByNumber.get(number);
+        const closed = issue && issue.status !== "open";
+        return `<button type="button" data-repo-record-kind="issues" data-repo-record-number="${number}" title="${escapeHtml(issue ? issue.title : `issue #${number}`)}" class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] transition-colors hover:bg-secondary ${closed ? "text-muted-foreground line-through" : "text-foreground"}">#${number}</button>`;
+      }).join("");
+      return `
+        <div class="border-t border-border px-4 py-3">
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <i data-lucide="chart-gantt" class="h-4 w-4 text-muted-foreground"></i>
+            <span class="min-w-0 truncate text-sm font-semibold text-foreground">${escapeHtml(project.title)}</span>
+            <span data-repo-record-state class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-[10px] font-mono text-foreground">${escapeHtml(project.status)}</span>
+            ${dates ? `<span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(dates)}</span>` : ""}
+            ${project.milestone ? `<span class="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"><i data-lucide="milestone" class="h-3 w-3"></i>${escapeHtml(project.milestone)}</span>` : ""}
+          </div>
+          ${project.body ? `<p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(project.body).slice(0, 200)}</p>` : ""}
+          <div class="mt-2 flex items-center gap-3">
+            <div class="h-1.5 w-40 overflow-hidden rounded-full bg-secondary"><span class="block h-full rounded-full bg-primary" style="width:${progress < 0 ? 0 : progress}%"></span></div>
+            <span class="font-mono text-[10px] text-muted-foreground">${progress < 0 ? "no linked issues" : `${progress}% · ${project.issues.length} issue${project.issues.length === 1 ? "" : "s"}`}</span>
+          </div>
+          ${chips ? `<div class="mt-2 flex flex-wrap items-center gap-1.5">${chips}</div>` : ""}
+        </div>`;
+    }).join("");
+  }
+
+  // The gantt view: one labeled row per project (rounded track + progress
+  // fill) with its linked issues indented beneath, over a shared month axis
+  // with a "today" rule. Chrome uses theme tokens so both modes stay readable;
+  // every bar is direct-labeled by its row so color never carries meaning
+  // alone.
+  function renderRepoProjectsGantt(projects, issues) {
+    const issueByNumber = new Map(issues.map((issue) => [issue.number, issue]));
+    const rows = [];
+    projects.forEach((project) => {
+      rows.push({
+        kind: "project",
+        label: project.title,
+        start: project.startDate,
+        end: project.endDate,
+        createdAt: project.createdAtMs,
+        status: project.status,
+        progress: projectProgress(project, issues),
+      });
+      project.issues.forEach((number) => {
+        const issue = issueByNumber.get(number);
+        if (!issue) return;
+        rows.push({
+          kind: "issue",
+          label: `#${number} ${issue.title}`,
+          start: issue.startDate,
+          end: issue.endDate,
+          createdAt: issue.createdAtMs,
+          status: issue.status,
+          number,
+        });
+      });
+    });
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    let min = Infinity;
+    let max = -Infinity;
+    rows.forEach((row) => {
+      if (row.start > 0) min = Math.min(min, row.start);
+      if (row.end > 0) max = Math.max(max, row.end);
+      if (!(row.start > 0) && !(row.end > 0) && row.createdAt > 0) min = Math.min(min, row.createdAt);
+    });
+    if (!Number.isFinite(min)) min = now - 30 * DAY;
+    if (!Number.isFinite(max)) max = now;
+    max = Math.max(max, Math.min(now, min + 365 * DAY));
+    if (max - min < 14 * DAY) max = min + 14 * DAY;
+    const pad = (max - min) * 0.04;
+    min -= pad;
+    max += pad;
+    const span = max - min;
+    const pct = (ms) => Math.min(100, Math.max(0, (ms - min) * 100 / span));
+    // Month ticks (day ticks when the whole range fits inside ~2 months).
+    const ticks = [];
+    const cursor = new Date(min);
+    cursor.setHours(0, 0, 0, 0);
+    if (span > 62 * DAY) {
+      cursor.setDate(1);
+      cursor.setMonth(cursor.getMonth() + 1);
+      while (cursor.getTime() < max) {
+        ticks.push({ ms: cursor.getTime(), label: cursor.toLocaleDateString(undefined, { month: "short", year: span > 300 * DAY ? "2-digit" : undefined }) });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    } else {
+      const step = span > 21 * DAY ? 7 : span > 10 * DAY ? 2 : 1;
+      cursor.setDate(cursor.getDate() + step);
+      while (cursor.getTime() < max) {
+        ticks.push({ ms: cursor.getTime(), label: ganttDayLabel(cursor.getTime()) });
+        cursor.setDate(cursor.getDate() + step);
+      }
+    }
+    const todayVisible = now > min && now < max;
+    // The label gutter is an inline grid track, never a Tailwind arbitrary
+    // class: a `grid-cols-[<gutter>_...]` name assembled here is invisible to
+    // the build-time scanner, so the compiled stylesheet carries no rule for
+    // it and every row collapses to one column - labels then run across the
+    // bars and the vertical grid lines (issue #639). One custom property feeds
+    // the row tracks, the month axis and the grid-line overlay, so the three
+    // cannot drift apart.
+    const GUTTER = "15rem";
+    const COLUMNS = "grid-template-columns:var(--fm-gantt-gutter) minmax(0,1fr)";
+    // Rows carry px-1 for their hover inset, so the timeline column opens a
+    // gutter + gap-3 (0.75rem) + that 0.25rem padding in from the left edge.
+    const TRACK = "left:calc(var(--fm-gantt-gutter) + 1rem);right:0.25rem";
+    const barTitle = (row) => {
+      const range = row.start > 0 || row.end > 0
+        ? `${row.start > 0 ? ganttDayLabel(row.start) : "?"} → ${row.end > 0 ? ganttDayLabel(row.end) : "?"}`
+        : "no dates set";
+      const progress = row.kind === "project" && row.progress >= 0 ? ` · ${row.progress}% done` : "";
+      return `${row.label} · ${range} · ${row.status}${progress}`;
+    };
+    const barHtml = (row) => {
+      const dated = row.start > 0 || row.end > 0;
+      const startMs = row.start > 0 ? row.start : (dated ? min + pad : Math.max(min, row.createdAt || min));
+      const endMs = row.end > 0 ? row.end : (dated ? Math.max(startMs + DAY, Math.min(now, max)) : Math.min(now, max));
+      const left = pct(startMs);
+      const width = Math.max(0.8, pct(Math.max(endMs, startMs + DAY)) - left);
+      const closed = row.status !== "open";
+      if (!dated) {
+        return `<span class="absolute top-1/2 h-2 -translate-y-1/2 rounded-full border border-dashed border-muted-foreground/50" style="left:${left}%;width:${width}%"></span>`;
+      }
+      if (row.kind === "project") {
+        const progress = row.progress < 0 ? 0 : row.progress;
+        return `<span class="absolute top-1/2 h-4 -translate-y-1/2 overflow-hidden rounded-md border border-primary/50 bg-primary/20 ${closed ? "opacity-55" : ""}" style="left:${left}%;width:${width}%"><span class="absolute inset-y-0 left-0 bg-primary" style="width:${progress}%"></span></span>`;
+      }
+      return `<span class="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-accent ${closed ? "opacity-40" : ""}" style="left:${left}%;width:${width}%"></span>`;
+    };
+    // Both halves of a row carry the same tooltip, so a title truncated into
+    // the gutter stays readable on hover and to a screen reader.
+    const rowsHtml = rows.map((row) => `
+      <div class="grid items-center gap-3 rounded ${row.kind === "project" ? "h-9" : "h-7"} px-1 hover:bg-secondary/40" style="${COLUMNS}">
+        <span class="flex min-w-0 items-center gap-1.5 pr-2 ${row.kind === "project" ? "text-xs font-semibold text-foreground" : "pl-5 text-[11px] text-muted-foreground"}" title="${escapeHtml(barTitle(row))}">
+          <span class="min-w-0 truncate">${escapeHtml(row.label)}</span>
+          ${row.kind === "project" && row.progress >= 0 ? `<span class="shrink-0 font-mono text-[10px] font-normal text-muted-foreground">${row.progress}%</span>` : ""}
+        </span>
+        <div class="relative h-full" title="${escapeHtml(barTitle(row))}">${barHtml(row)}</div>
+      </div>`).join("");
+    return `
+      <div class="p-4">
+        <div class="mb-2 flex flex-wrap items-center justify-end gap-4 text-[10px] text-muted-foreground">
+          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-4 rounded-sm border border-primary/50 bg-primary/40"></span>Projects</span>
+          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-4 rounded-full bg-accent"></span>Issues</span>
+          ${todayVisible ? '<span class="inline-flex items-center gap-1.5"><span class="h-3 w-px bg-destructive"></span>Today</span>' : ""}
+        </div>
+        <div class="overflow-x-auto">
+          <div data-repo-projects-gantt style="--fm-gantt-gutter:${GUTTER};min-width:calc(var(--fm-gantt-gutter) + 26rem)">
+            <div class="grid gap-3 px-1" style="${COLUMNS}">
+              <span></span>
+              <div class="relative h-5">
+                ${ticks.map((tick) => `<span class="absolute top-0 -translate-x-1/2 font-mono text-[10px] text-muted-foreground" style="left:${pct(tick.ms)}%">${escapeHtml(tick.label)}</span>`).join("")}
+              </div>
+            </div>
+            <div class="relative">
+              <div class="pointer-events-none absolute inset-y-0" style="${TRACK}">
+                <span class="absolute inset-y-0 left-0 w-px bg-border"></span>
+                ${ticks.map((tick) => `<span class="absolute inset-y-0 w-px bg-border/70" style="left:${pct(tick.ms)}%"></span>`).join("")}
+                ${todayVisible ? `<span class="absolute inset-y-0 w-px bg-destructive/70" style="left:${pct(now)}%"></span>` : ""}
+              </div>
+              ${rowsHtml}
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Rows a record list shows once its search terms have been applied. The
+  // records carry exactly the fields renderRepoRecordList prints, so the same
+  // matcher the issue search uses gives "matches the search" == "matches what
+  // is displayed" here too (adhoc #37).
+  function repoRecordsMatchingQueries(items, queries) {
+    if (!queries.length) return items;
+    return items.filter((item) =>
+      queries.every((query) => issueMatchesQuery(item, query)));
+  }
+
+  function pullFilterState() {
+    const filter = String(state.pullsView?.filter || "open").toLowerCase();
+    return ["open", "closed", "all"].includes(filter) ? filter : "open";
+  }
+
+  // The mirror's count contract treats exactly `status: open` as open; merged,
+  // closed, and unknown legacy statuses belong in the closed history. Keep the
+  // list's classification identical so its Open/Closed controls never disagree
+  // with the tab badge.
+  function pullIsOpen(pull) {
+    return String(pull?.state || "open").trim().toLowerCase() === "open";
+  }
+
+  function pullMatchesFilter(pull, filter = pullFilterState()) {
+    if (filter === "all") return true;
+    return filter === "open" ? pullIsOpen(pull) : !pullIsOpen(pull);
+  }
+
+  function pullEmptyLabel(filter) {
+    if (filter === "closed") return "No closed or merged pull requests.";
+    if (filter === "all") return "No pull requests.";
+    return "No open pull requests.";
+  }
+
+  function pullFilterButtonClass(active) {
+    return `inline-flex h-7 items-center gap-2 rounded-md px-2.5 text-xs font-medium transition-colors ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`;
+  }
+
+  function syncPullFilterControls() {
+    const filter = pullFilterState();
+    $$('[data-dashboard-pull-filter]').forEach((button) => {
+      const active = button.dataset.dashboardPullFilter === filter;
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.className = pullFilterButtonClass(active);
+    });
+  }
+
+  function setPullFilter(filter) {
+    const value = String(filter || "").toLowerCase();
+    if (!["open", "closed", "all"].includes(value)) return;
+    state.pullsView.filter = value;
+    state.repoCollectionPages.pulls = 1;
+    syncPullFilterControls();
+    renderRepoCollection("pulls");
+  }
+
+  // Re-render a cached pull/discussion list through the current page filter.
+  // No mirror read: loadRepoCollection stashed the records it fetched.
+  function renderRepoCollection(kind) {
+    const container = $(`[data-repo-${kind}]`);
+    const config = repoCollectionConfig[kind];
+    const loadedItems = state.repoCollectionItems[kind];
+    if (!container || !config || !Array.isArray(loadedItems)) return;
+    const pullFilter = pullFilterState();
+    const items = kind === "pulls"
+      ? loadedItems.filter((item) => pullMatchesFilter(item, pullFilter))
+      : loadedItems;
+    // Pulls has its own search box and answers to it alone (issue #673);
+    // discussions has none, so the header box still narrows it.
+    const ownQuery = kind === "pulls" ? state.pullsView.query : "";
+    const queries = kind === "pulls" ? localFilterQueries(ownQuery) : pageFilterQueries(ownQuery);
+    const visible = repoRecordsMatchingQueries(items, queries);
+    if (kind === "pulls") syncPullFilterControls();
+    const empty = emptyListHtml(
+      kind === "pulls" ? pullEmptyLabel(pullFilter) : config.empty,
+      ownQuery,
+      queries);
+    container.innerHTML = visible.length
+      ? renderRepoRecordList(visible, config, kind)
+      : `<div class="px-4 py-3 text-sm text-muted-foreground">${empty}</div>`;
+    window.lucide?.createIcons();
+  }
+
+  function discussionsUnavailableHtml(repo) {
+    const count = repoCount(repo, ["discussions", "discussionCount"]);
+    const catalogNote = Number.isFinite(count) && count > 0
+      ? `The catalog reports ${formatCount(count)} discussion${count === 1 ? "" : "s"}, but ${count === 1 ? "it" : "they"} cannot be fetched because no mirror is reachable right now.`
+      : "Discussions cannot be fetched because no mirror is reachable right now.";
+    return `<div class="px-4 py-3 text-sm text-muted-foreground">${catalogNote}</div>`;
+  }
+
+  async function loadRepoCollection(repo, kind, containerSelector) {
+    const container = $(containerSelector);
+    const config = repoCollectionConfig[kind];
+    if (!container || !config) return;
+    // The pull ledger advances independently from the selected source branch.
+    // A commit cached while this repository page was open would otherwise keep
+    // a newly opened pull invisible even when the list is explicitly reloaded.
+    if (kind === "pulls") {
+      delete state.repoPullMetadataCommits[repoPullMetadataCacheKey(repo)];
+    }
+    // Drop the previous repo's cache up front so a failed load can never leave
+    // the page filter re-rendering rows that are no longer on screen.
+    state.repoCollectionItems[kind] = null;
+    const discussionsOffline = kind === "discussions" && !repoIsLive(repo);
+    if (discussionsOffline) {
+      // The catalog count is only a last-published snapshot. When every mirror
+      // is offline it does not prove those records are currently available, so
+      // do not advertise it as a live badge while the read below retries in
+      // case a mirror recovered after the catalog snapshot was produced.
+      setRepoTabCount("discussions", 0);
+      container.innerHTML = discussionsUnavailableHtml(repo);
+    } else {
+      container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml(`Loading ${escapeHtml(config.label.toLowerCase())} from the live mirror...`)}</div>`;
+    }
+    try {
+      if (kind === "pulls" || kind === "discussions") await primeRepoViewReads(repo, kind);
+      const items = await loadRepoRecordsFromMirror(repo, config);
+      // Counts below stay off the unfiltered set: the tab badge reports what
+      // the repo holds, not what the search box is currently showing.
+      state.repoCollectionItems[kind] = items;
+      renderRepoCollection(kind);
+      if (kind === "pulls") {
+        const openPulls = items.filter(pullIsOpen).length;
+        setRepoTabCount("pulls", openPulls);
+        setRepoCollectionCounts("pulls", openPulls, items.length - openPulls);
+      } else if (kind === "discussions") {
+        // Once a mirror answers, replace the catalog seed with the records this
+        // page can actually show. In particular, an authoritative empty folder
+        // must clear a stale non-zero catalog badge.
+        setRepoTabCount("discussions", items.length);
+      }
+    } catch (_) {
+      if (kind === "discussions") {
+        setRepoTabCount("discussions", 0);
+        container.innerHTML = discussionsUnavailableHtml(repo);
+      } else {
+        container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${escapeHtml(config.label)} are unavailable until a reachable mirror host serves the ${escapeHtml(config.dir)}/ folder.</div>`;
+      }
+    } finally {
+      window.lucide?.createIcons();
+    }
+  }
+
+  // True when the logged-in account is the node that owns (hosts) this repo -
+  // the only account whose node can actually pick an "assign to agent" issue up
+  // and run a coding agent on it.
+  function sessionOwnsRepo(repo) {
+    // A repo's owner is a NODE account name. The logged-in account matches
+    // either directly (it IS that node) or because the user OWNS that node
+    // (adhoc #53 claim/link) — state.session.nodes is the list of node names
+    // the user owns, the same alias set profileContributionAliases folds in.
+    // Without this, a user whose repos are published by a linked node account
+    // could never edit About / assign agents from the web (backend
+    // _account_owns_node applies the identical rule).
+    const repoOwner = String(repo?.owner || "").toLowerCase();
+    if (!repoOwner) return false;
+    const me = String(state.session?.nodeName || "").toLowerCase();
+    if (me && me === repoOwner) return true;
+    const owned = Array.isArray(state.session?.nodes) ? state.session.nodes : [];
+    return owned.some((n) => String(n || "").toLowerCase() === repoOwner);
+  }
+
+  // True when the logged-in account may assign an issue to a coding agent on
+  // this repo's node: the repo owner itself, or an admin acting on the owner's
+  // behalf (admin node-ownership, adhoc #141). The backend independently
+  // re-checks the account name against owner/admin status (no password,
+  // adhoc #225), so this is only the client-side gate for showing the checkbox.
+  function sessionCanAssignAgent(repo) {
+    return sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+  }
+
+  function setRepoAboutEditing(on) {
+    const detail = $("[data-repo-detail]");
+    const text = detail?.querySelector("[data-repo-about-description]");
+    const form = detail?.querySelector("[data-repo-about-form]");
+    const input = detail?.querySelector("[data-repo-about-input]");
+    if (!text || !form) return;
+    text.classList.toggle("hidden", Boolean(on));
+    form.classList.toggle("hidden", !on);
+    if (on) input?.focus();
+  }
+
+  function setRepoAboutStatus(message, tone = "") {
+    const status = $("[data-repo-about-status]");
+    if (!status) return;
+    status.textContent = message || "";
+    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-muted-foreground" : "text-muted-foreground"}`;
+  }
+
+  function setRepoSettingsStatus(message, tone = "") {
+    const status = $("[data-repo-settings-status]");
+    if (!status) return;
+    status.textContent = message || "";
+    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-muted-foreground" : "text-muted-foreground"}`;
+  }
+
+  function applyRepoAboutDescription(repo, description) {
+    const text = String(description || "").trim();
+    repo.description = text;
+    const key = repoKey(repo).toLowerCase();
+    const canonical = repoCanonicalKey(repo).toLowerCase();
+    (state.repositories || []).forEach((item) => {
+      if (repoKey(item).toLowerCase() === key ||
+          repoCanonicalKey(item).toLowerCase() === canonical) {
+        item.description = text;
+      }
+    });
+    $$("[data-repo-about-description]").forEach((el) => {
+      el.textContent = text || "No description published.";
+    });
+    $$("[data-repo-about-input]").forEach((el) => {
+      el.value = text;
+    });
+  }
+
+  async function saveRepoAboutFromWeb(repo, description, media = {}) {
+    // media may carry logoPng / bannerPng (data-URL PNG, "" = remove). Only
+    // keys actually present are sent, so an untouched image stays unchanged.
+    const response = await fetch(`${repoApiBase(repo)}/about`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerAccount: state.session?.nodeName || "",
+        sessionToken: state.session?.sessionToken || "",
+        description,
+        ...media,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok === false) {
+      throw new Error(body?.error || "about_update_failed");
+    }
+    return body;
+  }
+
+  async function saveRepoSettingsFromWeb(repo, settings = {}) {
+    const response = await fetch(`${repoApiBase(repo)}/about`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerAccount: state.session?.nodeName || "",
+        sessionToken: state.session?.sessionToken || "",
+        ...settings,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok === false) {
+      throw new Error(body?.error || "repo_settings_update_failed");
+    }
+    return body;
+  }
+
+  async function deleteRepoFromWeb(repo) {
+    const token = state.session?.sessionToken || "";
+    const query = new URLSearchParams({
+      owner: String(repo?.owner || ""),
+      name: String(repo?.name || ""),
+    });
+    const response = await fetch(`/api/repositories?${query}`, {
+      method: "DELETE",
+      headers: {
+        accept: "application/json",
+        ...(token ? { authorization: "Bearer " + token } : {}),
+      },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok === false) {
+      throw new Error(body?.error || "repository_delete_failed");
+    }
+    return body;
+  }
+
+  // --- Manage federated posts (issue #426) ---------------------------------
+  //
+  // The owner-only "Fediverse posts" dropdown in the About rail lists the
+  // repo actor's posts and lets the owner delete one. A delete makes the relay
+  // broadcast a Delete(Tombstone) to every follower's server, so the post also
+  // disappears from Mastodon — not just the repo's own profile feed. The
+  // backend re-checks ownership from the session token, so this is only the
+  // client surface (same session-auth shape as saveRepoAboutFromWeb).
+
+  async function fetchRepoFediPosts(repo) {
+    const response = await fetch(`${repoApiBase(repo)}/ap-posts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerAccount: state.session?.nodeName || "",
+        sessionToken: state.session?.sessionToken || "",
+        action: "list",
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok === false) {
+      throw new Error(body?.error || "fedi_posts_failed");
+    }
+    return Array.isArray(body.posts) ? body.posts : [];
+  }
+
+  async function deleteRepoFediPost(repo, id) {
+    const response = await fetch(`${repoApiBase(repo)}/ap-posts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerAccount: state.session?.nodeName || "",
+        sessionToken: state.session?.sessionToken || "",
+        action: "delete",
+        id,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok === false) {
+      throw new Error(body?.error || "fedi_post_delete_failed");
+    }
+    return body;
+  }
+
+  function renderRepoFediPosts(posts) {
+    const list = $("[data-repo-fedi-posts-list]");
+    if (!list) return;
+    if (!posts.length) {
+      list.innerHTML = `<p class="text-[11px] text-muted-foreground">No federated posts yet — new issues, pull requests, discussions and releases will appear here.</p>`;
+      return;
+    }
+    list.innerHTML = posts.map((post) => {
+      const id = escapeHtml(String(post.id || ""));
+      const when = relativeTimeLabel(Number(post.published || 0));
+      // Strip our own generated HTML down to a plain-text preview.
+      const preview = String(post.content || "")
+        .replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      const text = escapeHtml(preview.slice(0, 140) || "(no text)");
+      const link = String(post.url || "");
+      const view = /^https?:\/\//i.test(link)
+        ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link hover:underline">View</a>`
+        : "";
+      return `<div data-repo-fedi-post class="grid gap-1 rounded-md border border-border p-2">
+        <p class="text-[11px] leading-4 text-foreground">${text}</p>
+        <div class="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+          <span>${escapeHtml(when)}</span>
+          <span class="inline-flex items-center gap-2">${view}<button type="button" data-repo-fedi-post-delete="${id}" class="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-0.5 font-medium text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3 w-3"></i>Delete</button></span>
+        </div>
+      </div>`;
+    }).join("");
+    window.lucide?.createIcons();
+  }
+
+  async function loadRepoFediPosts(repo) {
+    const list = $("[data-repo-fedi-posts-list]");
+    if (!list) return;
+    list.innerHTML = `<p class="text-[11px] text-muted-foreground">Loading…</p>`;
+    try {
+      const posts = await fetchRepoFediPosts(repo);
+      if (!repoAboutStillCurrent(repo)) return;
+      renderRepoFediPosts(posts);
+    } catch (_) {
+      list.innerHTML = `<p class="text-[11px] text-destructive">Couldn't load federated posts.</p>`;
+    }
+  }
+
+  async function removeRepoFediPost(repo, id, trigger) {
+    if (!id) return;
+    if (!window.confirm("Delete this post? It will be removed from your Mastodon followers' timelines.")) return;
+    if (trigger) trigger.disabled = true;
+    try {
+      await deleteRepoFediPost(repo, id);
+      // Drop the row in place; the follower count/profile feed catch up on
+      // the next reload.
+      trigger?.closest("[data-repo-fedi-post]")?.remove();
+      const list = $("[data-repo-fedi-posts-list]");
+      if (list && !list.querySelector("[data-repo-fedi-post]")) {
+        renderRepoFediPosts([]);
+      }
+    } catch (_) {
+      if (trigger) trigger.disabled = false;
+      showErrorNotice("Couldn't delete that post. Please try again.");
+    }
+  }
+
+  // --- About rail: fediverse badge + desktop-parity sections ---------------
+  //
+  // The desktop app's About panel shows the repo's canonical info from
+  // .forkmesh/info.json plus latest release / languages / files /
+  // contributors it computes from the local git mirror. The website mirrors
+  // all of it from data it can already reach: the live-mirror tunnel (blob,
+  // tree, history) and the relay's public GET /about (branding + fediverse
+  // follower count). Every section is best-effort and independent — a dead
+  // host must not blank the whole rail.
+
+  const REPO_LANGUAGE_EXTENSIONS = {
+    c: "C", h: "C++", cc: "C++", cpp: "C++", cxx: "C++", hpp: "C++",
+    py: "Python", js: "JavaScript", mjs: "JavaScript", jsx: "JavaScript",
+    ts: "TypeScript", tsx: "TypeScript", html: "HTML", htm: "HTML",
+    css: "CSS", json: "JSON", md: "Markdown", yml: "YAML", yaml: "YAML",
+    sh: "Shell", bash: "Shell", dart: "Dart", java: "Java", kt: "Kotlin",
+    rs: "Rust", go: "Go", rb: "Ruby", php: "PHP", swift: "Swift",
+    m: "Objective-C", mm: "Objective-C", qml: "QML", cmake: "CMake",
+    toml: "TOML", sql: "SQL", proto: "Protobuf", svg: "SVG",
+  };
+  const REPO_LANGUAGE_COLORS = {
+    "C": "#555555", "C++": "#f34b7d", Python: "#3572A5",
+    JavaScript: "#f1e05a", TypeScript: "#3178c6", HTML: "#e34c26",
+    CSS: "#563d7c", JSON: "#8a8a8a", Markdown: "#083fa1", YAML: "#cb171e",
+    Shell: "#89e051", Dart: "#00B4AB", Java: "#b07219", Kotlin: "#A97BFF",
+    Rust: "#dea584", Go: "#00ADD8", Ruby: "#701516", PHP: "#4F5D95",
+    Swift: "#F05138", "Objective-C": "#438eff", QML: "#44a51c",
+    CMake: "#DA3434", TOML: "#9c4221", SQL: "#e38c00", Protobuf: "#4a76c6",
+    SVG: "#ff9900",
+  };
+
+  function applyRepoAboutWebsite(website) {
+    // Sync the About rail's website link + the gear form's input. Empty value
+    // hides the link.
+    const value = String(website || "").trim();
+    const link = $("[data-repo-about-website]");
+    const label = $("[data-repo-about-website-label]");
+    const input = $("[data-repo-about-website-input]");
+    if (input && document.activeElement !== input) input.value = value;
+    if (!link || !label) return;
+    if (value && /^https?:\/\//i.test(value)) {
+      link.href = value;
+      label.textContent = value.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+      link.classList.remove("hidden");
+      link.classList.add("inline-flex");
+    } else {
+      link.classList.add("hidden");
+      link.classList.remove("inline-flex");
+    }
+  }
+
+  function repoAboutStillCurrent(repo) {
+    return state.selectedRepo
+      && repoKey(state.selectedRepo).toLowerCase() === repoKey(repo).toLowerCase();
+  }
+
+  function relativeTimeLabel(ms) {
+    const ts = Number(ms) || 0;
+    if (!ts) return "";
+    const delta = Math.max(0, Date.now() - ts);
+    const minutes = Math.floor(delta / 60000);
+    if (minutes < 60) return `${Math.max(1, minutes)} minute${minutes === 1 ? "" : "s"} ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 60) return `${days} days ago`;
+    return formatDate(ts);
+  }
+
+  function setRepoLogoSuggestionStatus(message, tone = "") {
+    const target = $("[data-repo-logo-suggestion-status]");
+    if (!target) return;
+    target.textContent = message || "";
+    target.className = `text-[11px] ${
+      tone === "bad"
+        ? "text-destructive"
+        : tone === "good"
+          ? "text-muted-foreground"
+          : "text-muted-foreground"
+    }`;
+  }
+
+  async function loadRepoLogoSuggestions(repo) {
+    const target = $("[data-repo-logo-suggestions]");
+    if (!target || repo.isPrivate) return;
+    try {
+      const headers = {};
+      if (state.session?.sessionToken) {
+        headers.Authorization = `Bearer ${state.session.sessionToken}`;
+      }
+      const response = await fetch(`${repoApiBase(repo)}/logo-suggestions`, {
+        headers,
+        cache: "no-store",
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !repoAboutStillCurrent(repo)) return;
+      const suggestions = Array.isArray(body?.suggestions)
+        ? body.suggestions
+        : [];
+      const mayReview = sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+      target.innerHTML = suggestions.length
+        ? suggestions
+            .map((suggestion) => {
+              const image = String(suggestion?.image?.dataUrl || "");
+              const id = String(suggestion?.id || "");
+              const pending = suggestion?.status === "pending";
+              return `<article class="flex items-center gap-2 rounded-md border border-border p-2">
+                ${
+                  image.startsWith("data:image/")
+                    ? `<img src="${escapeHtml(image)}" alt="" class="h-10 w-10 rounded-md border border-border object-cover" />`
+                    : ""
+                }
+                <div class="min-w-0 flex-1 text-[11px]">
+                  <strong class="block truncate text-foreground">${escapeHtml(
+                    suggestion?.official
+                      ? "Official logo"
+                      : `${suggestion?.status || "pending"} suggestion`,
+                  )}</strong>
+                  <span class="block truncate text-muted-foreground">by ${escapeHtml(
+                    suggestion?.proposer || "community member",
+                  )}${suggestion?.aiGenerated ? " · AI-generated" : ""}</span>
+                </div>
+                ${
+                  mayReview && pending
+                    ? `<span class="inline-flex gap-1">
+                        <button type="button" data-repo-logo-review="approve" data-repo-logo-suggestion-id="${escapeHtml(
+                          id,
+                        )}" class="rounded border border-border px-2 py-1 text-[10px] text-foreground hover:bg-secondary">Approve</button>
+                        <button type="button" data-repo-logo-review="reject" data-repo-logo-suggestion-id="${escapeHtml(
+                          id,
+                        )}" class="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground hover:bg-secondary">Reject</button>
+                      </span>`
+                    : ""
+                }
+              </article>`;
+            })
+            .join("")
+        : `<p class="text-[11px] text-muted-foreground">No community suggestions yet.</p>`;
+    } catch (_) {
+      target.innerHTML = `<p class="text-[11px] text-muted-foreground">Suggestions are temporarily unavailable.</p>`;
+    }
+  }
+
+  async function submitRepoLogoSuggestion(repo, form) {
+    if (!state.session?.sessionToken) {
+      throw new Error("sign_in_required");
+    }
+    const file = form.querySelector("[data-repo-logo-suggestion-file]")?.files?.[0];
+    if (!file || file.size > 256 * 1024) throw new Error("logo_too_large");
+    if (!form.querySelector("[data-repo-logo-suggestion-rights]")?.checked) {
+      throw new Error("rights_required");
+    }
+    const imageData = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("image_read_failed"));
+      reader.readAsDataURL(file);
+    });
+    const response = await fetch(`${repoApiBase(repo)}/logo-suggestions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionToken: state.session.sessionToken,
+        imageData,
+        rightsConfirmed: true,
+        attribution: String(
+          form.querySelector("[data-repo-logo-suggestion-attribution]")?.value ||
+            "",
+        ).trim(),
+        aiGenerated: Boolean(
+          form.querySelector("[data-repo-logo-suggestion-ai]")?.checked,
+        ),
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body?.error || "logo_suggestion_failed");
+    form.reset();
+    await loadRepoLogoSuggestions(repo);
+  }
+
+  async function reviewRepoLogoSuggestion(repo, suggestionId, action) {
+    const response = await fetch(`${repoApiBase(repo)}/logo-suggestions`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionToken: state.session?.sessionToken || "",
+        suggestionId,
+        action,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body?.error || "logo_review_failed");
+    await Promise.all([
+      loadRepoLogoSuggestions(repo),
+      loadRepoFediverse(repo),
+    ]);
+  }
+
+  function repoFediverseFollowerAvatar(follower) {
+    const name = String(follower?.name || follower?.handle || "Fediverse follower").trim();
+    const words = name.replace(/^@/, "").split(/[\s._@-]+/).filter(Boolean);
+    const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
+    const avatarUrl = String(follower?.avatarUrl || "");
+    const profileUrl = String(follower?.profileUrl || follower?.url || "");
+    const fallback = `<span class="flex h-full w-full items-center justify-center bg-secondary font-mono text-[9px] font-semibold text-foreground">${escapeHtml(initials)}</span>`;
+    const image = /^https?:\/\//i.test(avatarUrl)
+      ? `<img data-repo-social-follower-avatar src="${escapeHtml(avatarUrl)}" alt="" aria-hidden="true" loading="lazy" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />`
+      : "";
+    const avatar = `<span class="relative flex h-7 w-7 overflow-hidden rounded-full border-2 border-background bg-secondary shadow-sm">${fallback}${image}</span>`;
+    return /^https?:\/\//i.test(profileUrl)
+      ? `<a href="${escapeHtml(profileUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(name)}" aria-label="${escapeHtml(name)}">${avatar}</a>`
+      : `<span title="${escapeHtml(name)}">${avatar}<span class="sr-only">${escapeHtml(name)}</span></span>`;
+  }
+
+  function applyRepoSocialBanner(repo, url) {
+    // A repo's banner is its own or absent. The relay can only offer the
+    // committed `.forkmesh/banner.png` as a candidate — catalog metadata lists
+    // top-level names, not what is inside the directory — so probe the image
+    // before painting it and collapse the strip when it is not there (no
+    // banner committed, or the mirror serving it is offline). The logo's
+    // negative offset only makes sense while a banner is above it.
+    const banner = $("[data-repo-social-banner]");
+    if (!banner) return;
+    const logo = $("[data-repo-social-logo]");
+    const identity = $("[data-repo-social-identity]");
+    const show = (shown) => {
+      banner.classList.toggle("hidden", !shown);
+      logo?.classList.toggle("-mt-7", shown);
+      identity?.classList.toggle("pt-3", !shown);
+    };
+    banner.style.backgroundImage = "";
+    show(false);
+    if (!url) return;
+    const probe = new Image();
+    probe.onload = () => {
+      // A decode that lands after the reader moved on would paint the previous
+      // repo's artwork onto the card now on screen.
+      if (!repoAboutStillCurrent(repo)) return;
+      banner.style.backgroundImage = `url('${url.replace(/'/g, "%27")}')`;
+      show(true);
+    };
+    probe.src = url;
+  }
+
+  async function loadRepoFediverse(repo) {
+    // Public branding + follower count from the relay (GET /about). Fills the
+    // Watch button count, the popover, and the social badge header.
+    try {
+      const body = await fetchRepoJson(`${repoApiBase(repo)}/about`);
+      if (!repoAboutStillCurrent(repo) || !body?.ok) return;
+      const followers = Number(body.fediverse?.followers || 0);
+      $$("[data-repo-watch-count], [data-repo-watch-followers], [data-repo-social-followers]").forEach((el) => {
+        el.textContent = formatCount(followers);
+      });
+      const entries = Array.isArray(body.fediverse?.followersList)
+        ? body.fediverse.followersList : [];
+      const followerAvatars = $("[data-repo-social-follower-avatars]");
+      if (followerAvatars) {
+        const shown = entries.slice(0, 6);
+        followerAvatars.innerHTML = shown.map(repoFediverseFollowerAvatar).join("") +
+          (entries.length > shown.length
+            ? `<span title="${formatCount(entries.length - shown.length)} more fediverse followers" class="relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary px-1 font-mono text-[9px] font-semibold text-foreground">+${formatCount(entries.length - shown.length)}</span>`
+            : "");
+        followerAvatars.querySelectorAll("[data-repo-social-follower-avatar]").forEach((image) => {
+          image.addEventListener("error", () => image.remove(), { once: true });
+        });
+        followerAvatars.classList.toggle("hidden", shown.length === 0);
+        followerAvatars.classList.toggle("flex", shown.length > 0);
+      }
+      // WHO is watching: newest followers (handle + remote profile link),
+      // each row captioned with what they follow.
+      const watchList = $("[data-repo-watch-list]");
+      if (watchList) {
+        if (entries.length) {
+          const following = `Following ${repoKey(repo).toLowerCase()}`;
+          watchList.innerHTML = entries.slice(0, 25).map((f) => {
+            const handleText = escapeHtml(String(f?.handle || f?.url || ""));
+            const url = String(f?.url || "");
+            const who = /^https?:\/\//i.test(url)
+              ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="min-w-0 truncate font-mono text-[11px] text-foreground hover:underline">${handleText}</a>`
+              : `<span class="min-w-0 truncate font-mono text-[11px] text-foreground">${handleText}</span>`;
+            return `<div class="flex items-center justify-between gap-2 py-0.5">${who}<span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(following)}</span></div>`;
+          }).join("");
+          watchList.classList.remove("hidden");
+        } else {
+          watchList.innerHTML = "";
+          watchList.classList.add("hidden");
+        }
+      }
+      // Owner switched federation off (or the instance did): say so instead
+      // of silently showing zeros.
+      $("[data-repo-watch-disabled]")?.classList.toggle(
+        "hidden", body.fediverse?.enabled !== false);
+      // Seed the gear form's federation switches with the stored settings so
+      // an untouched save round-trips them unchanged.
+      const apSettings = body.fediverse?.settings;
+      if (apSettings && typeof apSettings === "object") {
+        [["[data-repo-ap-federate]", "federate"],
+         ["[data-repo-ap-broadcast]", "broadcastEvents"],
+         ["[data-repo-ap-comments]", "acceptComments"]].forEach(([sel, key]) => {
+          const box = $(sel);
+          if (box && key in apSettings) box.checked = Boolean(apSettings[key]);
+        });
+      }
+      // Admin-only operational-alert switches, seeded the same way. Absent or
+      // never saved reads as off, which is the stored default.
+      // Mirrors may report their own actor handle, but the repository UI
+      // advertises the canonical ForkMesh actor everywhere.
+      const handle = "@forkmesh.forkmesh@forkmesh.com";
+      if (handle) {
+        const handleEl = $("[data-repo-watch-handle]");
+        if (handleEl) handleEl.textContent = handle;
+        const copyButton = $("[data-repo-watch-wrap] [data-dashboard-copy]");
+        if (copyButton) copyButton.setAttribute("data-dashboard-copy", handle);
+        const badgeHandle = $("[data-repo-social-handle]");
+        if (badgeHandle) { badgeHandle.textContent = handle; badgeHandle.title = handle; }
+        // Point every "View on Mastodon" link at the authoritative handle.
+        $$("[data-repo-mastodon-link]").forEach((el) => {
+          el.setAttribute("href", fediverseFollowUrl(handle));
+        });
+      }
+      const logo = $("[data-repo-social-logo]");
+      if (logo) {
+        const loadedLogo = await loadNativeRepositoryLogo(
+          nativeRepositoryLogoEndpoint(repo),
+        );
+        // The relay resolves this in the same precedence order users expect:
+        // the project's own root logo.png, then owner-approved artwork, then
+        // nothing at all — a repository without a real logo shows none.
+        const logoUrl = nativeRepositoryLogoDataUrl(body.logoUrl)
+          || String(loadedLogo?.dataUrl || "");
+        const fallbackUrl = String(loadedLogo?.fallbackDataUrl || "");
+        if (logoUrl) {
+          logo.decoding = "async";
+          logo.fetchPriority = "low";
+          logo.onerror = () => {
+            if (fallbackUrl && logo.src !== new URL(fallbackUrl, location.href).href) {
+              logo.src = fallbackUrl;
+            } else {
+              logo.classList.add("hidden");
+            }
+          };
+          logo.src = logoUrl;
+          logo.classList.remove("hidden");
+        } else {
+          logo.removeAttribute("src");
+          logo.classList.add("hidden");
+        }
+      }
+      // The header is the repository's own banner — its uploaded artwork or
+      // the `.forkmesh/banner.png` it committed — and nothing otherwise. There
+      // is no brand fallback: the ForkMesh banner is this instance's identity,
+      // and painting it over every repo made unrelated projects look like ours.
+      applyRepoSocialBanner(repo, String(body.bannerUrl || ""));
+      if (body.description && !repo.description) {
+        applyRepoAboutDescription(repo, body.description);
+      }
+      // Relay-known website seeds the link/form; the committed
+      // .forkmesh/info.json (loadRepoAboutInfo) overrides it when the live
+      // mirror is reachable.
+      if (body.website) applyRepoAboutWebsite(body.website);
+    } catch (_) { /* fediverse card is an adornment, never an error */ }
+  }
+
+  async function loadRepoDigestPreview(repo) {
+    const target = $("[data-repo-digest-preview]");
+    if (!target || !sessionOwnsRepo(repo) || repo.isPrivate) return;
+    target.textContent = "Loading preview…";
+    try {
+      const token = state.session?.sessionToken || "";
+      const response = await fetch(
+        `${repoApiBase(repo)}/fediverse-digest`, {
+          headers: {
+            accept: "application/json",
+            ...(token ? { authorization: "Bearer " + token } : {}),
+          },
+          cache: "no-store",
+        });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body?.ok) {
+        throw new Error(body?.error || "preview_failed");
+      }
+      if (!repoAboutStillCurrent(repo)) return;
+      const text = String(body.preview?.text || "").trim();
+      target.textContent = text || "No meaningful public updates are queued.";
+      target.dataset.pending = String(Number(body.pending || 0));
+      target.dataset.nextPublishAt = String(Number(body.nextPublishAt || 0));
+    } catch (_) {
+      if (repoAboutStillCurrent(repo)) {
+        target.textContent = "Digest preview is unavailable.";
+      }
+    }
+  }
+
+  // --- Repository webhooks (adhoc #207) ------------------------------------
+  //
+  // The relay delivers signed forkmesh-webhook-v1 events to endpoints the
+  // owner registers here. Everything is one POST to /api/repo/<o>/<r>/webhooks
+  // carrying the session envelope, because the backend re-derives ownership
+  // from the session token; this is only the client surface.
+
+  const REPO_WEBHOOK_OUTCOME_LABELS = {
+    delivered: "delivered",
+    dropped: "not delivered",
+    failed: "not delivered",
+  };
+
+  async function repoWebhookRequest(repo, payload) {
+    const response = await fetch(`${repoApiBase(repo)}/webhooks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerAccount: state.session?.nodeName || "",
+        sessionToken: state.session?.sessionToken || "",
+        ...payload,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok && !body?.error) throw new Error("webhook_request_failed");
+    if (body?.error) throw new Error(body.error);
+    return body;
+  }
+
+  function setRepoWebhookStatus(message, tone = "") {
+    const status = $("[data-repo-webhook-status]");
+    if (!status) return;
+    status.textContent = message || "";
+    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : "text-muted-foreground"}`;
+  }
+
+  function repoWebhookErrorText(code) {
+    switch (String(code || "")) {
+      case "invalid_url":
+        return "Enter a public https URL. Loopback, private and ForkMesh addresses are refused.";
+      case "no_events":
+        return "Choose at least one event.";
+      case "duplicate_url":
+        return "That URL is already registered for this repository.";
+      case "too_many_webhooks":
+        return "This repository already has the maximum number of webhooks.";
+      case "not_authorized":
+        return "Only the repository owner can manage webhooks.";
+      case "not_found":
+        return "That webhook no longer exists.";
+      default:
+        return "The webhook could not be saved.";
+    }
+  }
+
+  function renderRepoWebhookEventChoices(events, selected) {
+    const fieldset = $("[data-repo-webhook-events]");
+    if (!fieldset) return;
+    const chosen = new Set(selected || []);
+    const legend = fieldset.querySelector("legend");
+    fieldset.innerHTML = "";
+    if (legend) fieldset.appendChild(legend);
+    (events || []).forEach((event) => {
+      const label = document.createElement("label");
+      label.className = "inline-flex items-start gap-2";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.className = "mt-0.5 h-3.5 w-3.5";
+      input.dataset.repoWebhookEvent = event.type;
+      input.checked = chosen.has(event.type);
+      const text = document.createElement("span");
+      text.innerHTML = `<span class="font-medium text-foreground">${escapeHtml(event.label)}</span> <span class="font-mono text-[10px]">${escapeHtml(event.type)}</span><br /><span>${escapeHtml(event.hint)}</span>`;
+      label.append(input, text);
+      fieldset.appendChild(label);
+    });
+  }
+
+  function repoWebhookDeliveryLine(delivery) {
+    const outcome = REPO_WEBHOOK_OUTCOME_LABELS[delivery.outcome] || delivery.outcome;
+    const status = Number(delivery.status || 0);
+    return `${escapeHtml(delivery.eventType)} · ${escapeHtml(outcome)}${status ? ` (HTTP ${status})` : ""} · ${escapeHtml(relativeTimeLabel(Number(delivery.ts || 0)) || "just now")}`;
+  }
+
+  function renderRepoWebhooks(body) {
+    const list = $("[data-repo-webhooks-list]");
+    if (!list) return;
+    const hooks = Array.isArray(body?.webhooks) ? body.webhooks : [];
+    const deliveries = Array.isArray(body?.deliveries) ? body.deliveries : [];
+    if (!hooks.length) {
+      list.innerHTML = `<p class="text-[11px] text-muted-foreground">No webhooks yet. Add one below and every matching event is POSTed to it.</p>`;
+      return;
+    }
+    list.innerHTML = hooks.map((hook) => {
+      const last = deliveries.find((item) => item.webhookId === hook.id);
+      const failing = Number(hook.consecutiveFailures || 0) > 0;
+      return `
+        <div data-repo-webhook-row data-repo-webhook-id="${escapeHtml(hook.id)}" data-repo-webhook-active="${hook.active ? "1" : "0"}" class="grid gap-2 rounded-md border border-border p-3">
+          <div class="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <span class="min-w-0 break-all font-mono text-[11px] text-foreground">${escapeHtml(hook.url)}</span>
+            <span class="inline-flex shrink-0 items-center gap-1.5">
+              <span class="inline-flex h-2 w-2 rounded-full ${hook.active && !failing ? "bg-emerald-500" : failing ? "bg-destructive" : "bg-muted-foreground"}"></span>
+              <span class="text-[10px] text-muted-foreground">${hook.active ? (failing ? `${hook.consecutiveFailures} failed` : "active") : "paused"}</span>
+            </span>
+          </div>
+          ${hook.description ? `<p class="text-[11px] text-muted-foreground">${escapeHtml(hook.description)}</p>` : ""}
+          <p class="font-mono text-[10px] text-muted-foreground">${hook.events.map((event) => escapeHtml(event)).join(" · ")}</p>
+          <p class="text-[10px] text-muted-foreground">${last ? repoWebhookDeliveryLine(last) : "No deliveries yet."}</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" data-repo-webhook-test class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">Send test</button>
+            <button type="button" data-repo-webhook-toggle class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">${hook.active ? "Pause" : "Resume"}</button>
+            <button type="button" data-repo-webhook-rotate class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">Rotate secret</button>
+            <button type="button" data-repo-webhook-delete class="inline-flex h-7 items-center rounded-md border border-destructive/60 px-2.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10">Delete</button>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  function showRepoWebhookSecret(secret) {
+    const panel = $("[data-repo-webhook-secret]");
+    const value = $("[data-repo-webhook-secret-value]");
+    if (!panel || !value) return;
+    if (!secret) {
+      panel.hidden = true;
+      value.textContent = "";
+      return;
+    }
+    value.textContent = secret;
+    panel.hidden = false;
+  }
+
+  async function loadRepoWebhooks(repo) {
+    const list = $("[data-repo-webhooks-list]");
+    if (!list || !sessionOwnsRepo(repo)) return;
+    try {
+      const body = await repoWebhookRequest(repo, { action: "list" });
+      if (!repoAboutStillCurrent(repo)) return;
+      state.repoWebhookEvents = Array.isArray(body?.events) ? body.events : [];
+      renderRepoWebhooks(body);
+      // Default the new-webhook form to every event, which is what a CI
+      // provider that wants "build on any change" needs.
+      renderRepoWebhookEventChoices(
+        state.repoWebhookEvents,
+        state.repoWebhookEvents.map((event) => event.type),
+      );
+    } catch (error) {
+      if (!repoAboutStillCurrent(repo)) return;
+      list.innerHTML = `<p class="text-[11px] text-destructive">${escapeHtml(repoWebhookErrorText(error?.message))}</p>`;
+    }
+  }
+
+  const REPO_FORGE_MIRROR_MARKS = {
+    github: `<svg viewBox="0 0 16 16" aria-hidden="true" class="h-5 w-5" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>`,
+    gitlab: `<svg viewBox="0 0 24 24" aria-hidden="true" class="h-5 w-5" fill="currentColor" style="color:#fc6d26"><path d="M23.6 9.59l-.03-.09-3.27-8.53a.85.85 0 00-.34-.4.87.87 0 00-1 .05.88.88 0 00-.29.45l-2.2 6.75H7.53L5.33 1.07A.86.86 0 005.04.63a.87.87 0 00-1-.06.85.85 0 00-.34.41L.43 9.5l-.03.09a6.07 6.07 0 002.01 7.01l.01.01.03.02 4.98 3.73 2.46 1.86 1.5 1.13a1.01 1.01 0 001.22 0l1.5-1.13 2.46-1.86 5.01-3.75.01-.01a6.07 6.07 0 002.01-7.01z"/></svg>`,
+  };
+
+  function repoForgeMirrorState(repo) {
+    const key = repoKey(repo).toLowerCase();
+    if (!state.repoForgeMirror || state.repoForgeMirror.key !== key) {
+      state.repoForgeMirror = { key, body: null, provider: "github", editing: false, picker: null };
+    }
+    return state.repoForgeMirror;
+  }
+
+  async function repoForgeMirrorRequest(repo, payload) {
+    const response = await fetch(`${repoApiBase(repo)}/provider-mirror`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerAccount: state.session?.nodeName || "",
+        sessionToken: state.session?.sessionToken || "",
+        ...payload,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (body?.error) {
+      const error = new Error(body.error);
+      error.detail = body.message || "";
+      throw error;
+    }
+    if (!response.ok) throw new Error("mirror_request_failed");
+    return body;
+  }
+
+  function repoForgeMirrorErrorText(error) {
+    if (error?.detail) return error.detail;
+    switch (String(error?.message || "")) {
+      case "invalid_provider":
+        return "Choose GitHub or GitLab.";
+      case "invalid_remote":
+        return "Enter the repository as owner/name, or paste its https address.";
+      case "token_required":
+        return "Paste an access token so ForkMesh can reach the repository.";
+      case "not_authorized":
+        return "Only the repository owner can manage its mirror.";
+      case "not_configured":
+        return "This repository is not mirrored yet.";
+      case "nothing_selected":
+        return "Tick at least one item to import.";
+      default:
+        return "The mirror could not be updated. Try again in a moment.";
+    }
+  }
+
+  function setRepoForgeMirrorStatus(message, tone = "") {
+    const status = $("[data-repo-forge-mirror-status]");
+    if (!status) return;
+    status.textContent = message || "";
+    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-emerald-600" : "text-muted-foreground"}`;
+  }
+
+  function repoForgeMirrorProviderLabel(body, provider) {
+    const entry = (body?.catalog?.providers || []).find((item) => item.key === provider);
+    return entry?.label || (provider === "gitlab" ? "GitLab" : "GitHub");
+  }
+
+  function repoForgeMirrorResourceLabel(resource, provider) {
+    return resource?.labels?.[provider] || resource?.label || "";
+  }
+
+  function repoForgeMirrorDirectionLabel(direction, providerLabel) {
+    switch (direction) {
+      case "push":
+        return `ForkMesh → ${providerLabel}`;
+      case "pull":
+        return `${providerLabel} → ForkMesh`;
+      case "both":
+        return "Both ways";
+      default:
+        return "Off";
+    }
+  }
+
+  function repoForgeMirrorDot(tone) {
+    const color = tone === "good" ? "bg-emerald-500" : tone === "bad" ? "bg-destructive" : "bg-muted-foreground";
+    return `<span class="inline-flex h-2 w-2 shrink-0 rounded-full ${color}"></span>`;
+  }
+
+  function renderRepoForgeMirrorProviderPicker(body, provider) {
+    return (body?.catalog?.providers || []).map((item) => {
+      const active = item.key === provider;
+      return `<button type="button" data-repo-forge-mirror-provider="${escapeHtml(item.key)}" aria-pressed="${active ? "true" : "false"}" class="flex min-w-0 items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${active ? "border-primary bg-secondary/60" : "border-border hover:bg-secondary"}">
+        <span class="text-foreground">${REPO_FORGE_MIRROR_MARKS[item.key] || ""}</span>
+        <span class="grid min-w-0">
+          <span class="text-xs font-semibold text-foreground">${escapeHtml(item.label)}</span>
+          <span class="truncate text-[10px] text-muted-foreground">${escapeHtml(item.web.replace("https://", ""))}</span>
+        </span>
+        ${active ? `<i data-lucide="check" class="ml-auto h-3.5 w-3.5 text-foreground"></i>` : ""}
+      </button>`;
+    }).join("");
+  }
+
+  function renderRepoForgeMirrorResourceRows(body, provider, resources) {
+    const providerLabel = repoForgeMirrorProviderLabel(body, provider);
+    return (body?.catalog?.resources || []).map((resource) => {
+      const supported = (resource.providers || []).includes(provider);
+      const current = resources?.[resource.key] || {};
+      const direction = supported ? (current.direction || resource.default || "off") : "off";
+      const pulls = direction === "pull" || direction === "both";
+      const label = repoForgeMirrorResourceLabel(resource, provider);
+      const options = (resource.directions || []).map((value) =>
+        `<option value="${escapeHtml(value)}"${value === direction ? " selected" : ""}>${escapeHtml(repoForgeMirrorDirectionLabel(value, providerLabel))}</option>`).join("");
+      const codeNote = resource.key === "code"
+        ? `<label class="inline-flex items-start gap-2 text-[10px] text-muted-foreground"><input data-repo-forge-mirror-prune type="checkbox" class="mt-0.5 h-3.5 w-3.5"${body?.mirror?.prune ? " checked" : ""} />Also delete branches and tags there that no longer exist here</label>
+           ${body?.codeHosted ? "" : `<p class="text-[10px] leading-4 text-muted-foreground">Code is pushed by the ForkMesh server that holds this repository. This one is served from its owner's node, so the push starts once it is hosted on ForkMesh.</p>`}`
+        : "";
+      return `<div data-repo-forge-mirror-resource="${escapeHtml(resource.key)}" class="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${supported ? "" : "opacity-50"}">
+        <div class="flex min-w-0 items-start gap-2.5">
+          <i data-lucide="${escapeHtml(resource.icon)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
+          <div class="grid min-w-0 gap-1">
+            <span class="text-xs font-semibold text-foreground">${escapeHtml(label)}</span>
+            <span class="text-[11px] leading-4 text-muted-foreground">${supported ? escapeHtml(resource.hint) : `${escapeHtml(providerLabel)} has no ${escapeHtml(label.toLowerCase())}.`}</span>
+            ${supported ? codeNote : ""}
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+          <select data-repo-forge-mirror-direction aria-label="${escapeHtml(label)} direction" class="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent disabled:opacity-50"${supported ? "" : " disabled"}>${options}</select>
+          ${resource.directions.includes("pull") ? `<select data-repo-forge-mirror-mode aria-label="${escapeHtml(label)} import mode" class="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent disabled:opacity-50"${supported && pulls ? "" : " disabled"}>
+            <option value="auto"${current.mode !== "manual" ? " selected" : ""}>Import automatically</option>
+            <option value="manual"${current.mode === "manual" ? " selected" : ""}>I pick what to import</option>
+          </select>
+          <label class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><input data-repo-forge-mirror-comments type="checkbox" class="h-3.5 w-3.5"${current.comments === false ? "" : " checked"}${supported && direction !== "off" ? "" : " disabled"} />Comments</label>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function renderRepoForgeMirrorForm(body, mirrorState) {
+    const mirror = body?.mirror || null;
+    const provider = mirrorState.provider;
+    const providerSpec = (body?.catalog?.providers || []).find((item) => item.key === provider) || {};
+    const providerLabel = repoForgeMirrorProviderLabel(body, provider);
+    const resources = mirror && mirror.provider === provider ? mirror.resources : null;
+    const remote = mirror && mirror.provider === provider ? mirror.remote : "";
+    const keepsToken = Boolean(mirror && mirror.provider === provider && mirror.tokenHint);
+    return `<form data-repo-forge-mirror-form class="grid gap-4">
+      <div class="grid gap-2">
+        <span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Mirror to</span>
+        <div class="grid gap-2 sm:grid-cols-2">${renderRepoForgeMirrorProviderPicker(body, provider)}</div>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <label class="grid gap-1 text-[11px] font-medium text-foreground">${escapeHtml(providerLabel)} repository
+          <span class="flex h-8 min-w-0 items-center rounded-md bg-secondary text-xs">
+            <span class="shrink-0 pl-2 font-mono text-muted-foreground">${escapeHtml((providerSpec.web || "").replace("https://", ""))}/</span>
+            <input data-repo-forge-mirror-remote type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(remote)}" placeholder="${escapeHtml(state.selectedRepo ? repoKey(state.selectedRepo) : "owner/name")}" class="h-8 min-w-0 flex-1 bg-transparent px-1 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
+          </span>
+        </label>
+        <label class="grid gap-1 text-[11px] font-medium text-foreground">Personal access token
+          <input data-repo-forge-mirror-token type="password" autocomplete="new-password" spellcheck="false"${keepsToken ? "" : " required"} placeholder="${keepsToken ? `Saved (${escapeHtml(mirror.tokenHint)}). Leave blank to keep it` : provider === "gitlab" ? "glpat-…" : "github_pat_…"}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
+        </label>
+      </div>
+      <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(providerSpec.tokenHelp || "")} <a href="${escapeHtml(providerSpec.tokenUrl || "#")}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Create a token on ${escapeHtml(providerLabel)}</a>. It is stored encrypted, used only for this mirror, and never shown again.</p>
+      <label class="inline-flex items-start gap-2 text-[11px] text-muted-foreground"><input data-repo-forge-mirror-create type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Create the repository on ${escapeHtml(providerLabel)} if it does not exist yet${body?.private ? " (as a private repository)" : ""}</label>
+      <div class="grid gap-2">
+        <span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">What to mirror</span>
+        <div class="divide-y divide-border rounded-md border border-border">${renderRepoForgeMirrorResourceRows(body, provider, resources)}</div>
+        <p class="text-[10px] leading-4 text-muted-foreground">Items brought in from ${escapeHtml(providerLabel)} keep a link to the original and are never sent back, so nothing loops. Wikis, projects and Actions have no ForkMesh counterpart and are not mirrored.</p>
+      </div>
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        ${mirror ? `<button type="button" data-repo-forge-mirror-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>` : ""}
+        <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"><i data-lucide="link" class="h-3.5 w-3.5"></i>${mirror ? "Save mirror" : `Connect ${escapeHtml(providerLabel)}`}</button>
+      </div>
+    </form>`;
+  }
+
+  function repoForgeMirrorCodeLine(mirror, body) {
+    const push = mirror.status?.codePush || {};
+    if (mirror.resources?.code?.direction !== "push") return { tone: "", text: "Code is not mirrored." };
+    if (!body?.codeHosted) return { tone: "", text: "Waiting for this repository to be hosted on ForkMesh." };
+    if (!push.at) return { tone: "", text: "First push is on its way (within a few minutes)." };
+    if (!push.ok) return { tone: "bad", text: `Last push failed ${relativeTimeLabel(push.at)}: ${push.error || "unknown error"}` };
+    return { tone: "good", text: `Pushed ${push.refs || 0} branch${push.refs === 1 ? "" : "es"} and tags ${relativeTimeLabel(push.at)}.` };
+  }
+
+  function repoForgeMirrorSyncLine(mirror) {
+    const sync = mirror.status?.lastSync || {};
+    const pulling = Object.values(mirror.resources || {}).some((item) => item.direction === "pull" || item.direction === "both");
+    if (!pulling) return { tone: "", text: "Nothing is imported into ForkMesh." };
+    if (!sync.at) return { tone: "", text: "First import runs within ten minutes, or press Sync now." };
+    if (!sync.ok) return { tone: "bad", text: `Last import ${relativeTimeLabel(sync.at)} hit a problem: ${sync.error}` };
+    return { tone: "good", text: `Checked ${relativeTimeLabel(sync.at)}: ${sync.imported || 0} new item${sync.imported === 1 ? "" : "s"}, ${sync.comments || 0} comment${sync.comments === 1 ? "" : "s"}.` };
+  }
+
+  function renderRepoForgeMirrorOverview(body) {
+    const mirror = body.mirror;
+    const providerLabel = mirror.providerLabel || repoForgeMirrorProviderLabel(body, mirror.provider);
+    const status = mirror.status || {};
+    const code = repoForgeMirrorCodeLine(mirror, body);
+    const sync = repoForgeMirrorSyncLine(mirror);
+    const connectionTone = status.error ? "bad" : status.remoteExists ? "good" : "";
+    const resources = (body.catalog?.resources || []).filter((resource) => (resource.providers || []).includes(mirror.provider));
+    const chips = resources.map((resource) => {
+      const direction = mirror.resources?.[resource.key]?.direction || "off";
+      const manual = mirror.resources?.[resource.key]?.mode === "manual" && (direction === "pull" || direction === "both");
+      const arrow = { push: "arrow-right", pull: "arrow-left", both: "arrow-left-right" }[direction] || "minus";
+      return `<span class="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11px] ${direction === "off" ? "text-muted-foreground" : "text-foreground"}"><i data-lucide="${escapeHtml(resource.icon)}" class="h-3 w-3 text-muted-foreground"></i>${escapeHtml(repoForgeMirrorResourceLabel(resource, mirror.provider))}<i data-lucide="${arrow}" class="h-3 w-3 text-muted-foreground"></i>${manual ? `<span class="text-[10px] text-muted-foreground">picked</span>` : ""}</span>`;
+    }).join("");
+    const pickable = resources.filter((resource) => {
+      const direction = mirror.resources?.[resource.key]?.direction;
+      return direction === "pull" || direction === "both";
+    });
+    const pickButtons = pickable.map((resource) =>
+      `<button type="button" data-repo-forge-mirror-pick="${escapeHtml(resource.key)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="list-checks" class="h-3.5 w-3.5 text-muted-foreground"></i>Pick ${escapeHtml(repoForgeMirrorResourceLabel(resource, mirror.provider).toLowerCase())}</button>`).join("");
+    const history = (mirror.history || []).slice(0, 8).map((entry) =>
+      `<li class="flex min-w-0 items-start gap-2">${repoForgeMirrorDot(entry.ok ? "good" : "bad")}<span class="min-w-0 flex-1 break-words">${escapeHtml(entry.message || entry.kind || "")}</span><span class="shrink-0 text-[10px]">${escapeHtml(relativeTimeLabel(entry.at) || "just now")}</span></li>`).join("");
+    return `<div class="grid gap-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-secondary/40 p-3">
+        <div class="flex min-w-0 items-center gap-3">
+          <span class="text-foreground">${REPO_FORGE_MIRROR_MARKS[mirror.provider] || ""}</span>
+          <div class="grid min-w-0">
+            <a href="${escapeHtml(mirror.remoteUrl)}" target="_blank" rel="noopener noreferrer" class="truncate font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(mirror.remote)}</a>
+            <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(connectionTone)}${status.error ? escapeHtml(status.error) : `${escapeHtml(providerLabel)} as @${escapeHtml(status.login || "unknown")}${status.remotePrivate ? " · private" : ""}${status.canPush ? "" : " · token cannot push"}`}</span>
+          </div>
+        </div>
+        <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(mirror.active ? "good" : "")}${mirror.active ? "Mirroring" : "Paused"}</span>
+      </div>
+      <div class="flex flex-wrap gap-1.5">${chips}</div>
+      <div class="grid gap-2 text-[11px] text-muted-foreground">
+        <p class="flex items-start gap-2">${repoForgeMirrorDot(code.tone)}<span><span class="font-medium text-foreground">Code</span> · ${escapeHtml(code.text)}</span></p>
+        <p class="flex items-start gap-2">${repoForgeMirrorDot(sync.tone)}<span><span class="font-medium text-foreground">Import</span> · ${escapeHtml(sync.text)}</span></p>
+        ${Number(body.pending || 0) ? `<p class="flex items-start gap-2">${repoForgeMirrorDot("")}<span>${Number(body.pending)} item${Number(body.pending) === 1 ? "" : "s"} waiting to be sent to ${escapeHtml(providerLabel)}.</span></p>` : ""}
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" data-repo-forge-mirror-sync class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-muted-foreground"></i>Sync now</button>
+        ${pickButtons}
+        <button type="button" data-repo-forge-mirror-edit class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="sliders-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Change settings</button>
+        <button type="button" data-repo-forge-mirror-verify class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">Check connection</button>
+        <button type="button" data-repo-forge-mirror-toggle data-repo-forge-mirror-active="${mirror.active ? "1" : "0"}" class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">${mirror.active ? "Pause" : "Resume"}</button>
+        <button type="button" data-repo-forge-mirror-disconnect class="inline-flex h-7 items-center rounded-md border border-destructive/60 px-2.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10">Disconnect</button>
+      </div>
+      <div data-repo-forge-mirror-picker></div>
+      ${history ? `<div class="grid gap-2"><span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</span><ul class="grid gap-1.5 text-[11px] text-muted-foreground">${history}</ul></div>` : ""}
+    </div>`;
+  }
+
+  function renderRepoForgeMirrorPicker() {
+    const holder = $("[data-repo-forge-mirror-picker]");
+    const mirrorState = state.repoForgeMirror;
+    if (!holder || !mirrorState) return;
+    const picker = mirrorState.picker;
+    if (!picker) {
+      holder.innerHTML = "";
+      return;
+    }
+    const body = mirrorState.body || {};
+    const resource = (body.catalog?.resources || []).find((item) => item.key === picker.kind) || {};
+    const label = repoForgeMirrorResourceLabel(resource, body.mirror?.provider);
+    const providerLabel = body.mirror?.providerLabel || "";
+    const items = picker.items || [];
+    const rows = items.map((item) => {
+      const disabled = item.imported || item.mirrored;
+      const checked = picker.selected.has(item.key);
+      return `<label class="flex min-w-0 items-start gap-2.5 px-3 py-2.5 ${disabled ? "opacity-60" : "cursor-pointer hover:bg-secondary/50"}">
+        <input type="checkbox" data-repo-forge-mirror-pick-item="${escapeHtml(item.key)}" class="mt-0.5 h-3.5 w-3.5"${checked ? " checked" : ""}${disabled ? " disabled" : ""} />
+        <span class="grid min-w-0 flex-1 gap-0.5">
+          <span class="flex min-w-0 items-center gap-2">
+            <span class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title)}</span>
+            <span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] ${item.state === "open" ? "text-emerald-600" : "text-muted-foreground"}">${item.merged ? "merged" : escapeHtml(item.state)}</span>
+          </span>
+          <span class="truncate text-[10px] text-muted-foreground">#${escapeHtml(item.number)} · @${escapeHtml(item.author)} · ${escapeHtml(relativeTimeLabel(item.updatedAt) || "")}${item.commentCount ? ` · ${Number(item.commentCount)} comment${Number(item.commentCount) === 1 ? "" : "s"}` : ""}${item.imported ? " · already imported" : item.mirrored ? " · came from ForkMesh" : ""}</span>
+          ${item.excerpt ? `<span class="line-clamp-2 text-[11px] text-muted-foreground">${escapeHtml(item.excerpt)}</span>` : ""}
+        </span>
+        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="shrink-0 text-muted-foreground hover:text-foreground" title="Open on ${escapeHtml(providerLabel)}"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a>
+      </label>`;
+    }).join("");
+    const importable = items.filter((item) => !item.imported && !item.mirrored);
+    holder.innerHTML = `<div class="overflow-hidden rounded-md border border-border">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-3 py-2">
+        <span class="text-xs font-semibold text-foreground">Pick ${escapeHtml(label.toLowerCase())} to bring into ForkMesh</span>
+        <span class="inline-flex items-center gap-2">
+          ${importable.length ? `<button type="button" data-repo-forge-mirror-pick-all class="text-[11px] text-accent hover:underline">${picker.selected.size === importable.length ? "Clear" : "Select all"}</button>` : ""}
+          <button type="button" data-repo-forge-mirror-pick-close class="text-muted-foreground hover:text-foreground" aria-label="Close"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>
+        </span>
+      </div>
+      <div class="max-h-96 divide-y divide-border overflow-y-auto">${picker.loading ? `<p class="px-3 py-4 text-[11px] text-muted-foreground">Loading from ${escapeHtml(providerLabel)}…</p>` : picker.error ? `<p class="px-3 py-4 text-[11px] text-destructive">${escapeHtml(picker.error)}</p>` : rows || `<p class="px-3 py-4 text-[11px] text-muted-foreground">Nothing here yet.</p>`}</div>
+      <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
+        <span class="inline-flex items-center gap-2 text-[11px] text-muted-foreground">${picker.page > 1 ? `<button type="button" data-repo-forge-mirror-pick-page="${picker.page - 1}" class="text-accent hover:underline">Newer</button>` : ""}<span>Page ${picker.page}</span>${picker.more ? `<button type="button" data-repo-forge-mirror-pick-page="${picker.page + 1}" class="text-accent hover:underline">Older</button>` : ""}</span>
+        <button type="button" data-repo-forge-mirror-import class="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"${picker.selected.size ? "" : " disabled"}><i data-lucide="download" class="h-3.5 w-3.5"></i>Import ${picker.selected.size || ""} selected</button>
+      </div>
+    </div>`;
+    window.lucide?.createIcons();
+  }
+
+  function renderRepoForgeMirror() {
+    const holder = $("[data-repo-forge-mirror-body]");
+    const mirrorState = state.repoForgeMirror;
+    if (!holder || !mirrorState?.body) return;
+    const body = mirrorState.body;
+    const summary = $("[data-repo-forge-mirror-summary]");
+    if (summary) {
+      summary.innerHTML = body.mirror
+        ? `${repoForgeMirrorDot(body.mirror.active && !body.mirror.status?.error ? "good" : body.mirror.status?.error ? "bad" : "")}<span>${escapeHtml(body.mirror.providerLabel)} · ${escapeHtml(body.mirror.remote)}</span>`
+        : "Not connected";
+    }
+    holder.innerHTML = body.mirror && !mirrorState.editing
+      ? renderRepoForgeMirrorOverview(body)
+      : renderRepoForgeMirrorForm(body, mirrorState);
+    renderRepoForgeMirrorPicker();
+    window.lucide?.createIcons();
+  }
+
+  async function loadRepoProviderMirror(repo) {
+    const holder = $("[data-repo-forge-mirror-body]");
+    if (!holder || !sessionOwnsRepo(repo)) return;
+    const mirrorState = repoForgeMirrorState(repo);
+    try {
+      const body = await repoForgeMirrorRequest(repo, { action: "get" });
+      if (!repoAboutStillCurrent(repo)) return;
+      mirrorState.body = body;
+      if (body.mirror?.provider) mirrorState.provider = body.mirror.provider;
+      renderRepoForgeMirror();
+      if (location.hash === "#mirror") $("[data-repo-forge-mirror-card]")?.scrollIntoView({ block: "start" });
+    } catch (error) {
+      if (!repoAboutStillCurrent(repo)) return;
+      holder.innerHTML = `<p class="text-[11px] text-destructive">${escapeHtml(repoForgeMirrorErrorText(error))}</p>`;
+    }
+  }
+
+  function openRepoForgeMirrorSettings() {
+    if (!state.selectedRepo) return;
+    activateRepoTab("settings");
+    window.setTimeout(() => {
+      $("[data-repo-forge-mirror-card]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  }
+
+  function readRepoForgeMirrorResources(form) {
+    const resources = {};
+    form.querySelectorAll("[data-repo-forge-mirror-resource]").forEach((row) => {
+      const direction = row.querySelector("[data-repo-forge-mirror-direction]");
+      const mode = row.querySelector("[data-repo-forge-mirror-mode]");
+      const comments = row.querySelector("[data-repo-forge-mirror-comments]");
+      resources[row.dataset.repoForgeMirrorResource] = {
+        direction: direction?.value || "off",
+        mode: mode?.value || "auto",
+        comments: comments ? comments.checked : true,
+      };
+    });
+    return resources;
+  }
+
+  async function loadRepoForgeMirrorCandidates(repo, kind, page) {
+    const mirrorState = repoForgeMirrorState(repo);
+    mirrorState.picker = { kind, page, items: [], selected: new Set(), loading: true, more: false, error: "" };
+    renderRepoForgeMirrorPicker();
+    try {
+      const body = await repoForgeMirrorRequest(repo, { action: "candidates", kind, page });
+      if (!repoAboutStillCurrent(repo) || mirrorState.picker?.kind !== kind) return;
+      mirrorState.picker.items = Array.isArray(body.items) ? body.items : [];
+      mirrorState.picker.more = Boolean(body.more);
+    } catch (error) {
+      if (mirrorState.picker) mirrorState.picker.error = repoForgeMirrorErrorText(error);
+    }
+    if (mirrorState.picker) mirrorState.picker.loading = false;
+    renderRepoForgeMirrorPicker();
+  }
+
+  function handleRepoForgeMirrorChange(event) {
+    const direction = event.target.closest?.("[data-repo-forge-mirror-direction]");
+    if (!direction) return false;
+    const row = direction.closest("[data-repo-forge-mirror-resource]");
+    const pulls = direction.value === "pull" || direction.value === "both";
+    const mode = row?.querySelector("[data-repo-forge-mirror-mode]");
+    if (mode) mode.disabled = !pulls;
+    const comments = row?.querySelector("[data-repo-forge-mirror-comments]");
+    if (comments) comments.disabled = direction.value === "off";
+    return true;
+  }
+
+  async function handleRepoForgeMirrorClick(event) {
+    const opener = event.target.closest("[data-repo-forge-mirror-open]");
+    if (opener) {
+      event.preventDefault();
+      openRepoForgeMirrorSettings();
+      return true;
+    }
+    const card = event.target.closest("[data-repo-forge-mirror-card]");
+    const repo = state.selectedRepo;
+    if (!card || !repo || !sessionOwnsRepo(repo)) return false;
+    const mirrorState = repoForgeMirrorState(repo);
+    const providerButton = event.target.closest("[data-repo-forge-mirror-provider]");
+    if (providerButton) {
+      mirrorState.provider = providerButton.dataset.repoForgeMirrorProvider || "github";
+      renderRepoForgeMirror();
+      return true;
+    }
+    if (event.target.closest("[data-repo-forge-mirror-edit]")) {
+      mirrorState.editing = true;
+      mirrorState.picker = null;
+      renderRepoForgeMirror();
+      return true;
+    }
+    if (event.target.closest("[data-repo-forge-mirror-cancel]")) {
+      mirrorState.editing = false;
+      mirrorState.provider = mirrorState.body?.mirror?.provider || mirrorState.provider;
+      renderRepoForgeMirror();
+      return true;
+    }
+    const pick = event.target.closest("[data-repo-forge-mirror-pick]");
+    if (pick) {
+      await loadRepoForgeMirrorCandidates(repo, pick.dataset.repoForgeMirrorPick, 1);
+      return true;
+    }
+    const pickPage = event.target.closest("[data-repo-forge-mirror-pick-page]");
+    if (pickPage && mirrorState.picker) {
+      await loadRepoForgeMirrorCandidates(repo, mirrorState.picker.kind, Number(pickPage.dataset.repoForgeMirrorPickPage) || 1);
+      return true;
+    }
+    if (event.target.closest("[data-repo-forge-mirror-pick-close]")) {
+      mirrorState.picker = null;
+      renderRepoForgeMirrorPicker();
+      return true;
+    }
+    const pickItem = event.target.closest("[data-repo-forge-mirror-pick-item]");
+    if (pickItem && mirrorState.picker) {
+      const key = pickItem.dataset.repoForgeMirrorPickItem;
+      if (pickItem.checked) mirrorState.picker.selected.add(key);
+      else mirrorState.picker.selected.delete(key);
+      renderRepoForgeMirrorPicker();
+      return true;
+    }
+    if (event.target.closest("[data-repo-forge-mirror-pick-all]") && mirrorState.picker) {
+      const importable = mirrorState.picker.items.filter((item) => !item.imported && !item.mirrored);
+      mirrorState.picker.selected = mirrorState.picker.selected.size === importable.length
+        ? new Set()
+        : new Set(importable.map((item) => item.key));
+      renderRepoForgeMirrorPicker();
+      return true;
+    }
+    const button = event.target.closest("button");
+    const actions = [
+      ["[data-repo-forge-mirror-import]", "import"],
+      ["[data-repo-forge-mirror-sync]", "sync"],
+      ["[data-repo-forge-mirror-verify]", "verify"],
+      ["[data-repo-forge-mirror-toggle]", "toggle"],
+      ["[data-repo-forge-mirror-disconnect]", "disconnect"],
+    ];
+    const match = button && actions.find(([selector]) => button.matches(selector));
+    if (!match) return false;
+    const action = match[1];
+    const providerLabel = mirrorState.body?.mirror?.providerLabel || "the provider";
+    if (action === "disconnect" && !window.confirm(
+      `Disconnect this repository from ${providerLabel}? The stored token is deleted and nothing more is mirrored. Nothing already copied is removed on either side.`,
+    )) return true;
+    const payload = { action };
+    if (action === "toggle") payload.active = button.dataset.repoForgeMirrorActive !== "1";
+    if (action === "import") {
+      payload.kind = mirrorState.picker?.kind || "";
+      payload.page = mirrorState.picker?.page || 1;
+      payload.keys = Array.from(mirrorState.picker?.selected || []);
+    }
+    const pending = {
+      import: "Importing…",
+      sync: "Syncing…",
+      verify: "Checking the connection…",
+      toggle: payload.active ? "Resuming…" : "Pausing…",
+      disconnect: "Disconnecting…",
+    }[action];
+    button.disabled = true;
+    setRepoForgeMirrorStatus(pending);
+    try {
+      const body = await repoForgeMirrorRequest(repo, payload);
+      if (!repoAboutStillCurrent(repo)) return true;
+      mirrorState.body = body;
+      if (action === "import") {
+        const kind = mirrorState.picker?.kind;
+        const page = mirrorState.picker?.page || 1;
+        renderRepoForgeMirror();
+        setRepoForgeMirrorStatus(`Imported ${Number(body.imported || 0)} item${Number(body.imported) === 1 ? "" : "s"}. They appear once the repository host picks them up.`, "good");
+        if (kind) await loadRepoForgeMirrorCandidates(repo, kind, page);
+        return true;
+      }
+      if (action === "disconnect") {
+        mirrorState.editing = false;
+        mirrorState.picker = null;
+      }
+      renderRepoForgeMirror();
+      setRepoForgeMirrorStatus({
+        sync: `Synced: ${Number(body.sync?.imported || 0)} new item${Number(body.sync?.imported) === 1 ? "" : "s"}, ${Number(body.sync?.comments || 0)} comment${Number(body.sync?.comments) === 1 ? "" : "s"}.`,
+        verify: body.mirror?.status?.error ? body.mirror.status.error : "Connection works.",
+        toggle: payload.active ? "Mirroring resumed." : "Mirroring paused.",
+        disconnect: "Disconnected.",
+      }[action], action === "verify" && body.mirror?.status?.error ? "bad" : "good");
+    } catch (error) {
+      setRepoForgeMirrorStatus(repoForgeMirrorErrorText(error), "bad");
+    } finally {
+      button.disabled = false;
+    }
+    return true;
+  }
+
+  async function handleRepoForgeMirrorSubmit(event) {
+    const form = event.target.closest("[data-repo-forge-mirror-form]");
+    if (!form) return false;
+    event.preventDefault();
+    const repo = state.selectedRepo;
+    if (!repo || !sessionOwnsRepo(repo)) return true;
+    const mirrorState = repoForgeMirrorState(repo);
+    const submit = form.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    setRepoForgeMirrorStatus("Checking the token and the repository…");
+    try {
+      const body = await repoForgeMirrorRequest(repo, {
+        action: "save",
+        provider: mirrorState.provider,
+        remote: form.querySelector("[data-repo-forge-mirror-remote]")?.value || "",
+        token: form.querySelector("[data-repo-forge-mirror-token]")?.value || "",
+        createRemote: Boolean(form.querySelector("[data-repo-forge-mirror-create]")?.checked),
+        prune: Boolean(form.querySelector("[data-repo-forge-mirror-prune]")?.checked),
+        description: repo.description || "",
+        resources: readRepoForgeMirrorResources(form),
+      });
+      if (!repoAboutStillCurrent(repo)) return true;
+      mirrorState.body = body;
+      mirrorState.editing = false;
+      renderRepoForgeMirror();
+      setRepoForgeMirrorStatus(body.created
+        ? `Created ${body.mirror?.remote || "the repository"} and connected.`
+        : "Mirror saved.", "good");
+    } catch (error) {
+      setRepoForgeMirrorStatus(repoForgeMirrorErrorText(error), "bad");
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+    return true;
+  }
+
+  async function loadRepoPullRulesSettings(repo) {
+    const holder = $("[data-repo-pull-rules-editor]");
+    if (!holder || !repo) return;
+    const path = ".forkmesh/pull-rules.json";
+    const branch = repoDefaultBranch(repo) || "main";
+    let exists = false;
+    let policy = { schema: "forkmesh-pull-rules-v1", rules: [] };
+    try {
+      const blobs = await fetchRepoBlobs(repo, [path], { ref: branch });
+      if (!repoAboutStillCurrent(repo)) return;
+      const blob = blobs[path];
+      if (blob) {
+        exists = true;
+        try {
+          policy = JSON.parse(blobText(blob));
+        } catch (_) {
+          holder.innerHTML = `<p class="text-[11px] text-destructive">${escapeHtml(path)} on ${escapeHtml(branch)} is not valid JSON, so every merge it covers is locked. Fix the file in the code view.</p>`;
+          return;
+        }
+      }
+    } catch (_) {
+      if (!repoAboutStillCurrent(repo)) return;
+      holder.innerHTML = `<p class="text-[11px] text-destructive">No repository host answered, so the current rules could not be read. Try again shortly.</p>`;
+      return;
+    }
+    holder.innerHTML = pullRulesEditorHtml(policy, {
+      editable: sessionOwnsRepo(repo),
+      saveLabel: `Commit rules to ${branch}`,
+    });
+    window.lucide?.createIcons();
+    bindPullRulesEditor(holder, {
+      onSave: async (next) => {
+        const payload = await repoFileEditRequest(repo, {
+          path,
+          branch,
+          baseRef: branch,
+          content: `${JSON.stringify(next, null, 2)}\n`,
+          message: next.rules.length ? "Update pull request rules" : "Clear pull request rules",
+          ...(exists ? {} : { create: true }),
+        });
+        exists = true;
+        const commit = String(payload?.commit || "").slice(0, 10);
+        return payload?.unchanged ? "No changes to commit." : `Committed to ${branch}${commit ? ` at ${commit}` : ""}.`;
+      },
+    });
+  }
+
+  async function loadRepoAboutInfo(repo) {
+    // .forkmesh/info.json is the repo's own committed About (what the desktop
+    // shows); when present it wins over the relay catalog description.
+    try {
+      const blobs = await fetchRepoBlobs(repo, [".forkmesh/info.json"]);
+      const blob = blobs[".forkmesh/info.json"];
+      if (!blob || !repoAboutStillCurrent(repo)) return;
+      let info;
+      try { info = JSON.parse(blobText(blob)); } catch (_) { return; }
+      const about = String(info?.about || "").trim();
+      // The committed file is canonical, so it also seeds the gear editor —
+      // editing starts from exactly what the page (and the desktop app) show.
+      if (about) applyRepoAboutDescription(repo, about);
+      applyRepoAboutWebsite(String(info?.website || ""));
+    } catch (_) { /* host offline — keep catalog description */ }
+  }
+
+  function repoReleaseTimestampMs(manifest) {
+    const raw = Number(manifest?.created_at || manifest?.published_at || 0);
+    if (!Number.isFinite(raw) || raw <= 0) return 0;
+    return raw < 1e12 ? raw * 1000 : raw;
+  }
+
+  function repoReleaseVersionParts(tag) {
+    const match = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/.exec(String(tag || "").trim());
+    return match ? [Number(match[1]), Number(match[2] || 0), Number(match[3] || 0)] : null;
+  }
+
+  function compareRepoReleases(a, b) {
+    const time = repoReleaseTimestampMs(b) - repoReleaseTimestampMs(a);
+    if (time) return time;
+    const va = repoReleaseVersionParts(a?.tag);
+    const vb = repoReleaseVersionParts(b?.tag);
+    if (va && vb) {
+      for (let i = 0; i < 3; i += 1) if (va[i] !== vb[i]) return vb[i] - va[i];
+    } else if (va || vb) {
+      return va ? -1 : 1;
+    }
+    return 0;
+  }
+
+  function pickLatestRepoRelease(entries) {
+    const tagged = (Array.isArray(entries) ? entries : [])
+      .filter((entry) => entry && entry.manifest && entry.manifest.tag);
+    const promoted = tagged.find((entry) => entry.channel === "latest");
+    if (promoted) return promoted.manifest;
+    const sorted = tagged.map((entry) => entry.manifest).sort(compareRepoReleases);
+    return sorted[0] || null;
+  }
+
+  async function loadRepoAboutRelease(repo) {
+    try {
+      let tree;
+      try {
+        tree = await fetchRepoJson(repoLiveUrl(
+          repo,
+          "tree",
+          { path: ".forkmesh/releases" },
+        ));
+      } catch (_) { return; }
+      const channels = (Array.isArray(tree?.entries) ? tree.entries : [])
+        .filter((entry) => entry.type === "tree" && entry.name)
+        .map((entry) => String(entry.name));
+      if (!channels.length) return;
+      const paths = channels.map((channel) => `.forkmesh/releases/${channel}/release.json`);
+      const blobs = await fetchRepoBlobs(repo, paths);
+      const manifests = [];
+      channels.forEach((channel, index) => {
+        const blob = blobs[paths[index]];
+        if (!blob) return;
+        let manifest;
+        try { manifest = JSON.parse(blobText(blob)); } catch (_) { return; }
+        if (manifest && typeof manifest === "object") manifests.push({ channel, manifest });
+      });
+      const latest = pickLatestRepoRelease(manifests);
+      if (!latest || !repoAboutStillCurrent(repo)) return;
+      const section = $("[data-repo-about-release]");
+      const body = $("[data-repo-about-release-body]");
+      if (!section || !body) return;
+      const when = relativeTimeLabel(repoReleaseTimestampMs(latest));
+      body.innerHTML = `
+        <span class="inline-flex items-center gap-1.5 rounded-md bg-primary/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground"><i data-lucide="tag" class="h-3 w-3"></i>${escapeHtml(String(latest.tag))}</span>
+        ${when ? `<p class="mt-1.5">released ${escapeHtml(when)}</p>` : ""}`;
+      section.classList.remove("hidden");
+      window.lucide?.createIcons();
+    } catch (_) { /* no releases — section stays hidden */ }
+  }
+
+  function renderRepoAboutFileCount(count, partial) {
+    const section = $("[data-repo-about-files]");
+    const label = $("[data-repo-about-files-count]");
+    if (!section || !label || !count) return;
+    label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""} files`;
+    section.classList.remove("hidden");
+  }
+
+  // ranked: [[language, weight], ...] already sorted desc. weight is bytes when
+  // the host provided sizes (accurate), else a plain file count (fallback).
+  function renderRepoAboutLanguages(ranked) {
+    const total = ranked.reduce((sum, [, weight]) => sum + weight, 0);
+    if (!ranked.length || !total) return;
+    const bar = $("[data-repo-about-langs-bar]");
+    const legend = $("[data-repo-about-langs-legend]");
+    const section = $("[data-repo-about-langs]");
+    if (!bar || !legend || !section) return;
+    bar.innerHTML = ranked.map(([language, weight]) => {
+      const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
+      const pct = (weight / total) * 100;
+      return `<span title="${escapeHtml(language)}" style="width:${pct.toFixed(1)}%;background-color:${color}"></span>`;
+    }).join("");
+    legend.innerHTML = ranked.map(([language, weight]) => {
+      const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
+      const pct = ((weight / total) * 100).toFixed(1);
+      return `<span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background-color:${color}"></span><span class="font-medium text-foreground">${escapeHtml(language)}</span> ${pct}%</span>`;
+    }).join("");
+    section.classList.remove("hidden");
+  }
+
+  // The identicon shown for a contributor. Keyed on the git email (falling back
+  // to the name) so two distinct people never collapse to the same swatch the
+  // way a name-initial + single hue did — a two-tone gradient plus up-to-two
+  // initials keeps each user visually distinct and stable across loads.
+  function repoContributorAvatar(contributor) {
+    const name = String(contributor?.name || contributor?.email || "?").trim();
+    const email = String(contributor?.email || "").trim().toLowerCase();
+    const commits = Number(contributor?.commits) || 0;
+    const key = email || name.toLowerCase();
+    let hash = 0;
+    for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    const hue = hash % 360;
+    const hue2 = (hue + 40 + ((hash >> 8) % 90)) % 360;
+    const words = name.split(/[\s._@-]+/).filter(Boolean);
+    const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
+    const title = `${name}${email ? ` <${email}>` : ""}` +
+      (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
+    return `<span title="${escapeHtml(title)}" class="flex h-8 w-8 items-center justify-center rounded-full border border-background font-mono text-[10px] font-semibold uppercase text-white shadow-sm" style="background-image:linear-gradient(135deg, hsl(${hue} 60% 46%), hsl(${hue2} 58% 38%))">${escapeHtml(initials)}</span>`;
+  }
+
+  // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
+  // rendered count (the host knows the full-history total even though only the
+  // top few avatars are shown).
+  function renderRepoAboutContributors(contributors, total) {
+    const rows = (Array.isArray(contributors) ? contributors : [])
+      .filter((c) => c && (c.name || c.email));
+    if (!rows.length) return;
+    const section = $("[data-repo-about-contribs]");
+    const count = $("[data-repo-about-contribs-count]");
+    const list = $("[data-repo-about-contribs-list]");
+    if (!section || !count || !list) return;
+    count.textContent = String(Number(total) || rows.length);
+    list.innerHTML = rows.slice(0, 14).map(repoContributorAvatar).join("");
+    section.classList.remove("hidden");
+  }
+
+  // Preferred path: one /stats round-trip the host answers from `git ls-tree -r`
+  // + `git shortlog`, so the file count is exact, languages are byte-weighted,
+  // and contributors span the whole history. Returns false (→ fall back to the
+  // per-directory walk + capped history) when the host is offline or too old to
+  // know the op.
+  async function loadRepoAboutStats(repo) {
+    let data;
+    try {
+      data = await fetchRepoJson(repoLiveUrl(repo, "stats"));
+    } catch (_) {
+      return false; // host offline, or an old node that answered bad_op as a 5xx
+    }
+    if (!data || data.ok === false) return false;
+    if (!repoAboutStillCurrent(repo)) return true; // served, but the user navigated away
+    renderRepoAboutFileCount(Number(data.fileCount) || 0, false);
+    const tally = {};
+    Object.entries(data.extensions || {}).forEach(([ext, info]) => {
+      const language = REPO_LANGUAGE_EXTENSIONS[String(ext).toLowerCase()];
+      if (!language) return;
+      const bytes = Number(info?.bytes) || 0;
+      const weight = bytes > 0 ? bytes : Number(info?.files) || 0;
+      if (weight > 0) tally[language] = (tally[language] || 0) + weight;
+    });
+    renderRepoAboutLanguages(Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 6));
+    renderRepoAboutContributors(data.contributors, Number(data.contributorCount) || 0);
+    return true;
+  }
+
+  async function loadRepoAboutFilesAndLanguages(repo) {
+    try {
+      const files = await buildRepoFileIndex(repo);
+      if (!files.length || !repoAboutStillCurrent(repo)) return;
+      renderRepoAboutFileCount(files.length, Boolean(state.repoFileFinder?.partial));
+      const tally = {};
+      files.forEach((path) => {
+        const name = String(path).split("/").pop() || "";
+        const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+        const language = REPO_LANGUAGE_EXTENSIONS[ext];
+        if (language) tally[language] = (tally[language] || 0) + 1;
+      });
+      renderRepoAboutLanguages(Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 6));
+    } catch (_) { /* host offline — sections stay hidden */ }
+  }
+
+  async function loadRepoAboutContributors(repo) {
+    try {
+      const data = await fetchRepoJson(repoLiveUrl(repo, "history"));
+      const commits = Array.isArray(data?.commits) ? data.commits : [];
+      if (!commits.length || !repoAboutStillCurrent(repo)) return;
+      const tally = {};
+      commits.forEach((commit) => {
+        const author = String(commit.author || "").trim();
+        if (author) tally[author] = (tally[author] || 0) + 1;
+      });
+      const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+      renderRepoAboutContributors(
+        ranked.map(([name, commitCount]) => ({ name, commits: commitCount })),
+        ranked.length);
+    } catch (_) { /* host offline — section stays hidden */ }
+  }
+
+  // --- Size map (adhoc #189) --------------------------------------------
+  //
+  // A multi-level pie (sunburst) of the repo's directory sizes, fed by the
+  // host's one-round-trip /sizes op (git ls-tree -r -l folded into a nested
+  // directory tree). Ring 1 holds the repo root's directories and each deeper
+  // ring subdivides its parent; a directory's direct files are the unfilled
+  // span at the end of its arc, so "mostly loose files" reads as mostly-empty
+  // arc (the HDGraph convention). The About rail shows a small static chart;
+  // clicking it opens the fullscreen interactive one (hover details,
+  // click-to-zoom, breadcrumb). Hosts too old to know the op just leave the
+  // section hidden.
+
+  // Top-level directories take these hues in size order (fixed slots, never
+  // cycled — everything past eight goes muted gray); descendants inherit the
+  // parent hue stepped toward the surface so depth reads as shade. Both
+  // variants validated against the site's dark (#010409) / light (#ffffff)
+  // surfaces.
+  const REPO_SIZEMAP_DARK = ["#3987e5", "#199e70", "#c98500", "#008300", "#9085e9", "#e66767", "#d55181", "#d95926"];
+  const REPO_SIZEMAP_LIGHT = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4", "#eb6834"];
+  const REPO_SIZEMAP_GRAY = "#8a8a8a";
+
+  function repoSizeMapShade(hex, depth, lighten, extra) {
+    const toward = lighten ? 255 : 0;
+    const f = Math.min(0.55, Math.max(0, (depth - 1) * 0.16 + extra));
+    const channel = (i) => {
+      const v = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+      return Math.round(v + (toward - v) * f);
+    };
+    return `rgb(${channel(0)} ${channel(1)} ${channel(2)})`;
+  }
+
+  // One walk over the full tree assigns every directory its color, so a node
+  // keeps its hue in the mini chart, in the modal, and at every zoom level
+  // (color follows the entity, never its current rank on screen).
+  function repoSizeMapColors(root) {
+    const dark = document.documentElement.dataset.dashboardTheme !== "light";
+    const palette = dark ? REPO_SIZEMAP_DARK : REPO_SIZEMAP_LIGHT;
+    const colors = new Map();
+    const walk = (node, depth, base, index) => {
+      const hue = depth === 1
+        ? (node.name !== "…" && index < palette.length ? palette[index] : REPO_SIZEMAP_GRAY)
+        : base;
+      colors.set(node, repoSizeMapShade(hue, depth, dark, depth > 1 ? (index % 2) * 0.06 : 0));
+      (node.children || []).forEach((child, i) => walk(child, depth + 1, hue, i));
+    };
+    (root.children || []).forEach((child, i) => walk(child, 1, REPO_SIZEMAP_GRAY, i));
+    return colors;
+  }
+
+  // Flattens the tree, re-rooted at `focus`, into drawable ring segments. Each
+  // segment keeps `nodes` (the chain from focus down to it) so a click can
+  // extend the zoom trail without re-walking the tree.
+  function repoSizeMapSegments(focus, colors, rings) {
+    if (!(Number(focus?.size) > 0)) return [];
+    const segments = [];
+    const minSpan = (2 * Math.PI) / 900; // skip sub-0.4-degree slivers
+    const walk = (node, depth, from, span, chain) => {
+      if (depth > rings) return;
+      let at = from;
+      const size = Number(node.size) || 0;
+      (node.children || []).forEach((child) => {
+        const childSize = Number(child.size) || 0;
+        if (!(childSize > 0) || !(size > 0)) return;
+        const childSpan = span * Math.min(1, childSize / size);
+        if (childSpan >= minSpan) {
+          const nodes = [...chain, child];
+          segments.push({
+            node: child,
+            nodes,
+            path: nodes.map((n) => String(n.name || "")).join("/"),
+            depth,
+            a0: at,
+            a1: at + childSpan,
+            color: colors.get(child) || REPO_SIZEMAP_GRAY,
+            hasChildren: Array.isArray(child.children) && child.children.length > 0,
+            isFile: child.type === "file" && typeof child.path === "string",
+            filePath: child.type === "file" ? String(child.path || "") : "",
+          });
+          walk(child, depth + 1, at, childSpan, nodes);
+        }
+        at += childSpan;
+      });
+    };
+    walk(focus, 1, -Math.PI / 2, 2 * Math.PI, []);
+    return segments;
+  }
+
+  function repoSizeMapArc(c, r0, r1, a0, a1) {
+    const span = Math.min(a1 - a0, 2 * Math.PI - 0.0004);
+    const end = a0 + span;
+    const large = span > Math.PI ? 1 : 0;
+    const px = (r, a) => (c + r * Math.cos(a)).toFixed(2);
+    const py = (r, a) => (c + r * Math.sin(a)).toFixed(2);
+    return `M ${px(r1, a0)} ${py(r1, a0)} A ${r1} ${r1} 0 ${large} 1 ${px(r1, end)} ${py(r1, end)} ` +
+      `L ${px(r0, end)} ${py(r0, end)} A ${r0} ${r0} 0 ${large} 0 ${px(r0, a0)} ${py(r0, a0)} Z`;
+  }
+
+  // Renders the sunburst as an SVG string. Every <path> carries
+  // data-seg="<index>" into the returned segments array so callers can wire
+  // hover/click; non-interactive charts get native <title> tooltips instead.
+  function repoSizeMapSvg(focus, colors, opts) {
+    const view = opts.view;
+    const hole = opts.hole;
+    const c = view / 2;
+    const ringWidth = (c - 6 - hole) / opts.rings;
+    const segments = repoSizeMapSegments(focus, colors, opts.rings);
+    const gap = "rgb(var(--dashboard-background-rgb))";
+    const parts = [];
+    segments.forEach((seg, i) => {
+      const r0 = hole + (seg.depth - 1) * ringWidth;
+      const r1 = r0 + ringWidth;
+      parts.push(
+        `<path data-seg="${i}" d="${repoSizeMapArc(c, r0, r1, seg.a0, seg.a1)}" fill="${seg.color}" ` +
+        `stroke="${gap}" stroke-width="2"${opts.interactive
+          ? ` class="cursor-pointer" tabindex="0" role="button" aria-label="${escapeHtml(
+              `${seg.isFile ? "Open file" : "Zoom directory"} ${seg.path}`,
+            )}"`
+          : ""}>` +
+        (opts.interactive ? "" : `<title>${escapeHtml(`${seg.path} — ${formatSize(seg.node.size)}`)}</title>`) +
+        `</path>`);
+    });
+    if (opts.labels) {
+      // Direct labels only where they comfortably fit (span over ~18 degrees);
+      // the hover tooltip carries everything else.
+      const labelSize = opts.labelSize || 12;
+      segments.forEach((seg) => {
+        if (seg.a1 - seg.a0 < 0.32) return;
+        const mid = (seg.a0 + seg.a1) / 2;
+        const r = hole + (seg.depth - 1) * ringWidth + ringWidth / 2;
+        const x = (c + r * Math.cos(mid)).toFixed(1);
+        const y = (c + r * Math.sin(mid)).toFixed(1);
+        const name = String(seg.node.name || "");
+        const shown = name.length > 14 ? `${name.slice(0, 13)}…` : name;
+        parts.push(
+          `<text x="${x}" y="${y}" text-anchor="middle" fill="#ffffff" font-size="${labelSize}" ` +
+          `style="pointer-events:none;paint-order:stroke;stroke:rgb(0 0 0 / 0.5);stroke-width:2.5px">` +
+          `<tspan x="${x}" dy="-0.15em">${escapeHtml(shown)}</tspan>` +
+          `<tspan x="${x}" dy="1.2em" font-size="${labelSize - 1}">${escapeHtml(formatSize(seg.node.size))}</tspan></text>`);
+      });
+    }
+    // Center hub: a transparent circle catches zoom-out clicks over the whole
+    // hole; the two text lines ride on top with pointer events off.
+    parts.push(`<circle data-sizemap-center="1" cx="${c}" cy="${c}" r="${hole - 2}" fill="transparent"${opts.canGoUp ? ' class="cursor-pointer" tabindex="0" role="button" aria-label="Zoom out one directory"' : ""}></circle>`);
+    const title = String(opts.centerTitle || "");
+    const shownTitle = title.length > 16 ? `${title.slice(0, 15)}…` : title;
+    parts.push(
+      `<text x="${c}" y="${c}" text-anchor="middle" style="pointer-events:none">` +
+      `<tspan x="${c}" dy="-0.15em" fill="rgb(var(--dashboard-foreground-rgb))" font-size="${opts.centerTitleSize || 13}" font-weight="600">${escapeHtml(shownTitle)}</tspan>` +
+      `<tspan x="${c}" dy="1.35em" fill="rgb(var(--dashboard-muted-foreground-rgb))" font-size="${(opts.centerTitleSize || 13) - 2}">${escapeHtml(String(opts.centerSub || ""))}</tspan></text>`);
+    const svg =
+      `<svg viewBox="0 0 ${view} ${view}" role="img" aria-label="Directory size sunburst" class="block h-auto w-full">${parts.join("")}</svg>`;
+    return { svg, segments };
+  }
+
+  function renderRepoAboutSizeMap(repo, tree) {
+    const section = $("[data-repo-about-sizemap]");
+    const chart = $("[data-repo-about-sizemap-chart]");
+    const open = $("[data-repo-about-sizemap-open]");
+    if (!section || !chart || !open) return;
+    if (!(Number(tree?.size) > 0) || !(tree.children || []).length) return;
+    const colors = repoSizeMapColors(tree);
+    chart.innerHTML = repoSizeMapSvg(tree, colors, {
+      view: 260,
+      hole: 42,
+      rings: 3,
+      centerTitle: formatSize(tree.size),
+      centerSub: `${Number(tree.fileCount || 0).toLocaleString()} files`,
+      centerTitleSize: 14,
+    }).svg;
+    open.onclick = () => activateRepoTab("sizemap");
+    section.classList.remove("hidden");
+  }
+
+  // --- Size map tab (adhoc #198) ----------------------------------------
+  //
+  // The interactive size map now lives on its own repo tab instead of a modal
+  // reached from the About rail. The tab lazy-loads /sizes on first open, then
+  // mounts the same zoomable sunburst explorer full-width.
+  async function loadRepoSizeMapTab(repo) {
+    const body = $("[data-repo-sizemap]");
+    if (!body) return;
+    body.innerHTML = `<p class="text-xs text-muted-foreground">${loadingHtml("Loading size map...")}</p>`;
+    try {
+      const data = await fetchRepoJson(repoLiveUrl(repo, "sizes"));
+      if (!data || data.ok === false || !(Number(data.size) > 0) || !(data.children || []).length) {
+        body.innerHTML = `<p class="text-xs text-muted-foreground">No directory size data is available for this repository yet — it appears once an online mirror node reports it.</p>`;
+        return;
+      }
+      renderRepoSizeMapTab(repo, data);
+    } catch (_) {
+      body.innerHTML = `<p class="text-xs text-muted-foreground">Couldn't load the size map. Try again once a mirror is online.</p>`;
+    }
+  }
+
+  function renderRepoSizeMapTab(repo, root) {
+    const body = $("[data-repo-sizemap]");
+    if (!body) return;
+    body.innerHTML = `
+      <div class="mb-3 min-w-0">
+        <div data-sizemap-crumbs class="flex min-w-0 flex-wrap items-center gap-1 text-sm text-foreground"></div>
+        <p data-sizemap-summary class="mt-0.5 text-[11px] text-muted-foreground"></p>
+      </div>
+      <div class="relative">
+        <div data-sizemap-chart class="mx-auto max-w-xl"></div>
+        <div data-sizemap-tip class="pointer-events-none absolute z-20 hidden max-w-xs rounded-md border border-border bg-popover px-2.5 py-1.5 font-mono text-[11px] text-foreground shadow-lg"></div>
+      </div>
+      <p class="mt-3 border-t border-border pt-2 text-[11px] text-muted-foreground">Activate a directory to zoom in · activate a leaf file to open it at the selected ref · activate the center to zoom out. Pointer, touch, Enter, and Space are supported.</p>`;
+    mountRepoSizeMapExplorer({
+      repo,
+      root,
+      chart: body.querySelector("[data-sizemap-chart]"),
+      crumbs: body.querySelector("[data-sizemap-crumbs]"),
+      summary: body.querySelector("[data-sizemap-summary]"),
+      tip: body.querySelector("[data-sizemap-tip]"),
+    });
+  }
+
+  // --- Code map (adhoc #187) ---------------------------------------------
+  //
+  // The repository toolbar's "Code map" button opens a full-screen treemap of
+  // the whole codebase with every directory expanded and each file's source
+  // drawn inside its cell, plus a rotatable 3D view where folder height follows
+  // folder size. The viewer (and three.js behind its 3D toggle) is a separate
+  // on-demand script under /assets/ so none of it weighs on the dashboard
+  // bundle. It owns no network code: the tree is the host's /sizes reply, and
+  // file text and folded directories arrive through the batched /blobs and
+  // /tree reads below, so mirror routing and ref pinning stay in one place.
+  // Bump the version when codemap.js changes: /assets/ is long-cached.
+  const REPO_CODEMAP_SCRIPT = "/assets/codemap/codemap.js?v=3";
+  let repoCodeMapModuleLoader = null;
+  function loadRepoCodeMapModule() {
+    if (window.ForkMeshCodeMap?.open) return Promise.resolve(true);
+    if (repoCodeMapModuleLoader) return repoCodeMapModuleLoader;
+    repoCodeMapModuleLoader = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = REPO_CODEMAP_SCRIPT;
+      script.onload = () => resolve(Boolean(window.ForkMeshCodeMap?.open));
+      script.onerror = () => {
+        repoCodeMapModuleLoader = null; // a dropped connection must not be final
+        script.remove();
+        resolve(false);
+      };
+      document.head.append(script);
+    });
+    return repoCodeMapModuleLoader;
+  }
+
+  function repoCodeMapNotice(button, message = "", tone = "info") {
+    document.querySelectorAll("[data-repo-codemap-notice]").forEach((node) => node.remove());
+    if (!message) return;
+    const anchor = button?.closest("[data-repo-pathbar], [data-repo-root-toolbar]")
+      || document.querySelector("[data-repo-root-toolbar]");
+    if (!anchor) return;
+    const notice = document.createElement("p");
+    notice.dataset.repoCodemapNotice = tone;
+    notice.setAttribute("role", "status");
+    notice.textContent = message;
+    notice.style.cssText = "margin:8px 0 0;font-size:12px;line-height:1.45;color:" +
+      (tone === "bad" ? "rgb(var(--dashboard-destructive-rgb))" : "rgb(var(--dashboard-muted-foreground-rgb))");
+    anchor.after(notice);
+  }
+
+  async function openRepoCodeMap(repo, button) {
+    if (!repo || button?.dataset.busy === "1") return;
+    const label = button?.querySelector("[data-repo-codemap-label]");
+    const setBusy = (busy) => {
+      if (!button) return;
+      button.dataset.busy = busy ? "1" : "";
+      button.setAttribute("aria-busy", String(busy));
+      if (label) label.textContent = busy ? "Loading…" : "Code map";
+    };
+    setBusy(true);
+    repoCodeMapNotice(button);
+    try {
+      const [ready, data] = await Promise.all([
+        loadRepoCodeMapModule(),
+        fetchRepoJson(repoLiveUrl(repo, "sizes")),
+      ]);
+      if (!ready) throw new Error("codemap_unavailable");
+      if (!data || !(Number(data.size) > 0) || !(data.children || []).length) {
+        repoCodeMapNotice(button, "No file size data is available for this repository yet. It appears once an online mirror node reports it.");
+        return;
+      }
+      // Pin every later read to the commit the tree was built from, so a push
+      // that lands while the map is open cannot mix two revisions.
+      const commit = immutableGitCommit(data.commit);
+      const refParams = commit ? { ref: commit } : {};
+      window.ForkMeshCodeMap.open({
+        title: `${repoPublicOwner(repo) || repo.owner || ""}/${repo.name || ""}`,
+        root: data,
+        theme: document.documentElement.dataset.dashboardTheme === "light" ? "light" : "dark",
+        formatSize,
+        async fetchBlobs(paths) {
+          const blobs = await fetchRepoBlobs(repo, paths, refParams);
+          const out = {};
+          paths.forEach((path) => {
+            const blob = blobs[path];
+            // base64 is how a host returns bytes that are not UTF-8 text.
+            out[path] = blob && String(blob.encoding || "").toLowerCase() !== "base64"
+              ? { text: blobText(blob), truncated: Boolean(blob.truncated) }
+              : null;
+          });
+          return out;
+        },
+        // Images and fonts are drawn from their raw bytes, one file per read.
+        async fetchRaw(path) {
+          const response = await fetch(repoLiveUrl(repo, "raw", { path, ...refParams }), { credentials: "same-origin" });
+          return response.ok ? response.blob() : null;
+        },
+        // Videos stream from this URL, so a thumbnail reads only their start.
+        rawUrl(path) { return repoLiveUrl(repo, "raw", { path, ...refParams }); },
+        async fetchTree(path) {
+          const tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path, ...refParams }));
+          return tree.entries || [];
+        },
+        openFile(path) { loadRepositoryBlob(repo, path); },
+        openFolder(path) { loadRepositoryTree(repo, path); },
+      });
+    } catch (_) {
+      repoCodeMapNotice(button, "Couldn't open the code map. Try again once a mirror is online.", "bad");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadRepoAboutSizeMap(repo) {
+    try {
+      // The rail's chart draws three rings; a node that reads the repository
+      // locally sends only those levels (~95 KB instead of ~400 KB for
+      // forkmesh/forkmesh). Other origins ignore depth.
+      const data = await fetchRepoJson(repoLiveUrl(repo, "sizes", { depth: 3 }));
+      if (!data || data.ok === false) return; // host offline, or a pre-sizes node
+      if (!repoAboutStillCurrent(repo)) return;
+      renderRepoAboutSizeMap(repo, data);
+    } catch (_) { /* section stays hidden */ }
+  }
+
+  // The detailed, interactive size map: click a directory to zoom in, the
+  // center (or a breadcrumb) to zoom back out, hover for exact sizes. Mounts
+  // into the caller's {chart, crumbs, summary, tip} elements (the Size map tab
+  // panel) — it carries no overlay/dialog chrome of its own.
+  function mountRepoSizeMapExplorer({ repo, root, chart, crumbs, summary, tip }) {
+    if (!chart || !crumbs || !summary || !tip) return;
+    const colors = repoSizeMapColors(root);
+    let trail = [root]; // root … focus
+    let segments = [];
+
+    const render = () => {
+      const focus = trail[trail.length - 1];
+      const out = repoSizeMapSvg(focus, colors, {
+        view: 720,
+        hole: 86,
+        rings: 4,
+        labels: true,
+        interactive: true,
+        labelSize: 13,
+        canGoUp: trail.length > 1,
+        centerTitle: trail.length > 1 ? String(focus.name || "") : String(repo.name || "repository"),
+        centerSub: formatSize(Number(focus.size) || 0),
+        centerTitleSize: 16,
+      });
+      segments = out.segments;
+      chart.innerHTML = out.svg;
+      crumbs.innerHTML = trail.map((node, i) => {
+        const label = String(i === 0 ? repo.name || "repo" : node.name || "");
+        const item = i === trail.length - 1
+          ? `<span class="font-semibold">${escapeHtml(label)}</span>`
+          : `<button type="button" data-sizemap-crumb="${i}" class="dashboard-accent-link hover:underline">${escapeHtml(label)}</button>`;
+        return (i ? '<span class="text-muted-foreground">/</span>' : "") + item;
+      }).join("");
+      const focusSize = Number(trail[trail.length - 1].size) || 0;
+      const rootSize = Number(root.size) || 0;
+      summary.textContent = trail.length > 1
+        ? `${formatSize(focusSize)} · ${rootSize ? ((focusSize / rootSize) * 100).toFixed(1) : "0"}% of the repository`
+        : `${formatSize(rootSize)} across ${Number(root.fileCount || 0).toLocaleString()} files`;
+      crumbs.querySelectorAll("[data-sizemap-crumb]").forEach((button) => {
+        button.onclick = () => {
+          trail = trail.slice(0, Number(button.dataset.sizemapCrumb) + 1);
+          render();
+        };
+      });
+      window.lucide?.createIcons();
+    };
+
+    const activateSizeMapTarget = (target) => {
+      if (target?.closest?.("[data-sizemap-center]")) {
+        if (trail.length > 1) {
+          trail = trail.slice(0, -1);
+          render();
+        }
+        return;
+      }
+      const hit = target?.closest?.("[data-seg]");
+      const seg = hit ? segments[Number(hit.dataset.seg)] : null;
+      if (seg?.isFile && seg.filePath) {
+        tip.classList.add("hidden");
+        loadRepositoryBlob(repo, seg.filePath);
+        return;
+      }
+      if (seg?.hasChildren) {
+        trail = [...trail, ...seg.nodes];
+        tip.classList.add("hidden");
+        render();
+      }
+    };
+    chart.addEventListener("click", (event) => {
+      activateSizeMapTarget(event.target);
+    });
+    chart.addEventListener("keydown", (event) => {
+      if (!["Enter", " "].includes(event.key)) return;
+      if (!event.target.closest("[data-seg],[data-sizemap-center]")) return;
+      event.preventDefault();
+      activateSizeMapTarget(event.target);
+    });
+    chart.addEventListener("mousemove", (event) => {
+      const hit = event.target.closest("[data-seg]");
+      const seg = hit ? segments[Number(hit.dataset.seg)] : null;
+      if (!seg) {
+        tip.classList.add("hidden");
+        return;
+      }
+      const prefix = trail.slice(1).map((n) => String(n.name || "")).join("/");
+      const full = prefix ? `${prefix}/${seg.path}` : seg.path;
+      const rootSize = Number(root.size) || 0;
+      const pct = rootSize ? ((Number(seg.node.size) / rootSize) * 100).toFixed(1) : "0";
+      tip.textContent = `${full} — ${formatSize(seg.node.size)} · ${pct}% of repo`;
+      const host = tip.parentElement.getBoundingClientRect();
+      tip.style.left = `${Math.max(8, Math.min(event.clientX - host.left + 14, host.width - 160))}px`;
+      tip.style.top = `${event.clientY - host.top + 14}px`;
+      tip.classList.remove("hidden");
+    });
+    chart.addEventListener("mouseleave", () => tip.classList.add("hidden"));
+
+    render();
+  }
+
+  // The About rail's file/language/contributor sections come from /stats in one
+  // request; only when that host op is unavailable do we fall back to the slower
+  // directory walk and capped commit history. The size map rides its own /sizes
+  // op in parallel (hosts predating it just leave that section hidden).
+  // /sizes is the whole size tree (~400 KB of JSON for forkmesh/forkmesh) for
+  // a small chart at the bottom of the About rail, and was read on every
+  // repository view. Read it when that part of the rail comes near the
+  // viewport. The section stays hidden until it has a chart, so a 1px marker
+  // in front of it is what gets observed.
+  function loadRepoAboutSizeMapWhenNear(repo) {
+    const section = $("[data-repo-about-sizemap]");
+    state.repoAboutSizeMapObserver?.disconnect();
+    state.repoAboutSizeMapObserver = null;
+    if (!section?.parentElement || typeof IntersectionObserver !== "function") {
+      loadRepoAboutSizeMap(repo);
+      return;
+    }
+    let marker = section.previousElementSibling;
+    if (!marker?.hasAttribute("data-repo-about-sizemap-marker")) {
+      marker = document.createElement("div");
+      marker.setAttribute("data-repo-about-sizemap-marker", "");
+      marker.setAttribute("aria-hidden", "true");
+      marker.style.height = "1px";
+      section.parentElement.insertBefore(marker, section);
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      if (state.repoAboutSizeMapObserver === observer) state.repoAboutSizeMapObserver = null;
+      if (repoAboutStillCurrent(repo)) loadRepoAboutSizeMap(repo);
+    }, { rootMargin: "300px 0px" });
+    state.repoAboutSizeMapObserver = observer;
+    observer.observe(marker);
+  }
+
+  async function loadRepoAboutInsights(repo) {
+    loadRepoAboutSizeMapWhenNear(repo);
+    if (await loadRepoAboutStats(repo)) return;
+    loadRepoAboutFilesAndLanguages(repo);
+    loadRepoAboutContributors(repo);
+  }
+
+  function loadRepoAboutRail(repo) {
+    if (!repo || repo.isPrivate) {
+      // Private repos have no fediverse presence; live sections still apply.
+      loadRepoAboutInfo(repo);
+      loadRepoAboutRelease(repo);
+      loadRepoAboutInsights(repo);
+      return;
+    }
+    loadRepoFediverse(repo);
+    loadRepoAboutInfo(repo);
+    loadRepoAboutRelease(repo);
+    loadRepoAboutInsights(repo);
+  }
+
+  function scheduleRepoAboutRail(repo) {
+    if (!repo || state.repoAboutLoaded) return;
+    state.repoAboutLoaded = true;
+    const load = () => {
+      if (
+        state.activeRepoTab !== "code"
+        || !state.selectedRepo
+        || !repoMatchesKey(state.selectedRepo, repoKey(repo))
+      ) {
+        state.repoAboutLoaded = false;
+        return;
+      }
+      loadRepoAboutRail(repo);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(load, { timeout: 1200 });
+    } else {
+      window.setTimeout(load, 0);
+    }
+  }
+
+  // --- Owner-only "Agents" tab (adhoc #182) -----------------------------
+  //
+  // Shows the desktop app's running/finished Claude Code agent sessions for
+  // this repo, and lets the owner send a follow-up prompt to a live one. The
+  // desktop pushes the session list; the browser has no signing key, so it
+  // re-proves account ownership by node account name (no password, adhoc #225)
+  // via the same ownerAccount check the worker uses for the "Assign to agent"
+  // issue checkbox.
+
+  // A session counts as still actionable (promptable) unless it's reached one
+  // of these terminal states. Mirrors the worker/desktop's own status names;
+  // kept as an allowlist-of-terminal-states so an unrecognized/future status
+  // defaults to promptable rather than silently hiding the input.
+  const AGENT_TERMINAL_STATUSES = new Set(["success", "failed", "stopped", "cleared"]);
+
+  // Mirrors the desktop app's known model aliases (agentModelLabel in
+  // MainWindowInternal.h) so a web-picked model renders the same short label
+  // once the agent session shows up in the Agents tab. Empty value leaves the
+  // provider's own default in place.
+  const AGENT_MODEL_OPTIONS = [
+    { value: "", label: "Provider default" },
+    { value: "auto", label: "Auto" },
+    { value: "opus", label: "Opus" },
+    { value: "sonnet", label: "Sonnet" },
+    { value: "haiku", label: "Haiku" },
+    { value: "fable", label: "Fable" },
+  ];
+
+  // Agent-provider dropdown (adhoc #234): mirrors the desktop app's provider
+  // picker so the owner can choose which agent the node auto-starts. Empty
+  // value leaves the node's default provider in place.
+  const AGENT_PROVIDER_OPTIONS = [
+    { value: "claude-code", label: "Claude Code" },
+    { value: "codex", label: "Codex" },
+    { value: "local-llama", label: "Gemma (local)" },
+  ];
+
+  // Agent-model dropdown for the "start a new agent" composer (adhoc #276):
+  // lets the owner choose which Claude model the agent uses. Distinct from
+  // AGENT_MODEL_OPTIONS above (used by the issue "assign to agent" checkbox,
+  // adhoc #182) since that one mirrors the desktop app's short model aliases
+  // while this one sends a full model id. Empty value leaves the provider's
+  // own default in place.
+  const AGENT_NEW_MODEL_OPTIONS = [
+    { provider: "claude-code", value: "", label: "Provider default" },
+    { provider: "claude-code", value: "opus", label: "Claude Opus 5.5" },
+    { provider: "claude-code", value: "sonnet", label: "Claude Sonnet 5" },
+    { provider: "claude-code", value: "haiku", label: "Claude Haiku 4.5" },
+    { provider: "claude-code", value: "fable", label: "Fable 5" },
+    { provider: "codex", value: "", label: "Provider default" },
+    { provider: "codex", value: "sol", label: "GPT-5.6 Sol" },
+    { provider: "codex", value: "terra", label: "GPT-5.6 Terra" },
+    { provider: "codex", value: "luna", label: "GPT-5.6 Luna" },
+    { provider: "codex", value: "spark", label: "Codex Spark" },
+    { provider: "local-llama", value: "", label: "Provider default" },
+    { provider: "local-llama", value: "gemma4:e4b", label: "Gemma 4 E4B" },
+    { provider: "local-llama", value: "gemma4:e2b", label: "Gemma 4 E2B" },
+    { provider: "local-llama", value: "gemma4:12b", label: "Gemma 4 12B" },
+    { provider: "local-llama", value: "gemma4:26b", label: "Gemma 4 26B" },
+    { provider: "local-llama", value: "gemma4:31b", label: "Gemma 4 31B" },
+  ];
+
+  function issueAgentModelOptions(provider) {
+    return provider === "claude-code"
+      ? AGENT_MODEL_OPTIONS
+      : AGENT_NEW_MODEL_OPTIONS.filter((option) => option.provider === provider);
+  }
+
+  function repoAgentsCanPrompt(status) {
+    return !AGENT_TERMINAL_STATUSES.has(String(status || "").toLowerCase());
+  }
+
+  // Two vocabularies land here: the desktop's own session statuses (success /
+  // stopped) and the relay's org-agent queue statuses (completed / rejected).
+  // Both name the same three outcomes, so tone them the same - "completed" used
+  // to read as in-flight yellow on a run that had already finished.
+  function repoAgentStatusTone(status) {
+    const value = String(status || "").toLowerCase();
+    if (value === "success" || value === "completed") return "text-primary";
+    if (["failed", "stopped", "rejected"].includes(value)) return "text-destructive";
+    return "text-yellow-500";
+  }
+
+  // The list column's status dot. Same three outcomes as repoAgentStatusTone,
+  // written as background utilities: the class has to be a literal for the
+  // dashboard's pre-built Tailwind sheet to carry a rule for it.
+  function orgAgentStatusDotClass(status) {
+    const value = String(status || "").toLowerCase();
+    if (value === "success" || value === "completed") return "bg-primary";
+    if (["failed", "stopped", "rejected"].includes(value)) return "bg-destructive";
+    return "bg-yellow-500";
+  }
+
+  function repoAgentIssueLabel(agent) {
+    return agent.issueNumber
+      ? `#${agent.issueNumber} ${agent.issueTitle || ""}`.trim()
+      : (agent.issueTitle || "");
+  }
+
+  // A summary row (adhoc #259): the inline prompt moved to the detail page, so
+  // the whole row is now a click target that opens the transcript + prompt view.
+  function renderRepoAgentRow(agent) {
+    const issueLabel = repoAgentIssueLabel(agent);
+    return `
+      <button type="button" data-repo-agent-open data-repo-agent-id="${escapeHtml(String(agent.id ?? ""))}" class="grid w-full gap-2 px-4 py-3 text-left text-xs transition-colors hover:bg-secondary/50">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="rounded-full border border-border px-2 py-0.5 font-mono ${repoAgentStatusTone(agent.status)}">${escapeHtml(agent.status || "unknown")}</span>
+          ${issueLabel ? `<span class="min-w-0 truncate font-medium text-foreground">${escapeHtml(issueLabel)}</span>` : ""}
+          <span class="ml-auto font-mono text-muted-foreground">${escapeHtml(agent.model || "")}</span>
+          <i data-lucide="chevron-right" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-muted-foreground">
+          ${agent.provider ? `<span>${escapeHtml(agent.provider)}</span>` : ""}
+          <span>${formatCount(agent.numTurns)} turns</span>
+          ${agent.durationMs ? `<span>${escapeHtml(formatServeSpeed(agent.durationMs))}</span>` : ""}
+          <span>${escapeHtml(formatUsd(agent.costUsd))}</span>
+          ${agent.branchName ? `<span class="font-mono">${escapeHtml(agent.branchName)}</span>` : ""}
+        </div>
+        ${agent.lastError ? `<div class="text-destructive">${escapeHtml(agent.lastError)}</div>` : ""}
+      </button>`;
+  }
+
+  // Agent plaintext is intentionally unavailable in the browser.  The hybrid
+  // recipient private key lives only in the owner's desktop vault, so even a
+  // stale legacy row must not reactivate browser transcript/prompt surfaces.
+  function renderRepoAgentDetail(agent) {
+    return `
+      <div data-repo-agent-detail data-repo-agent-id="${escapeHtml(String(agent.id ?? ""))}" data-repo-agent-composer-mode="${escapeHtml(String(state.agentsView.selectedAgentComposerMode || ""))}" class="grid gap-3 px-4 py-3 text-xs">
+        <div class="flex items-center gap-2 font-medium text-foreground">
+          <i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>
+          Owner-device encrypted
+        </div>
+        <p class="leading-5 text-muted-foreground">This session, its transcript, and its prompts can be opened only by the owner's ForkMesh desktop key. The browser and relay do not have that key.</p>
+        <a href="/desktop" class="inline-flex h-8 w-fit items-center gap-1.5 rounded-md bg-primary px-3 font-medium text-primary-foreground hover:bg-primary/90"><i data-lucide="monitor-down" class="h-3.5 w-3.5"></i>Open desktop downloads</a>
+      </div>`;
+  }
+
+  // The "start a new agent" composer lives in a single top modal opened from
+  // the robot button in the header nav (adhoc #62) - it was previously pinned
+  // above the repo tab bar (adhoc #278). Because the header is global, the
+  // modal carries its own repository picker instead of relying on a repo page
+  // being open. It also loads the owned agent-capable nodes for that repository
+  // so the durable command is addressed to one exact node.
+  function agentRecentRepositoriesStorageKey() {
+    const account = String(
+      state.session?.nodeName || state.session?.email || "",
+    ).trim().toLowerCase();
+    return account
+      ? `${AGENT_RECENT_REPOSITORIES_STORAGE_PREFIX}${account}`
+      : "";
+  }
+
+  function agentRecentRepositoryKeys() {
+    const storageKey = agentRecentRepositoriesStorageKey();
+    if (!storageKey) return [];
+    try {
+      const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      return (Array.isArray(stored) ? stored : [])
+        .map((value) => String(value || "").trim().toLowerCase())
+        .filter(isRepoKey)
+        .slice(0, AGENT_RECENT_REPOSITORIES_LIMIT);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // Keep a short account-scoped history instead of one global "last repo".
+  // If the latest page was a public repository the viewer does not belong to,
+  // the picker can still select their most recently visited eligible repo.
+  function rememberAgentVisitedRepository(repo) {
+    const storageKey = agentRecentRepositoriesStorageKey();
+    const key = String(repoDisplayKey(repo) || "").trim().toLowerCase();
+    if (!storageKey || !isRepoKey(key)) return;
+    const recent = agentRecentRepositoryKeys().filter((value) => value !== key);
+    try {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify(
+          [key, ...recent].slice(0, AGENT_RECENT_REPOSITORIES_LIMIT),
+        ),
+      );
+    } catch (_) {}
+  }
+
+  function recordRepositoryView(repo) {
+    if (!repo || repo.isPrivate) return;
+    const key = repositoryViewKey(repo);
+    if (!isRepoKey(key) || state.recordedRepositoryViews.has(key)) return;
+    state.recordedRepositoryViews.add(key);
+    const body = state.session?.sessionToken
+      ? { sessionToken: state.session.sessionToken }
+      : {};
+    fetch(`${repoApiBase(repo)}/view`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!data || data.ok === false) return;
+        state.homeRepositoryViews = {
+          ...(state.homeRepositoryViews || {}),
+          [key]: {
+            views: Number(data.views) || 0,
+            viewers: Number(data.viewers) || 0,
+            lastViewedAt: Number(data.lastViewedAt) || 0,
+          },
+        };
+      })
+      .catch(() => {});
+  }
+
+  // This picker is an account-membership list, not an administrator catalog.
+  // Start with repository groups hosted by the account's own nodes, merging
+  // mirrors and rewritten histories by their public address. Then add linked
+  // repositories from organizations the account actually belongs to. The
+  // global admin shortcut used by sessionCanAssignAgent intentionally does not
+  // apply here: it was what exposed every public repository in this menu.
+  function agentModalRepoChoices() {
+    const byPublicAddress = new Map();
+    const groups = mergeGroupsByPublicAddress(
+      groupRepositories(state.repositories || []),
+    );
+    for (const group of groups) {
+      const members = [sourceOfTruth(group), ...(group.members || [])];
+      const owned = members.find((repo) =>
+        repo?.owner && repo?.name && sessionOwnsRepo(repo));
+      if (!owned) continue;
+      const publicKey = repoDisplayKey(owned).toLowerCase();
+      if (isRepoKey(publicKey) && !byPublicAddress.has(publicKey)) {
+        byPublicAddress.set(publicKey, owned);
+      }
+    }
+    for (const repo of state.homeOrganizationRepositories || []) {
+      if (!repo?.owner || !repo?.name) continue;
+      const publicKey = repoDisplayKey(repo).toLowerCase();
+      if (isRepoKey(publicKey) && !byPublicAddress.has(publicKey)) {
+        byPublicAddress.set(publicKey, repo);
+      }
+    }
+    return [...byPublicAddress.values()].sort((a, b) =>
+      repoDisplayKey(a).localeCompare(repoDisplayKey(b)));
+  }
+
+  function agentModalPreferredRepo(choices) {
+    for (const key of agentRecentRepositoryKeys()) {
+      const recent = choices.find((repo) =>
+        repoDisplayKey(repo).toLowerCase() === key ||
+        repoKey(repo).toLowerCase() === key);
+      if (recent) return recent;
+    }
+    if (state.selectedRepo) {
+      const selectedKey = repoKey(state.selectedRepo).toLowerCase();
+      const selectedPublicKey = repoDisplayKey(state.selectedRepo).toLowerCase();
+      const selected = choices.find((repo) =>
+        repoKey(repo).toLowerCase() === selectedKey ||
+        repoDisplayKey(repo).toLowerCase() === selectedPublicKey);
+      if (selected) return selected;
+    }
+    return choices[0] || null;
+  }
+
+  function renderAgentModalRepositories(modal, preserveSelection = false) {
+    const repoSelect = modal?.querySelector("[data-agent-modal-repo]");
+    if (!repoSelect) return;
+    const previous = preserveSelection
+      ? String(repoSelect.value || "").toLowerCase()
+      : "";
+    const choices = agentModalRepoChoices();
+    const preferred = choices.find((repo) =>
+      repoKey(repo).toLowerCase() === previous) ||
+      agentModalPreferredRepo(choices);
+    repoSelect.innerHTML = choices.length
+      ? choices.map((repo) => `<option value="${escapeHtml(repoKey(repo))}"${repo === preferred ? " selected" : ""}>${escapeHtml(repoDisplayKey(repo))}</option>`).join("")
+      : '<option value="">No repositories you belong to</option>';
+    repoSelect.disabled = !choices.length;
+  }
+
+  function agentModalSelectedRepo() {
+    const value = String($("#agentModal [data-agent-modal-repo]")?.value || "");
+    if (!value.includes("/")) return null;
+    return agentModalRepoChoices().find((repo) =>
+      repoKey(repo).toLowerCase() === value.toLowerCase()) || null;
+  }
+
+  function agentModelChoicesHtml(groups) {
+    return groups.map(({ provider, models }) => {
+      const agentLabel = AGENT_PROVIDER_OPTIONS.find(
+        (option) => option.value === provider)?.label || provider;
+      const options = ["", ...models.filter(Boolean)].map((model) => {
+        const label = model
+          ? AGENT_NEW_MODEL_OPTIONS.find(
+            (option) => option.provider === provider && option.value === model,
+          )?.label || model
+          : `${agentLabel} · default model`;
+        return `<option value="${escapeHtml(`${provider}|${model}`)}">${escapeHtml(label)}</option>`;
+      }).join("");
+      return `<optgroup label="${escapeHtml(agentLabel)}">${options}</optgroup>`;
+    }).join("");
+  }
+
+  function splitAgentModelChoice(value, fallbackProvider) {
+    const text = String(value || "");
+    const split = text.indexOf("|");
+    return split < 0
+      ? { provider: fallbackProvider, model: "" }
+      : { provider: text.slice(0, split), model: text.slice(split + 1) };
+  }
+
+  function renderAgentModalAgentModels(modal) {
+    const select = modal?.querySelector("[data-repo-agent-new-agent-model]");
+    if (!select || select.options.length) return;
+    select.innerHTML = agentModelChoicesHtml(
+      AGENT_PROVIDER_OPTIONS.map(({ value }) => ({
+        provider: value,
+        models: AGENT_NEW_MODEL_OPTIONS
+          .filter((option) => option.provider === value)
+          .map((option) => option.value),
+      })),
+    );
+  }
+
+  function syncAgentModalAgentModel(modal) {
+    const { provider, model } = splitAgentModelChoice(
+      modal?.querySelector("[data-repo-agent-new-agent-model]")?.value,
+      "claude-code",
+    );
+    const providerInput = modal?.querySelector("[data-repo-agent-new-provider]");
+    const modelInput = modal?.querySelector("[data-repo-agent-new-model]");
+    if (providerInput) providerInput.value = provider;
+    if (modelInput) modelInput.value = model;
+  }
+
+  function renderAgentModalTargets(modal) {
+    const targetSelect = modal?.querySelector("[data-agent-modal-target]");
+    if (!targetSelect) return;
+    const provider = String(
+      modal.querySelector("[data-repo-agent-new-provider]")?.value || "",
+    );
+    const targets = (Array.isArray(modal._ownerAgentTargets)
+      ? modal._ownerAgentTargets
+      : []).filter((target) =>
+      (Array.isArray(target?.providers) && target.providers.includes(provider)) ||
+      agentTargetRunnerNeedsLogin(target, provider));
+    targetSelect.innerHTML = targets.length
+      ? targets.map((target) => `<option value="${escapeHtml(target.node || "")}">${escapeHtml(agentTargetRunner(target) || target.node || "Owned node")} · ${target.online ? "online" : "offline — queue for later"}${target.runtimeMode === "headless" ? " · managed" : ""}${agentTargetRunner(target) ? " · runner" : ""}${agentTargetRunnerNeedsLogin(target, provider) ? " · needs sign-in" : ""}${target.source && !agentTargetRunner(target) ? " · source" : ""}</option>`).join("")
+      : '<option value="">No owned node advertises this agent</option>';
+    targetSelect.disabled = !targets.length;
+    renderAgentModalLogin(modal);
+  }
+
+  function agentProviderLabel(provider) {
+    if (provider === "local-llama") return "Gemma";
+    return provider === "codex" ? "Codex" : "Claude Code";
+  }
+
+  function agentTargetRunner(target) {
+    if (target?.runtimeMode !== "runner-pool") return "";
+    return String(target.runner || target.node || "").trim();
+  }
+
+  function agentTargetRunnerNeedsLogin(target, provider) {
+    if (!agentTargetRunner(target)) return false;
+    const needs = target.needsLogin;
+    return Boolean(needs && typeof needs === "object" && !Array.isArray(needs) &&
+      Object.prototype.hasOwnProperty.call(needs, provider));
+  }
+
+  function agentModalSelectedTarget(modal, node) {
+    const targets = Array.isArray(modal?._ownerAgentTargets)
+      ? modal._ownerAgentTargets
+      : [];
+    return targets.find((target) => String(target?.node || "") === node) || null;
+  }
+
+  function runnerSignInConnectUrl(runner, provider) {
+    const params = new URLSearchParams({ runner, provider, connect: "1" });
+    return `/dashboard/runners?${params}`;
+  }
+
+  function openRunnerSignInFromAgentModal(runner, provider) {
+    const url = runnerSignInConnectUrl(runner, provider);
+    const opened = window.open(url, "_blank");
+    if (opened) {
+      opened.opener = null;
+      return;
+    }
+    window.location.assign(url);
+  }
+
+  // The sign-in control used to be nothing but a `forkmesh://agent-login/...`
+  // link. On a machine without the desktop app that is a dead end — the OS
+  // answers "No Apps Available" and the sign-in has nowhere to go — so the
+  // button now streams the node's own login terminal into this tab, and the
+  // desktop hand-off stays underneath it for people who prefer their local app.
+  function renderAgentModalLogin(modal) {
+    const login = modal?.querySelector("[data-agent-modal-login]");
+    if (!login) return;
+    const provider = String(
+      modal.querySelector("[data-repo-agent-new-provider]")?.value || "",
+    );
+    const node = String(
+      modal.querySelector("[data-agent-modal-target]")?.value || "",
+    );
+    const label = agentProviderLabel(provider);
+    const runner = agentTargetRunner(agentModalSelectedTarget(modal, node));
+    const needsLogin = Boolean(node && provider && provider !== "local-llama");
+    login.classList.toggle("hidden", !needsLogin);
+    login.classList.toggle("flex", needsLogin);
+    const start = login.querySelector("[data-agent-modal-login-start]");
+    if (start) {
+      start.dataset.node = node;
+      start.dataset.provider = provider;
+      start.dataset.runner = runner;
+    }
+    const desktop = login.querySelector("[data-agent-modal-login-desktop]");
+    if (desktop) {
+      desktop.href = node && provider
+        ? `forkmesh://agent-login/${encodeURIComponent(node)}?provider=${encodeURIComponent(provider)}`
+        : "#";
+      desktop.classList.toggle("hidden", Boolean(runner));
+    }
+    const text = login.querySelector("[data-agent-modal-login-label]");
+    if (text) text.textContent = `Sign in to ${label} on ${runner || node || "node"}`;
+  }
+
+  // One streamed session at a time, torn down whenever the dialog closes: the
+  // node ends its pty when the browser stops asking for it, so a forgotten tab
+  // cannot leave a login prompt open on someone's mirror.
+  function closeAgentLoginTerminal() {
+    const modal = $("[data-agent-login-modal]");
+    if (state.agentLoginTerminal) {
+      try {
+        state.agentLoginTerminal.close();
+      } catch (_) {}
+      state.agentLoginTerminal = null;
+    }
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+    const surface = modal.querySelector("[data-agent-login-surface]");
+    if (surface) surface.textContent = "";
+  }
+
+  function setAgentLoginStatus(text, level) {
+    const status = $("[data-agent-login-modal] [data-agent-login-status]");
+    if (!status) return;
+    status.textContent = text;
+    status.className = "mt-0.5 text-xs " + (
+      level === "error"
+        ? "text-destructive"
+        : level === "ok"
+          ? "text-foreground"
+          : "text-muted-foreground"
+    );
+  }
+
+  async function openAgentLoginTerminal(node, provider) {
+    if (!node || !provider) return;
+    const modal = showAgentLoginModal(
+      `Sign in to ${agentProviderLabel(provider)} on ${node}`, `Connecting to ${node}…`);
+    const surface = modal?.querySelector("[data-agent-login-surface]");
+    if (!modal || !surface) return;
+    // The dialog itself is where this reads best: the terminal reports every
+    // other refusal on that same status line.
+    if (!readSession()?.sessionToken) {
+      setAgentLoginStatus(
+        "Sign in to ForkMesh before starting a sign-in on a node.", "error");
+      return;
+    }
+    // Dynamic import: the bundle is a classic script, and a terminal emulator
+    // is dead weight on every dashboard load that never signs a node in.
+    let createAgentLoginTerminal;
+    try {
+      ({ createAgentLoginTerminal } = await import("/agent-terminal.js"));
+    } catch (_) {
+      setAgentLoginStatus(
+        "This browser could not load the terminal module.", "error");
+      return;
+    }
+    if (modal.classList.contains("hidden")) return; // closed while importing
+    state.agentLoginTerminal = createAgentLoginTerminal({
+      surface,
+      node,
+      provider,
+      sessionToken: () => String(readSession()?.sessionToken || ""),
+      onStatus: setAgentLoginStatus,
+    });
+    void state.agentLoginTerminal.start();
+  }
+
+  function showAgentLoginModal(titleText, statusText, footerText = "") {
+    const modal = $("[data-agent-login-modal]");
+    if (!modal?.querySelector("[data-agent-login-surface]")) return null;
+    closeAgentLoginTerminal();
+    const title = modal.querySelector("[data-agent-login-title]");
+    if (title) {
+      title.innerHTML =
+        `<i data-lucide="terminal" class="h-4 w-4 text-muted-foreground"></i>${escapeHtml(titleText)}`;
+    }
+    const footer = modal.querySelector("[data-agent-login-footer]");
+    if (footer) {
+      footer.dataset.defaultText ||= footer.textContent.trim();
+      footer.textContent = footerText || footer.dataset.defaultText;
+    }
+    setAgentLoginStatus(statusText, "pending");
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    window.lucide?.createIcons();
+    if (!modal._agentLoginWired) {
+      modal._agentLoginWired = true;
+      modal.querySelector("[data-agent-login-close]")
+        ?.addEventListener("click", closeAgentLoginTerminal);
+      modal.querySelector("[data-agent-login-backdrop]")
+        ?.addEventListener("click", closeAgentLoginTerminal);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+          closeAgentLoginTerminal();
+        }
+      });
+    }
+    return modal;
+  }
+
+  async function loadAgentModalTargets(modal, repo) {
+    const targetSelect = modal?.querySelector("[data-agent-modal-target]");
+    const hint = modal?.querySelector("[data-repo-agent-new-hint]");
+    if (!modal || !targetSelect || !repo) return;
+    targetSelect.disabled = true;
+    targetSelect.innerHTML = '<option value="">Loading owned nodes…</option>';
+    try {
+      const payload = await orgAgentRequest("GET", orgAgentEndpoint(repo));
+      // Ignore a response for a repository the user changed away from while
+      // the request was in flight. Choices are regrouped on each render, so
+      // compare their stable physical address rather than object identity.
+      const selected = agentModalSelectedRepo();
+      if (
+        !selected ||
+        repoKey(selected).toLowerCase() !== repoKey(repo).toLowerCase()
+      ) return;
+      modal._ownerAgentTargets = Array.isArray(payload?.targets)
+        ? payload.targets
+        : [];
+      renderAgentModalTargets(modal);
+      if (hint && !modal._ownerAgentTargets.length) {
+        hint.className = "text-[11px] leading-4 text-destructive";
+        hint.textContent =
+          "No owned node currently advertises an installed Claude Code or Codex CLI. Update or open the node, then refresh.";
+      }
+    } catch (error) {
+      modal._ownerAgentTargets = [];
+      renderAgentModalTargets(modal);
+      if (hint) {
+        hint.className = "text-[11px] leading-4 text-destructive";
+        hint.textContent = String(
+          error?.message || "Could not load owned agent nodes.",
+        );
+      }
+    }
+  }
+
+  function wireAgentModalSelectors(modal) {
+    if (!modal || modal._agentSelectorsWired) return;
+    modal._agentSelectorsWired = true;
+    modal.querySelector("[data-agent-modal-repo]")?.addEventListener(
+      "change",
+      () => {
+        modal._agentRepoUserChanged = true;
+        loadAgentModalTargets(modal, agentModalSelectedRepo());
+      },
+    );
+    modal.querySelector("[data-repo-agent-new-agent-model]")?.addEventListener(
+      "change",
+      () => {
+        syncAgentModalAgentModel(modal);
+        renderAgentModalTargets(modal);
+      },
+    );
+    modal.querySelector("[data-agent-modal-target]")?.addEventListener(
+      "change",
+      () => renderAgentModalLogin(modal),
+    );
+    modal.querySelector("[data-agent-modal-login-start]")?.addEventListener(
+      "click",
+      (event) => {
+        const button = event.currentTarget;
+        const runner = String(button.dataset.runner || "");
+        if (runner) {
+          openRunnerSignInFromAgentModal(
+            runner, String(button.dataset.provider || ""));
+          return;
+        }
+        void openAgentLoginTerminal(
+          String(button.dataset.node || ""),
+          String(button.dataset.provider || ""),
+        );
+      },
+    );
+  }
+
+  function setAgentModalOpen(open) {
+    const modal = $("#agentModal");
+    if (!modal) return;
+    modal._agentRepoMembershipRequest =
+      Number(modal._agentRepoMembershipRequest || 0) + 1;
+    if (open) {
+      renderAgentModalAgentModels(modal);
+      syncAgentModalAgentModel(modal);
+      modal._agentRepoUserChanged = false;
+      renderAgentModalRepositories(modal);
+      const hint = modal.querySelector("[data-repo-agent-new-hint]");
+      if (hint) {
+        hint.className = "text-[11px] leading-4 text-muted-foreground";
+        hint.textContent = "The selected node claims this durable request and runs it.";
+      }
+      wireAgentModalSelectors(modal);
+      void loadAgentModalTargets(modal, agentModalSelectedRepo());
+      // Organization aliases come from the signed-in membership endpoint, not
+      // the public catalog. Refresh the choices after that bounded lookup; an
+      // in-progress manual selection wins over the asynchronous refresh.
+      const membershipRequest = modal._agentRepoMembershipRequest;
+      void ensureHomeOrganizationRepositories().then(() => {
+        if (
+          modal.hidden ||
+          modal._agentRepoMembershipRequest !== membershipRequest
+        ) return;
+        renderAgentModalRepositories(modal, modal._agentRepoUserChanged);
+        void loadAgentModalTargets(modal, agentModalSelectedRepo());
+      });
+      window.lucide?.createIcons();
+    }
+    if (open) {
+      // Screenshot paste/attach (adhoc #78): wire the modal's file input, paste
+      // handler and chip list once, then reset any leftover attachments so each
+      // fresh open starts clean.
+      wireAgentModalImages(modal);
+      const form = modal.querySelector("[data-repo-agent-new-form]");
+      if (form) {
+        form._pendingAgentImages = [];
+        renderAgentModalChips(form);
+      }
+    }
+    modal.classList.toggle("hidden", !open);
+    if (open) modal.querySelector("[data-repo-agent-new-input]")?.focus();
+  }
+
+  // Pasted/attached screenshots queued alongside a "start agent" prompt
+  // (adhoc #78). They ride to the node as data: URLs; the node writes them into
+  // the agent's working tree so a coding agent can actually see the screenshot.
+  function agentModalImages(form) {
+    if (!form) return [];
+    if (!form._pendingAgentImages) form._pendingAgentImages = [];
+    return form._pendingAgentImages;
+  }
+
+  function agentModalAttachmentsPayload(form) {
+    return agentModalImages(form).map((img) => {
+      const match = /^data:([^;,]+);base64,(.*)$/s.exec(String(img.dataUrl || ""));
+      return match
+        ? { mediaType: match[1].toLowerCase(), data: match[2], name: img.name }
+        : null;
+    }).filter(Boolean);
+  }
+
+  function renderAgentModalChips(form) {
+    const list = form?.querySelector("[data-repo-agent-new-attachments]");
+    if (!list) return;
+    const images = agentModalImages(form);
+    list.className = images.length ? "grid gap-2" : "hidden";
+    list.innerHTML = images.map((img) => `
+      <span class="rounded-md border border-border bg-secondary/50 p-2 text-[11px] text-foreground">
+        <span class="flex items-start gap-2">
+          <img src="${escapeHtml(img.dataUrl)}" alt="${escapeHtml(img.name)}" class="h-12 w-12 flex-none rounded border border-border object-cover" />
+          <span class="min-w-0">
+            <span class="block truncate font-medium">${escapeHtml(img.name)}</span>
+            <span class="mt-1 block text-muted-foreground">Image attachment</span>
+          </span>
+          <button type="button" data-repo-agent-new-attachment-remove="${img.id}" class="ml-auto inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground hover:text-destructive" aria-label="Remove ${escapeHtml(img.name)}">&times;</button>
+        </span>
+      </span>`).join("") + (images.length ? `
+      <span class="h-px border-t border-border"></span>` : "");
+    window.lucide?.createIcons();
+  }
+
+  async function addAgentModalImage(form, file, setHint) {
+    const images = agentModalImages(form);
+    if (!file || !file.type.startsWith("image/")) {
+      setHint?.("That's not an image.", "bad");
+      return;
+    }
+    if (!ORG_AGENT_IMAGE_TYPES.has(file.type)) {
+      setHint?.("Attach a JPEG, PNG, WebP or GIF image.", "bad");
+      return;
+    }
+    if (images.length >= AGENT_IMAGE_MAX_COUNT) {
+      setHint?.(`You can attach up to ${AGENT_IMAGE_MAX_COUNT} screenshots.`, "bad");
+      return;
+    }
+    if (file.size > ISSUE_IMAGE_RAW_MAX_BYTES) {
+      setHint?.(`That image is too large (max ${formatSize(ISSUE_IMAGE_RAW_MAX_BYTES)}).`, "bad");
+      return;
+    }
+    const used = images.reduce((sum, img) => sum + img.size, 0);
+    const budget = Math.min(AGENT_IMAGE_MAX_BYTES, AGENT_IMAGE_MAX_TOTAL_BYTES - used);
+    if (budget <= 0) {
+      setHint?.("Attached screenshots already use the size limit - remove one to add another.", "bad");
+      return;
+    }
+    let dataUrl;
+    let size;
+    if (file.size <= budget) {
+      try {
+        dataUrl = await readAsDataUrl(file);
+        size = file.size;
+      } catch (_) {
+        setHint?.("Could not read that image.", "bad");
+        return;
+      }
+    } else {
+      // Oversized paste/pick: reuse the issue composer's crop/compress modal to
+      // squeeze it under the per-attachment budget.
+      setHint?.(`Compressing to fit under ${formatSize(budget)}…`);
+      const result = await openImageResizeModal(file, budget);
+      if (!result) {
+        setHint?.("");
+        return;
+      }
+      dataUrl = result.dataUrl;
+      size = result.size;
+    }
+    const id = `agent-image:${Date.now().toString(36)}${images.length}`;
+    const name = (file.name || "screenshot.png").replace(/[[\]]/g, "_");
+    images.push({ id, name, dataUrl, size });
+    setHint?.(`Attached ${name}.`, "good");
+    renderAgentModalChips(form);
+  }
+
+  function wireAgentModalImages(modal) {
+    if (!modal || modal._agentImagesWired) return;
+    modal._agentImagesWired = true;
+    const form = modal.querySelector("[data-repo-agent-new-form]");
+    const input = modal.querySelector("[data-repo-agent-new-input]");
+    const fileInput = modal.querySelector("[data-repo-agent-new-file-input]");
+    const attachBtn = modal.querySelector("[data-repo-agent-new-attach]");
+    const chips = modal.querySelector("[data-repo-agent-new-attachments]");
+    const hint = modal.querySelector("[data-repo-agent-new-hint]");
+    const setHint = (text, tone) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-muted-foreground" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    attachBtn?.addEventListener("click", () => fileInput?.click());
+    fileInput?.addEventListener("change", async () => {
+      const files = Array.from(fileInput.files || []);
+      fileInput.value = "";
+      for (const file of files) await addAgentModalImage(form, file, setHint);
+    });
+    input?.addEventListener("paste", async (event) => {
+      const imageItems = Array.from(event.clipboardData?.items || [])
+        .filter((it) => it.kind === "file" && it.type.startsWith("image/"));
+      if (!imageItems.length) return;
+      // A screenshot in the clipboard shouldn't also dump its (empty) text into
+      // the prompt field - claim the paste for the attachment instead.
+      event.preventDefault();
+      for (const it of imageItems) {
+        const file = it.getAsFile();
+        if (file) await addAgentModalImage(form, file, setHint);
+      }
+    });
+    chips?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-repo-agent-new-attachment-remove]");
+      if (!button) return;
+      const images = agentModalImages(form);
+      const index = images.findIndex((img) => img.id === button.dataset.repoAgentNewAttachmentRemove);
+      if (index >= 0) images.splice(index, 1);
+      renderAgentModalChips(form);
+    });
+  }
+
+  const ERROR_ACTIONS_CANDIDATES =
+    ".text-destructive, [role=\"alert\"], .fmc-status[data-tone=\"bad\"], [data-error-copy]";
+  const ERROR_ACTIONS_DATA_RE = /(hint|status|error|notice|warning|message)/i;
+
+  function errorActionsHostQualifies(el) {
+    if (!el || el.nodeType !== 1 || el.hasAttribute("data-error-actions")) return false;
+    if (!errorActionsHostShaped(el)) return false;
+    if (el.closest("[data-error-actions], [data-error-actions-skip], button, a, label, select, option, textarea, summary")) return false;
+    return errorActionsText(el).length >= 3;
+  }
+
+  function errorActionsHostShaped(el) {
+    if (el.matches("[data-error-copy], [role=\"alert\"], .fmc-status[data-tone=\"bad\"]")) return true;
+    if (!el.classList.contains("text-destructive")) return false;
+    const shaped = el.tagName === "P" || el.tagName === "DIV" || Array.from(el.attributes).some((attr) =>
+      attr.name.startsWith("data-") && ERROR_ACTIONS_DATA_RE.test(attr.name));
+    return shaped && !el.querySelector("button:not([data-error-actions] button), input, select, textarea");
+  }
+
+  function errorActionsText(el) {
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll("[data-error-actions], .sr-only").forEach((node) => node.remove());
+    return String(clone.textContent || "")
+      .split("\n")
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  function errorActionsPrompt(text) {
+    const where = `${window.location.pathname}${window.location.search}`;
+    return `Fix this error shown on ${where}:\n\n${text}`;
+  }
+
+  function sendTextToPrompt(text) {
+    const value = String(text || "").trim();
+    if (!value) return false;
+    if (window.ForkMeshComposer?.insert) {
+      window.ForkMeshComposer.insert(value);
+      return true;
+    }
+    if (!$("#agentModal")) return false;
+    setAgentModalOpen(true);
+    const input = $("#agentModal")?.querySelector("[data-repo-agent-new-input]");
+    if (!input) return false;
+    input.value = input.value.trim() ? `${input.value.trimEnd()}\n\n${value}` : value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+    return true;
+  }
+
+  function errorActionsBarHtml() {
+    const button = "inline-flex h-5 items-center rounded-md border border-border bg-background px-2 text-[11px] font-medium text-foreground hover:bg-secondary";
+    return `<button type="button" data-error-action="copy" class="${button}" title="Copy this error">Copy</button>`
+      + `<button type="button" data-error-action="prompt" class="${button}" title="Put this error in the prompt">Send to prompt</button>`;
+  }
+
+  function decorateErrorHost(host) {
+    if (Array.from(host.children).some((child) => child.hasAttribute("data-error-actions"))) return;
+    const bar = document.createElement("span");
+    bar.setAttribute("data-error-actions", "");
+    bar.className = "ml-2 inline-flex flex-wrap items-center gap-1 align-middle font-normal tracking-normal";
+    bar.innerHTML = errorActionsBarHtml();
+    host.appendChild(bar);
+  }
+
+  function scanErrorActions() {
+    document.querySelectorAll("[data-error-actions]").forEach((bar) => {
+      if (!errorActionsHostQualifies(bar.parentElement)) bar.remove();
+    });
+    const hosts = Array.from(document.querySelectorAll(ERROR_ACTIONS_CANDIDATES))
+      .filter(errorActionsHostQualifies);
+    const hostSet = new Set(hosts);
+    hosts.forEach((host) => {
+      let parent = host.parentElement;
+      while (parent) {
+        if (hostSet.has(parent)) return;
+        parent = parent.parentElement;
+      }
+      decorateErrorHost(host);
+    });
+  }
+
+  async function handleErrorActionClick(event) {
+    const button = event.target.closest?.("[data-error-action]");
+    if (!button) return;
+    const host = button.closest("[data-error-actions]")?.parentElement;
+    const text = host ? errorActionsText(host) : "";
+    if (!text) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const label = button.textContent;
+    let done = false;
+    if (button.dataset.errorAction === "copy") {
+      done = await copyTextToClipboard(text);
+      button.textContent = done ? "Copied" : "Copy failed";
+    } else {
+      done = sendTextToPrompt(errorActionsPrompt(text));
+      button.textContent = done ? "Sent" : "No prompt here";
+    }
+    window.setTimeout(() => { button.textContent = label; }, 1400);
+  }
+
+  function showErrorNotice(message) {
+    const text = String(message || "").trim();
+    if (!text) return;
+    let stack = $("[data-error-notice-stack]");
+    if (!stack) {
+      stack = document.createElement("div");
+      stack.setAttribute("data-error-notice-stack", "");
+      stack.className = "fixed z-50 grid w-fit max-w-md gap-2";
+      stack.style.right = "1rem";
+      stack.style.bottom = "1rem";
+      stack.style.left = "1rem";
+      stack.style.marginLeft = "auto";
+      document.body.appendChild(stack);
+    }
+    const notice = document.createElement("div");
+    notice.className = "flex items-start gap-2 rounded-md border border-destructive/40 bg-card p-3 text-xs leading-5 shadow-lg";
+    const body = document.createElement("p");
+    body.setAttribute("role", "alert");
+    body.className = "min-w-0 flex-1 whitespace-pre-wrap break-words text-destructive";
+    body.textContent = text;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "shrink-0 text-muted-foreground hover:text-foreground";
+    close.setAttribute("aria-label", "Dismiss");
+    close.textContent = "\u00d7";
+    close.addEventListener("click", () => {
+      notice.remove();
+      if (!stack.children.length) stack.remove();
+    });
+    notice.append(body, close);
+    stack.appendChild(notice);
+  }
+
+  function installErrorActions() {
+    if (document.documentElement._errorActionsInstalled) return;
+    document.documentElement._errorActionsInstalled = true;
+    document.addEventListener("click", (event) => { void handleErrorActionClick(event); }, true);
+    let queued = false;
+    const queue = () => {
+      if (queued) return;
+      queued = true;
+      window.requestAnimationFrame(() => {
+        queued = false;
+        scanErrorActions();
+      });
+    };
+    new MutationObserver(queue).observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["class", "role", "data-tone", "data-error-copy"],
+    });
+    scanErrorActions();
+  }
+
+  // Header-search page filter for the Agents tab (adhoc #62). One haystack for
+  // both session renderers — they draw the same snapshots, just different
+  // fields of them — so a hit is always something visible on the row.
+  function repoAgentsMatchingPageFilter(agents) {
+    const queries = pageFilterQueries("");
+    if (!queries.length) return agents;
+    return agents
+      .map((agent, index) => {
+        const info = agent?.agentInfo && typeof agent.agentInfo === "object"
+          ? agent.agentInfo : {};
+        const titleText = [agent?.title, repoAgentIssueLabel(agent)]
+          .filter((value) => value !== undefined && value !== null)
+          .join(" ")
+          .toLowerCase();
+        const haystack = [
+          titleText,
+          agent.status,
+          agent.provider,
+          agent.model || info.model || agent.requestedModel,
+          agent.branchName,
+          agent.targetNode, agent.createdBy, agent.taskKey, agent.lastError,
+        ].join(" ").toLowerCase();
+        if (!queries.every((query) => haystack.includes(query))) return null;
+        // Keep title matches at the top, while retaining the server order for
+        // ties. The title is what identifies an agent to a person, so it is a
+        // stronger signal than a match in status, node, or other metadata.
+        const titleScore = queries.reduce(
+          (score, query) => score + (titleText.includes(query) ? 1 : 0), 0);
+        return { agent, index, titleScore };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.titleScore - a.titleScore || a.index - b.index)
+      .map(({ agent }) => agent);
+  }
+
+  function renderRepoAgentsList(agents) {
+    const container = $("[data-repo-agents]");
+    if (!container) return;
+    // When a detail page is open for a still-present agent, render that instead
+    // of the list (adhoc #259). If the selected agent has vanished from a fresh
+    // fetch, fall back to the list so we never strand the user on a dead page.
+    const selectedId = state.agentsView.selectedAgentId;
+    const selected = selectedId != null
+      ? agents.find((a) => String(a.id ?? "") === String(selectedId))
+      : null;
+    if (selected) {
+      container.innerHTML = renderRepoAgentDetail(selected);
+      window.lucide?.createIcons();
+      return;
+    }
+    if (selectedId != null) state.agentsView.selectedAgentId = null;
+    // The "start a new agent" composer now lives in the header robot-button
+    // modal (adhoc #62), so this list is just the sessions.
+    const visible = repoAgentsMatchingPageFilter(agents);
+    container.innerHTML = visible.length
+      ? `<div class="divide-y divide-border">${visible.map(renderRepoAgentRow).join("")}</div>`
+      : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyListHtml("No agent sessions yet. Start one from the robot button in the header, or from the desktop app.")}</div>`;
+    window.lucide?.createIcons();
+  }
+
+  // Open / close the detail page for one agent. Transcript refresh is explicit:
+  // opening the page, clicking Refresh, or sending a prompt triggers a fetch.
+  function openRepoAgentDetail(repo, agentId, composerMode = "prompt") {
+    state.agentsView.selectedAgentId = agentId;
+    state.agentsView.selectedAgentComposerMode = composerMode || "prompt";
+    renderRepoAgentsList(state.agentsView.agents);
+    loadRepoAgentTranscript(repo, agentId);
+  }
+
+  function closeRepoAgentDetail(repo) {
+    state.agentsView.selectedAgentId = null;
+    state.agentsView.selectedAgentComposerMode = "";
+    renderRepoAgentsList(state.agentsView.agents);
+  }
+
+  // The browser intentionally has no owner recipient private key.  Never fetch
+  // a legacy plaintext transcript or pretend an opaque envelope is readable.
+  async function loadRepoAgentTranscript(repo, agentId) {
+    const pre = $("[data-repo-agent-transcript]");
+    if (!pre || !repo || !agentId) return;
+    pre.textContent =
+      "Open this transcript in the ForkMesh desktop app on the owner device.";
+  }
+
+  async function requestRepoAgentsList(repo) {
+    if (!repo) return [];
+    throw new Error("owner_device_only");
+  }
+
+  function repoHasOrgAgentRoute(repo) {
+    if (!repo?.ownerKind && !Array.isArray(repo?.logicalOwners)) return true;
+    return repoLogicalOwners(repo).some((value) => value.kind === "organization");
+  }
+
+  function orgAgentEndpoint(repo, sessionId = "") {
+    if (!sessionOwnsRepo(repo) && !repoHasOrgAgentRoute(repo)) return "";
+    const base = sessionOwnsRepo(repo)
+      ? `${repoApiBase(repo)}/agent-sessions`
+      : `/api/orgs/${encodeURIComponent(repo.owner || "")}/repos/${encodeURIComponent(repo.name || "")}/agent-bots`;
+    return sessionId ? `${base}/${encodeURIComponent(sessionId)}` : base;
+  }
+
+  // --- One agent session, summarised and in detail (adhoc #2117) --------
+  //
+  // The Agents tab used to print every session's metadata and its entire
+  // transcript inline, so a repository with a dozen sessions was a wall of text
+  // with no way into any one run. A row is now a summary that opens a detail
+  // page modelled on the desktop app's streaming session view
+  // (agentDetailTableHtml in MainWindowAgents.cpp over ClaudeTranscriptView):
+  // a labelled meta table, then a speaker-captioned transcript, then the
+  // follow-up composer. Nothing polls: the account socket's cloud-agents
+  // topics redraw it (docs/agents/README.md, Live transcript on the web).
+
+  const orgAgentOps = {
+    busy: new Set(),
+    notice: "",
+    tone: "ok",
+    diff: { id: "", open: false, loading: false, loadingMore: false, error: "", data: null, patch: "", page: 0, pageCount: 0 },
+    actions: null,
+  };
+  const ORG_AGENT_DIFF_PAGE_SIZE = 25;
+  const ORG_AGENT_MERGE_POLLS = 90;
+  const ORG_AGENT_MERGE_POLL_MS = 2000;
+  const ORG_AGENT_ACTIONS_POLLS = 60;
+  const ORG_AGENT_ACTIONS_POLL_MS = 5000;
+  const ORG_AGENT_CONTINUE_PROMPT = "Continue where you left off.";
+
+  function orgAgentBranchFacts(session) {
+    const info = session?.agentInfo && typeof session.agentInfo === "object" ? session.agentInfo : {};
+    const merge = session?.merge && typeof session.merge === "object" ? session.merge : {};
+    const stats = session?.diffStats && typeof session.diffStats === "object" ? session.diffStats : {};
+    const status = String(session?.status || "");
+    const active = REPO_AGENT_ACTIVE_STATUSES.has(status);
+    const branch = String(session?.branch || session?.branchName || info.branchName || "");
+    const base = String(session?.baseBranch || info.baseBranch || info.baseRef || "");
+    const pending = Array.isArray(merge.cleanupPending) ? merge.cleanupPending.map(String) : [];
+    const merged = merge.state === "merged" || info.merged === true;
+    const merging = !merged && merge.state === "merging";
+    const canMerge = typeof session?.canMerge === "boolean"
+      ? session.canMerge
+      : Boolean(branch) && !active && !merged;
+    const prNumber = Number(session?.prNumber) || Number(info.prNumber) || 0;
+    return {
+      branch,
+      base,
+      runner: String(session?.runner || ""),
+      active,
+      merge,
+      merged,
+      merging,
+      pending,
+      stats,
+      canMerge,
+      prNumber,
+      canOpenPull: session?.canOpenPull === true && !prNumber,
+      canCleanup: merge.state === "merged" && (merge.branchDeleted !== true || pending.length > 0),
+      canContinue: !active && ORG_AGENT_FINISHED_STATUSES.has(status) && Number(session?.localAgentId) > 0,
+    };
+  }
+
+  function orgAgentRequestId() {
+    const bytes = new Uint8Array(18);
+    crypto.getRandomValues(bytes);
+    return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function orgAgentOpsButton(action, icon, label, { tone = "", title = "" } = {}) {
+    const busy = orgAgentOps.busy.has(action);
+    const toneClass = tone === "danger"
+      ? "border-destructive/50 text-destructive hover:bg-destructive/10"
+      : tone === "primary"
+        ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+        : "border-border text-foreground hover:bg-secondary";
+    return `<button type="button" data-org-agent-action="${action}"${busy ? " disabled" : ""} class="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${toneClass} disabled:cursor-not-allowed disabled:opacity-50"${title ? ` title="${escapeHtml(title)}"` : ""}><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${escapeHtml(busy ? `${label}…` : label)}</button>`;
+  }
+
+  function orgAgentStatsHtml(branchFacts) {
+    const stats = branchFacts.stats;
+    if (stats.known !== true) return "";
+    const files = Number(stats.files) || 0;
+    const parts = [
+      `${escapeHtml(formatCount(files))} ${files === 1 ? "file" : "files"}`,
+      `<span class="text-emerald-600">+${escapeHtml(formatCount(Number(stats.added) || 0))}</span>`,
+      `<span class="text-destructive">−${escapeHtml(formatCount(Number(stats.removed) || 0))}</span>`,
+    ];
+    if (Number(stats.behind) > 0) parts.push(`<span class="text-amber-500">${escapeHtml(formatCount(stats.behind))} behind</span>`);
+    if (stats.conflicted === true) parts.push('<span class="text-destructive">Conflicts</span>');
+    return parts.join(" ");
+  }
+
+  const USER_ACTIVITY_SLOTS = 288;
+  const USER_ACTIVITY_ROWS = 12;
+  const USER_ACTIVITY_KEY = "forkmesh.userActivityToday";
+  const USER_ACTIVITY_DEVICE_KEY = "forkmesh.userActivityDevice";
+  const USER_ACTIVITY_KIND = "web";
+  const USER_ACTIVITY_SYNC_MS = 2 * 60 * 1000;
+  const USER_ACTIVITY_READ_MS = 10 * 60 * 1000;
+  const USER_ACTIVITY_FORCED_MS = 10 * 1000;
+  const USER_ACTIVITY_WHEEL_GAP_MS = 400;
+  const USER_ACTIVITY_CARD_SYNC_MS = 60 * 1000;
+  const USER_ACTIVITY_LIGHT = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"];
+  const USER_ACTIVITY_DARK = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"];
+  const userActivity = {
+    started: false,
+    lastWheelMs: 0,
+    sentRevision: -1,
+    syncedAt: -Infinity,
+    account: "",
+    busy: false,
+    othersDay: "",
+    others: null,
+    otherKinds: [],
+    cardSyncAt: -Infinity,
+  };
+
+  function userActivityDay(date = new Date()) {
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function userActivitySlot(date = new Date()) {
+    return date.getHours() * USER_ACTIVITY_ROWS + Math.floor(date.getMinutes() / 5);
+  }
+
+  function userActivityEmpty() {
+    return new Array(USER_ACTIVITY_SLOTS).fill(0);
+  }
+
+  function userActivityStored() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(USER_ACTIVITY_KEY) || "null");
+      if (stored && typeof stored.day === "string" && Array.isArray(stored.counts) &&
+          stored.counts.length === USER_ACTIVITY_SLOTS) {
+        return {
+          day: stored.day,
+          revision: Number(stored.revision) || 0,
+          counts: stored.counts.map((value) => Math.max(0, Math.floor(Number(value) || 0))),
+        };
+      }
+    } catch (_) {}
+    return { day: "", revision: 0, counts: userActivityEmpty() };
+  }
+
+  function userActivityDevice() {
+    try {
+      let device = localStorage.getItem(USER_ACTIVITY_DEVICE_KEY) || "";
+      if (!/^[A-Za-z0-9._:-]{8,64}$/.test(device)) {
+        device = crypto.randomUUID ? crypto.randomUUID()
+          : Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+        localStorage.setItem(USER_ACTIVITY_DEVICE_KEY, device);
+      }
+      return device;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function recordUserActivity(at = new Date()) {
+    const day = userActivityDay(at);
+    const stored = userActivityStored();
+    const counts = stored.day === day ? stored.counts : userActivityEmpty();
+    counts[userActivitySlot(at)] += 1;
+    try {
+      localStorage.setItem(USER_ACTIVITY_KEY, JSON.stringify({ day, revision: stored.revision + 1, counts }));
+    } catch (_) {}
+  }
+
+  function userActivityLocalCounts(day = userActivityDay()) {
+    const stored = userActivityStored();
+    return stored.day === day ? stored.counts : userActivityEmpty();
+  }
+
+  function userActivityCounts(day = userActivityDay()) {
+    const counts = userActivityLocalCounts(day);
+    if (userActivity.others && userActivity.othersDay === day) {
+      userActivity.others.forEach((value, slot) => { counts[slot] += value; });
+    }
+    return counts;
+  }
+
+  function userActivityOtherKinds(day = userActivityDay()) {
+    return userActivity.othersDay === day ? userActivity.otherKinds : [];
+  }
+
+  function clearUserActivityOthers() {
+    userActivity.othersDay = "";
+    userActivity.others = null;
+    userActivity.otherKinds = [];
+  }
+
+  function userActivitySourcesText(selfKind, otherKinds) {
+    const label = (kind) => ({ desktop: "desktop", ios: "iOS device", android: "Android device", web: "browser" })[kind] || "other device";
+    const parts = [({ desktop: "this desktop", web: "this browser" })[selfKind] || "this device"];
+    [...new Set(otherKinds)].forEach((kind) => parts.push(kind === selfKind ? "another " + label(kind) : label(kind)));
+    if (parts.length === 1) return parts[0];
+    const last = parts.pop();
+    return parts.join(", ") + " and " + last;
+  }
+
+  async function syncUserActivity(force = false) {
+    const account = String(state.session?.nodeName || "").toLowerCase();
+    if (!account) {
+      userActivity.account = "";
+      userActivity.sentRevision = -1;
+      userActivity.syncedAt = -Infinity;
+      clearUserActivityOthers();
+      return false;
+    }
+    if (account !== userActivity.account) {
+      userActivity.account = account;
+      userActivity.sentRevision = -1;
+      userActivity.syncedAt = -Infinity;
+      clearUserActivityOthers();
+    }
+    const device = userActivityDevice();
+    if (!device || userActivity.busy) return false;
+    const now = Date.now();
+    const stored = userActivityStored();
+    const day = userActivityDay();
+    const revision = stored.day === day ? stored.revision : 0;
+    const changed = revision !== userActivity.sentRevision;
+    if (!changed && now - userActivity.syncedAt < (force ? USER_ACTIVITY_FORCED_MS : USER_ACTIVITY_READ_MS)) return false;
+    const body = { day, device, kind: USER_ACTIVITY_KIND };
+    if (changed) body.counts = stored.day === day ? stored.counts : userActivityEmpty();
+    userActivity.busy = true;
+    try {
+      const response = await fetch("/api/accounts/activity-today", {
+        method: "POST",
+        headers: sessionHeaders(true),
+        credentials: "same-origin",
+        cache: "no-store",
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || String(data.nodeName || "").toLowerCase() !== account ||
+          account !== userActivity.account || !Array.isArray(data.others) ||
+          data.others.length !== USER_ACTIVITY_SLOTS) {
+        return false;
+      }
+      if (changed) userActivity.sentRevision = revision;
+      userActivity.syncedAt = now;
+      userActivity.othersDay = day;
+      userActivity.others = data.others.map((value) => Math.max(0, Math.floor(Number(value) || 0)));
+      userActivity.otherKinds = (Array.isArray(data.sources) ? data.sources : [])
+        .filter((source) => source && source.self !== true && Number(source.total) > 0)
+        .map((source) => String(source.kind || ""));
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      userActivity.busy = false;
+    }
+  }
+
+  function startUserActivity() {
+    if (userActivity.started) return;
+    userActivity.started = true;
+    const count = (event) => {
+      if (event.isTrusted) recordUserActivity();
+    };
+    window.addEventListener("pointerdown", count, { capture: true, passive: true });
+    window.addEventListener("keydown", (event) => {
+      if (!event.repeat) count(event);
+    }, { capture: true, passive: true });
+    window.addEventListener("wheel", (event) => {
+      const now = Date.now();
+      if (now - userActivity.lastWheelMs > USER_ACTIVITY_WHEEL_GAP_MS) count(event);
+      userActivity.lastWheelMs = now;
+    }, { capture: true, passive: true });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") void syncUserActivity(false);
+    });
+    setInterval(() => {
+      if (document.visibilityState === "visible") void syncUserActivity(false);
+    }, USER_ACTIVITY_SYNC_MS);
+    void syncUserActivity(true);
+  }
+
+  function userActivitySummary(counts) {
+    const hours = new Array(24).fill(0);
+    let total = 0;
+    let peak = 0;
+    let peakSlot = -1;
+    let active = 0;
+    counts.forEach((value, slot) => {
+      if (value <= 0) return;
+      total += value;
+      active += 1;
+      hours[Math.floor(slot / USER_ACTIVITY_ROWS)] += value;
+      if (value > peak) {
+        peak = value;
+        peakSlot = slot;
+      }
+    });
+    let peakHour = -1;
+    let peakHourTotal = 0;
+    hours.forEach((value, hour) => {
+      if (value > peakHourTotal) {
+        peakHourTotal = value;
+        peakHour = hour;
+      }
+    });
+    const minutes = active * 5;
+    return {
+      total, peak, peakSlot, peakHour, peakHourTotal,
+      activeText: minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`,
+    };
+  }
+
+  function userActivityLevel(value, peak) {
+    if (value <= 0 || peak <= 0) return 0;
+    return Math.min(4, Math.max(1, Math.ceil((4 * value) / peak)));
+  }
+
+  function userActivitySlotLabel(slot) {
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${pad(Math.floor(slot / USER_ACTIVITY_ROWS))}:${pad((slot % USER_ACTIVITY_ROWS) * 5)}`;
+  }
+
+  function renderUserActivityCard() {
+    if (Date.now() - userActivity.cardSyncAt >= USER_ACTIVITY_CARD_SYNC_MS) {
+      userActivity.cardSyncAt = Date.now();
+      setTimeout(refreshUserActivityCard, 0);
+    }
+    const counts = userActivityCounts();
+    const kinds = userActivityOtherKinds();
+    const summary = userActivitySummary(counts);
+    const nowSlot = userActivitySlot();
+    const ramp = readDashboardTheme() === "light" ? USER_ACTIVITY_LIGHT : USER_ACTIVITY_DARK;
+    const cells = [];
+    for (let row = 0; row < USER_ACTIVITY_ROWS; row += 1) {
+      for (let hour = 0; hour < 24; hour += 1) {
+        const slot = hour * USER_ACTIVITY_ROWS + row;
+        const value = counts[slot];
+        const faded = slot > nowSlot && value <= 0;
+        const ring = slot === nowSlot ? "box-shadow:0 0 0 1.5px currentColor;" : "";
+        cells.push(`<span title="${escapeHtml(`${userActivitySlotLabel(slot)} · ${formatCount(value)}`)}" style="aspect-ratio:1;border-radius:2px;background:${ramp[userActivityLevel(value, summary.peak)]};opacity:${faded ? 0.4 : 1};${ring}"></span>`);
+      }
+    }
+    const axis = [0, 6, 12, 18].map((hour) => `<span style="grid-column:${hour + 1} / span 6">${String(hour).padStart(2, "0")}</span>`).join("");
+    const sources = kinds.length ? `<p data-user-activity-sources class="text-[11px] text-muted-foreground">On ${escapeHtml(userActivitySourcesText(USER_ACTIVITY_KIND, kinds))}</p>` : "";
+    const footer = summary.total > 0
+      ? `<p class="text-[11px] text-muted-foreground">Active ${escapeHtml(summary.activeText)} · busiest hour ${escapeHtml(userActivitySlotLabel(summary.peakHour * USER_ACTIVITY_ROWS))} (${escapeHtml(formatCount(summary.peakHourTotal))}) · busiest 5 min ${escapeHtml(userActivitySlotLabel(summary.peakSlot))} (${escapeHtml(formatCount(summary.peak))})</p>`
+      : `<p class="text-[11px] text-muted-foreground">Clicks, keys, scrolls and taps show up here as you work.</p>`;
+    const legend = ramp.map((color) => `<span style="width:10px;height:10px;border-radius:2px;background:${color}"></span>`).join("");
+    return `
+      <section data-user-activity-card class="grid gap-2 rounded-md border border-border px-3 py-3" aria-label="${escapeHtml(summary.total ? `Today's activity: ${summary.total} interactions, active ${summary.activeText}.` : "Today's activity: nothing recorded yet.")}">
+        <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-foreground">
+          <i data-lucide="mouse-pointer-click" class="h-3.5 w-3.5 text-emerald-600"></i>Today's activity
+          <span data-user-activity-total class="ml-auto font-normal text-muted-foreground">${escapeHtml(formatCount(summary.total))} ${summary.total === 1 ? "interaction" : "interactions"}</span>
+        </div>
+        ${sources}
+        <div class="text-foreground" style="display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px">${cells.join("")}</div>
+        <div class="text-[10px] text-muted-foreground" style="display:grid;grid-template-columns:repeat(24,minmax(0,1fr))">${axis}</div>
+        ${footer}
+        <div class="flex items-center justify-end gap-1 text-[10px] text-muted-foreground">Less${legend}More</div>
+      </section>`;
+  }
+
+  function refreshUserActivityCard() {
+    void syncUserActivity(true).then((changed) => {
+      if (!changed) return;
+      $$("[data-user-activity-card]").forEach((card) => { card.outerHTML = renderUserActivityCard(); });
+      window.lucide?.createIcons();
+    });
+  }
+
+  function orgAgentMergeStatsText(branch, base, payload) {
+    const stats = payload?.stats && typeof payload.stats === "object" ? payload.stats : {};
+    const cleaned = payload?.branchDeleted === true;
+    let text = `Merged ${branch} into ${stats.base || payload?.base || base || "its base"}${cleaned ? " and cleaned up" : ""}.`;
+    const commits = Number(stats.commits) || 0;
+    const files = Number(stats.files) || 0;
+    if (commits || files) {
+      text += ` ${formatCount(commits)} ${commits === 1 ? "commit" : "commits"} · ${formatCount(files)} ${files === 1 ? "file" : "files"} +${formatCount(Number(stats.insertions) || 0)} −${formatCount(Number(stats.deletions) || 0)}.`;
+    }
+    const pending = Array.isArray(payload?.cleanupPending) ? payload.cleanupPending : [];
+    if (pending.length) text += ` Clean up still pending on ${pending.join(", ")}.`;
+    return text;
+  }
+
+  function renderOrgAgentRunnerDiff(branchFacts) {
+    const diff = orgAgentOps.diff;
+    if (diff.loading) return `<p class="text-xs text-muted-foreground">${loadingHtml("Reading the diff from ForkMesh…")}</p>`;
+    if (diff.error) return `<p class="text-xs text-destructive">${escapeHtml(diff.error)}</p>`;
+    const data = diff.data;
+    if (!data) return "";
+    const files = Array.isArray(data.files) ? data.files : [];
+    const conflicts = Array.isArray(data.conflicts) ? data.conflicts : [];
+    const more = diff.page + 1 < diff.pageCount;
+    return `
+      <div data-org-agent-diff class="grid gap-3">
+        <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span class="font-mono text-foreground">${escapeHtml(data.base || branchFacts.base || "base")}...${escapeHtml(data.branch || branchFacts.branch)}</span>
+          <span>${escapeHtml(formatCount(files.length))} ${files.length === 1 ? "file" : "files"}</span>
+          <span class="text-emerald-600">+${escapeHtml(formatCount(Number(data.added) || 0))}</span>
+          <span class="text-destructive">−${escapeHtml(formatCount(Number(data.removed) || 0))}</span>
+          ${Number(data.commits) > 0 ? `<span>${escapeHtml(formatCount(data.commits))} ${Number(data.commits) === 1 ? "commit" : "commits"}</span>` : ""}
+          ${Number(data.behind) > 0 ? `<span class="text-amber-500">${escapeHtml(formatCount(data.behind))} behind ${escapeHtml(data.base || "base")}</span>` : ""}
+          ${data.merged ? '<span class="text-emerald-600">Merged</span>' : ""}
+          ${data.clean === false ? '<span class="text-destructive">Conflicts with the base</span>' : ""}
+        </div>
+        ${conflicts.length ? `<div class="grid gap-1 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-[11px] text-destructive"><span class="font-semibold">Conflicting files</span><ul class="font-mono">${conflicts.map((path) => `<li>${escapeHtml(path)}</li>`).join("")}</ul></div>` : ""}
+        ${files.length ? `<ul class="grid gap-0.5 rounded-md border border-border bg-secondary/20 p-2 font-mono text-[11px]">${files.map((file) => `<li class="flex min-w-0 items-center gap-2"><span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(file?.path || "")}</span>${file?.binary ? '<span class="text-muted-foreground">binary</span>' : `<span class="text-emerald-600">+${escapeHtml(String(Number(file?.added) || 0))}</span><span class="text-destructive">−${escapeHtml(String(Number(file?.removed) || 0))}</span>`}</li>`).join("")}</ul>` : ""}
+        ${diff.patch ? `
+          <div class="grid gap-1">
+            <div class="text-[11px] font-semibold text-foreground">Committed on the branch</div>
+            <pre class="overflow-x-auto rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-4">${desktopDiffLinesHtml(diff.patch)}</pre>
+          </div>` : ""}
+        ${more ? `<button type="button" data-org-agent-action="diff-more"${diff.loadingMore ? " disabled" : ""} class="inline-flex h-8 w-fit items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i>${diff.loadingMore ? "Loading more…" : `Load more (${escapeHtml(formatCount(diff.page + 1))} of ${escapeHtml(formatCount(diff.pageCount))})`}</button>` : ""}
+        ${!files.length ? '<p class="text-xs text-muted-foreground">No changes against the base branch.</p>' : ""}
+      </div>`;
+  }
+
+  function orgAgentSelectedSession() {
+    const id = String(state.agentsView.selectedAgentId || "");
+    return (state.agentsView.agents || []).find((item) => String(item?.id || "") === id) || null;
+  }
+
+  function orgAgentSetNotice(message, tone = "ok") {
+    orgAgentOps.notice = message;
+    orgAgentOps.tone = tone;
+  }
+
+  async function orgAgentLoadDiffPage(repo, session, page) {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(ORG_AGENT_DIFF_PAGE_SIZE) });
+    return orgAgentRequest("GET", `${orgAgentEndpoint(repo, String(session.id || ""))}/diff?${params.toString()}`);
+  }
+
+  async function orgAgentPostUntilDone(repo, sessionId, body) {
+    let payload = null;
+    for (let attempt = 0; attempt < ORG_AGENT_MERGE_POLLS; attempt += 1) {
+      try {
+        payload = await orgAgentRequest("POST", orgAgentEndpoint(repo, sessionId), body);
+      } catch (error) {
+        if (error?.code !== "merge_status_pending" || attempt + 1 >= ORG_AGENT_MERGE_POLLS) throw error;
+        payload = { status: "processing" };
+      }
+      if (payload?.status !== "processing") return payload;
+      await new Promise((resolve) => setTimeout(resolve, ORG_AGENT_MERGE_POLL_MS));
+    }
+    const error = new Error(body?.action === "update"
+      ? "The core is still updating the branch. Press Update again to keep waiting for the same update."
+      : "The core is still publishing the merge. Press Finish merge to keep waiting for the same merge.");
+    error.code = "merge_status_pending";
+    throw error;
+  }
+
+  const ORG_AGENT_TASK_KEY = /^task:([0-9a-f]{32})$/i;
+  const ORG_AGENT_TASK_TAG = /^\s*\[task:([0-9a-f]{32})\]/i;
+
+  function orgAgentTaskId(session) {
+    const key = String(session?.taskKey || "").trim().match(ORG_AGENT_TASK_KEY);
+    if (key) return key[1].toLowerCase();
+    const history = Array.isArray(session?.history) ? session.history : [];
+    const first = history.find((item) => String(item?.role || "") === "user");
+    for (const text of [session?.title, first?.text]) {
+      const tag = String(text || "").match(ORG_AGENT_TASK_TAG);
+      if (tag) return tag[1].toLowerCase();
+    }
+    return "";
+  }
+
+  function orgAgentTaskCompletionNote(branch, base, payload) {
+    const oid = String(payload?.mergeOid || "").slice(0, 7);
+    const message = String(payload?.message || "").trim();
+    return `Merged ${branch} into ${base}${oid ? ` (${oid})` : ""}.${message ? ` ${message}` : ""}`;
+  }
+
+  async function orgAgentCompleteTask(session, branchFacts, payload) {
+    const taskId = orgAgentTaskId(session);
+    if (!taskId) return "";
+    const base = String(payload?.base || branchFacts.base || "its base");
+    try {
+      await orgAgentRequest("POST", `/api/tasks/${taskId}/complete`, {
+        completionNote: orgAgentTaskCompletionNote(branchFacts.branch, base, payload),
+      });
+      return "Its task is marked done.";
+    } catch (_) {
+      return "Its task could not be marked done; complete it from Tasks.";
+    }
+  }
+
+  function orgAgentMergeErrorText(error) {
+    const payload = error?.payload && typeof error.payload === "object" ? error.payload : {};
+    if (error?.code === "merge_conflict") {
+      const conflicts = Array.isArray(payload.conflicts) ? payload.conflicts : [];
+      return `${String(payload.message || "The branch conflicts with its base, so nothing was merged.")}${conflicts.length ? ` Conflicts: ${conflicts.join(", ")}.` : ""}`;
+    }
+    return String(error?.message || "The request failed.");
+  }
+
+  function orgAgentPullDescription(session, branchFacts) {
+    const history = Array.isArray(session?.history) ? session.history : [];
+    const last = [...history].reverse().find((item) => String(item?.role || "") === "assistant" && String(item?.text || "").trim());
+    const where = branchFacts.runner ? `the ${branchFacts.runner} runner` : (session?.targetNode ? session.targetNode : "a ForkMesh node");
+    const opening = `Opened from the agent run on ${where} (${branchFacts.branch}).`;
+    const summary = String(last?.text || "").trim().slice(0, 4000);
+    return summary ? `${opening}\n\n${summary}` : opening;
+  }
+
+  async function orgAgentOpenPull(repo, session, branchFacts) {
+    const base = branchFacts.base || repoDefaultBranch(repo);
+    const title = String(session?.title || branchFacts.branch).trim().slice(0, 160) || branchFacts.branch;
+    let opened;
+    try {
+      opened = await submitWebPullOpen(repo, title, orgAgentPullDescription(session, branchFacts), base, branchFacts.branch);
+    } catch (error) {
+      const code = String(error?.message || "");
+      throw new Error(code === "no_changes"
+        ? `${branchFacts.branch} has no changes against ${base}, so there is nothing to open a pull request for.`
+        : code === "comparison_unavailable"
+          ? `${branchFacts.branch} is not on ForkMesh yet, so no pull request was opened.`
+          : code === "pull_too_large"
+            ? `${branchFacts.branch} is too large for a web pull request. Open it from a desktop.`
+            : `The pull request could not be opened (${code || "error"}).`);
+    }
+    const number = Number(opened?.number) || 0;
+    if (number <= 0) throw new Error("The pull request was sent but has no number yet. Refresh in a moment.");
+    const payload = await orgAgentRequest("POST", orgAgentEndpoint(repo, String(session.id || "")), { action: "link-pull", number });
+    return { number, message: String(payload?.message || `Opened pull request #${number}.`) };
+  }
+
+  async function runOrgAgentAction(repo, session, action) {
+    const sessionId = String(session?.id || "");
+    if (!sessionId || orgAgentOps.busy.has(action)) return;
+    const branchFacts = orgAgentBranchFacts(session);
+    if (action === "diff" || action === "diff-more") {
+      const diff = orgAgentOps.diff;
+      if (action === "diff" && diff.open && diff.id === sessionId) {
+        orgAgentOps.diff = { ...diff, open: false };
+        patchOrgAgentDetail(repo);
+        return;
+      }
+      if (action === "diff") {
+        orgAgentOps.diff = { id: sessionId, open: true, loading: true, loadingMore: false, error: "", data: null, patch: "", page: 0, pageCount: 0 };
+      } else {
+        if (diff.id !== sessionId || diff.loadingMore || diff.page + 1 >= diff.pageCount) return;
+        diff.loadingMore = true;
+      }
+      patchOrgAgentDetail(repo);
+      const current = orgAgentOps.diff;
+      try {
+        const page = action === "diff" ? 0 : current.page + 1;
+        const data = await orgAgentLoadDiffPage(repo, session, page);
+        current.data = data;
+        current.page = Number(data?.page) || page;
+        current.pageCount = Number(data?.pageCount) || 0;
+        current.patch = action === "diff" ? String(data?.committed || "") : `${current.patch}${String(data?.committed || "")}`;
+      } catch (error) {
+        if (action === "diff") current.error = String(error?.message || "The diff could not be read.");
+        else orgAgentSetNotice(String(error?.message || "The diff could not be read."), "error");
+      }
+      current.loading = false;
+      current.loadingMore = false;
+      if (orgAgentOps.diff === current) patchOrgAgentDetail(repo);
+      return;
+    }
+    if (!["stop", "continue", "merge", "cleanup", "update", "pull"].includes(action)) return;
+    if (action === "stop" && !window.confirm(`Stop “${session.title || "this agent"}”${branchFacts.runner ? ` on ${branchFacts.runner}` : ""}? Its work so far stays on ${branchFacts.branch || "its branch"}.`)) return;
+    orgAgentOps.busy.add(action);
+    orgAgentSetNotice("");
+    patchOrgAgentDetail(repo);
+    let landed = false;
+    try {
+      if (action === "stop") {
+        const payload = await orgAgentRequest("POST", orgAgentEndpoint(repo, sessionId), { action: "stop" });
+        orgAgentSetNotice(String(payload?.message || "Stop sent."));
+      } else if (action === "continue") {
+        const payload = await orgAgentRequest("POST", orgAgentEndpoint(repo, sessionId), { prompt: ORG_AGENT_CONTINUE_PROMPT });
+        orgAgentSetNotice(orgAgentSavedMessage(payload));
+      } else if (action === "pull") {
+        const opened = await orgAgentOpenPull(repo, session, branchFacts);
+        orgAgentSetNotice(opened.message);
+      } else if (action === "update") {
+        const payload = await orgAgentPostUntilDone(repo, sessionId, { action: "update", requestId: orgAgentRequestId() });
+        orgAgentSetNotice(String(payload?.message || `Updated ${branchFacts.branch} from ${payload?.base || branchFacts.base || "its base"}.`));
+      } else if (action === "merge") {
+        const payload = await orgAgentPostUntilDone(repo, sessionId, { action: "merge", cleanup: true, requestId: orgAgentRequestId() });
+        const merged = orgAgentMergeStatsText(branchFacts.branch, branchFacts.base, payload);
+        orgAgentSetNotice(merged);
+        orgAgentMergeActionsState(sessionId, true);
+        landed = true;
+        if (payload?.status === "merged") {
+          const task = await orgAgentCompleteTask(session, branchFacts, payload);
+          if (task) orgAgentSetNotice(`${merged} ${task}`);
+        }
+      } else {
+        const payload = await orgAgentPostUntilDone(repo, sessionId, { action: "cleanup", requestId: orgAgentRequestId() });
+        const pending = Array.isArray(payload?.cleanupPending) ? payload.cleanupPending : [];
+        orgAgentSetNotice(String(payload?.message || `Cleaned up ${branchFacts.branch}.${pending.length ? ` Still pending on ${pending.join(", ")}.` : ""}`));
+      }
+    } catch (error) {
+      orgAgentSetNotice(orgAgentMergeErrorText(error), "error");
+    } finally {
+      orgAgentOps.busy.delete(action);
+    }
+    if ((action === "merge" || action === "cleanup") && orgAgentOps.diff.id === sessionId) {
+      orgAgentOps.diff = { ...orgAgentOps.diff, open: false };
+    }
+    await refreshOrgAgentsLive();
+    patchOrgAgentDetail(repo);
+    if (landed) {
+      void orgAgentLoadMergeActions(repo, sessionId);
+    }
+  }
+
+  function orgAgentMergeActionsState(sessionId, reset = false) {
+    const current = orgAgentOps.actions;
+    if (current && current.id === sessionId && !reset) return current;
+    if (current?.timer) window.clearTimeout(current.timer);
+    orgAgentOps.actions = {
+      id: sessionId, phase: "idle", node: "", controlAvailable: false,
+      workflows: [], runs: [], sent: [], busy: new Set(), notice: "", tone: "ok",
+      polls: 0, timer: 0,
+    };
+    return orgAgentOps.actions;
+  }
+
+  function orgAgentMergeRuns(view, branchFacts) {
+    const base = branchFacts.merge.base || branchFacts.base || "";
+    const mergeOid = String(branchFacts.merge.mergeOid || "");
+    const mergedAt = Number(branchFacts.merge.mergedAt) || 0;
+    return view.runs.filter((run) => (mergeOid && run.commit === mergeOid)
+      || (base && run.ref === `refs/heads/${base}` && mergedAt && run.createdAt >= mergedAt)
+      || view.sent.includes(run.id));
+  }
+
+  function orgAgentMergeWorkflows(view, branchFacts) {
+    const runs = orgAgentMergeRuns(view, branchFacts);
+    const rows = view.workflows
+      .filter((workflow) => workflow.events.includes("push") || workflow.manual)
+      .map((workflow) => ({
+        workflow,
+        run: runs.find((run) => repoActionsRunMatchesWorkflow(run, workflow)) || null,
+      }));
+    runs.forEach((run) => {
+      if (!rows.some((row) => row.run === run || (row.workflow && repoActionsRunMatchesWorkflow(run, row.workflow)))) {
+        rows.push({ workflow: null, run });
+      }
+    });
+    return rows;
+  }
+
+  function orgAgentScheduleMergeActions(repo, view, delay = ORG_AGENT_ACTIONS_POLL_MS) {
+    if (view.timer) window.clearTimeout(view.timer);
+    view.timer = 0;
+    if (orgAgentOps.actions !== view || view.polls >= ORG_AGENT_ACTIONS_POLLS) return;
+    if (String(state.agentsView.selectedAgentId || "") !== view.id) return;
+    if (view.phase !== "ready") return;
+    const session = orgAgentSelectedSession();
+    if (!session) return;
+    const rows = orgAgentMergeWorkflows(view, orgAgentBranchFacts(session));
+    const waiting = rows.some((row) => !row.run && row.workflow?.events.includes("push"))
+      || rows.some((row) => row.run && repoActionsRunIsLive(row.run))
+      || view.busy.size > 0;
+    if (!waiting) return;
+    view.timer = window.setTimeout(() => {
+      view.timer = 0;
+      view.polls += 1;
+      void orgAgentLoadMergeActions(repo, view.id, { background: true });
+    }, delay);
+  }
+
+  async function orgAgentLoadMergeActions(repo, sessionId, { background = false } = {}) {
+    const view = orgAgentMergeActionsState(sessionId);
+    if (!background) {
+      view.polls = 0;
+      if (view.phase !== "ready") view.phase = "loading";
+      patchOrgAgentDetail(repo);
+    }
+    try {
+      const payload = await orgAgentRequest("GET", `${repoApiBase(repo)}/actions/runs`);
+      view.node = repoActionsCleanLine(payload?.node, 80);
+      view.controlAvailable = payload?.controlAvailable === true && Number(payload?.schemaVersion) === 2;
+      view.workflows = (Array.isArray(payload?.workflows) ? payload.workflows : [])
+        .map(normalizeRepoActionsWorkflow).filter(Boolean);
+      view.runs = (Array.isArray(payload?.runs) ? payload.runs : [])
+        .map(normalizeRepoActionsRun).filter(Boolean)
+        .sort((left, right) => (right.createdAt - left.createdAt) || (right.id - left.id));
+      const controls = (Array.isArray(payload?.controls) ? payload.controls : [])
+        .map(normalizeRepoActionsControl).filter(Boolean);
+      controls.forEach((control) => {
+        if (control.status === "applied" && control.runId && !view.sent.includes(control.runId)
+          && view.busy.has(control.requestId)) {
+          view.sent.push(control.runId);
+        }
+        if (view.busy.delete(control.requestId) && control.status !== "applied") {
+          view.notice = `The executor on ${view.node || "the mirror"} refused it: ${REPO_ACTIONS_CONTROL_REASONS[control.reason] || control.reason.replace(/_/g, " ") || "no reason given"}.`;
+          view.tone = "error";
+        }
+      });
+      view.phase = "ready";
+    } catch (error) {
+      if (!background || view.phase !== "ready") {
+        view.phase = error?.payload?.state === "unavailable" || Number(error?.status) === 404
+          ? "unavailable"
+          : Number(error?.status) === 403 ? "forbidden" : "error";
+      }
+    }
+    if (orgAgentOps.actions !== view) return;
+    patchOrgAgentDetail(repo);
+    orgAgentScheduleMergeActions(repo, view);
+  }
+
+  async function orgAgentMergeActionsControl(repo, sessionId, action, fields, label) {
+    const view = orgAgentMergeActionsState(sessionId);
+    if (!view.controlAvailable || !view.node) return;
+    const requestId = repoActionsRequestId();
+    view.busy.add(requestId);
+    view.notice = "";
+    patchOrgAgentDetail(repo);
+    try {
+      await orgAgentRequest("POST", `${repoApiBase(repo)}/actions/control`, {
+        requestId, action, node: view.node, ...fields,
+      });
+      view.notice = `${label}: sent to ${view.node}.`;
+      view.tone = "ok";
+    } catch (error) {
+      view.busy.delete(requestId);
+      const status = Number(error?.status) || 0;
+      view.notice = status === 403
+        ? `${label}: only the repository owner and organization writers can do that.`
+        : status === 503
+          ? `${label}: ${view.node} is not reachable right now.`
+          : `${label} could not be sent.`;
+      view.tone = "error";
+    }
+    if (orgAgentOps.actions !== view) return;
+    view.polls = 0;
+    patchOrgAgentDetail(repo);
+    orgAgentScheduleMergeActions(repo, view, 4000);
+  }
+
+  function renderOrgAgentMergeActions(repo, session, branchFacts, canManage) {
+    if (!branchFacts.merged) return "";
+    const view = orgAgentOps.actions?.id === String(session?.id || "") ? orgAgentOps.actions : null;
+    const base = branchFacts.merge.base || branchFacts.base || repoDefaultBranch(repo);
+    const small = (kind, icon, label, extra = "") => `<button type="button" data-org-agent-merge-action="${kind}"${extra} class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${escapeHtml(label)}</button>`;
+    const header = (buttons) => `
+      <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-foreground">
+        <i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions on <span class="font-mono">${escapeHtml(base)}</span>
+        <div class="ml-auto flex flex-wrap items-center gap-2 font-normal">${buttons}</div>
+      </div>`;
+    if (!view || view.phase === "idle") {
+      return `<div data-org-agent-merge-actions class="grid gap-2">${header(small("refresh", "workflow", "Show Actions"))}</div>`;
+    }
+    if (view.phase === "loading") {
+      return `<div data-org-agent-merge-actions class="grid gap-2">${header("")}<p class="text-xs text-muted-foreground">${loadingHtml("Asking the Actions executor…")}</p></div>`;
+    }
+    if (view.phase !== "ready") {
+      const message = {
+        unavailable: "No mirror runs Actions for this repository, so nothing runs after a merge.",
+        forbidden: "Workflow runs are shown to the repository owner and organization writers.",
+      }[view.phase] || "The Actions executor could not be reached.";
+      return `<div data-org-agent-merge-actions class="grid gap-2">${header(small("refresh", "refresh-cw", "Try again"))}<p class="text-xs text-muted-foreground">${escapeHtml(message)}</p></div>`;
+    }
+    const rows = orgAgentMergeWorkflows(view, branchFacts);
+    const control = view.controlAvailable && canManage;
+    const manual = rows.filter((row) => row.workflow?.manual && row.workflow.enabled && row.workflow.valid);
+    const list = rows.map(({ workflow, run }) => {
+      const meta = run ? pullCheckStateMeta(run.status) : null;
+      const path = workflow?.path || run?.workflowPath || "";
+      const status = run
+        ? `<span class="inline-flex items-center gap-1 ${meta.tone}"><i data-lucide="${meta.icon}" class="h-3.5 w-3.5${run.status === "running" ? " animate-spin" : ""}"></i>${escapeHtml(meta.label)}</span>`
+        : `<span class="text-muted-foreground">${workflow?.events.includes("push") ? (workflow.enabled ? "waiting for the merge to reach the executor" : "disabled") : "runs by hand"}</span>`;
+      const buttons = [];
+      if (control && run && run.status === "awaiting-approval") {
+        buttons.push(small("approve", "shield-check", "Approve", ` data-org-agent-run-id="${run.id}"`));
+      } else if (control && run && repoActionsRunIsLive(run)) {
+        buttons.push(small("cancel", "square", run.status === "running" ? "Stop" : "Cancel", ` data-org-agent-run-id="${run.id}"`));
+      } else if (control && run) {
+        buttons.push(small("rerun", "rotate-ccw", "Re-run", ` data-org-agent-run-id="${run.id}"`));
+      }
+      if (control && workflow?.manual && workflow.enabled && workflow.valid && !(run && repoActionsRunIsLive(run))) {
+        buttons.push(small("dispatch", "play", "Run", ` data-org-agent-workflow="${escapeHtml(workflow.path)}"`));
+      }
+      return `
+        <li data-org-agent-merge-workflow="${escapeHtml(path)}" class="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
+          <span class="min-w-0 flex-1 truncate font-medium text-foreground">${escapeHtml(workflow?.name || run?.workflow || path)}</span>
+          ${run ? `<span class="font-mono text-[10px] text-muted-foreground">run ${escapeHtml(String(run.id))}</span>` : ""}
+          ${status}
+          ${buttons.join("")}
+        </li>`;
+    }).join("");
+    const actions = [
+      control && manual.length > 1 ? small("dispatch-all", "play", "Run all") : "",
+      small("refresh", "refresh-cw", "Refresh"),
+      small("open", "external-link", "Open Actions"),
+    ].join("");
+    return `
+      <div data-org-agent-merge-actions class="grid gap-2">
+        ${header(actions)}
+        ${view.notice ? `<p class="text-xs ${view.tone === "error" ? "text-destructive" : "text-emerald-600"}">${escapeHtml(view.notice)}</p>` : ""}
+        ${rows.length
+          ? `<ul class="divide-y divide-border rounded-md border border-border bg-secondary/20 text-xs">${list}</ul>`
+          : '<p class="text-xs text-muted-foreground">This repository has no workflow that runs on a push or by hand.</p>'}
+        <p class="text-[11px] text-muted-foreground">Runs on <span class="font-mono">${escapeHtml(view.node || "the mirror")}</span>. Workflows that run on a push start by themselves once the merge reaches it${control ? "; Run and Re-run start one by itself." : "."}</p>
+      </div>`;
+  }
+
+  function runOrgAgentMergeAction(repo, session, button) {
+    const sessionId = String(session?.id || "");
+    const view = orgAgentOps.actions;
+    const kind = button.dataset.orgAgentMergeAction || "";
+    if (kind === "refresh") {
+      orgAgentMergeActionsState(sessionId);
+      void orgAgentLoadMergeActions(repo, sessionId);
+      return;
+    }
+    if (kind === "open") {
+      setRepoTab("actions");
+      return;
+    }
+    if (!view || view.id !== sessionId) return;
+    const branchFacts = orgAgentBranchFacts(session);
+    const base = branchFacts.merge.base || branchFacts.base || repoDefaultBranch(repo);
+    if (kind === "dispatch" || kind === "dispatch-all") {
+      const paths = kind === "dispatch"
+        ? [String(button.dataset.orgAgentWorkflow || "")]
+        : orgAgentMergeWorkflows(view, branchFacts)
+          .filter((row) => row.workflow?.manual && row.workflow.enabled && row.workflow.valid)
+          .map((row) => row.workflow.path);
+      paths.filter((path) => REPO_ACTIONS_WORKFLOW_PATH.test(path)).forEach((workflow) => {
+        void orgAgentMergeActionsControl(repo, sessionId, "dispatch",
+          { workflow, ref: `refs/heads/${base}` }, `Run ${workflow.split("/").pop()} on ${base}`);
+      });
+      return;
+    }
+    const runId = Number(button.dataset.orgAgentRunId) || 0;
+    const run = view.runs.find((entry) => entry.id === runId);
+    if (!run || !["rerun", "cancel", "approve"].includes(kind)) return;
+    if (kind === "approve" && !window.confirm(
+      `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.node}.`)) {
+      return;
+    }
+    const label = { rerun: `Re-run of ${run.workflow}`, cancel: `Stop run ${runId}`, approve: `Approve run ${runId}` }[kind];
+    void orgAgentMergeActionsControl(repo, sessionId, kind, { runId }, label);
+  }
+
+  function orgAgentProviderLabel(session) {
+    return session?.provider === "codex" ? "Codex" : "Claude Code";
+  }
+
+  const ORG_AGENT_SIGN_IN_SIGNS = Object.freeze([
+    "oauth session expired",
+    "oauth token has expired",
+    "could not be refreshed",
+    "login expired",
+    "failed to authenticate",
+    "please run /login",
+    "not logged in",
+    "login was not found",
+    "invalid api key",
+    "authentication_error",
+  ]);
+
+  function orgAgentNeedsRunnerSignIn(session, lastError, diagnostic) {
+    if (session?.provider === "local-llama") return false;
+    if (diagnostic?.code === "provider_credential_missing") return true;
+    if (!["failed", "rejected"].includes(String(session?.status || ""))) return false;
+    const text = `${diagnostic?.message || ""}\n${lastError || ""}`.toLowerCase();
+    return ORG_AGENT_SIGN_IN_SIGNS.some((sign) => text.includes(sign));
+  }
+
+  function orgAgentRunnerSignInUrl(session) {
+    const params = new URLSearchParams();
+    const runner = String(session?.targetNode || "").trim();
+    if (runner) params.set("runner", runner);
+    params.set("provider", session?.provider === "codex" ? "codex" : "claude-code");
+    return `/dashboard/runners?${params}`;
+  }
+
+  function orgAgentSignInLinkHtml(session) {
+    return `<a data-org-agent-runner-sign-in href="${escapeHtml(orgAgentRunnerSignInUrl(session))}" class="inline-flex w-fit items-center gap-1.5 font-semibold text-primary hover:underline"><i data-lucide="key-round" class="h-3.5 w-3.5"></i>Sign ${escapeHtml(orgAgentProviderLabel(session))} in again</a>`;
+  }
+
+  // The fields both renderers read off one session snapshot. agentInfo is the
+  // node's own report of the run, so it outranks what the web request asked
+  // for; the request is only the fallback for a job no node has claimed yet.
+  function orgAgentSessionFacts(session) {
+    const info = session?.agentInfo && typeof session.agentInfo === "object"
+      ? session.agentInfo
+      : {};
+    return {
+      id: String(session?.id || ""),
+      info,
+      title: String(session?.title || `${session?.provider || "Agent"} session`),
+      agentLabel: orgAgentProviderLabel(session),
+      modelLabel: info.model || session?.requestedModel || "Provider default",
+      permissionLabel: info.mode || "Node default",
+      reasoningEffort: info.strength || "Provider default",
+      branchName: String(session?.branchName || info.branchName || ""),
+      history: Array.isArray(session?.history) ? session.history : [],
+      promptable: orgAgentSessionPromptable(session),
+      finished: ORG_AGENT_FINISHED_STATUSES.has(String(session?.status || "")),
+      live: String(session?.status || "") === "running",
+      liveText: String(session?.status || "") === "running"
+        ? String(session?.live?.text || "")
+        : "",
+      liveAt: Number(session?.live?.at) || 0,
+    };
+  }
+
+  // A session that has finished is not over: the mirror keeps its branch and
+  // (for Claude Code) its conversation, and resumes both on the next prompt,
+  // exactly as the desktop app continues a Done session from its composer. So
+  // the composer stays under a completed or failed run as long as a node ever
+  // started it (localAgentId is the node's own handle on the run - without it
+  // there is nothing to resume, which is what the Worker checks too). Queued
+  // and running sessions were always promptable.
+  const ORG_AGENT_FINISHED_STATUSES = new Set(["completed", "failed"]);
+
+  function orgAgentSessionPromptable(session) {
+    const status = String(session?.status || "");
+    if (["running", "queued"].includes(status)) return true;
+    return ORG_AGENT_FINISHED_STATUSES.has(status)
+      && Number(session?.localAgentId) > 0;
+  }
+
+  function orgAgentSessionTooltip(facts) {
+    return `Agent: ${facts.agentLabel} · Permission: ${facts.permissionLabel} · Reasoning effort: ${facts.reasoningEffort}`;
+  }
+
+  // ``compact`` is the icon-only control the narrow session column carries -
+  // a bordered "Delete" button costs a third of that column's width, and the
+  // desktop keeps its row controls to glyphs for the same reason.
+  function orgAgentDeleteButtonHtml(facts, compact = false) {
+    if (!state.agentsView.canDeleteSessions) return "";
+    if (compact) {
+      return `<button type="button" data-org-agent-delete="${escapeHtml(facts.id)}" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete ${escapeHtml(facts.title)}" title="Delete this agent session"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>`;
+    }
+    return `<button type="button" data-org-agent-delete="${escapeHtml(facts.id)}" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-destructive/50 px-2 text-[11px] font-semibold text-destructive hover:bg-destructive/10" aria-label="Delete ${escapeHtml(facts.title)}" title="Delete this agent session"><i data-lucide="trash-2" class="h-3 w-3"></i>Delete</button>`;
+  }
+
+  // A timestamp the session may simply not have yet (completedAt is 0 until a
+  // run finishes). Zero is not the epoch here, it is "never" - rendering it as
+  // a date would date every queued session to 1970.
+  function orgAgentClockHtml(value) {
+    const date = Number(value) > 0 ? parseFlexibleDate(value) : null;
+    if (!date) return "";
+    return `<time datetime="${escapeHtml(date.toISOString())}" title="${escapeHtml(date.toLocaleString())}">${escapeHtml(formatTimeAgo(value))}</time>`;
+  }
+
+  // Agent runs last minutes, and formatServeSpeed - built for request latency -
+  // would call a twelve-minute run "720.0 s". Spell it the way the desktop
+  // detail table does.
+  function orgAgentRuntimeText(ms) {
+    const value = Number(ms);
+    if (!Number.isFinite(value) || value <= 0) return "";
+    const seconds = Math.round(value / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
+    return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+  }
+
+  function orgAgentTokenSummary(info) {
+    const prompt = Number(info.promptTokens) || 0;
+    const completion = Number(info.completionTokens) || 0;
+    const total = Number(info.totalTokens) || prompt + completion;
+    if (!total) return "";
+    const parts = [`${formatCount(total)} total`];
+    if (prompt) parts.push(`${formatCount(prompt)} in`);
+    if (completion) parts.push(`${formatCount(completion)} out`);
+    return escapeHtml(parts.join(" · "));
+  }
+
+  // How much of the model's window this conversation is carrying - the figure
+  // that decides whether the next follow-up still fits.
+  function orgAgentContextSummary(info) {
+    const used = Number(info.contextTokens) || 0;
+    const limit = Number(info.contextWindow) || 0;
+    if (!used && !limit) return "";
+    if (!limit) return escapeHtml(`${formatCount(used)} tokens`);
+    const percent = Math.min(100, Math.round((used / limit) * 100));
+    return escapeHtml(`${formatCount(used)} / ${formatCount(limit)} (${percent}%)`);
+  }
+
+  function orgAgentDiagnosticTone(level) {
+    const value = String(level || "").toLowerCase();
+    if (value === "attention") {
+      return { icon: "triangle-alert", box: "border-amber-500/40 bg-amber-500/10", mark: "text-amber-500" };
+    }
+    if (value === "ok") {
+      return { icon: "circle-check", box: "border-primary/40 bg-primary/10", mark: "text-primary" };
+    }
+    if (value === "active") {
+      return { icon: "loader", box: "border-border bg-secondary/40", mark: "text-yellow-500" };
+    }
+    return { icon: "clock", box: "border-border bg-secondary/30", mark: "text-muted-foreground" };
+  }
+
+  function orgAgentMetaRow(label, valueHtml) {
+    if (!valueHtml) return "";
+    return `<div class="grid min-w-0 gap-0.5">
+        <dt class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">${escapeHtml(label)}</dt>
+        <dd class="min-w-0 break-words text-xs text-foreground">${valueHtml}</dd>
+      </div>`;
+  }
+
+  // Transcript speakers. The relay only ever stores three roles on an org agent
+  // session (the queued prompt, the node's report, and a node's refusal), but
+  // an unknown one still gets a caption rather than being dropped.
+  const ORG_AGENT_TRANSCRIPT_ROLES = Object.freeze({
+    user: { label: "prompt", icon: "user" },
+    assistant: { label: "agent", icon: "bot" },
+    security: { label: "refused", icon: "shield-alert" },
+  });
+
+  const ORG_AGENT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+  const orgAgentImageUrls = new Map();
+
+  function orgAgentAttachmentsHtml(repo, session, item) {
+    const attachments = (Array.isArray(item?.attachments) ? item.attachments : [])
+      .filter((attachment) => /^[0-9a-f]{32}$/.test(String(attachment?.id || "")));
+    const sessionId = String(session?.id || "");
+    if (!attachments.length || !repo?.owner || !repo?.name || !sessionId) return "";
+    const base = `${orgAgentEndpoint(repo, sessionId)}/attachments/`;
+    return `<ul data-org-agent-attachments class="flex flex-wrap gap-2">${attachments.map((attachment) => {
+      const name = String(attachment.name || "Image");
+      const size = Number(attachment.size) > 0 ? formatSize(Number(attachment.size)) : "";
+      return `<li>
+          <button type="button" data-org-agent-attachment="${escapeHtml(base + attachment.id)}" data-org-agent-attachment-name="${escapeHtml(name)}" data-org-agent-attachment-type="${escapeHtml(String(attachment.mediaType || ""))}" class="grid w-32 gap-1 rounded-md border border-border bg-secondary/40 p-1 text-left hover:bg-secondary" title="${escapeHtml(name)}${size ? ` · ${escapeHtml(size)}` : ""}" aria-label="Open ${escapeHtml(name)}">
+            <span data-org-agent-attachment-preview class="flex h-20 items-center justify-center overflow-hidden rounded bg-background px-1 text-center text-[10px] leading-4 text-muted-foreground"><i data-lucide="image" class="h-5 w-5"></i></span>
+            <span class="truncate text-[10px] text-muted-foreground">${escapeHtml(name)}${size ? ` · ${escapeHtml(size)}` : ""}</span>
+          </button>
+        </li>`;
+    }).join("")}</ul>`;
+  }
+
+  function orgAgentImageRefusal(status) {
+    if (status === 403) return "Only the member who attached it can open it.";
+    if (status === 404) return "This relay does not keep prompt images.";
+    if (status === 410) return "Kept for a week; no longer stored.";
+    return "Could not load this image.";
+  }
+
+  async function orgAgentImageUrl(path, mediaType) {
+    if (orgAgentImageUrls.has(path)) return orgAgentImageUrls.get(path);
+    const token = state.session?.sessionToken || "";
+    const pending = fetch(path, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: token && token !== "cookie" ? { authorization: `Bearer ${token}` } : {},
+    }).then(async (response) => {
+      if (!response.ok) {
+        throw Object.assign(new Error(orgAgentImageRefusal(response.status)), {
+          permanent: [403, 404, 410].includes(response.status),
+        });
+      }
+      const type = ORG_AGENT_IMAGE_TYPES.has(mediaType) ? mediaType : "image/jpeg";
+      return URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }));
+    });
+    orgAgentImageUrls.set(path, pending);
+    pending.catch((error) => {
+      if (!error?.permanent) orgAgentImageUrls.delete(path);
+    });
+    while (orgAgentImageUrls.size > 40) {
+      const oldest = orgAgentImageUrls.keys().next().value;
+      void orgAgentImageUrls.get(oldest).then((url) => URL.revokeObjectURL(url), () => {});
+      orgAgentImageUrls.delete(oldest);
+    }
+    return pending;
+  }
+
+  function openOrgAgentImage(src, name) {
+    let dialog = document.querySelector("[data-org-agent-image-viewer]");
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.dataset.orgAgentImageViewer = "true";
+      dialog.className = "rounded-lg border border-border bg-popover p-3 text-popover-foreground";
+      dialog.style.cssText = "width:min(72rem,calc(100vw - 2rem));max-width:none;max-height:calc(100vh - 2rem);overflow:auto;";
+      dialog.innerHTML = `<header class="mb-3 flex items-center justify-between gap-3"><strong data-org-agent-image-viewer-name class="min-w-0 truncate text-sm text-foreground"></strong><button type="button" data-org-agent-image-viewer-close class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">Close</button></header><img data-org-agent-image-viewer-image alt="" style="display:block;max-width:100%;max-height:calc(100vh - 7rem);margin:0 auto;object-fit:contain;" />`;
+      dialog.querySelector("[data-org-agent-image-viewer-close]").addEventListener("click", () => dialog.close());
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+      document.body.append(dialog);
+    }
+    dialog.querySelector("[data-org-agent-image-viewer-name]").textContent = name;
+    const image = dialog.querySelector("[data-org-agent-image-viewer-image]");
+    image.src = src;
+    image.alt = name;
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function hydrateOrgAgentAttachments(root) {
+    root?.querySelectorAll?.("[data-org-agent-attachment]").forEach((button) => {
+      const path = button.dataset.orgAgentAttachment;
+      const name = button.dataset.orgAgentAttachmentName || "Image";
+      const preview = button.querySelector("[data-org-agent-attachment-preview]");
+      if (!path || !preview) return;
+      const loaded = orgAgentImageUrl(path, button.dataset.orgAgentAttachmentType || "");
+      button.addEventListener("click", () => {
+        void loaded.then((url) => openOrgAgentImage(url, name), () => {});
+      });
+      void loaded.then((url) => {
+        if (!preview.isConnected) return;
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = name;
+        image.className = "h-full w-full object-cover";
+        preview.replaceChildren(image);
+      }).catch((error) => {
+        if (!preview.isConnected) return;
+        preview.textContent = error?.message || orgAgentImageRefusal(0);
+        button.disabled = true;
+        button.classList.remove("hover:bg-secondary");
+      });
+    });
+  }
+
+  function renderOrgAgentTranscriptEntry(session, item, repo = null, streaming = false) {
+    const role = String(item?.role || "").toLowerCase();
+    const kind = ORG_AGENT_TRANSCRIPT_ROLES[role]
+      || { label: role || "event", icon: "circle-dot" };
+    const speaker = role === "user"
+      ? `@${String(item?.author || session?.createdBy || "member")}`
+      : role === "assistant"
+        ? orgAgentProviderLabel(session)
+        : String(item?.author || "ForkMesh");
+    const text = String(item?.text || "");
+    const clock = orgAgentClockHtml(item?.at);
+    return `
+      <li${streaming ? " data-org-agent-live-entry" : ""} class="grid gap-1.5 rounded-md border ${streaming ? "border-yellow-500/40" : "border-border"} bg-background p-3">
+        <div class="flex flex-wrap items-center gap-2 text-[11px]">
+          <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-secondary"><i data-lucide="${kind.icon}" class="h-3 w-3 text-muted-foreground"></i></span>
+          <span class="font-semibold text-foreground">${escapeHtml(speaker)}</span>
+          <span class="uppercase tracking-wide text-muted-foreground">${escapeHtml(kind.label)}</span>
+          ${streaming ? '<span class="inline-flex items-center gap-1.5 rounded-full border border-yellow-500/40 px-1.5 py-0.5 font-mono text-yellow-500"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-500"></span>streaming</span>' : ""}
+          ${item?.state ? `<span class="rounded-full border border-border px-1.5 py-0.5 font-mono ${repoAgentStatusTone(item.state)}">${escapeHtml(item.state)}</span>` : ""}
+          ${clock ? `<span class="ml-auto text-muted-foreground">${clock}</span>` : ""}
+        </div>
+        ${text ? (role === "assistant"
+          ? `<div data-org-agent-markdown class="min-w-0 break-words text-xs leading-5 text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">${renderRecordMarkdown(text, repo)}</div>`
+          : `<p class="whitespace-pre-wrap break-words text-xs leading-5 text-foreground">${escapeHtml(text)}</p>`) : ""}
+        ${orgAgentAttachmentsHtml(repo, session, item)}
+      </li>`;
+  }
+
+  // Summary row in the left-hand session column. Everything here is repeated on
+  // the detail pane - this half is the scannable one: what the session is,
+  // where it runs, and the tail of its transcript, so a finished run says how
+  // it finished without being opened. It is written for a ~20rem column (the
+  // desktop app's agent list is the same shape): one identity line, one line of
+  // metadata, and the open session keeps a marked row while its detail fills
+  // the pane beside it.
+  function renderOrgAgentSession(session) {
+    const facts = orgAgentSessionFacts(session);
+    const last = facts.history[facts.history.length - 1];
+    const preview = facts.liveText
+      ? facts.liveText.replace(/\s+/g, " ").trim().slice(-240)
+      : String(last?.text || "").replace(/\s+/g, " ").trim();
+    const info = facts.info;
+    const selected = facts.id !== "" &&
+      String(state.agentsView.selectedAgentId || "") === facts.id;
+    return `
+      <article data-org-agent-session="${escapeHtml(facts.id)}"${selected ? " data-org-agent-session-selected" : ""} class="relative border-b border-border ${selected ? "bg-secondary" : "transition-colors hover:bg-secondary/40"}" title="${escapeHtml(orgAgentSessionTooltip(facts))}">
+        ${selected ? '<span aria-hidden="true" class="absolute inset-y-0 left-0 w-0.5 bg-primary"></span>' : ""}
+        <div class="flex items-start gap-2 px-3 py-2.5">
+          <button type="button" data-org-agent-open="${escapeHtml(facts.id)}" class="grid min-w-0 flex-1 gap-1 text-left"${selected ? ' aria-current="true"' : ""} aria-label="Open the ${escapeHtml(facts.title)} agent session">
+            <div class="flex min-w-0 items-center gap-1.5">
+              <span aria-hidden="true" class="inline-block h-1.5 w-1.5 shrink-0 rounded-full ${orgAgentStatusDotClass(session.status)}${facts.live ? " animate-pulse" : ""}"></span>
+              <strong class="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">${escapeHtml(facts.title)}</strong>
+              ${Number(session.updatedAt) > 0 ? `<span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">${escapeHtml(formatTimeAgo(session.updatedAt))}</span>` : ""}
+            </div>
+            <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+              <span class="font-mono ${repoAgentStatusTone(session.status)}">${escapeHtml(session.status || "unknown")}</span>
+              <span class="min-w-0 truncate font-mono">${escapeHtml(facts.agentLabel)} · ${escapeHtml(facts.modelLabel)}</span>
+              <span class="min-w-0 truncate">mirror ${escapeHtml(session.targetNode || "pending")}</span>
+              ${Number(info.numTurns) > 0 ? `<span>${escapeHtml(formatCount(info.numTurns))} turns</span>` : ""}
+            </div>
+            ${preview ? `<p class="line-clamp-2 text-[10px] leading-4 text-muted-foreground">${escapeHtml(preview.slice(0, 240))}</p>` : ""}
+          </button>
+          ${orgAgentDeleteButtonHtml(facts, true)}
+        </div>
+      </article>`;
+  }
+
+  function renderOrgAgentSessionDetail(session, repo) {
+    const facts = orgAgentSessionFacts(session);
+    const info = facts.info;
+    const security = session?.security && typeof session.security === "object"
+      ? session.security : {};
+    const diagnostic = session?.diagnostic && typeof session.diagnostic === "object"
+      ? session.diagnostic : {};
+    const availability = session?.availability && typeof session.availability === "object"
+      ? session.availability : {};
+    const tone = orgAgentDiagnosticTone(diagnostic.level);
+    // A repository link is only addressable when the page knows the repository
+    // this session belongs to; without it the numbers stay plain text.
+    const canLink = Boolean(repo?.owner && repo?.name);
+    const issueNumber = Number(session.issueNumber) || Number(info.issueNumber) || 0;
+    const baseBranch = info.baseBranch || info.baseRef || "";
+    // The agent's branch is readable in the web diff viewer as soon as the node
+    // names it, whether or not a pull request was opened: the compare page
+    // shows base...branch the way the desktop's own diff view does.
+    const compareUrl = canLink && facts.branchName
+      ? repoCompareUrl(repo, baseBranch || repoDefaultBranch(repo), facts.branchName)
+      : "";
+    const lastError = String(session.lastError || info.lastError || "").trim();
+    // A failed run's diagnostic is built from lastError: show that text once,
+    // in the red error box, not again as an amber note above it.
+    const diagnosticText = String(diagnostic.message || "").trim();
+    const showDiagnostic = Boolean(diagnosticText) && diagnosticText !== lastError;
+    // The availability note repeats the diagnostic whenever the diagnostic was
+    // derived from it, so only add it when it carries something else.
+    const availabilityNote = String(availability.message || "").trim();
+    const signInLink = orgAgentNeedsRunnerSignIn(session, lastError, diagnostic)
+      ? orgAgentSignInLinkHtml(session) : "";
+    const branchFacts = orgAgentBranchFacts(session);
+    const prNumber = branchFacts.prNumber;
+    const diffOpen = orgAgentOps.diff.open && orgAgentOps.diff.id === facts.id;
+    const canManage = state.agentsView.canDeleteSessions !== false;
+    const opsActions = [
+      branchFacts.branch ? orgAgentOpsButton("diff", "git-compare-arrows", diffOpen ? "Transcript" : "Diff", { title: diffOpen ? "Back to the transcript" : "Show this agent's changes against its base" }) : "",
+      branchFacts.active && canManage ? orgAgentOpsButton("stop", "square", "Stop", { tone: "danger" }) : "",
+      branchFacts.canContinue && canManage ? orgAgentOpsButton("continue", "play", "Continue", { title: "Resume this agent where it left off" }) : "",
+      branchFacts.canMerge && canManage ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : "Merge the branch into its base on ForkMesh, then remove the branch" }) : "",
+      branchFacts.canMerge && canManage && !branchFacts.merging && branchFacts.branch ? orgAgentOpsButton("update", "git-pull-request-arrow", `Update from ${branchFacts.base || repoDefaultBranch(repo)}`, { title: `Merge ${branchFacts.base || repoDefaultBranch(repo)} into ${branchFacts.branch} on ForkMesh` }) : "",
+      branchFacts.canCleanup && canManage ? orgAgentOpsButton("cleanup", "eraser", "Clean up", { title: "Remove the merged branch" }) : "",
+      prNumber > 0 && canLink ? `<a data-org-agent-pull href="${escapeHtml(repoRecordUrl(repo, "pulls", prNumber))}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary" title="Open pull request #${prNumber}"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>PR #${prNumber}</a>` : "",
+      branchFacts.canOpenPull && canManage && canLink ? orgAgentOpsButton("pull", "git-pull-request", "Create PR", { title: `Open a pull request from ${branchFacts.branch} into ${branchFacts.base || repoDefaultBranch(repo)}` }) : "",
+    ].join("");
+    const meta = [
+      orgAgentMetaRow("Agent", escapeHtml(facts.agentLabel)),
+      orgAgentMetaRow("Model", escapeHtml(facts.modelLabel)),
+      orgAgentMetaRow("Mode", escapeHtml(facts.permissionLabel)),
+      orgAgentMetaRow("Reasoning", escapeHtml(facts.reasoningEffort)),
+      orgAgentMetaRow(branchFacts.runner ? "Runner" : "Mirror", `<span class="font-mono">${escapeHtml(branchFacts.runner || session.targetNode || "pending")}</span>`),
+      orgAgentMetaRow("Changes", orgAgentStatsHtml(branchFacts)),
+      orgAgentMetaRow("Merge", branchFacts.merging ? '<span class="text-amber-500">Merging…</span>' : branchFacts.merged ? `Merged into <span class="font-mono">${escapeHtml(branchFacts.merge.base || branchFacts.base || "base")}</span>${branchFacts.merge.branchDeleted ? " · branch removed" : ""}${branchFacts.pending.length ? ` · clean up pending on ${escapeHtml(branchFacts.pending.join(", "))}` : ""}` : (branchFacts.merge.state === "conflict" ? '<span class="text-destructive">Conflicts with the base</span>' : "")),
+      orgAgentMetaRow("Started by", `@${escapeHtml(session.createdBy || "member")}`),
+      orgAgentMetaRow(
+        "Branch",
+        facts.branchName
+          ? (compareUrl
+            ? `<a data-org-agent-branch-link class="font-mono font-medium text-primary hover:underline" href="${escapeHtml(compareUrl)}" title="View this branch's changes in the diff viewer">${escapeHtml(facts.branchName)}</a>`
+            : `<span class="font-mono">${escapeHtml(facts.branchName)}</span>`)
+          : "",
+      ),
+      orgAgentMetaRow("Base", baseBranch ? `<span class="font-mono">${escapeHtml(baseBranch)}</span>` : ""),
+      orgAgentMetaRow(
+        "PR",
+        prNumber > 0
+          ? `${canLink ? `<a class="font-medium text-primary hover:underline" href="${escapeHtml(repoRecordUrl(repo, "pulls", prNumber))}">#${prNumber}</a>` : `#${prNumber}`}${branchFacts.merged ? " · branch merged" : ""}`
+          : ((session.createPr || info.createPr) && !branchFacts.runner && branchFacts.active ? "Opens on finish" : "None"),
+      ),
+      orgAgentMetaRow(
+        "Issue",
+        issueNumber > 0
+          ? (canLink
+            ? `<a class="font-medium text-primary hover:underline" href="${escapeHtml(repoRecordUrl(repo, "issues", issueNumber))}">#${issueNumber}</a>`
+            : `#${issueNumber}`)
+          : "",
+      ),
+      orgAgentMetaRow("Task", session.taskKey ? `<span class="font-mono">${escapeHtml(session.taskKey)}</span>` : ""),
+      orgAgentMetaRow("Turns", Number(info.numTurns) > 0 ? escapeHtml(formatCount(info.numTurns)) : ""),
+      orgAgentMetaRow("Runtime", escapeHtml(orgAgentRuntimeText(info.durationMs))),
+      orgAgentMetaRow("Cost", Number(info.costUsd) > 0 ? escapeHtml(formatUsd(info.costUsd)) : ""),
+      orgAgentMetaRow("Tokens", orgAgentTokenSummary(info)),
+      orgAgentMetaRow("Context", orgAgentContextSummary(info)),
+      orgAgentMetaRow("Started", orgAgentClockHtml(session.createdAt)),
+      orgAgentMetaRow("Updated", orgAgentClockHtml(session.updatedAt)),
+      orgAgentMetaRow("Completed", orgAgentClockHtml(session.completedAt)),
+      orgAgentMetaRow("Session", `<span class="font-mono">${escapeHtml(facts.id.slice(0, 12) || "pending")}</span>`),
+    ].join("");
+    const liveEntry = facts.liveText
+      ? renderOrgAgentTranscriptEntry(
+        session, { role: "assistant", text: facts.liveText, at: facts.liveAt }, repo, true)
+      : "";
+    const transcript = facts.history.length || liveEntry
+      ? `<ol data-org-agent-transcript class="grid gap-2">${facts.history
+          .map((item) => renderOrgAgentTranscriptEntry(session, item, repo)).join("")}${liveEntry}</ol>`
+      : `<p data-org-agent-transcript class="px-3 py-6 text-center text-xs text-muted-foreground">Waiting for the mirror.</p>`;
+    return `
+      <section data-org-agent-detail="${escapeHtml(facts.id)}" class="flex min-h-0 flex-1 flex-col" title="${escapeHtml(orgAgentSessionTooltip(facts))}">
+        <div data-org-agent-detail-head class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+          <button type="button" data-org-agent-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to sessions</button>
+          <span class="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] ${repoAgentStatusTone(session.status)}">${escapeHtml(session.status || "unknown")}</span>
+          ${branchFacts.runner ? `<span data-org-agent-runner class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"><i data-lucide="server" class="h-3 w-3"></i>Runner · ${escapeHtml(branchFacts.runner)}</span>` : ""}
+          ${facts.live ? '<span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-yellow-500"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-500"></span>live</span>' : ""}
+          <div class="ml-auto flex flex-wrap items-center gap-2">
+            ${opsActions}
+            ${compareUrl && !branchFacts.branch ? `<a data-org-agent-compare href="${escapeHtml(compareUrl)}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary" title="View ${escapeHtml(facts.branchName)} against ${escapeHtml(baseBranch || repoDefaultBranch(repo))} in the diff viewer"><i data-lucide="git-compare-arrows" class="h-3.5 w-3.5"></i>View diff</a>` : ""}
+            <button type="button" data-org-agent-session-refresh class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-secondary"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
+            ${orgAgentDeleteButtonHtml(facts)}
+          </div>
+        </div>
+        <div data-org-agent-detail-body class="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-4">
+          <header class="grid gap-1">
+            <span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(facts.agentLabel)} · ${escapeHtml(facts.modelLabel)}</span>
+            <h3 class="text-base font-semibold leading-tight text-foreground">${escapeHtml(facts.title)}</h3>
+            ${branchFacts.branch ? `<span data-org-agent-branch class="font-mono text-[11px] text-muted-foreground">${escapeHtml(branchFacts.branch)} → ${escapeHtml(branchFacts.base || repoDefaultBranch(repo))}${branchFacts.stats.known === true ? ` · ${orgAgentStatsHtml(branchFacts)}` : ""}</span>` : ""}
+          </header>
+          ${orgAgentOps.notice ? `<p data-org-agent-ops-notice class="text-xs ${orgAgentOps.tone === "error" ? "text-destructive" : "text-emerald-600"}">${escapeHtml(orgAgentOps.notice)}</p>` : ""}
+          ${showDiagnostic ? `
+            <div data-org-agent-diagnostic class="flex items-start gap-2 rounded-md border ${tone.box} px-3 py-2 text-xs leading-5 text-foreground">
+              <i data-lucide="${tone.icon}" class="mt-0.5 h-3.5 w-3.5 shrink-0 ${tone.mark}"></i>
+              <span class="grid gap-1">
+                <span>${escapeHtml(diagnostic.message)}</span>
+                ${availabilityNote && availabilityNote !== String(diagnostic.message) ? `<span class="text-muted-foreground">${escapeHtml(availabilityNote)}</span>` : ""}
+                ${lastError ? "" : signInLink}
+              </span>
+            </div>` : ""}
+          ${lastError ? `
+            <div class="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
+              <i data-lucide="octagon-alert" class="mt-0.5 h-3.5 w-3.5 shrink-0"></i>
+              <span class="grid min-w-0 gap-1">
+                <span class="break-words">${escapeHtml(lastError)}</span>
+                ${signInLink}
+              </span>
+            </div>` : ""}
+          ${!lastError && !showDiagnostic && signInLink ? `<p class="text-xs">${signInLink}</p>` : ""}
+          <div class="grid gap-2">
+            <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-foreground">
+              <i data-lucide="${diffOpen ? "git-compare-arrows" : "messages-square"}" class="h-3.5 w-3.5 text-muted-foreground"></i>${diffOpen ? "Changes" : "Transcript"}
+              ${diffOpen ? "" : `<span class="font-normal text-muted-foreground">${escapeHtml(formatCount(facts.history.length))} ${facts.history.length === 1 ? "entry" : "entries"}</span>`}
+            </div>
+            ${diffOpen ? renderOrgAgentRunnerDiff(branchFacts) : transcript}
+          </div>
+          ${renderOrgAgentMergeActions(repo, session, branchFacts, canManage)}
+          ${branchFacts.merged ? renderUserActivityCard() : ""}
+          <div class="grid gap-2">
+            <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-foreground">
+              <i data-lucide="info" class="h-3.5 w-3.5 text-muted-foreground"></i>Details
+            </div>
+            <dl data-org-agent-meta class="grid grid-cols-2 gap-3 rounded-md border border-border bg-secondary/20 p-3 sm:grid-cols-3">${meta}</dl>
+            ${security.reason ? `<p class="text-[11px] leading-4 text-muted-foreground">Node: ${escapeHtml(security.reason)}</p>` : ""}
+          </div>
+        </div>
+        <div data-org-agent-detail-foot class="border-t border-border bg-secondary/20 px-4 py-3">
+          ${facts.promptable ? `
+            <form data-org-agent-followup="${escapeHtml(facts.id)}"${facts.finished ? " data-org-agent-followup-resumes" : ""} class="grid gap-2">
+              <textarea name="prompt" required maxlength="8000" rows="2" class="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs text-foreground" placeholder="${facts.finished ? "Continue this session…" : "Revise or send another prompt…"}"></textarea>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="submit" class="h-8 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90">Send</button>
+                <span data-org-agent-hint class="text-[11px] ${state.agentsView.notice ? "text-emerald-600" : "text-muted-foreground"}">${escapeHtml(state.agentsView.notice || (facts.finished ? "The mirror resumes this session on its branch with your message. Enter sends; Shift+Enter adds a line." : "Enter sends; Shift+Enter adds a line."))}</span>
+              </div>
+            </form>`
+          : `<p class="text-[11px] text-muted-foreground">${facts.finished ? "This session never started on a node, so there is nothing to resume." : "This session is no longer accepting prompts."}</p>`}
+        </div>
+      </section>`;
+  }
+
+  // With no session open the pane keeps the same shape - description above, a
+  // prompt box along its bottom edge - so "start an agent" and "follow up on
+  // this agent" are the same gesture in the same place, the way the desktop's
+  // composer stays put under whichever session is selected.
+  function renderOrgAgentStartPane() {
+    const ownerScope = state.agentsView.ownerScope === true;
+    const notice = state.agentsView.notice || "";
+    const accessReason = state.agentsView.accessReason || "";
+    const sessionCount = Array.isArray(state.agentsView.agents)
+      ? state.agentsView.agents.length : 0;
+    return `
+      <section data-org-agent-start-pane class="flex min-h-0 flex-1 flex-col">
+        <div class="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto px-4 py-4">
+          <div class="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <i data-lucide="bot" class="h-4 w-4 text-muted-foreground"></i>Start an agent
+          </div>
+          <p class="max-w-2xl text-xs leading-5 text-muted-foreground">${ownerScope ? "Start work on any agent-capable repository node owned by your account, including an offline desktop that can claim the durable request after it reconnects." : "Organization owners can save agent work for their linked desktop even while it is offline. Authorized Engineering members may also use eligible mirrors."} Prompts start as soon as the selected node claims them. Web-started runs create a pull request when they finish with changes.</p>
+          <p class="text-[11px] text-muted-foreground">${sessionCount ? "Pick a session on the left to read its transcript and send it a follow-up." : "Sessions you start appear in the list on the left."}</p>
+          ${!state.agentsView.canViewSessions && state.agentsView.canQueueAgent ? `
+            <p class="text-xs text-muted-foreground">${escapeHtml(accessReason || "Session transcripts are not available with your current access.")}</p>` : ""}
+        </div>
+        <div class="border-t border-border bg-secondary/20 px-4 py-3">
+          ${state.agentsView.canQueueAgent ? `
+            <form data-org-agent-start class="grid gap-2">
+              <textarea name="prompt" required maxlength="8000" rows="3" class="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs text-foreground" placeholder="Describe the repository task…"></textarea>
+              <input name="taskKey" maxlength="96" pattern="(?:task:[a-z0-9-]{1,48}|issue:[a-z0-9-]{1,40}/[a-z0-9._-]{1,60}#[1-9][0-9]{0,8})" class="h-9 rounded-md border border-input bg-background px-3 font-mono text-xs text-foreground" placeholder="Optional tracked board key, e.g. task:codex-world" />
+              <input data-org-agent-provider name="provider" type="hidden" value="" />
+              <input data-org-agent-model name="model" type="hidden" value="" />
+              <div class="grid gap-2 sm:grid-cols-2">
+                <label class="grid gap-1 text-[11px] font-medium text-foreground">Agent and model<select data-org-agent-agent-model required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select></label>
+                <label class="grid gap-1 text-[11px] font-medium text-foreground">Run on<select data-org-agent-target name="targetNode" required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select></label>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button data-org-agent-start-button type="submit" class="h-9 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50">Start agent</button>
+                <span data-org-agent-hint class="text-[11px] ${notice ? "text-emerald-600" : "text-muted-foreground"}">${escapeHtml(notice || "The request is durable while the linked desktop is offline; it starts as soon as the node claims it.")}</span>
+              </div>
+            </form>` : `
+            <div class="grid gap-1 text-xs text-muted-foreground">
+              <strong class="text-foreground">Agent queue access is unavailable</strong>
+              <span>${escapeHtml(accessReason || "You do not have permission to queue an agent for this repository.")}</span>
+            </div>`}
+        </div>
+      </section>`;
+  }
+
+  const ORG_AGENT_ERROR_MESSAGES = Object.freeze({
+    invalid_session: "Your session is no longer valid. Sign in again.",
+    forbidden: "You do not have permission to access these agent sessions.",
+    engineering_team_required:
+      "Engineering team membership is required to view these agent sessions.",
+    org_owner_required:
+      "Organization owner access is required to queue work for this desktop.",
+    repository_not_linked:
+      "This repository is not linked to the organization.",
+    repository_not_published:
+      "The linked desktop has not published this repository yet.",
+    target_not_owned:
+      "The selected desktop is not owned by this organization owner.",
+    target_not_desktop:
+      "The selected target is not a desktop runtime.",
+    provider_not_advertised:
+      "The linked desktop has not advertised this agent provider.",
+    preferred_target_ineligible:
+      "The selected desktop is not eligible for this agent request.",
+    no_online_agent_mirror:
+      "No eligible online agent mirror is available.",
+    no_eligible_agent_node:
+      "No eligible agent node is available for this repository.",
+    runner_login_expired:
+      "The runner's provider login has expired. Reconnect it from Runners.",
+    invalid_provider: "Choose Claude Code or Codex.",
+    invalid_model: "That model is not available for the selected provider.",
+    prompt_required: "Add a task for the agent.",
+    invalid_target_node: "The selected target node is not valid.",
+    session_not_promptable:
+      "This agent session is not accepting another prompt.",
+    agent_not_ready: "The agent is not ready for another prompt.",
+    queue_persistence_failed:
+      "The agent request could not be saved. Try again.",
+    session_delete_failed: "The agent session could not be deleted. Try again.",
+  });
+
+  function orgAgentResponseError(response, payload) {
+    const details = payload && typeof payload === "object" ? payload : {};
+    const code = String(details.error || "").trim();
+    const message =
+      String(details.message || "").trim() ||
+      ORG_AGENT_ERROR_MESSAGES[code] ||
+      code ||
+      `Request returned ${response.status}.`;
+    const error = new Error(message);
+    error.code = code;
+    error.status = response.status;
+    error.payload = details;
+    for (const key of [
+      "requiredTeam",
+      "targetNode",
+      "provider",
+      "requiredAction",
+      "retryable",
+    ]) {
+      if (details[key] !== undefined) error[key] = details[key];
+    }
+    return error;
+  }
+
+  function orgAgentSavedMessage(payload) {
+    const serverMessage = String(payload?.message || "").trim();
+    if (serverMessage) return serverMessage;
+    const target = String(
+      payload?.targetNode ||
+        payload?.session?.targetNode ||
+        "the linked desktop",
+    );
+    const waitingForDesktop =
+      payload?.targetOnline === false ||
+      payload?.queueState === "waiting_for_desktop";
+    return waitingForDesktop
+      ? `Saved for ${target}. It will start after the linked desktop reconnects.`
+      : `Saved for ${target}. It will start when the node claims it.`;
+  }
+
+  async function orgAgentRequest(method, path, body = null) {
+    if (!String(path || "").startsWith("/api/")) {
+      throw orgAgentResponseError({ status: 404 }, {
+        error: "not_found",
+        message: "The requested organization or repository was not found.",
+      });
+    }
+    const token = state.session?.sessionToken || "";
+    const headers = { accept: "application/json" };
+    if (body !== null) headers["content-type"] = "application/json";
+    if (token && token !== "cookie") {
+      headers.authorization = `Bearer ${token}`;
+    }
+    const response = await fetch(path, {
+      method,
+      cache: "no-store",
+      credentials: "same-origin",
+      headers,
+      ...(body === null
+        ? {}
+        : {
+            body: JSON.stringify({
+              ...body,
+              ...(token && token !== "cookie"
+                ? { sessionToken: token }
+                : {}),
+            }),
+          }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw orgAgentResponseError(response, payload);
+    }
+    return payload;
+  }
+
+  function renderOrgAgentStartChoices(form, payload) {
+    if (!form) return;
+    const choiceSelect = form.querySelector("[data-org-agent-agent-model]");
+    const providerInput = form.querySelector("[data-org-agent-provider]");
+    const modelInput = form.querySelector("[data-org-agent-model]");
+    const targetSelect = form.querySelector("[data-org-agent-target]");
+    const startButton = form.querySelector("[data-org-agent-start-button]");
+    if (!choiceSelect || !providerInput || !modelInput || !targetSelect) return;
+    const providers = Array.isArray(payload?.providers)
+      ? payload.providers.filter((provider) =>
+        AGENT_PROVIDER_OPTIONS.some((option) => option.value === provider))
+      : [];
+    const previousChoice = choiceSelect.value;
+    choiceSelect.innerHTML = agentModelChoicesHtml(providers.map((provider) => ({
+      provider,
+      models: Array.isArray(payload?.models?.[provider])
+        ? payload.models[provider].map((alias) => String(alias || ""))
+        : [],
+    })));
+    if (Array.from(choiceSelect.options).some((option) => option.value === previousChoice)) {
+      choiceSelect.value = previousChoice;
+    }
+    choiceSelect.disabled = !providers.length;
+    const { provider, model } = splitAgentModelChoice(choiceSelect.value, "");
+    providerInput.value = provider;
+    modelInput.value = model;
+    const targets = (Array.isArray(payload?.targets) ? payload.targets : [])
+      .filter((target) =>
+        Array.isArray(target?.providers) && target.providers.includes(provider));
+    targetSelect.innerHTML = targets.length
+      ? targets.map((target) => `<option value="${escapeHtml(target.node || "")}">${escapeHtml(target.node || "Agent node")} · ${target.online ? "online" : "offline — queue for later"}${target.source ? " · source" : ""}</option>`).join("")
+      : '<option value="">No eligible node advertises this agent</option>';
+    targetSelect.disabled = !targets.length;
+    if (startButton) startButton.disabled = !providers.length || !targets.length;
+  }
+
+  // The start composer is redrawn every time the pane swaps back from an open
+  // session, so its choices and its submit handler are wired per render off the
+  // provider/model/node payload the panel read once. Wiring it once at load
+  // would leave every later render's form inert.
+  function wireOrgAgentStartForm(repo, startForm) {
+    if (!startForm) return;
+    const payload = state.agentsView.startPayload || {};
+    renderOrgAgentStartChoices(startForm, payload);
+    startForm.querySelector("[data-org-agent-agent-model]")?.addEventListener(
+      "change",
+      () => renderOrgAgentStartChoices(startForm, payload),
+    );
+    startForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const values = new FormData(form);
+      const prompt = String(values.get("prompt") || "").trim();
+      const taskKey = String(values.get("taskKey") || "").trim();
+      const provider = String(values.get("provider") || "").trim();
+      const model = String(values.get("model") || "").trim();
+      const targetNode = String(values.get("targetNode") || "").trim();
+      const hint = form.querySelector("[data-org-agent-hint]");
+      if (
+        !prompt || !targetNode ||
+        !["claude-code", "codex"].includes(provider)
+      ) return;
+      if (hint) {
+        hint.className = "text-[11px] text-muted-foreground";
+        hint.textContent =
+          "Saving this request for the linked desktop. It does not need to be online yet…";
+      }
+      Array.from(form.elements).forEach((element) => { element.disabled = true; });
+      try {
+        const payload = await orgAgentRequest(
+          "POST",
+          orgAgentEndpoint(repo),
+          { provider, model, targetNode, prompt, taskKey, createPr: false },
+        );
+        // The new session is the top row; an open detail page would hide it.
+        state.agentsView.selectedAgentId = null;
+        await loadRepoAgents(repo, { notice: orgAgentSavedMessage(payload) });
+      } catch (error) {
+        if (hint) {
+          hint.className = "text-[11px] text-destructive";
+          hint.textContent = String(error?.message || "The agent request failed.");
+        }
+        Array.from(form.elements).forEach((element) => { element.disabled = false; });
+        renderOrgAgentStartChoices(form, payload);
+      }
+    });
+  }
+
+  function wireOrgAgentPanel(repo, container) {
+    container.querySelector("[data-org-agent-refresh]")?.addEventListener("click", () => {
+      void loadRepoAgents(repo).then(() => {
+        connectRepoDesktops(repo, state.agentsView.startPayload, { retry: true });
+      });
+    });
+  }
+
+  // The session list redraws itself whenever the header search filters the page
+  // (adhoc #62), so its follow-up forms are wired by whoever renders the list —
+  // once here would leave every later render's forms inert, and doing both
+  // would double-submit the follow-up that survived a redraw.
+  function wireOrgAgentSessionActions(repo, container) {
+    container.querySelectorAll("[data-org-agent-open]").forEach((button) => {
+      button.addEventListener("click", () => {
+        openOrgAgentDetail(repo, button.dataset.orgAgentOpen || "");
+      });
+    });
+    container.querySelector("[data-org-agent-back]")?.addEventListener(
+      "click", () => closeOrgAgentDetail(repo));
+    container.querySelectorAll("[data-org-agent-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const session = orgAgentSelectedSession();
+        if (session) void runOrgAgentAction(repo, session, button.dataset.orgAgentAction || "");
+      });
+    });
+    container.querySelectorAll("[data-org-agent-merge-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const session = orgAgentSelectedSession();
+        if (session) runOrgAgentMergeAction(repo, session, button);
+      });
+    });
+    // Refresh on the detail page re-reads the session list, which is where the
+    // open session's transcript comes from; renderOrgAgentSessions then redraws
+    // the same page from the fresh snapshot.
+    container.querySelector("[data-org-agent-session-refresh]")?.addEventListener(
+      "click", () => { void loadRepoAgents(repo); });
+    container.querySelectorAll("[data-org-agent-delete]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const sessionId = String(button.dataset.orgAgentDelete || "");
+        const session = state.agentsView.agents.find(
+          (candidate) => String(candidate?.id || "") === sessionId,
+        );
+        if (!sessionId || !window.confirm(
+          `Delete “${session?.title || "this agent session"}”? Pending work will be cancelled. A process already running on the node may continue locally.`,
+        )) return;
+        button.disabled = true;
+        try {
+          const payload = await orgAgentRequest(
+            "DELETE",
+            orgAgentEndpoint(repo, sessionId),
+          );
+          await loadRepoAgents(repo, {
+            notice: String(payload?.message || "Agent session deleted."),
+          });
+        } catch (error) {
+          button.disabled = false;
+          showErrorNotice(String(
+            error?.message || "The agent session could not be deleted.",
+          ));
+        }
+      });
+    });
+    container.querySelectorAll("[data-org-agent-followup]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const prompt = String(new FormData(form).get("prompt") || "").trim();
+        if (!prompt) return;
+        Array.from(form.elements).forEach((element) => { element.disabled = true; });
+        try {
+          const payload = await orgAgentRequest(
+            "POST",
+            orgAgentEndpoint(repo, form.dataset.orgAgentFollowup),
+            { prompt },
+          );
+          await loadRepoAgents(repo, { notice: orgAgentSavedMessage(payload) });
+        } catch (error) {
+          const input = form.querySelector("textarea, input");
+          if (input) input.disabled = false;
+          form.querySelector("button")?.removeAttribute("disabled");
+          let failure = form.querySelector("[data-org-agent-followup-error]");
+          if (!failure) {
+            failure = document.createElement("p");
+            failure.setAttribute("data-org-agent-followup-error", "");
+            failure.className = "text-xs text-destructive";
+            form.appendChild(failure);
+          }
+          failure.textContent = String(error?.message || "The follow-up request failed.");
+        }
+      });
+      // The composer is a textarea so a long prompt wraps, but it sits where a
+      // chat box sits: Enter sends it, Shift+Enter keeps the newline.
+      form.querySelector("textarea")?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.shiftKey || event.ctrlKey ||
+          event.metaKey || event.altKey || event.isComposing) return;
+        event.preventDefault();
+        form.requestSubmit();
+      });
+    });
+  }
+
+  // The Agents tab's session list, drawn from the sessions already fetched so a
+  // keystroke in the header box never turns into another org-agent read. The
+  // list is the left column of the two-pane workspace (adhoc #2120) while no
+  // session is open; an open session hides it and fills the whole width.
+  //
+  // Pass ``redrawPane: false`` for a redraw the reader did not ask for - that
+  // same header keystroke filters the rows, and rebuilding the pane under it
+  // would throw away a half-typed prompt. The pane is still redrawn when the
+  // filter drops the open session, since it is then showing a session the list
+  // no longer has.
+  function renderOrgAgentSessions(repo = state.selectedRepo, { redrawPane = true } = {}) {
+    const list = $("[data-org-agent-sessions]");
+    if (!list) return;
+    // Nothing to say about sessions a member is not allowed to see: the pane
+    // beside it already explains the missing access.
+    if (!state.agentsView.canViewSessions) {
+      list.innerHTML = desktopAgentsListHtml(repo);
+      wireDesktopAgentActions(repo, list);
+      if (redrawPane) renderOrgAgentDetailPane(repo);
+      window.lucide?.createIcons();
+      return;
+    }
+    const visible = repoAgentsMatchingPageFilter(
+      Array.isArray(state.agentsView.agents) ? state.agentsView.agents : []);
+    // An open session keeps the pane only while its row is one the list would
+    // show: a deleted session, or one the header search now excludes, drops the
+    // reader back on the start composer rather than stranding them on a page
+    // for a row that is no longer there to go back to.
+    const selectedId = state.agentsView.selectedAgentId;
+    const selected = selectedId != null && selectedId !== ""
+      ? (String(selectedId).startsWith("desktop:")
+        ? desktopAgentSelected()
+        : visible.find((item) => String(item?.id || "") === String(selectedId)))
+      : null;
+    const selectionDropped = selectedId != null && !selected;
+    if (selectionDropped) state.agentsView.selectedAgentId = null;
+    const desktopHtml = desktopAgentsListHtml(repo);
+    list.innerHTML = desktopHtml + (visible.length
+      ? visible.map(renderOrgAgentSession).join("")
+      : `<div class="px-4 py-4 text-sm text-muted-foreground">${emptyListHtml(desktopHtml ? "No sessions started from the website yet." : "No organization agent sessions yet.")}</div>`);
+    wireOrgAgentSessionActions(repo, list);
+    wireDesktopAgentActions(repo, list);
+    if (redrawPane || selectionDropped) renderOrgAgentDetailPane(repo);
+    window.lucide?.createIcons();
+  }
+
+  // The right-hand pane: the open session, or the start composer when none is
+  // open. Drawn from the sessions already fetched, like the list.
+  function renderOrgAgentDetailPane(repo = state.selectedRepo) {
+    const pane = $("[data-org-agent-detail-pane]");
+    if (!pane) return;
+    const agents = Array.isArray(state.agentsView.agents)
+      ? state.agentsView.agents : [];
+    const selectedId = state.agentsView.selectedAgentId;
+    const desktopSelected = desktopAgentSelected();
+    const selected = selectedId != null && selectedId !== "" && !desktopSelected
+      ? agents.find((item) => String(item?.id || "") === String(selectedId))
+      : null;
+    pane.innerHTML = desktopSelected
+      ? renderDesktopAgentDetail(desktopSelected, repo)
+      : selected
+        ? renderOrgAgentSessionDetail(selected, repo)
+        : renderOrgAgentStartPane();
+    wireOrgAgentSessionActions(repo, pane);
+    wireDesktopAgentActions(repo, pane);
+    wireOrgAgentStartForm(repo, pane.querySelector("[data-org-agent-start]"));
+    hydrateOrgAgentAttachments(pane);
+    syncOrgAgentLayout(pane);
+    window.lucide?.createIcons();
+  }
+
+  function syncOrgAgentLayout(pane) {
+    const layout = pane.closest("[data-org-agent-layout]");
+    if (!layout) return;
+    const open = Boolean(pane.querySelector("[data-org-agent-detail], [data-desktop-agent-detail]"));
+    const wasOpen = layout.dataset.orgAgentDetailOpen === "1";
+    layout.dataset.orgAgentDetailOpen = open ? "1" : "0";
+    layout.classList.toggle("lg:grid-cols-[20rem_minmax(0,1fr)]", !open);
+    layout.querySelector("[data-org-agent-sessions]")?.classList.toggle("hidden", open);
+    if (open !== wasOpen && layout.getBoundingClientRect().top < 0) {
+      layout.scrollIntoView({ block: "start" });
+    }
+  }
+
+  // Open / close one session in the pane. Both redraw from the sessions
+  // already fetched - opening a session is not a reason to re-read the org
+  // agent endpoint, and nothing polls behind it; the account socket pushes a
+  // newer transcript (refreshOrgAgentsLive).
+  function openOrgAgentDetail(repo, sessionId) {
+    const id = String(sessionId || "");
+    if (!id) return;
+    state.agentsView.selectedAgentId = id;
+    // The notice belongs to the request that produced it - carrying "Saved for
+    // mirror35" onto the next session's composer would misreport it.
+    state.agentsView.notice = "";
+    orgAgentSetNotice("");
+    if (orgAgentOps.diff.id !== id) {
+      orgAgentOps.diff = { id: "", open: false, loading: false, loadingMore: false, error: "", data: null, patch: "", page: 0, pageCount: 0 };
+    }
+    renderOrgAgentSessions(repo);
+  }
+
+  function patchOrgAgentDetail(repo) {
+    const pane = $("[data-org-agent-detail-pane]");
+    const current = pane?.querySelector("[data-org-agent-detail]");
+    if (!current) return;
+    const id = String(current.dataset.orgAgentDetail || "");
+    const session = (state.agentsView.agents || []).find(
+      (item) => String(item?.id || "") === id,
+    );
+    if (!session) return;
+    const scratch = document.createElement("div");
+    scratch.innerHTML = renderOrgAgentSessionDetail(session, repo);
+    const fresh = scratch.querySelector("[data-org-agent-detail]");
+    if (!fresh) return;
+    const body = current.querySelector("[data-org-agent-detail-body]");
+    const pinned = body
+      ? body.scrollHeight - body.scrollTop - body.clientHeight < 48
+      : true;
+    const scrollTop = body?.scrollTop || 0;
+    const draft = current.querySelector("[data-org-agent-detail-foot] textarea");
+    const keepFoot = Boolean(draft && (draft.value || document.activeElement === draft));
+    const answering = document.activeElement?.closest("[data-desktop-agent-answer]") && !document.activeElement.disabled;
+    const parts = (keepFoot ? ["head", "body"] : ["head", "body", "foot"]).filter((part) => part !== "body" || !answering);
+    parts.forEach((part) => {
+      const selector = `[data-org-agent-detail-${part}]`;
+      const before = current.querySelector(selector);
+      const after = fresh.querySelector(selector);
+      if (!before || !after) return;
+      before.replaceWith(after);
+      wireOrgAgentSessionActions(repo, after);
+      hydrateOrgAgentAttachments(after);
+    });
+    current.title = fresh.title;
+    const nextBody = current.querySelector("[data-org-agent-detail-body]");
+    if (nextBody) nextBody.scrollTop = pinned ? nextBody.scrollHeight : scrollTop;
+    window.lucide?.createIcons();
+  }
+
+  const orgAgentLiveRead = { busy: false, again: false };
+
+  async function refreshOrgAgentsLive() {
+    const repo = state.selectedRepo;
+    if (!repo || !state.session?.sessionToken) return;
+    if (!state.agentsView.canViewSessions || !$("[data-org-agent-sessions]")) return;
+    if (orgAgentLiveRead.busy) {
+      orgAgentLiveRead.again = true;
+      return;
+    }
+    orgAgentLiveRead.busy = true;
+    try {
+      const payload = await orgAgentRequest("GET", orgAgentEndpoint(repo));
+      if (state.selectedRepo !== repo || !$("[data-org-agent-sessions]")) return;
+      if (payload?.canViewAgentSessions !== true && payload?.engineeringAccess !== true) return;
+      state.agentsView.agents = keepRepoAgentsBeyondWindow(
+        state.agentsView.agents,
+        (Array.isArray(payload.sessions) ? payload.sessions : []).map(repoAgentStatusSnapshot),
+        payload.finishedBefore,
+      );
+      renderOrgAgentSessions(repo, { redrawPane: false });
+      patchOrgAgentDetail(repo);
+    } catch (_) {
+    } finally {
+      orgAgentLiveRead.busy = false;
+      if (orgAgentLiveRead.again) {
+        orgAgentLiveRead.again = false;
+        void refreshOrgAgentsLive();
+      }
+    }
+  }
+
+  window.addEventListener("forkmesh:cloud-agents", () => { void refreshOrgAgentsLive(); });
+
+  function closeOrgAgentDetail(repo) {
+    state.agentsView.selectedAgentId = null;
+    state.agentsView.notice = "";
+    renderOrgAgentSessions(repo);
+  }
+
+  function takeLinkedAgentSession() {
+    const params = new URLSearchParams(location.search);
+    const id = String(params.get("session") || "").trim();
+    if (!id || !/^\/[^/]+\/[^/]+\/agents\/?$/.test(location.pathname)) return "";
+    params.delete("session");
+    const query = params.toString();
+    try {
+      history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+    } catch (_) {}
+    return id;
+  }
+
+  let linkedAgentSession = takeLinkedAgentSession();
+
+  async function loadRepoAgents(repo, { notice = "" } = {}) {
+    const container = $("[data-repo-agents]");
+    if (!container || !repo) return;
+    if (linkedAgentSession) {
+      state.agentsView.selectedAgentId = linkedAgentSession;
+      linkedAgentSession = "";
+    }
+    const previousAgents = state.agentsView.agents;
+    state.agentsView.agents = [];
+    // selectedAgentId survives the read: refreshing or sending a follow-up from
+    // an open detail page must land back on that page. renderOrgAgentSessions
+    // drops the selection if the session is gone from the fresh snapshot, and
+    // the fallbacks below clear it when the whole panel is replaced.
+    state.agentsView.canViewSessions = false;
+    state.agentsView.canDeleteSessions = false;
+    const refreshBranchAgentStatus = () => {
+      if (state.selectedRepo && repoMatchesKey(state.selectedRepo, repoKey(repo))) {
+        updateRepoBranchControls(state.selectedRepo, null);
+      }
+    };
+    if (state.session?.sessionToken) {
+      try {
+        const payload = await orgAgentRequest(
+          "GET",
+          orgAgentEndpoint(repo),
+        );
+        const canQueueAgent =
+          payload?.canQueueAgent === true ||
+          payload?.engineeringAccess === true;
+        const canViewAgentSessions =
+          payload?.canViewAgentSessions === true ||
+          payload?.engineeringAccess === true;
+        const sessions = canViewAgentSessions &&
+            Array.isArray(payload.sessions)
+          ? payload.sessions
+          : [];
+        state.agentsView.agents = keepRepoAgentsBeyondWindow(
+          previousAgents,
+          sessions.map(repoAgentStatusSnapshot),
+          payload?.finishedBefore,
+        );
+        // renderOrgAgentSessions redraws the list on its own when the header
+        // search filters the page, so it needs to remember whether this member
+        // is allowed to see sessions at all.
+        state.agentsView.canViewSessions = canViewAgentSessions;
+        state.agentsView.canDeleteSessions =
+          payload?.canDeleteAgentSessions === true;
+        const accessReason = String(
+          payload?.accessReason || payload?.message || "",
+        ).trim();
+        const ownerScope = payload?.scope === "owner";
+        // The pane beside the list redraws on its own (a session opens, the
+        // header search filters the rows), and it carries the start composer,
+        // so what that composer needs outlives this one response.
+        state.agentsView.canQueueAgent = canQueueAgent;
+        state.agentsView.ownerScope = ownerScope;
+        state.agentsView.accessReason = accessReason;
+        state.agentsView.startPayload = payload;
+        state.agentsView.notice = notice;
+        container.innerHTML = `
+          <section class="grid gap-0">
+            <header class="flex flex-wrap items-center gap-2 px-4 py-3">
+              <i data-lucide="bot" class="h-4 w-4 text-muted-foreground"></i>
+              <strong class="text-sm text-foreground">${ownerScope ? "Owner-node agents" : "Organization agents"}</strong>
+              <span class="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">${escapeHtml(payload.memberRole || "member")}</span>
+              <button type="button" data-org-agent-refresh class="ml-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs hover:bg-secondary"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
+            </header>
+            <div data-org-agent-layout class="grid min-h-0 border-t border-border lg:h-[36rem] lg:grid-cols-[20rem_minmax(0,1fr)]">
+              <div data-org-agent-sessions class="max-h-72 min-h-0 min-w-0 overflow-y-auto border-b border-border lg:max-h-none lg:border-b-0 lg:border-r"></div>
+              <div data-org-agent-detail-pane class="flex min-h-0 min-w-0 flex-col"></div>
+            </div>
+          </section>`;
+        wireOrgAgentPanel(repo, container);
+        renderOrgAgentSessions(repo);
+        window.lucide?.createIcons();
+        refreshBranchAgentStatus();
+        connectRepoDesktops(repo, payload);
+        return;
+      } catch (error) {
+        const configurationError = [
+          "repository_not_linked",
+          "repository_not_published",
+        ].includes(String(error?.code || ""));
+        const accessError = [401, 403].includes(Number(error?.status || 0));
+        const heading = configurationError
+          ? "Repository setup required"
+          : accessError
+            ? "Agent access unavailable"
+            : "Organization agents are unavailable";
+        state.agentsView.selectedAgentId = null;
+        state.agentsView.canQueueAgent = false;
+        state.agentsView.startPayload = null;
+        state.agentsView.notice = "";
+        container.innerHTML = `
+          <div class="grid gap-3 px-4 py-4 text-sm text-muted-foreground">
+            <div class="flex items-center gap-2 font-medium text-foreground"><i data-lucide="shield-alert" class="h-4 w-4 text-amber-500"></i>${heading}</div>
+            <p class="max-w-2xl leading-6">${escapeHtml(String(error?.message || "The agent request failed."))}</p>
+          </div>`;
+        window.lucide?.createIcons();
+        refreshBranchAgentStatus();
+        return;
+      }
+    }
+    state.agentsView.selectedAgentId = null;
+    state.agentsView.canQueueAgent = false;
+    state.agentsView.startPayload = null;
+    state.agentsView.notice = "";
+    container.innerHTML = `
+      <div class="grid gap-3 px-4 py-4 text-sm text-muted-foreground">
+        <div class="flex items-center gap-2 font-medium text-foreground"><i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>Owner-device encrypted agents</div>
+        <p class="max-w-2xl leading-6">Agent session snapshots, transcripts, results, and prompts are encrypted to a hybrid key whose private half stays in the owner's desktop vault. This browser cannot decrypt them, and ForkMesh administrators do not receive an override.</p>
+        <a href="/desktop" class="inline-flex h-9 w-fit items-center gap-2 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90"><i data-lucide="monitor-down" class="h-4 w-4"></i>Open desktop downloads</a>
+      </div>`;
+    window.lucide?.createIcons();
+    refreshBranchAgentStatus();
+  }
+
+  const DESKTOP_AGENT_ACTIVE_STATUSES = new Set(["queued", "running", "waiting"]);
+  const DESKTOP_AGENT_TRANSCRIPT_MAX = 200000;
+  const desktopAgentsView = {
+    repoKey: "",
+    nodes: new Map(),
+    sessions: [],
+    transcript: { id: "", text: "", next: -1, loading: false, error: "" },
+    diff: { id: "", open: false, loading: false, data: null, error: "" },
+    busy: new Set(),
+    refreshTimers: new Map(),
+    bindError: "",
+  };
+  let desktopControlHubPromise = null;
+  let desktopControlHubAccount = "";
+
+  function desktopControlHub() {
+    const account = String(state.session?.nodeName || "").toLowerCase();
+    if (desktopControlHubPromise && desktopControlHubAccount === account) {
+      return desktopControlHubPromise;
+    }
+    const previous = desktopControlHubPromise;
+    desktopControlHubAccount = account;
+    desktopControlHubPromise = import("/desktop-control.js").then(
+      ({ createDesktopControlHub }) => createDesktopControlHub({
+        account,
+        sessionToken: () => String(state.session?.sessionToken || ""),
+      }),
+    );
+    desktopControlHubPromise.catch(() => {
+      if (desktopControlHubAccount === account) desktopControlHubPromise = null;
+    });
+    if (previous) void previous.then((hub) => hub.closeAll(), () => {});
+    return desktopControlHubPromise;
+  }
+
+  function desktopAgentId(node, localId) {
+    return `desktop:${node}:${localId}`;
+  }
+
+  function desktopAgentSelected() {
+    const selectedId = String(state.agentsView.selectedAgentId || "");
+    if (!selectedId.startsWith("desktop:")) return null;
+    return desktopAgentsView.sessions.find((item) => item.id === selectedId) || null;
+  }
+
+  function desktopSessionMatchesRepo(session, repo) {
+    const name = String(session?.repositoryName || "").toLowerCase();
+    if (!name || name !== String(repo?.name || "").toLowerCase()) return false;
+    const owner = String(session?.repositoryOwner || "").toLowerCase();
+    const repoOwner = String(repo?.owner || "").toLowerCase();
+    if (owner === repoOwner) return true;
+    const mine = [state.session?.nodeName, ...(Array.isArray(state.session?.nodes) ? state.session.nodes : [])]
+      .map((value) => String(value || "").toLowerCase())
+      .filter(Boolean);
+    return mine.includes(owner) && mine.includes(repoOwner);
+  }
+
+  function desktopAgentTitle(session) {
+    const issue = String(session?.issueTitle || "").trim();
+    if (issue) return issue;
+    const prompt = String(session?.prompt || "").trim();
+    const line = prompt.split("\n")[0] || "";
+    return line.slice(0, 160) || `Desktop agent #${session?.id || ""}`;
+  }
+
+  function desktopAgentRow(node, session) {
+    const status = String(session?.status || "").toLowerCase();
+    const updatedAt = Math.max(
+      Number(session?.finishedAtMs) || 0,
+      Number(session?.startedAtMs) || 0,
+      Number(session?.createdAtMs) || 0,
+    );
+    return {
+      id: desktopAgentId(node, session.id),
+      desktopNode: node,
+      localId: Number(session.id) || 0,
+      title: desktopAgentTitle(session),
+      status: status === "success" ? "completed" : status,
+      provider: String(session?.provider || ""),
+      model: String(session?.model || ""),
+      branchName: String(session?.branchName || ""),
+      baseBranch: String(session?.baseBranch || ""),
+      prNumber: Number(session?.prNumber) || 0,
+      issueNumber: Number(session?.issueNumber) || 0,
+      merged: session?.merged === true,
+      stoppable: session?.stoppable === true,
+      active: DESKTOP_AGENT_ACTIVE_STATUSES.has(status),
+      prompt: String(session?.prompt || ""),
+      lastError: String(session?.lastError || ""),
+      numTurns: Number(session?.numTurns) || 0,
+      durationMs: Number(session?.durationMs) || 0,
+      costUsd: Number(session?.costUsd) || 0,
+      totalTokens: Number(session?.totalTokens) || 0,
+      createdAt: Number(session?.createdAtMs) || 0,
+      startedAt: Number(session?.startedAtMs) || 0,
+      finishedAt: Number(session?.finishedAtMs) || 0,
+      updatedAt,
+      targetNode: node,
+    };
+  }
+
+  function resetDesktopAgentsView(key) {
+    for (const entry of desktopAgentsView.nodes.values()) {
+      for (const off of entry.listeners || []) off();
+    }
+    for (const timer of desktopAgentsView.refreshTimers.values()) clearTimeout(timer);
+    desktopAgentsView.refreshTimers.clear();
+    desktopAgentsView.repoKey = key;
+    desktopAgentsView.nodes = new Map();
+    desktopAgentsView.sessions = [];
+    desktopAgentsView.transcript = { id: "", text: "", next: -1, loading: false, error: "" };
+    desktopAgentsView.diff = { id: "", open: false, loading: false, data: null, error: "" };
+    desktopAgentsView.busy = new Set();
+    desktopAgentsView.bindError = "";
+  }
+
+  function repoDesktopTargets(payload) {
+    const seen = new Set();
+    return (Array.isArray(payload?.targets) ? payload.targets : [])
+      .filter((target) => String(target?.runtimeMode || "").toLowerCase() === "desktop")
+      .map((target) => ({ node: String(target?.node || "").trim().toLowerCase(), online: target?.online === true }))
+      .filter((target) => target.node && !seen.has(target.node) && seen.add(target.node));
+  }
+
+  function desktopControlErrorText(error) {
+    return String(error?.message || "The desktop did not answer.");
+  }
+
+  function redrawDesktopAgents(repo) {
+    if (state.selectedRepo !== repo || !$("[data-org-agent-sessions]")) return;
+    renderOrgAgentSessions(repo, { redrawPane: false });
+    const pane = $("[data-org-agent-detail-pane]");
+    const selectedId = String(state.agentsView.selectedAgentId || "");
+    if (selectedId.startsWith("desktop:")) {
+      if (pane?.querySelector("[data-desktop-agent-detail]") && desktopAgentSelected()) {
+        patchDesktopAgentDetail(repo);
+      } else {
+        renderOrgAgentDetailPane(repo);
+      }
+    }
+  }
+
+  async function connectRepoDesktops(repo, payload, { retry = false } = {}) {
+    if (!repo || !state.session?.sessionToken) return;
+    const key = repoKey(repo);
+    if (desktopAgentsView.repoKey !== key) resetDesktopAgentsView(key);
+    const routeTargets = payload?.scope === "owner" ? repoDesktopTargets(payload) : [];
+    const targets = new Map(routeTargets.map((target) => [target.node, target]));
+    try {
+      const hub = await desktopControlHub();
+      for (const desktop of await hub.desktops()) {
+        if (!targets.has(desktop.node)) targets.set(desktop.node, { node: desktop.node, online: false });
+      }
+      desktopAgentsView.bindError = "";
+    } catch (error) {
+      desktopAgentsView.bindError = targets.size ? desktopControlErrorText(error) : "";
+      redrawDesktopAgents(repo);
+      return;
+    }
+    if (desktopAgentsView.repoKey !== key) return;
+    for (const target of targets.values()) {
+      const current = desktopAgentsView.nodes.get(target.node);
+      if (current && current.status === "open" && retry) {
+        scheduleDesktopAgentsRefresh(repo, key, target.node);
+        continue;
+      }
+      if (current && (current.status === "open" || current.status === "connecting")) continue;
+      if (current && current.status === "error" && !retry) continue;
+      void connectRepoDesktop(repo, key, target);
+    }
+  }
+
+  async function connectRepoDesktop(repo, key, target) {
+    const node = target.node;
+    const entry = { status: "connecting", error: "", online: target.online, listeners: [], connection: null, reconnected: target.reconnected === true };
+    desktopAgentsView.nodes.set(node, entry);
+    redrawDesktopAgents(repo);
+    try {
+      const hub = await desktopControlHub();
+      const connection = await hub.connect(node);
+      if (desktopAgentsView.repoKey !== key || desktopAgentsView.nodes.get(node) !== entry) return;
+      entry.connection = connection;
+      entry.status = "open";
+      entry.name = String(connection.info?.name || node);
+      entry.listeners.push(connection.on("agents.changed", () => scheduleDesktopAgentsRefresh(repo, key, node)));
+      entry.listeners.push(connection.on("agentops.changed", () => scheduleDesktopAgentsRefresh(repo, key, node)));
+      entry.listeners.push(connection.onClose((reason) => {
+        if (desktopAgentsView.nodes.get(node) !== entry) return;
+        entry.status = "error";
+        entry.error = desktopControlErrorText({ message: reason === "closed" ? "The channel to the desktop closed." : reason });
+        desktopAgentsView.sessions = desktopAgentsView.sessions.filter((item) => item.desktopNode !== node);
+        redrawDesktopAgents(repo);
+        if (!entry.reconnected && ["relay_reconnected", "relay_out_of_order", "relay_unavailable"].includes(String(reason))) {
+          setTimeout(() => {
+            if (desktopAgentsView.nodes.get(node) !== entry || desktopAgentsView.repoKey !== key) return;
+            void connectRepoDesktop(repo, key, { ...target, reconnected: true });
+          }, 2000);
+        }
+      }));
+      await refreshDesktopAgents(repo, key, node);
+    } catch (error) {
+      if (desktopAgentsView.nodes.get(node) !== entry) return;
+      entry.status = "error";
+      entry.error = desktopControlErrorText(error);
+      redrawDesktopAgents(repo);
+    }
+  }
+
+  function scheduleDesktopAgentsRefresh(repo, key, node) {
+    if (desktopAgentsView.refreshTimers.has(node)) return;
+    desktopAgentsView.refreshTimers.set(node, setTimeout(() => {
+      desktopAgentsView.refreshTimers.delete(node);
+      void refreshDesktopAgents(repo, key, node);
+    }, 400));
+  }
+
+  function desktopConnection(node) {
+    const entry = desktopAgentsView.nodes.get(String(node || ""));
+    return entry?.status === "open" && entry.connection?.isOpen ? entry.connection : null;
+  }
+
+  async function refreshDesktopAgents(repo, key, node) {
+    const connection = desktopConnection(node);
+    if (!connection || desktopAgentsView.repoKey !== key) return;
+    try {
+      const listed = await connection.request("agents.list", {});
+      if (desktopAgentsView.repoKey !== key) return;
+      const rows = (Array.isArray(listed?.sessions) ? listed.sessions : [])
+        .filter((session) => desktopSessionMatchesRepo(session, repo))
+        .map((session) => desktopAgentRow(node, session));
+      desktopAgentsView.sessions = [
+        ...desktopAgentsView.sessions.filter((item) => item.desktopNode !== node),
+        ...rows,
+      ].sort((a, b) => Number(b.active) - Number(a.active) || b.updatedAt - a.updatedAt);
+      const entry = desktopAgentsView.nodes.get(node);
+      if (entry) entry.hasCheckout = (Array.isArray(listed?.repositories) ? listed.repositories : [])
+        .some((item) => desktopSessionMatchesRepo({ repositoryOwner: item?.owner, repositoryName: item?.name }, repo));
+      const selected = desktopAgentSelected();
+      if (selected && selected.desktopNode === node) await loadDesktopAgentTranscript(repo, selected);
+      redrawDesktopAgents(repo);
+    } catch (error) {
+      const entry = desktopAgentsView.nodes.get(node);
+      if (entry && entry.status === "open") {
+        entry.error = desktopControlErrorText(error);
+        redrawDesktopAgents(repo);
+      }
+    }
+  }
+
+  async function loadDesktopAgentTranscript(repo, session) {
+    const connection = desktopConnection(session.desktopNode);
+    if (!connection) return;
+    const view = desktopAgentsView.transcript;
+    if (view.id !== session.id) {
+      desktopAgentsView.transcript = { id: session.id, text: "", next: -1, loading: true, error: "" };
+    }
+    const current = desktopAgentsView.transcript;
+    const params = { id: session.localId };
+    if (current.next >= 0) params.since = current.next;
+    try {
+      const result = await connection.request("agents.transcript", params);
+      if (desktopAgentsView.transcript !== current) return;
+      const chunk = String(result?.transcript || "");
+      const continues = current.next >= 0 && !result?.reset && Number(result?.from) === current.next;
+      current.text = (continues ? current.text + chunk : chunk).slice(-DESKTOP_AGENT_TRANSCRIPT_MAX);
+      current.next = Number(result?.next) || 0;
+      current.error = "";
+    } catch (error) {
+      current.error = desktopControlErrorText(error);
+    } finally {
+      current.loading = false;
+    }
+  }
+
+  function desktopNodeStatusHtml(repo) {
+    const entries = Array.from(desktopAgentsView.nodes.entries());
+    const retry = '<button type="button" data-desktop-agents-retry class="shrink-0 rounded-md border border-border px-1.5 text-[10px] font-medium text-foreground hover:bg-secondary">Retry</button>';
+    if (desktopAgentsView.bindError) {
+      return `<div data-desktop-agents-status class="flex items-start gap-1.5 border-b border-border bg-secondary/20 px-3 py-2 text-[10px] text-muted-foreground"><span class="min-w-0 flex-1">${escapeHtml(desktopAgentsView.bindError)}</span>${retry}</div>`;
+    }
+    if (!entries.length) return "";
+    const rows = [];
+    const failed = [];
+    for (const [node, entry] of entries) {
+      const label = escapeHtml(entry.name || node);
+      if (entry.status === "open") {
+        const checkout = entry.hasCheckout === false
+          ? '<span class="text-muted-foreground"> · no checkout of this repository</span>' : "";
+        rows.push(`<div class="flex items-center gap-1.5"><span aria-hidden="true" class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span><span class="min-w-0 truncate"><strong class="font-semibold text-foreground">${label}</strong> connected, end to end encrypted${checkout}</span></div>`);
+      } else if (entry.status === "connecting") {
+        rows.push(`<div class="flex items-center gap-1.5"><span aria-hidden="true" class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-yellow-500"></span><span class="min-w-0 truncate">Connecting to <strong class="font-semibold text-foreground">${label}</strong>…</span></div>`);
+      } else {
+        failed.push({ node, entry });
+      }
+    }
+    if (failed.length) {
+      const names = failed.map(({ node, entry }) => escapeHtml(entry.name || node)).join(", ");
+      const reasons = Array.from(new Set(failed.map(({ entry }) => entry.error).filter(Boolean)));
+      const opened = entries.some(([, entry]) => entry.status === "open");
+      const reason = reasons.length === 1 ? ` ${escapeHtml(reasons[0])}` : "";
+      rows.push(`<div class="flex items-start gap-1.5"><span aria-hidden="true" class="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground"></span><span class="min-w-0 flex-1">${opened ? "Not reachable" : "No desktop answered"}: <strong class="font-semibold text-foreground">${names}</strong>.${reason}</span>${retry}</div>`);
+    }
+    return `<div data-desktop-agents-status class="grid gap-1 border-b border-border bg-secondary/20 px-3 py-2 text-[10px] text-muted-foreground">${rows.join("")}</div>`;
+  }
+
+  function renderDesktopAgentSession(session) {
+    const selected = String(state.agentsView.selectedAgentId || "") === session.id;
+    const detail = [
+      session.provider === "codex" ? "Codex" : "Claude Code",
+      session.model,
+    ].filter(Boolean).join(" · ");
+    const preview = session.lastError || session.prompt.replace(/\s+/g, " ").trim();
+    return `
+      <article data-desktop-agent-session="${escapeHtml(session.id)}"${selected ? " data-org-agent-session-selected" : ""} class="relative border-b border-border ${selected ? "bg-secondary" : "transition-colors hover:bg-secondary/40"}">
+        ${selected ? '<span aria-hidden="true" class="absolute inset-y-0 left-0 w-0.5 bg-primary"></span>' : ""}
+        <div class="flex items-start gap-2 px-3 py-2.5">
+          <button type="button" data-desktop-agent-open="${escapeHtml(session.id)}" class="grid min-w-0 flex-1 gap-1 text-left"${selected ? ' aria-current="true"' : ""} aria-label="Open the ${escapeHtml(session.title)} desktop agent">
+            <div class="flex min-w-0 items-center gap-1.5">
+              <span aria-hidden="true" class="inline-block h-1.5 w-1.5 shrink-0 rounded-full ${orgAgentStatusDotClass(session.status)}${session.active ? " animate-pulse" : ""}"></span>
+              <strong class="min-w-0 flex-1 truncate text-xs font-semibold text-foreground">${escapeHtml(session.title)}</strong>
+              ${session.updatedAt > 0 ? `<span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">${escapeHtml(formatTimeAgo(session.updatedAt))}</span>` : ""}
+            </div>
+            <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+              <span class="inline-flex items-center gap-1 rounded-full border border-border px-1.5"><i data-lucide="monitor" class="h-2.5 w-2.5"></i>${escapeHtml(session.desktopNode)}</span>
+              <span class="font-mono ${repoAgentStatusTone(session.status)}">${escapeHtml(session.status || "unknown")}</span>
+              ${detail ? `<span class="min-w-0 truncate font-mono">${escapeHtml(detail)}</span>` : ""}
+              ${session.merged ? "<span>merged</span>" : ""}
+            </div>
+            ${preview ? `<p class="line-clamp-2 text-[10px] leading-4 text-muted-foreground">${escapeHtml(preview.slice(0, 240))}</p>` : ""}
+          </button>
+        </div>
+      </article>`;
+  }
+
+  function desktopAgentButton(action, icon, label, { tone = "", title = "" } = {}) {
+    const busy = desktopAgentsView.busy.has(action);
+    const toneClass = tone === "danger"
+      ? "border-destructive/50 text-destructive hover:bg-destructive/10"
+      : tone === "primary"
+        ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+        : "border-border text-foreground hover:bg-secondary";
+    return `<button type="button" data-desktop-agent-action="${action}"${busy ? " disabled" : ""} class="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${toneClass} disabled:cursor-not-allowed disabled:opacity-50"${title ? ` title="${escapeHtml(title)}"` : ""}><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${escapeHtml(busy ? `${label}…` : label)}</button>`;
+  }
+
+  function desktopDiffLinesHtml(text) {
+    const lines = String(text || "").split("\n");
+    if (lines.length && lines[lines.length - 1] === "") lines.pop();
+    return lines.slice(0, 12000).map((line) => {
+      const tone = line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff --git") || line.startsWith("index ")
+        ? "text-muted-foreground font-semibold"
+        : line.startsWith("@@")
+          ? "text-primary"
+          : line.startsWith("+")
+            ? "bg-emerald-500/10 text-emerald-600"
+            : line.startsWith("-")
+              ? "bg-destructive/10 text-destructive"
+              : "text-foreground";
+      return `<span class="block whitespace-pre ${tone}">${escapeHtml(line) || " "}</span>`;
+    }).join("");
+  }
+
+  function renderDesktopAgentDiff(session) {
+    const diff = desktopAgentsView.diff;
+    if (diff.loading) return `<p class="text-xs text-muted-foreground">${loadingHtml("Reading the diff from the desktop…")}</p>`;
+    if (diff.error) return `<p class="text-xs text-destructive">${escapeHtml(diff.error)}</p>`;
+    const data = diff.data;
+    if (!data) return "";
+    const files = Array.isArray(data.files) ? data.files : [];
+    const untracked = Array.isArray(data.untracked) ? data.untracked : [];
+    const added = files.reduce((sum, file) => sum + (Number(file?.added) || 0), 0);
+    const removed = files.reduce((sum, file) => sum + (Number(file?.removed) || 0), 0);
+    const section = (label, text) => text ? `
+        <div class="grid gap-1">
+          <div class="text-[11px] font-semibold text-foreground">${escapeHtml(label)}</div>
+          <pre class="overflow-x-auto rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-4">${desktopDiffLinesHtml(text)}</pre>
+        </div>` : "";
+    return `
+      <div data-desktop-agent-diff class="grid gap-3">
+        <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span class="font-mono text-foreground">${escapeHtml(data.base || "base")}...${escapeHtml(data.branch || session.branchName)}</span>
+          <span>${escapeHtml(formatCount(files.length))} ${files.length === 1 ? "file" : "files"}</span>
+          <span class="text-emerald-600">+${escapeHtml(formatCount(added))}</span>
+          <span class="text-destructive">−${escapeHtml(formatCount(removed))}</span>
+          ${data.truncated ? '<span class="text-amber-500">Truncated: the full diff is on the desktop.</span>' : ""}
+        </div>
+        ${files.length ? `<ul class="grid gap-0.5 rounded-md border border-border bg-secondary/20 p-2 font-mono text-[11px]">${files.map((file) => `<li class="flex min-w-0 items-center gap-2"><span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(file?.path || "")}</span>${file?.binary ? '<span class="text-muted-foreground">binary</span>' : `<span class="text-emerald-600">+${escapeHtml(String(Number(file?.added) || 0))}</span><span class="text-destructive">−${escapeHtml(String(Number(file?.removed) || 0))}</span>`}</li>`).join("")}</ul>` : ""}
+        ${section("Committed on the branch", data.committed)}
+        ${section("Uncommitted in the worktree", data.uncommitted)}
+        ${untracked.length ? `<div class="grid gap-1"><div class="text-[11px] font-semibold text-foreground">New files not yet added</div><ul class="font-mono text-[11px] text-muted-foreground">${untracked.map((path) => `<li>${escapeHtml(path)}</li>`).join("")}</ul></div>` : ""}
+        ${!data.committed && !data.uncommitted && !untracked.length ? '<p class="text-xs text-muted-foreground">No changes against the base branch.</p>' : ""}
+      </div>`;
+  }
+
+  function desktopAgentDataHtml(value) {
+    if (typeof value === "string" && /^[\s]*[\[{]/.test(value)) {
+      try { return desktopAgentDataHtml(JSON.parse(value)); } catch (_) {}
+    }
+    if (value === null || typeof value !== "object") return `<span class="whitespace-pre-wrap break-words">${escapeHtml(String(value ?? ""))}</span>`;
+    if (Array.isArray(value)) return `<ul class="grid gap-2">${value.map((item) => `<li>${desktopAgentDataHtml(item)}</li>`).join("")}</ul>`;
+    return `<dl class="grid gap-2">${Object.entries(value).map(([key, item]) => `<div class="min-w-0"><dt class="text-xs font-semibold text-muted-foreground">${escapeHtml(key.replace(/[_/]/g, " "))}</dt><dd class="min-w-0 text-sm">${desktopAgentDataHtml(item)}</dd></div>`).join("")}</dl>`;
+  }
+
+  function desktopAgentTranscriptHtml(text) {
+    const events = String(text || "").split("\n").map((line) => {
+      try { return JSON.parse(line); } catch (_) { return line; }
+    });
+    const answered = new Set(events.filter((event) => event?.type === "_local_ask_answer").map((event) => event.tool_use_id));
+    return events.map((event) => {
+      if (typeof event !== "object" || event === null) return event ? `<p class="whitespace-pre-wrap break-words text-sm">${escapeHtml(String(event))}</p>` : "";
+      const content = event.message?.content;
+      if (Array.isArray(content)) return `<article class="grid gap-3 rounded-md border border-border p-3"><strong class="text-xs">${escapeHtml(event.message.role || event.type || "Agent")}</strong>${content.map((block) => {
+        if (block.type === "text") return `<div class="whitespace-pre-wrap break-words text-sm">${escapeHtml(block.text || "")}</div>`;
+        if (block.name !== "AskUserQuestion") return desktopAgentDataHtml(block);
+        const questions = block.input?.questions || [];
+        const done = answered.has(block.id);
+        return `<form data-desktop-agent-answer="${escapeHtml(block.id || "")}" class="grid gap-4">${questions.map((question, index) => `<fieldset class="grid min-w-0 gap-2"><legend class="text-sm font-semibold">${escapeHtml(question.question || question.header || "Choice")}</legend>${(question.options || []).map((option) => `<label class="flex min-h-11 items-start gap-3 rounded border border-border p-3 text-sm"><input type="${question.multiSelect ? "checkbox" : "radio"}" name="answer-${index}" value="${escapeHtml(option.label || "")}"${done ? " disabled" : ""}><span class="min-w-0 break-words">${escapeHtml(option.label || "")} <span class="block text-xs text-muted-foreground">${escapeHtml(option.description || "")}</span></span></label>`).join("")}<input data-question-text="${escapeHtml(question.question || "")}" data-question-index="${index}" type="${question.isSecret ? "password" : "text"}" placeholder="${question.options?.length ? "Or type a response" : "Type a response"}" aria-label="${escapeHtml(question.question || "Response")}" class="min-h-11 min-w-0 rounded border border-border bg-background px-3 text-base"${done ? " disabled" : ""}></fieldset>`).join("")}${done ? '<p class="text-xs text-muted-foreground">Answered</p>' : '<button type="submit" class="min-h-11 rounded border border-border px-3 text-sm font-semibold">Send answers and continue</button>'}<p data-answer-error role="alert" class="text-sm text-destructive"></p></form>`;
+      }).join("")}<details><summary class="text-xs text-muted-foreground">Event details</summary>${desktopAgentDataHtml(event)}</details></article>`;
+      return `<details class="min-w-0 rounded border border-border p-3"><summary class="text-sm">${escapeHtml(event.type || "Event")}</summary>${desktopAgentDataHtml(event)}</details>`;
+    }).join("") || "(empty)";
+  }
+
+  function renderDesktopAgentDetail(session, repo) {
+    const transcript = desktopAgentsView.transcript.id === session.id ? desktopAgentsView.transcript : null;
+    const diffOpen = desktopAgentsView.diff.open && desktopAgentsView.diff.id === session.id;
+    const canLink = Boolean(repo?.owner && repo?.name);
+    const connected = Boolean(desktopConnection(session.desktopNode));
+    const actions = connected ? [
+      session.branchName ? desktopAgentButton("diff", "git-compare-arrows", diffOpen ? "Transcript" : "Diff", { title: diffOpen ? "Back to the transcript" : "Show this agent's changes, read from the desktop" }) : "",
+      session.stoppable ? desktopAgentButton("stop", "square", "Stop", { tone: "danger" }) : "",
+      !session.active ? desktopAgentButton("continue", "play", "Continue", { title: "Resume this agent where it left off" }) : "",
+      session.branchName && !session.merged && !session.active ? desktopAgentButton("merge", "git-merge", "Merge & clean up", { tone: "primary", title: "Merge the branch into its base on the desktop, then remove the worktree" }) : "",
+      !session.active ? desktopAgentButton("delete", "trash-2", "Delete", { tone: "danger" }) : "",
+    ].join("") : "";
+    const meta = [
+      orgAgentMetaRow("Agent", escapeHtml(session.provider === "codex" ? "Codex" : "Claude Code")),
+      orgAgentMetaRow("Model", escapeHtml(session.model || "Provider default")),
+      orgAgentMetaRow("Desktop", `<span class="font-mono">${escapeHtml(session.desktopNode)}</span>`),
+      orgAgentMetaRow("Branch", session.branchName ? `<span class="font-mono">${escapeHtml(session.branchName)}</span>` : ""),
+      orgAgentMetaRow("Base", session.baseBranch ? `<span class="font-mono">${escapeHtml(session.baseBranch)}</span>` : ""),
+      orgAgentMetaRow("PR", session.prNumber > 0
+        ? `${canLink ? `<a class="font-medium text-primary hover:underline" href="${escapeHtml(repoRecordUrl(repo, "pulls", session.prNumber))}">#${session.prNumber}</a>` : `#${session.prNumber}`}${session.merged ? " · merged" : ""}`
+        : (session.merged ? "Merged" : "")),
+      orgAgentMetaRow("Issue", session.issueNumber > 0
+        ? (canLink ? `<a class="font-medium text-primary hover:underline" href="${escapeHtml(repoRecordUrl(repo, "issues", session.issueNumber))}">#${session.issueNumber}</a>` : `#${session.issueNumber}`)
+        : ""),
+      orgAgentMetaRow("Turns", session.numTurns > 0 ? escapeHtml(formatCount(session.numTurns)) : ""),
+      orgAgentMetaRow("Runtime", escapeHtml(orgAgentRuntimeText(session.durationMs))),
+      orgAgentMetaRow("Cost", session.costUsd > 0 ? escapeHtml(formatUsd(session.costUsd)) : ""),
+      orgAgentMetaRow("Tokens", session.totalTokens > 0 ? escapeHtml(formatCount(session.totalTokens)) : ""),
+      orgAgentMetaRow("Started", orgAgentClockHtml(session.startedAt || session.createdAt)),
+      orgAgentMetaRow("Finished", orgAgentClockHtml(session.finishedAt)),
+      orgAgentMetaRow("Session", `<span class="font-mono">#${escapeHtml(String(session.localId))}</span>`),
+    ].join("");
+    const transcriptBody = !transcript || (transcript.loading && !transcript.text)
+      ? `<p class="px-3 py-6 text-center text-xs text-muted-foreground">${connected ? loadingHtml("Reading the transcript from the desktop…") : "Reconnect to the desktop to read this transcript."}</p>`
+      : transcript.error && !transcript.text
+        ? `<p class="text-xs text-destructive">${escapeHtml(transcript.error)}</p>`
+        : `<div data-desktop-agent-transcript class="grid max-h-96 min-w-0 gap-3 overflow-auto rounded-md bg-background p-3 text-foreground">${desktopAgentTranscriptHtml(transcript.text)}</div>`;
+    return `
+      <section data-desktop-agent-detail="${escapeHtml(session.id)}" class="flex min-h-0 flex-1 flex-col">
+        <div data-desktop-agent-detail-head class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+          <button type="button" data-org-agent-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to sessions</button>
+          <span class="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] ${repoAgentStatusTone(session.status)}">${escapeHtml(session.status || "unknown")}</span>
+          <span class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"><i data-lucide="monitor" class="h-3 w-3"></i>${escapeHtml(session.desktopNode)}</span>
+          ${session.active ? '<span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-yellow-500"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-500"></span>live</span>' : ""}
+          <div class="ml-auto flex flex-wrap items-center gap-2">
+            ${actions}
+            ${desktopAgentButton("refresh", "refresh-cw", "Refresh")}
+          </div>
+        </div>
+        <div data-desktop-agent-detail-body data-desktop-agent-mode="${diffOpen ? "diff" : "transcript"}" class="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-4">
+          <header class="grid gap-1">
+            <span class="font-mono text-[11px] text-muted-foreground">Desktop agent on ${escapeHtml(session.desktopNode)}</span>
+            <h3 class="text-base font-semibold leading-tight text-foreground">${escapeHtml(session.title)}</h3>
+          </header>
+          ${state.agentsView.desktopNotice ? `<p data-desktop-agent-notice class="text-xs ${state.agentsView.desktopNoticeTone === "error" ? "text-destructive" : "text-emerald-600"}">${escapeHtml(state.agentsView.desktopNotice)}</p>` : ""}
+          ${session.lastError ? `
+            <div class="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
+              <i data-lucide="octagon-alert" class="mt-0.5 h-3.5 w-3.5 shrink-0"></i>
+              <span class="min-w-0 break-words">${escapeHtml(session.lastError)}</span>
+            </div>` : ""}
+          <div class="grid gap-2">
+            <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-foreground">
+              <i data-lucide="${diffOpen ? "git-compare-arrows" : "messages-square"}" class="h-3.5 w-3.5 text-muted-foreground"></i>${diffOpen ? "Changes" : "Transcript"}
+            </div>
+            ${diffOpen ? renderDesktopAgentDiff(session) : transcriptBody}
+          </div>
+          <div class="grid gap-2">
+            <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-foreground">
+              <i data-lucide="info" class="h-3.5 w-3.5 text-muted-foreground"></i>Details
+            </div>
+            <dl class="grid grid-cols-2 gap-3 rounded-md border border-border bg-secondary/20 p-3 sm:grid-cols-3">${meta}</dl>
+          </div>
+        </div>
+        <div data-desktop-agent-detail-foot class="border-t border-border bg-secondary/20 px-4 py-3">
+          ${connected ? `
+            <form data-desktop-agent-prompt="${escapeHtml(session.id)}" class="grid gap-2">
+              <textarea name="prompt" required maxlength="16000" rows="2" class="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs text-foreground" placeholder="${session.active ? "Steer this agent…" : "Continue this agent with a new message…"}"></textarea>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="submit" class="h-8 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90">Send</button>
+                <span class="text-[11px] text-muted-foreground">Sent straight to the desktop, encrypted end to end. Enter sends; Shift+Enter adds a line.</span>
+              </div>
+            </form>` : '<p class="text-[11px] text-muted-foreground">The desktop is not connected.</p>'}
+        </div>
+      </section>`;
+  }
+
+  function patchDesktopAgentDetail(repo) {
+    const pane = $("[data-org-agent-detail-pane]");
+    const current = pane?.querySelector("[data-desktop-agent-detail]");
+    const session = desktopAgentSelected();
+    if (!current || !session || current.dataset.desktopAgentDetail !== session.id) {
+      renderOrgAgentDetailPane(repo);
+      return;
+    }
+    const scratch = document.createElement("div");
+    scratch.innerHTML = renderDesktopAgentDetail(session, repo);
+    const fresh = scratch.querySelector("[data-desktop-agent-detail]");
+    if (!fresh) return;
+    const body = current.querySelector("[data-desktop-agent-detail-body]");
+    const modeChanged = body?.dataset.desktopAgentMode !==
+      fresh.querySelector("[data-desktop-agent-detail-body]")?.dataset.desktopAgentMode;
+    const scrollTop = modeChanged ? 0 : body?.scrollTop || 0;
+    const oldTranscript = current.querySelector("[data-desktop-agent-transcript]");
+    const transcriptPinned = oldTranscript
+      ? oldTranscript.scrollHeight - oldTranscript.scrollTop - oldTranscript.clientHeight < 48
+      : true;
+    const transcriptTop = oldTranscript?.scrollTop || 0;
+    const answerDrafts = Array.from(current.querySelectorAll("[data-desktop-agent-answer]")).map((form) => ({
+      id: form.dataset.desktopAgentAnswer,
+      inputs: Array.from(form.querySelectorAll("input")).map((input) => ({ value: input.value, checked: input.checked })),
+    }));
+    const draft = current.querySelector("[data-desktop-agent-detail-foot] textarea");
+    const keepFoot = Boolean(draft && (draft.value || document.activeElement === draft));
+    const answering = document.activeElement?.closest("[data-desktop-agent-answer]") && !document.activeElement.disabled;
+    const parts = (keepFoot ? ["head", "body"] : ["head", "body", "foot"]).filter((part) => part !== "body" || !answering);
+    parts.forEach((part) => {
+      const selector = `[data-desktop-agent-detail-${part}]`;
+      const before = current.querySelector(selector);
+      const after = fresh.querySelector(selector);
+      if (!before || !after) return;
+      before.replaceWith(after);
+      wireDesktopAgentActions(repo, after);
+    });
+    const nextBody = current.querySelector("[data-desktop-agent-detail-body]");
+    if (nextBody) nextBody.scrollTop = scrollTop;
+    const nextTranscript = current.querySelector("[data-desktop-agent-transcript]");
+    if (nextTranscript) nextTranscript.scrollTop = transcriptPinned ? nextTranscript.scrollHeight : transcriptTop;
+    for (const draft of answerDrafts) {
+      const form = Array.from(current.querySelectorAll("[data-desktop-agent-answer]")).find((item) => item.dataset.desktopAgentAnswer === draft.id);
+      if (!form) continue;
+      Array.from(form.querySelectorAll("input")).forEach((input, index) => {
+        if (!input.disabled && draft.inputs[index]) {
+          input.value = draft.inputs[index].value;
+          input.checked = draft.inputs[index].checked;
+        }
+      });
+    }
+    window.lucide?.createIcons();
+  }
+
+  function setDesktopAgentNotice(message, tone = "ok") {
+    state.agentsView.desktopNotice = message;
+    state.agentsView.desktopNoticeTone = tone;
+  }
+
+  async function runDesktopAgentAction(repo, session, action) {
+    const connection = desktopConnection(session.desktopNode);
+    if (!connection || desktopAgentsView.busy.has(action)) return;
+    const key = desktopAgentsView.repoKey;
+    if (action === "diff") {
+      const diff = desktopAgentsView.diff;
+      if (diff.open && diff.id === session.id) {
+        desktopAgentsView.diff = { ...diff, open: false };
+        patchDesktopAgentDetail(repo);
+        return;
+      }
+      desktopAgentsView.diff = { id: session.id, open: true, loading: true, data: null, error: "" };
+      patchDesktopAgentDetail(repo);
+      const current = desktopAgentsView.diff;
+      try {
+        current.data = await connection.request("agentops.diff", { id: session.localId }, 60000);
+      } catch (error) {
+        current.error = desktopControlErrorText(error);
+      }
+      current.loading = false;
+      if (desktopAgentsView.diff === current) patchDesktopAgentDetail(repo);
+      return;
+    }
+    if (action === "refresh") {
+      desktopAgentsView.busy.add(action);
+      patchDesktopAgentDetail(repo);
+      try {
+        if (desktopAgentsView.diff.open && desktopAgentsView.diff.id === session.id) {
+          desktopAgentsView.diff.open = false;
+          await runDesktopAgentAction(repo, session, "diff");
+        }
+        await refreshDesktopAgents(repo, key, session.desktopNode);
+      } finally {
+        desktopAgentsView.busy.delete(action);
+        redrawDesktopAgents(repo);
+      }
+      return;
+    }
+    let confirmation = null;
+    if (action === "merge" || action === "delete") {
+      try {
+        confirmation = await connection.request("agentops.prepare", { action, id: session.localId });
+      } catch (error) {
+        setDesktopAgentNotice(desktopControlErrorText(error), "error");
+        patchDesktopAgentDetail(repo);
+        return;
+      }
+      if (action === "delete" && !window.confirm(String(confirmation.summary || "Delete this agent?"))) {
+        return;
+      }
+    } else if (action === "stop" && !window.confirm(`Stop “${session.title}” on ${session.desktopNode}? Its work so far stays in its worktree.`)) {
+      return;
+    }
+    desktopAgentsView.busy.add(action);
+    setDesktopAgentNotice("");
+    patchDesktopAgentDetail(repo);
+    try {
+      if (action === "stop") {
+        await connection.request("agents.stop", { id: session.localId });
+        setDesktopAgentNotice("Stopped on the desktop.");
+      } else if (action === "continue") {
+        await connection.request("agents.continue", { id: session.localId });
+        setDesktopAgentNotice("Continuing on the desktop.");
+      } else if (action === "merge") {
+        await connection.request("agentops.merge", {
+          id: session.localId, token: confirmation.token, typed: confirmation.typeToConfirm || "",
+        }, 180000);
+        setDesktopAgentNotice(`Merged ${session.branchName} and cleaned up its worktree on the desktop.`);
+      } else if (action === "delete") {
+        await connection.request("agentops.delete", { id: session.localId, token: confirmation.token });
+        state.agentsView.selectedAgentId = null;
+        setDesktopAgentNotice("");
+        state.agentsView.notice = "Agent deleted on the desktop.";
+      }
+    } catch (error) {
+      setDesktopAgentNotice(desktopControlErrorText(error), "error");
+    } finally {
+      desktopAgentsView.busy.delete(action);
+    }
+    await refreshDesktopAgents(repo, key, session.desktopNode);
+    if (action === "delete") renderOrgAgentSessions(repo);
+    else redrawDesktopAgents(repo);
+  }
+
+  function openDesktopAgentDetail(repo, id) {
+    const session = desktopAgentsView.sessions.find((item) => item.id === id);
+    if (!session) return;
+    state.agentsView.selectedAgentId = id;
+    state.agentsView.notice = "";
+    setDesktopAgentNotice("");
+    if (desktopAgentsView.diff.id !== id) {
+      desktopAgentsView.diff = { id: "", open: false, loading: false, data: null, error: "" };
+    }
+    renderOrgAgentSessions(repo);
+    void loadDesktopAgentTranscript(repo, session).then(() => {
+      if (String(state.agentsView.selectedAgentId || "") === id) patchDesktopAgentDetail(repo);
+    });
+  }
+
+  function wireDesktopAgentActions(repo, container) {
+    container.querySelectorAll("[data-desktop-agent-answer]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const session = desktopAgentSelected();
+        const connection = session ? desktopConnection(session.desktopNode) : null;
+        if (!connection) return;
+        const answers = [];
+        for (const input of form.querySelectorAll("[data-question-index]")) {
+          const selected = Array.from(form.querySelectorAll(`[name="answer-${input.dataset.questionIndex}"]:checked`)).map((option) => option.value);
+          const answer = input.value.trim() || selected.join(", ");
+          if (!answer) {
+            form.querySelector("[data-answer-error]").textContent = "Answer each question before continuing.";
+            return;
+          }
+          answers.push([input.dataset.questionText, answer]);
+        }
+        Array.from(form.elements).forEach((element) => { element.disabled = true; });
+        try {
+          await connection.request("agents.answer", { id: session.localId, question: form.dataset.desktopAgentAnswer, answer: answers.length === 1 ? answers[0][1] : answers.map(([question, answer]) => `${question} → ${answer}`).join("\n") });
+          await loadDesktopAgentTranscript(repo, session);
+          patchDesktopAgentDetail(repo);
+        } catch (error) {
+          form.querySelector("[data-answer-error]").textContent = desktopControlErrorText(error);
+          Array.from(form.elements).forEach((element) => { element.disabled = false; });
+        }
+      });
+    });
+
+    container.querySelectorAll("[data-desktop-agent-open]").forEach((button) => {
+      button.addEventListener("click", () => openDesktopAgentDetail(repo, button.dataset.desktopAgentOpen || ""));
+    });
+    container.querySelectorAll("[data-desktop-agents-retry]").forEach((button) => {
+      button.addEventListener("click", () => {
+        connectRepoDesktops(repo, state.agentsView.startPayload, { retry: true });
+      });
+    });
+    container.querySelectorAll("[data-desktop-agent-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const session = desktopAgentSelected();
+        if (session) void runDesktopAgentAction(repo, session, button.dataset.desktopAgentAction || "");
+      });
+    });
+    container.querySelectorAll("[data-desktop-agent-prompt]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const session = desktopAgentSelected();
+        const connection = session ? desktopConnection(session.desktopNode) : null;
+        const input = form.querySelector("textarea");
+        const text = String(input?.value || "").trim();
+        if (!session || !connection || !text) return;
+        Array.from(form.elements).forEach((element) => { element.disabled = true; });
+        try {
+          await connection.request("agents.prompt", { id: session.localId, text });
+          if (input) input.value = "";
+          setDesktopAgentNotice(session.active ? "Sent to the running agent." : "Sent; the agent resumes on the desktop.");
+        } catch (error) {
+          setDesktopAgentNotice(desktopControlErrorText(error), "error");
+        }
+        Array.from(form.elements).forEach((element) => { element.disabled = false; });
+        await refreshDesktopAgents(repo, desktopAgentsView.repoKey, session.desktopNode);
+        patchDesktopAgentDetail(repo);
+      });
+      form.querySelector("textarea")?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.shiftKey || event.ctrlKey ||
+          event.metaKey || event.altKey || event.isComposing) return;
+        event.preventDefault();
+        form.requestSubmit();
+      });
+    });
+  }
+
+  function desktopAgentsListHtml(repo) {
+    if (desktopAgentsView.repoKey !== repoKey(repo)) return "";
+    const status = desktopNodeStatusHtml(repo);
+    const sessions = repoAgentsMatchingPageFilter(desktopAgentsView.sessions);
+    if (!status && !sessions.length) return "";
+    return `
+      <div data-desktop-agents class="border-b border-border">
+        <div class="flex items-center gap-1.5 border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><i data-lucide="monitor" class="h-3 w-3"></i>On desktop</div>
+        ${status}
+        ${sessions.map(renderDesktopAgentSession).join("")}
+      </div>`;
+  }
+
+  async function handleRepoAgentPromptSubmit(repo, form) {
+    void repo;
+    const hint = form?.querySelector("[data-repo-agent-prompt-hint]");
+    if (hint) {
+      hint.className = "text-[11px] text-muted-foreground";
+      hint.textContent =
+        "Send prompts from the ForkMesh desktop app; this browser has no owner encryption key.";
+    }
+  }
+
+  async function handleRepoAgentNewSubmit(repo, form) {
+    const hint = form?.querySelector("[data-repo-agent-new-hint]");
+    if (!repo || !form) return;
+    const values = new FormData(form);
+    const prompt = String(values.get("prompt") || "").trim();
+    const provider = String(values.get("provider") || "").trim();
+    const model = String(values.get("model") || "").trim();
+    const targetNode = String(values.get("targetNode") || "").trim();
+    if (!prompt || !provider || !targetNode) return;
+    if (hint) {
+      hint.className = "text-[11px] leading-4 text-muted-foreground";
+      hint.textContent = `Saving this request for ${targetNode}…`;
+    }
+    Array.from(form.elements).forEach((element) => { element.disabled = true; });
+    try {
+      const payload = await orgAgentRequest(
+        "POST",
+        orgAgentEndpoint(repo),
+        {
+          prompt,
+          provider,
+          model,
+          targetNode,
+          createPr: values.get("createPr") === "on",
+          attachments: agentModalAttachmentsPayload(form),
+        },
+      );
+      if (hint) {
+        hint.className = "text-[11px] leading-4 text-muted-foreground";
+        hint.textContent = orgAgentSavedMessage(payload);
+      }
+      form.querySelector("[data-repo-agent-new-input]").value = "";
+      form._pendingAgentImages = [];
+      renderAgentModalChips(form);
+      if (state.selectedRepo && repoMatchesKey(state.selectedRepo, repoKey(repo))) {
+        // Land on the list: the session just queued is the row to look at.
+        state.agentsView.selectedAgentId = null;
+        void loadRepoAgents(repo, { notice: orgAgentSavedMessage(payload) });
+      }
+      window.setTimeout(() => setAgentModalOpen(false), 900);
+    } catch (error) {
+      if (hint) {
+        hint.className = "text-[11px] leading-4 text-destructive";
+        hint.textContent = String(error?.message || "The agent request failed.");
+      }
+    } finally {
+      Array.from(form.elements).forEach((element) => { element.disabled = false; });
+      renderAgentModalTargets($("#agentModal"));
+    }
+  }

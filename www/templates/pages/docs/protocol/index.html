@@ -1,0 +1,853 @@
+{% extends "base.html" %}
+{% block title %}Protocol spec · ForkMesh Docs{% endblock %}
+{% block meta %}
+    <meta
+      name="description"
+      content="The ForkMesh mainnode protocol: identity and signatures, encrypted rooms, catalog and state attestation, the HTTP API, the two-request clone flow, and how to self-host a mainnode."
+    />
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <style>
+      .doc-wrap { max-width: 860px; margin: 0 auto; padding: 42px 20px 80px; }
+      .doc-wrap h1 { font-size: clamp(32px, 5vw, 48px); margin: 0 0 12px; }
+      .doc-intro { color: var(--muted); max-width: 68ch; font-size: 17px; margin: 0 0 8px; line-height: 1.6; }
+      .doc-crumbs { margin: 0 0 18px; font-size: 13px; color: var(--muted); }
+      .doc-crumbs a { color: var(--muted); }
+      .doc-crumbs a:hover { color: var(--foreground); }
+      .doc-toc { margin: 28px 0 8px; padding: 16px 20px; border: 1px solid var(--border); border-radius: 12px; }
+      .doc-toc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+      .doc-toc ol { margin: 0; padding-left: 18px; columns: 2; column-gap: 24px; }
+      .doc-toc li { margin: 4px 0; break-inside: avoid; }
+      .doc-toc a { color: var(--foreground); text-decoration: none; }
+      .doc-toc a:hover { text-decoration: underline; }
+      .doc-body { margin-top: 32px; }
+      .doc-body h2 { font-size: 26px; margin: 44px 0 14px; padding-top: 22px; border-top: 1px solid var(--border); }
+      .doc-body h2:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+      .doc-body h3 { font-size: 19px; margin: 28px 0 10px; }
+      .doc-body p { color: var(--muted); line-height: 1.65; margin: 0 0 14px; }
+      .doc-body p strong, .doc-body li strong { color: var(--foreground); }
+      .doc-body a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+      .doc-body ul, .doc-body ol { padding-left: 22px; margin: 0 0 14px; color: var(--muted); }
+      .doc-body li { margin: 6px 0; line-height: 1.6; }
+      .doc-body code { font-family: "ForkMesh Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: rgba(127,127,127,0.14); border-radius: 4px; padding: 0.12em 0.4em; }
+      .doc-body pre { background: rgba(127,127,127,0.08); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+      .doc-body pre code { background: none; padding: 0; font-size: 0.86em; line-height: 1.55; }
+      .doc-body blockquote { margin: 0 0 16px; padding: 4px 16px; border-left: 3px solid var(--border); color: var(--muted); }
+      .doc-body table { width: 100%; border-collapse: collapse; margin: 0 0 20px; font-size: 0.93em; }
+      .doc-body th, .doc-body td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      .doc-body th { color: var(--foreground); font-weight: 700; }
+      .doc-body hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+      .doc-siblings { margin-top: 44px; padding-top: 24px; border-top: 1px solid var(--border); }
+      .doc-siblings h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+      .doc-siblings ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; color: var(--muted); }
+      .doc-siblings a { font-weight: 600; color: var(--foreground); text-decoration: none; }
+      .doc-siblings a:hover { text-decoration: underline; }
+    </style>
+{% endblock %}
+{% block body %}
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="doc-wrap">
+      <p class="doc-crumbs"><a href="/docs">Docs</a> / Protocol spec</p>
+      <p class="eyebrow">Developer docs</p>
+      <h1>The ForkMesh mainnode protocol</h1>
+      <p class="doc-intro">
+        ForkMesh is a peer-to-peer forge: desktop clients hold working copies,
+        while managed mirror services hold independently served Git history and
+        issue/PR/discussion records. They talk to
+        each other through a thin <strong>mainnode</strong> routing layer. The
+        relay never becomes a repository store. Every room's outer layer uses a
+        relay-derived authenticated shared key, so the relay operator can
+        decrypt public-channel traffic. Private channels and direct messages
+        add automatic device-to-device encryption inside that layer, so the
+        relay sees only recipient ciphertext there (see
+        <a href="#rooms">Rooms</a>). It coordinates generalized presence, selects healthy
+        independently operated HTTPS mirror origins, proxies authorized public
+        reads in place, verifies signed submissions, and keeps a public catalog
+        so the network is discoverable.
+      </p>
+      <p class="doc-intro">
+        The reference mainnode runs at <code>app.forkmesh.com</code>. This document
+        specifies the protocol so that is a <em>deployment</em>, not the
+        definition: anyone can stand up a mainnode from this spec and point a
+        stock desktop client at it (see
+        <a href="#self-hosting-a-mainnode">Self-hosting a mainnode</a>). The
+        reference relay is the App in
+        <code>app/</code>; the reference client is the desktop app in
+        <code>desktop/</code>.
+      </p>
+      <p class="doc-intro">
+        Everything here is versioned by canonical-string prefix
+        (<code>forkmesh-&lt;thing&gt;-v1</code>). A <code>-v1</code> string is
+        frozen: changing the bytes that go into a signature is a new version,
+        never an edit, so old signatures keep verifying across a client
+        rollout.
+      </p>
+      <p class="doc-intro">
+        Companion docs: <a href="/docs/cloudflare-worker">App &amp; API relay</a>,
+        <a href="/docs/qt-client">desktop client</a>,
+        <a href="/mobile">mobile app</a>, and
+        the <a href="/changelog">changelog</a>. The on-disk issue/PR/discussion
+        record format lives in <code>issues/README.md</code> in the repo.
+      </p>
+
+      <nav class="doc-toc" aria-label="Table of contents">
+        <h2>Contents</h2>
+        <ol>
+          <li><a href="#identity-and-signatures">1. Identity and signatures</a></li>
+          <li><a href="#rooms">2. Rooms (encrypted coordination channels)</a></li>
+          <li><a href="#catalog-and-state-attestation">3. Catalog and state attestation</a></li>
+          <li><a href="#http-api">4. HTTP API</a></li>
+          <li><a href="#two-request-clone-flow">5. The two-request clone flow and sticky pinning</a></li>
+          <li><a href="#self-hosting-a-mainnode">6. Self-hosting a mainnode</a></li>
+        </ol>
+      </nav>
+
+      <div class="doc-body">
+        <h2 id="identity-and-signatures">1. Identity and signatures</h2>
+
+        <h3 id="node-identity">1.1 Node identity</h3>
+        <p>
+          Every desktop client starts with a long-lived <strong>Ed25519</strong>
+          identity key, generated on first run and stored as
+          <code>ed25519.pem</code> in the node's config directory
+          (<code>desktop/src/ForkMeshIdentity.h</code>). This key is
+          separate from the LAN TLS certificate: TLS encrypts peer links, the
+          Ed25519 key <em>signs</em> metadata (profile, catalog records,
+          issues, PRs, releases, auth tokens).
+        </p>
+        <p>
+          The <strong>public key is the identity</strong> — a raw 32-byte
+          Ed25519 key, encoded <strong>base64url without padding</strong>.
+          That base64url string is what appears as <code>author</code> /
+          <code>maintainer</code> throughout the protocol and as the pubkey in
+          every canonical string. Signatures are likewise raw Ed25519,
+          base64url without padding.
+        </p>
+        <p>
+          A human-facing <strong>account name</strong> (e.g.
+          <code>newnewnode</code>) can be bound to a key by reserving and
+          finalizing it (§4.5). Account binding gates private repositories and
+          owner-authorized changes. Managed mirror services, not desktop
+          clients, publish serving state to the catalog. A bare key can browse
+          and submit, while only an authorized account may administer
+          <code>owner/repo</code>. An active account can rotate
+          its bound key with <code>POST /api/accounts/rotate</code>; the old
+          bound key signs the successor key, and the relay records the old key
+          in <code>prev_pubkeys</code> for idempotent retries.
+        </p>
+
+        <h3 id="canonical-string-convention">1.2 The canonical-string convention</h3>
+        <p>
+          ForkMesh's legacy action schemes do not sign generic canonicalized
+          JSON (that would invite C++/Python serialization drift). They sign an
+          <strong>explicit newline-joined canonical string</strong>:
+        </p>
+        <pre><code>forkmesh-&lt;thing&gt;-v1 \n
+&lt;field 1&gt; \n
+&lt;field 2&gt; \n
+...</code></pre>
+        <p>
+          Where a signature commits to variable-length content, the content is
+          reduced to a single field by joining its parts with a NUL
+          (<code>\x00</code>) and hashing:
+          <code>sha256hex(part1 \0 part2 \0 …)</code>. The signature then
+          binds that hex digest, not the raw content, so the canonical string
+          stays fixed-shape.
+        </p>
+        <p>
+          Both sides implement this identically: the client in the various
+          <code>*Store</code> <code>canonicalString</code> /
+          <code>contentForSigning</code> helpers, the relay in
+          <code>app/src/entry.py</code>
+          (<code>ed25519_verify</code> + the per-type <code>verify_*</code>
+          functions).
+        </p>
+        <p>
+          Conflict-safe collaboration v1 (§1.5) is the exception: it defines a
+          deliberately small canonical JSON subset, rejects noncanonical wire
+          bytes, and tests the Python and WebCrypto encoders against one signed
+          corpus. Its domain prefix remains an explicit first line.
+        </p>
+
+        <h3 id="signature-schemes">1.3 Signature schemes</h3>
+        <p>
+          Every signed action in the protocol. The relay verifies each with
+          the pubkey named in the canonical string
+          (<code>ed25519_verify</code>); a bad or missing signature is
+          rejected before any state changes.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Purpose</th><th>Canonical string (fields after the prefix line, <code>\n</code>-joined)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Issue event</strong></td><td><code>issue-event</code> type · number · author · ts · <code>sha256hex(content)</code></td></tr>
+            <tr><td><strong>Discussion event</strong></td><td><code>discussion-event</code> type · number · author · ts · <code>sha256hex(content)</code></td></tr>
+            <tr><td><strong>Pull request</strong></td><td><code>pull-event</code> author · ts · <code>sha256hex(title \0 base \0 head \0 patch [\0 commits])</code></td></tr>
+            <tr><td><strong>Pull comment</strong></td><td><code>pull-comment</code> type · number · author · ts · <code>sha256hex(content)</code></td></tr>
+            <tr><td><strong>Catalog record</strong></td><td><code>catalog</code> owner · repo · updatedAt</td></tr>
+            <tr><td><strong>Catalog delete</strong></td><td><code>catalog-delete</code> owner · name · ts</td></tr>
+            <tr><td><strong>Repo-state attestation</strong></td><td><code>repostate</code> owner · repo · stateHash · updatedAt</td></tr>
+            <tr><td><strong>Release manifest</strong></td><td><code>release</code> repo · tag · author · ts · <code>sha256hex(content)</code></td></tr>
+            <tr><td><strong>Account reserve</strong></td><td><code>reserve</code> name · ts</td></tr>
+            <tr><td><strong>Account finalize</strong></td><td><code>finalize</code> name · email · ts</td></tr>
+            <tr><td><strong>Account key rotation</strong></td><td><code>rotate</code> oldPubkey · newPubkey · ts</td></tr>
+            <tr><td><strong>Host token</strong></td><td><code>host</code> owner · repo · ts</td></tr>
+            <tr><td><strong>View token</strong> (private clone/browse)</td><td><code>view</code> owner · repo · ts</td></tr>
+            <tr><td><strong>Legacy push token</strong> (inactive)</td><td><code>push</code> owner · repo · ts; retained only for compatibility parsing; it cannot authorize receive-pack</td></tr>
+            <tr><td><strong>Share view token</strong> (collaborator)</td><td><code>share-view</code> viewer · owner · repo · ts</td></tr>
+            <tr><td><strong>Node link (self)</strong></td><td><code>link-self</code> nodeName · identifier · ts</td></tr>
+            <tr><td><strong>Node link (grant)</strong></td><td><code>link-grant</code> nodeName · ts; redeemed only by the accepting account's own session, which becomes the owner</td></tr>
+            <tr><td><strong>Node link (named grant)</strong></td><td><code>link-grant-v2</code> nodeName · user · ts · nonce; accepted only by <code>user</code>, once, within 5 minutes</td></tr>
+            <tr><td><strong>Node link (accept)</strong></td><td><code>link-accept</code> nodeName · user · grant signature · ts; the named account's own key accepts a grant</td></tr>
+          </tbody>
+        </table>
+        <p>
+          All prefixes are the literal <code>forkmesh-&lt;name&gt;-v1</code>, except the named grant, <code>forkmesh-link-grant-v2</code>.
+          <code>ts</code> is milliseconds since the epoch.
+          Active <code>host</code> and <code>view</code> tokens are accepted
+          only inside a short freshness window (<code>_ts_ok</code>). Direct
+          mirror capabilities add a single-use request id and bind the method,
+          path, body digest, node, and issue time. A syntactically valid legacy
+          <code>push</code> token cannot activate receive-pack.
+        </p>
+        <p>
+          The distinct prefixes are load-bearing: a <code>view</code> token
+          can never be replayed as a <code>host</code> or <code>push</code>
+          token, and vice versa, even though the three share the same
+          <code>owner · repo · ts</code> shape.
+        </p>
+
+        <h3 id="issue-pr-discussion-record-signing">1.4 Issue / PR / discussion record signing</h3>
+        <p>
+          The on-disk record format lives in <code>issues/README.md</code> in
+          the repo. The essentials the relay verifies for cross-user
+          submissions:
+        </p>
+        <pre><code>canonical =
+  forkmesh-issue-event-v1 \n &lt;type&gt; \n &lt;number&gt; \n &lt;author-pubkey&gt; \n &lt;ts&gt; \n
+  sha256hex(content)</code></pre>
+        <p>
+          <code>content</code> is type-specific and joined by NUL. For an
+          <code>open</code> event it is
+          <code>title \0 body \0 attachments.join(",")</code>; the body has
+          leading/trailing newlines stripped so the blank line after
+          frontmatter doesn't change the signature. See the per-type content
+          table in <code>issues/README.md</code>. Issue signatures bind the
+          issue number; PR signatures deliberately do <strong>not</strong>
+          (the owner assigns the durable PR number on merge).
+        </p>
+
+        <h3 id="conflict-safe-collaboration">1.5 Conflict-safe collaboration objects</h3>
+        <p>
+          The universal collaboration envelope covers issues, pull requests,
+          comments, labels, reactions, reviews, milestones, boards,
+          notifications, and moderation decisions. Every event binds a
+          content-derived repository and object identity, an Ed25519 author, a
+          repository authority-policy digest, an author sequence, and an
+          explicit parent DAG. Wall-clock time is audit metadata, never a
+          conflict winner.
+        </p>
+        <p>
+          Scalar updates replace only causal ancestors. Concurrent differing
+          values remain visible conflicts until a signed update names every
+          conflicting head as a parent. Sets and tombstones use observed-remove
+          semantics, so a concurrent add or deletion cannot be erased by an
+          event that never observed it. Moderator decisions require a pinned
+          moderator role and a signed decide → appeal → resolve lineage;
+          conflicting decisions quarantine the subject visibly.
+        </p>
+        <p>
+          Nodes retain canonical raw envelopes as NDJSON and recompute the
+          disposable materialized state. Duplicate delivery is idempotent,
+          missing-parent events remain pending, and signature, sequence,
+          authorization, reference, or lineage failures stay out of the fold.
+          See the
+          <a href="/docs/protocol/collaboration-event-v1.schema.json">event schema</a>
+          and the repository's
+          <code>www/docs/design/conflict-safe-collaboration.md</code> for the
+          complete encoding, family matrix, migration, recovery, telemetry,
+          and conformance rules.
+        </p>
+
+        <h2 id="rooms">2. Rooms (encrypted coordination channels)</h2>
+        <p>
+          Nodes converge on shared <strong>rooms</strong> hosted by the
+          mainnode's room service. Rooms carry presence, chat, and the
+          small control frames that make the mesh feel live. The default room
+          every node joins is <code>mainnode/forkmesh</code> → room
+          <code>general</code>, i.e. the WebSocket path:
+        </p>
+        <pre><code>/api/repo/&lt;owner&gt;/&lt;repo&gt;/rooms/&lt;room&gt;/ws</code></pre>
+        <p>
+          Every room uses <strong>relay-readable authenticated shared-key
+          transport</strong> as its outer layer. Public channels intentionally
+          stop there for controller integrations. Private channels and direct
+          messages add an automatic recipient-encrypted inner layer, so the
+          controller room key alone cannot decrypt their application frames.
+        </p>
+
+        <h3 id="room-key">2.1 Room key</h3>
+        <p>
+          The repository-scoped passphrase and room key are derived in two stages:
+        </p>
+        <ul>
+          <li><strong>Relay passphrase:</strong> the Town Square <code>mainnode/forkmesh</code> compatibility room uses lowercase hex of <code>SHA-256(DATA_KEY + ":room-chat-passphrase-v1")</code>. Other repositories use <code>SHA-256(DATA_KEY + ":room-chat-passphrase-v2:" + lower(owner + "/" + repo))</code>. <code>GET /api/chat/room-key?owner=&amp;repo=</code> releases the scoped value only to an authenticated account or signed node authorized for that repository; missing and unauthorized private repositories both return not found.</li>
+          <li><strong>Room salt:</strong> the first 16 bytes of <code>SHA-256("ForkMesh room:" + &lt;roomName&gt;)</code>.</li>
+          <li><strong>Client KDF:</strong> PBKDF2-HMAC-SHA256 over the UTF-8 passphrase, 210,000 rounds, producing a 256-bit <strong>AES-GCM</strong> key. The desktop, website, iOS, and Android clients use the same bytes.</li>
+          <li><strong>Protected application layer:</strong> each installation keeps a local X25519 private key and advertises only its public key. Private conversations wrap each fresh AES-256-GCM content key for known room devices before applying the outer room cipher. Public-key discovery is automatic and goes through the relay, which is trusted to publish the right device keys.</li>
+        </ul>
+        <p>
+          A desktop client signs
+          <code>forkmesh-room-key-v2\n&lt;node&gt;\n&lt;lower-owner&gt;\n&lt;lower-repo&gt;\n&lt;timestamp-ms&gt;</code>.
+          The old v1 node proof is accepted only for the public
+          <code>mainnode/forkmesh</code> compatibility room. Browser clients use
+          their bearer session; the passphrase response is never cacheable.
+        </p>
+
+        <h3 id="private-chat-channels">2.2 User-managed channels and webhooks</h3>
+        <p>
+          Active registered users can create named public or private chat
+          channels. Public channels are available to every active registered
+          user, but not to guests or node-only sessions. Private channels are
+          available to their creator, administrators, and explicitly selected
+          active registered users. The creator can select initial users in the creation
+          request, and the relay writes the channel and every membership in one atomic
+          batch. Channel names, visibility, and member names are encrypted at
+          rest, with blind indexes used for lookup and uniqueness. The creator
+          and platform administrators can manage membership and topics.
+        </p>
+        <p>
+          The encrypted channel record contains a <code>visibility</code> value
+          of <code>public</code> or <code>private</code>. Records created before
+          this field existed default to private, so an upgrade never widens
+          channel access. A public creation request cannot include membership
+          rows. A private creation request can include up to 500 normalized
+          registered usernames, and any invalid user rejects the complete
+          operation without partial channel data.
+        </p>
+        <p>
+          A browser first lists its authorized channels through
+          <code>GET /api/chat/channels</code>, then requests a non-cacheable
+          passphrase and a 60-second signed WebSocket ticket through
+          <code>GET /api/chat/channels/&lt;channel-id&gt;/room-access</code>.
+          The WebSocket upgrade rechecks the active account, channel visibility,
+          administrator or membership status when required, and current key
+          version before reaching the room. Removing a private member
+          atomically increments the key version, which selects a new passphrase
+          and room namespace so the removed user cannot enter the rotated room.
+        </p>
+        <p>
+          A channel manager edits the channel through
+          <code>PATCH /api/chat/channels/&lt;channel-id&gt;</code>, which accepts
+          any subset of <code>name</code>, <code>topic</code>, and
+          <code>visibility</code>. A rename re-derives the name blind index and
+          still rejects a name another channel holds. Changing
+          <code>visibility</code> from <code>public</code> to
+          <code>private</code> increments the key version and revokes the open
+          room, so an account that is not a member cannot re-enter with the
+          passphrase it already holds. It also revokes every incoming webhook;
+          widening access does not rotate.
+          <code>DELETE /api/chat/channels/&lt;channel-id&gt;</code> removes the
+          channel, its memberships, and its webhooks in one atomic batch, closes
+          the live room, and notifies every member.
+        </p>
+        <p>
+          The desktop client holds account keys rather than a browser session,
+          so it signs each of these with its Ed25519 account key instead:
+          separate canonical proofs bind the settings edit (to a digest of the
+          exact named fields it sends), the deletion, the webhook collection
+          (to the method and the created name), and one webhook (to its id and
+          the method). A proof for one action therefore cannot authorize
+          another, and the channel-manager check still runs on every request.
+        </p>
+        <p>
+          A channel manager can create up to ten incoming webhooks for a public
+          channel. Private channels reject creation and rotation because a
+          controller webhook cannot author a recipient-sealed frame. Creation
+          returns a random 256-bit bearer URL once; only a
+          keyed blind index of its token is stored, so a later list can never
+          show the URL again.
+          <code>POST /api/chat/channels/&lt;channel-id&gt;/webhooks/&lt;webhook-id&gt;</code>
+          rotates one: it stores the blind index of a fresh token, retires the
+          previous URL, and reveals the new URL exactly once. A JSON delivery uses its
+          <code>text</code>, <code>content</code>, or <code>message</code> field,
+          is encrypted into the channel's current AES-GCM room format, broadcast
+          to live readers, and retained with normal room limits. Every delivery
+          also creates an account notification for the active user directory.
+        </p>
+        <p>
+          Public channels use the controller-readable room layer. Private
+          channels automatically add the X25519 recipient layer and reject
+          controller-authored application frames.
+        </p>
+
+        <h3 id="personal-direct-messages">2.3 Personal direct messages</h3>
+        <p>
+          Personal direct messages connect exactly two active registered users.
+          Either participant can start the conversation, and starting the same
+          pair again returns the existing conversation regardless of which user
+          initiated it. Self-messaging and group conversations are rejected.
+          Administrators have no implicit access: an account must be one of the
+          two stored participants to list, open, or connect to the conversation.
+        </p>
+        <p>
+          Conversation and participant names are encrypted at rest. Blind
+          indexes enforce one conversation per unordered pair and authorize
+          participant lookups without exposing those names. The browser lists
+          its conversations through the cursor-paginated
+          <code>GET /api/chat/direct-messages</code> collection or starts one
+          with <code>POST /api/chat/direct-messages</code> and a
+          <code>username</code> field. New-pair creation is account-throttled,
+          while reopening an existing pair does not consume that budget.
+        </p>
+        <p>
+          Authenticated username lookup uses
+          <code>GET /api/chat/direct-messages/users?query=…</code>. It searches
+          all active registered users, including accounts excluded from the
+          public profile directory, because profile publication and direct
+          message eligibility are separate choices. Results are bounded and
+          empty queries never enumerate the account database.
+        </p>
+        <p>
+          A participant requests a non-cacheable passphrase and 60-second
+          WebSocket ticket through
+          <code>GET /api/chat/direct-messages/&lt;conversation-id&gt;/room-access</code>.
+          The socket at
+          <code>/api/chat/direct-messages/&lt;conversation-id&gt;/ws?ticket=…</code>
+          rechecks the active account and participant row before reaching the
+          room. Missing conversations and unauthorized accounts both
+          receive not found, including platform administrators.
+        </p>
+        <p>
+          Retained direct-message frames advance an opaque message counter.
+          Each participant has a server-side read cursor, exposed only as a
+          bounded <code>unreadCount</code> in their own conversation listing.
+          Opening room access or posting to
+          <code>/api/chat/direct-messages/&lt;conversation-id&gt;/read</code>
+          advances that participant's cursor without exposing plaintext.
+        </p>
+        <p>
+          Direct messages use the same outer AES-GCM transport, encrypted
+          attachment frames, and retained ciphertext limits as other chat
+          rooms. They automatically add the X25519 recipient layer; the
+          relay-derived conversation passphrase opens only that inner envelope.
+        </p>
+
+        <h3 id="message-envelope">2.4 Message envelope</h3>
+        <p>Each frame on the wire is JSON:</p>
+        <pre><code>{ "kind": "cipher", "v": 1, "nonce": "&lt;b64 12 bytes&gt;", "tag": "&lt;b64 16 bytes&gt;", "body": "&lt;b64 ciphertext&gt;" }</code></pre>
+        <p>
+          In a public channel, the plaintext inside that outer envelope is the
+          application JSON object — a chat message, edit, delete, or similar
+          frame. In a protected conversation, it is instead a version-2
+          recipient envelope containing the encrypted application object and a
+          wrapped content key for each known device. AES-GCM uses the 12-byte
+          nonce; the 16-byte tag is stored separately from the ciphertext body.
+        </p>
+        <p>
+          An encrypted attachment chat object uses <code>fileName</code>,
+          <code>fileMime</code>, and a base64 <code>file</code> value. Browser
+          clients accept clipboard images and selected image or document files
+          up to 1 MiB. Protected conversations put those fields inside the
+          recipient envelope; there is no plaintext upload endpoint.
+        </p>
+
+        <h3 id="history-retention">2.5 History retention</h3>
+        <p>
+          The relay keeps the last few days of <strong>encrypted</strong>
+          frames so a late-joining node sees some backlog when no peer is
+          online to replay it. Retention is opt-in per frame: only an
+          envelope with <code>persist: true</code> is retained (the desktop
+          client sets it for its durable message types). Limits:
+          <code>CHAT_HISTORY_RETAIN_MS</code> = 7 days,
+          <code>CHAT_HISTORY_MAX_PER_ROOM</code> = 500 frames,
+          <code>CHAT_HISTORY_MAX_BODY</code> = 1,900,000 encrypted-frame bytes,
+          and <code>CHAT_HISTORY_MAX_BYTES_PER_ROOM</code> = 16 MiB. Oldest
+          frames are pruned when a room exceeds a time, count, or aggregate
+          byte limit. The relay operator can derive the outer room keys. That
+          decrypts public application frames, while protected history still
+          contains recipient ciphertext.
+        </p>
+
+        <h2 id="catalog-and-state-attestation">3. Catalog and state attestation</h2>
+        <p>
+          The <strong>catalog</strong> is the relay's public, at-rest-encrypted
+          index of repositories, so the network page and clients can discover
+          what is hosted and where. A node publishes a signed record for each
+          repo it hosts.
+        </p>
+
+        <h3 id="catalog-record">3.1 Catalog record</h3>
+        <p>
+          <code>POST /api/repo/&lt;owner&gt;/&lt;repo&gt;/mirrors</code>
+          (publish) carries a record plus two signatures. Key fields
+          (<code>safe_catalog_record</code>):
+        </p>
+        <table>
+          <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>owner</code>, <code>name</code></td><td>logical repo identity within this mainnode</td></tr>
+            <tr><td><code>visibility</code></td><td><code>public</code> | <code>private</code> (anything but <code>private</code> is public)</td></tr>
+            <tr><td><code>rootCommit</code></td><td>first/root commit — the <strong>network-wide group key</strong> that unites mirrors under different owners into one logical repo</td></tr>
+            <tr><td><code>source</code></td><td><code>local-node</code> (a working-copy holder / source of truth) or <code>remote-clone</code> (a mirror)</td></tr>
+            <tr><td><code>sizeBytes</code>, <code>description</code>, <code>cloneUrl</code>, <code>solana</code>, <code>hostedSince</code>, <code>lastSync</code></td><td>descriptive</td></tr>
+            <tr><td><code>commit</code>, <code>branch</code>, counts, <code>platform</code>, <code>version</code>, <code>nodeId</code>, <code>clonesServed</code>, <code>websiteServed</code></td><td>point-in-time node facts, shown even while the node is offline</td></tr>
+            <tr><td><code>maintainer</code></td><td>the publishing key (base64url pubkey)</td></tr>
+            <tr><td><code>stateHash</code>, <code>stateSig</code></td><td>the repo-state attestation (§3.2)</td></tr>
+          </tbody>
+        </table>
+        <p>The record is accepted only if:</p>
+        <ol>
+          <li><code>catalogSig</code> verifies for <code>forkmesh-catalog-v1 \n owner \n name \n updatedAt</code> against the account's registered key (<code>maintainer</code> must match).</li>
+          <li>If present, <code>stateSig</code> verifies the attestation (§3.2) — a <em>present but bad</em> attestation rejects the whole write; absent is allowed for backward compatibility.</li>
+          <li><code>updatedAt</code> is not older than the stored record (rollback rejection).</li>
+        </ol>
+        <p>
+          The relay verifies <strong>only</strong> <code>catalogSig</code> and
+          <code>stateSig</code>. Other fields (including the descriptive JSON
+          <code>signature</code>) are stored as-is; extend the record freely
+          without touching the verification path.
+        </p>
+
+        <h3 id="repo-state-attestation">3.2 Repo-state attestation (the clone integrity gate)</h3>
+        <p>
+          To stop a tampered or rolled-back mirror from serving forged
+          history, the owner signs a fingerprint of the refs it serves:
+        </p>
+        <ul>
+          <li><code>stateHash</code> = SHA-256 over the <strong>canonical heads+tags advertisement</strong> (<code>advertised_refs_canonical</code>).</li>
+          <li><code>stateSig</code> signs <code>forkmesh-repostate-v1 \n owner \n repo \n stateHash \n updatedAt</code>.</li>
+        </ul>
+        <p>
+          The relay pins verified attestations from
+          <strong>source-of-truth</strong> (<code>local-node</code>) records
+          into <code>repo_state_history</code> (newest N per repo). When a
+          clone is served, the serving node's live ref advertisement must
+          hash to a pinned value (<code>clone_state_pins</code>):
+        </p>
+        <ul>
+          <li>A <strong>source of truth</strong> is validated against its <em>own</em> attestations (current pin + recent history) — self-attestation is fine, the pin is a consistency check and the history absorbs the publish-to-serve lag.</li>
+          <li>A <strong>mirror</strong> (<code>remote-clone</code>) must serve a state some source in its logical-repo group (matched by <code>rootCommit</code>, name fallback) actually attested — a mirror's self-signed pin proves nothing, since a tampered mirror can always republish a hash for its forged refs.</li>
+          <li>If no source in the group has published an authenticated refs pin, direct HTTPS routing fails closed. A mirror's self-published digest is not enough to activate a public repository.</li>
+        </ul>
+        <p>
+          A mirror running a local agent whose branches diverge from the
+          source fails the gate until its next pruning sync (~5 min) — clones
+          of that mirror fail closed for that window, by design.
+        </p>
+
+        <h3 id="presence">3.3 Presence</h3>
+        <p>
+          Signed node heartbeats provide generalized multiplayer and operator
+          presence. Repository routing uses the separate
+          <code>mirror_https_endpoints</code> registry: the relay performs
+          fresh signed health challenges and records latency and integrity
+          without storing repository bytes.
+        </p>
+        <p>
+          Presence is intentionally a lagging, privacy-preserving status and is
+          never treated as proof that a repository is safe. Clone, browse, and
+          release routing require a fresh endpoint health result, a
+          node-signed repository proof, and the repository integrity gate. The
+          public network page reports generalized node availability rather
+          than precise behavior.
+        </p>
+
+        <h2 id="http-api">4. HTTP API</h2>
+        <p>
+          All routes are rooted at the mainnode host. The route table is the
+          single source of truth in
+          <code>app/src/urls.py</code>;
+          <code>Default._route</code> in <code>entry.py</code> dispatches
+          against it.
+        </p>
+
+        <h3 id="rooms-and-live-tunnel">4.1 Rooms and direct-HTTPS routing</h3>
+        <table>
+          <thead><tr><th>Method · path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/room/&lt;room&gt;/ws</code> | <code>/clients</code></td><td>bare room WebSocket / live client count</td></tr>
+            <tr><td><code>GET /api/repo/&lt;owner&gt;/&lt;repo&gt;/rooms/&lt;room&gt;/ws</code> | <code>/clients</code></td><td>per-repo room WS / count (the mainnode <code>general</code> room lives here)</td></tr>
+            <tr><td><code>GET</code> | <code>POST /api/chat/channels</code></td><td>list authorized public and private channels or atomically create one with its private initial members</td></tr>
+            <tr><td><code>GET</code> | <code>POST</code> | <code>DELETE /api/chat/channels/&lt;id&gt;/members</code></td><td>creator-only private membership list, invitation, and revocation; a private room is visible only to its creator and invited members (administrators included only when invited), and non-members get 404</td></tr>
+            <tr><td><code>GET</code> | <code>POST /api/chat/channels/&lt;id&gt;/webhooks</code></td><td>list webhook metadata or create a one-time incoming bearer URL for a public channel as its creator or, for a public channel, an administrator</td></tr>
+            <tr><td><code>DELETE /api/chat/channels/&lt;id&gt;/webhooks/&lt;webhook-id&gt;</code></td><td>revoke an incoming channel webhook</td></tr>
+            <tr><td><code>POST /api/chat/webhooks/&lt;token&gt;</code></td><td>post JSON into the channel and notify its audience without a user session</td></tr>
+            <tr><td><code>GET /api/chat/channels/&lt;id&gt;/room-access</code></td><td>issue the current channel passphrase and short-lived ticket after visibility-aware authorization</td></tr>
+            <tr><td><code>GET /api/chat/channels/&lt;id&gt;/ws?ticket=…</code></td><td>ticketed channel WebSocket with active-account, visibility, membership, and key-version admission checks</td></tr>
+            <tr><td><code>GET</code> | <code>POST /api/chat/direct-messages</code></td><td>list participant conversations or idempotently start one with another active registered user</td></tr>
+            <tr><td><code>GET /api/chat/direct-messages/&lt;id&gt;/room-access</code></td><td>issue conversation credentials only when the active account is one of the two participants</td></tr>
+            <tr><td><code>GET /api/chat/direct-messages/&lt;id&gt;/ws?ticket=…</code></td><td>ticketed direct-message WebSocket with active-account and participant admission checks</td></tr>
+            <tr><td><code>* /api/repo/&lt;owner&gt;/&lt;repo&gt;/host</code></td><td>retired repository socket transport — a cacheable <code>410 repository_socket_transport_retired</code>, or <code>426</code> for an <code>Upgrade</code>; use the HTTPS routes below</td></tr>
+            <tr><td><code>GET /api/repo/&lt;owner&gt;/&lt;repo&gt;/{tree,blob,blobs,raw,history,commit,branches,search}</code></td><td>website browse — proxied over ordinary HTTPS to a healthy authenticated mirror origin</td></tr>
+          </tbody>
+        </table>
+        <p>
+          Room sockets carry only continuous interactions such as chat,
+          presence, emotes, and small invalidation notices. They never carry
+          repository clones, blobs, releases, or other large payloads. For
+          repository reads, the relay selects a healthy mirror and streams its
+          HTTPS response in place under the original ForkMesh URL; the origin
+          hostname is not exposed to the client.
+        </p>
+
+        <h3 id="signed-inboxes">4.2 Signed inboxes (cross-user submissions)</h3>
+        <p>
+          People without write access submit signed records; the owner's node
+          drains, verifies, merges into git, and syncs back. Each is
+          <code>POST</code> and each verifies with the matching §1.3 scheme.
+        </p>
+        <table>
+          <thead><tr><th>Path</th><th>Submission</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/repo/&lt;owner&gt;/&lt;repo&gt;/issues</code></td><td>signed issue open/comment/edit/status/…</td></tr>
+            <tr><td><code>POST /api/repo/&lt;owner&gt;/&lt;repo&gt;/pulls</code></td><td>signed pull request</td></tr>
+            <tr><td><code>POST /api/repo/&lt;owner&gt;/&lt;repo&gt;/pulls/&lt;number&gt;/merge</code></td><td>account-session-authorized asynchronous merge, pinned to one write-enabled mirror and exact base/head/metadata object ids</td></tr>
+            <tr><td><code>POST /api/repo/&lt;owner&gt;/&lt;repo&gt;/discussions</code></td><td>signed discussion open/comment</td></tr>
+            <tr><td><code>POST /api/repo/&lt;owner&gt;/&lt;repo&gt;/subscribe</code></td><td>signed thread subscribe/unsubscribe</td></tr>
+            <tr><td><code>POST /api/repo/&lt;owner&gt;/&lt;repo&gt;/bounty</code></td><td>retired legacy bounty-custody path; returns a migration response and never creates a deposit wallet</td></tr>
+            <tr><td><code>* /api/repo/&lt;owner&gt;/&lt;repo&gt;/shares</code></td><td>owner-signed private-repo collaborator ACL</td></tr>
+          </tbody>
+        </table>
+        <p>
+          Submission itself is open to anyone: the <code>author</code> pubkey
+          in an inbox record (§1.3) is whatever key the submitting node
+          happens to hold — it does not need to be a <em>registered</em>
+          account pubkey the way active <code>host</code>/<code>view</code>
+          tokens do (§4.5). Verification here only proves the record wasn't
+          tampered with after signing, not that the submitter is known or
+          trusted. The owner reviewing the inbox is the actual gate: nothing
+          merges into git or reaches the working copy without the owner
+          draining, reviewing, and pushing it themselves (§4.4).
+        </p>
+
+        <h3 id="catalog-mirrors-agents-releases">4.3 Catalog, mirrors, agents, releases</h3>
+        <table>
+          <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/repo/&lt;owner&gt;/&lt;repo&gt;/mirrors</code></td><td>publish a signed catalog record (§3.1); <code>GET</code> reports mirror health</td></tr>
+            <tr><td><code>* /api/repo/&lt;owner&gt;/&lt;repo&gt;/agents</code> · <code>/agents/list</code> · <code>/agents/&lt;id&gt;/prompt</code></td><td>signed owner-sealed session push/drain, owner-authorized ciphertext retrieval, and owner-sealed prompt queue; decrypted prompt objects are versioned and bind their repository owner/name, and decryption stays on the owner device</td></tr>
+            <tr><td><code>GET /api/repo/&lt;owner&gt;/&lt;repo&gt;/releases/blob/sha256/&lt;hash&gt;?filename=&lt;asset-name&gt;</code></td><td>content-addressed release download through the direct-HTTPS mirror route (immutable and integrity checked); user-facing links pass the manifest filename to preserve the downloaded extension</td></tr>
+            <tr><td><code>GET /api/repo/&lt;owner&gt;/&lt;repo&gt;/releases/downloads</code></td><td>per-artifact download counts</td></tr>
+            <tr><td><code>GET /api/market/installs</code></td><td>anonymous marketplace package counts (cumulative downloads and current installs) shown on <a href="/market">/market</a> and in the desktop Market; <code>POST</code> reports a client's own package state under a rotating random id, with no account, address, or hostname recorded</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="git-smart-http">4.4 Git smart-HTTP (clone / fetch)</h3>
+        <table>
+          <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /&lt;owner&gt;/&lt;repo&gt;/info/refs</code></td><td>clone/fetch ref advertisement (request 1 of 2)</td></tr>
+            <tr><td><code>POST /&lt;owner&gt;/&lt;repo&gt;/git-upload-pack</code></td><td>clone/fetch pack negotiation (request 2 of 2)</td></tr>
+            <tr><td><code>POST /&lt;owner&gt;/&lt;repo&gt;/git-receive-pack</code></td><td>authorized push only: signed device headers, or the mainnode's issued push credential for a repository it hosts; anything else gets <code>401 push_unauthorized</code>. There is no WebSocket repository-data fallback</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <code>git clone https://&lt;mainnode&gt;/&lt;owner&gt;/&lt;repo&gt;</code>
+          works with a stock git for an actively mirrored public repository.
+          Both upload-pack requests are capability-bound to an authenticated,
+          healthy HTTPS gateway and retain the original ForkMesh URL. Private
+          replica ciphertext is addressed only by an owner-authorized opaque
+          handle and decrypted locally; a private repository name never enters
+          the public routing index. Push uses the same masked direct-HTTPS
+          proxy: it requires signed device headers
+          (<code>forkmesh-git-push-v1</code>) and otherwise fails closed with
+          <code>401 push_unauthorized</code> before reading a request body.
+          See §5 for the two-request read flow.
+        </p>
+        <p>
+          Authorized receive-pack writes stream through the same per-request
+          capability boundary as clones. Pull merging uses a narrower control
+          path:
+          the relay authorizes repository write permission, pins an
+          idempotent request to one mirror, and signs a bounded request
+          containing exact Git object ids. The node performs an atomic
+          compare-and-swap, reseals the repository, and republishes signed
+          integrity before the relay reports completion. No repository
+          payload travels through the relay database or the multiplayer socket. The legacy
+          push-token verifier does not make the retired socket transport safe
+          and is not an active receive-pack path.
+        </p>
+        <p>
+          Object-producing merge work happens in an owner-only quarantine.
+          Journal recovery anchors candidate objects behind hidden
+          <code>refs/forkmesh/</code> refs before repository fsck; conflicts
+          never import objects, and a lost compare-and-swap leaves reachable
+          staging refs instead of dangling objects. HTTP and SSH upload-pack
+          hide that entire namespace and reject arbitrary object-id wants.
+          Pull author signatures remain unchanged because only PullStore's
+          established owner-applied lifecycle fields are updated. Relay merge
+          jobs expire after seven days and have hard per-repository and global
+          row limits.
+        </p>
+
+        <h3 id="accounts-and-platform">4.5 Accounts and platform</h3>
+        <table>
+          <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /api/accounts/&lt;name&gt;</code></td><td>public account lookup: availability, registered pubkey, profile flags</td></tr>
+            <tr><td><code>GET /signup</code></td><td>canonical password-user signup page; issues the short-lived, one-use server claim required by its form</td></tr>
+            <tr><td><code>POST /api/accounts/signup</code></td><td>page-internal form submission; rejects requests without the one-use <code>/signup</code> claim</td></tr>
+            <tr><td><code>POST /api/accounts/reserve</code></td><td>desktop/headless node name reservation, always signed by its Ed25519 key</td></tr>
+            <tr><td><code>POST /api/accounts/finalize</code></td><td>finish an already key-bound desktop/headless node registration</td></tr>
+            <tr><td><code>POST /api/accounts/login</code></td><td>password/TOTP login; an optional pubkey registers the desktop device</td></tr>
+            <tr><td><code>POST /api/accounts/rotate</code></td><td>replace the account's bound pubkey after the current bound key signs <code>forkmesh-rotate-v1</code></td></tr>
+            <tr><td><code>POST /api/accounts/profile</code></td><td>profile updates such as payout address, email verification resend, rename, and delete</td></tr>
+            <tr><td><code>GET /api/nodes/events</code></td><td>signed per-account WebSocket for payload-free change events and relay-advertised, independently signed node writes</td></tr>
+            <tr><td><code>POST /api/accounts/heartbeat</code></td><td>compatibility/recovery transport for the signed desktop presence and profile heartbeat; current desktops carry the same proof as an advertised <code>heartbeat</code> frame on <code>/api/nodes/events</code></td></tr>
+            <tr><td><code>GET /api/version</code></td><td><code>{ ok, rev, now }</code> — the live BUILD_REV, used to verify a deploy (§6)</td></tr>
+            <tr><td><code>GET /api/network/stats</code> · <code>/online-history</code> · <code>/leaderboards</code></td><td>cached homepage / network-page aggregates</td></tr>
+            <tr><td><code>GET /api/status</code></td><td>30-day per-system uptime for the public status page</td></tr>
+          </tbody>
+        </table>
+        <p>
+          Password-user creation has one path: a browser first loads
+          <code>/signup</code>, which issues a short-lived signed HttpOnly claim
+          backed by one-use server state. The rendered form uses a per-claim
+          email field name and a hidden conventional-name honeypot. Its internal
+          API submission atomically consumes the claim; a direct or replayed
+          API call cannot create an account. Desktop/headless nodes use the
+          separate reservation protocol, but both reservation
+          (<code>forkmesh-reserve-v1</code>) and finalization
+          (<code>forkmesh-finalize-v1</code>) require the node's Ed25519 proof
+          and cannot create a password user.
+        </p>
+        <p>
+          Once active, the account name can be bound to an Ed25519 key, and
+          active host/view checks resolve the owner name to the registered
+          pubkey before accepting a control or authorized private-replica
+          action. There is no self-assertion: with no registered account, those
+          gates fail closed. The legacy push-token verifier remains in the
+          compatibility code, but it cannot authorize receive-pack, and no
+          repository body ever reaches a socket.
+        </p>
+        <p>
+          <code>POST /api/accounts/rotate</code> accepts
+          <code>{ nodeName?, oldPubkey, newPubkey, ts, sig|signature }</code>
+          and verifies
+          <code>forkmesh-rotate-v1\n&lt;oldPubkey&gt;\n&lt;newPubkey&gt;\n&lt;ts&gt;</code>
+          with the currently bound old key. A request that names the account
+          and finds <code>newPubkey</code> already bound returns success as
+          an idempotent no-op. <code>nodeName</code> is optional for desktop
+          rotation records; when omitted, the relay finds the account by
+          <code>oldPubkey</code>, and a repeat request after success can
+          resolve by <code>newPubkey</code> when <code>oldPubkey</code> is
+          already in <code>prev_pubkeys</code>. The rotation rejects stale
+          requests, malformed keys, inactive or missing accounts, an
+          <code>oldPubkey</code> that is not currently bound, a bad
+          signature, and a <code>newPubkey</code> already bound to another
+          account.
+        </p>
+
+        <h2 id="two-request-clone-flow">5. The two-request clone flow and sticky HTTPS selection</h2>
+        <p>A <code>git clone</code> is <strong>two HTTP requests</strong> that must reach the <strong>same</strong> serving node:</p>
+        <ol>
+          <li><code>GET /&lt;owner&gt;/&lt;repo&gt;/info/refs</code> — the ref advertisement.</li>
+          <li><code>POST /&lt;owner&gt;/&lt;repo&gt;/git-upload-pack</code> — pack negotiation against the refs the first request advertised.</li>
+        </ol>
+        <p>
+          If those two land on <em>different</em> nodes, the pack is
+          negotiated against a different ref set and the clone breaks. The
+          routing layer keeps the selected node sticky and limits every
+          candidate to the same owner-attested refs state. The key idea is
+          that the client's URL never changes: there is <strong>no redirect</strong>
+          and no mirror hostname in the response. The relay streams the
+          selected HTTPS origin response in place without materializing it.
+        </p>
+        <p>Decision order for a <strong>public</strong> repo on <code>info/refs</code> / <code>upload-pack</code>:</p>
+        <ol>
+          <li><strong>Filter first.</strong> Candidates must have a fresh relay health result, a verified Ed25519 node identity, an owner-attested refs digest, the required operation, and must pass the repository integrity gate.</li>
+          <li><strong>Select and pin.</strong> Region/latency preference and a rotating cursor choose among eligible endpoints. A successful <code>info/refs</code> response records a short-lived node pin in <code>clone_sticky</code>.</li>
+          <li><strong>Bind and stream.</strong> The paired <code>git-upload-pack</code> request prefers that node, revalidates its repository proof, and carries a short-lived signed capability. If it fails, only another endpoint serving the identical approved refs state may be tried.</li>
+        </ol>
+        <p>
+          The mirror chosen at every step still passes the §3.2 integrity
+          gate. The relay issues a short-lived capability binding method,
+          path, body digest, node, request id, and timestamp; the local gateway
+          verifies it before serving refs whose hash matches the configured
+          source-attested pin. Serving in place therefore does not weaken the
+          tamper check.
+        </p>
+        <p>
+          Private repositories are excluded from named public routing and
+          mirror enumeration. The owner-authorized private-replica route uses
+          an opaque random identifier, returns only encrypted replica bytes,
+          and has no repository-name lookup. Decryption keys stay in the
+          owner/collaborator client. <code>git-receive-pack</code> never falls
+          back to a socket.
+        </p>
+
+        <h2 id="self-hosting-a-mainnode">6. Self-hosting a mainnode</h2>
+        <p>
+          A mainnode is the App in <code>app/</code>. The documented
+          self-hosting path deploys it as a Cloudflare Worker:
+        </p>
+
+        <h3 id="deploy-the-relay">6.1 Deploy the relay</h3>
+        <ol>
+          <li>Provision the Worker bindings — D1 for encrypted metadata and routing state, the room Durable Object for multiplayer interactions, and the configured edge-routing bindings. Repository bytes remain on independent encrypted mirror storage. <code>wrangler.toml</code> and <code>migrations/</code> define the schema; <code>migrate.sh</code> applies it.</li>
+          <li>Set the secrets the Worker needs (<code>DATA_KEY</code> / <code>HMAC</code> material for at-rest encryption, and any admin key). The catalog is encrypted at rest, so <code>DATA_KEY</code> must be stable across deploys.</li>
+          <li>Deploy with <code>app/deploy.sh</code>. It stamps build revision and target fingerprint vars into the Worker, then <strong>verifies the live App is actually serving them</strong> through <code>GET /api/version</code>. A mismatch fails loudly instead of reporting a phantom deployment.</li>
+        </ol>
+        <p>Your relay now answers the routes in §4 at your own host.</p>
+
+        <h3 id="point-a-client-at-it">6.2 Point a client at it</h3>
+        <p>
+          The desktop client's mainnode <strong>host</strong> is fully
+          configurable and threaded through everything downstream — you do
+          not edit code:
+        </p>
+        <ul>
+          <li>On the first-run screen, the <strong>Relay server</strong> field takes a bare host (e.g. <code>relay.example.com</code>, or <code>localhost:8787</code> for a local dev relay). The client expands it to the full room URL with <code>canonicalServerUrl</code> (<code>desktop/src/MainWindowInternal.h</code>) and persists it under <code>server/url</code>. <code>localhost</code> / <code>127.0.0.1</code> get <code>ws://</code>; everything else gets <code>wss://</code>.</li>
+          <li>The mainnode path shape (<code>/api/repo/mainnode/forkmesh/rooms/general/ws</code>) is a network-wide protocol constant (<code>kMainnodeRoomPath</code>), the same on every mainnode, so only the host varies. An advanced user can paste a full <code>wss://…</code> URL to override the whole path if their deployment differs.</li>
+          <li>Relay consumers (room connect and catalog bootstrap) read the stored <code>server/url</code>. Once mirror endpoints are known, the desktop verifies their signed health and reads configured SSH mirror remotes directly, so Mirrors and Pulls can continue through a relay outage.</li>
+        </ul>
+
+        <h3 id="point-the-website-at-it">6.3 Point the website at it</h3>
+        <p>
+          A self-hosted App includes its operational product UI from
+          <code>app/public/</code>. Its API and room WebSocket paths are
+          same-origin, so the site talks to its own mainnode with zero
+          configuration. The official deployment keeps marketing, docs, and
+          blog assets on the separate <code>www</code> site and serves the
+          product and API from <code>app.forkmesh.com</code>. If you serve a
+          browser client separately from the App, set
+          <code>window.FORKMESH_RELAY_HOST</code> (e.g.
+          <code>"relay.example.com"</code>) before the chat scripts load and
+          they will target that relay (<code>app/public/chat.js</code>,
+          <code>app/public/dashboard-chat.js</code>).
+        </p>
+        <p>
+          An optional World deployment must set its <code>APP_ORIGIN</code> to
+          the self-hosted App, and the App's <code>CORS_ALLOWED_ORIGINS</code>
+          must include both origins.
+        </p>
+
+        <h3 id="acceptance">6.4 Acceptance</h3>
+        <p>
+          A second party who has done the above has a working mainnode: a
+          stock desktop client, given only the new host, registers an account
+          and communicates with a separately deployed managed mirror service.
+          That service publishes catalog state, registers its signed HTTPS
+          endpoint, and serves public clones — all against the new relay, with
+          no forkmesh.com dependency.
+        </p>
+      </div>
+
+      <nav class="doc-siblings" aria-label="Other developer docs">
+        <h2>More developer docs</h2>
+        <ul>
+          <li><a href="/docs/cloudflare-worker">Relay &amp; website</a> — a historical note on the earlier Cloudflare-hosted architecture</li>
+          <li><a href="/docs/qt-client">Desktop client</a> — the Qt 6 node</li>
+          <li><a href="/mobile">Mobile app</a> — the native iOS and Android apps</li>
+          <li><a href="/changelog">Changelog</a> — release-by-release history</li>
+        </ul>
+      </nav>
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+{% endblock %}

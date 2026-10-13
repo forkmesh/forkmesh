@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>ForkMesh (latest)</title>
+    <description>ForkMesh desktop client updates</description>
+    <language>en</language>
+    <item>
+      <title>ForkMesh 1.2.8 (linux)</title>
+      <pubDate>Tue, 13 Oct 2026 01:08:51 +0000</pubDate>
+      <sparkle:version>1.2.8</sparkle:version>
+      <sparkle:shortVersionString>1.2.8</sparkle:shortVersionString>
+      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/a7930b0b08a14c5055eb5c4a159cf6b03c8151e133d1d9d5d9cf1e509837c4d7?filename=forkmesh-linux-x86_64.AppImage" sparkle:version="1.2.8" length="110082552" type="application/octet-stream" />
+    </item>
+    <item>
+      <title>ForkMesh 1.2.8 (macos)</title>
+      <pubDate>Tue, 13 Oct 2026 01:08:51 +0000</pubDate>
+      <sparkle:version>1.2.8</sparkle:version>
+      <sparkle:shortVersionString>1.2.8</sparkle:shortVersionString>
+      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/dc239153216ddca7776570543173f6305a9c6589b5cfd2c2e3eabd60bb550b59?filename=forkmesh-macos-arm64.dmg" sparkle:version="1.2.8" length="219710331" type="application/octet-stream" />
+    </item>
+    <item>
+      <title>ForkMesh 1.2.8 (macos)</title>
+      <pubDate>Tue, 13 Oct 2026 01:08:51 +0000</pubDate>
+      <sparkle:version>1.2.8</sparkle:version>
+      <sparkle:shortVersionString>1.2.8</sparkle:shortVersionString>
+      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/dc239153216ddca7776570543173f6305a9c6589b5cfd2c2e3eabd60bb550b59?filename=forkmesh-macos-x86_64.dmg" sparkle:version="1.2.8" length="219710331" type="application/octet-stream" />
+    </item>
+    <item>
+      <title>ForkMesh 1.2.8 (windows)</title>
+      <pubDate>Tue, 13 Oct 2026 01:08:51 +0000</pubDate>
+      <sparkle:version>1.2.8</sparkle:version>
+      <sparkle:shortVersionString>1.2.8</sparkle:shortVersionString>
+      <enclosure url="https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256/6facf31980bcb13902561822c8d810aa5f1abea3d00be700e5f460b45c25231f?filename=forkmesh-windows-x86_64-setup.exe" sparkle:version="1.2.8" length="103630728" type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

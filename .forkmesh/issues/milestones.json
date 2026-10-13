@@ -1,0 +1,38 @@
+[
+    {
+        "description": "Freeze the product promise, commercial boundary, terminology, dependency assumptions, incentive invariants, and privacy-respecting success measures.",
+        "due": 1786680000000,
+        "status": "open",
+        "title": "Product contract & measurement"
+    },
+    {
+        "description": "A visitor can migrate, inspect, verify, and clone a preserved public repository from independent infrastructure without creating an account.",
+        "due": 1793332800000,
+        "status": "open",
+        "title": "Preservation public alpha"
+    },
+    {
+        "description": "Communities can push, review, synchronize, and carry their identity and social records while retaining their existing forge workflows.",
+        "due": 1801198800000,
+        "status": "open",
+        "title": "Collaboration public beta"
+    },
+    {
+        "description": "Paid managed network services and secure organization workspaces reach GA with portable data, measurable service levels, support, and healthy unit economics.",
+        "due": 1809057600000,
+        "status": "open",
+        "title": "Hosted teams & revenue GA"
+    },
+    {
+        "description": "Unaffiliated operators can deploy every role and independent implementations can interoperate from public interfaces, specifications, and conformance tests.",
+        "due": 1816920000000,
+        "status": "open",
+        "title": "Open platform & ecosystem"
+    },
+    {
+        "description": "Observed drills prove useful operation through unreliable connectivity, privacy routes, removable media, primary-service loss, and infrastructure restoration.",
+        "due": 1822276800000,
+        "status": "open",
+        "title": "Adversarial resilience & disaster readiness"
+    }
+]

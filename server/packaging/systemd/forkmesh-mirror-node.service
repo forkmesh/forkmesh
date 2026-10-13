@@ -1,0 +1,57 @@
+[Unit]
+Description=ForkMesh mirror node
+Documentation=https://forkmesh.com/docs/operations/mirror-node
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=forkmesh-node
+Group=forkmesh-node
+# Read access to the whole journal, for the gateway's owner-signed
+# /v1/node/logs feed (the desktop's main log follows every host through it).
+SupplementaryGroups=systemd-journal
+# Git objects and refs from these public repositories are bind-mounted into
+# the unprivileged SSH gateway. Secret node state is always created with
+# explicit 0600/0700 modes and validated as owner-only before use.
+UMask=0022
+Environment=HOME=/var/lib/forkmesh
+Environment=XDG_DATA_HOME=/var/lib/forkmesh/.local/share
+Environment=TMPDIR=/var/lib/forkmesh/tmp
+EnvironmentFile=-/etc/forkmesh/node.env
+ExecStartPre=/usr/local/bin/forkmesh-mirror-node --config /etc/forkmesh/mirror-node.json --check
+ExecStart=/usr/local/bin/forkmesh-mirror-node --config /etc/forkmesh/mirror-node.json
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/forkmesh
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# The streamed provider sign-in (terminal.go) runs the agent CLI as a child of
+# this unit, and those CLIs are V8 programs whose JIT has to map executable
+# pages — MemoryDenyWriteExecute makes them fail to start at all. Every other
+# confinement above still applies to that child: no new privileges, an empty
+# capability set, a strict read-only system outside /var/lib/forkmesh, and a
+# private /dev and /tmp.
+MemoryDenyWriteExecute=false
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+TasksMax=128
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

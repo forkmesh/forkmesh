@@ -1,0 +1,306 @@
+{
+  "schema": "forkmesh-business-model-v1",
+  "schemaVersion": 1,
+  "publishedAt": "2026-08-20",
+  "status": "initial-research-preview",
+  "currency": "USD",
+  "promise": "ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.",
+  "permanentCommitments": {
+    "protocolLicense": "MIT",
+    "protocolUseRequiresPayment": false,
+    "selfHostingRequiresPayment": false,
+    "independentImplementationsAllowed": true,
+    "publicReadAndCloneRequirePaidPlan": false,
+    "portableGitDataRequiresPaidPlan": false,
+    "portableSignedCollaborationRequiresPaidPlan": false,
+    "governanceRequiresPaidPlan": false,
+    "noDataSale": true,
+    "tokenOrBlockchainRequired": false,
+    "incentivesAffectIdentityPermissionsRankingModerationOrGovernance": false
+  },
+  "usageUnits": [
+    {
+      "id": "active-member-month",
+      "label": "active member-month",
+      "definition": "One distinct person authorized to use a managed workspace during a calendar month.",
+      "costSource": "billing and organization membership ledger"
+    },
+    {
+      "id": "indexed-project-month",
+      "label": "indexed project-month",
+      "definition": "One project kept in a managed search or discovery index during a calendar month.",
+      "costSource": "index inventory and provider storage invoice"
+    },
+    {
+      "id": "managed-replica-gib-month",
+      "label": "managed replica GiB-month",
+      "definition": "One gibibyte of repository or artifact data retained by a ForkMesh-operated mirror for one month.",
+      "costSource": "managed-host storage inventory and invoice"
+    },
+    {
+      "id": "verified-egress-gib",
+      "label": "verified egress GiB",
+      "definition": "One gibibyte served by managed mirrors through verified clone, fetch, artifact, or recovery reads.",
+      "costSource": "managed-host transfer counters and invoice"
+    },
+    {
+      "id": "hosted-runner-minute",
+      "label": "hosted runner minute",
+      "definition": "One minute of hosted agent or workflow execution, rounded only at the invoice-total level.",
+      "costSource": "runner session ledger and compute invoice"
+    },
+    {
+      "id": "priority-support-hour",
+      "label": "priority support hour",
+      "definition": "One hour of human incident, onboarding, migration, or administration work.",
+      "costSource": "support case time ledger"
+    },
+    {
+      "id": "worker-request",
+      "label": "edge Worker request",
+      "definition": "One request reported for a ForkMesh Worker by the infrastructure provider.",
+      "costSource": "Cloudflare account analytics and invoice"
+    },
+    {
+      "id": "durable-object-request",
+      "label": "Durable Object request",
+      "definition": "One Durable Object invocation reported by the infrastructure provider.",
+      "costSource": "Cloudflare account analytics and invoice"
+    },
+    {
+      "id": "durable-object-gb-second",
+      "label": "Durable Object GB-second",
+      "definition": "One decimal gigabyte-second of Durable Object active duration reported by the infrastructure provider.",
+      "costSource": "Cloudflare account analytics and invoice"
+    }
+  ],
+  "plans": [
+    {
+      "id": "protocol-self-hosted",
+      "name": "Protocol + self-hosted",
+      "class": "free-software",
+      "availability": "available",
+      "price": {
+        "amountMicrousd": 0,
+        "interval": "forever"
+      },
+      "limits": [
+        "No ForkMesh license, seat, repository, storage, or protocol fee.",
+        "Capacity, uptime, backups, moderation, and support are the operator's responsibility."
+      ],
+      "support": "Public documentation, community discussion, and reproducible issue reports; no response-time or uptime commitment."
+    },
+    {
+      "id": "hosted-free",
+      "name": "Hosted Free",
+      "class": "best-effort-hosted-service",
+      "availability": "public-preview",
+      "price": {
+        "amountMicrousd": 0,
+        "interval": "month"
+      },
+      "limits": [
+        "One personal account; public reading and cloning remain anonymous.",
+        "Zero managed private-workspace, reserved-replica, priority-support, or service-level entitlements.",
+        "Shared relay, discovery, and public indexing are best effort and remain subject to security, abuse, and provider-capacity safeguards."
+      ],
+      "support": "Community support only; incidents are prioritized for network safety and data recovery, not by response-time commitment."
+    },
+    {
+      "id": "supporter-membership",
+      "name": "Supporter membership",
+      "class": "paid-support-membership",
+      "availability": "launch-membership",
+      "price": {
+        "amountMicrousd": 5000000,
+        "interval": "month"
+      },
+      "limits": [
+        "Funds shared public infrastructure and includes membership recognition.",
+        "Does not add a hosted capability, reserved replica, private workspace, service level, priority support, or protocol authority."
+      ],
+      "support": "Billing help and community support; no contracted response or resolution time."
+    },
+    {
+      "id": "pro-membership",
+      "name": "Pro membership",
+      "class": "paid-membership",
+      "availability": "launch-membership",
+      "price": {
+        "amountMicrousd": 10000000,
+        "interval": "month"
+      },
+      "limits": [
+        "One member and the currently published Pro hosted workflows where configured.",
+        "No uptime, reserved capacity, private-workspace, managed-replica, or priority-support entitlement.",
+        "Hosted workflows use bounded safety and capacity controls; this is not an unlimited infrastructure plan."
+      ],
+      "support": "Billing help and community product support; no contracted response or resolution time."
+    },
+    {
+      "id": "managed-services",
+      "name": "Managed services",
+      "class": "paid-managed-service",
+      "availability": "research-preview-not-for-sale",
+      "price": {
+        "amountMicrousd": null,
+        "interval": "validated-proposal"
+      },
+      "limits": [
+        "No unlimited plan: active members, indexing, replicas, egress, runners, and support use the published units.",
+        "Allowances, overages, service levels, and price require real buyer interviews plus measured cost and recovery evidence before checkout opens."
+      ],
+      "support": "Proposed paid jobs are managed hosting, team administration, indexing, reliability, recovery, support, and infrastructure. Contracted boundaries are not available until the launch gates pass."
+    }
+  ],
+  "entitlements": [
+    {
+      "capability": "Use, inspect, fork, modify, and reimplement the protocol",
+      "protocolRight": "Yes, under MIT",
+      "selfHosted": "Yes",
+      "hostedFree": "Yes; payment never changes the protocol right",
+      "paidService": "No extra protocol authority"
+    },
+    {
+      "capability": "Run a relay, index, mirror, client, or compatible implementation",
+      "protocolRight": "Permitted",
+      "selfHosted": "Operator-managed at no ForkMesh fee",
+      "hostedFree": "Shared public service only",
+      "paidService": "ForkMesh operates selected roles for the customer"
+    },
+    {
+      "capability": "Read and clone public projects",
+      "protocolRight": "Open interface",
+      "selfHosted": "Yes",
+      "hostedFree": "Anonymous, best effort",
+      "paidService": "Cannot be made pay-only"
+    },
+    {
+      "capability": "Own and export Git repositories and signed collaboration records",
+      "protocolRight": "Portable formats",
+      "selfHosted": "Local Git plus .forkmesh records",
+      "hostedFree": "Clone/export without an upgrade",
+      "paidService": "Same export; cancellation cannot remove the right"
+    },
+    {
+      "capability": "Shared hosted relay, discovery, and public index",
+      "protocolRight": "Replaceable service role",
+      "selfHosted": "Available to the operator",
+      "hostedFree": "Best effort; no reserved capacity or SLO",
+      "paidService": "Proposed reserved and measured capacity"
+    },
+    {
+      "capability": "Managed private workspace and team administration",
+      "protocolRight": "No vendor exclusivity",
+      "selfHosted": "Operator-managed current capabilities",
+      "hostedFree": "No supported entitlement",
+      "paidService": "Research preview; blocked on privacy, isolation, export, and buyer validation"
+    },
+    {
+      "capability": "Managed replicas, verified recovery, and reliability commitment",
+      "protocolRight": "Any operator may offer it",
+      "selfHosted": "Operator supplies infrastructure and recovery",
+      "hostedFree": "No reserved replica or uptime commitment",
+      "paidService": "Metered proposal; blocked on restore and service-level evidence"
+    },
+    {
+      "capability": "Human onboarding, migration, incident, and priority support",
+      "protocolRight": "Documentation remains public",
+      "selfHosted": "Community support",
+      "hostedFree": "Community support; no response time",
+      "paidService": "Proposed scoped hours and contracted response boundary"
+    }
+  ],
+  "portability": {
+    "canonicalRepositoryFormat": "Git objects and refs",
+    "canonicalCollaborationFormat": "Signed .forkmesh repository records",
+    "exportFeeMicrousd": 0,
+    "paymentProviderRecordsAreProtocolData": false,
+    "commitments": [
+      "A customer may clone and export canonical project data before, during, and after cancellation without buying another plan.",
+      "A managed-service launch requires a tested export into a clean self-hosted deployment and a tested restore from the exported records.",
+      "Provider account, billing, abuse, and operational logs are not presented as canonical project data.",
+      "ForkMesh will publish format changes and migration tooling; a paid service cannot add a proprietary signature requirement to protocol objects."
+    ]
+  },
+  "dataPolicy": {
+    "noDataSale": true,
+    "statement": "ForkMesh does not sell personal data, repository data, collaboration data, telemetry, or derived profiles, and does not use them to sell advertising.",
+    "serviceUse": "Data is processed only to provide, secure, support, measure, and improve the selected service, subject to the public privacy policy.",
+    "analyticsConsent": "Optional product analytics is disabled by default and uses only coarse allowlisted events after explicit consent."
+  },
+  "advertising": {
+    "network": "forkmesh-ads-v1",
+    "name": "ForkMesh Ads",
+    "availability": "launch-membership-perk",
+    "paymentProcessor": null,
+    "fundedBy": "An active membership level funds live ad slots; there is no separate ad billing, bidding, or pay-per-click.",
+    "allowances": [
+      {
+        "level": "free",
+        "liveAds": 0,
+        "rotationWeight": 0
+      },
+      {
+        "level": "supporter",
+        "liveAds": 1,
+        "rotationWeight": 1
+      },
+      {
+        "level": "pro",
+        "liveAds": 2,
+        "rotationWeight": 2
+      },
+      {
+        "level": "builder",
+        "liveAds": 5,
+        "rotationWeight": 5
+      },
+      {
+        "level": "studio",
+        "liveAds": 10,
+        "rotationWeight": 10
+      }
+    ],
+    "whoMaySubmit": "Any verified account; an approved ad runs only while its owner holds an active membership level.",
+    "humanReviewRequired": true,
+    "approvalValidDays": 180,
+    "creativeFormat": "text-only",
+    "targeting": "product-surface-only",
+    "usesPersonalData": false,
+    "measurement": "aggregate daily clicks per ad and surface; no impressions, identifiers, or addresses",
+    "prohibited": [
+      "adult",
+      "deceptive",
+      "exploitative-labor",
+      "financial-returns",
+      "gambling",
+      "hate-harassment",
+      "illegal",
+      "malware-exploits",
+      "political-persuasion",
+      "predatory-lending",
+      "surveillance",
+      "targets-children",
+      "tobacco-alcohol-drugs",
+      "tracking-destination",
+      "unproven-health",
+      "weapons"
+    ],
+    "policy": "/docs/operations/ad-network/",
+    "affectsIdentityPermissionsRankingModerationOrGovernance": false
+  },
+  "launchGates": {
+    "unlimitedPaidPlanAllowed": false,
+    "managedCheckoutEnabled": false,
+    "requiredBeforeManagedCheckout": [
+      "pricing-research-validated",
+      "all-variable-cost-units-metered",
+      "provider-invoices-reconciled",
+      "gross-margin-window-reviewed",
+      "portability-export-restore-passed",
+      "failure-and-recovery-drill-passed",
+      "security-privacy-support-docs-approved"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="vault_autofill_label">ForkMesh Vault</string>
+    <string name="vault_autofill_search">Search ForkMesh Vault</string>
+    <string name="vault_autofill_search_hint">Search your logins</string>
+    <string name="vault_autofill_prompt_title">ForkMesh Vault</string>
+    <string name="vault_autofill_prompt_subtitle">Confirm it is you to fill this login</string>
+    <string name="vault_autofill_open_app">Open ForkMesh and unlock your vault to refresh autofill.</string>
+    <string name="vault_autofill_mismatch_title">This login is for another site</string>
+    <string name="vault_autofill_mismatch_message">\"%1$s\" was saved for %2$s. You are on %3$s. Fill it here only if you are sure this site belongs to the same service.</string>
+    <string name="vault_autofill_mismatch_fill">Fill anyway</string>
+</resources>

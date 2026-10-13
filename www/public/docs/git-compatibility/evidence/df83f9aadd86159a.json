@@ -1,0 +1,222 @@
+{
+  "client": {
+    "gitVersion": "git version 2.47.3",
+    "label": "Debian system Git",
+    "machine": "x86_64",
+    "platform": "Linux",
+    "platformRelease": "6.12.107+deb13-amd64",
+    "protocolVersion": "2",
+    "pythonVersion": "3.13.5",
+    "transportMode": "http"
+  },
+  "finishedAt": "2026-09-14T15:58:35.903689+00:00",
+  "integrity": {
+    "clientAddressesIncluded": false,
+    "credentialsIncluded": false,
+    "mainAtFixtureCreation": "267cd7cf4de53b7be6761d14bc475e98539a71d6",
+    "refsSha256": "289f9bff675315183d7fcffbf464a8b99a624a3e39e48dbb0fa7a2b0a0389146",
+    "repositoryContentsIncluded": false,
+    "signedCommit": "b0a6afb0efea273fb76501dcb1d5b1e751bd2f07",
+    "temporaryPathsIncluded": false
+  },
+  "operations": [
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 290,
+      "id": "clone",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 344,
+      "id": "fetch",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 169,
+      "id": "push",
+      "paths": [
+        "direct"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 24,
+      "id": "hooks",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 365,
+      "id": "branches",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 386,
+      "id": "rebase",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 536,
+      "id": "force-with-lease",
+      "paths": [
+        "direct"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 92,
+      "id": "force",
+      "paths": [
+        "direct"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 706,
+      "id": "shallow-clone",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 444,
+      "id": "partial-clone",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 47,
+      "id": "bundle",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 597,
+      "id": "submodules",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 94,
+      "id": "signed-commits",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 93,
+      "id": "integrity",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    },
+    {
+      "detail": "stock Git behavior and integrity assertions passed",
+      "durationMs": 255,
+      "id": "rollback-recovery",
+      "paths": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "status": "pass"
+    }
+  ],
+  "paths": {
+    "direct": {
+      "fixture": "stock smart HTTP write/read origin"
+    },
+    "mirror-failover": {
+      "fixture": "retryable failed origin followed by matching mirror"
+    },
+    "relay": {
+      "fixture": "in-place single-origin HTTP proxy"
+    }
+  },
+  "schema": "forkmesh-git-conformance-report-v1",
+  "startedAt": "2026-09-14T15:58:30.091396+00:00",
+  "suite": {
+    "id": "forkmesh-stock-git",
+    "version": "1.0.0"
+  },
+  "summary": {
+    "compatibility": {
+      "passRate": 1.0,
+      "passedOperationPathCells": 39,
+      "totalOperationPathCells": 39
+    },
+    "fail": 0,
+    "failure": "",
+    "notRun": 0,
+    "pass": 15,
+    "status": "pass"
+  },
+  "telemetry": {
+    "directOriginRequests": 106,
+    "failoverProxyAttempts": 66,
+    "failoverProxySuccesses": 33,
+    "mirrorOriginRequests": 33,
+    "relayProxyAttempts": 39,
+    "relayProxySuccesses": 39,
+    "unavailableOriginAttempts": 33
+  },
+  "testedCommit": "c792b91e35e78b54871d6814d77d8fcfb7621591"
+}

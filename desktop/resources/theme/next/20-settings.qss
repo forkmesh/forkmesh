@@ -1,0 +1,29 @@
+QWidget[sectionCard="true"] { border: 1px solid @border; border-radius: 12px; }
+
+#settingsNav::item:hover { background-color: @surfaceRaised; color: @fg; }
+#settingsNav::item:selected { background-color: @surfaceActive; color: @fg; }
+#settingsSectionTitle { color: @fgSecondary; }
+#settingsSectionRule { background-color: @border; }
+#settingsSectionHeader { background: transparent; }
+QToolButton#settingsSectionToggle { border: none; border-radius: 4px; background: transparent; padding: 0; }
+QToolButton#settingsSectionToggle:hover { background-color: @surfaceRaised; }
+
+#avatarPreview { background-color: @surface; border: 1px solid @border; }
+#emailVerifiedBadge {
+    background-color: @successSubtle; border: 1px solid @successSubtle;
+    color: @success; font-weight: 500;
+}
+
+#suggestedAppStatusFound, #suggestedAppStatusMissing,
+#suggestedAppStatusInProgress, #suggestedAppStatusProblem {
+    border-radius: 6px; font-weight: 500;
+}
+#suggestedAppStatusFound {
+    color: @success; background: @successSubtle; border: 1px solid @successSubtle;
+}
+#suggestedAppStatusMissing, #suggestedAppStatusProblem {
+    color: @danger; background: @dangerSubtle; border: 1px solid @dangerSubtle;
+}
+#suggestedAppStatusInProgress {
+    color: @accentFg; background: @accentSubtle; border: 1px solid @accentSubtle;
+}

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "forkmesh": {
+      "command": "python3",
+      "args": ["tools/forkmesh_mcp_server.py"],
+      "description": "ForkMesh mesh as MCP tools: repos, issues, PRs (issue #366)."
+    }
+  }
+}

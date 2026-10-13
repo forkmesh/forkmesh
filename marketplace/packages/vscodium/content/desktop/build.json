@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "VSCodiumDesktopExtension.h",
+    "VSCodiumDesktopExtension.cpp"
+  ],
+  "mocHeaders": [],
+  "desktopFactory": "createVSCodiumDesktopExtension"
+}

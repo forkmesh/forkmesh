@@ -1,0 +1,40 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Live clone routing" %}
+{% set slug = "live-clone-routing" %}
+{% set image = "/assets/blog/features/live-clone-routing.webp" %}
+{% set description = "git clone https://forkmesh.com/owner/repo uses ordinary HTTPS while ForkMesh selects a signed, healthy, integrity-verified mirror behind the unchanged public URL." %}
+{% set share_description = "Git Smart HTTP keeps the public ForkMesh URL while ForkMesh selects a signed, healthy, integrity-verified mirror behind it." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Distributed hosting</p>
+            <h1>Live clone routing</h1>
+            <p class="lede">git clone https://forkmesh.com/owner/repo uses ordinary HTTPS while ForkMesh selects a signed, healthy, integrity-verified mirror behind the unchanged public URL.</p>
+            <div class="meta"><span class="pill">Feature 03 of 72</span><span>Feature</span><span>Distributed hosting &amp; preservation</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/live-clone-routing.webp" alt="Abstract ForkMesh artwork for Live clone routing">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Live clone routing lets Git use its normal Smart HTTP protocol while repository storage stays on independent mirrors. ForkMesh prefers a proven public mirror URL and retains the stable ForkMesh URL as repository identity and fallback route.</p>
+          <p>Code disappears from a network when one hosted account, one VM, or one storage path becomes the only way to reach it. In ForkMesh, live clone routing addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>Nodes register a replaceable HTTPS mirror endpoint with an account-bound Ed25519 signature. Scheduled nonce challenges verify freshness, latency, identity, and a signed repository refs digest. For Git requests, the routing service prefers a healthy direct URL; nodes reachable only through a tunnel are served through a capability-bound proxy.</p>
+          <p>Clone stickiness keeps the related info/refs and upload-pack exchange on one origin. A failed origin is retried only within strict idempotent and response-safety bounds; the routing service never stores repository content.</p>
+          <div class="note">Private and unknown repositories fail closed. Authorized private delivery transfers an opaque end-to-end encrypted replica over HTTPS rather than exposing a repository path or plaintext to the gateway.</div>
+          <h2>Where it fits</h2>
+          <p>Use live clone routing when availability, clone routing, and preservation need to be handled by the mesh instead of by a single origin.</p>
+          <p>It pairs with the rest of Distributed hosting &amp; preservation because Live clone routing keeps Git Smart HTTP requests routed to the node that actually serves the repository connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/zero-custody-relay/">← Packfile-free routing relay</a>
+          <a href="/blog/streaming-transfers/">Streaming transfers →</a>
+        </nav>
+{% endblock %}

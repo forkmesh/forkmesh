@@ -1,0 +1,94 @@
+          <section data-view="links" class="view active h-full overflow-y-auto">
+            <div class="p-3 sm:p-6 w-full">
+              <div data-links-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
+                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div class="min-w-0">
+                    <h1 class="text-base font-semibold text-foreground">Link rewards</h1>
+                    <p class="mt-1 text-sm text-muted-foreground">Share a public link you made about ForkMesh: an article, a post, a video or a community thread. Each link gets an explainable reach estimate and a tiny SOL appreciation estimate that anyone can send straight to the submitter's wallet.</p>
+                  </div>
+                  <div class="shrink-0 flex items-center gap-3 self-start">
+                    <span data-links-count class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <button
+                      data-links-refresh
+                      type="button"
+                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div data-links-notice aria-live="polite"></div>
+
+                <div class="px-4 sm:px-5 py-4 border-b border-border">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Submit a link</h2>
+                  <div data-links-start class="mt-3">
+                    <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Checking your session...</p>
+                  </div>
+                  <form data-links-form class="mt-3 grid gap-3 sm:grid-cols-2" hidden novalidate>
+                    <label class="text-xs text-muted-foreground sm:col-span-2">Public HTTPS link
+                      <input name="url" type="url" required maxlength="1200" autocomplete="off" placeholder="https://example.com/your-post" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+                    </label>
+                    <label class="text-xs text-muted-foreground">Title
+                      <input name="title" type="text" maxlength="120" autocomplete="off" placeholder="What people will find" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+                    </label>
+                    <label class="text-xs text-muted-foreground">Channel
+                      <select name="channel" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20">
+                        <option value="article">Article</option>
+                        <option value="community">Community</option>
+                        <option value="social">Social post</option>
+                        <option value="video">Video</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                    <label class="sm:col-span-2 flex items-start gap-2 text-xs text-muted-foreground">
+                      <input name="consent" type="checkbox" required class="mt-0.5 h-4 w-4 shrink-0 rounded border-border" />
+                      <span>Publish this link, my ForkMesh account name, the estimate and its potential-traffic range on the public list below.</span>
+                    </label>
+                    <div class="sm:col-span-2 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p data-links-result class="text-xs text-muted-foreground" role="status"></p>
+                      <button data-links-submit type="submit" class="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-colors disabled:opacity-60">
+                        <i data-lucide="link" class="w-4 h-4"></i>
+                        Analyze and submit
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div class="px-4 sm:px-5 py-4 border-b border-border">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">How the estimate works</h2>
+                  <ol class="mt-3 grid gap-3 sm:grid-cols-3">
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">1</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">Reach score, 0 to 100</p>
+                      <p class="mt-1 text-xs text-muted-foreground">Your ForkMesh follower count, visits already observed from that website, and a bonus when the domain is verified on your profile. ForkMesh never fetches the URL.</p>
+                    </li>
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">2</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">Potential visits</p>
+                      <p class="mt-1 text-xs text-muted-foreground">A range from the score and the channel you pick. It is an estimate, not a forecast.</p>
+                    </li>
+                    <li class="rounded-md border border-border bg-background p-3">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[11px] text-muted-foreground">3</span>
+                      <p class="mt-2 text-sm font-semibold text-foreground">SOL appreciation</p>
+                      <p class="mt-1 text-xs text-muted-foreground">0.00005 to 0.0005 SOL by score, paid directly to the submitter's Solana address if someone chooses to. Add yours in <a class="text-accent underline" href="/dashboard/settings">Settings</a>.</p>
+                    </li>
+                  </ol>
+                </div>
+
+                <div class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                  <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent links and rewards</h2>
+                  <span class="text-xs text-muted-foreground">The 25 newest public links</span>
+                </div>
+
+                <div data-links-list class="divide-y divide-border" aria-live="polite">
+                  <div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading links...</div>
+                </div>
+
+                <div class="border-t border-border px-4 sm:px-5 py-3">
+                  <p class="text-xs text-muted-foreground">The score is not a ranking of a person and never affects merges, access, moderation or governance. The SOL figure is an optional thank-you, not a guaranteed payout; ForkMesh holds no funds. Each account can submit up to 20 links. For your personal sign-up link, see <a class="text-accent underline" href="/referral">Referral</a>.</p>
+                </div>
+              </div>
+            </div>
+          </section>

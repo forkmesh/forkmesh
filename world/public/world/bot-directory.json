@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "bots": [
+    {
+      "id": "forkmesh-security-scanner",
+      "name": "ForkMesh Security Scanner",
+      "type": "Security analysis agent",
+      "verified": true,
+      "generalActivity": "Running scheduled public-repository security analysis",
+      "publicResourceCategory": "Redacted security reports"
+    },
+    {
+      "id": "forkmesh-mirror-health",
+      "name": "ForkMesh Mirror Health",
+      "type": "Infrastructure monitor",
+      "verified": true,
+      "generalActivity": "Checking signed public mirror health",
+      "publicResourceCategory": "Public mirror health endpoints"
+    }
+  ],
+  "privacy": {
+    "publicResourcesOnly": true,
+    "privateRepositoryPathsExcluded": true,
+    "credentialsExcluded": true,
+    "exactVisitorActivityExcluded": true
+  }
+}

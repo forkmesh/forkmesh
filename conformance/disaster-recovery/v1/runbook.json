@@ -1,0 +1,545 @@
+{
+  "schema": "forkmesh-disaster-runbook-v1",
+  "version": "1.0.0",
+  "updated": "2026-09-14",
+  "issue": 518,
+  "reviewIntervalDays": 90,
+  "topics": [
+    "offline-bootstrap",
+    "local-network",
+    "removable-media",
+    "independent-discovery",
+    "key-recovery",
+    "emergency-mirror",
+    "clean-restoration"
+  ],
+  "programs": {
+    "forkmesh-mirror-node": {"source": "server/cmd/forkmesh-mirror-node/main.go"}
+  },
+  "roles": [
+    {
+      "id": "coordinator",
+      "title": "Incident coordinator",
+      "summary": "Declares the incident, walks the triage tree, assigns the other roles, keeps the clock, and decides when normal service may take over again.",
+      "checklist": [
+        "Write down the time the incident was declared.",
+        "Walk the triage tree aloud with at least one other person.",
+        "Assign a key custodian, a mirror operator, a verifier, and a scribe. One person may hold two roles, but the verifier never checks their own copy.",
+        "Stop any step a checklist marks unsafe until the verifier agrees.",
+        "Declare recovery only after the verifier's checks pass, and hand the scribe the time."
+      ]
+    },
+    {
+      "id": "key-custodian",
+      "title": "Key custodian",
+      "summary": "Holds offline recovery keys and backup passphrases, and signs key rotations. Never types a recovery key into a shared or unverified machine.",
+      "checklist": [
+        "Bring your recovery key and your paper copy of the pinned public keys.",
+        "Check the rotation statement's revoked and successor keys against paper before signing.",
+        "Refuse any request to lower the recovery threshold during the incident.",
+        "Sign only on a machine that verified the bootstrap kit.",
+        "Return recovery keys to separate physical storage afterwards."
+      ]
+    },
+    {
+      "id": "mirror-operator",
+      "title": "Mirror operator",
+      "summary": "Stands up emergency mirrors, writes and imports removable media, and restores origins and nodes.",
+      "checklist": [
+        "Never delete or force-push refs on a surviving copy.",
+        "Keep every copy you start from untouched until recovery is declared.",
+        "Serve emergency mirrors read-only unless the coordinator approves writes.",
+        "Record every command you ran and when it finished for the scribe."
+      ]
+    },
+    {
+      "id": "verifier",
+      "title": "Verifier",
+      "summary": "Independently checks signatures, digests, and refs against pinned keys and signed pins. Must not be the person who produced the copy being checked.",
+      "checklist": [
+        "Read pinned public keys from paper, never from the media being checked.",
+        "Verify the bootstrap kit before anyone runs a tool from it.",
+        "Check restored refs against a signed export or a second independent copy.",
+        "Run git fsck on every restored repository.",
+        "Say out loud which checks passed and which were skipped."
+      ]
+    },
+    {
+      "id": "scribe",
+      "title": "Scribe",
+      "summary": "Records the exercise or incident: times, missing prerequisites, data loss, unsafe steps, and a corrective owner for every finding.",
+      "checklist": [
+        "Record declared, recovered, and verified times.",
+        "List every prerequisite that was missing and who will fix it.",
+        "List commits, refs, issues, or pull requests that were lost.",
+        "List every unsafe step, whether it was taken or refused.",
+        "Give every finding a corrective owner before the debrief ends."
+      ]
+    }
+  ],
+  "prerequisites": [
+    {"id": "printed-runbook", "title": "A printed or offline copy of this runbook, with the kit digest written on it", "owner": "coordinator", "check": "Two people can find a copy without a network connection."},
+    {"id": "verified-kit", "title": "A signed bootstrap kit on removable media", "owner": "verifier", "check": "kit verify passes against the kit key written on paper, before the review date."},
+    {"id": "pinned-keys-on-paper", "title": "Kit, export, and recovery public keys written on paper held by two people", "owner": "key-custodian", "check": "The keys on paper match roster check output."},
+    {"id": "recovery-key-threshold", "title": "Enough recovery key custodians, in separate places, to meet the roster threshold", "owner": "key-custodian", "check": "roster check reports the threshold is met by distinct holders."},
+    {"id": "community-roster", "title": "A roster of mirrors and contacts with at least one address that needs no DNS", "owner": "coordinator", "check": "roster check reports dnsFree true."},
+    {"id": "independent-copies", "title": "At least two copies of each repository under separate control", "owner": "mirror-operator", "check": "A mirror and a verified removable-media export, or two mirrors run by different people."},
+    {"id": "tested-backup", "title": "A backup or export verified within the review interval", "owner": "mirror-operator", "check": "forkmesh_offline_sync.py verify or forkmesh-mirror-node --restore-drill passed recently."},
+    {"id": "backup-passphrase-off-host", "title": "Node backup passphrases stored away from the node", "owner": "key-custodian", "check": "The custodian can produce the passphrase file without the node."},
+    {"id": "recovery-toolchain", "title": "Git 2.40 or newer and Python 3.9 or newer on at least one machine in each region", "owner": "mirror-operator", "check": "git --version and python3 --version."},
+    {"id": "removable-media", "title": "Blank removable media large enough for every repository", "owner": "mirror-operator", "check": "The media is labelled and stored with the kit."},
+    {"id": "local-network", "title": "A switch, hotspot, or community network the region can join without the internet", "owner": "mirror-operator", "check": "Two machines can reach each other by address."}
+  ],
+  "procedures": [
+    {
+      "id": "verify-bootstrap-kit",
+      "title": "Verify the bootstrap kit",
+      "topic": "offline-bootstrap",
+      "role": "verifier",
+      "docs": ["www/docs/disaster-recovery/README.md#the-bootstrap-kit"],
+      "steps": [
+        {"role": "verifier", "action": "Copy the kit from removable media to a local directory. Do not run anything from it yet."},
+        {"role": "verifier", "action": "Verify the kit with the kit public key written on paper.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "kit", "verify", "<KIT>", "--trusted-key", "<KIT KEY FROM PAPER>"], "expect": "Exit 0 and the manifest digest you wrote on the printed runbook.", "unsafe": "Never take the trusted key from the kit itself; a forged kit carries its own key."},
+        {"role": "coordinator", "action": "If verification exits 4 (stale), continue, but give the scribe a finding to rebuild the kit."}
+      ],
+      "verify": [
+        {"check": "kit verify exits 0 or 4 with the pinned kit key."},
+        {"check": "The printed manifest digest matches the digest the tool prints."}
+      ],
+      "rollback": [
+        {"action": "Discard the copy and verify the second custodian's kit instead."}
+      ]
+    },
+    {
+      "id": "discover-from-roster",
+      "title": "Find mirrors and contacts without the website",
+      "topic": "independent-discovery",
+      "role": "coordinator",
+      "docs": ["www/docs/disaster-recovery/README.md#the-community-roster"],
+      "steps": [
+        {"role": "coordinator", "action": "Check the roster from the verified kit and list its mirrors, addresses, and contacts.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "roster", "check", "<KIT>/roster.json"], "expect": "Exit 0, the active keys, and every mirror address."},
+        {"role": "mirror-operator", "action": "Try each mirror address, starting with the ones that need no DNS.", "run": ["git", "ls-remote", "<MIRROR URL>"]},
+        {"role": "coordinator", "action": "Reach roster contacts over the channels the roster lists: phone, radio, or in person."}
+      ],
+      "verify": [
+        {"check": "At least one mirror answered, or every contact was tried and the answers are written down."}
+      ],
+      "rollback": [
+        {"action": "Nothing to undo: discovery only reads."}
+      ]
+    },
+    {
+      "id": "inventory-surviving-copies",
+      "title": "Inventory every surviving copy",
+      "topic": "clean-restoration",
+      "role": "mirror-operator",
+      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "steps": [
+        {"role": "mirror-operator", "action": "List the refs of every mirror, clone, and export people still hold.", "run": ["git", "-C", "<COPY>", "for-each-ref", "--format=%(refname) %(objectname)"]},
+        {"role": "verifier", "action": "Verify each removable-media export against the pinned export keys.", "run": ["python3", "tools/forkmesh_offline_sync.py", "verify", "<MEDIA>", "--trusted-key", "<EXPORT KEY>"]},
+        {"role": "mirror-operator", "action": "For each ref, find the most advanced copy: the one whose tip contains every other copy's tip.", "run": ["git", "-C", "<COPY>", "merge-base", "--is-ancestor", "<OLDER TIP>", "<NEWER TIP>"]}
+      ],
+      "verify": [
+        {"check": "Every ref has one chosen source, and diverged refs are written down rather than chosen."}
+      ],
+      "rollback": [
+        {"action": "Nothing to undo: the inventory only reads."}
+      ]
+    },
+    {
+      "id": "restore-origin-from-mirror",
+      "title": "Restore an origin from surviving copies",
+      "topic": "emergency-mirror",
+      "role": "mirror-operator",
+      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "steps": [
+        {"role": "mirror-operator", "action": "Create the new origin from the verified surviving mirror.", "run": ["git", "clone", "--mirror", "<SURVIVING MIRROR>", "<NEW ORIGIN>"]},
+        {"role": "mirror-operator", "action": "Push newer work from each local clone. Git refuses anything that is not a fast-forward.", "run": ["git", "-C", "<LOCAL CLONE>", "push", "--atomic", "<NEW ORIGIN>", "refs/heads/*:refs/heads/*", "refs/tags/*:refs/tags/*"], "unsafe": "Never add --force. A rejected push means the copies diverged; keep both and review."}
+      ],
+      "verify": [
+        {"check": "Connectivity check passes.", "run": ["git", "-C", "<NEW ORIGIN>", "fsck", "--connectivity-only"]},
+        {"check": "Every ref in the newest signed export is present, or contained in the restored ref.", "run": ["python3", "tools/forkmesh_offline_sync.py", "verify", "<MEDIA>", "--trusted-key", "<EXPORT KEY>"]},
+        {"check": "Collaboration records under .forkmesh/ are present on their branches."}
+      ],
+      "rollback": [
+        {"action": "Delete the new origin directory. The surviving copies were never changed."}
+      ]
+    },
+    {
+      "id": "serve-static-emergency-mirror",
+      "title": "Serve a read-only emergency mirror from plain files",
+      "topic": "emergency-mirror",
+      "role": "mirror-operator",
+      "docs": ["www/docs/offline-sync.md#fetch-over-a-link-that-keeps-dropping"],
+      "steps": [
+        {"role": "mirror-operator", "action": "Copy a verified repository into a directory to serve.", "run": ["git", "clone", "--mirror", "<VERIFIED COPY>", "<SERVE DIR>/<NAME>.git"]},
+        {"role": "mirror-operator", "action": "Write the files a static HTTP clone needs.", "run": ["git", "-C", "<SERVE DIR>/<NAME>.git", "update-server-info"]},
+        {"role": "mirror-operator", "action": "Serve the directory on the local network.", "run": ["python3", "-m", "http.server", "8080", "--bind", "<LAN ADDRESS>", "--directory", "<SERVE DIR>"], "unsafe": "A static mirror has no access control. Serve only public repositories, and only on networks the coordinator approves."}
+      ],
+      "verify": [
+        {"check": "A second machine clones the mirror.", "run": ["git", "clone", "--mirror", "http://<LAN ADDRESS>:8080/<NAME>.git", "<CHECK DIR>"]},
+        {"check": "The clone's refs match a signed export or a second copy. Integrity comes from those pins, not from the server."}
+      ],
+      "rollback": [
+        {"action": "Stop the HTTP server and delete the serve directory."}
+      ]
+    },
+    {
+      "id": "verify-mirror-role",
+      "title": "Check that a surviving mirror serves reads",
+      "topic": "emergency-mirror",
+      "role": "verifier",
+      "docs": ["www/docs/operations/service-roles.md#checking-a-running-role"],
+      "steps": [
+        {"role": "verifier", "action": "Probe the mirror's relay role.", "run": ["python3", "tools/forkmesh_service_roles.py", "probe", "--role", "relay", "--base-url", "<MIRROR URL>", "--param", "owner=<OWNER>", "--param", "repository=<REPOSITORY>"], "expect": "Exit 0 (pass) or 3 (degraded). Exit 4 means nothing answered: treat it as loss, never as an empty repository."}
+      ],
+      "verify": [
+        {"check": "The probe verdict is pass or degraded."}
+      ],
+      "rollback": [
+        {"action": "Nothing to undo: the probe sends only reads."}
+      ]
+    },
+    {
+      "id": "run-independent-gateway",
+      "title": "Accept pushes and pull requests without the hosted service",
+      "topic": "emergency-mirror",
+      "role": "mirror-operator",
+      "docs": ["www/docs/operations/service-roles.md#starting-the-independent-profiles"],
+      "steps": [
+        {"role": "mirror-operator", "action": "Check the node before starting it.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--preflight", "--json"]},
+        {"role": "mirror-operator", "action": "Start the node with the hosted tunnel disabled and your own endpoints.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--disable-cloudflared", "--upstream", "<ROSTER MIRROR URL>", "--catalog-url", "<ROSTER CATALOG URL>"], "unsafe": "Leaving --upstream at its default points the node at forkmesh.com, which is unavailable."}
+      ],
+      "verify": [
+        {"check": "The relay role probe passes against the node.", "run": ["python3", "tools/forkmesh_service_roles.py", "probe", "--role", "relay", "--base-url", "<NODE URL>"]}
+      ],
+      "rollback": [
+        {"action": "Stop the node. Submissions it spooled but did not commit are kept in its pull submission spool."}
+      ]
+    },
+    {
+      "id": "clone-over-lan-without-dns",
+      "title": "Clone over the local network with no DNS",
+      "topic": "local-network",
+      "role": "mirror-operator",
+      "docs": ["www/docs/transports.md#postures"],
+      "steps": [
+        {"role": "mirror-operator", "action": "Write a lan-only transport profile from the roster's pinned addresses.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "roster", "profile", "<KIT>/roster.json", "--out", "<LAN PROFILE>"]},
+        {"role": "verifier", "action": "Confirm the mirror's route uses a pinned address and needs no DNS.", "run": ["python3", "tools/forkmesh_transports.py", "plan", "--profile", "<LAN PROFILE>", "<MIRROR URL>"]},
+        {"role": "mirror-operator", "action": "Clone over that route. On Linux the Git process is traced for DNS queries and off-route connections.", "run": ["python3", "tools/forkmesh_transports.py", "git", "--profile", "<LAN PROFILE>", "<MIRROR URL>", "--", "clone", "--mirror", "@URL", "<DIR>"], "expect": "Exit 0. Exit 5 means a DNS query or off-route connection was seen."}
+      ],
+      "verify": [
+        {"check": "The transport exits 0, not 4 (unreachable) or 5 (exposed)."},
+        {"check": "The clone's refs match a signed export or a second copy."}
+      ],
+      "rollback": [
+        {"action": "Delete the clone and the profile."}
+      ]
+    },
+    {
+      "id": "carry-removable-media",
+      "title": "Carry repositories on removable media",
+      "topic": "removable-media",
+      "role": "mirror-operator",
+      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "steps": [
+        {"role": "mirror-operator", "action": "Export a signed copy to the media.", "run": ["python3", "tools/forkmesh_offline_sync.py", "export", "<REPO>", "<MEDIA>", "--signing-key", "<EXPORT SEED>", "--repository", "<OWNER/NAME>"]},
+        {"role": "verifier", "action": "On the receiving side, verify the media against the pinned export key.", "run": ["python3", "tools/forkmesh_offline_sync.py", "verify", "<MEDIA>", "--trusted-key", "<EXPORT KEY>"]},
+        {"role": "mirror-operator", "action": "Import it. Diverged refs are kept aside, never overwritten.", "run": ["python3", "tools/forkmesh_offline_sync.py", "import", "<MEDIA>", "<REPO>", "--trusted-key", "<EXPORT KEY>"], "unsafe": "Never pass --allow-unpinned during an incident: anyone can sign media."}
+      ],
+      "verify": [
+        {"check": "Import exits 0, or 5 with conflicts kept aside for review."}
+      ],
+      "rollback": [
+        {"action": "Undo the import's ref changes.", "run": ["python3", "tools/forkmesh_offline_sync.py", "rollback", "<REPO>", "<IMPORT ID>"]}
+      ]
+    },
+    {
+      "id": "rotate-lost-export-key",
+      "title": "Replace a lost or stolen signing key",
+      "topic": "key-recovery",
+      "role": "key-custodian",
+      "docs": ["www/docs/disaster-recovery/README.md#key-recovery", "www/docs/portable-identities.md#recovery-drills", "www/docs/operations/node-backup-and-recovery.md#moving-or-replacing-an-identity-key"],
+      "steps": [
+        {"role": "mirror-operator", "action": "Generate the successor key on a machine that verified the kit.", "run": ["python3", "tools/forkmesh_offline_sync.py", "keygen", "<SUCCESSOR SEED>"]},
+        {"role": "key-custodian", "action": "The first custodian writes and signs the rotation statement.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "key", "rotate", "--roster", "<ROSTER>", "--recovery-key", "<RECOVERY SEED>", "--revoke", "<LOST KEY>", "--successor", "<SUCCESSOR KEY>", "--holder", "<HOLDER>", "--reason", "<REASON>", "--issued", "<YYYY-MM-DD>", "--out", "<ROTATION>"], "unsafe": "The lost key must never sign its own replacement, and the threshold must never be lowered during an incident."},
+        {"role": "key-custodian", "action": "Each further custodian checks the keys against paper and adds a signature until the threshold is met.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "key", "cosign", "<ROTATION>", "--recovery-key", "<RECOVERY SEED>"]},
+        {"role": "verifier", "action": "Apply the rotation to write the new roster.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "key", "apply", "<ROSTER>", "<ROTATION>", "--out", "<NEW ROSTER>"]},
+        {"role": "mirror-operator", "action": "For a mirror node identity, import the node's sealed identity export instead.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--passphrase-file", "<PASSPHRASE FILE>", "--import-identity", "<IDENTITY EXPORT>", "--replace-identity"]}
+      ],
+      "verify": [
+        {"check": "key apply exits 0 and roster check lists the lost key as revoked.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "roster", "check", "<NEW ROSTER>"]},
+        {"check": "Media signed by the revoked key now fails import, and media signed by the successor imports."}
+      ],
+      "rollback": [
+        {"action": "A rotation cannot be unsigned. Keep the old roster file for the record, and issue a further rotation if the successor was wrong."}
+      ]
+    },
+    {
+      "id": "choose-good-backup",
+      "title": "Restore from the newest backup that verifies",
+      "topic": "clean-restoration",
+      "role": "verifier",
+      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "steps": [
+        {"role": "verifier", "action": "Verify copies newest first. Stop at the first that verifies.", "run": ["python3", "tools/forkmesh_offline_sync.py", "verify", "<MEDIA>", "--trusted-key", "<EXPORT KEY>"], "unsafe": "Never import a copy that failed verification, and never repair a bundle by hand."},
+        {"role": "mirror-operator", "action": "Import the verified copy into an empty repository.", "run": ["python3", "tools/forkmesh_offline_sync.py", "import", "<MEDIA>", "<EMPTY REPO>", "--trusted-key", "<EXPORT KEY>"]}
+      ],
+      "verify": [
+        {"check": "Connectivity check passes.", "run": ["git", "-C", "<EMPTY REPO>", "fsck", "--connectivity-only"]},
+        {"check": "The scribe records which newer copies were rejected, and which commits they held that are now lost."}
+      ],
+      "rollback": [
+        {"action": "Delete the restored repository; the backups were only read."}
+      ]
+    },
+    {
+      "id": "restore-node-backup",
+      "title": "Restore a mirror node from its encrypted backup",
+      "topic": "clean-restoration",
+      "role": "mirror-operator",
+      "docs": ["www/docs/operations/node-backup-and-recovery.md#restoring-a-node"],
+      "steps": [
+        {"role": "verifier", "action": "Rehearse the archive in scratch space first.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--passphrase-file", "<PASSPHRASE FILE>", "--restore-drill", "<ARCHIVE>"]},
+        {"role": "mirror-operator", "action": "Dry-run, then restore onto the new host.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--passphrase-file", "<PASSPHRASE FILE>", "--restore", "<ARCHIVE>", "--dry-run"]},
+        {"role": "mirror-operator", "action": "Restore for real.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--passphrase-file", "<PASSPHRASE FILE>", "--restore", "<ARCHIVE>"], "unsafe": "Never run the old host and its restored copy at the same time."}
+      ],
+      "verify": [
+        {"check": "Preflight reports no errors.", "run": ["forkmesh-mirror-node", "--config", "<CONFIG>", "--preflight", "--json"]}
+      ],
+      "rollback": [
+        {"action": "A failed restore deletes everything it created. Try the next older archive."}
+      ]
+    },
+    {
+      "id": "reconcile-after-isolation",
+      "title": "Reconcile regions that worked apart",
+      "topic": "removable-media",
+      "role": "mirror-operator",
+      "docs": ["www/docs/offline-sync.md#start-here-carry-a-repository-on-a-usb-stick"],
+      "steps": [
+        {"role": "mirror-operator", "action": "Each region exports with its own key, and the media travels both ways.", "run": ["python3", "tools/forkmesh_offline_sync.py", "export", "<REGION REPO>", "<MEDIA>", "--signing-key", "<REGION SEED>"]},
+        {"role": "mirror-operator", "action": "Each region imports the other's media. Diverged branches are kept under refs/forkmesh-offline/conflicts/.", "run": ["python3", "tools/forkmesh_offline_sync.py", "import", "<MEDIA>", "<REGION REPO>", "--trusted-key", "<OTHER REGION KEY>"], "unsafe": "Never force-push a region's branch over the other's kept-aside work."},
+        {"role": "coordinator", "action": "Review each kept-aside branch and merge it through a normal pull request."}
+      ],
+      "verify": [
+        {"check": "Every commit from both regions is reachable in both repositories.", "run": ["git", "-C", "<REGION REPO>", "rev-list", "--all"]}
+      ],
+      "rollback": [
+        {"action": "Undo an import's ref changes.", "run": ["python3", "tools/forkmesh_offline_sync.py", "rollback", "<REGION REPO>", "<IMPORT ID>"]}
+      ]
+    },
+    {
+      "id": "return-to-normal-service",
+      "title": "Return to normal service cleanly",
+      "topic": "clean-restoration",
+      "role": "coordinator",
+      "docs": ["www/docs/disaster-recovery/README.md#clean-restoration"],
+      "steps": [
+        {"role": "mirror-operator", "action": "Compare the returning service's refs with the restored network before anything syncs.", "run": ["git", "ls-remote", "<RETURNING SERVICE URL>"]},
+        {"role": "mirror-operator", "action": "Push restored work to the returning service as fast-forwards only.", "run": ["git", "-C", "<RESTORED>", "push", "--atomic", "<RETURNING SERVICE URL>", "refs/heads/*:refs/heads/*"], "unsafe": "Never let the returning service overwrite work done during the incident."},
+        {"role": "mirror-operator", "action": "Stop emergency static mirrors and temporary profiles."},
+        {"role": "coordinator", "action": "Rebuild and re-sign the bootstrap kit with the current roster.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "kit", "build", "<NEW KIT>", "--signing-key", "<KIT SEED>", "--roster", "<ROSTER>"]},
+        {"role": "scribe", "action": "Write the exercise or incident record with a corrective owner for every finding."}
+      ],
+      "verify": [
+        {"check": "The new kit verifies against the kit key on paper.", "run": ["python3", "tools/forkmesh_disaster_recovery.py", "kit", "verify", "<NEW KIT>", "--trusted-key", "<KIT KEY FROM PAPER>"]}
+      ],
+      "rollback": [
+        {"action": "Keep serving from the restored network, and try the return again later."}
+      ]
+    }
+  ],
+  "triage": {
+    "start": "kit",
+    "nodes": {
+      "kit": {"question": "Has the bootstrap kit verified against the kit key written on paper?", "yes": "keys", "no": "bootstrap"},
+      "bootstrap": {"procedure": "verify-bootstrap-kit", "next": "kit-ok"},
+      "kit-ok": {"question": "Did the kit verify (exit 0, or exit 4 stale)?", "yes": "keys", "no": "stop-kit"},
+      "stop-kit": {"outcome": "escalate", "text": "Stop. Do not run tools from unverified media. Get the second custodian's kit and the printed runbook."},
+      "keys": {"question": "Is a signing key, recovery key, or passphrase lost or possibly stolen?", "yes": "go-key-loss", "no": "backup"},
+      "go-key-loss": {"scenario": "key-loss"},
+      "backup": {"question": "Did a backup or export fail to verify?", "yes": "go-corrupted-backup", "no": "names"},
+      "go-corrupted-backup": {"scenario": "corrupted-backup"},
+      "names": {"question": "Do hostnames fail to resolve while addresses still answer?", "yes": "go-dns-loss", "no": "isolated"},
+      "go-dns-loss": {"scenario": "dns-loss"},
+      "isolated": {"question": "Is your region cut off from every other region?", "yes": "go-regional-isolation", "no": "origin"},
+      "go-regional-isolation": {"scenario": "regional-isolation"},
+      "origin": {"question": "Is a repository's origin host gone or wiped?", "yes": "go-origin-loss", "no": "service"},
+      "go-origin-loss": {"scenario": "origin-loss"},
+      "service": {"question": "Are hosted services (website, index, sign-in, collaboration inboxes) unavailable?", "yes": "go-main-service-loss", "no": "newcomer"},
+      "go-main-service-loss": {"scenario": "main-service-loss"},
+      "newcomer": {"question": "Does a new member or machine need to join with no internet?", "yes": "go-offline-bootstrap", "no": "no-incident"},
+      "go-offline-bootstrap": {"scenario": "offline-bootstrap"},
+      "no-incident": {"outcome": "no-incident", "text": "No scenario applies. Record what you saw and keep watching."}
+    }
+  },
+  "scenarios": [
+    {
+      "id": "origin-loss",
+      "title": "Origin loss",
+      "signals": ["The origin host is gone, wiped, or refuses every read.", "Mirrors still hold copies, possibly a little behind."],
+      "objectives": {"recoveryMinutes": 60, "dataLoss": "none", "automatedBudgetSeconds": 120},
+      "prerequisites": ["verified-kit", "community-roster", "independent-copies", "pinned-keys-on-paper", "recovery-toolchain"],
+      "decisionTree": {
+        "start": "discover",
+        "nodes": {
+          "discover": {"procedure": "discover-from-roster", "next": "inventory"},
+          "inventory": {"procedure": "inventory-surviving-copies", "next": "copy"},
+          "copy": {"question": "Does at least one surviving copy verify against a signed export or a second copy?", "yes": "restore", "no": "media"},
+          "media": {"question": "Is there a verified removable-media export?", "yes": "from-media", "no": "lost"},
+          "from-media": {"procedure": "carry-removable-media", "next": "restore"},
+          "restore": {"procedure": "restore-origin-from-mirror", "next": "return"},
+          "return": {"procedure": "return-to-normal-service", "next": "done"},
+          "done": {"outcome": "recovered", "text": "The new origin is verified and serving."},
+          "lost": {"outcome": "escalate", "text": "No verified copy survives. Ask every roster contact for clones, and follow crisis preservation for public copies elsewhere."}
+        }
+      },
+      "drill": {"procedures": ["inventory-surviving-copies", "restore-origin-from-mirror"], "faults": ["no-local-clone"]}
+    },
+    {
+      "id": "main-service-loss",
+      "title": "Main-service loss",
+      "signals": ["forkmesh.com, its sign-in, index, or collaboration inboxes do not answer.", "Service role probes exit 4 (unreachable)."],
+      "objectives": {"recoveryMinutes": 60, "dataLoss": "none", "automatedBudgetSeconds": 120},
+      "prerequisites": ["verified-kit", "community-roster", "independent-copies", "local-network", "recovery-toolchain"],
+      "decisionTree": {
+        "start": "discover",
+        "nodes": {
+          "discover": {"procedure": "discover-from-roster", "next": "reachable"},
+          "reachable": {"question": "Does a roster mirror answer reads?", "yes": "probe", "no": "serve"},
+          "probe": {"procedure": "verify-mirror-role", "next": "writes"},
+          "serve": {"procedure": "serve-static-emergency-mirror", "next": "writes"},
+          "writes": {"question": "Must the community accept pushes and pull requests before service returns?", "yes": "gateway", "no": "return"},
+          "gateway": {"procedure": "run-independent-gateway", "next": "return"},
+          "return": {"procedure": "return-to-normal-service", "next": "done"},
+          "done": {"outcome": "recovered", "text": "The community reads, and if needed writes, without the hosted service."}
+        }
+      },
+      "drill": {"procedures": ["serve-static-emergency-mirror"], "faults": ["no-surviving-mirror"]}
+    },
+    {
+      "id": "dns-loss",
+      "title": "DNS loss",
+      "signals": ["Hostnames do not resolve, or resolve to the wrong place.", "Addresses on the roster still answer."],
+      "objectives": {"recoveryMinutes": 30, "dataLoss": "none", "automatedBudgetSeconds": 120},
+      "prerequisites": ["verified-kit", "community-roster", "local-network", "recovery-toolchain"],
+      "decisionTree": {
+        "start": "address",
+        "nodes": {
+          "address": {"question": "Does the roster list an address or pinned host for a mirror you can reach?", "yes": "lan", "no": "media"},
+          "lan": {"procedure": "clone-over-lan-without-dns", "next": "clean"},
+          "clean": {"question": "Did the transport exit 0 (not unreachable or exposed)?", "yes": "others", "no": "media"},
+          "media": {"procedure": "carry-removable-media", "next": "others"},
+          "others": {"question": "Do other people on the network need the repository?", "yes": "serve", "no": "done"},
+          "serve": {"procedure": "serve-static-emergency-mirror", "next": "done"},
+          "done": {"outcome": "recovered", "text": "Repositories move by address or media, with no DNS."}
+        }
+      },
+      "drill": {"procedures": ["clone-over-lan-without-dns"], "faults": ["no-pinned-address"]}
+    },
+    {
+      "id": "key-loss",
+      "title": "Key loss",
+      "signals": ["A signing key, device, or passphrase is lost.", "A key may be in someone else's hands."],
+      "objectives": {"recoveryMinutes": 120, "dataLoss": "none", "automatedBudgetSeconds": 120},
+      "prerequisites": ["verified-kit", "pinned-keys-on-paper", "recovery-key-threshold", "community-roster"],
+      "decisionTree": {
+        "start": "threshold",
+        "nodes": {
+          "threshold": {"question": "Can the roster's threshold of recovery key custodians sign?", "yes": "rotate", "no": "wait"},
+          "wait": {"outcome": "escalate", "text": "Do not lower the threshold. Treat media signed by the lost key as untrusted and wait for custodians."},
+          "rotate": {"procedure": "rotate-lost-export-key", "next": "reexport"},
+          "reexport": {"procedure": "carry-removable-media", "next": "check"},
+          "check": {"question": "Is media signed by the revoked key refused, and media signed by the successor imported?", "yes": "return", "no": "wait"},
+          "return": {"procedure": "return-to-normal-service", "next": "done"},
+          "done": {"outcome": "recovered", "text": "The successor key is trusted and the lost key is revoked."}
+        }
+      },
+      "drill": {"procedures": ["rotate-lost-export-key", "carry-removable-media"], "faults": ["threshold-unreachable"]}
+    },
+    {
+      "id": "regional-isolation",
+      "title": "Regional isolation",
+      "signals": ["A region has no connection to other regions, while its local network still works.", "Work continues on both sides."],
+      "objectives": {"recoveryMinutes": 1440, "dataLoss": "none", "automatedBudgetSeconds": 120},
+      "prerequisites": ["verified-kit", "pinned-keys-on-paper", "removable-media", "local-network", "recovery-toolchain"],
+      "decisionTree": {
+        "start": "holder",
+        "nodes": {
+          "holder": {"question": "Does anyone in your region hold a mirror or clone?", "yes": "serve", "no": "media-in"},
+          "media-in": {"procedure": "carry-removable-media", "next": "serve"},
+          "serve": {"procedure": "serve-static-emergency-mirror", "next": "carry"},
+          "carry": {"question": "Can someone carry media between regions?", "yes": "reconcile", "no": "local"},
+          "local": {"outcome": "escalate", "text": "Keep working locally, export on a schedule, and carry media when a route opens."},
+          "reconcile": {"procedure": "reconcile-after-isolation", "next": "reconnected"},
+          "reconnected": {"question": "Has the network between regions returned?", "yes": "return", "no": "exchanging"},
+          "exchanging": {"outcome": "recovered", "text": "Regions stay in step by carried media until the network returns."},
+          "return": {"procedure": "return-to-normal-service", "next": "done"},
+          "done": {"outcome": "recovered", "text": "Both regions hold every commit, and diverged work is under review."}
+        }
+      },
+      "drill": {"procedures": ["reconcile-after-isolation"], "faults": ["unpinned-region-key"]}
+    },
+    {
+      "id": "corrupted-backup",
+      "title": "Corrupted backup",
+      "signals": ["A backup or export fails verification.", "A restore drill fails its checks."],
+      "objectives": {"recoveryMinutes": 60, "dataLoss": "since-last-good-copy", "automatedBudgetSeconds": 120},
+      "prerequisites": ["verified-kit", "independent-copies", "tested-backup", "backup-passphrase-off-host", "pinned-keys-on-paper"],
+      "decisionTree": {
+        "start": "kind",
+        "nodes": {
+          "kind": {"question": "Is the failing backup a mirror node archive (.fmbackup)?", "yes": "node", "no": "media"},
+          "node": {"procedure": "restore-node-backup", "next": "newer"},
+          "media": {"procedure": "choose-good-backup", "next": "found"},
+          "found": {"question": "Did any copy verify?", "yes": "newer", "no": "none"},
+          "none": {"outcome": "escalate", "text": "No copy verifies. Do not repair bundles by hand; ask roster contacts for clones."},
+          "newer": {"question": "Does a mirror or clone hold commits newer than the restored copy?", "yes": "catch-up", "no": "return"},
+          "catch-up": {"procedure": "restore-origin-from-mirror", "next": "return"},
+          "return": {"procedure": "return-to-normal-service", "next": "done"},
+          "done": {"outcome": "recovered", "text": "Restored from the newest verified copy; losses are recorded."}
+        }
+      },
+      "drill": {"procedures": ["choose-good-backup"], "faults": ["all-copies-corrupt"]}
+    },
+    {
+      "id": "offline-bootstrap",
+      "title": "Offline bootstrap",
+      "signals": ["A new member or machine must join with no internet.", "The only material is the printed runbook, the kit, and keys on paper."],
+      "objectives": {"recoveryMinutes": 30, "dataLoss": "none", "automatedBudgetSeconds": 120},
+      "prerequisites": ["printed-runbook", "verified-kit", "pinned-keys-on-paper", "community-roster", "local-network"],
+      "decisionTree": {
+        "start": "verify",
+        "nodes": {
+          "verify": {"procedure": "verify-bootstrap-kit", "next": "ok"},
+          "ok": {"question": "Did the kit verify?", "yes": "discover", "no": "stop"},
+          "stop": {"outcome": "escalate", "text": "Do not run anything from the kit. Get the second custodian's kit."},
+          "discover": {"procedure": "discover-from-roster", "next": "lan"},
+          "lan": {"procedure": "clone-over-lan-without-dns", "next": "done"},
+          "done": {"outcome": "recovered", "text": "The new member holds a verified clone and the verified kit."}
+        }
+      },
+      "drill": {"procedures": ["verify-bootstrap-kit", "discover-from-roster"], "faults": ["wrong-kit-key"]}
+    }
+  ],
+  "kit": {
+    "files": [
+      "conformance/disaster-recovery/v1/runbook.json",
+      "conformance/service-roles/v1/manifest.json",
+      "tools/forkmesh_disaster_recovery.py",
+      "tools/forkmesh_offline_sync.py",
+      "tools/forkmesh_service_roles.py",
+      "tools/forkmesh_transports.py",
+      "tools/verify_migration_report.py",
+      "www/docs/disaster-recovery/README.md",
+      "www/docs/disaster-recovery/runbook.md",
+      "www/docs/crisis-preservation.md",
+      "www/docs/offline-sync.md",
+      "www/docs/portable-identities.md",
+      "www/docs/transports.md",
+      "www/docs/operations/node-backup-and-recovery.md",
+      "www/docs/operations/service-roles.md"
+    ]
+  }
+}

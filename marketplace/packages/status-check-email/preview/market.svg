@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0d1117"/>
+  <rect x="120" y="96" width="400" height="168" rx="24" fill="#161b22" stroke="#30363d"/>
+  <circle cx="200" cy="180" r="18" fill="#3fb950"/>
+  <text x="236" y="188" fill="#e6edf3" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="24">Email Delivery</text>
+  <text x="320" y="236" fill="#8b949e" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="16" text-anchor="middle">Status Page check</text>
+</svg>

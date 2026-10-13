@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <title>ForkMesh World</title>
+    <meta
+      name="description"
+      content="Enter ForkMesh World: a multiplayer, three-dimensional city for repositories, mirror nodes, organizations, security, and developer community activity."
+    />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#f5f6f8" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href="https://forkmesh.com/world/" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <!-- Stream the full World stylesheet without making it render-blocking. -->
+    <link rel="preload" as="style" href="/world/world.css" />
+    <link rel="preload" as="font" type="font/woff2" href="/assets/fonts/Geist-Variable.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/assets/fonts/GeistMono-Variable.woff2" crossorigin />
+    <link
+      rel="stylesheet"
+      href="/world/world.css"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript><link rel="stylesheet" href="/world/world.css" /></noscript>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #f5f6f8;
+      }
+      forkmesh-world[data-world-booting] {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .world-boot {
+        position: fixed;
+        z-index: 2147483000;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #f5f6f8;
+        color: #111827;
+        font: 400 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        opacity: 1;
+        transition: opacity 280ms ease;
+      }
+      .world-boot:not([data-parsed="true"]) > * {
+        visibility: hidden;
+      }
+      .world-boot[data-ready="true"] {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .world-loading-curtain {
+        box-sizing: border-box;
+        width: min(360px, calc(100% - 32px));
+        padding: 24px 26px 20px;
+        border: 1px solid #e7e9ed;
+        border-radius: 20px;
+        display: grid;
+        justify-items: center;
+        gap: 8px;
+        background: #ffffff;
+        box-shadow: 0 22px 60px rgb(15 23 42 / 0.1);
+        text-align: center;
+      }
+      .world-loading-curtain img {
+        width: 40px;
+        height: 46px;
+        object-fit: contain;
+        animation: world-loader-dash 900ms cubic-bezier(.45,.05,.22,1) infinite;
+      }
+      .world-loading-curtain strong {
+        font: 600 16px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        letter-spacing: -0.01em;
+      }
+      .world-loading-stage {
+        color: #6b7280;
+        font-size: 13px;
+      }
+      .world-loading-track {
+        display: block;
+        width: 250px;
+        max-width: 100%;
+        height: 6px;
+        margin-top: 5px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #eef0f3;
+      }
+      .world-loading-track > span {
+        display: block;
+        width: 2%;
+        height: 100%;
+        border-radius: inherit;
+        background: #3b82f6;
+        transition: width 220ms cubic-bezier(.2,.8,.2,1);
+      }
+      .world-loading-curtain small {
+        color: #2563eb;
+        font-size: 12px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .world-loading-steps {
+        box-sizing: border-box;
+        width: 100%;
+        margin: 4px 0 0;
+        padding: 8px 0 0;
+        border-top: 1px solid #f0f2f4;
+        list-style: none;
+        text-align: left;
+      }
+      .world-loading-steps li {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr) auto;
+        align-items: baseline;
+        gap: 0 8px;
+        padding: 1px 0;
+        color: #6b7280;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .world-loading-step-mark {
+        text-align: center;
+      }
+      .world-loading-steps li[data-state="waiting"] .world-loading-step-mark::before { content: "○"; }
+      .world-loading-steps li[data-state="running"] .world-loading-step-mark::before { content: "▸"; }
+      .world-loading-steps li[data-state="done"] .world-loading-step-mark::before { content: "✓"; }
+      .world-loading-steps li[data-state="failed"] .world-loading-step-mark::before { content: "✕"; }
+      .world-loading-steps li[data-state="skipped"] .world-loading-step-mark::before { content: "–"; }
+      .world-loading-step-body {
+        display: grid;
+        min-width: 0;
+      }
+      .world-loading-step-label,
+      .world-loading-step-note {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .world-loading-step-note {
+        min-height: 1.4em;
+        color: #9ca3af;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      .world-loading-step-time {
+        min-width: 42px;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+      .world-loading-steps li[data-state="waiting"],
+      .world-loading-steps li[data-state="skipped"] {
+        opacity: 0.5;
+      }
+      .world-loading-steps li[data-state="running"] {
+        color: #111827;
+      }
+      .world-loading-steps li[data-state="done"] .world-loading-step-mark,
+      .world-loading-steps li[data-state="done"] .world-loading-step-time {
+        color: #2563eb;
+      }
+      .world-loading-steps li[data-state="failed"] {
+        color: #cf222e;
+      }
+      .world-loading-curtain .world-loading-total {
+        color: #6b7280;
+        font-size: 11px;
+        font-weight: 400;
+      }
+      .world-boot-log {
+        position: fixed;
+        z-index: 2147483100;
+        left: max(16px, env(safe-area-inset-left));
+        bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--world-boot-log-offset, 0px));
+        box-sizing: border-box;
+        width: min(440px, calc(100vw - 32px));
+        max-height: min(42vh, 360px);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        border: 1px solid rgb(15 23 42 / 0.12);
+        border-radius: 12px;
+        background: rgb(17 24 39 / 0.82);
+        color: #e5e7eb;
+        font: 400 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        box-shadow: 0 12px 32px rgb(15 23 42 / 0.2);
+      }
+      .world-boot-log[hidden],
+      .world-boot-log-pill[hidden],
+      .world-boot-log-suggestions[hidden] {
+        display: none;
+      }
+      .world-boot-log header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-bottom: 1px solid rgb(255 255 255 / 0.1);
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .world-boot-log[data-dragging="true"] header {
+        cursor: grabbing;
+      }
+      .world-boot-log header button {
+        cursor: pointer;
+      }
+      .world-boot-log header strong {
+        font-weight: 600;
+      }
+      .world-boot-log header span {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        color: #9ca3af;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .world-boot-log button,
+      .world-boot-log-pill {
+        padding: 2px 8px;
+        border: 1px solid rgb(255 255 255 / 0.2);
+        border-radius: 999px;
+        background: rgb(255 255 255 / 0.08);
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .world-boot-log ol {
+        margin: 0;
+        padding: 4px 8px;
+        overflow-y: auto;
+        list-style: none;
+      }
+      .world-boot-log [data-world-boot-log-lines] {
+        display: flex;
+        flex-direction: column-reverse;
+      }
+      .world-boot-log [data-world-boot-log-lines] li {
+        display: grid;
+        grid-template-columns: 58px 54px minmax(0, 1fr);
+        gap: 6px;
+      }
+      .world-boot-log-time {
+        color: #9ca3af;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+      }
+      .world-boot-log-kind {
+        color: #93c5fd;
+      }
+      .world-boot-log-text {
+        overflow-wrap: anywhere;
+      }
+      .world-boot-log li[data-world-boot-log-line="long"] .world-boot-log-kind,
+      .world-boot-log li[data-world-boot-log-line="error"] .world-boot-log-kind {
+        color: #fca5a5;
+      }
+      .world-boot-log li[data-world-boot-log-line="ready"],
+      .world-boot-log li[data-world-boot-log-line="frame"] {
+        color: #86efac;
+      }
+      .world-boot-log-suggestions {
+        max-height: 150px;
+        overflow-y: auto;
+        padding: 6px 8px;
+        border-top: 1px solid rgb(255 255 255 / 0.1);
+      }
+      .world-boot-log-suggestions p {
+        margin: 0 0 4px;
+        font-weight: 600;
+      }
+      .world-boot-log .world-boot-log-suggestions ol {
+        padding: 0;
+      }
+      .world-boot-log-suggestions li {
+        display: grid;
+        margin-bottom: 4px;
+      }
+      .world-boot-log-suggestions li span {
+        color: #9ca3af;
+      }
+      .world-boot-log-suggestions li[data-level="high"] strong {
+        color: #fca5a5;
+      }
+      .world-boot-log-suggestions li[data-level="caution"] strong {
+        color: #fcd34d;
+      }
+      .world-boot-log[data-collapsed="true"] {
+        grid-template-rows: auto;
+      }
+      .world-boot-log[data-collapsed="true"] > :not(header) {
+        display: none;
+      }
+      .world-boot-log-pill {
+        position: fixed;
+        z-index: 2147483100;
+        left: max(16px, env(safe-area-inset-left));
+        bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--world-boot-log-offset, 0px));
+        background: rgb(17 24 39 / 0.82);
+        color: #e5e7eb;
+        font: 400 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      @keyframes world-loader-dash {
+        0%, 100% { transform: translateY(0) rotate(-2deg); }
+        45% { transform: translateY(-7px) rotate(3deg); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .world-loading-curtain img,
+        .world-loading-track > span,
+        forkmesh-world,
+        .world-boot {
+          animation: none;
+          transition: none;
+        }
+      }
+    </style>
+    <!-- world.js is a first-paint shell. It loads the authored World runtime,
+         scene, and Three.js after yielding one frame, keeping the cold initial
+         graph small enough to paint progress before parsing the 3D app. -->
+    <link rel="modulepreload" href="/world/world-boot.js" />
+    <link rel="modulepreload" href="/world/world-debug-log.js" />
+    <link rel="modulepreload" href="/world/vendor/three-0.184.0/three.core.min.js" />
+    <link rel="modulepreload" href="/world/vendor/three-0.184.0/three.module.min.js" />
+    <link rel="modulepreload" href="/world/world-scene.js" />
+    <script defer src="/api-client.js?v=${version}"></script>
+    <script type="text/plain" data-world-after-interactive src="/analytics.js"></script>
+    <script type="text/plain" data-world-after-interactive src="/membership-prompt.js?v=${version}"></script>
+    <script type="module" src="/world/world.js"></script>
+    <script>
+      (function () {
+        var started = false;
+        window.forkmeshWorldLoadDeferredScripts = function () {
+          if (started) return;
+          started = true;
+          document.querySelectorAll("script[data-world-after-interactive]").forEach(function (placeholder) {
+            var script = document.createElement("script");
+            script.src = placeholder.getAttribute("src");
+            script.async = true;
+            document.head.append(script);
+          });
+        };
+        window.addEventListener("forkmesh:world-interactive", function () {
+          if ("requestIdleCallback" in window) {
+            window.requestIdleCallback(window.forkmeshWorldLoadDeferredScripts, { timeout: 1500 });
+          } else {
+            window.setTimeout(window.forkmeshWorldLoadDeferredScripts, 0);
+          }
+        }, { once: true });
+      })();
+    </script>
+    <script type="module">
+      // Discord and notes are useful after arrival, but neither belongs in the
+      // renderer's download queue. Ask for them once the live controls are
+      // interactive and the browser has an idle slice.
+      window.addEventListener("forkmesh:world-interactive", function () {
+        var loadExtra = function (href, retried) {
+          import(retried ? href + (href.indexOf("?") < 0 ? "?" : "&") + "retry=1" : href).catch(function (error) {
+            if (retried) {
+              console.warn("ForkMesh World could not load " + href, error);
+              return;
+            }
+            window.setTimeout(function () { loadExtra(href, true); }, 5000);
+          });
+        };
+        var loadExtras = function () {
+          loadExtra("/world/world-discord.js", false);
+          loadExtra("/world/world-notes.js", false);
+        };
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(loadExtras, { timeout: 2000 });
+        } else {
+          window.setTimeout(loadExtras, 0);
+        }
+      }, { once: true });
+    </script>
+  </head>
+  <body>
+    <a class="world-skip-link" href="#world-information">Skip to world information</a>
+    <forkmesh-world data-world-mode="public" data-world-booting inert></forkmesh-world>
+    <div class="world-boot" data-world-boot>
+      <div class="world-loading-curtain" data-world-loading aria-labelledby="world-loading-title">
+        <img src="/assets/logo.svg" alt="" aria-hidden="true" width="45" height="52" />
+        <strong id="world-loading-title">Opening ForkMesh World</strong>
+        <span class="world-loading-stage" data-world-loading-stage role="status" aria-live="polite">Loading the World…</span>
+        <span
+          class="world-loading-track"
+          data-world-loading-bar
+          role="progressbar"
+          aria-labelledby="world-loading-title"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="2"
+          aria-valuetext="Loading the World…"
+        >
+          <span data-world-loading-progress></span>
+        </span>
+        <small data-world-loading-percent>2%</small>
+        <ol
+          class="world-loading-steps"
+          data-world-loading-steps
+          aria-live="off"
+          aria-label="World startup steps"
+        >
+          <li data-world-boot-step="restore" data-state="waiting">
+            <span class="world-loading-step-mark" aria-hidden="true"></span>
+            <span class="world-loading-step-body">
+              <span class="world-loading-step-label">Read saved view</span>
+              <span class="world-loading-step-note" data-world-boot-note></span>
+            </span>
+            <span class="world-loading-step-time" data-world-boot-time>—</span>
+          </li>
+          <li data-world-boot-step="session" data-state="waiting">
+            <span class="world-loading-step-mark" aria-hidden="true"></span>
+            <span class="world-loading-step-body">
+              <span class="world-loading-step-label">Verify session · edge context</span>
+              <span class="world-loading-step-note" data-world-boot-note></span>
+            </span>
+            <span class="world-loading-step-time" data-world-boot-time>—</span>
+          </li>
+          <li data-world-boot-step="engine" data-state="waiting">
+            <span class="world-loading-step-mark" aria-hidden="true"></span>
+            <span class="world-loading-step-body">
+              <span class="world-loading-step-label">Download 3D engine</span>
+              <span class="world-loading-step-note" data-world-boot-note></span>
+            </span>
+            <span class="world-loading-step-time" data-world-boot-time>—</span>
+          </li>
+          <li data-world-boot-step="scene" data-state="waiting">
+            <span class="world-loading-step-mark" aria-hidden="true"></span>
+            <span class="world-loading-step-body">
+              <span class="world-loading-step-label">Build the town square</span>
+              <span class="world-loading-step-note" data-world-boot-note></span>
+            </span>
+            <span class="world-loading-step-time" data-world-boot-time>—</span>
+          </li>
+          <li data-world-boot-step="data" data-state="waiting">
+            <span class="world-loading-step-mark" aria-hidden="true"></span>
+            <span class="world-loading-step-body">
+              <span class="world-loading-step-label">Load nearby members</span>
+              <span class="world-loading-step-note" data-world-boot-note></span>
+            </span>
+            <span class="world-loading-step-time" data-world-boot-time>—</span>
+          </li>
+          <li data-world-boot-step="populate" data-state="waiting">
+            <span class="world-loading-step-mark" aria-hidden="true"></span>
+            <span class="world-loading-step-body">
+              <span class="world-loading-step-label">Place the nearby scene</span>
+              <span class="world-loading-step-note" data-world-boot-note></span>
+            </span>
+            <span class="world-loading-step-time" data-world-boot-time>—</span>
+          </li>
+          <li data-world-boot-step="spawn" data-state="waiting">
+            <span class="world-loading-step-mark" aria-hidden="true"></span>
+            <span class="world-loading-step-body">
+              <span class="world-loading-step-label">Take your position</span>
+              <span class="world-loading-step-note" data-world-boot-note></span>
+            </span>
+            <span class="world-loading-step-time" data-world-boot-time>—</span>
+          </li>
+        </ol>
+        <small class="world-loading-total" data-world-loading-elapsed>0.0s elapsed</small>
+      </div>
+    </div>
+    <aside
+      class="world-boot-log"
+      data-world-boot-log
+      role="log"
+      aria-live="polite"
+      aria-label="World load log"
+      data-collapsed="false"
+      hidden
+    >
+      <header data-world-boot-log-handle title="Drag to move · double-click to reset">
+        <strong>Load log</strong>
+        <span data-world-boot-log-summary>recording</span>
+        <button type="button" data-world-boot-log-copy>Copy log</button>
+        <button type="button" data-world-boot-log-collapse aria-expanded="true">Collapse</button>
+        <button type="button" data-world-boot-log-dismiss aria-label="Dismiss the load log">×</button>
+      </header>
+      <ol data-world-boot-log-lines></ol>
+      <section class="world-boot-log-suggestions" data-world-boot-log-suggestions aria-label="Optimization suggestions" hidden></section>
+    </aside>
+    <button type="button" class="world-boot-log-pill" data-world-boot-log-pill hidden>Load log</button>
+    <script>
+      (function () {
+        try {
+          var settings = JSON.parse(localStorage.getItem("forkmesh.world.settings.v1") || "null");
+          var prefs = JSON.parse(localStorage.getItem("forkmesh.world.bootlog.v1") || "null");
+          var boot = document.querySelector("[data-world-boot]");
+          if (boot) boot.dataset.parsed = "true";
+          var log = document.querySelector("[data-world-boot-log]");
+          if (!log) return;
+          if (prefs && prefs.collapsed === true) log.dataset.collapsed = "true";
+          var left = Number(prefs && prefs.position && prefs.position.left);
+          var top = Number(prefs && prefs.position && prefs.position.top);
+          if (isFinite(left) && isFinite(top) && prefs.position.left !== null && prefs.position.top !== null) {
+            log.style.left = Math.max(8, Math.min(left, window.innerWidth - 120)) + "px";
+            log.style.top = Math.max(8, Math.min(top, window.innerHeight - 40)) + "px";
+            log.style.bottom = "auto";
+            log.dataset.worldBootLogPlaced = "true";
+          }
+          if ((settings && settings.debugPanel === true) || (prefs && prefs.admin === true)) log.hidden = false;
+        } catch (error) {}
+      })();
+    </script>
+    <forkmesh-world-notes></forkmesh-world-notes>
+    <section class="world-load-error" data-world-load-error hidden>
+      <a class="brand world-load-error-brand" href="/" aria-label="ForkMesh home">
+        <img
+          class="brand-mark"
+          src="/assets/logo.svg"
+          alt=""
+          aria-hidden="true"
+          width="36"
+          height="42"
+        />
+        <span>ForkMesh World</span>
+      </a>
+      <p class="world-load-error-kicker">WORLD UNAVAILABLE</p>
+      <p>
+        The interactive world script did not load within 10 seconds. Check
+        your connection and reload, or continue with the standard web pages.
+      </p>
+      <nav aria-label="ForkMesh destinations">
+        <a href="/world/">Reload the world</a>
+        <a href="/dashboard">Open operations console</a>
+        <a href="/chat">Open ForkMesh chat</a>
+        <a href="/docs">Read the technical docs</a>
+        <a href="/network">Inspect the live network</a>
+      </nav>
+    </section>
+    <script>
+      // If the renderer never takes over, replace the loading surface with
+      // actionable fallback links.
+      setTimeout(function () {
+        var world = document.querySelector("forkmesh-world");
+        if (world && world.dataset.worldReady === "true") return;
+        var boot = document.querySelector("[data-world-boot]");
+        if (boot) boot.remove();
+        var failure = document.querySelector("[data-world-load-error]");
+        if (failure) failure.hidden = false;
+        if (window.forkmeshWorldLoadDeferredScripts) window.forkmeshWorldLoadDeferredScripts();
+      }, 10000);
+    </script>
+    <noscript>
+      <div class="world-noscript">
+        The 3D world needs JavaScript. You can still use the
+        <a href="/dashboard">ForkMesh operations console</a>.
+      </div>
+    </noscript>
+  </body>
+</html>

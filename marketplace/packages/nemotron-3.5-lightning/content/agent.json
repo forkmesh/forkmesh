@@ -1,0 +1,19 @@
+{
+  "$schema": "../../../agent.schema.json",
+  "schemaVersion": 1,
+  "provider": "local-llama",
+  "runtime": "ollama",
+  "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+  "defaultModel": "nemotron-3.5-lightning",
+  "avatar": "avatar.png",
+  "documentation": "https://ollama.com/library/nemotron-3.5-lightning",
+  "runtimeDownload": "https://ollama.com/download",
+  "models": [
+    {
+      "id": "nemotron-3.5-lightning",
+      "label": "Nemotron 3.5 Lightning",
+      "downloadBytes": 25000000000,
+      "contextTokens": 1048576
+    }
+  ]
+}

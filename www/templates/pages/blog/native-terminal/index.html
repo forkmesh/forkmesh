@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Native terminal" %}
+{% set slug = "native-terminal" %}
+{% set image = "/assets/blog/features/native-terminal.webp" %}
+{% set description = "A real VT100 terminal widget renders agent sessions with full color and emoji, not a flat log viewer." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">AI agents</p>
+            <h1>Native terminal</h1>
+            <p class="lede">A real VT100 terminal widget renders agent sessions with full color and emoji, not a flat log viewer.</p>
+            <div class="meta"><span class="pill">Feature 36 of 72</span><span>Feature</span><span>AI agents, built in</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/native-terminal.webp" alt="Abstract ForkMesh artwork for Native terminal">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Native terminal gives ForkMesh a concrete mechanism for a real terminal surface for agent sessions, not a flat text log. A real VT100 terminal widget renders agent sessions with full color and emoji, not a flat log viewer.</p>
+          <p>AI coding only helps when the agent can work in a real repository without trampling human state or hiding what it did. In ForkMesh, native terminal addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles native terminal through the same split it uses across the product: ForkMesh runs agents beside the repository, capturing transcripts, branches, diffs, prompts, usage, questions, and handoffs in the desktop app.</p>
+          <p>The behavior is intentionally narrow: A real VT100 terminal widget renders agent sessions with full color and emoji, not a flat log viewer. Humans keep control of instructions, answers, review, and merge decisions.</p>
+          <h2>Where it fits</h2>
+          <p>Use native terminal when agent work should be reviewable, resumable, and connected to the same repo UI humans use.</p>
+          <p>It pairs with the rest of AI agents, built in because Native terminal keeps a real terminal surface for agent sessions, not a flat text log connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/agents-can-ask-you-questions/">← Agents can ask you questions</a>
+          <a href="/blog/your-app-is-the-ide/">Your app is the IDE →</a>
+        </nav>
+{% endblock %}

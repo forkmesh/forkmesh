@@ -1,0 +1,61 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "capture",
+  "name": "Capture",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Extensions",
+  "version": "1.0.0",
+  "summary": "Capture a screen region, annotate it, and attach it to an agent prompt.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:capture",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "screen.capture",
+      "label": "Read the screen region you explicitly select",
+      "risk": "sensitive"
+    },
+    {
+      "id": "prompt.attachments.write",
+      "label": "Add the accepted image to the local prompt composer",
+      "risk": "low"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "preview/market.png",
+      "alt": "Capture annotation window with drawing tools and an Add to Prompt action"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": true
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

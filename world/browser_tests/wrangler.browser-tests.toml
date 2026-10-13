@@ -1,0 +1,60 @@
+name = "forkmesh-browser-tests"
+main = "../../app/src_build/entry.py"
+compatibility_flags = ["python_workers", "disable_python_external_sdk"]
+compatibility_date = "2026-09-22"
+
+[assets]
+directory = "../../app/dist"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+run_worker_first = [
+  "/api/*",
+  "/*/*",
+  "!/assets/*",
+  "!/blog/*",
+  "!/dashboard/*",
+  "!/docs/*",
+  "!/favicon/*",
+  "!/security/*",
+  "!/world/*",
+]
+
+[build]
+command = "python3 tools/build_worker_python.py"
+
+[vars]
+DATA_KEY = "browser-tests-private-data-key-2026"
+NODE_NAME = "forkmesh-browser-tests"
+PUBLIC_BASE_URL = "http://127.0.0.1:4179"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_MAINNODE_ROOM"
+class_name = "ForkMeshRoom"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_WORLD"
+class_name = "ForkMeshWorld"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_OFFICE_ROOM"
+class_name = "ForkMeshOfficeRoom"
+
+[[durable_objects.bindings]]
+name = "FORKMESH_NODES"
+class_name = "ForkMeshNodes"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "forkmesh-browser-tests-v3"
+database_id = "00000000-0000-0000-0000-000000000003"
+migrations_dir = "../../app/migrations"
+
+[[migrations]]
+tag = "browser-tests-v1"
+new_sqlite_classes = [
+  "ForkMeshRoom",
+  "ForkMeshWorld",
+  "ForkMeshOfficeRoom",
+  "ForkMeshNodes",
+]

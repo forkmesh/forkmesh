@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">The ForkMesh extension popup offering to fill a saved login, beside the page that installs and updates the extension</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <text x="64" y="84" font-size="30" font-weight="600" fill="#f4f5f7">Browser Extension</text>
+    <text x="64" y="114" font-size="16" fill="#9aa3b2">One ForkMesh extension for Chrome · Password Vault · CRM · one sign-in</text>
+    <g transform="translate(64,150)">
+      <rect width="640" height="200" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+      <text x="28" y="48" font-size="18" font-weight="600" fill="#f4f5f7">Extension v2.0.0 is installed and up to date.</text>
+      <rect x="28" y="84" width="188" height="40" rx="8" fill="#3987e5"/><text x="50" y="110" font-size="14" font-weight="600" fill="#ffffff">Download v2.0.0 again</text>
+      <rect x="228" y="84" width="220" height="40" rx="8" fill="#2a2f3a"/><text x="246" y="110" font-size="14" font-weight="600" fill="#f4f5f7">Open chrome://extensions</text>
+      <text x="28" y="164" font-size="14" fill="#9aa3b2">Unzip over the browser-extension folder, then press Reload.</text>
+    </g>
+    <g transform="translate(64,374)">
+      <rect width="308" height="256" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+      <text x="24" y="42" font-size="17" font-weight="600" fill="#f4f5f7">Password Vault</text>
+      <text x="24" y="74" font-size="13" fill="#9aa3b2">Fill on the login's own site only.</text>
+      <text x="24" y="98" font-size="13" fill="#9aa3b2">Save what you just typed.</text>
+      <text x="24" y="122" font-size="13" fill="#9aa3b2">Keys in memory, locked after</text>
+      <text x="24" y="146" font-size="13" fill="#9aa3b2">15 idle minutes.</text>
+    </g>
+    <g transform="translate(396,374)">
+      <rect width="308" height="256" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+      <text x="24" y="42" font-size="17" font-weight="600" fill="#f4f5f7">CRM</text>
+      <text x="24" y="74" font-size="13" fill="#9aa3b2">A CRM header above the open mail.</text>
+      <text x="24" y="98" font-size="13" fill="#9aa3b2">Gmail, Zoho Mail, Mastodon.</text>
+      <text x="24" y="122" font-size="13" fill="#9aa3b2">Link a message to a contact</text>
+      <text x="24" y="146" font-size="13" fill="#9aa3b2">in one click.</text>
+    </g>
+    <g transform="translate(760,150)">
+      <rect width="440" height="480" rx="12" fill="#14171c" stroke="#3987e5"/>
+      <text x="20" y="34" font-size="15" font-weight="600" fill="#e8eaed">ForkMesh</text><text x="368" y="34" font-size="13" fill="#9aa3ad">alice</text>
+      <line x1="0" y1="50" x2="440" y2="50" stroke="#2c3239"/>
+      <rect x="16" y="66" width="408" height="250" rx="8" fill="none" stroke="#2c3239"/>
+      <text x="30" y="92" font-size="14" font-weight="600" fill="#e8eaed">Password Vault</text>
+      <text x="30" y="118" font-size="13" fill="#9aa3ad">Logins for registrar.example</text>
+      <text x="30" y="152" font-size="14" font-weight="600" fill="#e8eaed">Domain registrar</text>
+      <text x="30" y="172" font-size="12" fill="#9aa3ad">ops@acme.test</text>
+      <rect x="252" y="140" width="52" height="30" rx="6" fill="#2f81f7"/><text x="266" y="160" font-size="12" font-weight="600" fill="#ffffff">Fill</text>
+      <rect x="310" y="140" width="52" height="30" rx="6" fill="#1d2229" stroke="#2c3239"/><text x="322" y="160" font-size="12" font-weight="600" fill="#e8eaed">User</text>
+      <rect x="368" y="140" width="48" height="30" rx="6" fill="#1d2229" stroke="#2c3239"/><text x="378" y="160" font-size="12" font-weight="600" fill="#e8eaed">Pass</text>
+      <rect x="30" y="196" width="380" height="32" rx="6" fill="#0d1014" stroke="#2c3239"/><text x="42" y="217" font-size="12" fill="#6b7484">Search the vault to copy from another login</text>
+      <rect x="30" y="250" width="162" height="30" rx="6" fill="#1d2229" stroke="#2c3239"/><text x="42" y="270" font-size="12" font-weight="600" fill="#e8eaed">Save this page's login</text>
+      <rect x="200" y="250" width="140" height="30" rx="6" fill="#1d2229" stroke="#2c3239"/><text x="212" y="270" font-size="12" font-weight="600" fill="#e8eaed">Generate password</text>
+      <rect x="348" y="250" width="56" height="30" rx="6" fill="#1d2229" stroke="#2c3239"/><text x="362" y="270" font-size="12" font-weight="600" fill="#e8eaed">Lock</text>
+      <text x="20" y="352" font-size="14" font-weight="600" fill="#e8eaed">CRM</text>
+      <rect x="16" y="366" width="408" height="92" rx="8" fill="none" stroke="#2c3239"/>
+      <text x="30" y="394" font-size="12" fill="#9aa3ad">Organization</text>
+      <rect x="30" y="404" width="380" height="34" rx="6" fill="#0d1014" stroke="#2c3239"/><text x="42" y="426" font-size="13" fill="#e8eaed">acme</text>
+    </g>
+  </g>
+</svg>

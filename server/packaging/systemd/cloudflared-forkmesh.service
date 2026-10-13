@@ -1,0 +1,41 @@
+[Unit]
+Description=Cloudflare Tunnel connector for the ForkMesh mirror gateway
+Documentation=https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+Wants=network-online.target
+After=network-online.target forkmesh-mirror.service
+Requires=forkmesh-mirror.service
+PartOf=forkmesh-mirror.service
+
+[Service]
+Type=simple
+User=forkmesh-cloudflared
+Group=forkmesh-cloudflared
+UMask=0077
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate run --token-file /etc/forkmesh/cloudflared-token
+Restart=always
+RestartSec=5s
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

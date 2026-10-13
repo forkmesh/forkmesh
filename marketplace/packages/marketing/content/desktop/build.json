@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "MarketingFeature.h",
+    "MarketingFeature.cpp",
+    "MarketingDashboard.h",
+    "MarketingDashboard.cpp",
+    "MarketingCommon.h",
+    "MarketingCommon.cpp",
+    "MarketingPages.cpp"
+  ],
+  "mocHeaders": []
+}

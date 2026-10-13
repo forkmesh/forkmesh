@@ -1,0 +1,651 @@
+{
+  "schemaVersion": 1,
+  "suite": {
+    "id": "forkmesh-stock-git",
+    "version": "1.0.0",
+    "updated": "2026-09-14",
+    "minimumGitVersion": "2.34.0",
+    "freshnessDays": 30,
+    "fixture": "A bare repository whose main branch has three commits: an SSH-signed commit adding a README, a 128 KiB binary payload, and a gitlink submodule at deps/fixture resolved through a relative URL, followed by two history commits. A lightweight tag points at the signed commit; receive and transfer fsck are enabled, and a read-only replica rejects every push.",
+    "reportSchema": "forkmesh-git-conformance-report-v1",
+    "workflow": "/.github/workflows/git-conformance.yml"
+  },
+  "statuses": {
+    "supported": "Covered by an automated stock-Git probe and part of the public contract.",
+    "local": "Runs in the stock client checkout; the transport preserves the required objects and refs.",
+    "conditional": "Supported when the condition in the matrix is satisfied.",
+    "unsupported": "Rejected or deliberately unavailable; follow the linked recovery or alternative."
+  },
+  "paths": [
+    {
+      "id": "direct",
+      "label": "Direct owner SSH",
+      "read": true,
+      "write": true,
+      "transport": "SSH (ssh://); the offline probe uses a stock smart-HTTP origin with the same pack negotiation",
+      "authentication": "Registered SSH public key with repository read or write permission",
+      "description": "A stock Git SSH session terminates at the owner-authorized forced-command gateway."
+    },
+    {
+      "id": "relay",
+      "label": "Stable relay HTTPS",
+      "read": true,
+      "write": false,
+      "transport": "HTTPS smart protocol under the stable repository URL",
+      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "description": "The stable repository URL proxies upload-pack in place from one integrity-matching HTTPS mirror."
+    },
+    {
+      "id": "mirror-failover",
+      "label": "Relay mirror failover",
+      "read": true,
+      "write": false,
+      "transport": "HTTPS smart protocol through a relay-selected mirror",
+      "authentication": "Anonymous read of a public repository; no credentials reach a mirror",
+      "description": "Before response bytes are committed, the relay retries another healthy mirror with the same attested refs."
+    }
+  ],
+  "operations": [
+    {
+      "id": "clone",
+      "label": "Clone",
+      "probe": "clone",
+      "reproduction": [
+        "git",
+        "clone",
+        "{clone_url}",
+        "worktree"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "SSH upload-pack."
+        },
+        "relay": {
+          "status": "supported",
+          "note": "Smart-HTTP upload-pack under the stable URL."
+        },
+        "mirror-failover": {
+          "status": "supported",
+          "note": "Retries only before response bytes; the selected mirror must match the accepted refs."
+        }
+      }
+    },
+    {
+      "id": "fetch",
+      "label": "Fetch",
+      "probe": "fetch",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "fetch",
+        "--prune",
+        "origin"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "Branches, tags, and deletes use stock ref negotiation."
+        },
+        "relay": {
+          "status": "supported",
+          "note": "The relay streams the selected mirror response without rewriting pack data."
+        },
+        "mirror-failover": {
+          "status": "supported",
+          "note": "A failed origin is skipped before streaming begins."
+        }
+      }
+    },
+    {
+      "id": "push",
+      "label": "Push",
+      "probe": "push",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "origin",
+        "HEAD"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "Requires a registered SSH public key and repository write permission."
+        },
+        "relay": {
+          "status": "unsupported",
+          "note": "HTTPS receive-pack fails before reading a request body.",
+          "limitation": "https-receive-pack"
+        },
+        "mirror-failover": {
+          "status": "unsupported",
+          "note": "Writes never fan out through read mirrors.",
+          "limitation": "https-receive-pack"
+        }
+      }
+    },
+    {
+      "id": "hooks",
+      "label": "Client hooks",
+      "probe": "hooks",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "commit",
+        "-m",
+        "exercise local hook"
+      ],
+      "support": {
+        "direct": {
+          "status": "local",
+          "note": "Normal checkout hooks run on the developer machine."
+        },
+        "relay": {
+          "status": "local",
+          "note": "Normal checkout hooks run on the developer machine."
+        },
+        "mirror-failover": {
+          "status": "local",
+          "note": "Normal checkout hooks run on the developer machine."
+        }
+      }
+    },
+    {
+      "id": "branches",
+      "label": "Branches",
+      "probe": "branches",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "switch",
+        "-c",
+        "topic/example"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "Create, fetch, push, and delete through ordinary refspecs."
+        },
+        "relay": {
+          "status": "conditional",
+          "note": "Read and local branch operations work; publish the branch with the SSH URL.",
+          "limitation": "https-receive-pack"
+        },
+        "mirror-failover": {
+          "status": "conditional",
+          "note": "Read and local branch operations work; publish the branch with the SSH URL.",
+          "limitation": "https-receive-pack"
+        }
+      }
+    },
+    {
+      "id": "rebase",
+      "label": "Rebase",
+      "probe": "rebase",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "rebase",
+        "origin/main"
+      ],
+      "support": {
+        "direct": {
+          "status": "local",
+          "note": "Rebase is local; the resulting ref can be pushed over SSH."
+        },
+        "relay": {
+          "status": "local",
+          "note": "Fetch over HTTPS, rebase locally, then publish over SSH."
+        },
+        "mirror-failover": {
+          "status": "local",
+          "note": "Fetch over HTTPS, rebase locally, then publish over SSH."
+        }
+      }
+    },
+    {
+      "id": "force-with-lease",
+      "label": "Force with lease",
+      "probe": "force-with-lease",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "--force-with-lease",
+        "origin",
+        "topic/example"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "A stale expected old object ID is rejected without changing the remote ref."
+        },
+        "relay": {
+          "status": "unsupported",
+          "note": "Use the repository SSH URL for writes.",
+          "limitation": "https-receive-pack"
+        },
+        "mirror-failover": {
+          "status": "unsupported",
+          "note": "Use the owner SSH URL; mirror reads are never a write quorum.",
+          "limitation": "https-receive-pack"
+        }
+      }
+    },
+    {
+      "id": "force",
+      "label": "Explicit force update",
+      "probe": "force",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "push",
+        "--force",
+        "origin",
+        "topic/example"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "Accepted for an authorized writable repository; create a bundle or backup ref first."
+        },
+        "relay": {
+          "status": "unsupported",
+          "note": "Use the repository SSH URL for writes.",
+          "limitation": "https-receive-pack"
+        },
+        "mirror-failover": {
+          "status": "unsupported",
+          "note": "Use the owner SSH URL; mirrors remain read-only.",
+          "limitation": "https-receive-pack"
+        }
+      }
+    },
+    {
+      "id": "shallow-clone",
+      "label": "Shallow clone",
+      "probe": "shallow-clone",
+      "reproduction": [
+        "git",
+        "clone",
+        "--depth=1",
+        "{clone_url}",
+        "worktree"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "Shallow boundaries and later unshallow are checked."
+        },
+        "relay": {
+          "status": "supported",
+          "note": "Standard deepen negotiation is passed through."
+        },
+        "mirror-failover": {
+          "status": "supported",
+          "note": "The initial request may fail over before streaming."
+        }
+      }
+    },
+    {
+      "id": "partial-clone",
+      "label": "Partial clone",
+      "probe": "partial-clone",
+      "reproduction": [
+        "git",
+        "-c",
+        "protocol.version=2",
+        "clone",
+        "--filter=blob:none",
+        "--no-checkout",
+        "{clone_url}",
+        "worktree"
+      ],
+      "support": {
+        "direct": {
+          "status": "conditional",
+          "note": "Git protocol v2 advertises filters and lazy blob fetch preserves object IDs.",
+          "limitation": "partial-protocol-v2"
+        },
+        "relay": {
+          "status": "conditional",
+          "note": "The bounded Git-Protocol v2 hint and filter negotiation are streamed unchanged.",
+          "limitation": "partial-protocol-v2"
+        },
+        "mirror-failover": {
+          "status": "conditional",
+          "note": "With protocol v2, each promisor fetch may select another matching mirror before bytes start.",
+          "limitation": "partial-protocol-v2"
+        }
+      }
+    },
+    {
+      "id": "bundle",
+      "label": "Bundles",
+      "probe": "bundle",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "bundle",
+        "create",
+        "recovery.bundle",
+        "--all"
+      ],
+      "support": {
+        "direct": {
+          "status": "local",
+          "note": "Bundle creation, verify, clone, and recovery use stock Git objects."
+        },
+        "relay": {
+          "status": "local",
+          "note": "Create a bundle from any complete local clone."
+        },
+        "mirror-failover": {
+          "status": "local",
+          "note": "Create a bundle from any complete local clone."
+        }
+      }
+    },
+    {
+      "id": "submodules",
+      "label": "Submodules",
+      "probe": "submodules",
+      "reproduction": [
+        "git",
+        "clone",
+        "--recurse-submodules",
+        "{clone_url}",
+        "worktree"
+      ],
+      "support": {
+        "direct": {
+          "status": "conditional",
+          "note": "Every submodule URL needs its own SSH authorization or public HTTPS route.",
+          "limitation": "submodule-authorization"
+        },
+        "relay": {
+          "status": "conditional",
+          "note": "Public relative submodule URLs resolve through the same stable relay.",
+          "limitation": "submodule-authorization"
+        },
+        "mirror-failover": {
+          "status": "conditional",
+          "note": "Each public submodule independently selects an integrity-matching mirror.",
+          "limitation": "submodule-authorization"
+        }
+      }
+    },
+    {
+      "id": "signed-commits",
+      "label": "Signed commits",
+      "probe": "signed-commits",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "verify-commit",
+        "HEAD"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "Commit bytes, signature header, and object ID are unchanged."
+        },
+        "relay": {
+          "status": "supported",
+          "note": "The relay does not decode or rewrite Git objects."
+        },
+        "mirror-failover": {
+          "status": "supported",
+          "note": "Only mirrors with the accepted refs are eligible; exact signed object bytes are compared."
+        }
+      }
+    },
+    {
+      "id": "integrity",
+      "label": "Ref and object integrity",
+      "probe": "integrity",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "fsck",
+        "--full",
+        "--strict"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "Accepted pushes enable receive fsck and the suite checks refs plus object contents."
+        },
+        "relay": {
+          "status": "supported",
+          "note": "Source-attested ref pins gate routing; the suite also injects bad refs and damaged packs."
+        },
+        "mirror-failover": {
+          "status": "supported",
+          "note": "Candidates must share the accepted ref digest; corruption fixtures must fail fsck."
+        }
+      }
+    },
+    {
+      "id": "rollback-recovery",
+      "label": "Rollback and recovery",
+      "probe": "rollback-recovery",
+      "reproduction": [
+        "git",
+        "clone",
+        "recovery.bundle",
+        "recovered"
+      ],
+      "support": {
+        "direct": {
+          "status": "supported",
+          "note": "A verified pre-force bundle restores the exact previous ref over authorized SSH."
+        },
+        "relay": {
+          "status": "local",
+          "note": "Recovery is prepared locally and published through the SSH write path."
+        },
+        "mirror-failover": {
+          "status": "local",
+          "note": "A recovered owner ref is served only after mirrors refresh and attest the new state."
+        }
+      }
+    }
+  ],
+  "clients": [
+    {
+      "id": "forkmesh-qt",
+      "name": "ForkMesh Qt desktop",
+      "platform": "Linux, macOS, Windows",
+      "version": "current main",
+      "status": "tested",
+      "lastTested": "2026-08-20",
+      "evidence": "desktop/tests/test_mesh_e2e.cpp"
+    },
+    {
+      "id": "github-desktop",
+      "name": "GitHub Desktop",
+      "platform": "macOS, Windows",
+      "version": "not yet recorded",
+      "status": "pending",
+      "lastTested": "not yet tested",
+      "evidence": "desktop-client-validation"
+    },
+    {
+      "id": "sourcetree",
+      "name": "Sourcetree",
+      "platform": "macOS, Windows",
+      "version": "not yet recorded",
+      "status": "pending",
+      "lastTested": "not yet tested",
+      "evidence": "desktop-client-validation"
+    },
+    {
+      "id": "gitkraken",
+      "name": "GitKraken Desktop",
+      "platform": "Linux, macOS, Windows",
+      "version": "not yet recorded",
+      "status": "pending",
+      "lastTested": "not yet tested",
+      "evidence": "desktop-client-validation"
+    }
+  ],
+  "limitations": [
+    {
+      "id": "https-receive-pack",
+      "title": "HTTPS and failover paths are read-only",
+      "appliesTo": [
+        "relay",
+        "mirror-failover"
+      ],
+      "expected": "Git receives HTTP 501 with error code direct_https_receive_pack_required before ForkMesh reads the push body.",
+      "reproduction": [
+        "git",
+        "push",
+        "https://forkmesh.com/OWNER/REPOSITORY",
+        "HEAD"
+      ],
+      "action": "Register an SSH public key, copy the repository's published ssh:// URL, and push that remote instead.",
+      "recovery": "No remote ref or object is changed. Correct the remote URL and retry the same push.",
+      "lastTested": {
+        "date": "2026-08-20",
+        "client": "Git 2.47.3",
+        "evidence": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"
+      }
+    },
+    {
+      "id": "server-hooks",
+      "title": "Repository-controlled server hooks are disabled",
+      "appliesTo": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "expected": "Client-side hooks in a checkout run normally. Gateways set core.hooksPath to the null device so pushed repository configuration cannot execute code on a mirror.",
+      "reproduction": [
+        "git",
+        "-C",
+        "worktree",
+        "commit",
+        "-m",
+        "exercise local hook"
+      ],
+      "action": "Keep developer hooks local; put shared required checks in reviewed ForkMesh Actions or another CI system.",
+      "recovery": "A rejected local hook leaves the index and remote unchanged; fix or intentionally bypass the local hook according to project policy.",
+      "lastTested": {
+        "date": "2026-08-20",
+        "client": "Git 2.47.3",
+        "evidence": "forkmesh-stock-git v1 hooks probe"
+      }
+    },
+    {
+      "id": "midstream-failover",
+      "title": "A response cannot change mirrors mid-stream",
+      "appliesTo": [
+        "mirror-failover"
+      ],
+      "expected": "ForkMesh retries another eligible mirror only before response bytes are committed. An interrupted pack fails as a normal Git transport error.",
+      "reproduction": [
+        "git",
+        "fetch",
+        "--prune",
+        "origin"
+      ],
+      "action": "Retry the fetch; Git reuses valid local objects and ForkMesh may select another matching mirror for the new request.",
+      "recovery": "Run git fsck --full --strict if the client or disk reported corruption. Do not delete the existing clone before collecting diagnostics.",
+      "lastTested": {
+        "date": "2026-08-20",
+        "client": "Git 2.47.3",
+        "evidence": "forkmesh-stock-git v1 mirror-failover and integrity probes"
+      }
+    },
+    {
+      "id": "partial-protocol-v2",
+      "title": "Partial clone requires Git protocol v2",
+      "appliesTo": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "expected": "A protocol-v0 filtered clone may receive the initial commits and trees, but its first lazy blob fetch is rejected as an unadvertised-object request so hidden ForkMesh objects remain inaccessible.",
+      "reproduction": [
+        "git",
+        "-c",
+        "protocol.version=0",
+        "clone",
+        "--filter=blob:none",
+        "--no-checkout",
+        "{clone_url}",
+        "worktree"
+      ],
+      "action": "Use Git 2.34 or newer and retry with -c protocol.version=2, or omit --filter for a full clone.",
+      "recovery": "Remove the incomplete disposable clone, or keep it for diagnostics and clone into a new directory with protocol v2; no remote ref or object was changed.",
+      "lastTested": {
+        "date": "2026-08-20",
+        "client": "Git 2.47.3",
+        "evidence": "forkmesh-stock-git v1 protocol-v0 rejection and protocol-v2 partial-clone probes"
+      }
+    },
+    {
+      "id": "submodule-authorization",
+      "title": "Submodules are separate repositories",
+      "appliesTo": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "expected": "The superproject clone succeeds, then Git names the exact submodule whose independent URL is unavailable or unauthorized.",
+      "reproduction": [
+        "git",
+        "clone",
+        "--recurse-submodules",
+        "{clone_url}",
+        "worktree"
+      ],
+      "action": "Confirm every .gitmodules URL uses a published public HTTPS route or an SSH route your key may read, then run git submodule update --init --recursive.",
+      "recovery": "The superproject and any completed submodules remain valid; Git resumes the missing child without recloning successful repositories.",
+      "lastTested": {
+        "date": "2026-08-20",
+        "client": "Git 2.47.3",
+        "evidence": "forkmesh-stock-git v1 submodules probe"
+      }
+    },
+    {
+      "id": "desktop-client-validation",
+      "title": "Third-party desktop UI certification is not complete",
+      "appliesTo": [
+        "direct",
+        "relay",
+        "mirror-failover"
+      ],
+      "expected": "GitHub Desktop, Sourcetree, and GitKraken are not release-supported rows until their exact application and bundled-Git versions produce a retained report.",
+      "reproduction": [
+        "python3",
+        "tools/git_conformance.py",
+        "run",
+        "--git",
+        "/path/to/the/client/bundled/git",
+        "--client-label",
+        "CLIENT VERSION"
+      ],
+      "action": "Use a tested Git CLI or ForkMesh Qt build, or run the versioned probe with the desktop application's bundled Git before relying on it.",
+      "recovery": "The probe uses disposable repositories and makes no production write. Attach its JSON report when requesting a new supported row.",
+      "lastTested": {
+        "date": "not yet tested",
+        "client": "not applicable",
+        "evidence": "No support claim is published without retained evidence."
+      }
+    }
+  ]
+}

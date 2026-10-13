@@ -1,0 +1,19 @@
+{
+  "$schema": "../../../agent.schema.json",
+  "schemaVersion": 1,
+  "provider": "local-llama",
+  "runtime": "ollama",
+  "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+  "defaultModel": "muse-spark-1.3-contributor",
+  "avatar": "avatar.png",
+  "documentation": "https://musespark.ai/models/muse-spark-1-3-contributor",
+  "runtimeDownload": "https://ollama.com/download",
+  "models": [
+    {
+      "id": "muse-spark-1.3-contributor",
+      "label": "Muse Spark 1.3 Contributor",
+      "downloadBytes": 1,
+      "contextTokens": 1048576
+    }
+  ]
+}

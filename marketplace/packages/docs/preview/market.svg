@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#0d1117"/>
+  <g font-family="sans-serif" fill="#c9d1d9">
+    <text x="24" y="40" font-size="22" font-weight="bold">Docs</text>
+    <text x="90" y="40" font-size="13" fill="#8b949e">155 documents from the ForkMesh library, the same pages as forkmesh.com/docs</text>
+    <rect x="648" y="24" width="60" height="24" rx="6" fill="#161b22" stroke="#30363d"/>
+    <text x="661" y="41" font-size="12">Back</text>
+    <rect x="716" y="24" width="96" height="24" rx="6" fill="#161b22" stroke="#30363d"/>
+    <text x="728" y="41" font-size="12">Library home</text>
+    <rect x="820" y="24" width="116" height="24" rx="6" fill="#161b22" stroke="#30363d"/>
+    <text x="834" y="41" font-size="12">Open on web</text>
+  </g>
+  <g font-family="sans-serif" font-size="13" fill="#c9d1d9">
+    <rect x="24" y="64" width="220" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="83" fill="#8b949e">Search the docs</text>
+    <rect x="24" y="100" width="220" height="416" rx="6" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="124" font-weight="bold">Guides (58)</text>
+    <text x="52" y="148">ForkMesh documentation</text>
+    <rect x="28" y="158" width="212" height="22" rx="4" fill="#1f6feb" opacity="0.35"/>
+    <text x="52" y="174">Getting started</text>
+    <text x="52" y="198">Product promise</text>
+    <text x="52" y="222">Terminology</text>
+    <text x="52" y="246">Business model</text>
+    <text x="36" y="274" font-weight="bold">Design (12)</text>
+    <text x="36" y="298" font-weight="bold">Engineering (6)</text>
+    <text x="36" y="322" font-weight="bold">Security (5)</text>
+    <text x="36" y="346" font-weight="bold">Operations (14)</text>
+    <text x="36" y="370" font-weight="bold">Mobile (3)</text>
+    <text x="36" y="394" font-weight="bold">Strategy &amp; research (9)</text>
+    <text x="36" y="418" font-weight="bold">Plans &amp; specs (8)</text>
+    <text x="36" y="442" font-weight="bold">Schemas &amp; data (17)</text>
+  </g>
+  <g font-family="sans-serif" fill="#c9d1d9">
+    <text x="260" y="80" font-size="12" fill="#8b949e">Library · Guides · www/docs/getting-started.md · 4 min read</text>
+    <rect x="260" y="92" width="480" height="388" rx="6" fill="#0d1117" stroke="#30363d"/>
+    <text x="280" y="130" font-size="24" font-weight="bold">Getting started</text>
+    <text x="280" y="160" font-size="13">Install the desktop, create your identity and clone your first</text>
+    <text x="280" y="178" font-size="13">repository over the mesh.</text>
+    <text x="280" y="214" font-size="18" font-weight="bold">Install</text>
+    <rect x="280" y="226" width="440" height="54" rx="4" fill="#161b22"/>
+    <text x="292" y="250" font-size="12" font-family="monospace">curl -fsSL https://forkmesh.com/install.sh | sh</text>
+    <text x="280" y="312" font-size="18" font-weight="bold">Create your identity</text>
+    <text x="280" y="338" font-size="13">Your node key signs every commit, issue and review. See</text>
+    <text x="280" y="356" font-size="13" fill="#58a6ff">Portable identities</text>
+    <text x="280" y="392" font-size="18" font-weight="bold">Clone a repository</text>
+    <text x="260" y="500" font-size="12" fill="#8b949e">Pages that link here: <tspan fill="#58a6ff">ForkMesh documentation, Terminology</tspan></text>
+    <text x="260" y="526" font-size="12">← ForkMesh documentation</text>
+    <text x="636" y="526" font-size="12">Product promise →</text>
+  </g>
+  <g font-family="sans-serif" font-size="13" fill="#c9d1d9">
+    <text x="756" y="80" fill="#8b949e" font-size="12">On this page</text>
+    <rect x="756" y="92" width="180" height="424" rx="6" fill="#161b22" stroke="#30363d"/>
+    <text x="768" y="118">Install</text>
+    <text x="768" y="142">Create your identity</text>
+    <text x="768" y="166">Clone a repository</text>
+    <text x="780" y="190" fill="#8b949e">Over SSH</text>
+    <text x="780" y="214" fill="#8b949e">Over HTTPS</text>
+    <text x="768" y="238">Next steps</text>
+  </g>
+</svg>

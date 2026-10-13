@@ -1,0 +1,82 @@
+
+    <script>
+      // Early repository reads (docs/PERF_REPO_PAGE.md), right after
+      // api-client.js (so they are routed like every other API call) and
+      // before the stylesheet (which would hold an inline script back).
+      // dashboard.js is ~2 MB and only asks for the catalog, then
+      // the tree, then the README once it has run; these start now, in
+      // parallel with the script download. The dashboard takes them over
+      // through takeEarlyPublicRead (catalog) and earlyRepoRead (tree, README,
+      // file, history) when its own request matches exactly: same op, path
+      // and ref. The ref comes from X-ForkMesh-Ref, which a node that reads
+      // the repository locally sends on a ref-less tree read; without it
+      // nothing here is used. The README/file/history reads go out at the
+      // same time as the tree (ref-less) and are only kept when they name the
+      // same commit as the tree.
+      (() => {
+        try {
+          const parts = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+          if (parts.length < 2 || new URLSearchParams(location.search).has("sig")) return;
+          const [owner, name, kind, ...rest] = parts;
+          const get = (url) => fetch(url, { credentials: "omit", headers: { accept: "application/json" } });
+          const base = `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+          const early = window.__forkmeshEarly = {
+            at: Date.now(),
+            base: base.toLowerCase(),
+            reads: {},
+            local: false,
+            catalog: get("/api/repositories").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          };
+          // A pull request, issue or discussion page the node rendered: its
+          // reads are already on their way in one bundle (window.__forkmeshView,
+          // app/host/forkmesh_host/repo_views.py), and this origin reads the
+          // repository locally.
+          if (window.__forkmeshView?.base === early.base) early.local = true;
+          if (kind && !["tree", "blob", "commits"].includes(kind)) return;
+          // The host may have rendered the root view into this page already
+          // (app/host/forkmesh_host/repo_ssr.py); its tree and README are the
+          // dashboard's first reads, so nothing needs to be fetched.
+          const ssr = (() => {
+            try { return JSON.parse(document.getElementById("forkmesh-repo-ssr")?.textContent || "null"); } catch (_) { return null; }
+          })();
+          if (!kind && ssr?.ref && ssr.tree?.commit === ssr.commit
+            && `/api/repo/${encodeURIComponent(ssr.owner)}/${encodeURIComponent(ssr.repo)}`.toLowerCase() === early.base) {
+            early.local = true;
+            early.reads[`tree||${ssr.ref}`] = { data: ssr.tree, servedBy: ssr.servedBy || "" };
+            if (ssr.readme) early.reads[`blob|${ssr.readme.name}|${ssr.ref}`] = { data: ssr.readme.data, servedBy: ssr.servedBy || "" };
+            early.tree = Promise.resolve();
+            return;
+          }
+          const read = (url) => get(url).then((r) => (r.ok
+            ? r.json().then((data) => ({ data, servedBy: r.headers.get("x-forkmesh-served-by") || "" }))
+            : null)).catch(() => null);
+          const paths = (list) => list.map((p) => `path=${encodeURIComponent(p)}`).join("&");
+          const blobPath = kind === "blob" ? rest.join("/") : "";
+          const extra = !kind
+            ? read(`${base}/blobs?${paths(["README.md", "README", "readme.md", "Readme.md", "README.txt", "README.rst"])}`)
+            : blobPath ? read(`${base}/blobs?${paths([blobPath])}`)
+              : kind === "commits" ? read(`${base}/history`) : null;
+          const treePath = kind === "tree" ? rest.join("/") : "";
+          early.tree = get(`${base}/tree?path=${encodeURIComponent(treePath)}`).then(async (r) => {
+            const ref = r.ok ? r.headers.get("x-forkmesh-ref") : "";
+            if (!ref) return;
+            early.local = r.headers.get("x-forkmesh-local-reads") === "1";
+            const tree = { data: await r.json(), servedBy: r.headers.get("x-forkmesh-served-by") || "" };
+            const at = (op, path) => `${op}|${path}|${ref}`;
+            early.reads[at("tree", treePath)] = tree;
+            const more = extra && await extra;
+            if (!more || !tree.data.commit || more.data?.commit !== tree.data.commit) return;
+            const blob = (path) => more.data.blobs?.[path];
+            if (!kind) {
+              const readme = (tree.data.entries || []).find((e) => e.type === "blob"
+                && /^readme(\.md|\.txt|\.rst)?$/i.test(String(e.name || "")));
+              if (readme && blob(readme.name)) early.reads[at("blob", readme.name)] = { data: blob(readme.name), servedBy: more.servedBy };
+            } else if (blobPath && blob(blobPath)) {
+              early.reads[at("blob", blobPath)] = { data: blob(blobPath), servedBy: more.servedBy };
+            } else if (kind === "commits") {
+              early.reads[at("history", "")] = more;
+            }
+          }).catch(() => {});
+        } catch (_) {}
+      })();
+    </script>

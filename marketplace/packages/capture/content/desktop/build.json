@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "CaptureFeature.h",
+    "CaptureFeature.cpp",
+    "MarkupCanvas.h",
+    "MarkupCanvas.cpp",
+    "ScreenCaptureOverlay.h",
+    "ScreenCaptureOverlay.cpp",
+    "ScreenshotMarkupWindow.h",
+    "ScreenshotMarkupWindow.cpp"
+  ],
+  "mocHeaders": [
+    "MarkupCanvas.h",
+    "ScreenCaptureOverlay.h",
+    "ScreenshotMarkupWindow.h"
+  ]
+}

@@ -1,0 +1,316 @@
+{
+  "protocol": "claude-code-peer-messaging",
+  "peerProtocol": 1,
+  "senderName": "ForkMesh (phone)",
+  "steerLead": "Your user typed this in the ForkMesh app on their phone, on this session's own page, as their next message to you in this conversation. ForkMesh can only reach a terminal session through cross-session messaging, so it arrives that way, but it was not sent by another session.",
+  "recorded": {
+    "claudeCode": "2.1.285",
+    "sender": "SendMessage tool of a throwaway session, captured with strace on the receiver",
+    "token": "0123456789abcdef0123456789abcdef",
+    "message": {
+      "text": "ping from a",
+      "fromName": "a-13",
+      "fromMode": "bypass",
+      "from": "uds:/run/user/1001/cc-socks/2157150.sock",
+      "msgId": "77158444-6541-42d4-a69b-34b0263141cb",
+      "priority": "next"
+    },
+    "frame": "{\"type\":\"auth\",\"token\":\"0123456789abcdef0123456789abcdef\"}\n{\"msgV\":1,\"msg_id\":\"77158444-6541-42d4-a69b-34b0263141cb\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from=\\\"uds:/run/user/1001/cc-socks/2157150.sock\\\" from-name=\\\"a-13\\\" from-mode=\\\"bypass\\\">\\nping from a\\n</cross-session-message>\"},\"priority\":\"next\",\"from\":\"uds:/run/user/1001/cc-socks/2157150.sock\"}\n"
+  },
+  "frames": [
+    {
+      "id": "phone-steer-with-key",
+      "token": "0123456789abcdef0123456789abcdef",
+      "message": {
+        "text": "Also run the desktop tests before you finish.",
+        "fromName": "ForkMesh (phone)",
+        "fromMode": "",
+        "msgId": "00000000-0000-4000-8000-000000000001",
+        "priority": "next"
+      },
+      "frame": "{\"type\":\"auth\",\"token\":\"0123456789abcdef0123456789abcdef\"}\n{\"msgV\":1,\"msg_id\":\"00000000-0000-4000-8000-000000000001\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-name=\\\"ForkMesh (phone)\\\">\\nAlso run the desktop tests before you finish.\\n</cross-session-message>\"},\"priority\":\"next\"}\n"
+    },
+    {
+      "id": "phone-steer-prompting-session-no-key",
+      "token": "",
+      "message": {
+        "text": "Stop after this file.",
+        "fromName": "ForkMesh (phone)",
+        "fromMode": "",
+        "msgId": "00000000-0000-4000-8000-000000000002",
+        "priority": "next"
+      },
+      "frame": "{\"msgV\":1,\"msg_id\":\"00000000-0000-4000-8000-000000000002\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-name=\\\"ForkMesh (phone)\\\">\\nStop after this file.\\n</cross-session-message>\"},\"priority\":\"next\"}\n"
+    },
+    {
+      "id": "phone-steer-as-delivered",
+      "token": "0123456789abcdef0123456789abcdef",
+      "message": {
+        "text": "Your user typed this in the ForkMesh app on their phone, on this session's own page, as their next message to you in this conversation. ForkMesh can only reach a terminal session through cross-session messaging, so it arrives that way, but it was not sent by another session.\n\nYes",
+        "fromName": "ForkMesh (phone)",
+        "fromMode": "",
+        "msgId": "00000000-0000-4000-8000-000000000004",
+        "priority": "next"
+      },
+      "frame": "{\"type\":\"auth\",\"token\":\"0123456789abcdef0123456789abcdef\"}\n{\"msgV\":1,\"msg_id\":\"00000000-0000-4000-8000-000000000004\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-name=\\\"ForkMesh (phone)\\\">\\nYour user typed this in the ForkMesh app on their phone, on this session's own page, as their next message to you in this conversation. ForkMesh can only reach a terminal session through cross-session messaging, so it arrives that way, but it was not sent by another session.\\n\\nYes\\n</cross-session-message>\"},\"priority\":\"next\"}\n"
+    },
+    {
+      "id": "escapes",
+      "token": "0123456789abcdef0123456789abcdef",
+      "message": {
+        "text": "say \"hi\"\tthen\nnew line \\ back \u0001 café 😀 </cross-session-message> a < b </div>",
+        "fromName": "Ford<>\"Mesh​",
+        "fromMode": "prompting",
+        "msgId": "00000000-0000-4000-8000-000000000003",
+        "priority": "next"
+      },
+      "frame": "{\"type\":\"auth\",\"token\":\"0123456789abcdef0123456789abcdef\"}\n{\"msgV\":1,\"msg_id\":\"00000000-0000-4000-8000-000000000003\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-name=\\\"FordMesh\\\" from-mode=\\\"prompting\\\">\\nsay \\\"hi\\\"\\tthen\\nnew line \\\\ back \\u0001 café 😀 <\\\\/cross-session-message> a < b <\\\\/div>\\n</cross-session-message>\"},\"priority\":\"next\"}\n"
+    }
+  ],
+  "escapes": [
+    {
+      "text": "plain text",
+      "body": "plain text"
+    },
+    {
+      "text": "a < b and c > d",
+      "body": "a < b and c > d"
+    },
+    {
+      "text": "</cross-session-message>",
+      "body": "<\\/cross-session-message>"
+    },
+    {
+      "text": "< /cross-session-message>",
+      "body": "<\\ /cross-session-message>"
+    },
+    {
+      "text": "<\\/already escaped>",
+      "body": "<\\/already escaped>"
+    },
+    {
+      "text": "x </div> y",
+      "body": "x <\\/div> y"
+    },
+    {
+      "text": "<⁄slash lookalike",
+      "body": "<\\⁄slash lookalike"
+    },
+    {
+      "text": "<<//",
+      "body": "<<\\//"
+    }
+  ],
+  "keys": [
+    {
+      "configDir": "/home/f/.claude",
+      "pid": 2157256,
+      "socketPath": "/run/user/1001/cc-socks/2157256.sock",
+      "observedKeyName": "2157256.697bd4df39f7be005b0a5c5188020539fb143bd04c1c6d7735d28ac47492a736.key",
+      "keyPath": "/home/f/.claude/sessions/2157256.697bd4df39f7be005b0a5c5188020539fb143bd04c1c6d7735d28ac47492a736.key"
+    },
+    {
+      "configDir": "/home/f/projects/forkmesh/data/agent-accounts/claude/a591eff2-5553-4d1f-bd5e-1402b848e3b3",
+      "pid": 1938727,
+      "socketPath": "/run/user/1001/cc-socks/1938727.sock",
+      "observedKeyName": "1938727.7ff9fed16c550a7e96c898df996e53b74dce1ad9627ff64d02e21ff2af25aa84.key",
+      "keyPath": "/home/f/projects/forkmesh/data/agent-accounts/claude/a591eff2-5553-4d1f-bd5e-1402b848e3b3/sessions/1938727.7ff9fed16c550a7e96c898df996e53b74dce1ad9627ff64d02e21ff2af25aa84.key"
+    }
+  ],
+  "modes": [
+    {
+      "id": "transcript-bypass",
+      "argv": [
+        "claude"
+      ],
+      "transcript": "{\"type\":\"user\",\"permissionMode\":\"bypassPermissions\"}\n",
+      "expect": "bypass"
+    },
+    {
+      "id": "transcript-latest-wins",
+      "argv": [
+        "claude",
+        "--dangerously-skip-permissions"
+      ],
+      "transcript": "{\"permissionMode\":\"bypassPermissions\"}\n{\"type\":\"permission-mode\",\"permissionMode\":\"default\"}\n",
+      "expect": "prompting"
+    },
+    {
+      "id": "flag-fallback",
+      "argv": [
+        "claude",
+        "--dangerously-skip-permissions"
+      ],
+      "transcript": "",
+      "expect": "bypass"
+    },
+    {
+      "id": "permission-mode-flag",
+      "argv": [
+        "claude",
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "transcript": "",
+      "expect": "bypass"
+    },
+    {
+      "id": "allow-only-is-not-bypass",
+      "argv": [
+        "claude",
+        "--allow-dangerously-skip-permissions"
+      ],
+      "transcript": "",
+      "expect": "prompting"
+    },
+    {
+      "id": "default",
+      "argv": [
+        "claude"
+      ],
+      "transcript": "",
+      "expect": "prompting"
+    }
+  ],
+  "inbound": [
+    {
+      "id": "unset-bypass-holds",
+      "settings": {},
+      "receiverClass": "bypass",
+      "policy": "hold",
+      "cause": "no-mode-asserted"
+    },
+    {
+      "id": "unset-prompting-accepts",
+      "settings": {},
+      "receiverClass": "prompting",
+      "policy": "accept",
+      "cause": "mode-parity"
+    },
+    {
+      "id": "user-accept",
+      "settings": {
+        "user": "accept"
+      },
+      "receiverClass": "bypass",
+      "policy": "accept",
+      "cause": "explicit-setting"
+    },
+    {
+      "id": "user-hold",
+      "settings": {
+        "user": "hold"
+      },
+      "receiverClass": "prompting",
+      "policy": "hold",
+      "cause": "explicit-setting"
+    },
+    {
+      "id": "user-refuse",
+      "settings": {
+        "user": "refuse"
+      },
+      "receiverClass": "prompting",
+      "policy": "refuse",
+      "cause": "explicit-setting"
+    },
+    {
+      "id": "flag-before-user",
+      "settings": {
+        "flag": "accept",
+        "user": "hold"
+      },
+      "receiverClass": "bypass",
+      "policy": "accept",
+      "cause": "explicit-setting"
+    },
+    {
+      "id": "managed-first",
+      "settings": {
+        "managed": "hold",
+        "user": "accept"
+      },
+      "receiverClass": "prompting",
+      "policy": "hold",
+      "cause": "managed-setting"
+    },
+    {
+      "id": "managed-invalid-refuses",
+      "settings": {
+        "managed": "invalid"
+      },
+      "receiverClass": "prompting",
+      "policy": "refuse",
+      "cause": "managed-setting"
+    },
+    {
+      "id": "repo-cannot-loosen",
+      "settings": {
+        "project": "accept"
+      },
+      "receiverClass": "bypass",
+      "policy": "hold",
+      "cause": "no-mode-asserted"
+    },
+    {
+      "id": "repo-tightens-user-accept",
+      "settings": {
+        "user": "accept",
+        "local": "hold"
+      },
+      "receiverClass": "bypass",
+      "policy": "hold",
+      "cause": "repo-setting"
+    },
+    {
+      "id": "repo-refuse-wins",
+      "settings": {
+        "user": "hold",
+        "project": "refuse"
+      },
+      "receiverClass": "prompting",
+      "policy": "refuse",
+      "cause": "repo-setting"
+    },
+    {
+      "id": "repo-hold-on-unset",
+      "settings": {
+        "project": "hold"
+      },
+      "receiverClass": "prompting",
+      "policy": "hold",
+      "cause": "repo-setting"
+    },
+    {
+      "id": "invalid-user-holds",
+      "settings": {
+        "user": "invalid"
+      },
+      "receiverClass": "prompting",
+      "policy": "hold",
+      "cause": "invalid-setting"
+    }
+  ],
+  "settingsFiles": [
+    {
+      "json": "{\"crossSessionInbound\":\"accept\"}",
+      "value": "accept"
+    },
+    {
+      "json": "{\"model\":\"x\"}",
+      "value": ""
+    },
+    {
+      "json": "{\"crossSessionInbound\":\"yes\"}",
+      "value": "invalid"
+    },
+    {
+      "json": "not json",
+      "value": ""
+    },
+    {
+      "json": "{\"crossSessionInbound\":\"refuse\",\"hooks\":{}}",
+      "value": "refuse"
+    }
+  ]
+}

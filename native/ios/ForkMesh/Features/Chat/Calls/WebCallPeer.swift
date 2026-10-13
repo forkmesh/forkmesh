@@ -1,0 +1,203 @@
+import AVFoundation
+import FMBase
+import FMChat
+import Foundation
+import Observation
+import WebKit
+
+enum WebCallError: Error {
+    case missingPage
+    case notReady
+    case failed(String)
+}
+
+@MainActor
+@Observable
+final class WebCallPeerFactory: DirectCallPeerMaking {
+    private(set) var current: WebCallPeer?
+
+    func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
+        current?.close()
+        let peer = WebCallPeer { [weak self] closed in
+            if self?.current === closed { self?.current = nil }
+        }
+        current = peer
+        do {
+            try await peer.load()
+            _ = try await peer.run("setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string("")])
+        } catch {
+            peer.close()
+            throw error
+        }
+        return peer
+    }
+
+    static func requestAccess(for media: DirectCallKind) async -> Bool {
+        let audio: Bool = await AVCaptureDevice.requestAccess(for: .audio)
+        guard audio else { return false }
+        guard media == .video else { return true }
+        return await AVCaptureDevice.requestAccess(for: .video)
+    }
+}
+
+@MainActor
+private final class WebCallMessageProxy: NSObject, WKScriptMessageHandler {
+    weak var target: WebCallPeer?
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let text = message.body as? String else { return }
+        target?.receive(text)
+    }
+}
+
+@MainActor
+final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
+    static let origin = URL(string: "https://call.forkmesh.invalid/")
+
+    var onIceCandidate: (@MainActor (JSONObject) -> Void)?
+    var onLive: (@MainActor () -> Void)?
+    var onClosed: (@MainActor () -> Void)?
+    let webView: WKWebView
+    private let proxy = WebCallMessageProxy()
+    private let onDispose: @MainActor (WebCallPeer) -> Void
+    private var ready = false
+    private var readyWaiters: [CheckedContinuation<Void, Error>] = []
+    private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
+    private var nextId = 1
+    private var closed = false
+
+    init(onDispose: @escaping @MainActor (WebCallPeer) -> Void) {
+        self.onDispose = onDispose
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.userContentController.add(proxy, name: "fmCall")
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.isOpaque = false
+        webView.backgroundColor = .black
+        webView.scrollView.isScrollEnabled = false
+        super.init()
+        proxy.target = self
+        webView.uiDelegate = self
+    }
+
+    func load() async throws {
+        guard let url = Bundle.main.url(forResource: "direct-call", withExtension: "html"),
+            let html = try? String(contentsOf: url, encoding: .utf8)
+        else { throw WebCallError.missingPage }
+        webView.loadHTMLString(html, baseURL: WebCallPeer.origin)
+        if ready { return }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            readyWaiters.append(continuation)
+        }
+    }
+
+    @discardableResult
+    func run(_ name: String, _ args: [JSONValue] = []) async throws -> JSONValue {
+        guard !closed else { throw WebCallError.notReady }
+        let id = nextId
+        nextId += 1
+        let script = "window.fmCall(\(id), \(JSON.encode(.string(name))), \(JSON.encode(.array(args))))"
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONValue, Error>) in
+            pending[id] = continuation
+            webView.evaluateJavaScript(script) { [weak self] _, error in
+                guard let error else { return }
+                let reason = "\(error)"
+                Task { @MainActor in
+                    self?.pending.removeValue(forKey: id)?.resume(throwing: WebCallError.failed(reason))
+                }
+            }
+        }
+    }
+
+    func receive(_ text: String) {
+        let message: JSONObject = JSON.parseObject(text)
+        switch message["event"]?.text ?? "" {
+        case "ready":
+            ready = true
+            let waiters = readyWaiters
+            readyWaiters = []
+            for waiter in waiters { waiter.resume() }
+        case "result":
+            let id = message["id"]?.intValue ?? -1
+            guard let continuation = pending.removeValue(forKey: id) else { return }
+            if message["ok"]?.boolValue == true {
+                continuation.resume(returning: message["value"] ?? .null)
+            } else {
+                continuation.resume(throwing: WebCallError.failed(message["error"]?.text ?? "call page error"))
+            }
+        case "ice":
+            if let candidate = message["candidate"]?.objectValue { onIceCandidate?(candidate) }
+        case "landmarks":
+            let id = message["id"]?.intValue ?? 0
+            guard let image = message["image"]?.text else { return }
+            Task { [weak self] in
+                let regions = await CallFaceLandmarks.detect(dataURL: image)
+                self?.replyLandmarks(id: id, regions: regions)
+            }
+        case "live":
+            onLive?()
+        case "closed":
+            onClosed?()
+        default:
+            return
+        }
+    }
+
+    private func replyLandmarks(id: Int, regions: JSONValue) {
+        guard !closed else { return }
+        webView.evaluateJavaScript(
+            "window.fmCallLandmarks && window.fmCallLandmarks(\(id), \(JSON.encode(regions)))",
+            completionHandler: nil)
+    }
+
+    func offer() async throws -> JSONObject {
+        try await run("offer").objectValue ?? [:]
+    }
+
+    func answer(offer: JSONObject) async throws -> JSONObject {
+        try await run("answer", [.object(offer)]).objectValue ?? [:]
+    }
+
+    func acceptAnswer(_ answer: JSONObject) async throws {
+        try await run("accept", [.object(answer)])
+    }
+
+    func add(candidate: JSONObject) async {
+        _ = try? await run("ice", [.object(candidate)])
+    }
+
+    func setMuted(_ muted: Bool) {
+        Task { _ = try? await run("mute", [.bool(muted)]) }
+    }
+
+    func setCameraOff(_ off: Bool) {
+        Task { _ = try? await run("camera", [.bool(off)]) }
+    }
+
+    func setFace(_ id: String) {
+        Task { _ = try? await run("face", [.string(id)]) }
+    }
+
+    func close() {
+        guard !closed else { return }
+        webView.evaluateJavaScript("window.fmCall && window.fmCall(0, \"close\", [])", completionHandler: nil)
+        closed = true
+        let waiters = readyWaiters
+        readyWaiters = []
+        for waiter in waiters { waiter.resume(throwing: WebCallError.notReady) }
+        let calls = pending
+        pending = [:]
+        for (_, continuation) in calls { continuation.resume(throwing: WebCallError.notReady) }
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "fmCall")
+        webView.stopLoading()
+        onDispose(self)
+    }
+
+    func webView(
+        _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType
+    ) async -> WKPermissionDecision {
+        origin.host == WebCallPeer.origin?.host ? .grant : .deny
+    }
+}

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>ForkMesh</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Standard algorithms only and not sold in France, so no export
+	     documentation. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>forkmesh</string>
+			</array>
+		</dict>
+	</array>
+	<key>FORKMESH_ENV</key>
+	<string>$(FORKMESH_ENV)</string>
+	<key>FORKMESH_API_HOST</key>
+	<string>$(FORKMESH_API_HOST)</string>
+	<key>FORKMESH_BUILD_COMMIT</key>
+	<string>$(FORKMESH_BUILD_COMMIT)</string>
+	<key>FORKMESH_WORLD_URL</key>
+	<string>$(FORKMESH_WORLD_URL)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo to attach to an agent prompt, and let the Genie spider see your hands when you turn on hand play. Frames stay on this device.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Dictate a prompt instead of typing it.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose photos to attach to an agent prompt.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save a photo from an agent's transcript to your library.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Turn what you say into the text of a prompt.</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>ASCredentialExchangeActivityType</string>
+	</array>
+	<key>NSFaceIDUsageDescription</key>
+	<string>ForkMesh confirms it's you before destructive actions like deleting a repository.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ForkMesh reaches nearby ForkMesh devices over Bluetooth so the #mesh room works with no Wi-Fi and no internet, and Glasses Alert listens for smart glasses near you.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>bluetooth-peripheral</string>
+	</array>
+	<key>NSHealthShareUsageDescription</key>
+	<string>ForkMesh reads your steps, walking distance, floors, water, and sleep from Apple Health so Pedometer, Water Intake, and Sleep can show them on your account across web, desktop, and mobile, and reads the dietary sugar logged in Health so Sugar Break can show it beside each day of your sugar break, and reads the Flexibility and Mind and Body workouts in Health so Stretch Break can show this week's workout minutes beside your Stretch Break workouts, and reads the nutrition other apps logged in Health over the last two weeks, such as iron, fiber and calcium, so Food Guide can suggest meals that fill what you have been missing.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>ForkMesh writes the water and meals you log in Water Intake and Calorie Counter, the sleep Sleep detects, the heart rate you tap out in Pedometer, and the guided sessions you finish in Stretch Break as Stretch Break workouts, to Apple Health.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Pedometer counts your steps with the motion sensor while you watch today's total, and notices when you start a walk to show its steps on the Lock Screen and in the Dynamic Island. Sleep works out how long you slept from when your phone lay still by your bed.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ForkMesh finds other ForkMesh devices on this Wi-Fi so the #mesh room can chat without the internet.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
+</dict>
+</plist>

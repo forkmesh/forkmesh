@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "QR handoffs" %}
+{% set slug = "qr-handoffs" %}
+{% set image = "/assets/blog/features/qr-handoffs.webp" %}
+{% set description = "Repos, invites, and addresses render as QR codes for instant scannable handoff to a phone." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Desktop app</p>
+            <h1>QR handoffs</h1>
+            <p class="lede">Repos, invites, and addresses render as QR codes for instant scannable handoff to a phone.</p>
+            <div class="meta"><span class="pill">Feature 57 of 72</span><span>Feature</span><span>The desktop app</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/qr-handoffs.webp" alt="Abstract ForkMesh artwork for QR handoffs">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>QR handoffs gives ForkMesh a concrete mechanism for scannable repo, invite, and address handoffs from desktop to phone. Repos, invites, and addresses render as QR codes for instant scannable handoff to a phone.</p>
+          <p>A local-first forge needs the local app to be more than a mirror status screen. In ForkMesh, QR handoffs addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles QR handoffs through the same split it uses across the product: the Qt desktop node combines repo browsing, source control, worktrees, markdown, captures, shortcuts, diagnostics, and handoff flows around the hosted mirror.</p>
+          <p>The behavior is intentionally narrow: Repos, invites, and addresses render as QR codes for instant scannable handoff to a phone. The same machine can hold the repository, review work, operate agents, and explain its own network state.</p>
+          <h2>Where it fits</h2>
+          <p>Use QR handoffs when the machine hosting the code should also be the place where contributors understand and act on it.</p>
+          <p>It pairs with the rest of The desktop app because QR handoffs keeps scannable repo, invite, and address handoffs from desktop to phone connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/markdown-everywhere/">← Markdown everywhere</a>
+          <a href="/blog/keyboard-first-navigation/">Keyboard-first navigation →</a>
+        </nav>
+{% endblock %}

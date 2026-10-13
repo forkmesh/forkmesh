@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "Content-addressed release storage" %}
+{% set slug = "content-addressed-release-storage" %}
+{% set image = "/assets/blog/features/content-addressed-release-storage.webp" %}
+{% set description = "Release binaries live in a content-addressed store keyed by SHA-256, keeping the Git history lean while downloads stay verifiable end-to-end." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">CI, releases &amp; distribution</p>
+            <h1>Content-addressed release storage</h1>
+            <p class="lede">Release binaries live in a content-addressed store keyed by SHA-256, keeping the Git history lean while downloads stay verifiable end-to-end.</p>
+            <div class="meta"><span class="pill">Feature 43 of 72</span><span>Feature</span><span>CI, releases &amp; distribution</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/content-addressed-release-storage.webp" alt="Abstract ForkMesh artwork for Content-addressed release storage">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>Content-addressed release storage gives ForkMesh a concrete mechanism for release binaries addressed by SHA-256 instead of hidden mutable links. Release binaries live in a content-addressed store keyed by SHA-256, keeping the Git history lean while downloads stay verifiable end-to-end.</p>
+          <p>Delivery metadata is part of a project, not a separate dashboard that should disappear during a migration. In ForkMesh, content-addressed release storage addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles content-addressed release storage through the same split it uses across the product: ForkMesh keeps runs, logs, artifacts, releases, quality signals, installers, and downloads close to the mirrored repository.</p>
+          <p>The behavior is intentionally narrow: Release binaries live in a content-addressed store keyed by SHA-256, keeping the Git history lean while downloads stay verifiable end-to-end. Outputs can be linked to commits and served by nodes instead of becoming opaque hosted-only assets.</p>
+          <h2>Where it fits</h2>
+          <p>Use content-addressed release storage when shipping, validation, and release assets need to remain attached to the preserved repository.</p>
+          <p>It pairs with the rest of CI, releases &amp; distribution because Content-addressed release storage keeps release binaries addressed by SHA-256 instead of hidden mutable links connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/releases-and-tags/">← Releases &amp; tags</a>
+          <a href="/blog/one-line-installer/">One-line installer →</a>
+        </nav>
+{% endblock %}

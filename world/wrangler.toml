@@ -1,0 +1,91 @@
+name = "forkmesh-next-world"
+main = "worker.js"
+compatibility_date = "2026-09-22"
+
+[build]
+command = "python3 ../app/tools/build_site_assets.py world"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+html_handling = "none"
+not_found_handling = "404-page"
+run_worker_first = [
+  "/",
+  "/health/mobile",
+  "/api",
+  "/api/*",
+  "/world",
+  "/world/",
+  "/chat",
+  "/dashboard",
+  "/dashboard/*",
+  "/forgot-password",
+  "/ledger",
+  "/leaderboards",
+  "/login",
+  "/mirror-payouts",
+  "/network",
+  "/notes/*",
+  "/referral",
+  "/referrals",
+  "/reset-password",
+  "/signup",
+  "/start",
+  "/status",
+  "/about",
+  "/blog",
+  "/blog/*",
+  "/careers",
+  "/changelog",
+  "/desktop",
+  "/mobile",
+  "/docs",
+  "/docs/*",
+  "/features",
+  "/market",
+  "/ecosystem",
+  "/ecosystem/*",
+  "/press",
+  "/privacy",
+  "/security-report",
+  "/terms",
+  "/account-events.js",
+  "/api-client.js",
+  "/chat-apps.js",
+  "/chat-attachments.js",
+  "/chat-crypto.js",
+  "/chat-issue-filing.js",
+  "/chat-moderation.js",
+  "/chat-retention.js",
+  "/chat-room-transport.js",
+  "/chat-seal.js",
+  "/dashboard-chat.js",
+  "/member-welcome.js",
+  "/analytics.js",
+  "/analytics-sdk.js",
+  "/assets/*",
+  "!/assets/bot-avatars/*",
+  "!/assets/world/*",
+  "/favicon/*",
+]
+
+[vars]
+APP_ORIGIN = "https://app.forkmesh.com"
+
+[[services]]
+binding = "APP"
+service = "forkmesh-next-app"
+
+[[routes]]
+pattern = "world.next.forkmesh.com"
+custom_domain = true
+
+[observability]
+enabled = true
+head_sampling_rate = 0.05
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 0.05
+invocation_logs = false

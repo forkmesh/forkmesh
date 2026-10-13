@@ -1,0 +1,42 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "calendar",
+  "name": "Calendar",
+  "creator": { "id": "did:forkmesh:forkmesh", "handle": "forkmesh", "displayName": "ForkMesh", "verified": true },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.1.0",
+  "summary": "Plan private personal and organization events alongside repository commits and merges.",
+  "screenshots": [{ "path": "preview/market.svg", "alt": "Calendar month view combining private events with repository commits and merges" }],
+  "license": { "model": "free-open-source", "spdx": "MIT", "creatorRetainsOwnership": true, "terms": "Included under the ForkMesh repository licence." },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": {
+    "desktop": "builtin:calendar",
+    "worker": "builtin:calendar",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [{
+    "socket": "dashboard.page",
+    "entrypoint": "dashboard-view",
+    "config": {
+      "route": "/dashboard/calendar",
+      "title": "Calendar",
+      "description": "Private calendars with invitations, agenda views, time zones, recurrence, and reminders.",
+      "script": "dashboard-script",
+      "navigation": { "label": "Calendar", "icon": "calendar-days", "order": 20 }
+    }
+  }],
+  "permissions": [
+    { "id": "calendar.events.read", "label": "Read your personal and organization calendars", "risk": "sensitive" },
+    { "id": "calendar.events.write", "label": "Create and update events, invitations, responses, and reminders", "risk": "sensitive" },
+    { "id": "repository.activity.read", "label": "Project public repository commits and merges onto the calendar", "risk": "low" }
+  ],
+  "dependencies": [],
+  "trust": { "sourceAvailable": true, "reproducibleBuild": false, "signature": "verified-bundle" },
+  "install": { "bundled": true, "default": false, "sync": "account", "installedBefore": "2026-10-11" },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "none" }
+}

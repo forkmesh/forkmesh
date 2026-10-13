@@ -1,0 +1,38 @@
+{% extends "layouts/blog-post.html" %}
+{% set heading = "One-line installer" %}
+{% set slug = "one-line-installer" %}
+{% set image = "/assets/blog/features/one-line-installer.webp" %}
+{% set description = "curl ... | sh installs the desktop or headless node with SHA-256-verified binaries, and a matching one-line uninstaller when you need it." %}
+{% block content %}
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">CI, releases &amp; distribution</p>
+            <h1>One-line installer</h1>
+            <p class="lede">curl ... | sh installs the desktop or headless node with SHA-256-verified binaries, and a matching one-line uninstaller when you need it.</p>
+            <div class="meta"><span class="pill">Feature 44 of 72</span><span>Feature</span><span>CI, releases &amp; distribution</span><span>3 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/one-line-installer.webp" alt="Abstract ForkMesh artwork for One-line installer">
+        </section>
+        <article class="body">
+          <h2>Why it matters</h2>
+          <p>One-line installer gives ForkMesh a concrete mechanism for verified install and uninstall commands for desktop and headless nodes. curl ... | sh installs the desktop or headless node with SHA-256-verified binaries, and a matching one-line uninstaller when you need it.</p>
+          <p>Delivery metadata is part of a project, not a separate dashboard that should disappear during a migration. In ForkMesh, one-line installer addresses that need at the feature level, keeping the behavior close to the repository instead of buried in a detached hosted layer.</p>
+          <h2>How ForkMesh handles it</h2>
+          <p>ForkMesh handles one-line installer through the same split it uses across the product: ForkMesh keeps runs, logs, artifacts, releases, quality signals, installers, and downloads close to the mirrored repository.</p>
+          <p>The behavior is intentionally narrow: curl ... | sh installs the desktop or headless node with SHA-256-verified binaries, and a matching one-line uninstaller when you need it. Outputs can be linked to commits and served by nodes instead of becoming opaque hosted-only assets.</p>
+          <h2>Where it fits</h2>
+          <p>Use one-line installer when shipping, validation, and release assets need to remain attached to the preserved repository.</p>
+          <p>It pairs with the rest of CI, releases &amp; distribution because One-line installer keeps verified install and uninstall commands for desktop and headless nodes connected to the repository, its signatures, and the nodes that serve it.</p>
+        </article>
+        <!-- Where this post was announced. Paste the permalink into the
+             matching attribute; the ones left blank render as empty. -->
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Feature posts">
+          <a href="/blog/content-addressed-release-storage/">← Content-addressed release storage</a>
+          <a href="/blog/quality-and-security-tabs/">Quality &amp; Security tabs →</a>
+        </nav>
+{% endblock %}

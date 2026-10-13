@@ -1,0 +1,11 @@
+{
+  "category": "Data and storage",
+  "integrations": [
+    "dropbox",
+    "box",
+    "supabase",
+    "firebase",
+    "algolia",
+    "upstash"
+  ]
+}

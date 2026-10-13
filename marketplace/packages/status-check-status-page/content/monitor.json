@@ -1,0 +1,8 @@
+{
+  "label": "Status Page API",
+  "systems": [
+    "status_page",
+    "desktop_status_page"
+  ],
+  "prefixes": []
+}
