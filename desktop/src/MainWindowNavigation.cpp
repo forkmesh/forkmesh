@@ -3951,7 +3951,7 @@ void MainWindow::initRelayReachabilityWatch()
             // automatic offline mode in place until its marked HTTP probe
             // succeeds, while allowing a normal session to reconnect now.
             if (m_backend)
-                m_backend->setNetworkAvailable(!m_offlineMode);
+                m_backend->setNetworkAvailable(!m_offlineMode && !projectInstancePending());
             // A machine that started with no network to mesh over has one
             // now; the local room does not care whether the relay answers.
             startLocalMesh();
