@@ -12,6 +12,7 @@ struct AgentLineRow: View {
     var view: AgentListView = .compact
     var trailing: AnyView? = nil
     var dialog: String = ""
+    var eagleFeed: AgentEagleFeed? = nil
     var watch: AgentWatchController? = nil
     var watchKeys: [String] = []
 
@@ -110,8 +111,14 @@ struct AgentLineRow: View {
                     AgentEagleStats(line: line)
                         .fixedSize()
                 }
-                AgentEagleStrip(dialog: dialog)
-                    .frame(height: 12)
+                Group {
+                    if let eagleFeed {
+                        AgentEagleLine(feed: eagleFeed, line: line)
+                    } else {
+                        AgentEagleStrip(dialog: dialog)
+                    }
+                }
+                .frame(height: 12)
             }
             ends
         }
@@ -257,6 +264,15 @@ struct AgentEagleStats: View {
             .frame(height: 10)
             .padding(.top, 1)
         }
+    }
+}
+
+struct AgentEagleLine: View {
+    let feed: AgentEagleFeed
+    let line: AgentLine
+
+    var body: some View {
+        AgentEagleStrip(dialog: feed.dialog(line))
     }
 }
 
