@@ -148,7 +148,7 @@ void testPlanParsing()
           "refusal parsed");
     check(!parseRemoveCorePlan(QByteArray("garbage")).valid, "garbage is no plan");
     check(plan.promote.isEmpty() &&
-              !removeCoreSummaryText(plan, false).contains(QLatin1String("voter first")),
+              !removeCoreSummaryText(plan, false).contains(QLatin1String("an rqlite voter first")),
           "no promotion line without a promotion");
     const RemoveCorePlan promoting = parseRemoveCorePlan(QByteArray(
         R"({"name": "n1", "voter": true, "allowed": true, "promote": "n4",)"
