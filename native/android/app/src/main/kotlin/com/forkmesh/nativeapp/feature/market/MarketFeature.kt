@@ -54,6 +54,9 @@ object MarketFeature {
     suspend fun organizationNames(): List<String> =
         runCatching { Services.get<ApiService>()?.myOrgs()?.map { it.name } }.getOrNull() ?: emptyList()
 
+    suspend fun organizationNamesOrNull(): List<String>? =
+        runCatching { Services.get<ApiService>()?.myOrgs()?.map { it.name } }.getOrNull()
+
     fun install(@Suppress("UNUSED_PARAMETER") app: App) {
         crmModel = null
         forgetSharedMarket()

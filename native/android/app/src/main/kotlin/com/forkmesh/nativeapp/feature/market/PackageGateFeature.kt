@@ -82,6 +82,8 @@ object PackageGateFeature {
 
     fun deviceSwitch(id: String): Boolean? = PhonePackages.isOn(id, prefs, legacy)
 
+    fun organizationCached(id: String): Boolean? = if (id in PackageGate.ORGANIZATION_PACKAGES) id in organizationInstalled else null
+
     fun setDeviceSwitch(id: String, on: Boolean) {
         PhonePackages.set(id, on, prefs)
         publish()
