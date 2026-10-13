@@ -829,3 +829,45 @@ The office-Mac ad hoc archive of `eb05c64227c2` failed in
 from the session model. The card now receives `model.repo`, preserving the
 repository metadata required by its operations and matching its declared
 input type.
+
+## What's new changelog (2026-10-13)
+
+Every ad hoc build bundles a plain-language changelog that the app shows from
+the version row of the You hub ([NAVIGATION.md](NAVIGATION.md), §4.x).
+
+- **Generator.** `tools/mobile_changelog.py` (tests:
+  `tools/test_mobile_changelog.py`). The previous builds come from the
+  publisher's `state/mac-adhoc/published.json` (build number and version from
+  the IPA name, commit, send time; the run folder's time is the build's
+  start). For each build it reads `git log --no-merges` from the previous
+  build's commit, or, when that commit is gone (main was rewritten on
+  2026-10-13), from the previous build's start time. It drops merges,
+  generic "N files changed" subjects, docs, tests, chores and commits that
+  touch only docs or tests, subjects full of code names, and commits only for
+  the other phone. It groups by area (the subject's prefix, then its words,
+  then the paths: Market, Calls, Projects, Chat, Agents, World, Settings,
+  iPhone, Android, Desktop, Server, Other improvements), turns imperative
+  verbs into past tense, caps a line at 140 characters, 8 lines a section and
+  24 a build, and dedupes. No network or model calls.
+- **Hand-written notes.** `native/changelog/notes.json`, per platform and
+  build number. A note for build N applies to the first build numbered N or
+  later that follows the last published build, so notes written for 219 still
+  ship if 219 fails and 220 is the next build. `"replace": true` replaces the
+  generated lines; otherwise the notes come first and the generated lines
+  follow in the same sections.
+- **Wiring.** The shortcut (`mac_adhoc_deploy.write_changelog`) and the
+  Actions workflow write a draft (`steps/changelog.json`) next to the steps
+  they send to the Mac; the Mac has no history (a depth-1 sparse checkout), so
+  the desktop generates it. `mac_adhoc_build.sh` exports
+  `FORKMESH_CHANGELOG_DRAFT`. The `ios-native-adhoc` step "Bundle the
+  changelog", right after "Pick the ad hoc build number", runs
+  `native/ios/tools/changelog_stamp.py` with the picked build number: it names
+  the current entry with that number, applies the notes due and writes
+  `ForkMesh/Resources/Changelog.json`, so the number in the changelog is the
+  `CFBundleVersion` the app shows. Without a draft (Codemagic, an old
+  launcher) it writes the build with no notes. The checked-in file is an empty
+  placeholder. A failed draft never stops a build.
+- **Android.** `-Pforkmesh.changelog=<file>` bundles that file as the
+  `changelog.json` asset (`bundleChangelog` task); without it the empty
+  placeholder `app/src/changelog/changelog.json` ships. The release host's APK
+  build generates it from the previous `v*` tag with the release's versionCode.
