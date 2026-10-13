@@ -62,6 +62,7 @@ export async function openViewOnceCapture(kind, {
       : false,
   });
   const stages = [];
+  let voiceStage = null;
   let videoTrack = raw.getVideoTracks()[0] || null;
   let audioTrack = raw.getAudioTracks()[0] || null;
   try {
@@ -76,6 +77,7 @@ export async function openViewOnceCapture(kind, {
       const stage = await filterStages.voice(audioTrack, filters.voice);
       if (stage?.track) {
         stages.push(stage);
+        voiceStage = stage;
         audioTrack = stage.track;
       }
     }
@@ -92,6 +94,7 @@ export async function openViewOnceCapture(kind, {
     stream,
     raw,
     filtered: stages.length > 0,
+    voiceStage,
     stop() {
       for (const stage of stages) {
         try { stage.stop?.(); } catch (_) {}
@@ -218,6 +221,9 @@ export function openViewOnceRecorder({
   kind,
   recipient = "",
   filters = {},
+  voices = [],
+  voiceChoice = "",
+  onVoiceChoice = () => {},
   onSend,
   onClose = () => {},
 }) {
@@ -265,6 +271,50 @@ export function openViewOnceRecorder({
   status.textContent = kind === "voice"
     ? "Tap to start, or hold and release to send. It disappears after it is played once."
     : "It disappears after it is watched once.";
+  const activeFilters = { ...filters };
+  const filterRow = document.createElement("div");
+  filterRow.className = "chat-view-once-filters";
+  let voiceSelect = null;
+  let monitorBox = null;
+  if (filterStages.voice && voices.length) {
+    const voiceLabel = document.createElement("label");
+    voiceLabel.textContent = "Voice ";
+    voiceSelect = document.createElement("select");
+    voiceSelect.className = "chat-view-once-voice-select";
+    voiceSelect.setAttribute("aria-label", "Voice for this message");
+    for (const [id, text] of [["", "Your own voice"], ...voices]) {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = text;
+      voiceSelect.append(option);
+    }
+    voiceSelect.value = voices.some(([id]) => id === voiceChoice) ? voiceChoice : "";
+    activeFilters.voice = voiceSelect.value;
+    voiceLabel.append(voiceSelect);
+    const monitorLabel = document.createElement("label");
+    monitorBox = document.createElement("input");
+    monitorBox.type = "checkbox";
+    monitorBox.className = "chat-view-once-monitor";
+    monitorBox.setAttribute("aria-label", "Hear yourself while recording. Use headphones.");
+    monitorLabel.append(monitorBox, document.createTextNode(" Hear yourself (headphones)"));
+    monitorLabel.hidden = !activeFilters.voice;
+    filterRow.append(voiceLabel, monitorLabel);
+    voiceSelect.addEventListener("change", () => {
+      activeFilters.voice = voiceSelect.value;
+      monitorLabel.hidden = !activeFilters.voice;
+      if (!activeFilters.voice) monitorBox.checked = false;
+      onVoiceChoice(activeFilters.voice);
+      if (capture && !recording && !starting) {
+        releaseCapture();
+        if (kind === "video") ensureCapture().catch(() => {});
+      }
+    });
+    monitorBox.addEventListener("change", () => {
+      capture?.voiceStage?.monitor?.(monitorBox.checked);
+    });
+  } else {
+    filterRow.hidden = true;
+  }
   const controls = document.createElement("div");
   controls.className = "chat-view-once-controls";
   const record = makeButton("chat-view-once-record", "Record", `Start recording ${label.toLowerCase()}`);
@@ -276,7 +326,7 @@ export function openViewOnceRecorder({
   const cancel = makeButton("chat-view-once-close", "Cancel", "Cancel and close");
   for (const button of [discard, rerecord, send]) button.hidden = true;
   controls.append(record, stopButton, rerecord, discard, send, cancel);
-  panel.append(heading, stage, timer, status, controls);
+  panel.append(heading, stage, filterRow, timer, status, controls);
   overlay.append(panel);
 
   let capture = null;
@@ -289,6 +339,15 @@ export function openViewOnceRecorder({
   let lastPointerDownAt = -Infinity;
   let starting = false;
   let sending = false;
+
+  function unavailableText() {
+    if (activeFilters.voice) {
+      return "The voice changer could not start here. Choose \u201cYour own voice\u201d or try again.";
+    }
+    return kind === "video"
+      ? "The camera or microphone is unavailable."
+      : "The microphone is unavailable.";
+  }
 
   function setTimer(ms) {
     timer.textContent = `${viewOnceDuration(ms)} / ${viewOnceDuration(limits.maxDurationMs)}`;
@@ -334,7 +393,8 @@ export function openViewOnceRecorder({
   async function ensureCapture() {
     if (capture) return capture;
     status.textContent = kind === "video" ? "Starting the camera…" : "Starting the microphone…";
-    capture = await openViewOnceCapture(kind, { filters });
+    capture = await openViewOnceCapture(kind, { filters: activeFilters });
+    if (monitorBox?.checked) capture.voiceStage?.monitor?.(true);
     if (closed) {
       capture.stop();
       throw new Error("closed");
@@ -383,6 +443,7 @@ export function openViewOnceRecorder({
         onTick: (ms) => setTimer(ms),
       });
       starting = false;
+      if (voiceSelect) voiceSelect.disabled = true;
       record.hidden = true;
       stopButton.hidden = false;
       stopButton.focus();
@@ -391,6 +452,7 @@ export function openViewOnceRecorder({
       const result = await recording.done;
       recording = null;
       delete overlay.dataset.recording;
+      if (voiceSelect) voiceSelect.disabled = false;
       releaseCapture();
       if (closed) return;
       if (!result.blob.size) {
@@ -413,11 +475,10 @@ export function openViewOnceRecorder({
     } catch (error) {
       starting = false;
       recording = null;
+      if (voiceSelect) voiceSelect.disabled = false;
       releaseCapture();
       if (closed) return;
-      status.textContent = kind === "video"
-        ? "The camera or microphone is unavailable."
-        : "The microphone is unavailable.";
+      status.textContent = unavailableText();
       record.hidden = false;
       stopButton.hidden = true;
     }
@@ -503,7 +564,7 @@ export function openViewOnceRecorder({
     ensureCapture().then(() => {
       if (!closed) status.textContent = "It disappears after it is watched once.";
     }).catch(() => {
-      if (!closed) status.textContent = "The camera or microphone is unavailable.";
+      if (!closed) status.textContent = unavailableText();
     });
   }
   record.focus();

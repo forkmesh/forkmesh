@@ -63,8 +63,16 @@ import {
 } from "./chat-view-once.js";
 import {
   openViewOnceRecorder,
+  registerViewOnceFilterStages,
   viewOnceRecordingSupported,
 } from "./chat-view-once-recorder.js";
+import {
+  CALL_VOICES,
+  callVoicesSupported,
+  createVoiceStage,
+  rememberCallerPitch,
+  savedCallerPitch,
+} from "./chat-call-voice.js";
 
 // Browser-side ForkMesh room chat. Reimplements the desktop client's room
 // crypto (PBKDF2 + AES-256-GCM) and message envelope so the website can join
@@ -5650,6 +5658,31 @@ function startDirectCall(media) {
 }
 
 const viewOnceClient = createViewOnceClient({ request: privateChannelRequest });
+const VIEW_ONCE_VOICE_KEY = "forkmesh.chat.viewOnceVoice";
+if (callVoicesSupported()) {
+  registerViewOnceFilterStages({
+    voice: (micTrack, voiceId) => createVoiceStage({
+      sourceTrack: micTrack,
+      voiceId,
+      userPitchHz: savedCallerPitch(),
+      onStats: (stats) => rememberCallerPitch(stats?.userPitchHz),
+    }),
+  });
+}
+
+function savedViewOnceVoice() {
+  try {
+    return String(localStorage.getItem(VIEW_ONCE_VOICE_KEY) || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function rememberViewOnceVoice(id) {
+  try {
+    localStorage.setItem(VIEW_ONCE_VOICE_KEY, String(id || ""));
+  } catch (_) {}
+}
 const viewOnceStatusQueue = new Map();
 let viewOnceStatusTimer = null;
 let activeViewOnceViewer = null;
@@ -5743,6 +5776,9 @@ function startViewOnceRecording(kind) {
   openViewOnceRecorder({
     kind,
     recipient: direct.otherUser,
+    voices: CALL_VOICES.map((voice) => [voice.id, voice.label]),
+    voiceChoice: savedViewOnceVoice(),
+    onVoiceChoice: rememberViewOnceVoice,
     onSend: (recording, onProgress) =>
       sendViewOnce(channelKey, direct, recording, onProgress),
     onClose: () => (kind === "video" ? viewOnceVideoBtn : viewOnceVoiceBtn)?.focus(),
