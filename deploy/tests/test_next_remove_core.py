@@ -559,3 +559,141 @@ def test_scripts_hold_no_recursive_delete():
         assert re.search(r"\brm\s+-[a-zA-Z]*[rR]", script) is None
     assert subprocess.run(["bash", "-n", "-c", rc.stop_script(rc.STOP_UNITS)]).returncode == 0
     assert subprocess.run(["bash", "-n", "-c", rc.remove_script()]).returncode == 0
+
+
+def test_quorum_promotes_a_non_voter_when_a_voter_leaves_three():
+    nodes = json.loads(nodes_json(nonvoters=("n4",)))["nodes"]
+    report = rc.quorum_report(nodes, "n1", ["n2", "n3", "n4"])
+    assert report["allowed"] and report["promote"] == "n4"
+    assert report["voters_after"] == ["n2", "n3", "n4"]
+    assert report["healthy_after"] == ["n2", "n3", "n4"]
+    assert not any("even" in w for w in report["warnings"])
+    unreachable = json.loads(nodes_json(nonvoters=("n4",),
+                                        reachable=("n1", "n2", "n3")))["nodes"]
+    refused = rc.quorum_report(unreachable, "n1", ["n2", "n3", "n4"])
+    assert not refused["allowed"] and refused["promote"] == ""
+
+
+def test_quorum_promotes_nothing_when_the_voters_left_stay_odd():
+    nodes = json.loads(nodes_json())["nodes"]
+    assert rc.quorum_report(nodes, "n1", ["n2", "n3", "n4"])["promote"] == ""
+    nonvoter = json.loads(nodes_json(nonvoters=("n4",)))["nodes"]
+    assert rc.quorum_report(nonvoter, "n4", ["n1", "n2", "n3"])["promote"] == ""
+
+
+def test_promote_core_block_drops_only_that_nodes_non_voter_line():
+    text = next_fleet.upsert_core_block(fleet_text(), "n4", n4_block(False))
+    promoted = next_fleet.promote_core_block(text, "n4")
+    assert "rqlite_voter" not in promoted
+    assert promoted == next_fleet.upsert_core_block(fleet_text(), "n4", n4_block(True))
+    assert next_fleet.promote_core_block(text, "n2") == text
+
+
+class PromotingCluster:
+    def __init__(self):
+        self.removed = set()
+        self.restarted = False
+
+    def view(self):
+        members = [m for m in ("n1", "n2", "n3", "n4") if m not in self.removed
+                   or (m == "n4" and self.restarted)]
+        nonvoters = () if self.restarted else ("n4",)
+        return nodes_json(members=tuple(members), nonvoters=nonvoters, leader="n2")
+
+    def nodes(self, host, script, data):
+        return self.view()
+
+    def remove(self, host, script, data):
+        self.removed.add(json.loads(data)["id"])
+        return b""
+
+    def restart(self, host, script, data):
+        assert host == N4_IP
+        self.restarted = True
+        return b""
+
+
+def test_remove_n1_promotes_n4_first(tmp_path, monkeypatch):
+    path = fleet_file(tmp_path, n4_voter=False)
+    state = common.load_json(config() / "fleet-state.json", {})
+    state["rqlite_nonvoters"] = ["n4"]
+    common.save_json(config() / "fleet-state.json", state)
+    cluster = PromotingCluster()
+    by_ip = {ip: name for name, ip in IPS.items()}
+    ssh = FakeSsh([
+        (lambda h, s: "/nodes" in s, cluster.nodes),
+        (lambda h, s: "/remove" in s, cluster.remove),
+        (lambda h, s: "systemctl restart rqlite" in s, cluster.restart),
+        (lambda h, s: s == rc.WG_PUBKEY, lambda h, s, i: KEYS.get(by_ip.get(h), "").encode()),
+    ])
+    backend = rc.RemoveBackend(ssh=ssh, sleep=lambda s: None)
+    planned = backend.plan(path, "n1")
+    assert planned["allowed"] and planned["promote"] == "n4"
+    out = io.StringIO()
+    job = rc.Job(next_add_core.State(rc.state_path("n1"), dict(planned, steps={})),
+                 Runner(execute=True, out=out), fleet_file=path, out=out)
+    calls = []
+    monkeypatch.setattr(next_dns, "main", lambda argv: calls.append(("dns", argv[-3])) or 0)
+    monkeypatch.setattr(next_fleet, "install",
+                        lambda fleet, name, ssh, runner, steps, vultr=None,
+                        replacement=False, **kw: calls.append(
+                            ("install", name, steps, replacement,
+                             [n["name"] for n in fleet["nodes"] if n.get("rqlite_voter", True)])))
+    monkeypatch.setattr(next_fleet, "roll_healthy", lambda ssh, ip: (True, "ok"))
+    import next_ids
+    monkeypatch.setattr(next_ids, "push_expectation", lambda *a, **k: None)
+    backend.step_promote(job)
+    assert calls[0] == ("dns", "drain")
+    assert calls[1] == ("install", "n4", ("files",), True, ["n1", "n2", "n3", "n4"])
+    assert calls[-1] == ("dns", "undrain")
+    assert cluster.removed == {"n4"} and cluster.restarted
+    assert "rqlite_voter" not in path.read_text()
+    assert "n4" not in common.load_json(config() / "fleet-state.json", {})["rqlite_nonvoters"]
+    assert job.state.get("promoted") == "n4"
+    report = rc.quorum_report(json.loads(cluster.view())["nodes"], "n1", ["n2", "n3", "n4"])
+    assert report["allowed"] and report["promote"] == ""
+
+
+def test_promote_dry_run_and_nothing_to_promote(tmp_path):
+    path = fleet_file(tmp_path, n4_voter=False)
+    ssh = ssh_for(Cluster(nonvoters=("n4",)))
+    backend = rc.RemoveBackend(ssh=ssh, sleep=lambda s: None)
+    planned = backend.plan(path, "n1")
+    out = io.StringIO()
+    job = rc.Job(next_add_core.State(Path("/dev/null"), dict(planned, steps={})),
+                 Runner(execute=False, out=out), fleet_file=path, out=out)
+    lines = rc.describe(job, backend)
+    assert any("n4 (a non-voter core) becomes a voter first" in line for line in lines)
+    backend.step_promote(job)
+    assert "[dry-run] n4: drain" in out.getvalue()
+    job, backend, _, out = make_job(tmp_path)
+    backend.step_promote(job)
+    assert "no non-voter needs promoting" in out.getvalue()
+
+
+def test_rqlite_step_retires_the_status_row_through_a_peer(tmp_path):
+    cluster = Cluster()
+    job, backend, _, _ = make_job(tmp_path, cluster=cluster)
+    backend.ssh = ssh_for(cluster)
+    backend.step_rqlite(job)
+    retire = [(h, s, i) for h, s, i in backend.ssh.runs if "/db/execute" in s]
+    assert len(retire) == 1 and retire[0][0] != N4_IP
+    assert json.loads(retire[0][2]) == [[rc.RETIRE_MEMBER_SQL, "n4"]]
+
+
+def test_commit_carries_the_promotion(tmp_path, monkeypatch):
+    seed()
+    repo = repo_with_n4(tmp_path, monkeypatch)
+    fleet_path = repo / "deploy" / "fleet.toml"
+    fleet_path.write_text(next_fleet.upsert_core_block(fleet_text(), "n4", n4_block(False)))
+    git(repo, "commit", "-qam", "n4 non-voter")
+    out = io.StringIO()
+    job = rc.Job(next_add_core.State(Path("/dev/null"),
+                                     {"name": "n1", "label": "fmnext-core-1",
+                                      "promoted": "n4", "steps": {}}),
+                 Runner(execute=True, out=out), fleet_file=fleet_path, out=out)
+    rc.RemoveBackend(ssh=FakeSsh(), repo=repo).step_commit(job)
+    text = git(repo, "show", "fleet/remove-core-n1:deploy/fleet.toml")
+    assert 'name = "n1"' not in text and 'name = "n4"' in text
+    assert "rqlite_voter" not in text
+    assert "n4 was promoted" in git(repo, "log", "-1", "--format=%B", "fleet/remove-core-n1")
