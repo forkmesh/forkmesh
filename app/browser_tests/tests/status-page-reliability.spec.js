@@ -215,3 +215,69 @@ test("reachable mirrors with converging issue revisions are not red downtime", a
     /is-down/,
   );
 });
+
+
+test("cores and runners get their own section with only the 60-minute and 24-hour strips", async ({ page }) => {
+  await serveStatusPage(page);
+  await page.addInitScript(() => {
+    window.WebSocket = undefined;
+  });
+  const now = 7_200_000;
+  const minutes = Array.from({ length: 60 }, (_, index) => ({
+    minuteTs: now - (59 - index) * 60_000,
+    status: "operational",
+  }));
+  const rows = ["website", "core:n2", "runner:fmnext-r1", "core:n4", "mirror:m1"].map((id) => {
+    const row = system(id, "operational");
+    row.minutes = minutes;
+    row.days = [{ dayTs: 0, checks: 120, failures: 0, uptimePct: 100, hours: [] }];
+    return row;
+  });
+  await page.route("**/api/status", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(payload(now, rows)),
+  }));
+
+  await page.route("**/styles.css", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/css; charset=utf-8",
+    body: fs.readFileSync(path.join(ROOT, "www", "public", "styles.css"), "utf8"),
+  }));
+  await page.goto("https://app.forkmesh.test/status.html");
+  await expect(page.locator("#status-nodes")).toBeVisible();
+  const nodeIds = await page.locator("#status-node-list > .status-row").evaluateAll(
+    (items) => items.map((item) => item.id),
+  );
+  expect(nodeIds).toEqual(["system-core-n2", "system-runner-fmnext-r1", "system-core-n4"]);
+  const serviceIds = await page.locator("#status-list > .status-row").evaluateAll(
+    (items) => items.map((item) => item.id),
+  );
+  expect(serviceIds).toEqual(["system-website", "system-mirror-m1"]);
+  for (const id of nodeIds) {
+    expect(await page.locator(`#${id} > .status-history-row`).evaluateAll(
+      (strips) => strips.map((strip) => strip.firstElementChild.className),
+    )).toEqual(["status-minute-bar", "status-hour-bar"]);
+  }
+  expect(await page.locator("#system-website > .status-history-row").count()).toBe(3);
+  if (process.env.STATUS_SCREENSHOT) {
+    await page.setViewportSize({ width: 1100, height: 1400 });
+    await page.locator(".status-systems").screenshot({ path: process.env.STATUS_SCREENSHOT });
+  }
+});
+
+
+test("the nodes section stays hidden without core or runner rows", async ({ page }) => {
+  await serveStatusPage(page);
+  await page.addInitScript(() => {
+    window.WebSocket = undefined;
+  });
+  await page.route("**/api/status", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(payload(5_000, [system("website", "operational")])),
+  }));
+  await page.goto("https://app.forkmesh.test/status.html");
+  await expect(page.locator("#system-website")).toBeVisible();
+  await expect(page.locator("#status-nodes")).toBeHidden();
+});

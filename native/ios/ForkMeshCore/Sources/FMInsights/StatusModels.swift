@@ -76,6 +76,7 @@ public struct StatusSystem: Equatable, Sendable, Identifiable {
     }
 
     public var isMirror: Bool { id.hasPrefix("mirror:") }
+    public var isNode: Bool { id.hasPrefix("core:") || id.hasPrefix("runner:") }
 }
 
 public struct StatusCurrent: Equatable, Sendable {
@@ -131,6 +132,8 @@ public struct StatusReport: Equatable, Sendable {
 
     public var coreSystems: [StatusSystem] { systems.filter { !$0.isMirror } }
     public var mirrorSystems: [StatusSystem] { systems.filter(\.isMirror) }
+    public var serviceSystems: [StatusSystem] { systems.filter { !$0.isMirror && !$0.isNode } }
+    public var nodeSystems: [StatusSystem] { systems.filter(\.isNode) }
 
     public var websiteUptime24h: Double? {
         (systems.first { $0.id == "website" } ?? coreSystems.first)?.uptime24h

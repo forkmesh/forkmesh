@@ -602,3 +602,14 @@ def test_a_500_prints_an_error_line_and_the_traceback(capsys, monkeypatch):
     assert lines[1] == "Traceback (most recent call last):"
     assert any("in broken" in line for line in lines)
     assert lines[-1] == "KeyError: 'spentCents'"
+
+
+def test_runner_targets_follow_the_rendered_fleet_not_a_fixed_list():
+    from forkmesh_host import autoscaler
+    assert autoscaler.default_runner_targets({
+        "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES": "fmnext-n2,fmnext-n4"}) == [
+        "fmnext-n2", "fmnext-n4"]
+    assert autoscaler.default_runner_targets({
+        "FORKMESH_MESH_PEERS": "n4=http://10.77.0.4:8792,n2=http://10.77.0.2:8792"}) == [
+        "fmnext-n2", "fmnext-n4"]
+    assert autoscaler.default_runner_targets({}) == []
