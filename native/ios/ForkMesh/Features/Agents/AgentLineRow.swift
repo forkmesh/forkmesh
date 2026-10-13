@@ -263,6 +263,7 @@ struct AgentEagleStats: View {
 struct AgentEagleStrip: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shellTabHidden) private var tabHidden
     let dialog: String
     @State private var train: [String] = []
     @State private var widths: [String: CGFloat] = [:]
@@ -319,7 +320,7 @@ struct AgentEagleStrip: View {
                 laneWidth = width
             }
             .overlay(alignment: .leading) {
-                TimelineView(.animation(minimumInterval: nil, paused: !scrolls)) { (context: TimelineViewDefaultContext) in
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !scrolls || tabHidden)) { (context: TimelineViewDefaultContext) in
                     let elapsed: Double = scrolls ? context.date.timeIntervalSince(cycleStart) : 0
                     let due: Bool = scrolls && elapsed * Double(Self.speed) >= Double(distance)
                     HStack(spacing: Self.gap) {

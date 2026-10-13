@@ -528,6 +528,7 @@ struct AgentLineDot: View {
 
     @Environment(\.fmPalette) private var fm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shellTabHidden) private var tabHidden
     let line: AgentLine
     var watch: AgentWatchController? = nil
     var keys: [String] = []
@@ -538,7 +539,7 @@ struct AgentLineDot: View {
     var body: some View {
         Group {
             if running {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { _ in
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion || tabHidden)) { _ in
                     let _ = watch?.advance()
                     canvas(now: watch?.now ?? ProcessInfo.processInfo.systemUptime)
                 }

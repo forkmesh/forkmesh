@@ -134,10 +134,19 @@ private struct ShellStackTabKey: EnvironmentKey {
     static let defaultValue: AppTab? = nil
 }
 
+private struct ShellTabHiddenKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
 extension EnvironmentValues {
     var shellStackTab: AppTab? {
         get { self[ShellStackTabKey.self] }
         set { self[ShellStackTabKey.self] = newValue }
+    }
+
+    var shellTabHidden: Bool {
+        get { self[ShellTabHiddenKey.self] }
+        set { self[ShellTabHiddenKey.self] = newValue }
     }
 }
 

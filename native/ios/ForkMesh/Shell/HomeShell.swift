@@ -489,6 +489,7 @@ struct HomeShell: View {
         }
         .environment(\.shellDock, docks[tab])
         .environment(\.shellStackTab, tab)
+        .environment(\.shellTabHidden, !selected)
         .id([stackResets[tab] ?? 0, ShellChrome.shared.stackReturns[tab] ?? 0])
         .opacity(selected ? 1 : 0)
         .allowsHitTesting(selected)
