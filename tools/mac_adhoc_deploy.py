@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import mac_adhoc_publish
+import mobile_changelog
 import next_codemagic
 from next_common import ToolError
 
@@ -29,6 +30,7 @@ RELEASE = mac_adhoc_publish.release_host()
 UNIT_ENV = "FORKMESH_MAC_ADHOC_LOG"
 UNIT_PREFIX = "forkmesh-mac-adhoc-"
 UNIT_LOGS = RELEASE.LAYOUT.logs / "mac-adhoc"
+PUBLISHED = RELEASE.LAYOUT.state / "mac-adhoc" / "published.json"
 PASSED_ENV = re.compile(r"PATH|LANG|LC_\w+|FORKMESH_\w+|MAC_BUILD_\w+|CODEMAGIC_\w+")
 DROPPED_ENV = re.compile(r"FORKMESH_AGENT_\w*|" + UNIT_ENV)
 FOLLOW_SECONDS = 0.5
@@ -342,14 +344,30 @@ def fetch_on_mac(mac, url: str, commit: str, lock: str) -> str:
     return mac.run("git -C ci/tree log -1 --format=%s", timeout=60).strip()
 
 
+def write_changelog(dest: Path, commit: str, repo: Path = ROOT, published: Path = PUBLISHED) -> bool:
+    try:
+        draft = mobile_changelog.draft(repo, commit, mobile_changelog.read_json(published),
+                                       mobile_changelog.read_json(mobile_changelog.NOTES), "ios")
+    except (OSError, ValueError, subprocess.CalledProcessError, SystemExit) as exc:
+        say(f"no changelog for this build ({exc}); the app shows its version with no notes")
+        return False
+    dest.write_text(json.dumps(draft, ensure_ascii=False) + "\n")
+    head = draft["entries"][0]
+    say(f"changelog: {sum(len(s['items']) for s in head['sections'])} generated notes since build "
+        f"{head['after'] or 'none'}, {len(draft['entries']) - 1} earlier builds")
+    return True
+
+
 def send_steps(mac, script: str, *args: str, lock: str, name: str = WORKFLOW,
-               overrides: dict[str, str] | None = None) -> list[str]:
+               overrides: dict[str, str] | None = None, commit: str = "") -> list[str]:
     with tempfile.TemporaryDirectory(prefix="mac-adhoc-steps-") as scratch:
         names = write_steps(mac.run("cat ci/tree/codemagic.yaml", timeout=60),
                             mac.run("cat ci/tree/native/ios/tools/codemagic_steps.py",
                                     timeout=60),
                             Path(scratch) / "steps", name, overrides)
         say(f"steps from codemagic.yaml ({name}): " + ", ".join(names))
+        if commit:
+            write_changelog(Path(scratch) / "steps" / "changelog.json", commit)
         packed = subprocess.Popen(["tar", "-C", scratch, "-c", "steps"], stdout=subprocess.PIPE)
         try:
             mac.run(script, *args, stdin=packed.stdout, timeout=300, lock=lock)
@@ -362,7 +380,7 @@ def send_steps(mac, script: str, *args: str, lock: str, name: str = WORKFLOW,
 def prepare_build(mac, url: str, commit: str, run_dir: str, lock: str, started: int,
                   locked: int) -> str:
     subject = fetch_on_mac(mac, url, commit, lock)
-    send_steps(mac, STEPS_SCRIPT, run_dir, str(started), str(locked), lock=lock)
+    send_steps(mac, STEPS_SCRIPT, run_dir, str(started), str(locked), lock=lock, commit=commit)
     return subject
 
 

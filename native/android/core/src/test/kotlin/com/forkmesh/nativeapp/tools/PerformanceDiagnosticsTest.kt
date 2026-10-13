@@ -1,0 +1,115 @@
+package com.forkmesh.nativeapp.tools
+
+import com.forkmesh.nativeapp.testing.assertEq
+import com.forkmesh.nativeapp.testing.expect
+import java.util.Locale
+
+class PerformanceDiagnosticsTest {
+    private val now = 1_800_000_000_000L
+
+    private fun sample(kind: PerformanceEventKind, ms: Long, agoMs: Long) = PerformanceAlert.Sample(kind, ms, now - agoMs)
+
+    fun testQuietAppIsNeutral() {
+        val alert = PerformanceAlert.evaluate(
+            listOf(sample(PerformanceEventKind.EventLoop, 249, 10_000), sample(PerformanceEventKind.Operation, 3000, 1000)),
+            emptyList(), null, now,
+        )
+        expect(!alert.detected)
+        assertEq("Send diagnostics", alert.label)
+    }
+
+    fun testAQuarterSecondFreezeTurnsItRed() {
+        val alert = PerformanceAlert.evaluate(
+            listOf(sample(PerformanceEventKind.EventLoop, 420, 30_000), sample(PerformanceEventKind.Sync, 300, 60_000)),
+            emptyList(), null, now,
+        )
+        assertEq("The app froze for 0.4 s (2 freezes)", alert.reason)
+        assertEq("Slow, send report", alert.label)
+    }
+
+    fun testOldOrAlreadySentFreezesDoNotCount() {
+        expect(!PerformanceAlert.evaluate(listOf(sample(PerformanceEventKind.EventLoop, 900, 601_000)), emptyList(), null, now).detected)
+        expect(!PerformanceAlert.evaluate(listOf(sample(PerformanceEventKind.EventLoop, 900, 60_000)), emptyList(), now - 30_000, now).detected)
+    }
+
+    fun testFiveHitchesTurnItRed() {
+        val four = (1..4).map { sample(PerformanceEventKind.Frame, 60, it * 10_000L) }
+        expect(!PerformanceAlert.evaluate(four, emptyList(), null, now).detected)
+        val five = four + sample(PerformanceEventKind.Frame, 60, 100_000)
+        assertEq("5 dropped-frame hitches in 10 min", PerformanceAlert.evaluate(five, emptyList(), null, now).reason)
+    }
+
+    fun testAnAndroidExitReasonSinceTheLastSendWins() {
+        val anr = PerformanceAlert.Diagnostic("The app stopped responding (ANR)", now - 3_600_000)
+        assertEq("Android reported: The app stopped responding (ANR)", PerformanceAlert.evaluate(emptyList(), listOf(anr), null, now).reason)
+        expect(!PerformanceAlert.evaluate(emptyList(), listOf(anr), now - 60_000, now).detected)
+    }
+
+    fun testScrubRemovesSecretsAndContents() {
+        val raw = """
+            GET https://app.forkmesh.com/api/chat?token=abc123&room=7 200
+            Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqZXR0In0.c2lnbmF0dXJlLXZhbHVl
+            api_key=sk-live-1234 password: hunter2
+            from jett@forkmesh.com {"text":"meet at 5pm","id":4}
+            node 3f9a0c1d2e4b5a6978877665544332211aabbccdd done
+            call +1 (415) 555-0100 at 2026-10-13 19:20:15 took 420 ms
+            /data/user/0/com.forkmesh.nativeapp/files/stalls.log
+        """.trimIndent()
+        val clean = DiagnosticsBundle.scrub(raw)
+        for (leaked in listOf("abc123", "eyJhbGci", "sk-live-1234", "hunter2", "jett@forkmesh.com", "meet at 5pm",
+            "3f9a0c1d2e4b5a6978877665544332211aabbccdd", "555-0100", "com.forkmesh.nativeapp/files")) {
+            expect(!clean.contains(leaked), leaked)
+        }
+        expect(clean.contains("https://app.forkmesh.com/api/chat?[query] 200"))
+        expect(clean.contains("\"text\":\"[redacted]\",\"id\":4"))
+        expect(clean.contains("2026-10-13 19:20:15 took 420 ms"))
+    }
+
+    fun testReportAndPromptLeaveLogsOutWhenAsked() {
+        val log = AppLog(now = { now })
+        log.add(LogCategory.entries.first(), "secret line")
+        val telemetry = AppTelemetry(log = log, now = { now }, rssMegabytes = { 100.0 })
+        val events = listOf(PerformanceEvent(PerformanceEventKind.EventLoop, "loop", 420_000, now - 5_000, stackTrace = "a.B.c(B.kt:1)\nd.E.f(E.kt:2)"))
+        val report = DiagnosticsBundle.report(listOf("app" to "1.4.1+10401"), telemetry, events, emptyList(), now)
+        expect(report.contains("eventLoop loop 420ms 5s ago"))
+        expect(report.contains("stack: a.B.c(B.kt:1) < d.E.f(E.kt:2)"))
+        val without = DiagnosticsBundle.prompt("The app froze for 0.4 s", report, includeLogs = false)
+        expect(!without.contains("secret line"))
+        expect(without.startsWith("The app detected a performance issue: The app froze for 0.4 s."))
+        expect(DiagnosticsBundle.prompt("", report, includeLogs = true).contains("secret line"))
+        val long = DiagnosticsBundle.prompt("x", "line\n".repeat(5000), includeLogs = true)
+        expect(long.length <= DiagnosticsBundle.MAX_PROMPT_CHARS && long.endsWith("[cut to fit the prompt]"))
+    }
+}
+
+class AppChangelogTest {
+    private val sample = """
+        {"schema": 1, "entries": [
+          {"version": "1.4.1", "build": "10401", "date": "2026-10-13",
+           "sections": [{"title": "Calls", "items": ["Blur your background."]}, {"title": "Empty", "items": []}]},
+          {"version": "1.4.0", "build": "10400", "date": "2026-10-01", "sections": [{"title": "Market", "items": ["One tap."]}]}
+        ]}
+    """.trimIndent()
+
+    fun testParsesAndDropsEmptySections() {
+        val log = AppChangelog.parse(sample)
+        assertEq(listOf("10401", "10400"), log.entries.map { it.build })
+        assertEq(listOf(AppChangelog.Section("Calls", listOf("Blur your background."))), log.entries[0].sections)
+        assertEq("Version 1.4.1 (10401)", log.entries[0].heading)
+        assertEq(0, AppChangelog.parse("not json").entries.size)
+    }
+
+    fun testTheRunningBuildComesFirst() {
+        assertEq(listOf("10401", "10400"), AppChangelog.load(sample, "1.4.1", "10401").entries.map { it.build })
+        val newer = AppChangelog.load(sample, "1.4.2", "10402")
+        assertEq(listOf("10402", "10401", "10400"), newer.entries.map { it.build })
+        expect(newer.entries[0].sections.isEmpty())
+        assertEq(listOf(AppChangelog.Entry("1.4.1", "10401")), AppChangelog.load("""{"entries": []}""", "1.4.1", "10401").entries)
+    }
+
+    fun testLabelsAndDates() {
+        assertEq("Version 1.4.1", AppChangelog.label("1.4.1", ""))
+        assertEq("October 13, 2026", AppChangelog.Entry("1", "2", "2026-10-13").formattedDate(Locale.US))
+        assertEq("soon", AppChangelog.Entry("1", "2", "soon").formattedDate(Locale.US))
+    }
+}
