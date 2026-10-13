@@ -54,7 +54,8 @@ private val THUMB_WIDTH = 96.dp
 private val ACTION_WIDTH = 84.dp
 
 @Composable
-internal fun MarketControls(model: MarketModel, onChanged: () -> Unit) {
+internal fun MarketControls(model: MarketModel, version: Int, onChanged: () -> Unit) {
+    @Suppress("UNUSED_EXPRESSION") version
     val options = model.options
     fun set(next: com.forkmesh.nativeapp.market.MarketOptions) {
         model.options = next
@@ -165,7 +166,9 @@ internal fun MarketCard(
     onOpenPackage: () -> Unit,
     onOpen: () -> Unit,
     onInstall: (String?) -> Unit,
+    version: Int,
 ) {
+    @Suppress("UNUSED_EXPRESSION") version
     val c = Fm.colors
     val nested = model.nested(pkg).size
     val stats = MarketText.stats(model.counts[pkg.id], model.usage[pkg.id], model.ratings[pkg.id])

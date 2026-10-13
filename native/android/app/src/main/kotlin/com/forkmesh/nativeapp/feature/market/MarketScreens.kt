@@ -233,9 +233,10 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
                     )
                 }
                 item(key = "controls") {
-                    MarketControls(model, onChanged = { version++ })
+                    MarketControls(model, version, onChanged = { version++ })
                 }
                 item(key = "errors") {
+                    @Suppress("UNUSED_EXPRESSION") version
                     Column {
                         ErrorLine(model.errorText)
                         ErrorLine(model.partialError)
@@ -273,6 +274,7 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
                             onOpenPackage = { navigator.push(PackageScreen(pkg.id)) },
                             onOpen = { route?.let { navigator.push(NavigationFeature.screen(it)) } },
                             onInstall = { organization -> install(pkg, organization) },
+                            version = version,
                         )
                     }
                 }
