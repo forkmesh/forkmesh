@@ -578,6 +578,103 @@ conversation closes, the app leaves the foreground or the account signs out.
 Tests: `app/tests/test_chat_recipient_count.py` (`test_live_*`) and
 `DirectLiveTests.swift`.
 
+## View-once video and voice messages (2026-10-13)
+
+Asked: "make it so that you can record a video or voice message and send that
+to someone; have those get deleted after they are watched or listened to".
+
+Direct messages only. A DM has exactly one recipient, so "opened" has one
+meaning; a private room would need a per-member state and a rule for when the
+last copy goes. Groups are private rooms, so they do not get these messages.
+
+### Wire format
+
+The media never travels in the room. The sender encrypts the recording on the
+device with a fresh AES-256-GCM key (32 random bytes, 12-byte random IV,
+16-byte tag appended, as WebCrypto, CryptoKit's `ciphertext + tag` and
+`AES/GCM/NoPadding` produce it), uploads the ciphertext, then sends an ordinary
+sealed DM chat frame (`persist`, `notify`) that carries the key:
+
+```
+{type:"chat", channel:"direct:<conversation>", id, senderId, sender, ts,
+ text:"🎥 Video message" | "🎤 Voice message",
+ viewOnce:{v:1, kind:"video"|"voice", media:"<32 hex>", key:"<base64url>",
+           iv:"<base64url>", mime:"video/webm"|"video/mp4"|"audio/webm"|"audio/mp4"|...,
+           durationMs, size:<ciphertext bytes>, parts}}
+```
+
+`text` is only for clients that do not know `viewOnce` (the desktop today):
+they show the line and nothing else. A client that knows `viewOnce` ignores
+`text`, never shows a download, save, copy or forward action on the row, and
+keeps no copy of the media. The relay sees ciphertext twice over: the frame is
+sealed like every DM frame, and the stored media is encrypted with a key that
+only exists inside that frame.
+
+### Server API
+
+`app/src/chat_direct_media_api.py`, under
+`/api/chat/direct-messages/<conversation>/media`. Every route needs a DM
+participant; anybody else gets 404, as for the rest of the DM API.
+
+| Route | Who | Does |
+| --- | --- | --- |
+| `POST /media` `{kind, size, parts, durationMs}` | either participant (the sender) | Creates an `uploading` row for the other participant. `parts = ceil(size / 524288)` |
+| `PUT /media/<id>/parts/<n>` `{data: base64}` | sender | Stores part `n`; every part but the last is exactly 512 KiB |
+| `POST /media/<id>/finish` | sender | Checks every part is there and the sizes add up, then `ready` |
+| `GET /media?ids=a,b` / `GET /media/<id>` | both | State: `uploading`, `ready`, `opened`, `expired`, `withdrawn`, with `sentAt`, `openedAt`, `expiresAt`, `role` |
+| `GET /media/<id>/parts/<n>` | recipient only (sender: 403) | `{index, parts, data}` while `ready`; `410 {error:"media_gone", state}` after |
+| `POST /media/<id>/consume` | recipient only | Deletes every part, then `opened` with `openedAt`. Repeating it answers `opened` again |
+| `DELETE /media/<id>` | sender only | Withdraws an unopened message: parts deleted, `withdrawn` |
+
+Limits: video 12 MiB and 61 s, voice 4 MiB and 121 s (the clients stop at 60 s
+and 120 s), plus 1 KiB for the tag. Quota per sender: 20 unopened messages and
+64 MiB of them at once (`429 media_quota_count` / `media_quota_bytes`). The
+server cannot check a content type (it only ever sees ciphertext), so `kind`
+picks the size limit and the clients only play the MIME types they know.
+
+### Storage and deletion
+
+Two tables (migration `0258_chat_direct_media`): `chat_direct_media` (one row
+per message: sender and recipient blind indexes, state, sizes, times, a sealed
+`{kind, durationMs}`) and `chat_direct_media_parts` (the ciphertext in 512 KiB
+rows, each sealed again with `DATA_KEY` like `org_agent_attachments`). They are
+ordinary rqlite tables, so every `DELETE` is a Raft write applied on all three
+cores; there is no other blob store and no thumbnail. What the cores still hold
+after a delete (SQLite free pages, rqlite snapshots and the encrypted backups
+until they roll over) is ciphertext whose key was only ever in the sealed DM
+frame.
+
+- **Opened.** The recipient's client downloads all parts, decrypts them in
+  memory and calls `consume` when playback starts. From then on the server
+  holds no media. The client plays its in-memory copy once: when playback
+  ends or the viewer is closed, whichever comes first, the copy is dropped
+  (and any temporary file deleted) and the row says "Opened". Closing the
+  viewer after it started counts as opened; closing it before playback
+  started does not.
+- **Sender.** Never downloads (the routes refuse) and keeps no local copy.
+  The row shows "Sent", then "Opened" when the room relays
+  `{"kind":"forkmesh-media","v":1,"id":"<media>","state":"opened"}` (sent by
+  `consume` through the room's internal `/media` path, to the other account's
+  sockets only), or when the client reads `GET /media?ids=` once on opening
+  the conversation.
+- **Unopened.** Expires 7 days after it was sent. The hourly `chat-prune`
+  cron phase, and every new upload, run `sweep`: expired and abandoned
+  uploads (an hour old and not finished) lose their parts and become
+  `expired`, the room is told (`state: "expired"` to both participants), any
+  part without a live message row is deleted, and finished rows are removed
+  30 days after they were sent.
+- **Deleted conversation or account.** `_delete_chat_direct_conversations`
+  deletes the conversation's media and parts with it.
+
+Screen capture cannot be prevented by any of the apps. Where the platform
+reports it (iOS `UIScreen.capturedDidChange` / screenshot notification,
+Android `FLAG_SECURE` on the viewer), the viewer says so or blanks itself;
+the web cannot detect it at all.
+
+Tests: `app/tests/test_chat_direct_media_api.py` (upload, download, consume,
+expiry, sweep, withdraw, quotas, limits, who may do what) and
+`app/tests/test_chat_recipient_count.py` (`test_media_*`, the room frame).
+
 ## Recipient counts ("to N")
 
 Every message in a server room shows a small muted "to N" beside it, with the
