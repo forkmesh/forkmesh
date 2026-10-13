@@ -83,11 +83,18 @@
       <section class="status-systems" aria-labelledby="status-systems-title">
         <div class="status-systems-head">
           <h2 id="status-systems-title">Systems</h2>
-          <p>Each system shows its last 60 one-minute checks, then its last 24 hourly checks and 30-day history. Hover a square for its status and reason; click a system's name to see exactly what its health check tests.</p>
+          <p>Each service shows its last 60 one-minute checks, then its last 24 hourly checks and 30-day history. Hover a square for its status and reason; click a system's name to see exactly what its health check tests.</p>
         </div>
         <p id="status-hover-detail" class="status-hover-detail">Hover a square for details.</p>
         <div id="status-list" class="status-list">
           <div class="status-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading…</div>
+        </div>
+        <div id="status-nodes" class="status-nodes" hidden>
+          <div class="status-systems-head">
+            <h2 id="status-nodes-title">Nodes</h2>
+            <p>Core nodes and runners join and leave with the fleet, so each shows only its last 60 one-minute checks and its last 24 hourly checks.</p>
+          </div>
+          <div id="status-node-list" class="status-list" aria-labelledby="status-nodes-title"></div>
         </div>
         <div class="status-legend">
           <span class="status-legend-item"><span class="status-dot is-operational"></span>Operational</span>
@@ -128,6 +135,9 @@
         const bannerText = document.getElementById("status-banner-text");
         const bannerSub = document.getElementById("status-banner-sub");
         const list = document.getElementById("status-list");
+        const nodeSection = document.getElementById("status-nodes");
+        const nodeList = document.getElementById("status-node-list");
+        const isNodeSystem = (system) => /^(core|runner):/.test(String((system && system.id) || ""));
         const hoverDetail = document.getElementById("status-hover-detail");
         let isRendering = false;
         let renderPending = false;
@@ -754,13 +764,16 @@
 
           if (!systems.length) {
             list.innerHTML = '<div class="status-empty">No systems reported.</div>';
+            nodeList.innerHTML = "";
+            nodeSection.hidden = true;
             return;
           }
 
           hideCheckTip();
           nextCheckMeters.length = 0;
           list.innerHTML = "";
-          systems.forEach((system) => {
+          nodeList.innerHTML = "";
+          const renderSystem = (system, target, showDays) => {
             const row = document.createElement("div");
             row.className = "status-row";
             const safeSystemId = String(system.id || "")
@@ -982,6 +995,11 @@
             hourHistory.appendChild(hourUptime);
             row.appendChild(hourHistory);
 
+            if (!showDays) {
+              row.classList.add("is-node");
+              target.appendChild(row);
+              return;
+            }
             const dayHistory = document.createElement("div");
             dayHistory.className = "status-history-row";
             const days = document.createElement("div");
@@ -1060,8 +1078,13 @@
             dayHistory.appendChild(dayUptime);
             row.appendChild(dayHistory);
 
-            list.appendChild(row);
-          });
+            target.appendChild(row);
+          };
+          const nodeSystems = systems.filter(isNodeSystem);
+          systems.filter((system) => !isNodeSystem(system))
+            .forEach((system) => renderSystem(system, list, true));
+          nodeSystems.forEach((system) => renderSystem(system, nodeList, false));
+          nodeSection.hidden = !nodeSystems.length;
         }
 
         function scheduleReconnect() {

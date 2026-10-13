@@ -5,11 +5,24 @@ import {
   callFacesSupported,
   createFaceStage,
 } from "./chat-call-faces.js";
+import {
+  callVoiceChoices,
+  callVoiceLabel,
+  callVoicesSupported,
+  createVoiceStage,
+  normalizeVoiceChoice,
+  rememberCallerPitch,
+  rememberVoiceChoice,
+  resolveCallVoice,
+  savedCallerPitch,
+  savedVoiceChoice,
+} from "./chat-call-voice.js";
 
 const RING_TIMEOUT_MS = 45000;
 const INVITE_RESEND_MS = 3000;
 const INVITE_STALE_MS = 9000;
 const DISCONNECT_GRACE_MS = 8000;
+const VOICE_READY_MS = 2500;
 const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true };
 const VIDEO_CONSTRAINTS = {
   width: { ideal: 640 },
@@ -50,6 +63,9 @@ export function createChatCalls({
   storage = globalThis.localStorage,
   facesSupported = () => callFacesSupported(documentRef),
   createFaceStageImpl = createFaceStage,
+  voicesSupported = () => callVoicesSupported(globalThis),
+  createVoiceStageImpl = createVoiceStage,
+  voiceModuleUrl = new URL("./chat-call-voice-worklet.js", import.meta.url).href,
   setTimeoutImpl = globalThis.setTimeout.bind(globalThis),
   clearTimeoutImpl = globalThis.clearTimeout.bind(globalThis),
   setIntervalImpl = globalThis.setInterval.bind(globalThis),
@@ -69,6 +85,9 @@ export function createChatCalls({
   const declineBtn = documentRef.querySelector("#chat-call-decline");
   const faceRow = documentRef.querySelector("#chat-call-face-row");
   const faceSelect = documentRef.querySelector("#chat-call-face");
+  const voiceRow = documentRef.querySelector("#chat-call-voice-row");
+  const voiceSelect = documentRef.querySelector("#chat-call-voice");
+  const voiceState = documentRef.querySelector("#chat-call-voice-state");
 
   let call = null;
   let invite = null;
@@ -102,7 +121,89 @@ export function createChatCalls({
       cameraBtn.textContent = call.cameraOff ? "Camera on" : "Camera off";
     }
     panel.classList.toggle("is-video", call.media === "video");
+    renderVoice();
     panel.hidden = false;
+  }
+
+  function renderVoice() {
+    if (!call) return;
+    const supported = voicesSupported();
+    if (voiceRow) voiceRow.hidden = !supported;
+    if (voiceSelect) voiceSelect.value = call.voiceChoice;
+    if (voiceState) {
+      voiceState.textContent = "Voice: " + callVoiceLabel(call.voiceStage?.voice() || "");
+    }
+  }
+
+  function voiceFace() {
+    if (!call) return "";
+    return call.media === "video" ? call.stage?.face() || "" : savedFace();
+  }
+
+  function audioSender() {
+    return call?.pc?.getTransceivers?.().find(
+      (transceiver) => transceiver.receiver?.track?.kind === "audio",
+    )?.sender || null;
+  }
+
+  function sendAudio() {
+    const track = outgoingTrack("audio");
+    const sender = audioSender();
+    if (sender && track && sender.track !== track) {
+      Promise.resolve(sender.replaceTrack(track)).catch(() => {});
+    }
+  }
+
+  function applyVoice() {
+    if (!call) return Promise.resolve();
+    const current = call;
+    const id = resolveCallVoice(current.voiceChoice, voiceFace());
+    if (current.voiceStage) {
+      current.voiceStage.setVoice(id);
+      renderVoice();
+      return Promise.resolve();
+    }
+    if (current.voiceStarting) return current.voiceStarting;
+    if (!id || !voicesSupported()) {
+      renderVoice();
+      return Promise.resolve();
+    }
+    const mic = current.localStream.getAudioTracks()[0];
+    if (!mic) return Promise.resolve();
+    current.voiceStarting = Promise.resolve()
+      .then(() => createVoiceStageImpl({
+        sourceTrack: mic,
+        voiceId: id,
+        userPitchHz: savedCallerPitch(storage),
+        moduleUrl: voiceModuleUrl,
+        onStats: (stats) => rememberCallerPitch(stats?.userPitchHz, storage),
+      }))
+      .then((stage) => {
+        if (call !== current) {
+          stage.stop();
+          return;
+        }
+        current.voiceStage = stage;
+        stage.setVoice(resolveCallVoice(current.voiceChoice, voiceFace()));
+        sendAudio();
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (call === current) {
+          current.voiceStarting = null;
+          renderVoice();
+        }
+      });
+    return current.voiceStarting;
+  }
+
+  function voiceReady() {
+    const pending = call?.voiceStarting;
+    if (!pending) return Promise.resolve();
+    return Promise.race([
+      pending,
+      new Promise((resolve) => setTimeoutImpl(resolve, VOICE_READY_MS)),
+    ]);
   }
 
   function hideIncoming() {
@@ -146,6 +247,7 @@ export function createChatCalls({
   function outgoingTrack(kind) {
     if (!call) return null;
     if (kind === "video" && call.stage?.track) return call.stage.track;
+    if (kind === "audio" && call.voiceStage?.track) return call.voiceStage.track;
     return call.localStream.getTracks().find((value) => value.kind === kind) ||
       null;
   }
@@ -191,6 +293,9 @@ export function createChatCalls({
     clearCallTimers();
     try {
       call.stage?.stop();
+    } catch (_) {}
+    try {
+      call.voiceStage?.stop();
     } catch (_) {}
     try {
       call.pc?.close();
@@ -305,11 +410,15 @@ export function createChatCalls({
       muted: false,
       cameraOff: false,
       stage: null,
+      voiceChoice: savedVoiceChoice(storage),
+      voiceStage: null,
+      voiceStarting: null,
       inviteTimer: null,
       ringTimer: null,
       disconnectTimer: null,
     };
     if (kind === "video") useFace(savedFace());
+    void applyVoice();
     attachLocalPreview();
     renderPanel();
     setPhase("ringing-out", `Calling @${call.partner}…`);
@@ -360,14 +469,21 @@ export function createChatCalls({
       muted: false,
       cameraOff: false,
       stage: null,
+      voiceChoice: savedVoiceChoice(storage),
+      voiceStage: null,
+      voiceStarting: null,
       inviteTimer: null,
       ringTimer: null,
       disconnectTimer: null,
     };
     if (call.media === "video") useFace(savedFace());
+    void applyVoice();
     attachLocalPreview();
     renderPanel();
     setPhase("connecting", "Connecting…");
+    const accepted = call;
+    await voiceReady();
+    if (call !== accepted) return;
     void signal("call-accept", { to: pending.from });
     onActiveChange();
   }
@@ -408,6 +524,9 @@ export function createChatCalls({
     clearCallTimers();
     call.peerId = String(plain.senderId);
     setPhase("connecting", "Connecting…");
+    const accepted = call;
+    await voiceReady();
+    if (call !== accepted) return;
     const pc = createPeer();
     for (const kind of ["audio", "video"]) {
       const track = outgoingTrack(kind);
@@ -535,7 +654,25 @@ export function createChatCalls({
   faceSelect?.addEventListener("change", () => {
     rememberFace(callFaceById(faceSelect.value)?.id || "");
     useFace(faceSelect.value);
+    void applyVoice();
   });
+  if (voiceSelect && !voiceSelect.options.length) {
+    for (const [value, label] of callVoiceChoices()) {
+      const option = documentRef.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      voiceSelect.append(option);
+    }
+  }
+  function chooseVoice(choice) {
+    const value = normalizeVoiceChoice(choice);
+    rememberVoiceChoice(value, storage);
+    if (!call) return;
+    call.voiceChoice = value;
+    void applyVoice();
+    renderVoice();
+  }
+  voiceSelect?.addEventListener("change", () => chooseVoice(voiceSelect.value));
 
   return {
     start,
@@ -546,7 +683,13 @@ export function createChatCalls({
     setFace: (id) => {
       rememberFace(callFaceById(id)?.id || "");
       useFace(id);
+      void applyVoice();
     },
     face: () => call?.stage?.face() || "",
+    setVoice: chooseVoice,
+    voiceChoice: () => call?.voiceChoice || savedVoiceChoice(storage),
+    voice: () => call?.voiceStage?.voice() || "",
+    voiceReady: () => call?.voiceStarting || Promise.resolve(),
+    monitorVoice: (on) => Boolean(call?.voiceStage?.monitor(on)),
   };
 }

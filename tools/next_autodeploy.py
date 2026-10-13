@@ -1067,7 +1067,7 @@ class Pipeline:
     def _execute(self, target, rev, lock, result):
         main = self.git.rev(MAIN_REF)
         hosts = self.hosts(target)
-        self.say("gate 1: %s must be on main and fast-forward what n1-n3 run" % rev)
+        self.say("gate 1: %s must be on main and fast-forward what the cores run" % rev)
         live = live_revs(hosts, run=self.run, say=self.say, sleep=self.sleep)
         self.say("gate 1: live %s" % ", ".join("%s %s" % kv for kv in sorted(live.items())))
         manifest = common.load_manifest()
@@ -1110,7 +1110,7 @@ class Pipeline:
         if tests_error is not None:
             raise tests_error
         self.say("gate 2: passed")
-        self.say("gate 4: next_deploy migrate, restart (n1 first, then the rest)")
+        self.say("gate 4: next_deploy migrate, restart (one core first, chosen per release, then the rest)")
         self.tool(worktree, lock, ["migrate", "--execute"], DEPLOY_TIMEOUT)
         result["deployed"] = True
         self.tool(worktree, lock, ["restart", "--rev", rev, "--execute"], DEPLOY_TIMEOUT)
@@ -1161,7 +1161,7 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
         notify_runner_roll(notifier, result)
     elif result.get("rolled"):
         notifier.send("Cores rolled after %s" % rev,
-                      "%s changed daemon or gateway files; n1-n3 were rolled one at a "
+                      "%s changed daemon or gateway files; the cores were rolled one at a "
                       "time and are back in DNS:\n%s" % (rev, "\n".join(roll[:20])),
                       "node-rolled:%s" % rev)
     elif roll and result.get("rollError"):

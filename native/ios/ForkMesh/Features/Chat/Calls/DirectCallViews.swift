@@ -169,6 +169,12 @@ struct DirectCallScreen: View {
                     Text(engine.stateLine)
                         .font(.system(size: 13))
                         .opacity(0.8)
+                    if !engine.voice.isEmpty {
+                        Text("Voice: \(DirectCallEngine.voiceLabel(engine.voice))")
+                            .font(.system(size: 12, weight: .medium))
+                            .opacity(0.8)
+                            .accessibilityIdentifier("chat-call-voice-state")
+                    }
                 }
                 .foregroundStyle(.white)
                 .shadow(radius: 4)
@@ -196,6 +202,7 @@ struct DirectCallScreen: View {
                 }
                 faceMenu
             }
+            voiceMenu
             Button(action: { Task { await engine.hangUp() } }) {
                 Image(systemName: "phone.down.fill")
                     .font(.system(size: 22, weight: .semibold))
@@ -228,6 +235,28 @@ struct DirectCallScreen: View {
         .accessibilityValue(DirectCallEngine.faces.first { $0.id == engine.face }?.label ?? "Your own face")
         .accessibilityHint("Shows the other person a different face that follows your head and lips")
         .accessibilityIdentifier("chat-call-face")
+    }
+
+    private var voiceMenu: some View {
+        Menu {
+            Picker("Voice", selection: Binding(get: { engine.voiceChoice }, set: { engine.setVoiceChoice($0) })) {
+                Text("Match face").tag(DirectCallEngine.voiceMatchFace)
+                Text("Your own voice").tag(DirectCallEngine.voiceOff)
+                ForEach(DirectCallEngine.voices) { (voice: DirectCallFace) in
+                    Text(voice.label).tag(voice.id)
+                }
+            }
+        } label: {
+            Image(systemName: "waveform")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(engine.voice.isEmpty ? Color.white : Color.black)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(engine.voice.isEmpty ? Color.white.opacity(0.18) : Color.white))
+        }
+        .accessibilityLabel("Voice")
+        .accessibilityValue("Voice: \(DirectCallEngine.voiceLabel(engine.voice))")
+        .accessibilityHint("Changes how your voice sounds to the other person")
+        .accessibilityIdentifier("chat-call-voice")
     }
 
     private func control(_ symbol: String, label: String, on: Bool, action: @escaping () -> Void) -> some View {

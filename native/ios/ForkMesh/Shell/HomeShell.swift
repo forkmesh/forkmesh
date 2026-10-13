@@ -634,7 +634,8 @@ struct HomeShell: View {
                             router: router, state: barState, linksInBar: !usesSplit,
                             onOpen: { (route: Route) in openFromHub(route) },
                             onAction: { (action: HubItem.Action) in hubAction(action) },
-                            onClose: { showHub = false })
+                            onClose: { showHub = false },
+                            onSendDiagnostics: { (prompt: String) async -> String? in await diagnosticsLaunch(prompt) })
                             .frame(
                                 width: min(HomeShell.hubWidth, proxy.size.width - FmSpace.x3 * 2),
                                 height: max(240, min(HomeShell.hubHeight, proxy.size.height - HomeShell.hubDrop - FmSpace.x4)))
@@ -1367,6 +1368,32 @@ struct HomeShell: View {
             FmHaptics.error()
         }
         return GenieFeature.outcomeLine(outcome)
+    }
+
+    private func diagnosticsLaunch(_ prompt: String) async -> String? {
+        let outcome: QuickLaunchOutcome = await composer.launcher.send(
+            prompt: prompt, repository: DiagnosticsBundle.repository, onDevice: false)
+        switch outcome {
+        case .queued(let repo, let session, _):
+            FmHaptics.send(.success)
+            agentStarted()
+            selectTab(.agents)
+            if let session = session {
+                router.setPath([LaunchedSessions.remember(repo, session)], for: .agents)
+            }
+            return nil
+        case .queuedWithoutSession(let message), .desktop(_, _, let message):
+            FmHaptics.send(.success)
+            agentStarted(message)
+            selectTab(.agents)
+            return nil
+        case .device:
+            return "Agents for \(DiagnosticsBundle.repository) run on this iPhone, so the report cannot start one here. Send it from a desktop or a mirror."
+        case .needsFix(_, let message), .failed(let message):
+            return message
+        case .ignored:
+            return "There was nothing to send."
+        }
     }
 
     private func openComposer(_ requested: ComposeTarget?) {

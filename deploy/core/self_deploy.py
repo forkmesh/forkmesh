@@ -31,6 +31,8 @@ STATE = "/var/lib/fmnext-self-deploy"
 TICK_SECONDS = 15
 MAX_APPROVAL_AGE_MS = 2 * 60 * 60 * 1000
 STALL_MS = 45 * 60 * 1000
+LIVE_MS = 2 * 60 * 1000
+NOT_LIVE = ("leaving", "quarantined")
 WAIT_FOR_COMMIT_MS = 15 * 60 * 1000
 BUILD_TIMEOUT = 2400
 STEP_TIMEOUT = 900
@@ -319,25 +321,50 @@ class Agent:
         return {r["node"]: r for r in self.db.query(
             "SELECT * FROM deploy_approval_nodes WHERE approval_id=?", approval_id)}
 
+    def sequence(self, row):
+        key = str(row["id"])
+        return sorted(self.order, key=lambda name: (hashlib.sha256(
+            ("%s:%s" % (key, name)).encode("utf-8")).hexdigest(), name))
+
+    def live_cores(self):
+        try:
+            rows = self.db.query(
+                "SELECT node_id,status FROM cluster_members WHERE heartbeat_ms>=?",
+                self.now() - LIVE_MS)
+        except Exception:
+            return set(self.order)
+        if not rows:
+            return set(self.order)
+        live = {str(r.get("node_id")) for r in rows if r.get("status") not in NOT_LIVE}
+        return live | {self.node}
+
+    def required(self, row, nodes):
+        live = self.live_cores()
+        return [n for n in self.sequence(row) if n in live or n in nodes]
+
     def finalize(self, row, nodes):
-        statuses = [nodes.get(n, {}).get("status") for n in self.order]
+        required = self.required(row, nodes)
+        statuses = [nodes.get(n, {}).get("status") for n in required]
         if any(s == "failed" for s in statuses):
-            failed = [n for n in self.order if nodes.get(n, {}).get("status") == "failed"]
+            failed = [n for n in required if nodes.get(n, {}).get("status") == "failed"]
             message = nodes[failed[0]].get("message") or "a core failed"
             self.set_approval(row["id"], "failed", "%s: %s" % (failed[0], message),
                               ("pending", "deploying"))
             return "failed"
         if all(s in ("deployed", "skipped") for s in statuses):
-            notes = [nodes[n].get("message") or "" for n in self.order
+            notes = [nodes[n].get("message") or "" for n in required
                      if nodes[n]["status"] == "skipped"]
-            notes += [nodes[n].get("message") or "" for n in self.order
+            notes += [nodes[n].get("message") or "" for n in required
                       if nodes[n]["status"] == "deployed"]
+            absent = [n for n in self.order if n not in required]
+            if absent:
+                notes.insert(0, "not live, left for a roll: %s" % ", ".join(absent))
             note = next((n for n in notes if n), "")
             self.set_approval(row["id"], "deployed", note or "",
                               ("pending", "deploying"))
             return "deployed"
         now = self.now()
-        for name in self.order:
+        for name in required:
             entry = nodes.get(name)
             if entry and entry["status"] not in DONE and \
                     now - int(entry["updated_at"]) > STALL_MS:
@@ -381,16 +408,21 @@ class Agent:
             nodes = self.nodes(row["id"])
             mine = nodes[self.node]
         if mine["status"] == "ready":
-            index = self.order.index(self.node)
-            for name in self.order[:index]:
-                if nodes.get(name, {}).get("status") not in ("deployed", "skipped"):
+            sequence = self.sequence(row)
+            before = sequence[:sequence.index(self.node)]
+            live = self.live_cores()
+            for name in before:
+                if nodes.get(name, {}).get("status") not in ("deployed", "skipped") \
+                        and (name in live or name in nodes):
                     return "waiting for %s" % name
+            first = not any(nodes.get(name, {}).get("status") == "deployed"
+                            for name in before)
             note = mine.get("message") or ""
             self.set_node(row["id"], "activating", note)
             try:
                 release, daemon, _ = self.plan(target)
                 if release:
-                    if index == 0:
+                    if first:
                         self.migrate(rev)
                     self.activate(rev)
                 if daemon:

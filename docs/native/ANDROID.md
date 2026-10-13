@@ -999,6 +999,21 @@ model in `C/market/MarketModels.kt` (`MarketModel`, `MarketOptions`,
 - Items read `version` so a sort, filter or install recomposes the chip row
   and rows; LazyColumn item lambdas that only capture the model are skipped.
 
+## 15. Version, What's new and Send diagnostics (2026-10-13)
+
+Parity with the iOS You hub ([NAVIGATION.md](NAVIGATION.md), §4.x): the hub's
+last row shows `versionName (versionCode)`, opens `WhatsNewPage` from the
+bundled `changelog.json` asset ([MAC_BUILD.md](MAC_BUILD.md#whats-new-changelog-2026-10-13)),
+and has the Send diagnostics capsule. The rule, the scrubbing and the bundle
+live in core (`tools/PerformanceDiagnostics.kt`, `tools/AppChangelog.kt`,
+tested by `PerformanceDiagnosticsTest` and `AppChangelogTest`); the app side
+is `feature/tools/AboutAndDiagnostics.kt`. Android has the same stall
+telemetry as iOS (`PerformanceMonitorService` events: frame, event loop,
+sync) but no MetricKit and no performance report builder, so the OS
+diagnostics are `ApplicationExitInfo` ANRs and crashes (API 30+) and the
+bundle is a smaller report written by `DiagnosticsBundle.report`. The hub
+pages swap inside the one bottom sheet instead of pushing screens.
+
 ## Appendix: port map
 
 The Flutter (or Flutter Android) source each Kotlin file was ported from, as

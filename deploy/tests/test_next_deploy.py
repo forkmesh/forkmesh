@@ -39,6 +39,20 @@ def test_rollout_is_fleet_order_without_any_leader_lookup(tmp_path):
     assert [n["name"] for n in order] == ["n1", "n2", "n3"]
 
 
+def test_the_first_node_of_a_rollout_rotates_with_the_release(tmp_path):
+    data = fleet(tmp_path)
+    firsts = {next_deploy.rollout_order(data, rev="%012x" % i)[0]["name"]
+              for i in range(40)}
+    assert firsts == {"n1", "n2", "n3"}
+    order = next_deploy.rollout_order(data, rev=REV)
+    assert sorted(n["name"] for n in order) == ["n1", "n2", "n3"]
+    assert order == next_deploy.rollout_order(data, rev=REV)
+
+
+def ips_in_order(data):
+    return [n["public_ipv4"] for n in next_deploy.rollout_order(data, rev=REV)]
+
+
 def test_restart_dry_run_runs_nothing(tmp_path):
     ssh = FakeSsh([leader_is("n2")])
     runner = Runner(execute=False)
@@ -73,14 +87,16 @@ def test_restart_lets_the_cluster_see_a_node_before_the_next_drains(
               ("203.0.113.11", "203.0.113.12", "203.0.113.13")}
     ssh = FakeSsh([(lambda host, script: "switch_to" in script, activate),
                    state_answer(states)])
-    next_deploy.restart(fleet(tmp_path), REV, ssh, Runner(execute=True),
+    data = fleet(tmp_path)
+    first, second, third = ips_in_order(data)
+    next_deploy.restart(data, REV, ssh, Runner(execute=True),
                         parallel=parallel,
                         settle=lambda seconds: events.append(seconds))
-    assert events[:2] == ["203.0.113.11", 3]
+    assert events[:2] == [first, 3]
     if parallel:
-        assert sorted(events[2:]) == ["203.0.113.12", "203.0.113.13"]
+        assert sorted(events[2:]) == sorted([second, third])
     else:
-        assert events[2:] == ["203.0.113.12", 3, "203.0.113.13"]
+        assert events[2:] == [second, 3, third]
 
 
 def test_restart_executes_in_order_and_stops_at_first_failed_gate(tmp_path):
@@ -91,14 +107,15 @@ def test_restart_executes_in_order_and_stops_at_first_failed_gate(tmp_path):
         code = 4 if host == "203.0.113.13" else 0
         return subprocess.CompletedProcess(["ssh"], code, b"", b"gate failed")
     old = "aaaaaaaaaaaa"
+    data = fleet(tmp_path)
     states = {"203.0.113.11": lambda: (REV, REV), "203.0.113.12": lambda: (REV, REV),
               "203.0.113.13": lambda: (old, old)}
     ssh = FakeSsh([(lambda host, script: "switch_to" in script, activate),
                    state_answer(states)])
     with pytest.raises(ToolError, match="n3 failed.*current aaaaaaaaaaaa"):
-        next_deploy.restart(fleet(tmp_path), REV, ssh, Runner(execute=True))
-    # n1, n2 done, n3 failed (and rolled back on the node, so no second try).
-    assert activations == ["203.0.113.11", "203.0.113.12", "203.0.113.13"]
+        next_deploy.restart(data, REV, ssh, Runner(execute=True))
+    expected = ips_in_order(data)
+    assert activations == expected[:expected.index("203.0.113.13") + 1]
     assert not any("/status" in script for _, script, _ in ssh.runs)
 
 
