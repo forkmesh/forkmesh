@@ -697,3 +697,16 @@ def test_commit_carries_the_promotion(tmp_path, monkeypatch):
     assert 'name = "n1"' not in text and 'name = "n4"' in text
     assert "rqlite_voter" not in text
     assert "n4 was promoted" in git(repo, "log", "-1", "--format=%B", "fleet/remove-core-n1")
+
+
+def test_nothing_to_promote_says_why(tmp_path):
+    path = fleet_file(tmp_path, cores=3)
+    backend = rc.RemoveBackend(ssh=ssh_for(Cluster(members=("n1", "n2", "n3"))),
+                               sleep=lambda s: None)
+    planned = backend.plan(path, "n1")
+    out = io.StringIO()
+    job = rc.Job(next_add_core.State(Path("/dev/null"), dict(planned, steps={})),
+                 Runner(execute=False, out=out), fleet_file=path, out=out)
+    assert not planned["allowed"] and planned["promote"] == ""
+    assert any("no reachable non-voter core to promote" in line
+               for line in rc.describe(job, backend))

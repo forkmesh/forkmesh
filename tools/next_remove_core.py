@@ -325,9 +325,7 @@ class RemoveBackend:
         import next_ids
         promote = job.state.get("promote") or ""
         if not promote:
-            job.say("no non-voter needs promoting: %s" % (
-                "%s is a non-voter" % job.name if not job.state.get("voter", True)
-                else "the voters left stay odd and at least %d" % MIN_VOTERS))
+            job.say("no non-voter needs promoting: %s" % promote_note(job))
             return
         if not job.execute:
             job.say("[dry-run] %s: drain, rqlite remove it as a non-voter, re-render "
@@ -747,9 +745,7 @@ class RemoveBackend:
         if step == "promote":
             promote = job.state.get("promote") or ""
             if not promote:
-                return ["nothing to promote: %s" % (
-                    "%s is a non-voter" % name if not job.state.get("voter", True)
-                    else "the voters left stay odd and at least %d" % MIN_VOTERS)]
+                return ["nothing to promote: %s" % promote_note(job)]
             return ["%s (a non-voter core) becomes a voter first, so the voters after "
                     "the removal are %s" % (promote, ", ".join(
                         job.state.get("voters_after") or [])),
@@ -833,6 +829,15 @@ def execute_script():
 def remove_script():
     return "cat >%s\n%s\nstatus=$?\nrm -f %s\nexit $status" % (
         REMOVE_BODY, common.rqlite_curl("/remove", "DELETE", REMOVE_BODY), REMOVE_BODY)
+
+
+def promote_note(job):
+    if not job.state.get("voter", True):
+        return "%s is a non-voter" % job.name
+    after = job.state.get("voters_after") or []
+    if len(after) >= MIN_VOTERS and len(after) % 2 == 1:
+        return "the voters left stay odd and at least %d" % MIN_VOTERS
+    return "no reachable non-voter core to promote (add a core first)"
 
 
 def quorum_text(plan):
