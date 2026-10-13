@@ -152,7 +152,7 @@ QWidget *MainWindow::buildPackageRail()
     content->setContextMenuPolicy(Qt::CustomContextMenu);
     m_packageRailLayout = new QVBoxLayout(content);
     m_packageRailLayout->setContentsMargins(0, kRepoTabRowTopInset + 4, 0, 8);
-    m_packageRailLayout->setSpacing(6);
+    m_packageRailLayout->setSpacing(8);
 
     auto *scroll = new QScrollArea;
     scroll->setObjectName(QStringLiteral("packageRail"));

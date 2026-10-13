@@ -2622,6 +2622,14 @@ button.issue-row {
   box-shadow: var(--kit-card-shadow);
 }
 
+.status-nodes {
+  margin-top: 28px;
+}
+
+.status-nodes[hidden] {
+  display: none;
+}
+
 .status-systems-head h2,
 .status-method h2 {
   margin: 0;

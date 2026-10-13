@@ -48,6 +48,17 @@ final class StatusModelTests: XCTestCase {
         XCTAssertEqual(report.websiteUptime24h, 99.9)
     }
 
+    func testCoresAndRunnersAreNodesApartFromServicesAndMirrors() {
+        let report = StatusReport(json: object("""
+        {"systems":[{"id":"website","status":"operational"},{"id":"core:n2","status":"operational"},
+         {"id":"runner:fmnext-r1","status":"operational"},{"id":"mirror:a","status":"down"}],"current":{}}
+        """))
+        XCTAssertEqual(report.serviceSystems.map(\.id), ["website"])
+        XCTAssertEqual(report.nodeSystems.map(\.id), ["core:n2", "runner:fmnext-r1"])
+        XCTAssertEqual(report.mirrorSystems.map(\.id), ["mirror:a"])
+        XCTAssertTrue(report.nodeSystems.allSatisfy(\.isNode))
+    }
+
     func testMirrorOutagesDoNotRedTheHeadline() {
         let report = StatusReport(json: object("""
         {"systems":[{"id":"website","status":"operational"},{"id":"mirror:a","status":"down"}],"current":{}}

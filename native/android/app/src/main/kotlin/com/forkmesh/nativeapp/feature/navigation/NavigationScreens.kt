@@ -77,7 +77,10 @@ import com.forkmesh.nativeapp.feature.chat.ChatDepth
 import com.forkmesh.nativeapp.feature.chat.ChatFeature
 import com.forkmesh.nativeapp.feature.composer.ComposerFeature
 import com.forkmesh.nativeapp.feature.inbox.InboxFeature
+import com.forkmesh.nativeapp.feature.tools.DiagnosticsSendPage
+import com.forkmesh.nativeapp.feature.tools.HubVersionRow
 import com.forkmesh.nativeapp.feature.tools.ToolsFeature
+import com.forkmesh.nativeapp.feature.tools.WhatsNewPage
 import com.forkmesh.nativeapp.account.projects.LegalLinks
 import com.forkmesh.nativeapp.account.projects.ProjectDefaults
 import com.forkmesh.nativeapp.feature.market.PackageGateFeature
@@ -720,6 +723,7 @@ fun YouHubSheet(onClose: () -> Unit, scope: CoroutineScope) {
     val groups = HubCatalog.groups(guest, session?.isAdmin == true, surfaces.hubItems, NavigationFeature::isRegistered)
     val status = rememberFmStatus()
     val runHubItem = rememberHubItemRunner(scope, status)
+    var page by remember { mutableStateOf(HubPage.Main) }
     fun activate(item: HubItem) {
         if (runHubItem(item)) onClose()
     }
@@ -731,7 +735,11 @@ fun YouHubSheet(onClose: () -> Unit, scope: CoroutineScope) {
         containerColor = c.bgRaised,
         shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg),
     ) {
-        LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = FmSpace.x6)) {
+        if (page == HubPage.WhatsNew) {
+            WhatsNewPage(onBack = { page = HubPage.Main })
+        } else if (page == HubPage.Diagnostics) {
+            DiagnosticsSendPage(onBack = { page = HubPage.Main }, onSent = onClose)
+        } else LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = FmSpace.x6)) {
             if (status.message != null) {
                 item(key = "hub-status") { FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x4)) }
             }
@@ -776,9 +784,14 @@ fun YouHubSheet(onClose: () -> Unit, scope: CoroutineScope) {
                     ResultRow(item.icon, item.title, "") { activate(item) }
                 }
             }
+            item(key = "hub-version") {
+                HubVersionRow(onWhatsNew = { page = HubPage.WhatsNew }, onDiagnostics = { page = HubPage.Diagnostics })
+            }
         }
     }
 }
+
+private enum class HubPage { Main, WhatsNew, Diagnostics }
 
 class ShellMenuEntry(
     val id: String,

@@ -25,12 +25,15 @@ MIN_VOTERS = 3
 DRAIN_MARGIN = 15
 LEADER_TIMEOUT = 120
 REMOVE_TIMEOUT = 120
+PROMOTE_TIMEOUT = 300
 NAME_RE = re.compile(r"n[0-9]{1,2}")
 CORE_LABEL_RE = re.compile(r"fmnext-core-[0-9]{1,2}")
 WG_KEY_RE = re.compile(r"[A-Za-z0-9+/]{43}=")
 WG_PUBKEY = "wg show wg0 public-key"
 WG_PEERS = "wg show wg0 peers"
 REMOVE_BODY = "/tmp/fmnext-remove-core.json"
+EXECUTE_BODY = "/tmp/fmnext-remove-core-sql.json"
+RETIRE_MEMBER_SQL = "DELETE FROM cluster_members WHERE node_id=?"
 STOP_UNITS = (
     "forkmesh-app.service", "forkmesh-mirror-node.service", "caddy.service",
     "fmnext-certsync.service", "fmnext-cert-sync.timer", "fmnext-cert-sync.service",
@@ -41,6 +44,7 @@ RQLITE_UNIT = "rqlite.service"
 
 STEPS = (
     ("preflight", "Preflight: the node, rqlite quorum after removal, leadership", 5),
+    ("promote", "Promote a non-voter core so 3 or more voters remain", 120),
     ("leader", "Hand rqlite leadership to another voter if this core leads", 15),
     ("drain", "Drain it from DNS and wait out the record TTL", 75),
     ("stop", "Stop the app, mirror daemon, Caddy and certsync on it", 15),
@@ -89,18 +93,39 @@ def provider_client(name, region=None):
     return next_fleet.Vultr.from_config()
 
 
+def core_order(name):
+    digits = re.sub(r"[^0-9]", "", str(name))
+    return (int(digits) if digits else 0, str(name))
+
+
+def promotion_candidate(nodes, target_id, cores_after):
+    voters = [str(n.get("id")) for n in nodes if n.get("voter", True)]
+    if target_id not in voters:
+        return ""
+    after = [v for v in voters if v != target_id]
+    if len(after) >= MIN_VOTERS and len(after) % 2 == 1:
+        return ""
+    cores = {str(c) for c in cores_after}
+    spare = sorted((str(n.get("id")) for n in nodes
+                    if not n.get("voter", True) and n.get("reachable")
+                    and str(n.get("id")) in cores and str(n.get("id")) != target_id),
+                   key=core_order)
+    return spare[0] if spare else ""
+
+
 def quorum_report(nodes, target_id, cores_after):
     voters = sorted(str(n.get("id")) for n in nodes if n.get("voter", True))
     member = any(str(n.get("id")) == target_id for n in nodes)
     target_voter = target_id in voters
-    after = [v for v in voters if v != target_id]
-    healthy = sorted(str(n.get("id")) for n in nodes
-                     if n.get("voter", True) and n.get("reachable")
-                     and str(n.get("id")) != target_id)
+    promote = promotion_candidate(nodes, target_id, cores_after)
+    after = sorted([v for v in voters if v != target_id] + ([promote] if promote else []))
+    healthy = sorted([str(n.get("id")) for n in nodes
+                      if n.get("voter", True) and n.get("reachable")
+                      and str(n.get("id")) != target_id] + ([promote] if promote else []))
     leaders = [str(n.get("id")) for n in nodes if n.get("leader")]
     report = {"voters_before": voters, "voters_after": after,
               "healthy_after": healthy, "leader": leaders[0] if leaders else "",
-              "member": member, "target_voter": target_voter,
+              "member": member, "target_voter": target_voter, "promote": promote,
               "cores_after": sorted(cores_after), "allowed": True, "blocker": "",
               "warnings": []}
     problems = []
@@ -264,7 +289,7 @@ class RemoveBackend:
                       "voters_before": plan["configured_voters"],
                       "voters_after": [v for v in plan["configured_voters"]
                                        if v != rqlite_id],
-                      "healthy_after": [], "leader": "", "member": True,
+                      "healthy_after": [], "leader": "", "member": True, "promote": "",
                       "target_voter": plan["voter"], "cores_after": sorted(cores_after),
                       "warnings": []}
         plan.update(report)
@@ -289,8 +314,105 @@ class RemoveBackend:
                              "cannot be checked over SSH" % job.name)
         self.verify(job)
         job.state.set(leader=fresh.get("leader"), is_leader=fresh.get("is_leader"),
-                      healthy_after=fresh.get("healthy_after"))
+                      healthy_after=fresh.get("healthy_after"),
+                      voters_after=fresh.get("voters_after"),
+                      promote=fresh.get("promote") or "")
         job.say(quorum_text(fresh))
+
+    def step_promote(self, job):
+        import next_dns
+        import next_fleet
+        import next_ids
+        promote = job.state.get("promote") or ""
+        if not promote:
+            job.say("no non-voter needs promoting: %s" % promote_note(job))
+            return
+        if not job.execute:
+            job.say("[dry-run] %s: drain, rqlite remove it as a non-voter, re-render "
+                    "it as a voter (-join the voters), restart rqlite, wait until "
+                    "/nodes lists it as a reachable voter, health gate, undrain"
+                    % promote)
+            return
+        self.set_voter_in_files(job, promote)
+        fleet = self.fleet(job)
+        node = next(n for n in fleet.get("nodes") or [] if n["name"] == promote)
+        ip = node["public_ipv4"]
+        if self.live_voter(fleet, promote):
+            job.state.set(promoted=promote)
+            job.say("%s is already an rqlite voter" % promote)
+            return
+        extra = ["--fleet", str(job.fleet_file)]
+        identity = self.identity(job, fleet)
+        identity.verify_target(promote, ip)
+        if next_dns.main(extra + ["drain", promote, "--execute"]) != 0:
+            raise ToolError("%s: drain refused before its promotion" % promote)
+        nodes = self.cluster(fleet, promote)
+        if any(str(n.get("id")) == promote for n in nodes):
+            peer = self.voter_peer(fleet, nodes, promote)
+            body = json.dumps({"id": promote}).encode()
+            job.runner.step("rqlite remove %s as a non-voter (via %s)" % (
+                promote, peer["name"]),
+                lambda: self.ssh.run(peer["public_ipv4"], remove_script(),
+                                     input_bytes=body, timeout=60))
+        next_fleet.install(fleet, promote, self.ssh, job.runner, ("files",),
+                           vultr=identity, replacement=True)
+        next_ids.push_expectation(fleet, self.ssh, job.runner, promote,
+                                  rescan=next_ids.WANTS,
+                                  allow=("listeners", "processes"),
+                                  reason="next_fleet remove-core promote")
+        job.runner.step("%s: restart rqlite to join as a voter" % promote,
+                        lambda: self.ssh.run(ip, "systemctl restart %s" % RQLITE_UNIT,
+                                             timeout=120))
+        if not common.wait_for(lambda: self.live_voter(fleet, promote),
+                               PROMOTE_TIMEOUT, interval=3, sleep=self.sleep,
+                               clock=self.clock):
+            raise ToolError("%s is not a reachable rqlite voter after %d s; it is "
+                            "out of DNS" % (promote, PROMOTE_TIMEOUT))
+        deadline = self.clock() + next_fleet.ROLL_HEALTH_SECONDS
+        while True:
+            ok, note = next_fleet.roll_healthy(self.ssh, ip)
+            if ok or self.clock() >= deadline:
+                break
+            self.sleep(3)
+        if not ok:
+            raise ToolError("%s is a voter but unhealthy (%s); it is out of DNS"
+                            % (promote, note))
+        next_dns.main(extra + ["undrain", promote, "--execute"])
+        job.state.set(promoted=promote)
+        job.say("%s is an rqlite voter and back in DNS" % promote)
+
+    def set_voter_in_files(self, job, name):
+        import next_fleet
+        current = job.fleet_file.read_text("utf-8")
+        text = next_fleet.promote_core_block(current, name)
+        if text != current:
+            job.fleet_file.write_text(text, "utf-8")
+            job.say("%s: %s is a voter" % (job.fleet_file, name))
+        path = next_add_core.fleet_state_path()
+        state = common.load_json(path, {}) or {}
+        nonvoters = [n for n in state.get("rqlite_nonvoters") or [] if n != name]
+        if nonvoters != list(state.get("rqlite_nonvoters") or []):
+            state["rqlite_nonvoters"] = nonvoters
+            common.save_json(path, state)
+            job.say("%s: %s is no longer a non-voter" % (path, name))
+
+    def live_voter(self, fleet, name):
+        try:
+            nodes = self.cluster(fleet, name)
+        except ToolError:
+            return False
+        leaders = [n for n in nodes if n.get("leader")]
+        return bool(leaders) and any(
+            str(n.get("id")) == name and n.get("voter", True) and n.get("reachable")
+            for n in nodes)
+
+    def voter_peer(self, fleet, nodes, exclude):
+        voters = {str(n.get("id")) for n in nodes
+                  if n.get("voter", True) and n.get("reachable")}
+        for node in fleet.get("nodes") or []:
+            if node["name"] != exclude and str(node.get("rqlite_id") or node["name"]) in voters:
+                return node
+        raise ToolError("no reachable rqlite voter to send the change through")
 
     def step_leader(self, job):
         fleet = self.fleet(job)
@@ -388,6 +510,12 @@ class RemoveBackend:
                                                  input_bytes=body, timeout=60))
         else:
             job.say("%s is no longer in the rqlite cluster" % target)
+        retire = self.healthy_peer(fleet, job)
+        sql = json.dumps([[RETIRE_MEMBER_SQL, job.name]]).encode()
+        job.runner.step("retire %s's cluster_members row (via %s), so /status drops "
+                        "its core row now" % (job.name, retire["name"]),
+                        lambda: self.ssh.run(retire["public_ipv4"], execute_script(),
+                                             input_bytes=sql, timeout=60))
 
         def gone():
             try:
@@ -515,14 +643,19 @@ class RemoveBackend:
             return
         base_text = self.git.show(self.git.rev(MAIN_REF), FLEET_PATH)
         text = next_fleet.remove_core_block(base_text, job.name)
+        promoted = job.state.get("promoted") or ""
+        if promoted:
+            text = next_fleet.promote_core_block(text, promoted)
         if text == base_text:
             job.say("%s on main has no %s block; nothing to commit" % (FLEET_PATH,
                                                                        job.name))
             job.state.set(branch="", commit="")
             return
         message = ("Remove core node %s (%s) from deploy/fleet.toml\n\n"
-                   "Removed by tools/next_fleet.py remove-core.\n"
-                   % (job.name, job.state.get("label")))
+                   "Removed by tools/next_fleet.py remove-core.%s\n"
+                   % (job.name, job.state.get("label"),
+                      " %s was promoted to an rqlite voter." % promoted
+                      if promoted else ""))
         commit, created = self.git.commit_file(branch, MAIN_REF, FLEET_PATH, text, message)
         job.state.set(branch=branch, commit=commit)
         job.say("%s %s on %s: merge it into main so autodeploy and roll leave %s out:\n"
@@ -577,6 +710,11 @@ class RemoveBackend:
             else:
                 notes.append("%s has left rqlite; finish the removal rather than "
                              "putting it back." % job.name)
+        if job.state.get("promote") and "promote" not in done \
+                and (job.state.get("failed") or {}).get("step") == "promote":
+            notes.append("%s may be out of DNS and out of rqlite while it rejoins as a "
+                         "voter. Re-run remove-core %s --execute to finish the "
+                         "promotion." % (job.state.get("promote"), job.name))
         if "fleet" in done and "peers" not in done:
             notes.append("deploy/fleet.toml no longer lists %s; some cores may still "
                          "have its WireGuard peer until the peers step finishes."
@@ -604,6 +742,17 @@ class RemoveBackend:
                     "healthy majority" % (MIN_CORES, MIN_VOTERS),
                     "state file: %s (a re-run resumes from the failed step)"
                     % state_path(name)]
+        if step == "promote":
+            promote = job.state.get("promote") or ""
+            if not promote:
+                return ["nothing to promote: %s" % promote_note(job)]
+            return ["%s (a non-voter core) becomes a voter first, so the voters after "
+                    "the removal are %s" % (promote, ", ".join(
+                        job.state.get("voters_after") or [])),
+                    "%s: drain, rqlite remove it as a non-voter, re-render it as a "
+                    "voter (-join the voters; fleet.toml drops rqlite_voter = false), "
+                    "restart rqlite, wait until it is a reachable voter, health gate, "
+                    "undrain" % promote]
         if step == "leader":
             return ["%s: POST /leader (step down), wait for another voter to lead"
                     % name if job.state.get("is_leader") else
@@ -622,7 +771,9 @@ class RemoveBackend:
             return ["%s: systemctl disable --now %s" % (name, RQLITE_UNIT),
                     "a healthy peer: DELETE /remove {\"id\": \"%s\"}; wait until "
                     "/nodes no longer lists it and a leader is up" % (
-                        job.state.get("rqlite_id") or name)]
+                        job.state.get("rqlite_id") or name),
+                    "a healthy peer: delete its cluster_members row, so its /status "
+                    "core row goes at once (the other rows keep their history)"]
         if step == "fleet":
             return ["%s: remove the %s [[nodes]] block; fleet-state.json: drop its "
                     "WireGuard key and rqlite_nonvoters entry" % (job.fleet_file, name)]
@@ -669,9 +820,24 @@ def stop_script(units):
             "echo \"still active: $unit\" >&2; exit 1; fi; done" % (names, names))
 
 
+def execute_script():
+    return "cat >%s\n%s\nstatus=$?\nrm -f %s\nexit $status" % (
+        EXECUTE_BODY, common.rqlite_curl("/db/execute", "POST", EXECUTE_BODY),
+        EXECUTE_BODY)
+
+
 def remove_script():
     return "cat >%s\n%s\nstatus=$?\nrm -f %s\nexit $status" % (
         REMOVE_BODY, common.rqlite_curl("/remove", "DELETE", REMOVE_BODY), REMOVE_BODY)
+
+
+def promote_note(job):
+    if not job.state.get("voter", True):
+        return "%s is a non-voter" % job.name
+    after = job.state.get("voters_after") or []
+    if len(after) >= MIN_VOTERS and len(after) % 2 == 1:
+        return "the voters left stay odd and at least %d" % MIN_VOTERS
+    return "no reachable non-voter core to promote (add a core first)"
 
 
 def quorum_text(plan):
@@ -684,6 +850,8 @@ def quorum_text(plan):
         plan.get("leader") or "unknown")
     if not plan.get("voter", True):
         lines += "; %s is a non-voter" % plan.get("name")
+    if plan.get("promote"):
+        lines += "; %s is promoted from non-voter to voter first" % plan["promote"]
     return lines
 
 
