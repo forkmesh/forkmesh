@@ -199,6 +199,9 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
     public var settings: [PackageSetting]
     public var monitors: PackageMonitors
     public var places: [PackagePlace]
+    public var free: Bool
+    public var publisher: String
+    public var verified: Bool
 
     public init(
         id: String, market: String = "forkmesh", name: String, version: String = "", summary: String = "",
@@ -206,7 +209,8 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
         world: Bool = false, api: String = "", dataScope: PackageDataScope = .none, bundled: Bool = false,
         permissions: [PackagePermission] = [], screenshots: [PackageScreenshot] = [], defaultOn: Bool = false,
         installedBefore: String = "", accountSync: Bool = false, dependencies: [String] = [], settings: [PackageSetting] = [],
-        monitors: PackageMonitors = PackageMonitors(), places: [PackagePlace] = PackagePlace.allCases
+        monitors: PackageMonitors = PackageMonitors(), places: [PackagePlace] = PackagePlace.allCases, free: Bool = true,
+        publisher: String = "", verified: Bool = false
     ) {
         self.id = id
         self.market = market
@@ -231,6 +235,9 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
         self.settings = settings
         self.monitors = monitors
         self.places = PackagePlace.ordered(places)
+        self.free = free
+        self.publisher = publisher
+        self.verified = verified
     }
 
     public init?(json: JSONObject) {
@@ -255,7 +262,9 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
                 return PackagesText.isPackageId(dependency) && dependency != id ? dependency : nil
             },
             settings: json.maps("settings").prefix(20).compactMap(PackageSetting.init(json:)),
-            monitors: PackageMonitors(json: json.obj("monitors")), places: PackagePlace.list(json, "places"))
+            monitors: PackageMonitors(json: json.obj("monitors")), places: PackagePlace.list(json, "places"),
+            free: json.optBool("free") ?? true, publisher: PackagesText.bounded(json.str("publisher"), 80),
+            verified: json.bool("verified"))
         if name.isEmpty { name = id }
     }
 
@@ -284,15 +293,77 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
     public var installsPerOrganization: Bool { dataScope == .organization }
 
     public var hasSensitivePermissions: Bool { permissions.contains { $0.risk == "high" || $0.risk == "sensitive" } }
+
+    public func runs(on place: MarketRunsOn) -> Bool {
+        switch place {
+        case .any: return true
+        case .phone:
+            if case .native = phoneSurface { return true }
+            return false
+        case .web: return !webRoute.isEmpty
+        case .desktop: return desktop
+        case .world: return world
+        }
+    }
 }
 
 public struct PackageCounts: Equatable, Sendable {
     public var installs: Int
     public var downloads: Int
+    public var accounts: Int
+    public var organizations: Int
 
-    public init(installs: Int = 0, downloads: Int = 0) {
+    public init(installs: Int = 0, downloads: Int = 0, accounts: Int = 0, organizations: Int = 0) {
         self.installs = installs
         self.downloads = downloads
+        self.accounts = accounts
+        self.organizations = organizations
+    }
+
+    public init(json: JSONObject) {
+        self.init(
+            installs: max(0, json.int("installs")), downloads: max(0, json.int("downloads")),
+            accounts: max(0, json.int("accounts")), organizations: max(0, json.int("organizations")))
+    }
+
+    public var total: Int { installs + accounts + organizations }
+}
+
+public struct PackageUsage: Equatable, Sendable {
+    public var views: Int
+    public var opens: Int
+    public var people: Int
+
+    public init(views: Int = 0, opens: Int = 0, people: Int = 0) {
+        self.views = views
+        self.opens = opens
+        self.people = people
+    }
+
+    public init(json: JSONObject) {
+        self.init(views: max(0, json.int("views")), opens: max(0, json.int("opens")), people: max(0, json.int("people")))
+    }
+}
+
+public struct MarketSummary: Equatable, Sendable {
+    public var ratings: [String: RatingSummary]
+    public var usage: [String: PackageUsage]
+
+    public init(ratings: [String: RatingSummary] = [:], usage: [String: PackageUsage] = [:]) {
+        self.ratings = ratings
+        self.usage = usage
+    }
+
+    public init(json: JSONObject) {
+        var ratings: [String: RatingSummary] = [:]
+        for (key, value) in json.obj("packages") where PackagesText.isPackageId(key) {
+            ratings[key] = RatingSummary(json: value.objectOrEmpty)
+        }
+        var usage: [String: PackageUsage] = [:]
+        for (key, value) in json.obj("usage") where PackagesText.isPackageId(key) {
+            usage[key] = PackageUsage(json: value.objectOrEmpty)
+        }
+        self.init(ratings: ratings, usage: usage)
     }
 }
 
@@ -419,17 +490,161 @@ public enum MarketFilter: String, CaseIterable, Sendable {
     }
 }
 
+public enum MarketSort: String, CaseIterable, Sendable {
+    case featured
+    case name
+    case rating
+    case installs
+    case downloads
+    case used
+    case opened
+    case installedFirst = "installed-first"
+
+    public var title: String {
+        switch self {
+        case .featured: return "Featured"
+        case .name: return "Name A–Z"
+        case .rating: return "Top rated"
+        case .installs: return "Most installed"
+        case .downloads: return "Most downloaded"
+        case .used: return "Most used"
+        case .opened: return "Most opened"
+        case .installedFirst: return "Installed first"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .featured: return "sparkles"
+        case .name: return "textformat"
+        case .rating: return "star"
+        case .installs: return "arrow.down.app"
+        case .downloads: return "arrow.down.circle"
+        case .used: return "person.2"
+        case .opened: return "hand.tap"
+        case .installedFirst: return "checkmark.circle"
+        }
+    }
+}
+
+public enum MarketRunsOn: String, CaseIterable, Sendable {
+    case any
+    case phone
+    case web
+    case desktop
+    case world
+
+    public var title: String {
+        switch self {
+        case .any: return "Anywhere"
+        case .phone: return "This phone"
+        case .web: return "Web"
+        case .desktop: return "Desktop"
+        case .world: return "World"
+        }
+    }
+}
+
+public enum MarketPrice: String, CaseIterable, Sendable {
+    case any
+    case free
+    case paid
+
+    public var title: String {
+        switch self {
+        case .any: return "Any price"
+        case .free: return "Free"
+        case .paid: return "Paid"
+        }
+    }
+}
+
+public enum MarketInstallScope: String, CaseIterable, Sendable {
+    case account
+    case organization
+    case device
+    case desktop
+
+    public var title: String {
+        switch self {
+        case .account: return "Your account"
+        case .organization: return "An organization"
+        case .device: return "This phone only"
+        case .desktop: return "Your desktop"
+        }
+    }
+}
+
+public struct MarketFilters: Equatable, Sendable {
+    public var category: String?
+    public var kind: String?
+    public var runsOn: MarketRunsOn
+    public var price: MarketPrice
+    public var scope: MarketInstallScope?
+    public var publisher: String?
+    public var verifiedOnly: Bool
+    public var ratedOnly: Bool
+
+    public init(
+        category: String? = nil, kind: String? = nil, runsOn: MarketRunsOn = .any, price: MarketPrice = .any,
+        scope: MarketInstallScope? = nil, publisher: String? = nil, verifiedOnly: Bool = false, ratedOnly: Bool = false
+    ) {
+        self.category = category
+        self.kind = kind
+        self.runsOn = runsOn
+        self.price = price
+        self.scope = scope
+        self.publisher = publisher
+        self.verifiedOnly = verifiedOnly
+        self.ratedOnly = ratedOnly
+    }
+
+    public var activeCount: Int {
+        [category != nil, kind != nil, runsOn != .any, price != .any, scope != nil, publisher != nil, verifiedOnly, ratedOnly]
+            .filter { $0 }.count
+    }
+}
+
+public enum MarketCardAction: Equatable, Sendable {
+    case open
+    case installed
+    case installAccount
+    case installDevice
+    case installPhone
+    case installOrganization(String)
+    case chooseOrganization([String])
+    case createOrganization
+    case askAdmin
+    case signIn
+    case desktop
+    case busy
+}
+
 public enum PackagesText {
-    public static func isPackageId(_ value: String) -> Bool {
-        guard let first = value.unicodeScalars.first, value.count <= 63, CharacterSet.lowercaseLetters.contains(first)
+    static func isSlug(_ value: String, limit: Int) -> Bool {
+        guard let first = value.unicodeScalars.first, value.count <= limit, CharacterSet.lowercaseLetters.contains(first)
         else { return false }
         return value.unicodeScalars.allSatisfy {
             ($0.value >= 97 && $0.value <= 122) || ($0.value >= 48 && $0.value <= 57) || $0 == "-"
         }
     }
 
+    public static func isPackageId(_ value: String) -> Bool {
+        guard value.count <= 96 else { return false }
+        if !value.contains(".") { return isSlug(value, limit: 96) }
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard let head = parts.first, isSlug(String(head), limit: 96) else { return false }
+        return parts.allSatisfy { (part: Substring) -> Bool in
+            guard let first = part.first, let last = part.last else { return false }
+            return first != "-" && last != "-" && !part.contains("--")
+                && part.unicodeScalars.allSatisfy {
+                    ($0.value >= 97 && $0.value <= 122) || ($0.value >= 48 && $0.value <= 57) || $0 == "-"
+                }
+        }
+    }
+
     public static func isOrgName(_ value: String) -> Bool {
-        isPackageId(value) && !value.hasSuffix("-")
+        isSlug(value, limit: 63) && !value.hasSuffix("-")
     }
 
     public static func isHexId(_ value: String) -> Bool {

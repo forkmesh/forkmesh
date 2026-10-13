@@ -7,10 +7,13 @@ import XCTest
 @testable import FMPackages
 
 final class MarketTests: XCTestCase {
-    func packageJSON(_ id: String, scope: String = "", web: String = "", category: String = "Productivity") -> JSONValue {
+    func packageJSON(
+        _ id: String, scope: String = "", web: String = "", category: String = "Productivity", defaultOn: Bool = false
+    ) -> JSONValue {
         .object([
             "id": .string(id), "name": .string(id.uppercased()), "version": "1.0.0", "summary": "Does things",
             "category": .string(category), "dataScope": .string(scope), "bundled": .bool(scope != "organization"),
+            "default": .bool(defaultOn),
             "surfaces": .object(["desktop": true, "web": .string(web), "worker": true]),
             "permissions": [["id": "organization.crm.read", "label": "Read", "risk": "sensitive"]],
         ])
@@ -69,7 +72,7 @@ final class MarketTests: XCTestCase {
         let transport = FakePackagesTransport()
         transport.on("GET", "/api/market/packages", [
             "packages": [
-                packageJSON("crm", scope: "organization"), packageJSON("vault", scope: "account", category: "Security"),
+                packageJSON("crm", scope: "organization"), packageJSON("vault", scope: "account", category: "Security", defaultOn: true),
                 packageJSON("marketing", scope: "organization"),
             ],
         ])

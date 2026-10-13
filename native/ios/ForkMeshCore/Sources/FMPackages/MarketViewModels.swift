@@ -4,27 +4,66 @@ import Observation
 
 @MainActor
 @Observable
+public final class OrganizationPackagesLedger {
+    public static let shared = OrganizationPackagesLedger()
+
+    public private(set) var states: [OrgPackageState] = []
+    public private(set) var loaded = false
+
+    public init() {}
+
+    public func replace(_ states: [OrgPackageState]) {
+        self.states = states
+        loaded = true
+    }
+
+    public func update(_ state: OrgPackageState) {
+        if let index = states.firstIndex(where: { $0.organization == state.organization }) {
+            states[index] = state
+        } else {
+            states.append(state)
+        }
+    }
+
+    public func reset() {
+        states = []
+        loaded = false
+    }
+}
+
+@MainActor
+@Observable
 public final class MarketModel {
     public private(set) var packages: [MarketPackage] = []
     public private(set) var counts: [String: PackageCounts] = [:]
     public private(set) var ratings: [String: RatingSummary] = [:]
-    public private(set) var organizations: [OrgPackageState] = []
+    public private(set) var usage: [String: PackageUsage] = [:]
     public private(set) var loading = false
     public private(set) var errorText = ""
     public private(set) var partialError = ""
     public private(set) var installing: Set<String> = []
+    public private(set) var installErrors: [String: String] = [:]
     public private(set) var removed: PackageRemoval?
     public var filter: MarketFilter
+    public var sort: MarketSort = .featured
+    public var filters = MarketFilters()
     public var query = ""
 
     @ObservationIgnored private let client: PackagesClient
     @ObservationIgnored public let account: AccountPackagesStore?
+    @ObservationIgnored public let ledger: OrganizationPackagesLedger
 
-    public init(client: PackagesClient, filter: MarketFilter = .all, account: AccountPackagesStore? = nil) {
+    public init(
+        client: PackagesClient, filter: MarketFilter = .all, account: AccountPackagesStore? = nil,
+        ledger: OrganizationPackagesLedger? = nil
+    ) {
         self.client = client
         self.filter = filter
         self.account = account
+        self.ledger = ledger ?? OrganizationPackagesLedger()
     }
+
+    public var organizations: [OrgPackageState] { ledger.states }
 
     public func refresh(organizations names: [String]) async {
         loading = true
@@ -40,22 +79,95 @@ public final class MarketModel {
         await account?.refresh()
         var problems: [String] = []
         if let counts = try? await client.installCounts() { self.counts = counts } else { problems.append("install counts") }
-        if let ratings = try? await client.ratingSummaries() { self.ratings = ratings } else { problems.append("ratings") }
-        var states: [OrgPackageState] = []
-        for name in names.filter(PackagesText.isOrgName).prefix(20) {
-            if let state = try? await client.organizationPackages(name) { states.append(state) }
+        if let summary = try? await client.marketSummary() {
+            ratings = summary.ratings
+            usage = summary.usage
+        } else {
+            problems.append("ratings")
         }
-        organizations = states
+        var states: [OrgPackageState] = []
+        var failed = false
+        for name in names.filter(PackagesText.isOrgName).prefix(20) {
+            if let state = try? await client.organizationPackages(name) {
+                states.append(state)
+            } else if let known = ledger.states.first(where: { $0.organization == name }) {
+                states.append(known)
+                failed = true
+            } else {
+                failed = true
+            }
+        }
+        ledger.replace(states)
+        if failed { problems.append("your organizations' packages") }
         partialError = problems.isEmpty ? "" : "Couldn't load " + problems.joined(separator: " and ") + "."
     }
 
+    public func installScope(_ package: MarketPackage) -> MarketInstallScope {
+        if package.accountSync { return .account }
+        if package.installsPerOrganization { return .organization }
+        if PhonePackages.deviceSwitched.contains(package.id) { return .device }
+        return .desktop
+    }
+
     public func isInstalled(_ package: MarketPackage) -> Bool {
-        if package.accountSync { return account?.isInstalled(package.id) ?? package.defaultOn }
+        if package.accountSync {
+            return (account?.isInstalled(package.id) ?? package.defaultOn) && !PhonePackages.isRemoved(package.id)
+        }
+        if let on = PhonePackages.isOn(package.id) { return on }
         if PhonePackages.isRemoved(package.id) { return false }
         switch package.dataScope {
         case .organization: return organizations.contains { $0.isInstalled(package.id) }
-        case .account, .none: return package.bundled && (PhonePackages.isOn(package.id) ?? true)
+        case .account, .none: return package.defaultOn
         }
+    }
+
+    public func cardAction(_ package: MarketPackage, signedIn: Bool) -> MarketCardAction {
+        if isBusy(package) { return .busy }
+        if isInstalled(package) {
+            return PackageRoutes.route(for: package) != nil || !package.webRoute.isEmpty ? .open : .installed
+        }
+        switch installScope(package) {
+        case .account:
+            if account?.isInstalled(package.id) == true && PhonePackages.isRemoved(package.id) { return .installPhone }
+            return signedIn ? .installAccount : .signIn
+        case .device:
+            return .installDevice
+        case .organization:
+            if PhonePackages.isRemoved(package.id) && organizations.contains(where: { $0.isInstalled(package.id) }) {
+                return .installPhone
+            }
+            if !signedIn { return .signIn }
+            if organizations.isEmpty { return .createOrganization }
+            let targets = installTargets(package).filter { !$0.isInstalled(package.id) }.map(\.organization)
+            if targets.isEmpty { return .askAdmin }
+            return targets.count == 1 ? .installOrganization(targets[0]) : .chooseOrganization(targets)
+        case .desktop:
+            return .desktop
+        }
+    }
+
+    public func isBusy(_ package: MarketPackage) -> Bool {
+        account?.isBusy(package.id) == true || installing.contains { $0.hasSuffix("/" + package.id) }
+    }
+
+    @discardableResult
+    public func installForAccount(_ package: MarketPackage) async -> Bool {
+        guard let account else {
+            installErrors[package.id] = PackagesError.sentence("sign_in_required")
+            return false
+        }
+        PhonePackages.setRemoved(package.id, removed: false)
+        if account.isInstalled(package.id) {
+            installErrors[package.id] = nil
+            return true
+        }
+        let changed = await account.install(package.id)
+        installErrors[package.id] = changed == nil ? (account.errorText.isEmpty ? nil : account.errorText) : nil
+        return changed != nil
+    }
+
+    public func dismissInstallError(_ package: MarketPackage) {
+        installErrors[package.id] = nil
     }
 
     public func marketParent(of package: MarketPackage) -> String? {
@@ -68,8 +180,38 @@ public final class MarketModel {
         packages.filter { marketParent(of: $0) == package.id }
     }
 
+    public var categories: [String] {
+        Array(Set(packages.map { $0.category.isEmpty ? "Other" : $0.category })).sorted()
+    }
+
+    public var kinds: [String] {
+        Array(Set(packages.map(\.type).filter { !$0.isEmpty })).sorted()
+    }
+
+    public var publishers: [String] {
+        Array(Set(packages.map(\.publisher).filter { !$0.isEmpty })).sorted()
+    }
+
+    public var hasPaid: Bool { packages.contains { !$0.free } }
+
+    public func matchesFilters(_ package: MarketPackage) -> Bool {
+        if let category = filters.category, (package.category.isEmpty ? "Other" : package.category) != category { return false }
+        if let kind = filters.kind, package.type != kind { return false }
+        if !package.runs(on: filters.runsOn) { return false }
+        switch filters.price {
+        case .any: break
+        case .free: if !package.free { return false }
+        case .paid: if package.free { return false }
+        }
+        if let scope = filters.scope, installScope(package) != scope { return false }
+        if let publisher = filters.publisher, package.publisher != publisher { return false }
+        if filters.verifiedOnly && !package.verified { return false }
+        if filters.ratedOnly && (ratings[package.id]?.count ?? 0) == 0 { return false }
+        return true
+    }
+
     public var visible: [MarketPackage] {
-        packages.filter { package in
+        let rows = packages.filter { package in
             if marketParent(of: package) != nil { return false }
             let installed = isInstalled(package)
             switch filter {
@@ -77,9 +219,41 @@ public final class MarketModel {
             case .installed: if !installed { return false }
             case .notInstalled: if installed { return false }
             }
+            if !matchesFilters(package) { return false }
             return ([package] + nested(in: package)).contains {
-                PackagesText.matches(query, $0.name, $0.summary, $0.category)
+                PackagesText.matches(query, $0.name, $0.summary, $0.category, $0.publisher)
             }
+        }
+        return sorted(rows)
+    }
+
+    public func sorted(_ rows: [MarketPackage]) -> [MarketPackage] {
+        let order: [String: Int] = Dictionary(packages.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func key(_ package: MarketPackage) -> Double {
+            switch sort {
+            case .featured, .name: return 0
+            case .rating:
+                let rating = ratings[package.id] ?? RatingSummary()
+                return rating.count == 0 ? -1 : rating.average * 100_000 + Double(min(rating.count, 99_999))
+            case .installs: return Double(counts[package.id]?.total ?? 0)
+            case .downloads: return Double(counts[package.id]?.downloads ?? 0)
+            case .used:
+                let used = usage[package.id] ?? PackageUsage()
+                return Double(used.people) * 1_000_000 + Double(min(used.opens, 999_999))
+            case .opened: return Double(usage[package.id]?.opens ?? 0)
+            case .installedFirst: return isInstalled(package) ? 1 : 0
+            }
+        }
+        return rows.sorted { (left: MarketPackage, right: MarketPackage) -> Bool in
+            if sort == .name {
+                let compared = left.name.localizedCaseInsensitiveCompare(right.name)
+                if compared != .orderedSame { return compared == .orderedAscending }
+            } else {
+                let a = key(left)
+                let b = key(right)
+                if a != b { return a > b }
+            }
+            return (order[left.id] ?? 0) < (order[right.id] ?? 0)
         }
     }
 
@@ -105,15 +279,14 @@ public final class MarketModel {
         defer { installing.remove(key) }
         do {
             let state = try await client.install(package.id, organization: organization)
-            if let index = organizations.firstIndex(where: { $0.organization == organization }) {
-                organizations[index] = state
-            } else {
-                organizations.append(state)
-            }
+            ledger.update(state)
+            PhonePackages.setRemoved(package.id, removed: false)
             errorText = ""
+            installErrors[package.id] = nil
             return true
         } catch {
             errorText = PackagesError.describe(error)
+            installErrors[package.id] = errorText
             return false
         }
     }
@@ -134,8 +307,8 @@ public final class MarketModel {
             errorText = PackagesError.describe(error)
             return false
         }
-        if let index = organizations.firstIndex(where: { $0.organization == organization }) {
-            organizations[index] = organizations[index].removing(package.id)
+        if let state = organizations.first(where: { $0.organization == organization }) {
+            ledger.update(state.removing(package.id))
         }
         errorText = ""
         return true
