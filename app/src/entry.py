@@ -43005,6 +43005,41 @@ async def package_install_counts(env):
     return counts
 
 
+PACKAGE_MEMBER_INSTALL_SQL = (
+    ("accounts",
+     "SELECT package AS pkg, COUNT(*) AS n FROM account_package_installs "
+     "WHERE installed=1 GROUP BY package"),
+    ("organizations",
+     "SELECT plugin AS pkg, COUNT(*) AS n FROM org_plugin_installs "
+     "GROUP BY plugin"),
+)
+
+
+def _merge_member_installs(counts, members):
+    first = counts.setdefault("forkmesh", {})
+    for field, rows in members.items():
+        for row in rows or []:
+            pkg = _marketplace_identifier(row.get("pkg"))
+            if not pkg:
+                continue
+            entry = first.setdefault(pkg, {"installs": 0, "downloads": 0})
+            entry[field] = max(0, int(row.get("n") or 0))
+    for entry in first.values():
+        for field, _ in PACKAGE_MEMBER_INSTALL_SQL:
+            entry.setdefault(field, 0)
+    return counts
+
+
+async def package_member_installs(env):
+    members = {}
+    for field, sql in PACKAGE_MEMBER_INSTALL_SQL:
+        try:
+            members[field] = await d1_all(env, sql)
+        except Exception:
+            members[field] = []
+    return members
+
+
 async def package_installs_handler(env, request):
     """Marketplace install counts: GET reads them, POST reports them.
 
@@ -43016,7 +43051,9 @@ async def package_installs_handler(env, request):
     method = method_name(request)
     if method == "GET":
         await ensure_schema(env)
-        counts = await package_install_counts(env)
+        counts = _merge_member_installs(
+            await package_install_counts(env),
+            await package_member_installs(env))
         return json_response({
             "ok": True,
             "packages": counts.get("forkmesh", {}),
@@ -43024,8 +43061,9 @@ async def package_installs_handler(env, request):
             "observedAt": int(Date.now()),
             "privacy": (
                 "Anonymous package counts only: a rotating per-client id and "
-                "the package id. No accounts, IP addresses, or hostnames are "
-                "stored or exposed."
+                "the package id, plus how many accounts and organizations have "
+                "each package installed, as totals. "
+                "No accounts, IP addresses, or hostnames are stored or exposed."
             ),
         }, cache_control="public, max-age=300",
            extra_headers={"x-content-type-options": "nosniff"})

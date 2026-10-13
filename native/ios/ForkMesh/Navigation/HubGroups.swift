@@ -20,6 +20,7 @@ final class HubPackageState {
         refreshing = false
         installed = []
         adReviewer = false
+        OrganizationPackagesLedger.shared.reset()
     }
 
     func refresh() async {
@@ -28,9 +29,15 @@ final class HubPackageState {
         refreshing = true
         defer { if started == epoch { refreshing = false } }
         var found: Set<String> = []
+        var states: [OrgPackageState] = []
+        var complete = true
         for name in await PackagesFeature.organizationNames().filter(PackagesText.isOrgName).prefix(20) {
             if started != epoch { return }
-            guard let state = try? await client.organizationPackages(name) else { continue }
+            guard let state = try? await client.organizationPackages(name) else {
+                complete = false
+                continue
+            }
+            states.append(state)
             for id in PackageRoutes.businessPackageIds where state.isInstalled(id) {
                 found.insert(id)
             }
@@ -39,6 +46,7 @@ final class HubPackageState {
         if started != epoch { return }
         installed = found
         adReviewer = reviewer
+        if complete { OrganizationPackagesLedger.shared.replace(states) }
         PackageGateSync.publish()
     }
 }

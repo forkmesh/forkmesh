@@ -34,18 +34,18 @@ public final class PackagesClient {
 
     public func installCounts() async throws -> [String: PackageCounts] {
         var out: [String: PackageCounts] = [:]
-        for (key, value) in try await call("GET", "/api/market/installs").obj("packages") {
-            out[key] = PackageCounts(installs: value.int("installs"), downloads: value.int("downloads"))
+        for (key, value) in try await call("GET", "/api/market/installs").obj("packages") where PackagesText.isPackageId(key) {
+            out[key] = PackageCounts(json: value.objectOrEmpty)
         }
         return out
     }
 
+    public func marketSummary() async throws -> MarketSummary {
+        MarketSummary(json: try await call("GET", "/api/market/reviews/summary"))
+    }
+
     public func ratingSummaries() async throws -> [String: RatingSummary] {
-        var out: [String: RatingSummary] = [:]
-        for (key, value) in try await call("GET", "/api/market/reviews/summary").obj("packages") {
-            out[key] = RatingSummary(json: value.objectOrEmpty)
-        }
-        return out
+        try await marketSummary().ratings
     }
 
     public func organizationPackages(_ organization: String) async throws -> OrgPackageState {

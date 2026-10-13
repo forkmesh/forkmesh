@@ -259,6 +259,38 @@ Market. On `/market`, `build_market_catalog.py` renders them between the
   (`MainWindow::installPackageSet`): `m_marketBatchInstall` holds back the
   per-package runtime sync, count report and shelf rebuild until the end.
 
+### Market numbers and fields for the phones (2026-10-13)
+
+The phone Markets show usage on every card and sort and filter by it, so the
+listing APIs carry a few more read-only fields. All are additive; older
+clients ignore them.
+
+- `GET /api/market/installs`: each `packages.<id>` row keeps `installs`
+  (desktops that report the package installed now) and `downloads` (their
+  cumulative installs), and adds `accounts` (accounts with an explicit
+  install row, `account_package_installs.installed = 1`) and
+  `organizations` (organizations that installed it, `org_plugin_installs`).
+  A package with only account or organization installs gets a row with
+  `installs` and `downloads` at 0. Both new numbers are counts per package,
+  never names, and are 0 when the table does not exist yet. Packages that are
+  on by default for every account are not counted in `accounts` until an
+  account changes them. The response stays cached for 5 minutes.
+  `entry.py`: `PACKAGE_MEMBER_INSTALL_SQL`, `package_member_installs`,
+  `_merge_member_installs`; tested in `app/tests/test_market_install_counts.py`.
+- `GET /api/market/packages`: every row adds `publisher` (the manifest's
+  `creator.displayName`, or its `handle`) and `verified` (`creator.verified`
+  is `true`). `free` was already there (`price.amount` is 0).
+- Usage needs no new field: `GET /api/market/reviews/summary` already returns
+  `usage.<id>` with `views`, `opens` and `people`.
+- The phones add a card's installs as `installs + accounts + organizations`.
+  Sorts: Featured, Name, Top rated, Most installed (that total), Most
+  downloaded, Most used (`people`, then `opens`), Most opened, Installed
+  first. The catalog has no release or update dates, so there is no Newest
+  sort. Filters: installed or not, category, kind (`type`), runs on
+  (`surfaces`), installs for (account, organization, this phone, desktop),
+  price (`free`), publisher, verified only, rated only. See
+  [../native/NAVIGATION.md](../native/NAVIGATION.md) §2.0.93.
+
 ## Packages
 
 | Package | Type | Surfaces | Default | Notes |

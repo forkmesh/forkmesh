@@ -193,6 +193,8 @@ def package_row(manifest, root=None, relative=""):
     install = install if isinstance(install, dict) else {}
     price = manifest.get("price")
     price = price if isinstance(price, dict) else {}
+    creator = manifest.get("creator")
+    creator = creator if isinstance(creator, dict) else {}
     row = {
         "id": package_id,
         "market": MARKET,
@@ -218,6 +220,8 @@ def package_row(manifest, root=None, relative=""):
         "settings": settings_rows(manifest),
         "monitors": _monitors(manifest),
         "free": not int(price.get("amount") or 0),
+        "publisher": _text(creator.get("displayName") or creator.get("handle"), 80),
+        "verified": creator.get("verified") is True,
         "permissions": _permissions(manifest),
         "screenshots": _screenshots(manifest, root, relative),
     }

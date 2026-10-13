@@ -2962,6 +2962,75 @@ background, and to draw to each other on the background.
   device from Linux: the app files were parsed only; the FMChat tests ran with
   `swift test`.
 
+### 2.0.93 The Market: search above the bar, every sort and filter, usage on flat cards (2026-10-13, iPhone)
+
+The user asked to move up what sat behind the navigation, for every sort and
+filter the data allows, usage numbers and a one-tap Install on each card,
+flat cards split by hairlines, and an installed state that matches reality.
+
+- **Behind the bar.** `MarketScreen` used `.searchable` with the default
+  placement. On iOS 26 an iPhone puts that field in the bottom toolbar, the
+  same strip the shell's floating Liquid Glass bar covers (§2.0.16), so the
+  search field sat under the capsule; the All / Installed / Not installed
+  picker was the first row of an inset `List` and scrolled away under the
+  top chrome. Search is now `.navigationBarDrawer(displayMode: .always)`,
+  under the title, and the sort and filter chips are the scroll view's top
+  `safeAreaInset` (`MarketControls`, on `.bar` material with a hairline), so
+  rows scroll under them. The page still takes the bar clearance from
+  `shellPageClearance()`, and the list ends with 16 pt of padding above it.
+  Not checked in the simulator: a cold Debug build on the office Mac did not
+  finish in the time available.
+- **Sorts** (`MarketSort`): Featured (catalog order), Name, Top rated, Most
+  installed, Most downloaded, Most used, Most opened, Installed first. Ties
+  keep catalog order. There are no release dates in the catalog, so no
+  Newest.
+- **Filters** (`MarketFilter` for installed or not, `MarketFilters` for the
+  rest): category, runs on (this phone, web, desktop, World), installs for
+  (account, organization, this phone, desktop), and under More: kind, price,
+  publisher, verified only, rated only. Clear resets them. Search also
+  matches the publisher.
+- **Cards** (`MarketCard`): no background or grouped inset; a full-width
+  `Divider` between rows. The preview is a fixed 112 pt 16:9 thumbnail (the
+  catalog's previews are all 16:9), or a placeholder of the same size, so
+  every row lines up. The stats line (`MarketStatsLine`) shows the rating,
+  installs (`installs + accounts + organizations` from
+  `/api/market/installs`, or downloads when there are none), and people who
+  use it (`usage.people` from `/api/market/reviews/summary`), and drops the
+  extra tags when the row is too narrow. The listing API changes are in
+  [../marketplace/README.md](../marketplace/README.md#market-numbers-and-fields-for-the-phones-2026-10-13).
+- **One-tap Install** (`MarketActionButton`, `MarketModel.cardAction`):
+  Open when installed with a phone route or web page, Installed otherwise;
+  Install for an account package (asks first only when dependencies come
+  along), a per-device package, a package hidden on this phone, or the one
+  organization you manage; a menu when you manage several; Get (to the
+  package page) when you must sign in, create an organization or ask an
+  admin; Desktop (or World for World-only packages) for packages only a
+  desktop installs, as on Android. A spinner replaces
+  the button while it works, and a failure shows in red under the card
+  (`MarketModel.installErrors`).
+- **Installed state.** Three causes, fixed in `MarketModel`:
+  1. A package that is neither account-synced nor per organization counted
+     as installed whenever it was `bundled`, and every catalog package is
+     bundled, so Winamp, the IDEs and the banner boards read Installed.
+     `bundled` only means the App host can activate it; the desktop installs
+     it on first run when `install.default` is true, so that is what the
+     phone now shows.
+  2. The list and the package page each kept their own copy of the
+     organizations' packages, so installing from the page left the list
+     stale. Both now read `OrganizationPackagesLedger.shared`, which
+     `HubPackageState.refresh` also fills and sign-out resets. An
+     organization that fails to load keeps its last state and says so.
+  3. An account package removed from the phone before it was account-synced
+     stayed hidden from Home (`settings.removedPackages`) while the Market
+     said Installed, and no screen could undo it. The Market now reads it as
+     not installed here; Install, or **Install on this phone** on its page,
+     clears the flag.
+  Also: package ids with dots (`nemotron-3.5-lightning`) were dropped by
+  `PackagesText.isPackageId` and are now kept.
+- Tested in `MarketListTests` (sorts, filters, card actions, each state
+  bug) and the updated `MarketTests`; all ForkMeshCore tests pass on Linux.
+  The app files were only parsed.
+
 ### 2.1 Behaviour of the tab row (WS3 builds it, WS8 checks it against this list)
 
 - **Selecting and reselecting.** Tapping a tab always shows its root

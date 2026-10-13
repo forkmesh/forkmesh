@@ -19,106 +19,521 @@ struct MarketDestination: View {
 struct MarketScreen: View {
     private let client: PackagesClient
     @State private var model: MarketModel
+    @State private var accountAction: AccountPackageAction?
 
     init(client: PackagesClient, filter: MarketFilter) {
         self.client = client
-        _model = State(initialValue: MarketModel(client: client, filter: filter, account: PackagesFeature.accountPackages))
+        _model = State(
+            initialValue: MarketModel(
+                client: client, filter: filter, account: PackagesFeature.accountPackages, ledger: .shared))
     }
 
     var body: some View {
-        List {
-            Section {
-                Picker("Show", selection: $model.filter) {
-                    ForEach(MarketFilter.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                PackagesErrorBanner(text: model.errorText) { await refresh() }
-                PackagesErrorBanner(text: model.partialError)
-            }
-            if model.visible.isEmpty && !model.loading && model.errorText.isEmpty {
-                ContentUnavailableView.search(text: model.query)
-            }
-            ForEach(model.shelves, id: \.category) { shelf in
-                Section(shelf.category) {
-                    ForEach(shelf.packages) { package in
-                        NavigationLink(value: Route.package(id: package.id)) {
-                            MarketRow(
-                                package: package, installed: model.isInstalled(package),
-                                rating: model.ratings[package.id], counts: model.counts[package.id],
-                                nestedCount: model.nested(in: package).count)
-                        }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if !model.errorText.isEmpty || !model.partialError.isEmpty {
+                    VStack(alignment: .leading, spacing: FmSpace.x1) {
+                        PackagesErrorBanner(text: model.errorText) { await refresh() }
+                        PackagesErrorBanner(text: model.partialError)
                     }
+                    .padding(.horizontal, FmSpace.x4)
+                    .padding(.vertical, FmSpace.x2)
+                    Divider()
+                }
+                let rows: [MarketPackage] = model.visible
+                if rows.isEmpty && !model.loading && model.errorText.isEmpty {
+                    emptyState
+                }
+                ForEach(rows) { (package: MarketPackage) in
+                    MarketCard(
+                        package: package, model: model, signedIn: PackagesFeature.signedIn,
+                        onInstall: { (action: MarketCardAction) in Task { await run(action, package) } })
+                    Divider()
                 }
             }
+            .padding(.bottom, FmSpace.x4)
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            MarketControls(model: model)
         }
         .navigationTitle("Market")
-        .searchable(text: $model.query, prompt: "Search packages")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $model.query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search packages")
         .overlay {
             if model.loading && model.packages.isEmpty { ProgressView() }
         }
         .fmRefreshable { await refresh() }
         .task { await refresh() }
+        .confirmationDialog(
+            accountAction?.title ?? "",
+            isPresented: Binding(get: { accountAction != nil }, set: { if !$0 { accountAction = nil } }),
+            titleVisibility: .visible, presenting: accountAction
+        ) { (action: AccountPackageAction) in
+            Button("Install") {
+                guard let package = model.package(action.packageId) else { return }
+                Task { await installForAccount(package) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { (action: AccountPackageAction) in
+            Text(action.message)
+        }
+    }
+
+    @ViewBuilder private var emptyState: some View {
+        if model.query.isEmpty {
+            ContentUnavailableView(
+                "No packages match", systemImage: "line.3.horizontal.decrease.circle",
+                description: Text("Change the filters to see more of the Market."))
+                .padding(.top, FmSpace.x6)
+        } else {
+            ContentUnavailableView.search(text: model.query)
+                .padding(.top, FmSpace.x6)
+        }
     }
 
     private func refresh() async {
         await model.refresh(organizations: await PackagesFeature.organizationNames())
     }
+
+    private func run(_ action: MarketCardAction, _ package: MarketPackage) async {
+        switch action {
+        case .installAccount:
+            let others: [String] = model.account?.missingDependencies(of: package.id).map(\.name) ?? []
+            if others.isEmpty {
+                await installForAccount(package)
+            } else {
+                accountAction = AccountPackageAction(
+                    packageId: package.id, name: package.name, install: true, others: others,
+                    project: model.account?.ownsInstalls ?? false)
+            }
+        case .installPhone:
+            if package.accountSync {
+                await installForAccount(package)
+            } else {
+                PhonePackages.setRemoved(package.id, removed: false)
+                PackageGateSync.publish()
+                FmHaptics.commit()
+            }
+        case .installDevice:
+            PackageGateSync.setOnDevice(package.id, on: true)
+            FmHaptics.commit()
+        case .installOrganization(let organization):
+            if await model.install(package, organization: organization) {
+                FmHaptics.commit()
+                await HubPackageState.shared.refresh()
+            }
+        default:
+            return
+        }
+    }
+
+    private func installForAccount(_ package: MarketPackage) async {
+        if await model.installForAccount(package) {
+            PackageGateSync.publish()
+            FmHaptics.commit()
+        }
+    }
 }
 
-struct MarketRow: View {
-    let package: MarketPackage
-    let installed: Bool
-    let rating: RatingSummary?
-    let counts: PackageCounts?
-    var nestedCount = 0
+struct MarketControls: View {
+    @Bindable var model: MarketModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            if let screenshot = package.screenshots.first {
-                MarketScreenshotImage(screenshot: screenshot, cornerRadius: 6)
-                    .frame(width: 96)
-                    .accessibilityHidden(true)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: FmSpace.x2) {
+                sortMenu
+                statusMenu
+                categoryMenu
+                runsOnMenu
+                scopeMenu
+                moreMenu
+                if model.filters.activeCount > 0 || model.filter != .all {
+                    Button {
+                        model.filters = MarketFilters()
+                        model.filter = .all
+                        FmHaptics.selection()
+                    } label: {
+                        Label("Clear", systemImage: "xmark")
+                            .marketChip(active: false)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("market-filter-clear")
+                }
             }
-            details
+            .padding(.horizontal, FmSpace.x4)
+            .padding(.vertical, FmSpace.x2)
+        }
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort by", selection: $model.sort) {
+                ForEach(MarketSort.allCases, id: \.self) { (sort: MarketSort) in
+                    Label(sort.title, systemImage: sort.symbol).tag(sort)
+                }
+            }
+        } label: {
+            Label(model.sort.title, systemImage: "arrow.up.arrow.down")
+                .marketChip(active: model.sort != .featured)
+        }
+        .accessibilityLabel("Sort by \(model.sort.title)")
+        .accessibilityIdentifier("market-sort")
+    }
+
+    private var statusMenu: some View {
+        Menu {
+            Picker("Show", selection: $model.filter) {
+                ForEach(MarketFilter.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+        } label: {
+            Label(model.filter == .all ? "Installed or not" : model.filter.title, systemImage: "checkmark.circle")
+                .marketChip(active: model.filter != .all)
+        }
+        .accessibilityIdentifier("market-filter-status")
+    }
+
+    private var categoryMenu: some View {
+        Menu {
+            Picker("Category", selection: $model.filters.category) {
+                Text("All categories").tag(String?.none)
+                ForEach(model.categories, id: \.self) { (category: String) in
+                    Text(category).tag(String?.some(category))
+                }
+            }
+        } label: {
+            Label(model.filters.category ?? "Category", systemImage: "square.grid.2x2")
+                .marketChip(active: model.filters.category != nil)
+        }
+        .accessibilityIdentifier("market-filter-category")
+    }
+
+    private var runsOnMenu: some View {
+        Menu {
+            Picker("Runs on", selection: $model.filters.runsOn) {
+                ForEach(MarketRunsOn.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+        } label: {
+            Label(model.filters.runsOn == .any ? "Runs on" : model.filters.runsOn.title, systemImage: "iphone")
+                .marketChip(active: model.filters.runsOn != .any)
+        }
+        .accessibilityIdentifier("market-filter-runs-on")
+    }
+
+    private var scopeMenu: some View {
+        Menu {
+            Picker("Installs for", selection: $model.filters.scope) {
+                Text("Anyone").tag(MarketInstallScope?.none)
+                ForEach(MarketInstallScope.allCases, id: \.self) { (scope: MarketInstallScope) in
+                    Text(scope.title).tag(MarketInstallScope?.some(scope))
+                }
+            }
+        } label: {
+            Label(model.filters.scope?.title ?? "Installs for", systemImage: "person.crop.circle")
+                .marketChip(active: model.filters.scope != nil)
+        }
+        .accessibilityIdentifier("market-filter-scope")
+    }
+
+    private var moreActive: Int {
+        [model.filters.kind != nil, model.filters.price != .any, model.filters.publisher != nil,
+         model.filters.verifiedOnly, model.filters.ratedOnly].filter { $0 }.count
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Picker("Kind", selection: $model.filters.kind) {
+                Text("Every kind").tag(String?.none)
+                ForEach(model.kinds, id: \.self) { (kind: String) in
+                    Text(MarketCard.kindTitle(kind)).tag(String?.some(kind))
+                }
+            }
+            .pickerStyle(.menu)
+            Picker("Price", selection: $model.filters.price) {
+                ForEach(MarketPrice.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.menu)
+            Picker("Publisher", selection: $model.filters.publisher) {
+                Text("Every publisher").tag(String?.none)
+                ForEach(model.publishers, id: \.self) { (publisher: String) in
+                    Text(publisher).tag(String?.some(publisher))
+                }
+            }
+            .pickerStyle(.menu)
+            Toggle("Verified publishers only", isOn: $model.filters.verifiedOnly)
+            Toggle("Rated only", isOn: $model.filters.ratedOnly)
+        } label: {
+            Label(moreActive > 0 ? "More (\(moreActive))" : "More", systemImage: "line.3.horizontal.decrease")
+                .marketChip(active: moreActive > 0)
+        }
+        .accessibilityIdentifier("market-filter-more")
+    }
+}
+
+private struct MarketChip: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .font(.footnote.weight(active ? .semibold : .regular))
+            .lineLimit(1)
+            .padding(.horizontal, FmSpace.x3)
+            .frame(minHeight: 32)
+            .foregroundStyle(active ? Color.white : Color.primary)
+            .background(
+                Capsule().fill(active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary)))
+            .contentShape(Capsule())
+    }
+}
+
+extension View {
+    fileprivate func marketChip(active: Bool) -> some View {
+        modifier(MarketChip(active: active))
+    }
+}
+
+struct MarketCard: View {
+    let package: MarketPackage
+    let model: MarketModel
+    let signedIn: Bool
+    let onInstall: (MarketCardAction) -> Void
+
+    static let thumbnailWidth: CGFloat = 112
+    static let actionWidth: CGFloat = 76
+
+    static func kindTitle(_ kind: String) -> String {
+        switch kind {
+        case "extension.native": return "Extension"
+        case "extension.vscode": return "Editor extension"
+        case "agent": return "Agent"
+        case "theme": return "Theme"
+        case "virtual.object": return "World object"
+        case "virtual.world": return "World"
+        default: return kind
+        }
+    }
+
+    var body: some View {
+        let action: MarketCardAction = model.cardAction(package, signedIn: signedIn)
+        VStack(alignment: .leading, spacing: FmSpace.x1) {
+            NavigationLink(value: Route.package(id: package.id)) {
+                HStack(alignment: .top, spacing: FmSpace.x3) {
+                    thumbnail
+                    details
+                    Color.clear.frame(width: MarketCard.actionWidth, height: 1)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("market-card-" + package.id)
+            .overlay(alignment: .topTrailing) {
+                MarketActionButton(package: package, action: action, onInstall: onInstall)
+                    .frame(width: MarketCard.actionWidth, alignment: .trailing)
+            }
+            if let error = model.installErrors[package.id] {
+                HStack(alignment: .firstTextBaseline, spacing: FmSpace.x2) {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fmMessageTools(error)
+                    Spacer(minLength: 0)
+                    Button {
+                        model.dismissInstallError(package)
+                    } label: {
+                        Image(systemName: "xmark").font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
+                }
+            }
+        }
+        .padding(.horizontal, FmSpace.x4)
+        .padding(.vertical, FmSpace.x3)
+    }
+
+    @ViewBuilder private var thumbnail: some View {
+        if let screenshot = package.screenshots.first {
+            MarketScreenshotImage(screenshot: screenshot, cornerRadius: FmRadius.md)
+                .frame(width: MarketCard.thumbnailWidth)
+                .accessibilityHidden(true)
+        } else {
+            RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous)
+                .fill(.quaternary)
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .frame(width: MarketCard.thumbnailWidth)
+                .overlay {
+                    Image(systemName: "shippingbox").font(.title3).foregroundStyle(.secondary)
+                }
+                .accessibilityHidden(true)
         }
     }
 
     private var details: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(package.name).font(.headline)
-                if installed {
-                    Label("Installed", systemImage: "checkmark.circle.fill")
-                        .labelStyle(.iconOnly)
-                        .foregroundStyle(.green)
-                        .accessibilityLabel("Installed")
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Text(package.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                if package.verified {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityLabel("Verified publisher")
                 }
-                Spacer(minLength: 0)
-                Text(package.version.isEmpty ? "" : "v" + package.version)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
             }
             if !package.summary.isEmpty {
-                Text(package.summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-            }
-            if nestedCount > 0 {
-                Label("Includes \(nestedCount) packages", systemImage: "square.stack.3d.up")
+                Text(package.summary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            HStack(spacing: 10) {
-                if let rating, rating.count > 0 {
-                    Label(rating.label, systemImage: "star.fill").foregroundStyle(.orange)
+            MarketStatsLine(
+                package: package, rating: model.ratings[package.id], counts: model.counts[package.id],
+                usage: model.usage[package.id], nestedCount: model.nested(in: package).count)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct MarketStatsLine: View {
+    let package: MarketPackage
+    let rating: RatingSummary?
+    let counts: PackageCounts?
+    let usage: PackageUsage?
+    var nestedCount = 0
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            line(full: true)
+            line(full: false)
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.secondary)
+    }
+
+    private func line(full: Bool) -> some View {
+        HStack(spacing: FmSpace.x2) {
+            if let rating, rating.count > 0 {
+                Label(String(format: "%.1f", rating.average), systemImage: "star.fill")
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel(String(format: "Rated %.1f from %d ratings", rating.average, rating.count))
+            }
+            if let counts, counts.total > 0 {
+                Label(PackagesFeature.count(Int64(counts.total)), systemImage: "arrow.down.app")
+                    .accessibilityLabel("\(counts.total) installs")
+            } else if let counts, counts.downloads > 0 {
+                Label(PackagesFeature.count(Int64(counts.downloads)), systemImage: "arrow.down.circle")
+                    .accessibilityLabel("\(counts.downloads) downloads")
+            }
+            if let usage, usage.people > 0 {
+                Label(PackagesFeature.count(Int64(usage.people)), systemImage: "person.2")
+                    .accessibilityLabel("\(usage.people) people use it")
+            }
+            if full {
+                if !package.free {
+                    Text("Paid")
                 }
-                if let counts, counts.installs > 0 {
-                    Label("\(counts.installs)", systemImage: "arrow.down.circle")
+                if nestedCount > 0 {
+                    Label("\(nestedCount)", systemImage: "square.stack.3d.up")
+                        .accessibilityLabel("Includes \(nestedCount) packages")
                 }
                 PhoneSurfaceTag(surface: package.phoneSurface)
+                    .labelStyle(.iconOnly)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
-        .accessibilityElement(children: .combine)
+        .labelStyle(MarketTightLabel())
+        .lineLimit(1)
+    }
+}
+
+private struct MarketTightLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 2) {
+            configuration.icon
+            configuration.title
+        }
+    }
+}
+
+struct MarketActionButton: View {
+    let package: MarketPackage
+    let action: MarketCardAction
+    let onInstall: (MarketCardAction) -> Void
+
+    var body: some View {
+        content
+            .font(.footnote.weight(.semibold))
+            .controlSize(.small)
+            .accessibilityIdentifier("market-action-" + package.id)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch action {
+        case .open:
+            if let route = PackageRoutes.route(for: package) {
+                NavigationLink(value: route) { Text("Open") }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .accessibilityLabel("Open \(package.name)")
+            } else if let url = AppServices.current?.api.url(package.webRoute) {
+                Link(destination: url) { Text("Open") }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .accessibilityLabel("Open \(package.name) on the web")
+            } else {
+                installedLabel
+            }
+        case .installed:
+            installedLabel
+        case .installAccount, .installDevice, .installPhone, .installOrganization:
+            Button { onInstall(action) } label: { Text("Install") }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .accessibilityLabel("Install \(package.name)")
+        case .chooseOrganization(let organizations):
+            Menu {
+                Section("Install for") {
+                    ForEach(organizations, id: \.self) { (organization: String) in
+                        Button(organization) { onInstall(.installOrganization(organization)) }
+                    }
+                }
+            } label: {
+                Text("Install")
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .accessibilityLabel("Install \(package.name) for an organization")
+        case .createOrganization, .askAdmin, .signIn:
+            NavigationLink(value: Route.package(id: package.id)) { Text("Get") }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .accessibilityLabel(action == .askAdmin ? "Ask an admin to install \(package.name)" : "Get \(package.name)")
+        case .desktop:
+            let world: Bool = package.phoneSurface == .worldOnly
+            Label(world ? "World" : "Desktop", systemImage: world ? "globe.europe.africa" : "desktopcomputer")
+                .labelStyle(MarketTightLabel())
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.top, 6)
+                .accessibilityLabel(
+                    world ? "\(package.name) runs in World" : "Install \(package.name) from your desktop's Market")
+        case .busy:
+            ProgressView()
+                .frame(height: 28)
+                .accessibilityLabel("Installing \(package.name)")
+        }
+    }
+
+    private var installedLabel: some View {
+        Label("Installed", systemImage: "checkmark.circle.fill")
+            .labelStyle(MarketTightLabel())
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.green)
+            .padding(.top, 6)
     }
 }
 
@@ -215,7 +630,7 @@ struct PackageDetailScreen: View {
     init(client: PackagesClient, packageId: String) {
         self.client = client
         self.packageId = packageId
-        _market = State(initialValue: MarketModel(client: client, account: PackagesFeature.accountPackages))
+        _market = State(initialValue: MarketModel(client: client, account: PackagesFeature.accountPackages, ledger: .shared))
         _reviews = State(initialValue: PackageReviewsModel(client: client, packageId: packageId))
     }
 
@@ -395,7 +810,7 @@ struct PackageDetailScreen: View {
     }
 
     @ViewBuilder private func phoneInstallSection(_ package: MarketPackage) -> some View {
-        if PhonePackages.canRemove(package) {
+        if PhonePackages.canRemove(package) || PhonePackages.isRemoved(package.id) {
             Section {
                 if PhonePackages.isRemoved(package.id) {
                     Button {
@@ -461,8 +876,14 @@ struct PackageDetailScreen: View {
                 HStack(spacing: 12) {
                     if !package.version.isEmpty { Text("v" + package.version) }
                     if !package.category.isEmpty { Text(package.category) }
-                    if let counts = market.counts[package.id], counts.installs > 0 {
-                        Text("\(counts.installs) installs")
+                    if let counts = market.counts[package.id], counts.total > 0 {
+                        Text("\(counts.total) installs")
+                    }
+                    if let counts = market.counts[package.id], counts.downloads > 0 {
+                        Text("\(counts.downloads) downloads")
+                    }
+                    if let usage = market.usage[package.id], usage.people > 0 {
+                        Text("\(usage.people) \(usage.people == 1 ? "person" : "people")")
                     }
                 }
                 .font(.caption)

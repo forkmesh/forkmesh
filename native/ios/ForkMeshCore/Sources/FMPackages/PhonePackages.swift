@@ -8,6 +8,7 @@ public enum PhonePackages {
     public static let tour = "tour"
     public static let aquarium = "aquarium"
     public static let signIn = "sign-in"
+    nonisolated public static let deviceSwitched: Set<String> = ["aquarium", "sign-in"]
 
     public static func isOn(_ id: String, settings: SettingsService? = Services.get(SettingsService.self)) -> Bool? {
         switch id {
