@@ -2,6 +2,7 @@
 #include "ActionStore.h"
 #include "HiddenTerms.h"
 #include "ProcessReaper.h"
+#include "ProjectRegistry.h"
 #include "AgentCapabilityBroker.h"
 #include "BackgroundFileWriter.h"
 #include "AgentCapabilityStore.h"
@@ -691,6 +692,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
                   // and it has its own restore rule below.
                   m_nodeOffline =
                       QSettings().value(kNodeOfflineSetting, false).toBool();
+                  {
+                      QSettings projectSettings;
+                      forkmesh::projects::markUnattachedProjectPending(
+                          projectSettings,
+                          forkmesh::paths::projectSlug() ==
+                              QLatin1String(forkmesh::paths::kHomeProjectSlug),
+                          kDefaultServerUrl);
+                  }
                   restorePersistedOfflineMode();
                   m_liveClaudeModels =
                       QJsonDocument::fromJson(

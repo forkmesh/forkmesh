@@ -898,7 +898,9 @@ void MainWindow::connectProjectInstance(const QString &url, const QString &name)
     QSettings settings;
     settings.remove(forkmesh::projects::kInstancePendingSetting);
     settings.remove(forkmesh::projects::kInstanceChoicesSetting);
+    settings.setValue(forkmesh::projects::kInstanceAttachedSetting, true);
 
+    const bool attached = m_activeServer >= 0 && m_activeServer < m_servers.size();
     int index = -1;
     for (int i = 0; i < m_servers.size(); ++i) {
         if (canonicalServerUrl(m_servers.at(i).url) == canonical)
@@ -916,6 +918,8 @@ void MainWindow::connectProjectInstance(const QString &url, const QString &name)
         index = m_servers.size() - 1;
         saveServers();
     }
+    if (!attached)
+        m_activeServer = -1;
     if (index != m_activeServer)
         switchToServer(index);
     for (int i = m_servers.size() - 1; i >= 0; --i) {

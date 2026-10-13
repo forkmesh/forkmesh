@@ -472,7 +472,8 @@ QWidget *MainWindow::buildSetupPage()
         savedServerUrl.isEmpty() || savedServerUrl == kLocalServerUrl
             ? kDefaultServerUrl
             : savedServerUrl;
-    m_serverUrlEdit->setText(serverHostDisplay(effectiveServerUrl));
+    if (!projectInstancePending())
+        m_serverUrlEdit->setText(serverHostDisplay(effectiveServerUrl));
 
     m_roomNameEdit = new QLineEdit(card);
     m_roomNameEdit->setMaxLength(80);
@@ -2235,7 +2236,8 @@ void MainWindow::startSession()
     authenticateSilently(name);
 #endif
 
-    if (m_serverUrlEdit->text().trimmed().isEmpty())
+    const bool instancePending = projectInstancePending();
+    if (!instancePending && m_serverUrlEdit->text().trimmed().isEmpty())
         m_serverUrlEdit->setText(serverHostDisplay(kDefaultServerUrl));
 
     QString payoutAddress = m_solanaEdit->text().trimmed();
@@ -2301,7 +2303,8 @@ void MainWindow::startSession()
     rebuildConversationView();
 
     const QString fullServerUrl = canonicalServerUrl(m_serverUrlEdit->text());
-    forkmesh::settings::put(QSettings(), kServerUrlSetting, fullServerUrl);
+    if (!instancePending)
+        forkmesh::settings::put(QSettings(), kServerUrlSetting, fullServerUrl);
     forgetConfiguredRelayHost();
     forkmesh::settings::put(QSettings(), kRoomNameSetting, kDefaultRoomName);
     persistEditsToActiveServer();
@@ -2316,7 +2319,7 @@ void MainWindow::startSession()
         return authorizeFirewallConnection(QStringLiteral("WebSocket"), endpoint);
     });
     const auto *networkInfo = QNetworkInformation::instance();
-    if (m_offlineMode ||
+    if (m_offlineMode || instancePending ||
         (networkInfo && networkInfo->reachability() ==
                             QNetworkInformation::Reachability::Disconnected)) {
         server->setNetworkAvailable(false);
@@ -4775,6 +4778,8 @@ QUrl MainWindow::catalogListUrl()
 
 QJsonArray MainWindow::fetchCatalogRepos()
 {
+    if (projectInstancePending() || !m_networkAccess)
+        return {};
     QNetworkReply *reply = m_networkAccess->get(QNetworkRequest(catalogListUrl()));
     QEventLoop loop;
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
@@ -4786,6 +4791,8 @@ QJsonArray MainWindow::fetchCatalogRepos()
 
 int MainWindow::fetchNodesOnline()
 {
+    if (projectInstancePending() || !m_networkAccess)
+        return 0;
     QUrl url = catalogApiUrl();
     url.setPath(QStringLiteral("/api/network/stats"));
     url.setQuery(QString());

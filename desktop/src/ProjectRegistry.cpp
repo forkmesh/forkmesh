@@ -10,6 +10,7 @@
 #include <QLockFile>
 #include <QSaveFile>
 #include <QSettings>
+#include <QUrl>
 
 namespace forkmesh::projects {
 
@@ -139,6 +140,56 @@ QString encodeInstanceChoices(const QVector<InstanceChoice> &choices)
                                  {QStringLiteral("url"), url}});
     }
     return QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact));
+}
+
+namespace {
+
+QString instanceHost(const QString &url)
+{
+    const QString trimmed = url.trimmed();
+    if (trimmed.contains(QStringLiteral("://")))
+        return QUrl(trimmed).host().toLower();
+    QString host = trimmed.section(QLatin1Char('/'), 0, 0);
+    return host.section(QLatin1Char(':'), 0, 0).toLower();
+}
+
+}
+
+bool markUnattachedProjectPending(QSettings &settings, bool isHome,
+                                  const QString &defaultServerUrl)
+{
+    if (isHome || settings.value(kInstancePendingSetting, false).toBool() ||
+        settings.value(kInstanceAttachedSetting, false).toBool())
+        return false;
+    QStringList urls;
+    const QJsonArray saved =
+        QJsonDocument::fromJson(
+            settings.value(QStringLiteral("servers/items")).toString().toUtf8())
+            .array();
+    for (const QJsonValue &value : saved) {
+        const QString url = value.toObject().value(QStringLiteral("url")).toString().trimmed();
+        if (!url.isEmpty() && !urls.contains(url))
+            urls.append(url);
+    }
+    if (urls.isEmpty()) {
+        const QString legacy = settings.value(QStringLiteral("server/url")).toString().trimmed();
+        if (!legacy.isEmpty())
+            urls.append(legacy);
+    }
+    const QString defaultHost = instanceHost(defaultServerUrl);
+    QVector<InstanceChoice> choices;
+    for (const QString &url : std::as_const(urls)) {
+        const QString host = instanceHost(url);
+        if (host != defaultHost)
+            return false;
+        choices.append({host, url});
+    }
+    settings.setValue(kInstancePendingSetting, true);
+    settings.setValue(QStringLiteral("network/offlineMode"), true);
+    settings.setValue(QStringLiteral("network/offlineModeAutomatic"), false);
+    if (!choices.isEmpty())
+        settings.setValue(kInstanceChoicesSetting, encodeInstanceChoices(choices));
+    return true;
 }
 
 QVector<InstanceChoice> decodeInstanceChoices(const QString &json)

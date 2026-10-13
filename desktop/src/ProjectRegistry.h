@@ -3,6 +3,7 @@
 #include "AppPaths.h"
 
 #include <QDateTime>
+#include <QSettings>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -43,9 +44,13 @@ struct InstanceChoice {
 
 inline const QString kInstancePendingSetting = QStringLiteral("project/instancePending");
 inline const QString kInstanceChoicesSetting = QStringLiteral("project/instanceChoices");
+inline const QString kInstanceAttachedSetting = QStringLiteral("project/instanceAttached");
 
 QString encodeInstanceChoices(const QVector<InstanceChoice> &choices);
 QVector<InstanceChoice> decodeInstanceChoices(const QString &json);
+
+bool markUnattachedProjectPending(QSettings &settings, bool isHome,
+                                  const QString &defaultServerUrl);
 
 struct CreateRequest {
     QString name;

@@ -100,6 +100,26 @@ Everything is in `desktop/`.
   offline mode off opens it too. `connectProjectInstance()` clears both
   settings, switches to the chosen instance, drops the `loadServers()`
   placeholder, and goes online.
+- **A project with no instance lists nothing from the network** (2026-10-13).
+  Asked: a non-home project showed `forkmesh/forkmesh` and
+  `newnewnode/forkmesh` from app.forkmesh.com although it was attached to no
+  instance. While `project/instancePending` is set, `loadServers()` loads and
+  synthesizes no instance (`m_servers` stays empty, `m_activeServer` is -1,
+  `saveServers()` writes nothing), `catalogApiUrl()` and `activeRelayOrigin()`
+  are empty, the relay edit is left blank, `startSession()` keeps the backend
+  off the network and does not save `server/url`, and the network
+  repositories page, `refreshRelayRepositoryList()`, `fetchCatalogRepos()` and
+  `fetchNodesOnline()` send nothing; the page reads "Choose an instance". The
+  repository switcher shows only local workspaces (not preview-only network
+  records). Projects made before the pending flag existed are caught at
+  startup by `projects::markUnattachedProjectPending()`: a non-home project
+  without `project/instanceAttached` whose saved instances are none or only
+  the default instance is set pending and offline (not automatic), with the
+  instance it held offered back as a choice. `connectProjectInstance()` sets
+  `project/instanceAttached`, so a chosen instance (app.forkmesh.com
+  included) is kept from then on; a project that once picked app.forkmesh.com
+  before this change is asked once more. A project that saved any other
+  instance is left alone, and the home project (`forkmesh`) never changes.
 - **Inviting someone to a project.** The current project's row in the picker
   has a people button, and the menu has "Invite someone to this project…";
   both open `promptInviteToProject()`. A person who already has an account on
