@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.MutableContextWrapper
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
@@ -32,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class WebCallPeers(
     private val context: Context,
     private val callbacks: Executor,
+    private val voice: () -> String = { "" },
     private val face: () -> String,
 ) : DirectCallPeerFactory {
     private val viewState = MutableStateFlow<WebView?>(null)
@@ -45,7 +49,7 @@ class WebCallPeers(
         val peer = WebCallPeer(context, callbacks) { gone -> viewState.compareAndSet(gone, null) }
         try {
             viewState.value = peer.load()
-            peer.request("setup", listOf(media.wire, iceServers, if (video) face() else ""))
+            peer.request("setup", listOf(media.wire, iceServers, if (video) face() else "", voice()))
             facesState.value = video && (peer.request("faceList", emptyList()) as? List<*>).orEmpty().isNotEmpty()
         } catch (error: Exception) {
             peer.close()
@@ -79,6 +83,9 @@ class WebCallPeer internal constructor(
 
     @Volatile
     private var closed = false
+
+    @Volatile
+    private var voiceObserver: ((String) -> Unit)? = null
 
     private val ready = CountDownLatch(1)
     private val pending = ConcurrentHashMap<Int, CompletableFuture<Any?>>()
@@ -145,6 +152,10 @@ class WebCallPeer internal constructor(
             "ice" -> {
                 val candidate = message["candidate"].asJsonMap()
                 if (candidate.isNotEmpty()) deliver { onIceCandidate?.invoke(candidate) }
+            }
+            "voice" -> {
+                val applied = jsonText(message["id"])
+                deliver { voiceObserver?.invoke(applied) }
             }
             "live" -> deliver { onLive?.invoke() }
             "closed" -> deliver { onClosed?.invoke() }
@@ -223,6 +234,18 @@ class WebCallPeer internal constructor(
         request("face", listOf(id))
     }
 
+    override fun setVoice(id: String) {
+        request("voice", listOf(id))
+    }
+
+    override fun observeVoice(handler: (String) -> Unit) {
+        voiceObserver = handler
+    }
+
+    fun preview(media: DirectCallKind, voice: String): String = jsonText(request("preview", listOf(media.wire, voice)))
+
+    fun setMonitor(on: Boolean): Boolean = request("monitor", listOf(on)) == true
+
     override fun close() {
         if (closed) return
         closed = true
@@ -243,6 +266,19 @@ class WebCallPeer internal constructor(
             }, DESTROY_DELAY_MS)
         }
     }
+}
+
+fun callHeadphonesConnected(context: Context): Boolean {
+    val audio = context.getSystemService(AudioManager::class.java) ?: return false
+    val worn = mutableSetOf(
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+    )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) worn.add(AudioDeviceInfo.TYPE_BLE_HEADSET)
+    return audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type in worn }
 }
 
 fun WebView.adoptContext(context: Context): WebView {

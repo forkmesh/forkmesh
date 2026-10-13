@@ -129,8 +129,13 @@ def ipa_build(tmp_path):
 
 
 class FakeReleaseHost:
+    hosts = [("fmnext-n1", "192.0.2.1")]
+
     def parse_hosts(self, text):
-        return [("fmnext-n1", "192.0.2.1")]
+        return list(self.hosts)
+
+    def seed_hosts(self, text):
+        return self.parse_hosts(text)
 
     def seed_targets(self, hosts, *_args):
         return [(name, ip, []) for name, ip in hosts]
@@ -290,3 +295,25 @@ def test_a_damaged_ipa_is_found(tmp_path):
     data[60] ^= 0xFF
     ipa.write_bytes(bytes(data))
     assert mac_adhoc_publish.damaged_entry(ipa) == "Payload/A.app/A"
+
+
+def test_a_dead_first_core_hands_the_lookup_and_mail_to_the_next(tmp_path, monkeypatch):
+    ipa_build(tmp_path)
+    sent = fake_core(monkeypatch, {"ok": True, "testers": [
+        {"account": "ada", "email": "ada@example.com"}]})
+    inner = mac_adhoc_publish.subprocess.run
+    used = []
+
+    def run(argv, input=None, **kwargs):
+        target = next((a for a in argv if str(a).startswith("root@")), "")
+        if target == "root@192.0.2.1":
+            raise mac_adhoc_publish.subprocess.TimeoutExpired(argv, 15)
+        used.append(target)
+        return inner(argv, input=input, **kwargs)
+    monkeypatch.setattr(mac_adhoc_publish.subprocess, "run", run)
+
+    class TwoCores(FakeReleaseHost):
+        hosts = [("fmnext-n1", "192.0.2.1"), ("fmnext-n2", "192.0.2.2")]
+    monkeypatch.setattr(mac_adhoc_publish, "release_host", TwoCores)
+    assert mac_adhoc_publish.main(publish_args(tmp_path)) == 0
+    assert sent == ["ada@example.com"] and set(used) == {"root@192.0.2.2"}

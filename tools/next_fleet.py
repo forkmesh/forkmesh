@@ -522,6 +522,15 @@ def remove_core_block(text, name):
     return text
 
 
+def promote_core_block(text, name):
+    for match in NODES_BLOCK_RE.finditer(text):
+        if not re.search(r'(?m)^name = "%s"$' % re.escape(name), match.group(0)):
+            continue
+        block = re.sub(r"(?m)^rqlite_voter = false\n?", "", match.group(0))
+        return text[:match.start()] + block + text[match.end():]
+    return text
+
+
 def fleet_toml_text(instances, state=None, example=None, current=None):
     """current: the existing fleet.toml text; its [app] optional_secrets
     (which integrations this fleet turned on) and ``vault`` switches survive

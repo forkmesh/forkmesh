@@ -502,6 +502,18 @@ def production_settings(fleet):
     return "\n".join(lines)
 
 
+def core_daemon_names(fleet):
+    return ["fmnext-%s" % n["name"] for n in fleet.get("nodes") or []
+            if not is_app_node(n)]
+
+
+def core_role_settings(fleet):
+    names = ",".join(core_daemon_names(fleet))
+    hosted = names if (fleet.get("hosted") or {}).get("enabled", True) else ""
+    return "\n".join(["", "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=%s" % names,
+                      "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=%s" % hosted])
+
+
 def public_hosts(fleet):
     """Every public hostname a core's App answers to (the host rejects any
     other Host header; app/host/forkmesh_host/asgi.py)."""
@@ -1900,7 +1912,7 @@ def render_core(fleet, node_name, replacement=False):
         else dns_settings(fleet),
         "IDS_SETTINGS": ids_env_settings(fleet),
         "PUBLIC_HOSTS": ",".join(public_hosts(fleet)),
-        "PRODUCTION_SETTINGS": production_settings(fleet),
+        "PRODUCTION_SETTINGS": production_settings(fleet) + core_role_settings(fleet),
         "TURN_SETTINGS": turn_app_settings(fleet),
         "MESH_PEERS": mesh_peers(fleet),
         **request_rules_paths(paths),

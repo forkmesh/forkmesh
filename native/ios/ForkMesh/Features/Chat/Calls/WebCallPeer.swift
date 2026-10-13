@@ -5,6 +5,13 @@ import Foundation
 import Observation
 import WebKit
 
+enum CallAudioRoute {
+    static var headphonesConnected: Bool {
+        let worn: Set<AVAudioSession.Port> = [.headphones, .bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
+        return AVAudioSession.sharedInstance().currentRoute.outputs.contains { worn.contains($0.portType) }
+    }
+}
+
 enum WebCallError: Error {
     case missingPage
     case notReady
@@ -15,6 +22,7 @@ enum WebCallError: Error {
 @Observable
 final class WebCallPeerFactory: DirectCallPeerMaking {
     private(set) var current: WebCallPeer?
+    var voice: @MainActor () -> String = { "" }
 
     func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
         current?.close()
@@ -24,7 +32,8 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         current = peer
         do {
             try await peer.load()
-            _ = try await peer.run("setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string("")])
+            _ = try await peer.run(
+                "setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice())])
         } catch {
             peer.close()
             throw error
@@ -65,6 +74,7 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
     private var nextId = 1
     private var closed = false
+    private var voiceObserver: (@MainActor (String) -> Void)?
 
     init(onDispose: @escaping @MainActor (WebCallPeer) -> Void) {
         self.onDispose = onDispose
@@ -135,6 +145,8 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
                 let regions = await CallFaceLandmarks.detect(dataURL: image)
                 self?.replyLandmarks(id: id, regions: regions)
             }
+        case "voice":
+            voiceObserver?(message["id"]?.text ?? "")
         case "live":
             onLive?()
         case "closed":
@@ -177,6 +189,24 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
 
     func setFace(_ id: String) {
         Task { _ = try? await run("face", [.string(id)]) }
+    }
+
+    func setVoice(_ id: String) {
+        Task { _ = try? await run("voice", [.string(id)]) }
+    }
+
+    func observeVoice(_ handler: @escaping @MainActor (String) -> Void) {
+        voiceObserver = handler
+    }
+
+    @discardableResult
+    func preview(media: DirectCallKind, voice: String) async throws -> String {
+        try await run("preview", [.string(media.rawValue), .string(voice)]).text ?? ""
+    }
+
+    @discardableResult
+    func setMonitor(_ on: Bool) async -> Bool {
+        (try? await run("monitor", [.bool(on)]))?.boolValue ?? false
     }
 
     func close() {

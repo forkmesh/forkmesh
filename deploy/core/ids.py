@@ -1648,7 +1648,8 @@ class Responder:
 
     def rqlite_decision(self):
         """Stop the local rqlite only when the other voters keep quorum
-        without it: at least two other voters reachable, a leader, and no
+        without it: other reachable voters that are a majority of all the
+        voters (and at least two), a leader, and no
         other node already quarantined. Otherwise keep it (it holds only
         ciphertext for secrets; the lockdown firewall lets only the core
         peers reach Raft) so the IDS never takes the cluster down."""
@@ -1664,7 +1665,8 @@ class Responder:
         others = [n for n in voters if str(n.get("id")) != self.node
                   and n.get("reachable")]
         leader = any(n.get("leader") for n in voters)
-        if others_quarantined or len(others) < 2 or not leader:
+        needed = max(2, len(voters) // 2 + 1)
+        if others_quarantined or len(others) < needed or not leader:
             return False, "kept for quorum (%d other voters reachable%s)" % (
                 len(others), ", another node quarantined"
                 if others_quarantined else "")

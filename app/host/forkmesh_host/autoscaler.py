@@ -271,6 +271,17 @@ def operator_key(env):
                os.environ.get("FORKMESH_IDS_OPERATOR_PUBKEY", "")).strip()
 
 
+
+def default_runner_targets(environ=None):
+    environ = os.environ if environ is None else environ
+    raw = (environ.get("FORKMESH_VAR_RUNNER_POOL_TARGET_NODES")
+           or environ.get("RUNNER_POOL_TARGET_NODES") or "")
+    targets = [t.strip() for t in raw.split(",") if t.strip()]
+    if targets:
+        return targets
+    peers = _cluster.parse_peers(environ.get("FORKMESH_MESH_PEERS", ""))
+    return ["fmnext-%s" % name for name in sorted(peers)]
+
 class Autoscaler:
     def __init__(self, runtime, membership, clock=now_ms, guard_factory=None,
                  app_host=None, runner_targets=None):
@@ -283,10 +294,7 @@ class Autoscaler:
             lambda: vultr_guard.VultrGuard(self._env("VULTR_API_KEY")))
         self.app_host = app_host or os.environ.get(
             "FORKMESH_AUTOSCALE_APP_HOST", "app.forkmesh.com")
-        self.runner_targets = tuple(runner_targets or [
-            t.strip() for t in os.environ.get(
-                "RUNNER_POOL_TARGET_NODES", "fmnext-n1,fmnext-n2,fmnext-n3").split(",")
-            if t.strip()])
+        self.runner_targets = tuple(runner_targets or default_runner_targets())
         self._task = None
         self._metrics_task = None
         self.stats = {"ticks": 0, "owned": 0, "actions": 0, "errors": 0}

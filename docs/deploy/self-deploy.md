@@ -11,9 +11,17 @@ counts as deploy approval").
 
 Each core polls rqlite every 15 s, checks the approval's Ed25519 signature
 against `approver_keys`, its age (two hours), that the merged commit is the
-approved one and is on `main`, then works through the merge in `order`
-(`n1`, `n2`, `n3`): a core activates only after every core before it reports
-`deployed` or `skipped`, and a failure on one core stops the rest. Per-core
+approved one and is on `main`, then works through the merge in an order
+that is new for each approval: the cores in `order` (every core in
+`fleet.toml`) sorted by sha256 of `<approval id>:<core>` (`Agent.sequence`).
+A core activates only after every live core before it reports `deployed` or
+`skipped`, and a failure on one core stops the rest. A core is live while its
+`cluster_members` heartbeat is under two minutes old and it is not `leaving`
+or `quarantined`; a core that is not live and has no row for the approval
+neither blocks the others nor keeps the approval open, and the approval's
+message names it ("not live, left for a roll"). Until 2026-10-13 the order
+was the fleet file's, so `n1` always went first and always migrated, and a
+down `n1` stalled every self-deploy ([README.md](README.md#no-fixed-main-node)). Per-core
 progress is in `deploy_approval_nodes`; the outcome is announced to the
 operators and the approver (`announce`).
 
@@ -23,7 +31,7 @@ operators and the approver (`announce`).
 
 | Change | What the core does |
 | --- | --- |
-| App release paths (same rules as `tools/next_autodeploy.py`) | Builds the release under `fmnext-build` (`systemd-run --scope`, `build_memory_max`), uploads it locally, `n1` migrates rqlite, then `activate_script` swaps `current` inside an IDS window. |
+| App release paths (same rules as `tools/next_autodeploy.py`) | Builds the release under `fmnext-build` (`systemd-run --scope`, `build_memory_max`), uploads it locally, the first core of the approval's order to activate migrates rqlite, then `activate_script` swaps `current` inside an IDS window. |
 | Go daemon: `server/` (not tests, not Markdown) and the files `next_fleet.py install --steps daemon` ships (`DAEMON_TOOLS`, which includes `tools/mirror_gateway.py`) | Rolls the daemon itself (below). |
 | Any other roll path (`deploy/core/`, not Markdown) | Nothing: unit, firewall, WireGuard and Caddy files are rendered from the operator's `fleet.toml` and `fleet-state.json` and still need `next_fleet.py roll` from the desktop. The core's row says "deploy/core changes need a roll from the desktop". |
 | Nothing served | `skipped`, "nothing served changed". |

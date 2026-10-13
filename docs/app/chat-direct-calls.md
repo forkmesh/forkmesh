@@ -265,6 +265,191 @@ pass and `:app:assembleDebug` builds; there was no emulator run.
 
 Contract and runtime tests: `app/tests/test_chat_call_faces.py`.
 
+## Voices (added 2026-10-13, branch `1994-call-voice-per-face`)
+
+Requested with the faces: "the caller's voice changes to match the chosen
+face, at the highest quality". Each face has a voice, and calls can send it
+on the web, on iOS and on Android.
+
+**Where it runs.** All three platforms run the same page code. The
+microphone track from `getUserMedia` (with echo cancellation and noise
+suppression on) goes through an `AudioWorklet` into a
+`MediaStreamAudioDestinationNode`. That node's track replaces the audio
+sender's track with `RTCRtpSender.replaceTrack`, so no renegotiation is
+needed, just as with the face. The effect is applied after the browser's own
+echo cancellation, so that cancellation still works. On iOS and Android the
+audio flows inside the WebView (`direct-call.html`), not through native
+audio, so no `AVAudioEngine` or Android audio code was needed. If the
+worklet cannot start (no `AudioWorklet`, or an `AudioContext` that will not
+run within 2 s), the call sends the plain microphone and the indicator
+shows no voice.
+
+**The engine** (`app/public/chat-call-voice-worklet.js`) is a port of the
+desktop voice changer (`marketplace/packages/voice-changer`, `VoiceEngine.cpp`):
+
+- A 70 Hz high-pass and a gentle minimum-statistics denoise (floor −11 dB).
+  The browser has already suppressed most noise, and anything left over
+  turns into static once the pitch is shifted.
+- A 1024-point STFT (8x overlap, an asymmetric window with a 512-sample
+  synthesis tail) that only warps the cepstral spectral envelope (formants)
+  and its tilt. Each bin keeps its phase, and the input bin is multiplied
+  by `gain · warpedEnvelope · tilt / envelope`, so no trigonometry is needed.
+  FFTs are real-input (a half-size complex FFT).
+- Time-domain PSOLA for the pitch. Marks sit one period apart, each refined
+  by cross-correlation, and the synthesis hop uses the *measured* mark
+  spacing. When the shift lowers the voice by more than an octave
+  (ratio < 0.5, for example a woman choosing Kofi), the grains are widened to
+  half the hop. Before that fix, two-period grains left silent gaps between
+  pulses.
+- A McLeod pitch tracker on the pre-warp input (12 kHz, an 85 ms window,
+  run every 10.7 ms, median of three readings).
+- A 1.3 ms look-ahead peak limiter at 0.95 (sliding minimum, release, then a
+  box filter), so the gain never jumps.
+
+Added latency is 1728 samples, **36 ms** at 48 kHz. The engine works per
+sample, so the 128-sample render quantum (or any block size) does not
+matter. Switching voices glides the ratio, formant, tilt and breath, and
+cross-fades wet and dry over 30 ms. "Your own voice" in the middle of a call
+keeps the stage running and fades to the delayed input, which is then
+bit-exact. A call that starts with no voice never builds the stage, so it
+has no added latency.
+
+**Per-face voices** (`CALL_VOICES` in `app/public/chat-call-voice.js`;
+`chat-call-faces.js` is not touched). Each voice is a target median pitch
+and a vocal-tract scale relative to an average man (1.0; an average woman is
+about 1.17), plus tilt and breath. The voices were chosen from the photos:
+
+| Face | Looks like | Pitch | Tract | Brightness | Breath |
+| --- | --- | --- | --- | --- | --- |
+| Maya | woman, late 30s | 196 Hz | 1.14 | 0 | 0.04 |
+| Theo | man, mid 20s | 124 Hz | 1.03 | +0.10 | 0 |
+| Kofi | man, late 30s | 96 Hz | 0.93 | −0.15 | 0 |
+| Ingrid | woman, about 20 | 228 Hz | 1.21 | +0.12 | 0.08 |
+| Ren | woman, mid 20s | 210 Hz | 1.17 | +0.05 | 0.02 |
+
+(Ren is a woman: she is the female half of "Male and female deepfake.jpg".)
+
+The shift depends on the caller. The engine keeps a median of the caller's
+pitch: a histogram in quarter-semitone bins with a half-life of 3000 voiced
+readings. The pitch ratio is `target / callerMedian`. The formant ratio is
+`targetTract / tractFromPitch(callerMedian)`, which maps 115 Hz to 1.0 and
+205 Hz to 1.17 on a log scale, so a man choosing Maya gets about ×1.7 pitch
+and ×1.14 formants, and a woman choosing Maya gets almost none. The median is
+saved every second (`forkmesh.chat.callVoicePitch`, in the page's
+`localStorage` on the apps too) and seeds the next call with a weight of 60
+readings. A first call starts from 150 Hz and settles once the caller has
+spoken for a few seconds. The early estimate follows the first phrases,
+which are often higher.
+
+**Choice and UI.** The choice is "Match face" (the default), "Your own
+voice" (`off`) or one of the five voices. It is stored in `localStorage`
+`forkmesh.chat.callVoice` on the web and under the `chat.callVoice` pref in
+the apps (`DirectCallEngine.voiceChoice` and `setVoiceChoice` on iOS and
+Android). "Match face" uses the face shown in a video call. In a voice-only
+call it uses the saved face (the persona). `/chat` shows a Voice select in
+the call panel with a "Voice: <name>" indicator. The apps add a waveform
+button that opens a picker, plus a "Voice: <name>" line under the call
+state. The apps show the voice the page reports as applied (the page's
+`{event: "voice", id}`), not the one that was requested.
+
+**Native page.** `app/tools/sync_native_call_voice.py` inlines
+`chat-call-voice.js` as `window.FmCallVoice` and the worklet source as a
+`<script type="text/plain" id="fm-call-voice-worklet">`. The page loads the
+worklet from a `blob:` URL, so the page CSP has `script-src 'unsafe-inline'
+blob:`. It is a separate tool from the face sync, so the two never rewrite
+each other's blocks. Page operations:
+
+- `setup(media, ice, face, voice)`: the fourth argument starts the voice
+  before the offer.
+- `voice(id)` and `voiceList()`.
+- `preview(media, voice)` and `monitor(on)`, described below.
+
+`offer` and `answer` wait up to 2.5 s for a starting voice, so the first
+packets already carry it. On the web, `/chat` waits the same way before it
+sends `call-accept` or the offer.
+
+### Hearing yourself, and using the processor outside a call
+
+Requested 2026-10-13: before a call, people must be able to hear
+themselves with the voice change, and recorded messages will reuse the same
+processor. `chat-call-voice.js` exports:
+
+- `createVoiceStage({sourceTrack, voiceId, userPitchHz, moduleUrl, onStats})`
+  returns `{track, voice(), setVoice(id), monitor(on), monitoring(),
+  monitorLatencyMs(), latencyMs(), stats(), stop()}`. It needs no
+  `RTCPeerConnection`. `track` is a processed `MediaStreamTrack` that a
+  `MediaRecorder` can record directly. `monitor(true)` also plays the
+  processed voice to the local output, through a gain that ramps over 15 ms.
+- `createVoicePreview({micStream?, choice?, faceId?})` builds the stage from
+  the saved choice and pitch. It turns the monitor on only when
+  `headphonesLikely()` is true and returns `{track(), setChoice, setFace,
+  monitor, monitoring, headphones, supported, stop}`.
+  `mountVoicePreviewControls(container, preview)` adds the Voice select, a
+  "Hear myself" toggle and a hint. The hint says headphones were detected,
+  or warns that a speaker will echo and may howl.
+- `headphonesLikely()` reads the output device labels (headphones, headset,
+  earbuds, AirPods, Bluetooth, hands-free). Browsers expose labels only
+  after microphone permission, so this is a heuristic. The apps can ask the
+  OS instead: `CallAudioRoute.headphonesConnected` on iOS (AVAudioSession
+  route: headphones or Bluetooth A2DP/HFP/LE) and
+  `callHeadphonesConnected(context)` on Android (wired, Bluetooth A2DP/SCO,
+  USB or BLE headset). `WebCallPeer.preview(media:voice:)` and `setMonitor`
+  drive the page before `setup`, and `setup` reuses the previewed
+  microphone.
+- During a call, `createChatCalls(...).monitorVoice(on)` does the same (off by
+  default).
+
+What you hear yourself is delayed by the 36 ms processing plus the output
+device's own latency. Headless Chromium reported 71–103 ms in total with its
+fake output device. Bluetooth headphones add their usual 100–200 ms, which
+nothing in the page can remove. The pre-call Preview screen is being built
+by the face agent (branch `1993-call-face-head-and-backgrounds`). It is to
+call `createVoicePreview` / `mountVoicePreviewControls` on the web and the
+`preview`/`monitor` page operations in the apps. That wiring happens when
+the branches merge.
+
+### Measured
+
+Measured with piper speech as callers: lessac, a female voice with a
+192 Hz median, and ryan pitched down with formants preserved
+(`rubberband`), a male voice with a 120 Hz median. Each was rendered
+through every voice. F0 was measured with an independent YIN tracker, on
+frames aligned for latency.
+
+- With a seeded caller pitch, the median output lands within 0.7 semitone of
+  every target, for example a man choosing Maya: 194 Hz against 196, and a
+  woman choosing Kofi: 100 Hz against 96. Between 87 % and 99 % of voiced
+  frames are within one semitone of the intended ratio, and octave errors
+  are under 3 %.
+- Through a real WebRTC loopback with Opus (headless Chromium, the fake
+  microphone fed from the WAV, `replaceTrack` onto a live sender), the
+  remote side heard Kofi at 93 to 98 Hz and Maya at 190 to 194 Hz.
+- On sines in the tracked range, with the voice switching every half second:
+  no clicks (worst normalised second difference 0.08), no gaps, and the
+  output is identical for any render block size.
+- CPU: 0.25 to 0.65 ms on average per 128-sample quantum, out of 2.67 ms, in
+  Node on this (shared) desktop. Headless Chromium renders offline at 9 to
+  12x real time.
+
+Tests: `app/tests/test_chat_call_voice.py` (the DSP on synthetic voices,
+latency, block-size independence, clicks, limiter, CPU, the `/chat`
+wiring, native page sync and app wiring), `DirectCallsTests` on iOS
+(`testVoiceMatchesTheFaceUntilAnotherVoiceIsChosen`) and
+`DirectCallVoicesTest` on Android.
+
+**Not verified on a device.** Nothing here has run on a phone, and no person
+has listened to it:
+
+- WKWebView supports `AudioWorklet` and `getUserMedia` since iOS 14.5 and
+  14.3. Unverified: that an `AudioContext` runs alongside WebKit's capture
+  session without a gesture (`mediaTypesRequiringUserActionForPlayback = []`
+  should allow it), and how the voice-processing audio session sounds with
+  the monitor on.
+- The Android WebView is Chromium, so it should behave like the headless
+  runs above.
+- The iOS app files were only parse-checked, and the Android app was only
+  compiled (`:app:compileDebugKotlin`).
+
 ## Direct-message header on a phone
 
 Reported 2026-10-13: the DM screen was too wide for a phone and its header

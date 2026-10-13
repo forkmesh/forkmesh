@@ -203,7 +203,7 @@ To get the public key, run `forkmesh-mirror-node --config … --print-public-key
 **Core-side prerequisites:**
 
 - The core's gateway serves `/v1/runner/…` for every configured, enabled repository. It never creates a repository on demand.
-- The app sets `RUNNER_POOL_TARGET_NODES` to the core node name(s) whose queues the pool drains. In `app/wrangler.toml` it is `fmnext-n1,fmnext-n2,fmnext-n3` (since 9436027): a job queued on any core can be claimed by a pool runner.
+- The app sets `RUNNER_POOL_TARGET_NODES` to the core node name(s) whose queues the pool drains. In `app/wrangler.toml` it is `fmnext-n1,fmnext-n2,fmnext-n3` (since 9436027): a job queued on any core can be claimed by a pool runner. On the cores it follows the fleet: `deploy/core/render.py` writes `FORKMESH_VAR_RUNNER_POOL_TARGET_NODES` (every core in `fleet.toml` as `fmnext-<name>`) into `app.env`, which overrides the wrangler value, so a core added or removed with `next_fleet.py add-core`/`remove-core` is trusted or dropped with the next render (2026-10-13). `HOSTED_GIT_CORE_NODES` is rendered the same way.
 
 ### Prompt images (2026-10-04)
 
