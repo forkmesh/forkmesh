@@ -1286,6 +1286,17 @@ if [ ! -x native/android/gradlew ]; then
   echo "this release has no native Android app (native/android/gradlew)" >&2
   exit 1
 fi
+changelog=""
+since="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)"
+notes="$(mktemp "${TMPDIR:-/tmp}/forkmesh-changelog-XXXXXX")"
+trap 'rm -f "$notes"' EXIT
+if [ -f tools/mobile_changelog.py ] && python3 tools/mobile_changelog.py --repo . --commit HEAD \
+    --platform android --since-ref "$since" --version "$FORKMESH_ANDROID_VERSION_NAME" \
+    --build "$FORKMESH_ANDROID_VERSION_CODE" --out "$notes"; then
+  changelog="$notes"
+else
+  echo "No changelog for this APK: it shows its version with no notes." >&2
+fi
 cd native/android
 nice -n 10 ../../tools/loopback-netns.sh ./gradlew --no-daemon --console=plain \
   -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
@@ -1293,6 +1304,7 @@ nice -n 10 ../../tools/loopback-netns.sh ./gradlew --no-daemon --console=plain \
   -Pforkmesh.appId="$FORKMESH_ANDROID_APPLICATION_ID" \
   -Pforkmesh.versionCode="$FORKMESH_ANDROID_VERSION_CODE" \
   -Pforkmesh.versionName="$FORKMESH_ANDROID_VERSION_NAME" \
+  ${changelog:+-Pforkmesh.changelog="$changelog"} \
   :app:assembleRelease
 apk=app/build/outputs/apk/release/app-release.apk
 bt="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)"

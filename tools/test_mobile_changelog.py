@@ -199,3 +199,23 @@ def test_the_adhoc_workflow_bundles_the_changelog():
                   if isinstance(step, dict) and step.get("name") == "Bundle the changelog")
     assert "tools/changelog_stamp.py" in script and "ForkMesh/Resources/Changelog.json" in script
     assert "FORKMESH_CHANGELOG_DRAFT" in (ROOT / "native" / "ios" / "tools" / "mac_adhoc_build.sh").read_text()
+
+
+def test_the_shortcut_ships_a_draft_with_the_steps(repo, tmp_path, monkeypatch):
+    import mac_adhoc_deploy
+    monkeypatch.setattr(mac_adhoc_deploy, "say", lambda *a, **k: None)
+    first = commit(repo, "Initial import of the tree", "README")
+    commit(repo, "Calls: blur the background behind you", "app/calls.py")
+    published_file = tmp_path / "published.json"
+    published_file.write_text(json.dumps(published((7, first, 1_790_000_050))))
+    dest = tmp_path / "changelog.json"
+    assert mac_adhoc_deploy.write_changelog(dest, "main", repo, published_file)
+    draft = json.loads(dest.read_text())
+    assert draft["entries"][0]["pending"] and draft["entries"][0]["after"] == "7"
+    assert not mac_adhoc_deploy.write_changelog(tmp_path / "none.json", "main", tmp_path / "missing", published_file)
+
+
+def test_the_android_release_bundles_the_changelog():
+    text = (ROOT / "tools" / "forkmesh-release-host.py").read_text()
+    assert "tools/mobile_changelog.py" in text and "-Pforkmesh.changelog=" in text
+    assert "forkmesh.changelog" in (ROOT / "native" / "android" / "app" / "build.gradle.kts").read_text()
