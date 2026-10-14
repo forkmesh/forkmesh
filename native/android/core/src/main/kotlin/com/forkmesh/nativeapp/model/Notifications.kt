@@ -124,7 +124,7 @@ data class ForkNotification(
             "repository_hosted" -> "Hosting"
             "organization_task_started", "organization_task_activity", "organization_task_update" -> "Task"
             "calendar_invitation", "calendar_reminder", "calendar_rsvp" -> "Calendar"
-            "chat_webhook", "channel_unread" -> "Chat"
+            "chat_webhook", "channel_unread", "direct_unread" -> "Chat"
             "account_email_sent" -> "Email"
             "operational_alert" -> "Alert"
             "security_alert" -> "Security"

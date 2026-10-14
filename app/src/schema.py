@@ -708,6 +708,8 @@ SCHEMA_STATEMENTS = [
         last_read_count INTEGER NOT NULL DEFAULT 0
             CHECK (last_read_count >= 0),
         initiated INTEGER NOT NULL DEFAULT 0 CHECK (initiated IN (0, 1)),
+        unread_reminded_at INTEGER NOT NULL DEFAULT 0
+            CHECK (unread_reminded_at >= 0),
         PRIMARY KEY (conversation_id, participant_bi))""",
     "CREATE INDEX IF NOT EXISTS idx_chat_direct_participants_account "
     "ON chat_direct_participants(participant_bi, conversation_id)",

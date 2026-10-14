@@ -411,7 +411,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("ap-outbox")
         elif minute % 5 == 1:
             phases.extend((
-                "reward-chain", "reward-contributions", "reward-sweeps"))
+                "reward-chain", "reward-contributions", "reward-sweeps",
+                "direct-unread-email"))
         elif minute % 5 == 2:
             phases.append("federation")
         elif minute % 5 == 3:

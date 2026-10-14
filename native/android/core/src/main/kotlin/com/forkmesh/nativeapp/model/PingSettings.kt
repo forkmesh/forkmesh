@@ -141,6 +141,7 @@ val PING_KIND_FALLBACK_CATALOG: List<PingKindGroup> = listOf(
             PingKind("subscribed", "Activity on things you follow", true),
             PingKind("chat_webhook", "Chat webhook posts", false),
             PingKind("channel_unread", "Unread channel messages", true),
+            PingKind("direct_unread", "Unread direct messages", true),
             PingKind("calendar_invitation", "Calendar invitations", true),
             PingKind("calendar_reminder", "Calendar reminders", true),
             PingKind("calendar_rsvp", "Calendar replies", true),

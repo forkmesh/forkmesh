@@ -2,7 +2,8 @@ import re
 import urllib.parse
 from html import escape, unescape
 
-UNSUBSCRIBE_KINDS = ("notifications", "general_chat", "channel_unread", "tip",
+UNSUBSCRIBE_KINDS = ("notifications", "general_chat", "channel_unread",
+                     "direct_unread", "tip",
                      "badge", "reward_wallet_reminder", "package",
                      "marketing", "task")
 DELIVERY_EVENTS = ("delivery", "soft bounce", "bounce", "reject")
