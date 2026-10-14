@@ -275,7 +275,7 @@ public final class AccountPackagesStore {
 
     public func isAccountSynced(_ id: String) -> Bool { info(id) != nil || state?.entry(id) != nil }
 
-    public func isInstalled(_ id: String) -> Bool { installed(id, depth: 0) }
+    public func isInstalled(_ id: String) -> Bool { installed(id, depth: 0, in: installLookup()) }
 
     public var isLegacyProject: Bool { legacyProject() }
 
@@ -325,33 +325,65 @@ public final class AccountPackagesStore {
 
     public func isShownHere(_ id: String) -> Bool { isInstalled(id) && isPlaced(id) }
 
-    private func installed(_ id: String, depth: Int) -> Bool {
-        let own: Bool
-        let entry = state?.entry(id)
-        if entry == nil && info(id) == nil {
-            return PackageGate.isGated(id) ? legacyProject() || PackageGate.isStarter(id, pack: starterPack()) : true
+    private struct InstallLookup {
+        let entries: [String: AccountPackageEntry]
+        let infos: [String: AccountPackageInfo]
+        let legacy: Bool
+        let pack: StarterPack
+        let choices: [String: Bool]
+    }
+
+    private func installLookup() -> InstallLookup {
+        var entries: [String: AccountPackageEntry] = [:]
+        for entry in state?.packages ?? [] where entries[entry.id] == nil {
+            entries[entry.id] = entry
         }
-        if ownsInstalls {
+        var infos: [String: AccountPackageInfo] = [:]
+        for info in catalog where infos[info.id] == nil {
+            infos[info.id] = info
+        }
+        let legacy = legacyProject()
+        return InstallLookup(
+            entries: entries, infos: infos, legacy: legacy, pack: starterPack(), choices: legacy ? [:] : projectChoices)
+    }
+
+    private func installed(_ id: String, depth: Int, in lookup: InstallLookup) -> Bool {
+        let own: Bool
+        let entry = lookup.entries[id]
+        let info = lookup.infos[id]
+        if entry == nil && info == nil {
+            return PackageGate.isGated(id) ? lookup.legacy || PackageGate.isStarter(id, pack: lookup.pack) : true
+        }
+        if !lookup.legacy {
             let accountKeeps = entry?.installed ?? true
-            switch projectChoices[id] {
+            switch lookup.choices[id] {
             case .some(true): own = accountKeeps
             case .some(false): own = false
-            case .none: own = PackageGate.isStarter(id, pack: starterPack()) || ((info(id)?.defaultOn ?? false) && accountKeeps)
+            case .none: own = PackageGate.isStarter(id, pack: lookup.pack) || ((info?.defaultOn ?? false) && accountKeeps)
             }
         } else if let entry {
             own = entry.installed
-        } else if let info = info(id) {
-            own = fallbackInstalled(info)
+        } else if let info {
+            own = info.defaultOn || !info.installedBefore.isEmpty
         } else {
             own = false
         }
         if !own { return false }
         if depth > 8 { return true }
-        return (info(id)?.dependencies ?? []).allSatisfy { installed($0, depth: depth + 1) }
+        return (info?.dependencies ?? []).allSatisfy { installed($0, depth: depth + 1, in: lookup) }
     }
 
     public var installedGatedPackages: Set<String> {
-        Set(PackageGate.packages.filter { !PackageGate.organizationPackages.contains($0) && isShownHere($0) })
+        let lookup = installLookup()
+        let starters = lookup.pack.packages
+        return Set(
+            PackageGate.packages.filter { (id: String) -> Bool in
+                guard !PackageGate.organizationPackages.contains(id) else { return false }
+                if lookup.entries[id] == nil && lookup.infos[id] == nil {
+                    return lookup.legacy || starters.contains(id)
+                }
+                return installed(id, depth: 0, in: lookup) && (lookup.entries[id]?.shows(on: PackagePlace.here) ?? true)
+            })
     }
 
     public func isBusy(_ id: String) -> Bool { busy.contains(id) }

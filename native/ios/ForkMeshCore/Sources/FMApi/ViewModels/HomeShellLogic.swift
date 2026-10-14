@@ -306,9 +306,16 @@ public final class ShellBarOrder {
             .map(\.key)
     }
 
+    public static func mostUses(_ uses: [String: Int], among ids: [String]) -> Int {
+        ids.map { uses[$0] ?? 0 }.max() ?? 0
+    }
+
     public static func heat(_ id: String, uses: [String: Int], among ids: [String]) -> Double {
+        heat(id, uses: uses, most: mostUses(uses, among: ids))
+    }
+
+    public static func heat(_ id: String, uses: [String: Int], most: Int) -> Double {
         let count: Int = uses[id] ?? 0
-        let most: Int = ids.map { uses[$0] ?? 0 }.max() ?? 0
         guard count > 0, most > 0 else { return 0 }
         return min(log(1 + Double(count)) / log(1 + Double(most)), 1)
     }
@@ -324,8 +331,12 @@ public final class ShellBarOrder {
     }
 
     public static func frequentMark(_ id: String, uses: [String: Int], among ids: [String]) -> Double? {
+        frequentMark(id, uses: uses, most: mostUses(uses, among: ids))
+    }
+
+    public static func frequentMark(_ id: String, uses: [String: Int], most: Int) -> Double? {
         guard (uses[id] ?? 0) >= frequentMinimumUses else { return nil }
-        let level: Double = heat(id, uses: uses, among: ids)
+        let level: Double = heat(id, uses: uses, most: most)
         return level >= frequentMinimumHeat ? level : nil
     }
 

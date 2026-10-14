@@ -47,6 +47,20 @@ final class PackageGateTests: XCTestCase {
         XCTAssertEqual(AccountPackageInfo(json: info.json)?.installedBefore, "2026-10-11")
     }
 
+    @MainActor func testTheInstalledSetMatchesAskingEachPackage() async {
+        let prefs = InMemoryKeyValueStore()
+        Self.choose(prefs, ["vault": true, "agents": false, "notes": true, "workflows": false])
+        for legacy in [true, false] {
+            for pack in StarterPack.allCases {
+                let store = store(legacy: legacy, prefs: prefs, pack: pack)
+                let asked = PackageGate.packages.filter {
+                    !PackageGate.organizationPackages.contains($0) && store.isShownHere($0)
+                }
+                XCTAssertEqual(store.installedGatedPackages, asked, "legacy \(legacy), \(pack.rawValue)")
+            }
+        }
+    }
+
     @MainActor func testANewProjectStartsWithOnlyTheStarterPackages() async {
         let store = store(legacy: false)
         for id in ["special-agents", "branches", "pull-requests", "notes", "vault", "status-page", "workflows"] {
