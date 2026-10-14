@@ -675,9 +675,10 @@ def test_every_catalog_badge_has_a_medallion_and_the_card_shows_it():
         assert "<script" not in art and "href=" not in art
     script = (ROOT / "public" / "dashboard" / "js" / "04-account.js").read_text(
         encoding="utf-8")
-    card = script.split("function profileBadgeMedalSources(slug)", 1)[1]
+    card = script.split("function profileBadgeMedalSources(slug, tier)", 1)[1]
     card = card.split("function renderProfileBadges(session)", 1)[0]
-    assert '"/assets/badges/" + slug + ".svg"' in card
+    assert '"/assets/badges/" + file + ".svg"' in card
+    assert 'tier ? [slug + "-" + tier, slug] : [slug]' in card
     assert "const icon = profileBadgeMedal(badge);" in card
     assert "badge.icon" not in card
 
