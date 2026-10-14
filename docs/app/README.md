@@ -215,7 +215,10 @@ exhaust memory. Browser tests:
   (`app/src/urls.py`) must be in `REPO_HOST_READ_ACTIONS`
   (`app/src/app_runtime.py`), or it answers the cacheable 410
   `repository_socket_transport_retired`;
-  `app/tests/test_repo_read_route_operations.py` checks the lists agree.
+  `app/tests/test_repo_read_route_operations.py` checks the lists agree, and
+  `app/tests/test_dashboard_landing_migration.py` reads the set's members
+  from source to check the dashboard's compare, history, branch and raw
+  reads stay on the direct HTTPS gateway.
 - **Read guard.** Heavy readers go through `app/src/d1_read_guard.py`
   `shared_read`; the switch is off by default on rqlite.
 
