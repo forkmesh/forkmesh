@@ -1,34 +1,63 @@
 # Planned plugins
 
-These pages list the features we plan to move out of the ForkMesh core and
-into optional Marketplace packages. They come from the repo-wide plugin
-decomposition audit in issue #677, which looked at 1,742 tracked code files
-(686 of them tests). Nothing here is shipped yet. Each package family gets its
-own issue once it is scheduled.
+Features that may move out of the ForkMesh core into optional Marketplace
+packages. Nothing on this page is shipped; each family gets its own issue once
+scheduled. The package format and lifecycle are in
+[`marketplace/README.md`](../../../marketplace/README.md).
 
-Here, **plugin** means a `.fmpkg` package with a manifest: it declares its
-entrypoints and permissions, owns its own state, removes everything when
-uninstalled, and has migrations that can be rolled back. It does not mean a
-library loaded at runtime.
+A **plugin** here is a `.fmpkg` package with a manifest: it declares its
+entrypoints and permissions, owns its state, removes everything on uninstall,
+and has reversible migrations. It is not a library loaded at runtime.
 
-The audit comes in two modes:
+## Admission test
 
-| Mode | Page | What it answers |
-| --- | --- | --- |
-| Stingy | [Plugin shortlist](shortlist.md) | What we recommend building: 12 package families and 10 host socket families, plus the test a candidate must pass, when to stop, and the boundaries that stay in core. |
-| Generous | [Plugin opportunity inventory](opportunities.md) | What could be built: 316 candidate packages across desktop, App, World, mobile, mirror, CLI/MCP/operations, web, content, and portable skills, plus the 15 package boundaries that already exist and 44 proposed host sockets. |
+A candidate qualifies only when every answer is yes:
 
-Use the shortlist to choose what to build next. Use the inventory to check
-whether an idea has already been considered, and which host socket it would
-need.
+1. ForkMesh still browses, collaborates on, mirrors and preserves repositories
+   without it.
+2. It has one owner, lifecycle and configuration surface, and a reason to
+   version independently.
+3. Install and uninstall can be tested without rewriting or orphaning Git
+   history, identity, collaboration records or security state.
+4. The host can expose a narrow capability instead of arbitrary filesystem,
+   process, network, database or secret access.
+5. A second implementation, provider, content pack or user group benefits from
+   the choice.
 
-## Next step
+## Candidate families
 
-Start with one family. The World element trio is the cheapest. Land its socket
-with install, activate, uninstall, upgrade, rollback, and crash-restart tests
-before building a general version.
+| Family | Host socket |
+| --- | --- |
+| World decorative elements | `world.object` |
+| Portable operations skills and shortcuts | `content.skill`, `content.shortcut` |
+| Analytics (already extracted) | `web.analytics-provider` |
+| Membership provider adapter | `worker.webhook`, `membership.provider` |
+| Push notification adapter | `worker.notification-provider` |
+| Coding-agent provider adapters | `desktop.agent-provider` |
+| Repository statistics panel | `desktop.repo-panel` |
+| Developer diagnostics panel | `desktop.diagnostics-panel` |
+| Git conformance toolkit | `cli.command` |
+| Live sky and satellite data | `world.object`, `world.data-source` |
 
-The Marketplace package format and lifecycle are described in
-[`marketplace/README.md`](../../../marketplace/README.md). The per-candidate
-keep-or-extract review from issue #653 is
-[`docs/marketplace-extraction-inventory.md`](../../../docs/marketplace-extraction-inventory.md).
+Each socket is neutral (no package IDs or provider names in host code), carries
+explicit resource budgets, and has a defined teardown.
+
+## Stays in core
+
+Authentication, sessions, identity and keys; Git object parsing, refs and
+clone/fetch/push correctness; mirror eligibility, signed health and clone
+routing; issue, pull, review, merge and release record formats; permission
+evaluation, audit and abuse policy; Marketplace signature verification,
+installation and rollback; wallet and payout authority; agent sandboxing and
+final approval of repository mutations; chat encryption and membership; World
+renderer budgets.
+
+## Before extracting a family
+
+- A neutral socket and a permission list that is not "arbitrary code", "all
+  network", "all repositories" or "all secrets".
+- Install, activate, deactivate, uninstall, reinstall, upgrade, rollback and
+  crash/restart tests.
+- Package-owned settings, cache and data with tested export and purge.
+- Resource budgets, cancellation, and a documented degraded state when the
+  package or its provider is unavailable.

@@ -1,35 +1,24 @@
 # ForkMesh feature definition of done
 
-A feature is complete only when its implementation and the evidence below are
-reviewable together. This applies to application code, infrastructure, protocol
-changes, and visible World behavior.
+A feature is complete when its code and the following evidence can be reviewed
+together. The pull-request template has one section per item, and CI rejects a
+pull request with a missing or placeholder section.
 
-## Required evidence
-
-1. **Threat review.** Identify trust boundaries, sensitive inputs, authority
-   changes, failure behavior, and likely attacker goals. State why the feature
-   fails closed where authorization, identity, custody, or repository privacy is
-   uncertain.
-2. **Abuse and privacy review.** Record the data collected, its visibility,
-   retention and deletion behavior, consent controls, moderation/appeal path,
-   and abuse cases. Raw IP addresses, wallet secrets, private repository
-   existence, and private agent data must not become public observability data.
-3. **Benchmark and budget evidence.** Run the applicable performance budget or
-   provide a reproducible measurement. A feature with no relevant hot path may
-   say so, but must explain why.
-4. **Regression-test evidence.** Add tests for the success path, denied path,
-   malformed input, and material privacy or authorization boundary. Record the
-   exact commands and results.
-5. **Operational evidence.** Document deployment, configuration, rollback,
-   monitoring, recovery, and any external operation that was intentionally not
-   performed.
-
-The pull-request template exposes these five sections. CI rejects a pull request
-when a section is missing or contains only the template placeholder.
+1. **Threat review.** Trust boundaries, sensitive inputs, authority changes,
+   failure behaviour. Authorization, identity, custody and repository privacy
+   fail closed when uncertain.
+2. **Abuse and privacy review.** Data collected, visibility, retention,
+   deletion, consent, moderation and abuse cases. Raw IP addresses, secrets,
+   private repository existence and private agent data never become public
+   observability data.
+3. **Benchmark and budget evidence.** The applicable performance budget, or a
+   reproducible measurement, or a reason there is no hot path.
+4. **Regression tests.** Success, denied, malformed-input and privacy or
+   authorization boundary cases, with the commands and results.
+5. **Operational evidence.** Deployment, configuration, rollback, monitoring
+   and recovery.
 
 ## Running the gates
-
-From the repository root:
 
 ```bash
 python3 tools/quality_gate.py validate
@@ -37,36 +26,21 @@ python3 tools/quality_gate.py run --profile core
 python3 tools/quality_gate.py run --profile release
 ```
 
-The `core` profile is the fast local and CI gate. The `release` profile also
-runs the real-browser World suite and therefore requires its pinned Playwright
-dependencies and Chromium installation. Native Qt, iOS and Android suites remain
-required when their toolchains are available; the completion report must name
-any unavailable toolchain rather than silently treating it as passed.
-
-For a desktop change, also build the `forkmesh` app target
-(`./desktop/run.sh` or `cmake --build desktop/build --target forkmesh`). The
-desktop workflow (`.forkmesh/desktop-ci.yml`) builds only the critical test
-targets; `forkmesh-window-tests` among them compiles the `MainWindow*.cpp`
-units, but no CI job compiles `desktop/src/main.cpp` or links the app. See [docs/desktop/build-and-test.md](../../../docs/desktop/build-and-test.md).
-
-CI runs the core profile on pushes, pull requests, a weekly schedule, and manual
-dispatch. The separate World browser workflow runs the browser portion on every
-push and pull request, including the blocking responsive daily-interface timing
-and accessibility journey documented in
-[`daily-interface-validation.md`](daily-interface-validation.md).
+`core` is the fast local and CI gate. `release` adds the real-browser World
+suite (pinned Playwright and Chromium). Native Qt, iOS and Android suites are
+required where their toolchains exist; a missing toolchain is reported, never
+counted as a pass. Desktop changes must also build the `forkmesh` app target,
+since CI only builds the test targets. The responsive daily-interface journey is
+described in [`daily-interface-validation.md`](daily-interface-validation.md).
 
 ## Changing a budget
 
-Improving a maximum needs no exception. Removing a budget or raising a maximum
-is a weakening and must be explicit:
+Budgets live in `quality-gates.json`. Tightening needs no exception. Removing a
+budget or raising a maximum requires a waiver:
 
-1. Add a JSON record under `www/docs/engineering/quality-gate-waivers/` using the
-   budget ID as the file name.
-2. Include every field listed in `quality-gates.json`, a concrete risk review,
-   a UTC expiry date, and the approving reviewer identity.
-3. Pass the base commit to
-   `python3 tools/quality_gate.py compare --base-ref <sha>`.
-4. Replace the waiver with a restored or tighter budget before it expires.
-
-The comparison command rejects silent removals or increases. Waivers are an
-auditable temporary exception, not a way to make a failing test green.
+1. Add a JSON record under `www/docs/engineering/quality-gate-waivers/` named
+   after the budget ID, with every field `quality-gates.json` lists, a risk
+   review, a UTC expiry date and the approving reviewer.
+2. Run `python3 tools/quality_gate.py compare --base-ref <sha>`; it rejects
+   silent removals and increases.
+3. Restore or tighten the budget before the waiver expires.

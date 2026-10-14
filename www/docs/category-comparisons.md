@@ -1,80 +1,30 @@
 # When ForkMesh fits, and when it does not
 
-ForkMesh lets developers collaborate on, mirror, and preserve source-code
-repositories across independent hosts—without relying on any single hosting
-provider. That is not what every team needs. This page compares ForkMesh with
-the other ways teams host and keep Git repositories, so you can decide whether
-it fits before you spend time migrating.
-
-Status: issue #509. Evidence ledger:
-[`ledger.json`](../../conformance/category-comparisons/v1/ledger.json).
-Check tool: [`category_comparisons.py`](../../tools/category_comparisons.py).
+This page compares ForkMesh with other ways to host and keep Git repositories,
+so you can decide whether it fits before migrating. Evidence ledger:
+[`ledger.json`](../../conformance/category-comparisons/v1/ledger.json); check
+tool: [`category_comparisons.py`](../../tools/category_comparisons.py).
 
 ## How to read the comparison
 
-- **Two ForkMesh columns.** *ForkMesh protocol and self-hosted software* is
-  what anyone can run from this repository. *ForkMesh hosted service* is what
-  ForkMesh operates at forkmesh.com. A capability in one column does not imply
-  the other.
-- **Categories, not scorecards.** The other columns describe a kind of tool.
-  <!-- terminology: allow=peer-to-peer -->
-  Decentralized, Git-native tools are sometimes called peer-to-peer tools.
-  Where a cell names a product, it quotes that product's own documentation,
-  linked under *Primary sources* with the date it was checked.
-- **By definition** marks a statement that follows from what the category is,
-  such as "you run the server" for a self-hosted forge.
-- **No claim made** means we found no primary source that supports a
-  category-wide statement, so we do not make one. Read the provider's own
-  documentation for that row.
+- *ForkMesh protocol and self-hosted software* is what anyone can run from this
+  repository; *ForkMesh hosted service* is what forkmesh.com operates. A
+  capability in one column does not imply the other.
+- Other columns describe a category of tool. A cell that names a product quotes
+  that product's documentation, listed under *Primary sources* with its check date.
+- **By definition** marks a statement that follows from what the category is.
+  **No claim made** means no primary source supports a category-wide statement.
 
 ## How the claims stay honest
 
-The ledger is the source of truth; the block below is generated from it. If
-this page and the JSON disagree, the JSON wins.
-`python3 tools/category_comparisons.py check` fails when:
-
-- a matrix cell is missing, or a ForkMesh cell cites no test, specification,
-  or product evidence, or cites a test or heading that no longer exists;
-- a cell about another category cites anything other than a dated primary
-  source, or names a vendor none of its sources is published by;
-- any claim, source, or the page review is older than the review cadence, so
-  the comparison goes stale on the calendar rather than silently ageing;
-- claim or next-step copy uses an overclaiming phrase such as "unlimited" or
-  "guaranteed";
-- a measured next-step link carries a UTM value that attribution would record
-  as `other`; or
-- this generated block is out of date. Run `render` to refresh it.
-
-The `category-comparison-claims` quality gate and the *Category comparisons*
-workflow run the check on Linux, macOS, and Windows every week and on every
-change, and keep the `report` JSON as evidence.
-
-### Reviewing and correcting a claim
-
-At each review, open every primary source again, confirm the quoted text is
-still there, and re-run the linked ForkMesh tests. Update `verifiedOn` only for
-what you checked. When a claim was wrong, change it and add an entry under
-`corrections` with the date, the claim ids, and what changed; the page lists
-every correction. A claim you cannot verify again becomes **No claim made**
-rather than staying up with an old date.
-
-### Measures
-
-`python3 tools/category_comparisons.py report` prints the claim freshness
-measures: the review due date, the oldest verification date, cells by basis,
-and the number of corrections. Comparison exits and qualified conversion come
-from [acquisition attribution](../../docs/attribution.md): the trial and
-community links carry `utm_source=docs`, `utm_medium=comparison`, and
-`utm_campaign=category_comparison_509`, so signups and repository visits from
-this page appear under that channel. Documentation pages themselves are not
-captured, so exits to the self-hosting guide are not counted. Sales and support
-mismatches are not measured yet; report one as a correction.
-
-### Rollback
-
-Removing a claim is always safe: delete it from the ledger or change it to
-**No claim made**, then run `render`. The attribution allowlist values can stay;
-unused values record nothing.
+The block below is generated from the ledger; if they disagree, the ledger
+wins. `python3 tools/category_comparisons.py check` fails when a matrix cell is
+missing or lacks evidence, a category claim lacks a dated primary source, any
+claim is older than the review cadence, copy overclaims ("unlimited",
+"guaranteed"), a next-step UTM value is not allowlisted, or the block is out of
+date (run `render`). `report` prints freshness measures. Wrong claims are fixed
+in the ledger with a `corrections` entry; unverifiable claims become **No claim
+made**.
 
 <!-- category-comparisons:begin -->
 

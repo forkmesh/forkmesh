@@ -2,10 +2,9 @@
 
 `conformance/<suite>/v1/` holds versioned, machine-readable contracts: test
 vectors, fixtures, ledgers and retained evidence. Each suite is shared by the
-implementations it binds (the Python app, the Go daemon in `server/`, the
-desktop, mobile) and backs one public page under `www/docs/`. A version
-directory is frozen once published; a breaking change adds `v2` beside it.
-No suite has a `v2` yet.
+implementations it binds (the Python app, the Go daemon, the desktop, mobile)
+and backs one public page under `www/docs/`. A version directory is frozen
+once published; a breaking change adds `v2` beside it.
 
 ## Code map
 
@@ -36,23 +35,14 @@ No suite has a `v2` yet.
 
 A suite is data, not code. Implementations load the same fixture or vectors
 and must produce the recorded outputs, so the app, the Go daemon, the desktop
-and the mobile app cannot drift apart silently. Generator scripts
-(`generate_fixture.py`, `generate_vectors.py`, `build_corpus.py`) either
-rebuild the expected outputs or, with `--check`, fail when they are stale.
-
-Ledger suites (`git`, `category-comparisons`, `governance`, `funding`,
-`certification`) are rendered by their tool's `render` command into Markdown
-under `www/docs/`. All but `category-comparisons` also write JSON under
-`www/public/docs/`.
-
-## Protocols and interfaces
-
-Each suite's JSON shape is defined by its generator or consuming tool; there
-is no separate schema file.
-
-## Configuration
-
-None. Suites are versioned by directory.
+and the mobile apps cannot drift apart silently. Generator scripts
+(`generate_fixture.py`, `generate_vectors.py`, `build_corpus.py`) rebuild the
+expected outputs or, with `--check`, fail when they are stale. Ledger suites
+(`git`, `category-comparisons`, `governance`, `funding`, `certification`) are
+rendered by their tool's `render` command into Markdown under `www/docs/`
+(most also write JSON under `www/public/docs/`). Each suite's JSON shape is
+defined by its generator or consuming tool. Suites are versioned by
+directory; there is no other configuration.
 
 ## Build, run, test
 
@@ -63,55 +53,21 @@ python3 tools/git_conformance.py validate
 python3 -m pytest app/tests/test_protocol_suite.py app/tests/test_secret_gate.py app/tests/test_transports.py
 ```
 
-## Operations
-
 After changing a rendered ledger, run its tool's `render` command so the
-generated `www/docs` page matches; the matching `app/tests` test fails
-otherwise. CI runs `tools/git_conformance.py validate`,
-`render --check` and `run` (protocol v0 and v2) from `.forkmesh/ci.yml`.
+generated page matches; the matching test fails otherwise. CI runs
+`tools/git_conformance.py validate`, `render --check` and `run` from
+`.forkmesh/ci.yml`.
 
-## Security
+## Notes
 
-`secrets/v1/corpus.json` contains synthetic secret-shaped strings only. Its
-file names (for example `docs/security.md`, `docs/aws.md`) are fixture paths
-inside the corpus, not files in this repository.
-
-## Traps
-
-- Several code comments and tests name paths such as `docs/notes.md`,
-  `docs/guide.md` or `www/docs/old.md`; these are test fixtures, not missing
-  documents.
+- `secrets/v1/corpus.json` contains synthetic secret-shaped strings only; its
+  file names (for example `docs/security.md`) are fixture paths, not files in
+  this repository. Likewise, paths such as `docs/notes.md` or `docs/guide.md`
+  in tests are fixtures.
 - `social-signals/v1/vectors.json` and `disaster-recovery/v1/runbook.json`
-  are covered by signatures or attested digests. `tools/rehost.py` and
-  `tools/cutover_rehost.py` never rewrite them (`FROZEN_FILES`); a hostname
-  edit by hand breaks verification.
-- `service-roles` and `external-dependencies` still describe the Cloudflare
-  deployment (Workers, D1, Durable Objects). They were last changed on
-  2026-09-23 and do not yet describe the core nodes.
-- The stock-Git suite's fixture talks to itself over loopback TCP. On a host
-  running a queueing application firewall such as OpenSnitch, a single
-  loopback SYN can be dropped for the life of that connection, so a Git command
-  hangs for its full 90-second timeout. `.forkmesh/ci.yml` therefore runs
-  `git_conformance.py run` under `unshare -rn` with `lo` up (and plainly
-  where `unshare` is not allowed); reproduce a CI hang locally the same way
-  before blaming Git. The integration-contract step runs its fixture
-  `forkmesh_integration.py contract` runs and `test_integration_contract.py`
-  the same way, for the same reason.
-
-## Recent changes
-
-- 2026-10-07: the integration-contract CI step also runs on a private
-  loopback. Run 1755 failed `version`, `openapi`, `endpoint-catalog` and
-  `repositories` against the in-process fixture with 27 connect timeouts over
-  614 s: the same dropped loopback SYNs as run 784.
-- 2026-09-25: CI runs the stock-Git suite on a private loopback, and a failed
-  `git_conformance.py run` prints each failed probe and its reason on stderr
-  (297578432). Run 784 failed `submodules` after a host firewall dropped a
-  loopback SYN; the CI log only said "1 failed".
-- 2026-09-23: `tools/forkmesh_integration.py` says on stderr why an
-  integration contract run fails (fb24b4b60).
-
-## Related docs
-
-- [`docs/tools/README.md`](../tools/README.md)
-- [`www/docs/protocol/README.md`](../../www/docs/protocol/README.md)
+  are covered by signatures or attested digests; rehosting tools never
+  rewrite them (`FROZEN_FILES`), and a hand edit breaks verification.
+- Suites that talk to themselves over loopback TCP (stock Git, integration
+  contract) run in CI under `unshare -rn` with `lo` up, because a host
+  application firewall can drop loopback connections and stall a run.
+  Reproduce CI hangs locally the same way.

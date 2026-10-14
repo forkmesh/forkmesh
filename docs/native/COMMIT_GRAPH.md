@@ -1,9 +1,8 @@
 # Commit graph (iOS Commits screen, Graph tab)
 
-Requested 2026-10-02: a third tab on a repository's Commits screen, beside
-History and Branches, that draws the git history as a lane graph like the
-desktop's, and marks the commit each ForkMesh app is running: Desktop, Web and
-Mobile.
+A third tab on a repository's Commits screen, beside History and Branches,
+draws the git history as a lane graph like the desktop's and marks the commit
+each ForkMesh app is running: Desktop, Web and Mobile.
 
 ## What it shows
 
@@ -34,9 +33,9 @@ Mobile.
 
 | App | Source | Notes |
 |---|---|---|
-| Mobile | `FORKMESH_BUILD_COMMIT` in the app's Info.plist, read into `AppBuild.commit` | `Config/Version.xcconfig` holds an empty `FORKMESH_BUILD_COMMIT`; the shared Codemagic `native_project` step (used by `ios-native-build`, `ios-native-release` and `ios-native-adhoc`) writes `git rev-parse HEAD` into it. Builds from before this change, and local Xcode builds, report nothing. |
+| Mobile | `FORKMESH_BUILD_COMMIT` in the app's Info.plist, read into `AppBuild.commit` | `Config/Version.xcconfig` holds an empty `FORKMESH_BUILD_COMMIT`; the shared Codemagic `native_project` step (used by `ios-native-build`, `ios-native-release` and `ios-native-adhoc`) writes `git rev-parse HEAD` into it. Local Xcode builds report nothing. |
 | Web | `rev` from `GET /api/version` on the account's server (`ApiService.serverVersion`) | `BUILD_REV`, 12 hex characters, with `-dirty-<ts>` on a dirty deploy; only the leading hex is matched. `dev` matches nothing. |
-| Desktop | `commit` in the desktop's local-control `status` reply (`forkmesh::desktopBuildCommit()`) | Asked over the paired desktop's LAN or relay link with an 8 s timeout, only when the Graph tab opens or is refreshed. A desktop built before this change sends no `commit`. A dirty build reports `dirty`, which matches nothing. |
+| Desktop | `commit` in the desktop's local-control `status` reply (`forkmesh::desktopBuildCommit()`) | Asked over the paired desktop's LAN or relay link with an 8 s timeout, only when the Graph tab opens or is refreshed. An older desktop sends no `commit`. A dirty build reports `dirty`, which matches nothing. |
 
 The desktop reads `FORKMESH_BUILD_COMMIT` through `DesktopBuildCommit.h`, defined
 in `MainWindowHostInstall.cpp`, which already includes the generated

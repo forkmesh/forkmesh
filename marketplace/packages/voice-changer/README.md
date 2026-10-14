@@ -28,27 +28,16 @@ app. Free, from the ForkMesh Market.
   (`VoiceEngine.h`) keeps the output queue near 10 ms: it bends the
   resampling ratio by a few cents to follow the drift, refills a queue that
   ran dry once with faded-in silence, and cuts a queue grown long after a
-  stall back behind a short fade. Without it the live voice crackled with
-  static (fixed 2026-09-22).
-- Echo when hearing yourself (fixed 2026-09-24): the engine itself adds no
-  echo (a burst in leaves nothing behind it in any preset); the echo was the
-  whole trip from the microphone to the ForkMesh Voice microphone or the
-  "hear myself" output, measured at 161-188 ms on a PipeWire desktop and
-  heard as a second voice after your own. Two cuts brought it to 138 ms:
-  the STFT keeps its 1024-sample analysis window (the formant and noise
-  estimates need it) but analyses with a long-rise, short-fall square-root
-  Hann window and synthesises with a 512-sample window at the frame's end,
-  so that stage delays 11 ms instead of 21 (unchanged voices still come out
-  bit for bit; formant warps match the old spectrograms); and the player
-  queue target dropped from 30 to 10 ms. Each queue refill adds its target
-  as permanent delay, because `pw-cat` pulls the whole pipe into its own
-  4 KB buffer and `FIONREAD` reads empty at the start. A smaller target was
-  just as clean: no gaps idle on a 440 Hz tone, and fewer than the 30 ms
-  target under full CPU load (7 clicks against 32 in 19 s). The rest is the
-  helper processes: a bare `pw-cat --record | pw-cat --playback` chain
-  costs 64 ms at 40 ms streams, and 20 ms streams crackle again (16 clicks).
-  Going lower needs the engine inside the PipeWire graph (libpipewire), not
-  behind `pw-cat` pipes.
+  stall back behind a short fade, so the live voice does not crackle.
+- Latency: the engine adds no echo of its own; the round trip from the
+  microphone to the ForkMesh Voice microphone or the "hear myself" output is
+  kept low by synthesising with a 512-sample window at the frame's end (the
+  1024-sample analysis window is kept for the formant and noise estimates,
+  with a long-rise, short-fall square-root Hann window), and a 10 ms player
+  queue target (each refill adds its target as permanent delay, because
+  `pw-cat` buffers the pipe). The remaining delay is the `pw-cat` helper
+  processes; going lower needs the engine inside the PipeWire graph
+  (libpipewire).
 - `content/desktop/VoiceChangerFeature.{h,cpp}`: the rail page. Start/Stop,
   microphone and cable pickers, "hear myself", presets and sliders, saved
   voices (package data in QSettings, removed with the package), AI voice

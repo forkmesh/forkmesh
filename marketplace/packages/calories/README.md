@@ -99,9 +99,8 @@ entry id and a version of its numbers and time are in each sample's
 metadata), saves new entries, replaces edited ones, and deletes the samples
 of entries removed on any client. Samples other apps wrote are never touched.
 The switch is kept per device (`health.calories.enabled`); turning it off
-leaves what was written in Health. No Worker change was needed: the phone
-does the writing from the diary it already reads (2026-09-29, with the
-Pedometer and Water Intake packages).
+leaves what was written in Health. The phone does the writing from the
+diary it already reads; the worker is not involved.
 
 ## Data and privacy
 
@@ -147,22 +146,14 @@ You can export your data at any time. Uninstalling downloads that export
 first, then deletes your diary, weights, goals, reminders, settings, and the
 challenges you created. Deleting your ForkMesh account removes the same rows.
 
-Version 1.0.0 installed per organization. On first use after upgrading, each
-account's existing entries, weights, goals, and reminders move onto the
-account (anyone who had used it is treated as installed); organization
-challenges and organization USDA keys are not carried over.
+Rows created by older versions (organization-scoped, or sealed under one
+instance-wide key) are migrated automatically onto the account and re-sealed
+under its diary key, either when the account next opens Calorie Counter or by
+the per-minute reminder sweep.
 
-Version 2.0.0 sealed the words but not the numbers, under one instance-wide
-key. Version 2.1.0 re-encrypts those rows under per-account diary keys: your
-own rows are converted the next time you open Calorie Counter, and the
-per-minute reminder sweep drains whoever has not been back, then drops the
-old tables. Nothing is asked of you and nothing changes in the API.
-
-Version 2.3.0 made food search live on every surface. Open Food Facts'
-classic `/cgi/search.pl` endpoint is limited to about ten searches a minute
-and was often unavailable, so name search moved to Open Food Facts' own
-Elasticsearch service, `search.openfoodfacts.org`, which is free, open data,
-updated continuously by contributors, and answers in tens of milliseconds.
+Food name search uses Open Food Facts' Elasticsearch service,
+`search.openfoodfacts.org` (open data, fast), rather than the rate-limited
+classic `/cgi/search.pl` endpoint.
 One search asks it up to four questions at once: the words as typed; the
 words with the last one treated as a prefix of the product name, so a
 half-typed word still matches; and the rest of the words limited to brands

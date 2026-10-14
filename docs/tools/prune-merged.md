@@ -41,9 +41,8 @@ tool removed (`complete_task`). The tool cannot read the Tasks page itself.
 - `main`, `master`, `forkmesh/pulls` and every `forkmesh/pull/<n>` branch.
 - `--keep BRANCH`, and every branch attached to an open task in `--tasks`.
 - The branch and session of a standing agent (a session with a `teammateId`,
-  such as CEO, Fixer or Hearth). Its branch has no commits of its own between
-  runs, so it always looks merged, and the 2026-10-07 dry run would have
-  recycled all fourteen.
+  a scheduled teammate). Its branch has no commits of its own between runs,
+  so it always looks merged.
 - A branch whose tip is on `main`'s first-parent line (no commits of its own
   yet, as a new agent's branch is) unless its agent session has finished.
 - The branch of an agent that is running or has not finished. A stopped agent
@@ -63,23 +62,7 @@ per core over one SSH session, after one IDS expectation per core, and runs the
 cores in parallel. Each branch is deleted only while it is still at the listed
 commit and that commit is in `main`; a branch that moved is reported and kept.
 
-Trap: every core fetches its upstream `https://forkmesh.com/forkmesh/forkmesh`
-every 2 minutes, and that name is served by the cores themselves. A core that
-syncs while another still has a branch gets it back. On 2026-09-27 the first
-run deleted 307 branches on every core and 29 came back on n2 and n3 this way.
-`delete-refs` therefore repeats the batch until a pass deletes nothing on any
-core (at most 4 passes).
-
-## Recent changes
-
-- 2026-09-27: added, after a manual cleanup of 119 local branches, 95
-  worktrees, 6 agent sessions, 62 tasks and 307 core branches.
-- 2026-10-06: deleted branches came back. The 2026-10-06 cleanup deleted
-  branches with a bare `update-ref -d`, and within minutes the desktop's mesh
-  converge re-created every one whose mirror copy was not in `main`
-  (`agent/14-say-why-here-in-addition`, `fix/actions-failures` and 51 branch
-  review branches). `retire_branch` now writes the
-  `refs/forkmesh/trash/deleted/<branch>` tombstone first and drops the
-  `forkmesh-mesh` copy, so the converge skips the branch and the source
-  publisher's branch-delete pass removes it from the cores
-  ([CORE_PUSH.md](../CORE_PUSH.md#branches-the-source-deleted-2026-10-06)).
+Trap: every core fetches its upstream, which the cores themselves serve, so a
+core that syncs while another still has a branch gets it back. `delete-refs`
+therefore repeats the batch until a pass deletes nothing on any core (at most
+4 passes).

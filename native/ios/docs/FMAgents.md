@@ -1,116 +1,143 @@
 # FMAgents
 
-The on-device coding agent, its providers (Claude, OpenAI, and Gemma 4 on this
-iPhone), the session service with branch isolation, the node login terminal,
-and the Agents screens' view models. `import FMAgents` (deps FMBase, FMCrypto,
-FMNet, FMAccount, FMApi, FMCode, FMGit, FMDiff, FMLocalAI). Everything is
-`@MainActor`.
-
-Views: ForkMesh/Features/Agents.
+The on-device coding agent, its providers (Claude, OpenAI, and Gemma 4 on this iPhone), the
+session service with branch isolation, the node login terminal, quick launch from the composer,
+and the Agents screens' view models. `import FMAgents` (deps FMBase, FMCrypto, FMNet, FMAccount,
+FMApi, FMCode, FMGit, FMDiff, FMLocalAI). Everything is `@MainActor`. Views:
+ForkMesh/Features/Agents.
 
 ## Workspace seam (`AgentWorkspace.swift`, `GitAgentWorkspace.swift`)
 
-The tools and the session service talk to `protocol AgentWorkspace` (listFiles,
-readFile, writeFile, status, stageAll, commit, branches, createBranch,
-checkout; `currentBranch()`), with `Agent`-prefixed value
-types (`AgentFileEntry`, `AgentFileContent`, `AgentChange(Kind)`,
-`AgentWorktreeStatus`, `AgentBranch`, `AgentAuthor`), so a view importing FMCode
-too sees no clashes. `GitAgentWorkspace(gitWorkspace)` adapts FMCode's
-`GitWorkspace` and turns `GitWorkspaceException` into `AgentWorkspaceError`
-(the tools print "<tool> failed: <message>"). `AgentAuthor.fromAccount(nodeName:email:)`.
+Tools and the session service use `protocol AgentWorkspace` (listFiles, readFile, writeFile,
+status, stageAll, commit, branches, createBranch, checkout, currentBranch) with `Agent`-prefixed
+value types, so views importing FMCode see no clashes. `GitAgentWorkspace(gitWorkspace)` adapts
+FMCode's `GitWorkspace` and maps its errors to `AgentWorkspaceError` (tools print
+"<tool> failed: <message>").
 
 ## Providers (`AgentProvider.swift`, `GemmaAgentProvider.swift`)
 
-- `protocol AgentProvider` (`id`, `model`, `send(systemPrompt:history:tools:client:) -> AgentTurn`, `appendAssistant/appendToolResults/appendUser(&history, ...)`). History is `[JSONValue]` in the provider's own shape.
-- `AgentTurn { text, toolCalls: [AgentToolCall], raw, inputTokens, outputTokens, refusal, wantsTools }`, `AgentToolCall { id, name, arguments: JSONObject }`.
-- `AgentProviderException(message, statusCode:, retryable:)`: `isRetryable` = no status, 408/409/429/5xx, unless `retryable` overrides.
-- `AnthropicProvider(apiKey:model:maxTokens:baseUrl:)` (`claude-api`; Opus 5 / Fable 5 get `fallbacks: "default"` + the beta header; refusals from `stop_reason: refusal`), `OpenAiProvider` (`openai`; JSON-string arguments). 600 s request timeout. Errors: "Claude API error 401: <message>".
-- `GemmaAgentProvider(manager: LocalModelManager? = nil, parameters: .agent)` (`on-device`): `manager` nil = `Services.get(LocalModelManager.self)` at each turn. `send` calls `manager.ensureReady()` (loads the model) then `manager.engine.complete(...)`; history stays OpenAI-shaped (`LocalChatMessage.openAIJSON`). Every failure (switch off, not downloaded, engine unavailable, generation error, no manager) is an `AgentProviderException` with `retryable: false`, message = `LocalModelManager.describe`. `maxHistoryMessages` 20, `maxToolOutputChars` 8000.
-- `OnDeviceAgentReadiness.of(manager)`: `.ready(modelName:)`, `.notReady(reason:)` (fixable in On-device AI settings: `canBeFixedInSettings`), `.unavailable(reason:)`; `message`. Loads nothing.
+- `protocol AgentProvider` (`id`, `model`, `send(systemPrompt:history:tools:client:) -> AgentTurn`,
+  `appendAssistant/appendToolResults/appendUser`). History is `[JSONValue]` in the provider's own
+  shape.
+- `AgentTurn { text, toolCalls, raw, inputTokens, outputTokens, refusal, wantsTools }`.
+- `AgentProviderException(message, statusCode:, retryable:)`: retryable when there is no status or
+  it is 408/409/429/5xx, unless overridden.
+- `AnthropicProvider` (`claude-api`; refusals from `stop_reason: refusal`) and `OpenAiProvider`
+  (`openai`); 600 s request timeout; both accept photos as image blocks.
+- `GemmaAgentProvider` (`on-device`): `manager.ensureReady()` then `engine.complete(...)`, history
+  kept OpenAI-shaped; every failure is a non-retryable `AgentProviderException`. History limit 20
+  messages, tool output 8000 characters. See [FMLocalAI](FMLocalAI.md).
+- `OnDeviceAgentReadiness.of(manager)`: ready, not ready (fixable in settings) or unavailable.
 
 ## Loop and tools (`CodingAgent.swift`, `AgentTools.swift`)
 
-- `CodingAgent(provider:toolset:maxTurns: 24, maxHistoryMessages: 60, client:, retryDelay: 2, sleep:)`. `run(prompt) { event in }` hands each `AgentEvent` to the closure and waits for it (pull-based: a `cancel()`/`steer()` made inside the handler is seen before the next step). `runToEnd(prompt) -> [AgentEvent]`. `steer`, `cancel`, `history`, `systemPrompt`, `isRunning`, `hasHistory`. One retry for retryable failures; non-provider errors become "Could not reach the model: ...".
-- `enum AgentEvent`: `.userMessage`, `.assistantMessage`, `.toolCall`, `.toolResult`, `.notice(text, isError:)`, `.done(AgentDone { reason, turns, inputTokens, outputTokens })`; accessors `userText`, `assistantText`, `toolCall`, `toolResult`, `noticeText`, `done`. `AgentStopReason`: completed, cancelled, turnLimit, error, refused.
-- `AgentToolset(workspace, readOnly:)`: `tools` (read_file, write_file, replace_text, list_directory, grep, git_status, git_commit; names as the desktop agent), `invoke(callId, name, args) -> AgentToolResult`, `author`, `outputLimit` (24 000 by default). Strings are handled by UTF-16 code unit; grep uses NSRegularExpression (ICU, not JS syntax).
+- `CodingAgent(provider:toolset:maxTurns: 24, maxHistoryMessages: 60, ...)`: `run(prompt) { event
+  in }` is pull-based (a `cancel()`/`steer()` inside the handler is seen before the next step);
+  one retry for retryable failures.
+- `AgentEvent`: user message, assistant message, tool call, tool result, notice, done
+  (`AgentStopReason`: completed, cancelled, turnLimit, error, refused).
+- `AgentToolset(workspace, readOnly:)`: `read_file`, `write_file`, `replace_text`,
+  `list_directory`, `grep`, `git_status`, `git_commit` (names as the desktop agent); output limit
+  24 000 characters; strings handled by UTF-16 code unit; grep uses ICU regular expressions.
 
 ## Credentials (`AgentCredentials.swift`)
 
-- `AgentProviderKind`: `.anthropic`, `.openai`, `.onDevice` (raw value is what the keychain stores). `label` ("Gemma 4"), `pickerLabel` ("Gemma 4 (on this iPhone)"), `needsKey`, `looksLikeKey`, `keyPrefix`, `consoleUrl`, `models` (Gemma: the Local AI catalog).
-- `AgentCredentials(kind:apiKey:model:)`, `.onDevice(model:)`, `isUsable`, `maskedKey`, `modelLabel`, `build(localModels:)` (selects the catalog model in the manager for `.onDevice`), `makeAgent(toolset:localModels:client:)` (Gemma gets the smaller history and tool-output bounds).
-- `AgentCredentialStore(secureStore:http:localModels:)`: `read()`, `write(_)`, `clear()` under `agent/credentials-v1` (`{"kind","apiKey","model"}`), `verify(_) async -> String?` (one cheap request; Gemma: readiness, no load).
+- `AgentProviderKind`: `.anthropic`, `.openai`, `.onDevice`, with labels, key validation and
+  model lists.
+- `AgentCredentials` builds the provider and agent (Gemma gets smaller history and tool-output
+  bounds).
+- `AgentCredentialStore`: `read`, `write`, `clear` under `agent/credentials-v1`
+  (`{"kind","apiKey","model"}` in the secure store), `verify` (one cheap request; Gemma checks
+  readiness without loading).
 
 ## Sessions (`AgentSessionService.swift`)
 
-`AgentSessionService(prefs:staleAfter: 15 days, clock:)`, `@Observable`, registered by `AgentsFeature.register()`. `load()`, `submit(repoName:prompt:priority:id:) -> AgentTask?` (nil = steered the running session of that repo), `nextTask`, `removeTask`, `start(task:workspace:buildAgent:author:readOnly:) async throws -> AgentRunHandle` (sweeps stale records, refuses a dirty worktree or a second run with `AgentStartException(refusal, message)`, records the branch before creating `agent/<id6>-<words>`, runs eagerly, restores the base branch afterwards unless changes are uncommitted), `cancelActive()`, `isRunning`, **`runningRepo`**, `activeRun`, `lastRun`, `records`, `queue`, `sweepStaleRecords(workspace:repoName:now:)`, `agentBranchName(_:_:)`, `addListener`. Records persist under `agent/branch-records-v1` with ISO 8601 dates.
-`AgentRunHandle` (`@Observable`): `task`, `branch`, `baseBranch`, `events`, `isComplete`, `lastDone`, `waitUntilDone()`.
+`AgentSessionService(prefs:staleAfter: 15 days)`: `submit(repoName:prompt:...)` queues a task or
+steers the running session for that repository; `start(task:workspace:...)` sweeps stale records,
+refuses a dirty worktree or a second run (`AgentStartException`), records the base branch before
+creating `agent/<id6>-<words>`, runs, and restores the base branch afterwards unless changes are
+uncommitted. Records persist under `agent/branch-records-v1`. `AgentRunHandle` exposes the task,
+branches, events and completion.
 
 ## Login terminal (`AgentTerminal.swift`)
 
-`TerminalScreen(rows, cols)` (VT100/xterm subset: `feed`, `grid`, `scrollback`, `allRows`, `cx/cy`, `resized`, `links()`, `wrappedUrlTargets`), `TerminalCell`, `TerminalRow` (class), `TerminalKey` + `terminalKeyBytes`, `terminalControlBytes`, `agentLoginProviders`, `agentProviderLabel`, `isAgentLoginProvider`. `AgentLoginTerminal(node:provider:channel: AccountEventChannel, session:openTimeout:inputFlush:)` (`@Observable`): `start(cols:rows:)`, `input`, `paste`, `key`, `resize(cols:rows:)`, `close() async`; `screen`, `revision` (bumped per output burst; the screen is drawn into in place), `statusText`, `statusLevel`, `live`, `exitCode`, `closed`, `links`, `signInLink`.
+`TerminalScreen(rows, cols)` is a VT100/xterm subset with scrollback and link detection.
+`AgentLoginTerminal(node:provider:channel:session:)` drives a provider CLI login on a node over the
+account event channel: start, input, paste, keys, resize, close; exposes the screen, status, exit
+code and sign-in link. `close()` waits 50 ms after the close frame because
+`AccountEventChannel.send` writes from its own task.
 
-Surprise: `AccountEventChannel.send` writes from a task of its own, so `close()` waits 50 ms after the close frame before disposing the channel.
+## View models
 
-## View models (`AgentsListModel.swift`, `AgentStartModel.swift`, `AgentScreenModel.swift`)
-
-- `protocol AgentsApi` (ApiService conforms): the reads and queue calls the screens make; tests fake it.
-- `AgentsListModel(api:signal:ownerAccountName:hasDesktopNode:debounce:)`: `start()`/`stop()` (subscribes to `AgentListSignal`, 0.6 s debounce, no timer; a ring during a ring-driven load waits for it and starts one more, rather than cancelling it), `refresh()`, `reload()`, `enabled`, `groups`, `entries: [AgentEntry]` (running first), `desktopRunning`, counts, `sealedCount`, `listState`, `isPendingFirstLoad`, `isFailed`, `loadError`, `retry(repo, session) -> String?`, `ownerAccount(for:)`. A repository whose sealed-session read (`agents/list`) or queue read (`agent-sessions`, then `agent-bots`) answers 403 or 404 is not read again for `refusalTtl` (10 minutes) per account (`isRefusal`). Every `agents` ring re-reads every repository, and repositories the account can see but not run agents on (another node's `vm1/forkmesh`, say) cost a refused request on each ring; the 2026-10-01 performance report logged them as errors. The refusals live in an `AgentReadRefusals` passed to `init(refusals:)` (default `nil`, which makes a fresh store inside the main-actor init; a default argument of `AgentReadRefusals()` is evaluated outside the main actor and does not compile with the Linux Swift toolchain). The app passes `AgentReadRefusals.shared` from the Agents screen and the watch bridge, so a refusal holds across both models and across a recreated screen model. A later report still showed each refused read twice in five minutes. The ledger read for runs with a branch is `publishedPullHeads` (`AgentsApi`; the default forwards to `publishedPulls`), because the list only matches number, head and status. A ring-driven load keeps the pulls it read before unless a branched run is new or changed status, branch, pull number or merged flag, or the read is `pullsRefreshInterval` (5 minutes) old and some run's pull is not merged or closed; `refresh()` always reads. `init(now:)` sets the clock for that age. `LaunchedAgentSessionModel.refresh` (the queued run screen) reads `publishedPullHeads` as well; it only builds `chain`. `AgentsLogic`: `desktopDetail`, `launchedDetail`, `taskChain`, `retryDetail`, `statusTone`/`chipTone` (`AgentBadgeTone`).
-  A load writes `groups`, `loadError` and `hasLoaded` only when they change, because every write to an `@Observable` property redraws the Agents tab; `isPendingFirstLoad` and `isFailed` read `groups` first for the same reason.
-  A failed repository listing keeps the groups already shown (with `loadError` set); a repository whose sealed or queue read fails keeps that source's previous rows. Queued runs the relay's answer left out stay when they are finished and not newer than its `finishedBefore` (`AgentSessionList.keeping`, in FMApi; the same rule as the desktop's `cloudAgentBeyondListedWindow`), and `AgentControlCenter` applies it to the All agents cloud rows, which also survive a failed read. The list rings on both the `agents` and `cloud-agents` account topics.
-- `AgentTranscriptModel` (desktop session + transcript), `LaunchedAgentSessionModel` (queued run: `refresh`, `send` follow-up, `retry`, `cancel`, `chain`, `followUpClosedText`).
-- `AgentStartModel(api:records:signedIn:credentialStore:localModels:initialPrompt:)`: `loadTargets()` (mesh repositories and on-device mirrors folded; mirrors first), `targetsNeedLoading`, `selectTarget`, `plan`, `mode`, `nodeChoice`, `canStart`, `submitLabel`, `runsOnText`, `signInProviders`, `startOnNode()`, `deviceStart() -> AgentDeviceStart?` (`.open(record, prompt:)` / `.clone(owner:name:prompt:)`), `deviceCredentials`, `deviceRunsOnGemma`, `deviceModelLabel`, `gemmaReadiness`.
-- `AgentScreenModel(repoName:workspace:gitWorkspace:record:pullRequests:sessions:store:author:localModels:agentFactory:initialPrompt:initialImages:initialCredentials:autoStart:desktop:)`: `load() -> Bool` (true = auto-send now; `initialCredentials`, when given, wins over the stored provider), `send() -> AgentSendOutcome` (`.needsSetup` opens setup), `stop`, `events`, `handle`, `modelChipLabel`, `gemmaReadiness`, `prCandidate`, `preparePullRequest()`, `submitPullRequest(_:title:)`, `insertReference(_:into:at:)`, `attach`.
-- `AgentSetupModel(store:initial:localModels:)`: `selectKind`, `selectModel` (Gemma: also selects in the manager), `models`, `readiness`, `save() -> AgentCredentials?`, `remove()`, `problem`. `AttachFileModel(root:)`: `scan()`, `matches`, `query`, 2000-file cap, `.git` skipped.
-
-## App target (ForkMesh/Features/Agents)
-
-`enum AgentsFeature { @MainActor static func register() }` (no arguments; call after `LocalAIFeature.register`): registers `AgentSessionService` (loaded) and `AgentCredentialStore` from `KeyValueStore`/`SecureStore`/`HTTPClient`/`LocalModelManager` in `Services`. Helpers: `sessions()`, `credentialStore()`, `author()`, `pullRequests()` (needs `PublishService` + `InboxService`), `localRecords()` (needs `LocalRepoStore`), `localModels()`.
-Entry points: `AgentsScreen()`, `AgentStartCard()` (takes the shell's `AgentPromptHandoff` prompt, calls `started()`), `AgentScreen(repoName:workspace:record:initialPrompt:autoStart:)`; also `AgentLoginTerminalScreen(node:provider:)`, `AgentSetupSheet(initial:onSaved:)`.
+- `protocol AgentsApi` (ApiService conforms): the reads and queue calls the screens make.
+- `AgentsListModel`: subscribes to `AgentListSignal` (0.6 s debounce, no polling; a ring during a
+  load queues one more load), groups running runs first, and tracks sealed counts and load state.
+  - Repositories whose sealed-session or queue read answers 403/404 are not re-read for 10 minutes
+    per account (`AgentReadRefusals.shared`, shared with the watch bridge).
+  - Branched runs read `publishedPullHeads` (number, head and status only), refreshed when a
+    branched run changes or every 5 minutes while some pull is still open.
+  - Observable properties are written only when values change, to avoid redrawing the tab.
+  - A failed read keeps rows already shown; finished queued runs outside the relay's listed window
+    are kept (`AgentSessionList.keeping`, the desktop's rule). It rings on the `agents` and
+    `cloud-agents` account topics.
+- `AgentTranscriptModel`, `LaunchedAgentSessionModel` (queued run: refresh, follow-up, retry,
+  cancel, pull chain).
+- `AgentStartModel`: loads targets (mesh repositories and on-device mirrors), plan, mode, node
+  choice, start on a node or on the device. `targetsNeedLoading` stays true until a mesh read
+  returns repositories, so a launcher prepared before the network was up reloads later.
+- `AgentScreenModel`: the on-device agent screen (load, send, stop, events, pull request
+  preparation and submission, file references, attachments). `initialCredentials` overrides the
+  stored provider for one run.
+- `AgentSetupModel`, `AttachFileModel` (2000-file cap, `.git` skipped).
+- `RunnerMergeModel`: merge a runner's branch, update it from its base (`updateRunnerAgent`;
+  conflicts offer "Fix with agent"), then complete the linked task with the merge note
+  (best-effort) and offer the merge commit's Actions.
 
 ## Quick launch from the composer (`QuickAgentLaunch.swift`, `AgentModelCatalog.swift`)
 
-`QuickAgentLauncher(form:prefs:account:)` is the policy behind the shell composer's Send: it wraps an `AgentStartModel` and starts the run at once, with no second form. The repository is the current context (a repository route, or the on-device repository page on screen), else the last one used, else the account's own most recently updated one, else one already on this device, else the most recently updated one; where it runs is the last choice for that repository, else the first online node that runs the model's provider, else this device, else the preferred node. `send(prompt:images:)` returns a `QuickLaunchOutcome`: `.queued` or `.queuedWithoutSession` (the relay took it), `.device` (open the local repository's agent), `.desktop` (the linked desktop started it), `.needsFix(QuickLaunchFix, message:)` (sign in, choose a repository, sign a CLI in on the node, set up this device, mirror here first; the text stays), or `.failed`. The choices are remembered under `agent/quick/last-repo` and `agent/quick/target/<repo>` (`QuickLaunchMemory`).
+`QuickAgentLauncher` is the policy behind the shell composer's Send; it starts a run with no
+second form.
 
-The shell prepares the launcher once at launch, often before the relay or the network is up. `AgentStartModel.loadTargets()` swallows a failed `repositories()` read (an on-device mirror can still be worked on), and until 2026-10-13 that empty list was kept for the rest of the session: the composer said "Choose a repository", the picker's Repository section was empty and its "Runs on" said "Nothing can run this repository yet", while the Repos tab, which reads the same catalog on its own, listed every repository. `targetsNeedLoading` is now true until a mesh read has succeeded and returned at least one repository, and `prepare()`, `send(...)` and the picker sheet (which calls `prepare()` when it opens) load the list again while it is. With no repository chosen, the picker's "Runs on" says "Choose a repository below." instead, and an empty Repository section says whether it is loading or could not load.
+- **Repository**: the current context, else the last used, else the account's most recently
+  updated, else one on this device, else the most recently updated.
+- **Destination**: the last choice for that repository, else the first online node that runs the
+  model's provider, else this device, else the preferred node. Remembered under
+  `agent/quick/last-repo` and `agent/quick/target/<repo>`.
+- **Outcomes**: `.queued`, `.queuedWithoutSession`, `.device`, `.desktop`, `.needsFix(...)` (sign
+  in, choose a repository, sign a CLI in on the node, set up this device, mirror first; the text
+  stays), `.failed`.
+- **Desktop destination** (`.desktop(name)`): sends `agents.start` to the account's desktop over
+  the control channel (LAN, else relay), trying the public owner, then the node owner, on
+  `no_checkout`. Text only (no photos). `QuickLaunchRunOptions` adds YOLO (remembered under
+  `agent/desktop/yolo`) and No worktree, sent as `vibe` and `worktree`; see
+  `docs/native/DESKTOP_AGENTS.md`.
+- **Models**: `AgentModelCatalog` lists the models a queued run can request, narrowed to the
+  relay's `models` offer; `NodeModelPreference` keeps the chip's pick under
+  `agent/node-model-alias`. On-device Gemma (`on-device-gemma`) is offered when the build and
+  device can run it; picking it moves the run to the device and checks readiness (`.needsFix
+  (.setUpGemma)` opens Settings › On-device AI).
 
-The picker's "Runs on" list also offers the account's desktop, `.desktop(name)`, whenever `desktop` (a `QuickLaunchDesktop`; the app sets `HubQuickLaunchDesktop` over `HostsFeature.hub`) names one and the repository is on the mesh. Sending there calls the desktop's `agents.start` over the control channel (LAN, else the relay) with the chip's provider and model id, instead of queueing on the relay, so it needs no agent-capable catalog record. The desktop matches the repository by owner and name among its own checkouts: the launcher tries the public owner, then the node owner, when the desktop answers `no_checkout`. Photos are refused for this destination because `agents.start` takes text only. The choice is stored as `desktop:<name>`. Android mirrors this (`QuickLaunchDestination.Desktop`, `QuickLaunchBackend.startOnDesktop`). For this destination the launcher also carries `runOptions` (`QuickLaunchRunOptions`: YOLO, remembered under `agent/desktop/yolo`, and No worktree, for the next run only), sent as `agents.start`'s `vibe` and `worktree`; see `docs/native/DESKTOP_AGENTS.md`.
+`PromptPhotoRules` (2048 px, JPEG without metadata, size limits) and `PromptMarkupRules` (the
+PencilKit markup editor geometry; see `docs/native/CAPTURE_MARKUP.md`) back the composer's
+photos.
 
-`AgentModelCatalog` lists the models a queued run can ask for (Opus 5.5 first, then Opus 5, Sonnet 5, Haiku 4.5, Fable 5 and the GPT-5.6/Codex models), narrowed to the relay's `models` offer; `NodeModelPreference` keeps the chip's pick under `agent/node-model-alias`. `AgentStartModel` gained `attachments`, `nodeModel`, `nodeModelChoices`, `lastQueued` and `hasContent`; a queued launch now sends the chip's alias and provider instead of `auto` with no model. `AgentsApi` has a `launchAgentSession(..., attachments:)` requirement whose default throws when photos are passed, so fakes without photo support keep compiling.
+### Pasting images (`PromptPaste.swift`, app `PromptPasteboard.swift`)
 
-The chip also offers on-device Gemma (`AgentModelCatalog.onDeviceGemma`, provider `on-device`, alias `on-device-gemma`; `AgentModelChoice.runsOnDevice`) last, when this build can run agents on the phone and the MLX runtime is available here (`AgentStartModel.offersOnDeviceGemma`). It is a different model from the "Gemma 4 E4B…" entries, which queue a run on a node's Ollama. Picking it moves the run to `.device` (the "Runs on" list shows only this iPhone, with the Local AI model's name) and switching back re-resolves the destination. Send checks `onDeviceGemmaReadiness`: off or not downloaded returns `.needsFix(.setUpGemma)`, whose button opens Settings › On-device AI; a device MLX cannot run on returns `.failed`. A ready Gemma returns `.device(record:prompt:images:credentials:)` with `AgentCredentials.onDevice(model:)` for the Local AI selection; the shell hands them to the agent screen through `AgentPromptHandoff.offer(images:credentials:)`, and `AgentScreenModel(initialCredentials:)` uses them instead of the stored provider, so a saved API key is left as it was. A repository that must be mirrored to the phone first still goes through the full form, which runs with the stored provider. Added 2026-10-04 so the local Gemma can be picked from the mobile model dropdown.
+Composers that take photos also accept pasted images (long-press Paste and Cmd-V).
+`PromptPasteboard.read()` collects image items and images embedded in RTF(D); HTML images count
+only as `data:image/...;base64` URIs (no remote fetch). `PromptPasteRules` detects formats by magic
+bytes, keeps typed text, and caps the count; images then go through `PromptPhotoPreparer`
+(2048 px, JPEG q80, no metadata, 5 MB each). Chat fields reuse this through `ChatTextField`.
 
-`PromptPhotoRules` (`PromptAttachments.swift`) holds the photo rules the app's `PromptPhotoPreparer` applies: the 2048 px target size, the JPEG metadata strip and the size limits. `AnthropicProvider` and `OpenAiProvider` have `appendUser(_:_:images:)`, which writes the photos as image blocks; `GemmaAgentProvider` keeps the text-only default.
+## App target (ForkMesh/Features/Agents)
 
-`PromptMarkupRules` (`PromptMarkup.swift`) is the geometry of the app's PencilKit markup editor: the aspect fit of the photo in the editor, the flattened image's pixel size (the same 2048 px cap) and the ink scale from canvas points to those pixels. See [docs/native/CAPTURE_MARKUP.md](../../../docs/native/CAPTURE_MARKUP.md).
-
-## Pasting images into the composer (`PromptPaste.swift`, app `PromptPasteboard.swift`)
-
-Every `PromptComposer` that takes photos (the shell's new-agent composer, the session
-follow-up, the on-device agent) also takes pasted images, from the long-press Paste menu and
-Cmd-V. `ComposerUITextView` offers Paste whenever the pasteboard holds an image, RTF(D) or HTML;
-`PromptPasteboard.read()` collects each item's representations and, for rich text, the
-attachments of the RTF(D) document; HTML images count only as `data:image/...;base64` URIs (no
-remote fetch). `PromptPasteRules.paste` makes one image per image item (png, jpeg, heic, heif,
-tiff, gif, webp, bmp — by magic bytes, not the declared type) and keeps the typed text of rich-text
-items. `PromptPasteRules.admit` caps them at the photo limit and says how many were left out. The
-images then go through the same `PromptPhotoPreparer` as a picked photo: 2048 px, JPEG q80, no
-metadata, 5 MB each.
-
-The chat fields reuse `ComposerUITextView` and `PromptPasteboard` through `ChatTextField`; see
-FMChat.md, "Pasted images and the + menu".
-
-## Runner merge: update from base, linked task (2026-10-04)
-
-`RunnerMergeModel.update()` merges the run's base into its branch (`RunnerAgentsApi.updateRunnerAgent`);
-`updated`, `updateTitle` ("Update from <base>") and `successLine` report it, and a conflict sets
-`conflicted` so the sheet offers "Fix with agent". After a successful `merge()` the model reads the
-session, finds the linked task (`RunnerAgentText.taskId`) and completes it with the merge note
-(`RunnerAgentsApi.completeTask`), best-effort: a failure only sets `taskNote`, shown under the landed
-report with the cleanup notice (`landedNotice`). `repo` and `mergeOid` feed the landed report's
-Actions button, which opens `RepoActionsScreen(repo:commit:)` filtered to the merge commit
-(`RepoActionsModel.commitFilter`, "Show all runs" clears it). The run screen offers the update while
-the run is idle, has a branch, is not merged and the relay says `canMerge`.
+`AgentsFeature.register()` (after `LocalAIFeature.register`) registers `AgentSessionService` and
+`AgentCredentialStore`. Entry points: `AgentsScreen`, `AgentStartCard`,
+`AgentScreen(repoName:workspace:record:initialPrompt:autoStart:)`, `AgentLoginTerminalScreen`,
+`AgentSetupSheet`.
 
 ## Not verified
 
-The SwiftUI views were only parsed (no Mac). Gemma 4 as an agent is tested through `FakeLocalChatEngine` (tool-call round trip included), not the MLX engine; whether a 2B/4B model follows the tool protocol well enough is untested. The terminal grid's cell measuring and hardware-keyboard input (not ported) are untested on a device.
+SwiftUI views are syntax-checked on Linux. Gemma as an agent is tested through
+`FakeLocalChatEngine`, not the MLX engine; how well a small on-device model follows the tool
+protocol is untested. Terminal cell measuring and hardware-keyboard input are untested on a device.
