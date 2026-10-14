@@ -29,11 +29,16 @@ struct ForkMeshTheme<Content: View>: View {
     @Environment(\.colorScheme) private var systemScheme
 
     private let accent: FmAccent
+    private let wallpaper: Bool
     private let forcedDark: Bool?
     private let content: Content
 
-    init(accent: FmAccent = .fallback, dark: Bool? = nil, @ViewBuilder content: () -> Content) {
+    init(
+        accent: FmAccent = .fallback, wallpaper: Bool = false, dark: Bool? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
         self.accent = accent
+        self.wallpaper = wallpaper
         self.forcedDark = dark
         self.content = content()
     }
@@ -50,7 +55,7 @@ struct ForkMeshTheme<Content: View>: View {
     }
 
     var body: some View {
-        let palette: FmPalette = FmPalette(dark: isDark, accent: accent)
+        let palette: FmPalette = FmPalette(dark: isDark, accent: accent, wallpaper: wallpaper)
         content
             .fmText(.bodyMedium)
             .tint(palette.accent)

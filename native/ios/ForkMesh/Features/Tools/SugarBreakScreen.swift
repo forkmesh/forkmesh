@@ -20,7 +20,7 @@ struct SugarBreakScreen: View {
         content
             .navigationTitle(SugarBreakModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
     }
 
     @ViewBuilder private var content: some View {

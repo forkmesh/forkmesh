@@ -93,7 +93,7 @@ struct IdentityScreen: View {
             .padding(FmSpace.x4)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("Identity and recovery")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showKitSheet) {

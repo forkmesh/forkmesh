@@ -110,7 +110,7 @@ struct TimersScreen: View {
                 FmEmptyState(icon: "timer_outlined", title: "Timers are unavailable")
             }
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("Timers")
         .navigationBarTitleDisplayMode(.inline)
     }

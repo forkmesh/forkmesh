@@ -22,7 +22,7 @@ struct StepsScreen: View {
         content
             .navigationTitle(StepsModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
     }
 
     @ViewBuilder private var content: some View {

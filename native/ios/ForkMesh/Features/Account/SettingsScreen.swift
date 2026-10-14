@@ -71,7 +71,7 @@ struct SettingsScreen: View {
                 FmEmptyState(icon: "settings_outlined", title: "Settings")
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("Settings")
         .sheet(isPresented: $showStatusSheet) {
             UserStatusSheet()

@@ -231,7 +231,7 @@ struct NearbyDeviceSheet: View {
                 }
                 .padding(FmSpace.x4)
             }
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationTitle("Find device")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -46,7 +46,7 @@ struct CaloriesScreen: View {
         content
             .navigationTitle(CaloriesModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
     }
 
     @ViewBuilder private var content: some View {

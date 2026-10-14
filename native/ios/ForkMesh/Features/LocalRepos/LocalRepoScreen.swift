@@ -156,7 +156,7 @@ private struct LocalRepoScreenContent: View {
                 }
             }
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .overlay {
             if let label = model.busyLabel {
                 LocalGitBusyOverlay(label: label, onCancel: { model.cancel() })
