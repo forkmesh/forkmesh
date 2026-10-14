@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.chat.DirectMessageFrames
 import android.app.Activity
 import android.app.Application
 import android.content.Context
@@ -474,7 +475,7 @@ object ChatFeature {
     }
 
     fun threadScreen(channel: String, rootId: String): Screen =
-        ChatThreadScreen(if (channel.startsWith("#")) channel else "#$channel", rootId)
+        ChatThreadScreen(if (channel.startsWith("#") || DirectMessageFrames.isDirect(channel)) channel else "#$channel", rootId)
 
     fun discordScreen(guild: String = "", channel: String? = null): Screen = DiscordScreen(guild, channel)
 

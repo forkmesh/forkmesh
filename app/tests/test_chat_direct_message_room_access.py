@@ -33,8 +33,10 @@ def _apns_stub():
     import types
     return types.SimpleNamespace(
         direct_message_alert=(
-            lambda sender="", started=False, conversation_id="": {
-                "title": "Direct message from " + sender}))
+            lambda sender="", started=False, conversation_id="", ref="",
+            key_version=0: {
+                "title": "Direct message from " + sender,
+                **({"ref": ref, "keyVersion": key_version} if ref else {})}))
 
 
 class _FakeSubtle:

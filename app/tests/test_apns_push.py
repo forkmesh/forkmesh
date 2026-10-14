@@ -327,10 +327,11 @@ def test_only_the_sealed_topics_are_marked(apns):
     # told not to go looking for inbox text, and room chat must stay off the
     # sender's own screen. An inbox notification stays unmarked.
     alert = {"title": "New message in #design"}
-    for topic in apns.APNS_COLLAPSE_TOPICS:
+    for topic in apns.APNS_CONVERSATION_TOPICS:
         marked = json.loads(apns.alert_payload(alert, topic))
         assert marked["topic"] == topic
-        assert apns.collapse_id_for(topic) == topic
+    assert apns.collapse_id_for("chat") == "chat"
+    assert apns.collapse_id_for("direct-messages") == ""
     for topic in ("pings", "issues", "", None):
         assert "topic" not in json.loads(apns.alert_payload(alert, topic))
         assert apns.collapse_id_for(topic) == ""
@@ -341,14 +342,77 @@ def test_only_the_sealed_topics_are_marked(apns):
     assert apns.collapse_id_for("code-push") == ""
 
 
-def test_every_ping_is_its_own_banner_and_conversations_collapse(apns):
-    # A collapse id makes a new alert replace the previous one. That is right
-    # for a conversation in full flow and wrong for pings: two pings must be
-    # two notifications.
+def test_every_ping_and_direct_message_is_its_own_banner(apns):
+    # A collapse id makes a new alert replace the previous one. A direct
+    # message banner now shows the text the phone decrypted, so collapsing
+    # would throw the earlier message's text away (Signal shows each one).
     assert apns.collapse_id_for("pings") == ""
     assert apns.collapse_id_for("issues") == ""
-    assert apns.collapse_id_for("direct-messages") == "direct-messages"
+    assert apns.collapse_id_for("direct-messages") == ""
     assert apns.collapse_id_for("chat") == "chat"
+
+
+_REF = "0123456789abcdef0123456789abcdef01234567"
+_DIRECT_ID = "0123456789abcdef" * 2
+_CHANNEL_ID = "fedcba9876543210" * 2
+
+
+def test_a_direct_message_push_names_the_ciphertext_to_fetch(apns):
+    alert = apns.direct_message_alert(
+        "alice", conversation_id=_DIRECT_ID, ref=_REF.upper(), key_version=3)
+    payload = json.loads(apns.alert_payload(alert, "direct-messages"))
+    assert payload["conversation"] == "direct:" + _DIRECT_ID
+    assert payload["ref"] == _REF
+    assert payload["keyVersion"] == 3
+    assert payload["sender"] == "alice"
+    assert payload["aps"]["thread-id"] == "direct:" + _DIRECT_ID
+    assert payload["aps"]["mutable-content"] == 1
+    assert "encrypted" in payload["aps"]["alert"]["body"]
+    for key in ("ref", "keyVersion", "text", "body", "channelId"):
+        assert key not in payload["aps"]
+    assert set(payload) == {
+        "aps", "conversation", "ref", "keyVersion", "sender", "topic"}
+
+
+def test_a_push_never_carries_a_malformed_fetch_handle(apns):
+    for ref, version in (("", 1), ("xyz", 1), (_REF + "0", 1),
+                         (_REF, 0), (_REF, -1), (_REF, True), (_REF, "2x")):
+        alert = apns.direct_message_alert(
+            "alice", conversation_id=_DIRECT_ID, ref=ref, key_version=version)
+        payload = json.loads(apns.alert_payload(alert, "direct-messages"))
+        if ref != _REF:
+            assert "ref" not in payload, ref
+        if version is True or version in (0, -1, "2x"):
+            assert "keyVersion" not in payload, version
+    started = apns.direct_message_alert(
+        "alice", started=True, conversation_id=_DIRECT_ID, ref=_REF,
+        key_version=1)
+    assert "ref" not in started and "keyVersion" not in started
+    no_conversation = apns.direct_message_alert("alice", ref=_REF)
+    assert "ref" not in no_conversation
+    for topic in ("pings", "code-push"):
+        payload = json.loads(apns.alert_payload(
+            dict(_PING, ref=_REF, keyVersion=1, channelId=_CHANNEL_ID),
+            topic))
+        assert not {"ref", "keyVersion", "channelId"} & set(payload)
+
+
+def test_a_channel_push_names_the_channel_and_ciphertext(apns):
+    alert = apns.chat_message_alert(
+        "design", apns.office_conversation("design"),
+        channel_id=_CHANNEL_ID, ref=_REF, key_version=2)
+    payload = json.loads(apns.alert_payload(alert, "chat"))
+    assert payload["channelId"] == _CHANNEL_ID
+    assert payload["ref"] == _REF
+    assert payload["keyVersion"] == 2
+    assert payload["conversation"] == "#office/design"
+    assert payload["aps"]["thread-id"] == "#office/design"
+    world = json.loads(apns.alert_payload(
+        apns.chat_message_alert(apns.APNS_WORLD_CHAT_NAME, ref=_REF), "chat"))
+    assert not {"channelId", "ref", "keyVersion"} & set(world)
+    bare = json.loads(apns.alert_payload(
+        apns.chat_message_alert("", channel_id=_CHANNEL_ID, ref=_REF), "chat"))
+    assert bare["aps"]["thread-id"] == "channel:" + _CHANNEL_ID
 
 
 def test_an_alert_outlives_a_night_in_flight_mode(apns):
@@ -927,18 +991,21 @@ def _account_event_runtime(now=9_000_000):
         "_cron_subrequest_charge": lambda: None,
         "push_account_apns": push_account_apns,
         "_ACCOUNT_EVENT_PUSH_MEMO": {},
+        "re": __import__("re"),
     }
     for name in ("ACCOUNT_EVENT_PUSH_COALESCE_MS",
                  "ACCOUNT_EVENT_PUSH_MEMO_MAX",
                  "ACCOUNT_EVENT_PUSH_EVERY_TOPICS",
                  "ACCOUNT_EVENT_SOCKET_EVERY_TOPICS"):
         namespace[name] = _entry_constant(name)
+    exec(_entry_function("_account_event_query"), namespace)
     exec(_entry_function("notify_account_event"), namespace)
     env = types.SimpleNamespace(FORKMESH_NODES=types.SimpleNamespace(
         idFromName=lambda name: name, get=lambda node_id: _NodeObject()))
 
-    def notify(owner, topic):
-        asyncio.run(namespace["notify_account_event"](env, owner, topic))
+    def notify(owner, topic, push_alert=None):
+        asyncio.run(namespace["notify_account_event"](
+            env, owner, topic, push_alert))
 
     return types.SimpleNamespace(
         notify=notify, frames=frames, pushes=pushes, clock=clock)
@@ -958,16 +1025,69 @@ def test_every_ping_reaches_the_phone_even_inside_the_socket_window():
 
 def test_other_topics_still_share_the_socket_coalescing_window():
     runtime = _account_event_runtime()
-    for topic in ("direct-messages", "issues"):
-        runtime.notify("alice", topic)
-        runtime.notify("alice", topic)
-    assert runtime.frames == ["direct-messages", "issues"]
-    assert runtime.pushes == [
-        ("alice", "direct-messages"), ("alice", "issues")]
+    runtime.notify("alice", "issues")
+    runtime.notify("alice", "issues")
+    assert runtime.frames == ["issues"]
+    assert runtime.pushes == [("alice", "issues")]
     runtime.clock["now"] += _entry_constant("ACCOUNT_EVENT_PUSH_COALESCE_MS")
     runtime.notify("alice", "issues")
     assert runtime.pushes[-1] == ("alice", "issues")
-    assert len(runtime.pushes) == 3
+    assert len(runtime.pushes) == 2
+
+
+def test_every_direct_message_rings_the_socket_and_the_phone():
+    # Each message is its own notification, so neither the push nor the
+    # socket frame Android reads may be coalesced away.
+    runtime = _account_event_runtime()
+    first = {"title": "t", "conversation": "direct:" + "a" * 32,
+             "ref": "b" * 40, "keyVersion": 2}
+    second = dict(first, ref="c" * 40)
+    runtime.notify("alice", "direct-messages", first)
+    runtime.notify("alice", "direct-messages", second)
+    assert runtime.pushes == [("alice", "direct-messages")] * 2
+    assert runtime.frames == [
+        "direct-messages&conversation=direct:" + "a" * 32
+        + "&ref=" + "b" * 40 + "&keyVersion=2",
+        "direct-messages&conversation=direct:" + "a" * 32
+        + "&ref=" + "c" * 40 + "&keyVersion=2",
+    ]
+
+
+def test_the_direct_message_socket_frame_carries_only_valid_handles():
+    runtime = _account_event_runtime()
+    runtime.notify("alice", "direct-messages", {"title": "t"})
+    runtime.notify("alice", "direct-messages", {
+        "title": "t", "conversation": "direct:../x", "ref": "b" * 40})
+    runtime.notify("alice", "direct-messages", {
+        "title": "t", "conversation": "direct:" + "a" * 32,
+        "ref": "nothex", "keyVersion": True})
+    runtime.notify("alice", "pings", {
+        "title": "t", "conversation": "direct:" + "a" * 32})
+    assert runtime.frames == [
+        "direct-messages", "direct-messages",
+        "direct-messages&conversation=direct:" + "a" * 32, "pings"]
+
+
+def test_the_event_socket_relays_the_direct_message_handles():
+    import re
+    from urllib.parse import parse_qs
+    namespace = {"re": re}
+    exec(_entry_function("_account_event_direct_fields"), namespace)
+    fields = namespace["_account_event_direct_fields"]
+    assert fields(parse_qs(
+        "conversation=direct:" + "a" * 32 + "&ref=" + "b" * 40
+        + "&keyVersion=4")) == {
+            "conversation": "direct:" + "a" * 32, "ref": "b" * 40,
+            "keyVersion": 4}
+    assert fields(parse_qs("ref=" + "b" * 40)) == {}
+    assert fields(parse_qs(
+        "conversation=direct:" + "a" * 32 + "&ref=zz&keyVersion=0")) == {
+            "conversation": "direct:" + "a" * 32}
+    text = (SRC / "entry.py").read_text()
+    notify = text[text.index('            if path.endswith("/notify"):'):]
+    notify = notify[:notify.index("frame = json.dumps(frame_data)")]
+    assert 'if frame_data["topic"] == "direct-messages":' in notify
+    assert "_account_event_direct_fields(query)" in notify
 
 
 def test_every_chat_read_rings_the_socket_and_never_the_phone():
@@ -1013,10 +1133,13 @@ def _chat_push_runtime(*, configured=True, channel=None, members=(),
             return {"token": str(data)[len("sealed:"):]}
         return data
 
+    alerts = []
+
     async def _apns_send_tokens(env, tokens, topic, alert):
         sent.append((sorted(t["token_bi"] for t in tokens), topic))
         titles.append(alert["title"])
         conversations.append(alert.get("conversation", ""))
+        alerts.append(alert)
         return len(tokens)
 
     namespace = {
@@ -1025,9 +1148,9 @@ def _chat_push_runtime(*, configured=True, channel=None, members=(),
             APNS_CHAT_TOPIC="chat", APNS_MAX_DEVICES_PER_BROADCAST=32,
             APNS_WORLD_CHAT_NAME="World chat",
             office_conversation=lambda name: "#office/" + name,
-            chat_message_alert=lambda name="", conversation="": {
+            chat_message_alert=lambda name="", conversation="", **fetch: {
                 "title": "New message in " + (name or "?"),
-                "conversation": conversation}),
+                "conversation": conversation, "fetch": fetch}),
         "PUBLIC_WORLD_GENERAL_ROOM_KEY": (
             "repo:mainnode/forkmesh:room:world-general"),
         "Date": SimpleNamespaceNow(clock),
@@ -1052,7 +1175,7 @@ def _chat_push_runtime(*, configured=True, channel=None, members=(),
 
     return types.SimpleNamespace(
         push=push, sent=sent, reads=reads, clock=clock, titles=titles,
-        conversations=conversations)
+        conversations=conversations, alerts=alerts)
 
 
 def test_a_public_room_message_wakes_every_registered_phone():
@@ -1076,6 +1199,19 @@ def test_a_private_channel_wakes_its_members_and_never_the_sender():
     # The banner says where the message is.
     assert runtime.titles == ["New message in design"]
     assert runtime.conversations == ["#office/design"]
+    assert runtime.alerts[0]["fetch"] == {
+        "channel_id": "c1", "ref": "", "key_version": 0}
+
+
+def test_a_channel_push_hands_the_phone_the_ref_to_fetch():
+    runtime = _chat_push_runtime(
+        channel={"data": {"visibility": "private", "name": "design"},
+                 "created_by_bi": "bi-alice"},
+        members=("bi-bob",))
+    runtime.push("chat-channel:c1:v3", channel_id="c1", sender_bi="bi-bob",
+                 ref="d" * 40, key_version=3)
+    assert runtime.alerts[0]["fetch"] == {
+        "channel_id": "c1", "ref": "d" * 40, "key_version": 3}
 
 
 def test_a_public_channel_wakes_everyone_but_the_sender():
@@ -1120,7 +1256,10 @@ def test_the_relay_only_wakes_phones_for_frames_the_sender_marked():
     retain = retain[:retain.index("    async def _private_room_current")]
     assert 'elif not direct_id and envelope.get("notify") is True:' in retain
     assert "await push_chat_room_apns(" in retain
-    assert "sender_bi=account_bi" in retain
+    assert "sender_bi=account_bi, ref=msg_id[:40]," in retain
+    assert '_ws_attr(ws, "channel_version", 0)' in retain
+    assert "ref=msg_id[:40],\n" in retain
+    assert '_ws_attr(ws, "direct_version", 0)' in retain
 
     public = ROOT / "public"
     transport = (public / "chat-room-transport.js").read_text()

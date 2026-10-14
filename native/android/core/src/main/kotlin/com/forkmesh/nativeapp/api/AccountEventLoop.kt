@@ -71,6 +71,9 @@ class AccountEventLoop(
     var onTopic: ((String) -> Unit)? = null
 
     @Volatile
+    var onEvent: ((String, Map<String, Any?>) -> Unit)? = null
+
+    @Volatile
     var onConnected: (() -> Unit)? = null
 
     @Volatile
@@ -338,6 +341,8 @@ class AccountEventLoop(
         }
         val topic = jsonText(frame["topic"])
         if (topic.isEmpty()) return
+        @Suppress("UNCHECKED_CAST")
+        onEvent?.invoke(topic, frame as Map<String, Any?>)
         onTopic?.invoke(topic)
     }
 

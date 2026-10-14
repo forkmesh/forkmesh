@@ -150,21 +150,27 @@ def test_receipt_frames_are_ignored_outside_direct_messages():
 def _receipt_run(steps):
     helpers = "\n".join(
         [_const_source(name) for name in (
-            "DIRECT_RECEIPT_LABELS",
-            "DIRECT_RECEIPT_CHECK",
-            "DIRECT_RECEIPT_BACK_RING",
-            "DIRECT_RECEIPT_BACK_DOT",
+            "RECEIPT_LABELS",
+            "RECEIPT_FRONT_TICK",
+            "RECEIPT_BACK_TICK",
+            "RECEIPT_BACK_TICK_READ",
+            "RECEIPT_BACK_RING",
+            "RECEIPT_BACK_DISC",
         )] + [_function_source(name) for name in (
             "knownRecipientCount",
             "isDirectMessageKey",
-            "directReceiptState",
-            "directReceiptIcon",
-            "paintDirectReceipt",
-            "makeDirectReceipt",
+            "receiptState",
+            "receiptIcon",
+            "paintReceipt",
+            "makeReceipt",
+            "updateReceipt",
+            "applyReceiptSent",
             "applyDirectDelivered",
             "applyDirectRead",
         )])
     return _run_module(f"""
+      import {{ createThreadStore }}
+        from {json.dumps((PUBLIC / "chat-thread-model.js").as_uri())};
       class FakeElement {{
         constructor(tag) {{
           this.tag = tag; this.attributes = {{}}; this.children = [];
@@ -180,6 +186,10 @@ def _receipt_run(steps):
       }};
       const rows = new Map();
       const channelMessages = new Map();
+      const threads = createThreadStore();
+      let activeThreadRootId = "";
+      let threadRenders = 0;
+      const renderThread = () => {{ threadRenders += 1; }};
       {helpers}
       const shape = (record) => {{
         const mark = record.receiptEl;
@@ -187,9 +197,11 @@ def _receipt_run(steps):
         return {{
           state: mark.dataset.state, cls: mark.className, title: mark.title,
           aria: mark.attributes["aria-label"], role: mark.attributes.role,
+          viewBox: svg.attributes.viewBox,
           shapes: svg.children.map((child) => child.tag +
             (child.attributes.fill === "currentColor" ? ":filled" : "") +
-            (child.attributes["stroke-dasharray"] ? ":dashed" : "")),
+            (child.attributes["stroke-dasharray"] ? ":dashed" : "") +
+            (child.attributes.class === "chat-receipt-check" ? ":cut" : "")),
         }};
       }};
       const record = (id, fields = {{}}) => {{
@@ -199,6 +211,7 @@ def _receipt_run(steps):
         const list = channelMessages.get(value.channel) || [];
         list.push(value);
         channelMessages.set(value.channel, list);
+        threads.registerRoot({{ ...value }});
         return value;
       }};
       {steps}
@@ -210,16 +223,15 @@ def test_own_direct_messages_step_through_sending_sent_delivered_read():
       const sending = record("m1");
       const acked = record("m2", { recipients: 1 });
       const peer = record("m3", { self: false, recipients: 1 });
-      const channel = record("m4", { channel: "private:" + "b".repeat(32),
-        recipients: 3 });
+      const relayed = record("m5", { relayed: true });
       const states = {
-        sending: directReceiptState(sending),
-        acked: directReceiptState(acked),
-        peer: directReceiptState(peer),
-        channel: directReceiptState(channel),
+        sending: receiptState(sending),
+        acked: receiptState(acked),
+        peer: receiptState(peer),
+        relayed: receiptState(relayed),
       };
-      makeDirectReceipt(sending);
-      makeDirectReceipt(acked);
+      makeReceipt(sending);
+      makeReceipt(acked);
       const before = [shape(sending), shape(acked)];
       applyDirectDelivered(["m2", "m3", "missing"]);
       const delivered = shape(acked);
@@ -230,36 +242,133 @@ def test_own_direct_messages_step_through_sending_sent_delivered_read():
       process.stdout.write(JSON.stringify({
         states, before, delivered, read, stillSending,
         afterLateDelivery: acked.receipt, peerReceipt: peer.receipt ?? null,
+        relayedRead: relayed.receipt,
       }));
     """)
     assert result["states"] == {
-        "sending": "pending", "acked": "sent", "peer": "", "channel": ""}
+        "sending": "pending", "acked": "sent", "peer": "",
+        "relayed": "sent"}
     assert result["before"] == [
         {"state": "pending", "cls": "chat-receipt is-pending",
          "title": "Sending", "aria": "Sending", "role": "img",
-         "shapes": ["circle:dashed"]},
+         "viewBox": "0 0 22 14", "shapes": ["circle:dashed"]},
         {"state": "sent", "cls": "chat-receipt is-sent", "title": "Sent",
-         "aria": "Sent", "role": "img", "shapes": ["circle", "path"]},
+         "aria": "Sent", "role": "img", "viewBox": "0 0 22 14",
+         "shapes": ["circle", "path"]},
     ]
     assert result["delivered"]["title"] == "Delivered"
-    assert result["delivered"]["shapes"] == ["path", "circle", "path"]
+    assert result["delivered"]["shapes"] == ["path", "path", "circle", "path"]
     assert result["read"]["title"] == "Read"
     assert result["read"]["shapes"] == [
-        "path:filled", "circle:filled", "path"]
+        "path:filled", "circle:filled", "path:cut", "path:cut"]
     assert result["stillSending"]["state"] == "pending"
     assert result["afterLateDelivery"] == "read"
     assert result["peerReceipt"] is None
+    assert result["relayedRead"] == "read"
 
 
-def test_direct_rows_show_the_receipt_instead_of_a_recipient_count():
+def test_channel_messages_reach_sent_but_never_delivered_or_read():
+    result = _receipt_run("""
+      const channel = "private:" + "b".repeat(32);
+      const pending = record("c1", { channel });
+      const acked = record("c2", { channel, recipients: 3 });
+      const world = record("w1", { channel: "#general" });
+      makeReceipt(pending);
+      makeReceipt(acked);
+      makeReceipt(world);
+      applyDirectDelivered(["c1", "c2"]);
+      applyDirectRead(channel);
+      const afterReceipts = [shape(pending).state, shape(acked).state];
+      applyReceiptSent("w1");
+      applyReceiptSent("c2");
+      process.stdout.write(JSON.stringify({
+        afterReceipts, world: shape(world), acked: shape(acked) }));
+    """)
+    assert result["afterReceipts"] == ["pending", "sent"]
+    assert result["world"]["state"] == "sent"
+    assert result["acked"]["state"] == "sent"
+
+
+def test_own_thread_replies_carry_the_receipt_too():
+    result = _receipt_run("""
+      const root = record("r1", { self: false });
+      threads.addReply({ id: "t1", rootId: "r1", channel: root.channel,
+        self: true, recipients: null, receipt: "" });
+      threads.addReply({ id: "t2", rootId: "r1", channel: root.channel,
+        self: false, recipients: 1 });
+      activeThreadRootId = "r1";
+      const states = [];
+      states.push(receiptState(threads.target("t1")));
+      applyDirectDelivered(["t1", "t2"]);
+      states.push(receiptState(threads.target("t1")));
+      applyDirectRead(root.channel);
+      states.push(receiptState(threads.target("t1")));
+      states.push(receiptState(threads.target("t2")));
+      process.stdout.write(JSON.stringify({ states, threadRenders }));
+    """)
+    assert result["states"] == ["pending", "delivered", "read", ""]
+    assert result["threadRenders"] >= 2
+
+
+def test_every_own_row_and_thread_reply_shows_the_receipt():
     build_row = _function_source("buildRow")
-    assert "if (directReceiptState(record)) {" in build_row
-    assert "row.append(makeDirectReceipt(record));" in build_row
-    assert "paintDirectReceipt(rec);" in _function_source(
-        "applyRecipientCount")
+    assert "const receipt = receiptState(record);" in build_row
+    assert "if (receipt && isDirectMessageKey(record.channel)) {" in build_row
+    assert "if (receipt) row.append(makeReceipt(record));" in build_row
+    header = _function_source("threadMessageHeader")
+    assert "if (receipt) meta.append(makeReceipt(record));" in header
+    assert "paintReceipt(rec);" in _function_source("applyRecipientCount")
     assert "onDelivered: (ids) => applyDirectDelivered(ids)," in CHAT_TEXT
     assert "onRead: (room) => applyDirectRead(room.scope)," in CHAT_TEXT
     assert ".chat-receipt-check { stroke: var(--bg); }" in CHAT_CSS
+    assert ".chat-receipt.is-read { color: var(--accent); }" in CHAT_CSS
+    assert "      true,\n    );" in _function_source("renderChatEntry")
+    assert "relayed: true," in _function_source("renderThreadEntry")
+    send = _function_source("send")
+    assert ('if (sent && envelope.persist && scope === "public-world-general")'
+            in send)
+
+
+def test_delete_for_everyone_withdraws_the_server_copy():
+    confirm = _function_source("confirmMessageDelete")
+    assert "if (sent && isDirectMessageKey(record.channel)) {" in confirm
+    assert "roomTransport?.supersede?.([record.id]);" in confirm
+    result = _transport_run("""
+      await transport.send({ type: "chat", id: "mine", text: "hi" },
+        { persist: true });
+      const sentRef = refOf(socket.sent[socket.sent.length - 1]);
+      const replayed = await encryptObject(
+        { type: "chat", id: "older", text: "yo" }, key);
+      replayed.persist = true;
+      replayed.ref = "b".repeat(40);
+      socket.emit("message", { data: JSON.stringify(replayed) });
+      await settle();
+      const refs = transport.refsFor(["mine", "older", "nobody"]);
+      const before = socket.sent.length;
+      const withdrawn = transport.supersede(["mine", "older"]);
+      const none = transport.supersede(["nobody"]);
+      const frames = socket.sent.slice(before).map((text) => JSON.parse(text))
+        .filter((frame) => frame.kind === "forkmesh-superseded");
+      delivered.push({ refs, sentRef, withdrawn, none, frames });
+    """)
+    out = result["delivered"][-1]
+    assert sorted(out["refs"]) == sorted([out["sentRef"], "b" * 40])
+    assert out["withdrawn"] is True
+    assert out["none"] is False
+    assert out["frames"] == [{
+        "kind": "forkmesh-superseded", "v": 1,
+        "refs": [out["sentRef"], "b" * 40]}]
+
+
+def test_supersede_is_a_no_op_outside_direct_messages():
+    result = _transport_run("""
+      await transport.send({ type: "chat", id: "mine", text: "hi" },
+        { persist: true });
+      const before = socket.sent.length;
+      delivered.push({ sent: transport.supersede(["mine"]),
+        extra: socket.sent.length - before });
+    """, direct=False)
+    assert result["delivered"] == [{"sent": False, "extra": 0}]
 
 
 def test_a_hidden_tab_does_not_mark_a_direct_message_read():

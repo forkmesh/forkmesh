@@ -12,6 +12,7 @@ public struct ChatHistorySnapshot: Equatable, Sendable {
     public var privateChannels: [String] = []
     public var hiddenChannels: [String] = []
     public var hiddenMessages: [String] = []
+    public var removedMessages: [String] = []
     public var looks: [String: ChatLook] = [:]
     public var lookEvents: [ChatLookEvent] = []
 
@@ -95,6 +96,7 @@ public enum ChatHistoryCodec {
             "private": JSONValue(snapshot.privateChannels),
             "hidden": JSONValue(snapshot.hiddenChannels),
             "hiddenMessages": JSONValue(snapshot.hiddenMessages),
+            "removed": JSONValue(snapshot.removedMessages),
             "looks": .object(looks),
             "lookEvents": .array(snapshot.lookEvents.map(ChatLookFrames.encodeEvent)),
         ]
@@ -122,6 +124,7 @@ public enum ChatHistoryCodec {
         snapshot.privateChannels = root["private"]?.strings ?? []
         snapshot.hiddenChannels = root["hidden"]?.strings ?? []
         snapshot.hiddenMessages = root["hiddenMessages"]?.strings ?? []
+        snapshot.removedMessages = root["removed"]?.strings ?? []
         for (conversation, value) in root["looks"]?.objectOrEmpty ?? [:] where !conversation.isEmpty {
             snapshot.looks[conversation] = ChatLookFrames.decode(value.objectOrEmpty)
         }

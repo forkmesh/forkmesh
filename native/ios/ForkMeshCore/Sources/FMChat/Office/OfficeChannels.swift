@@ -209,11 +209,17 @@ public final class OfficeChannelService {
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored public var onFrame: (@MainActor (JSONObject, String) -> Void)?
     @ObservationIgnored public var onMessage: (@MainActor (ChatMessage) -> Void)?
+    @ObservationIgnored public var isRemoved: (@MainActor (String) -> Bool)?
+    @ObservationIgnored public var onRemoved: (@MainActor (String, String) -> Void)?
+    @ObservationIgnored private var pendingDeletes: [String: String] = [:]
+    @ObservationIgnored private var pendingDeleteOrder: [String] = []
+    @ObservationIgnored private var removedIds: Set<String> = []
 
     public private(set) var rooms: [OfficeRoom] = []
     public private(set) var loading = false
     public private(set) var lastError: String?
     public private(set) var connected: Set<String> = []
+    public private(set) var receipts: [String: ChatReceipt] = [:]
     private var history: [String: [ChatMessage]] = [:]
 
     public init(
@@ -235,6 +241,8 @@ public final class OfficeChannelService {
     public func room(for conversation: String) -> OfficeRoom? { rooms.first { $0.conversation == conversation } }
 
     public func messages(_ conversation: String) -> [ChatMessage] { history[conversation] ?? [] }
+
+    public func receipt(_ messageId: String) -> ChatReceipt? { receipts[messageId] }
 
     public func isConnected(_ conversation: String) -> Bool {
         guard let room = room(for: conversation) else { return false }
@@ -318,13 +326,65 @@ public final class OfficeChannelService {
         } else if room.isPrivate && !room.serverVisible {
             return
         }
-        onFrame?(plain, room.conversation)
+        let type = plain["type"]?.text ?? ""
+        let id = plain["id"]?.text ?? ""
+        if type == "chat" || type == "thread-reply" {
+            if isGone(id) || consumePendingDelete(plain, conversation: room.conversation) { return }
+        }
+        if type == "delete" { applyDelete(plain, conversation: room.conversation, stash: true) }
         guard
             let message = OfficeFrames.chatMessage(
                 plain, conversation: room.conversation, selfId: selfId(), recipients: recipients,
                 channelId: room.isPrivate ? "" : room.id)
-        else { return }
-        if append(message, roomId: room.id) && live && !message.isSelf { onMessage?(message) }
+        else {
+            onFrame?(plain, room.conversation)
+            return
+        }
+        let added = append(message, roomId: room.id)
+        onFrame?(plain, room.conversation)
+        if added && live && !message.isSelf { onMessage?(message) }
+    }
+
+    private func isGone(_ id: String) -> Bool {
+        !id.isEmpty && (removedIds.contains(id) || isRemoved?(id) == true)
+    }
+
+    @discardableResult
+    private func applyDelete(_ plain: JSONObject, conversation: String, stash: Bool) -> Bool {
+        let target = plain["target"]?.text ?? ""
+        let senderId = plain["senderId"]?.text ?? ""
+        guard !target.isEmpty, !senderId.isEmpty else { return false }
+        if let message = history[conversation]?.first(where: { $0.id == target }) {
+            guard message.senderId == senderId else { return false }
+            removeLocal(target, conversation: conversation)
+            return true
+        }
+        guard stash, !removedIds.contains(target) else { return false }
+        if pendingDeletes.updateValue(senderId, forKey: target) == nil { pendingDeleteOrder.append(target) }
+        while pendingDeleteOrder.count > DirectMessageFrames.maxPendingDeletes {
+            pendingDeletes.removeValue(forKey: pendingDeleteOrder.removeFirst())
+        }
+        return false
+    }
+
+    private func consumePendingDelete(_ plain: JSONObject, conversation: String) -> Bool {
+        let id = plain["id"]?.text ?? ""
+        guard !id.isEmpty, let sender = pendingDeletes[id], sender == (plain["senderId"]?.text ?? "") else { return false }
+        pendingDeletes.removeValue(forKey: id)
+        pendingDeleteOrder.removeAll { $0 == id }
+        removedIds.insert(id)
+        onRemoved?(conversation, id)
+        return true
+    }
+
+    private func removeLocal(_ id: String, conversation: String) {
+        if var list = history[conversation] {
+            list.removeAll { $0.id == id }
+            history[conversation] = list.isEmpty ? nil : list
+        }
+        removedIds.insert(id)
+        receipts.removeValue(forKey: id)
+        onRemoved?(conversation, id)
     }
 
     public func retentionKey(_ conversation: String) -> String {
@@ -425,15 +485,28 @@ public final class OfficeChannelService {
 
     private func rememberSent(_ ref: String, id: String) {
         if pendingRefs.updateValue(id, forKey: ref) == nil { pendingOrder.append(ref) }
+        receipts[id] = .sending
         while pendingOrder.count > OfficeFrames.maxPendingRefs {
             let dropped = pendingOrder.removeFirst()
-            if let oldId = pendingRefs.removeValue(forKey: dropped) { ackedCounts.removeValue(forKey: oldId) }
+            if let oldId = pendingRefs.removeValue(forKey: dropped) {
+                ackedCounts.removeValue(forKey: oldId)
+                receipts.removeValue(forKey: oldId)
+            }
         }
+    }
+
+    private func unsent(_ id: String, conversation: String, shown: Bool) {
+        receipts.removeValue(forKey: id)
+        guard shown, var list = history[conversation] else { return }
+        list.removeAll { $0.id == id }
+        history[conversation] = list.isEmpty ? nil : list
+        for roomId in seen.keys { seen[roomId]?.remove(id) }
     }
 
     private func applyAck(_ ref: String, _ count: Int, conversation: String) {
         guard let id = pendingRefs[ref] else { return }
         ackedCounts[id] = count
+        if receipts[id] == .sending { receipts[id] = .sent }
         setRecipients(count, id: id, conversation: conversation)
     }
 
@@ -505,9 +578,15 @@ public final class OfficeChannelService {
             envelope["notify"] = true
             let wire = JSON.encode(envelope)
             rememberSent(OfficeFrames.sentRef(wire), id: plain["id"]?.text ?? "")
-            try await socket.connection.send(text: wire)
+            var shown = false
             if let message = OfficeFrames.chatMessage(plain, conversation: room.conversation, selfId: selfId()) {
-                append(message, roomId: room.id)
+                shown = append(message, roomId: room.id)
+            }
+            do {
+                try await socket.connection.send(text: wire)
+            } catch {
+                unsent(plain["id"]?.text ?? "", conversation: room.conversation, shown: shown)
+                throw error
             }
             return plain.str("id")
         } catch {
@@ -530,19 +609,33 @@ public final class OfficeChannelService {
             let framed = room.isPrivate ? try socket.seal.seal(plain) : plain
             var envelope = try socket.crypto.encrypt(framed)
             envelope["persist"] = true
-            if type == "chat" { envelope["notify"] = true }
+            if type == "chat" || type == "thread-reply" { envelope["notify"] = true }
             let wire = JSON.encode(envelope)
-            if type == "chat" { rememberSent(OfficeFrames.sentRef(wire), id: plain["id"]?.text ?? "") }
-            try await socket.connection.send(text: wire)
-            onFrame?(plain, room.conversation)
+            if type == "chat" || type == "thread-reply" { rememberSent(OfficeFrames.sentRef(wire), id: plain["id"]?.text ?? "") }
+            var shown = false
             if let message = OfficeFrames.chatMessage(plain, conversation: room.conversation, selfId: selfId()) {
-                append(message, roomId: room.id)
+                shown = append(message, roomId: room.id)
             }
+            do {
+                try await socket.connection.send(text: wire)
+            } catch {
+                unsent(plain["id"]?.text ?? "", conversation: room.conversation, shown: shown)
+                throw error
+            }
+            if type == "delete" { applyDelete(plain, conversation: room.conversation, stash: false) }
+            onFrame?(plain, room.conversation)
             return plain
         } catch {
             lastError = "\(error)"
             return nil
         }
+    }
+
+    @discardableResult
+    public func deleteForEveryone(_ conversation: String, messageId: String) async -> Bool {
+        guard !messageId.isEmpty, let room = room(for: conversation) else { return false }
+        let fields: JSONObject = ["target": .string(messageId), "conversation": .string("#\(room.name)")]
+        return await postFrame(conversation, type: "delete", fields: fields) != nil
     }
 
     public func create(name: String, isPrivate: Bool, members: [String]) async throws -> OfficeRoom? {

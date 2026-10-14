@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.forkmesh.nativeapp.chat.ChatRow
+import com.forkmesh.nativeapp.chat.DirectMessageFrames
 import com.forkmesh.nativeapp.chat.RelayConnectionState
 import com.forkmesh.nativeapp.chat.guestComposeBlocked
 import com.forkmesh.nativeapp.chat.startsNewDay
@@ -48,7 +49,7 @@ import kotlinx.coroutines.withContext
 class ChatThreadScreen(private val channel: String, private val rootId: String) : Screen() {
     private var draft by mutableStateOf("")
 
-    override val title: String get() = "Thread in $channel"
+    override val title: String get() = ChatDepth.hub?.threadTitle(channel) ?: "Thread in $channel"
 
     @Composable
     override fun Content(navigator: Navigator) {
@@ -130,7 +131,7 @@ class ChatThreadScreen(private val channel: String, private val rootId: String) 
                 conversation = channel,
                 text = draft,
                 onTextChange = { draft = it },
-                connected = relay?.state == RelayConnectionState.CONNECTED,
+                connected = DirectMessageFrames.isDirect(channel) || relay?.state == RelayConnectionState.CONNECTED,
                 onSend = {
                     val text = draft
                     scope.launch {

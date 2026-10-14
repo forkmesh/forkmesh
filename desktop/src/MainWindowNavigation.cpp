@@ -39,6 +39,7 @@
 #include <QDrag>
 #include <QElapsedTimer>
 #include <QGuiApplication>
+#include <QTreeWidgetItemIterator>
 #include <QActionGroup>
 #include <QInputDialog>
 #include <QMimeData>
@@ -5966,6 +5967,60 @@ QStringList MainWindow::testChatDmRows() const
     for (int i = 0; m_dmList && i < m_dmList->count(); ++i)
         rows.append(m_dmList->item(i)->data(Qt::UserRole).toString());
     return rows;
+}
+
+namespace {
+
+QVariant chatListRowData(QListWidget *dms, QTreeWidget *channels,
+                         const QString &conversation, int role)
+{
+    for (int row = 0; dms && row < dms->count(); ++row)
+        if (dms->item(row)->data(Qt::UserRole).toString() == conversation)
+            return dms->item(row)->data(role);
+    if (!channels)
+        return QVariant();
+    for (QTreeWidgetItemIterator it(channels); *it; ++it)
+        if (!ChannelGroupTree::isGroupItem(*it) &&
+            (*it)->data(0, Qt::UserRole).toString() == conversation)
+            return (*it)->data(0, role);
+    return QVariant();
+}
+
+}
+
+QString MainWindow::testChatListPreview(const QString &conversation) const
+{
+    return chatListRowData(m_dmList, m_channelList, conversation,
+                           ChannelGroupTree::kPreviewRole)
+        .toString();
+}
+
+qint64 MainWindow::testChatListPreviewTime(const QString &conversation) const
+{
+    return chatListRowData(m_dmList, m_channelList, conversation,
+                           ChannelGroupTree::kPreviewTimeRole)
+        .toLongLong();
+}
+
+QPixmap MainWindow::testChatListAvatar(const QString &conversation) const
+{
+    return chatListRowData(m_dmList, m_channelList, conversation,
+                           ChannelGroupTree::kAvatarRole)
+        .value<QPixmap>();
+}
+
+int MainWindow::testChatListRowHeight(const QString &conversation) const
+{
+    for (int row = 0; m_dmList && row < m_dmList->count(); ++row)
+        if (m_dmList->item(row)->data(Qt::UserRole).toString() == conversation)
+            return m_dmList->visualItemRect(m_dmList->item(row)).height();
+    if (!m_channelList)
+        return -1;
+    for (QTreeWidgetItemIterator it(m_channelList); *it; ++it)
+        if (!ChannelGroupTree::isGroupItem(*it) &&
+            (*it)->data(0, Qt::UserRole).toString() == conversation)
+            return m_channelList->visualItemRect(*it).height();
+    return -1;
 }
 
 QString MainWindow::testChatTopicText() const

@@ -928,6 +928,17 @@ void ServerNode::processFrame(const QByteArray &payload)
         handleRecipientsAck(envelope);
         return;
     }
+    if (forkmesh::recipients::isDeliveredFrame(envelope)) {
+        m_lastRxType = QStringLiteral("delivered");
+        handleDelivered(envelope);
+        return;
+    }
+    if (forkmesh::recipients::isReadFrame(envelope)) {
+        m_lastRxType = QStringLiteral("read");
+        if (m_directRoom)
+            emit conversationRead();
+        return;
+    }
     if (forkmesh::recipients::isServerCopiesFrame(envelope)) {
         m_lastRxType = QStringLiteral("server-copies");
         const int stored =
@@ -1001,11 +1012,14 @@ void ServerNode::processFrame(const QByteArray &payload)
         forkmesh::recipients::namesFromEnvelope(envelope);
     if (plain.value("senderId").toString() == m_nodeId) {
         const QString ownId = plain.value(QStringLiteral("id")).toString();
-        if (recipients >= 0 && !ownId.isEmpty() &&
-            (type == QLatin1String("chat") ||
-             type == QLatin1String("thread-reply")))
-            emit messageRecipientsKnown(ownId.left(96), recipients,
-                                        recipientNames);
+        if (!ownId.isEmpty() && (type == QLatin1String("chat") ||
+                                 type == QLatin1String("thread-reply"))) {
+            rememberSentRef(forkmesh::recipients::relayRef(envelope),
+                            ownId.left(96));
+            if (recipients >= 0)
+                emit messageRecipientsKnown(ownId.left(96), recipients,
+                                            recipientNames);
+        }
         return;
     }
     noteReceived(envelope);
@@ -1052,6 +1066,36 @@ void ServerNode::handleRecipientsAck(const QJsonObject &envelope)
     m_recipientRefOrder.removeOne(ref);
     emit messageRecipientsKnown(messageId, count,
                                 forkmesh::recipients::namesFromEnvelope(envelope));
+}
+
+void ServerNode::rememberSentRef(const QString &ref, const QString &messageId)
+{
+    if (ref.isEmpty() || messageId.isEmpty())
+        return;
+    if (!m_sentRefs.contains(ref))
+        m_sentRefOrder.enqueue(ref);
+    m_sentRefs.insert(ref, messageId);
+    m_sentRefIds.insert(messageId, ref);
+    while (m_sentRefOrder.size() > forkmesh::recipients::kRememberedRefs) {
+        const QString dropped = m_sentRefOrder.dequeue();
+        const QString id = m_sentRefs.take(dropped);
+        if (m_sentRefIds.value(id) == dropped)
+            m_sentRefIds.remove(id);
+    }
+}
+
+void ServerNode::handleDelivered(const QJsonObject &envelope)
+{
+    if (!m_directRoom)
+        return;
+    QStringList ids;
+    for (const QString &ref : forkmesh::recipients::refsFromEnvelope(envelope)) {
+        const QString id = m_sentRefs.value(ref);
+        if (!id.isEmpty() && !ids.contains(id))
+            ids.append(id);
+    }
+    if (!ids.isEmpty())
+        emit messagesDelivered(ids);
 }
 
 void ServerNode::rememberRecipientRef(const QByteArray &frame,
@@ -1379,8 +1423,11 @@ void ServerNode::sendEncrypted(const QJsonObject &plain, bool showActivity,
     if (resend)
         envelope.insert(QStringLiteral("resend"), true);
     const QByteArray payload = QJsonDocument(envelope).toJson(QJsonDocument::Compact);
-    if (type == QLatin1String("chat") || type == QLatin1String("thread-reply"))
-        rememberRecipientRef(payload, moderated.value(QStringLiteral("id")).toString());
+    if (type == QLatin1String("chat") || type == QLatin1String("thread-reply")) {
+        const QString id = moderated.value(QStringLiteral("id")).toString();
+        rememberRecipientRef(payload, id);
+        rememberSentRef(forkmesh::recipients::frameRef(payload), id.left(96));
+    }
     if (m_directRoom && durable && framed != moderated && m_wsReady)
         rememberOutbox(forkmesh::recipients::frameRef(payload), moderated, framed);
     // A direct message, or history sent to one peer, is addressed to it.
@@ -1621,6 +1668,92 @@ void ServerNode::sendThreadReply(const QString &channel,
     storeHistory(message);
     sendEncrypted(message, true);
     emitChat(message);
+}
+
+QString ServerNode::sendThreadReplyWithId(const QString &channel,
+                                          const QString &rootMessageId,
+                                          const QString &text,
+                                          const QString &messageId)
+{
+    const QString rootId = rootMessageId.trimmed().left(96);
+    const QString moderated = filteredChatText(text).left(kMaxTextChars);
+    if (channel.trimmed().isEmpty() || rootId.isEmpty() ||
+        moderated.trimmed().isEmpty())
+        return QString();
+    QJsonObject message = makeMessage("thread-reply");
+    if (!messageId.trimmed().isEmpty())
+        message.insert("id", messageId.trimmed().left(96));
+    message.insert("channel", channel);
+    message.insert("rootId", rootId);
+    message.insert("text", moderated);
+    if (m_privateChannels.contains(channel))
+        message.insert("private", true);
+    markSeen(message.value("id").toString());
+    storeHistory(message);
+    sendEncrypted(message, true);
+    emitChat(message);
+    return message.value(QStringLiteral("id")).toString();
+}
+
+void ServerNode::sendRoomReaction(const QString &conversation,
+                                  const QString &messageId,
+                                  const QString &emoji, bool added)
+{
+    if (conversation.isEmpty() || messageId.isEmpty() || emoji.isEmpty())
+        return;
+    QJsonObject message = makeMessage("reaction");
+    message.insert("conversation", conversation);
+    message.insert("target", messageId.left(96));
+    message.insert("emoji", emoji);
+    message.insert("reactorId", m_nodeId);
+    message.insert("reactorName", m_userName);
+    message.insert("added", added);
+    markSeen(message.value("id").toString());
+    if (m_messageConversation.contains(messageId)) {
+        if (added)
+            m_reactions[messageId][emoji].insert(m_nodeId, m_userName);
+        else
+            m_reactions[messageId][emoji].remove(m_nodeId);
+    }
+    sendEncrypted(message, false);
+}
+
+void ServerNode::sendRoomEdit(const QString &conversation,
+                              const QString &messageId, const QString &newText)
+{
+    const QString text = filteredChatText(newText.trimmed()).left(kMaxTextChars);
+    if (conversation.isEmpty() || messageId.isEmpty() || text.trimmed().isEmpty())
+        return;
+    QJsonObject message = makeMessage("edit");
+    message.insert("conversation", conversation);
+    message.insert("target", messageId.left(96));
+    message.insert("text", text);
+    message.insert("editedAt", message.value("ts"));
+    markSeen(message.value("id").toString());
+    updateStoredMessage(messageId, text, false);
+    sendEncrypted(message, false);
+}
+
+void ServerNode::sendRoomDelete(const QString &conversation,
+                                const QString &messageId)
+{
+    if (conversation.isEmpty() || messageId.isEmpty())
+        return;
+    QJsonObject message = makeMessage("delete");
+    message.insert("conversation", conversation);
+    message.insert("target", messageId.left(96));
+    markSeen(message.value("id").toString());
+    updateStoredMessage(messageId, QString(), true);
+    m_reactions.remove(messageId);
+    m_outbox.removeIf([&messageId](const OutboxEntry &entry) {
+        return entry.plain.value(QStringLiteral("id")).toString() == messageId;
+    });
+    sendEncrypted(message, false);
+    const QString ref = m_sentRefIds.value(messageId);
+    if (!m_directRoom || ref.isEmpty())
+        return;
+    sendTextFrame(forkmesh::recipients::supersededFrame({ref}),
+                  QStringLiteral("superseded"), QString(), QString());
 }
 
 void ServerNode::setAccountKind(const QString &kind)
@@ -2290,7 +2423,10 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
                              message.value("inviterName").toString().left(80),
                              message.value("shareUrl").toString().left(512),
                              qint64(message.value("coveTs").toDouble()));
-    } else if (type == "reaction") {
+    } else if (type == "reaction" || type == "edit" || type == "delete") {
+        emit roomMutationArrived(message);
+    }
+    if (type == "reaction") {
         const QString target = message.value("target").toString();
         const QString emoji = message.value("emoji").toString();
         const QString reactorId = message.value("reactorId").toString();

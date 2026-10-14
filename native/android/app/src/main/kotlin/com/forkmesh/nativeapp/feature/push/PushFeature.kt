@@ -19,6 +19,12 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.push.NotificationContent
+import com.forkmesh.nativeapp.ui.theme.FmIcon
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
@@ -389,6 +395,40 @@ object PushFeature {
                     icon = "battery_saver_outlined",
                     onClick = { openBatterySettings(context) },
                 )
+            }
+            VGap(FmSpace.x4)
+            NotificationContentChoices()
+        }
+    }
+
+    @Composable
+    fun NotificationContentChoices() {
+        val context = LocalContext.current
+        var chosen by remember { mutableStateOf(PingAlerts.notificationContent(context)) }
+        val c = Fm.colors
+        Column(Modifier.fillMaxWidth()) {
+            Text(NotificationContent.TITLE, style = Fm.text.bodyMedium.copy(fontWeight = FmType.emphasis))
+            VGap(FmSpace.x1)
+            Text(NotificationContent.NOTE, style = Fm.text.bodySmall.copy(color = c.textSecondary))
+            VGap(FmSpace.x2)
+            for (option in NotificationContent.entries) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .selectable(selected = option == chosen, role = Role.RadioButton) {
+                            chosen = option
+                            PingAlerts.setNotificationContent(context, option)
+                        }
+                        .testTag("notification-content-${option.wire}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(option.label, style = Fm.text.bodyMedium)
+                        Text(option.detail, style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                    }
+                    if (option == chosen) FmIcon("check", size = 18.dp, tint = c.accent)
+                }
             }
         }
     }

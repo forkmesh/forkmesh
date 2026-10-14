@@ -355,6 +355,13 @@ autofill_extension = all_extensions || ENV.fetch('FORKMESH_NATIVE_AUTOFILL', '1'
   extension_targets << target
 end
 
+push_product = project.new(Obj::XCSwiftPackageProductDependency)
+push_product.product_name = 'ForkMeshPushCore'
+extension.package_product_dependencies << push_product
+push_build_file = project.new(Obj::PBXBuildFile)
+push_build_file.product_ref = push_product
+extension.frameworks_build_phase.files << push_build_file
+
 project.save
 
 # A shared scheme, so `xcodebuild -scheme ForkMesh` works on a fresh clone.

@@ -4,6 +4,7 @@ import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.model.ChatMessage
+import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.security.MemorySecretStore
 import com.forkmesh.nativeapp.testing.assertEq
@@ -58,6 +59,282 @@ class DirectMessagesTest {
         sentFrames(socket).filter { it["kind"] == "forkmesh-received" }.flatMap { it["refs"] as List<*> }
 
     private val historyEnd = """{"kind":"forkmesh-history-end","v":1}"""
+
+    private class Rig(
+        val dm: DirectMessageService,
+        val hub: ChatHub,
+        val socket: FakeOfficeSocket,
+        val peer: RoomSeal,
+        val conversation: String,
+    )
+
+    private fun rig(): Rig {
+        val store = MemorySecretStore()
+        val connector = FakeOfficeConnector()
+        val dm = service(preparedApi(), connector, store)
+        dm.refresh()
+        val hub = ChatHub(FakeChatRelay())
+        hub.direct = dm
+        val conversation = dm.conversations.single()
+        hub.select(conversation)
+        val socket = connector.last!!
+        socket.onText(historyEnd)
+        val peer = peerSeal()
+        peer.acceptKeyFrame(mySeal(store).keyFrame())
+        socket.onText(envelope(peer.keyFrame()))
+        return Rig(dm, hub, socket, peer, conversation)
+    }
+
+    private fun Rig.fromPeer(frame: Map<String, Any?>, ref: String = "") {
+        socket.onText(if (ref.isEmpty()) envelope(peer.seal(frame)) else envelope(peer.seal(frame), "ref" to ref))
+    }
+
+    private fun Rig.peerFrame(type: String, id: String, vararg extra: Pair<String, Any?>, sender: String = "pat-node"): Map<String, Any?> =
+        mapOf(
+            "type" to type, "id" to id, "senderId" to sender, "sender" to "pat", "accountKind" to "user",
+            "channel" to conversation, "conversation" to conversation, "ts" to System.currentTimeMillis(),
+        ) + extra
+
+    private fun Rig.sealedSent(from: Int = 0): List<Pair<Map<String, Any?>, Map<String, Any?>>> =
+        sentFrames(socket, from).mapNotNull { envelope ->
+            val framed = crypto.decrypt(envelope) ?: return@mapNotNull null
+            if (!RoomSeal.isSealedFrame(framed)) return@mapNotNull null
+            peer.unseal(framed)?.let { envelope to it }
+        }
+
+    fun testOwnDirectMessagesWalkThroughTheReceiptStates() {
+        val r = rig()
+        expect(r.dm.send(r.conversation, "tick me"))
+        val ref = OfficeFrames.sentRef(r.socket.sent.last())
+        val first = r.dm.messages(r.conversation).single().id
+        assertEq(ChatReceipt.SENDING, r.hub.rows(r.conversation).single().receipt)
+        r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1, "ref" to ref, "recipients" to 2)))
+        assertEq(ChatReceipt.SENT, r.dm.receipt(first))
+        r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf("f".repeat(40)))))
+        assertEq(ChatReceipt.SENT, r.dm.receipt(first))
+        r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf(ref, "nope"))))
+        assertEq(ChatReceipt.DELIVERED, r.hub.rows(r.conversation).single().receipt)
+        r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1, "ref" to ref, "recipients" to 2)))
+        assertEq(ChatReceipt.DELIVERED, r.dm.receipt(first))
+        expect(r.dm.send(r.conversation, "second"))
+        val second = r.dm.messages(r.conversation).last().id
+        r.socket.onText("""{"kind":"forkmesh-read","v":1}""")
+        assertEq(ChatReceipt.READ, r.dm.receipt(first))
+        assertEq(ChatReceipt.SENDING, r.dm.receipt(second))
+        r.fromPeer(peerChat("pat-1", "hello"), "a".repeat(40))
+        assertEq(null, r.hub.rows(r.conversation).first { it.message.id == "pat-1" }.receipt)
+    }
+
+    fun testOwnFramesFromHistoryOrAnotherDeviceShowAsSent() {
+        val store = MemorySecretStore()
+        val connector = FakeOfficeConnector()
+        val dm = service(preparedApi(), connector, store)
+        dm.refresh()
+        val hub = ChatHub(FakeChatRelay())
+        hub.direct = dm
+        val conversation = dm.conversations.single()
+        val socket = connector.last!!
+        val own = mapOf(
+            "type" to "chat", "id" to "me-node-old", "senderId" to "me-node", "sender" to "Me", "accountKind" to "user",
+            "channel" to conversation, "text" to "from my laptop", "ts" to System.currentTimeMillis(),
+        )
+        socket.onText(envelope(mySeal(store).seal(own), "ref" to "a".repeat(40), "historyReplay" to true))
+        socket.onText(historyEnd)
+        assertEq(ChatReceipt.SENT, hub.rows(conversation).single().receipt)
+        socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf("a".repeat(40)))))
+        assertEq(ChatReceipt.DELIVERED, dm.receipt("me-node-old"))
+    }
+
+    fun testRepliesAndReactionsWorkOnEitherPersonsMessages() {
+        val r = rig()
+        r.fromPeer(peerChat("pat-1", "root"), "a".repeat(40))
+        r.fromPeer(r.peerFrame("thread-reply", "pat-2", "rootId" to "pat-1", "text" to "in thread"), "b".repeat(40))
+        assertEq(listOf("in thread"), r.hub.threadRows("pat-1").map { it.text })
+        assertEq(1, r.hub.rows(r.conversation).single().thread?.replyCount)
+        assertEq("pat-1", r.hub.rootMessage("pat-1", r.conversation)?.id)
+        expect(r.hub.canReplyInThread(r.conversation))
+        assertEq("Thread with pat", r.hub.threadTitle(r.conversation))
+        r.fromPeer(
+            r.peerFrame("reaction", "pat-3", "target" to "pat-1", "emoji" to "\uD83D\uDC4D", "reactorId" to "pat-node", "reactorName" to "pat", "added" to true),
+        )
+        val chip = r.hub.rows(r.conversation).single().reactions.single()
+        assertEq("like", chip.value)
+        expect(!chip.mine)
+        val root = r.hub.rows(r.conversation).single().message
+        val before = r.socket.sent.size
+        r.hub.toggleReaction(root, "like")
+        val mine = r.hub.rows(r.conversation).single().reactions.single()
+        assertEq(2, mine.count)
+        expect(mine.mine)
+        val (reactionEnvelope, reaction) = r.sealedSent(before).single()
+        assertEq("reaction", reaction["type"])
+        assertEq("pat-1", reaction["target"])
+        assertEq(r.conversation, reaction["conversation"])
+        assertEq(true, reaction["added"])
+        assertEq("me-node", reaction["reactorId"])
+        assertEq(true, reactionEnvelope["persist"])
+        assertEq(null, reactionEnvelope["notify"])
+        r.hub.toggleReaction(root, "like")
+        assertEq(1, r.hub.rows(r.conversation).single().reactions.single().count)
+        val replyFrom = r.socket.sent.size
+        expect(r.hub.replyInThread(r.conversation, "pat-1", "my reply"))
+        assertEq(listOf("in thread", "my reply"), r.hub.threadRows("pat-1").map { it.text })
+        assertEq(ChatReceipt.SENDING, r.hub.threadRows("pat-1").last().receipt)
+        val (replyEnvelope, reply) = r.sealedSent(replyFrom).single()
+        assertEq("thread-reply", reply["type"])
+        assertEq("pat-1", reply["rootId"])
+        assertEq(r.conversation, reply["channel"])
+        assertEq(true, replyEnvelope["notify"])
+        expect(r.dm.send(r.conversation, "my own"))
+        val own = r.dm.messages(r.conversation).last()
+        r.hub.toggleReaction(own, "love")
+        assertEq("love", r.hub.rows(r.conversation).last().reactions.single().value)
+    }
+
+    fun testDirectThreadRepliesStayInTheThreadAndCarryTheirOwnMarks() {
+        val r = rig()
+        r.fromPeer(peerChat("pat-1", "root"), "a".repeat(40))
+        r.fromPeer(r.peerFrame("thread-reply", "pat-2", "rootId" to "pat-1", "text" to "peer reply"), "b".repeat(40))
+        r.fromPeer(r.peerFrame("thread-reply", "pat-2", "rootId" to "pat-1", "text" to "peer reply"), "b".repeat(40))
+        assertEq(listOf("root"), r.dm.messages(r.conversation).map { it.text })
+        assertEq(listOf("peer reply"), r.hub.threadRows("pat-1").map { it.text })
+        assertEq(null, r.hub.threadRows("pat-1").single().receipt)
+        expect(r.hub.replyInThread(r.conversation, "pat-1", "mine"))
+        val ref = OfficeFrames.sentRef(r.socket.sent.last())
+        val mine = r.hub.threadRows("pat-1").last()
+        assertEq(ChatReceipt.SENDING, mine.receipt)
+        expect(mine.deletable)
+        expect(mine.editable)
+        r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1, "ref" to ref, "recipients" to 2)))
+        assertEq(ChatReceipt.SENT, r.hub.threadRows("pat-1").last().receipt)
+        r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf(ref))))
+        assertEq(ChatReceipt.DELIVERED, r.hub.threadRows("pat-1").last().receipt)
+        assertEq(2, r.hub.rows(r.conversation).single().thread?.replyCount)
+        expect(r.hub.edit(mine.message, "mine, edited"))
+        assertEq("mine, edited", r.hub.threadRows("pat-1").last().text)
+        expect(r.hub.threadRows("pat-1").last().edited)
+        r.fromPeer(r.peerFrame("edit", "x-1", "target" to mine.message.id, "text" to "forged"))
+        assertEq("mine, edited", r.hub.threadRows("pat-1").last().text)
+        val before = r.socket.sent.size
+        expect(r.hub.deleteMessage(mine.message))
+        val (_, delete) = r.sealedSent(before).single()
+        assertEq("delete", delete["type"])
+        assertEq(mine.message.id, delete["target"])
+        assertEq(listOf("peer reply"), r.hub.threadRows("pat-1").map { it.text })
+        assertEq(1, r.hub.rows(r.conversation).single().thread?.replyCount)
+        r.fromPeer(r.peerFrame("delete", "pat-3", "target" to "pat-2"))
+        expect(r.hub.threadRows("pat-1").isEmpty())
+        assertEq(null, r.hub.rows(r.conversation).single().thread)
+        assertEq("root", r.hub.listPreview(r.conversation)?.line)
+    }
+
+    fun testDirectListPreviewShowsTheNewestTopLevelLine() {
+        val r = rig()
+        assertEq(null, r.hub.listPreview(r.conversation))
+        r.fromPeer(peerChat("pat-1", "hello\n**there**"), "a".repeat(40))
+        assertEq("hello there", r.hub.listPreview(r.conversation)?.line)
+        r.fromPeer(r.peerFrame("thread-reply", "pat-2", "rootId" to "pat-1", "text" to "aside"))
+        r.fromPeer(r.peerFrame("reaction", "pat-3", "target" to "pat-1", "emoji" to "👍", "reactorId" to "pat-node", "added" to true))
+        assertEq("hello there", r.hub.listPreview(r.conversation)?.line)
+        r.fromPeer(r.peerFrame("edit", "pat-4", "target" to "pat-1", "text" to "hello again"))
+        assertEq("hello again", r.hub.listPreview(r.conversation)?.line)
+        expect(r.dm.send(r.conversation, "my turn"))
+        assertEq("You: my turn", r.hub.listPreview(r.conversation)?.line)
+        val (record, preview) = r.hub.directListRows().single()
+        assertEq("pat", record.otherUser)
+        assertEq("You: my turn", preview?.line)
+        expect(r.hub.deleteMessage(r.dm.messages(r.conversation).last()))
+        assertEq("hello again", r.hub.listPreview(r.conversation)?.line)
+        expect(r.hub.sendAttachment(r.conversation, "plan.pdf", "application/pdf", byteArrayOf(1, 2, 3)))
+        assertEq("You: 📎 plan.pdf", r.hub.listPreview(r.conversation)?.line)
+    }
+
+    fun testDirectListRowsAreNewestFirst() {
+        val api = preparedApi()
+        val other = "e".repeat(32)
+        api.replies["GET /api/chat/direct-messages"] = mapOf(
+            "conversations" to listOf(
+                mapOf("id" to conversationId, "otherUser" to "pat", "updatedAt" to 5L),
+                mapOf("id" to other, "otherUser" to "sam", "updatedAt" to 9L),
+            ),
+            "nextCursor" to "",
+        )
+        val dm = service(api, FakeOfficeConnector())
+        dm.refresh()
+        val hub = ChatHub(FakeChatRelay())
+        hub.direct = dm
+        assertEq(listOf("sam", "pat"), hub.directListRows().map { it.first.otherUser })
+    }
+
+    fun testDeleteForEveryoneRemovesTheMessageAndWithdrawsTheServerCopy() {
+        val r = rig()
+        expect(r.dm.send(r.conversation, "oops"))
+        val ref = OfficeFrames.sentRef(r.socket.sent.last())
+        val original = r.socket.sent.last()
+        val mine = r.dm.messages(r.conversation).single()
+        r.fromPeer(peerChat("pat-1", "theirs"), "a".repeat(40))
+        val theirs = r.dm.messages(r.conversation).first { it.id == "pat-1" }
+        expect(!r.hub.deleteMessage(theirs))
+        val before = r.socket.sent.size
+        expect(r.hub.deleteMessage(mine))
+        assertEq(listOf("theirs"), r.dm.messages(r.conversation).map { it.text })
+        val (deleteEnvelope, delete) = r.sealedSent(before).single()
+        assertEq("delete", delete["type"])
+        assertEq(mine.id, delete["target"])
+        assertEq(r.conversation, delete["conversation"])
+        assertEq(true, deleteEnvelope["persist"])
+        assertEq(null, deleteEnvelope["notify"])
+        val superseded = sentFrames(r.socket, before).single { it["kind"] == "forkmesh-superseded" }
+        assertEq(listOf(ref), superseded["refs"])
+        expect(r.hub.extras.isHidden(mine.id))
+        r.socket.onText(original)
+        expect(r.hub.rows(r.conversation).none { it.message.id == mine.id })
+        val resealFrom = r.socket.sent.size
+        r.socket.onText(envelope(peerSeal().keyFrame()))
+        expect(r.sealedSent(resealFrom).none { it.second["id"] == mine.id })
+    }
+
+    fun testPeerEditsAndDeletesNeedTheAuthorAndWaitForTheirTarget() {
+        val r = rig()
+        r.fromPeer(peerChat("pat-1", "keep"), "a".repeat(40))
+        r.fromPeer(r.peerFrame("delete", "x-1", "target" to "pat-1", sender = "mallory-node"))
+        r.fromPeer(r.peerFrame("edit", "x-2", "target" to "pat-1", "text" to "forged", sender = "mallory-node"))
+        val kept = r.hub.rows(r.conversation).single()
+        assertEq("keep", kept.text)
+        expect(!kept.edited)
+        r.fromPeer(r.peerFrame("edit", "pat-2", "target" to "pat-1", "text" to "edited", "editedAt" to 5L))
+        assertEq("edited", r.hub.rows(r.conversation).single().text)
+        expect(r.hub.rows(r.conversation).single().edited)
+        r.fromPeer(r.peerFrame("delete", "pat-3", "target" to "pat-1"))
+        expect(r.dm.messages(r.conversation).isEmpty())
+        expect(r.hub.extras.isHidden("pat-1"))
+        r.fromPeer(r.peerFrame("delete", "pat-4", "target" to "pat-9"))
+        r.fromPeer(r.peerFrame("edit", "pat-5", "target" to "pat-8", "text" to "late edit"))
+        r.fromPeer(peerChat("pat-9", "gone before it came"))
+        r.fromPeer(peerChat("pat-8", "first draft"))
+        assertEq(listOf("late edit"), r.hub.rows(r.conversation).map { it.text })
+        r.fromPeer(r.peerFrame("thread-reply", "pat-10", "rootId" to "pat-8", "text" to "reply"))
+        r.fromPeer(r.peerFrame("delete", "pat-11", "target" to "pat-10"))
+        expect(r.hub.threadRows("pat-8").isEmpty())
+    }
+
+    fun testOwnEditsGoToThePeerAndOnlyForOwnMessages() {
+        val r = rig()
+        expect(r.dm.send(r.conversation, "frist"))
+        r.fromPeer(peerChat("pat-1", "theirs"), "a".repeat(40))
+        val mine = r.dm.messages(r.conversation).first { it.self }
+        val theirs = r.dm.messages(r.conversation).first { !it.self }
+        val before = r.socket.sent.size
+        expect(r.hub.edit(mine, "first"))
+        val (envelope, edit) = r.sealedSent(before).single()
+        assertEq("edit", edit["type"])
+        assertEq(mine.id, edit["target"])
+        assertEq("first", edit["text"])
+        assertEq(null, envelope["notify"])
+        assertEq("first", r.hub.rows(r.conversation).first { it.message.id == mine.id }.text)
+        expect(!r.hub.edit(theirs, "mine now"))
+        expect(!r.dm.edit(r.conversation, theirs.id, "mine now"))
+    }
 
     fun testConversationsAreParsedAndBounded() {
         val payload = mapOf(
@@ -393,7 +670,7 @@ class DirectMessagesTest {
         expect(dm.isConnected(conversation))
         assertEq(ChatHubSend.Sent, hub.sendText(conversation, "hello there"))
         assertEq(listOf("hello there"), hub.messages(conversation).map { it.text })
-        expect(hub.rows(conversation).none { it.deletable })
+        expect(hub.rows(conversation).all { it.deletable && it.editable && it.receipt == ChatReceipt.SENDING })
         expect(api.calls.any { it.first == "POST" && it.second == "/api/chat/direct-messages/$conversationId/read" })
     }
 

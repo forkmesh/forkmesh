@@ -68,6 +68,11 @@ public:
     void setDeliveryNote(const QString &note, const QString &tooltip);
     void setRecipientCount(int count, const QStringList &names = {});
     int recipientCount() const { return m_message.recipientCount; }
+    void setReceiptMark(forkmesh::recipients::ReceiptMark mark);
+    forkmesh::recipients::ReceiptMark receiptMark() const { return m_receiptMark; }
+    static QPixmap receiptMarkPixmap(forkmesh::recipients::ReceiptMark mark,
+                                     const QColor &muted, const QColor &accent,
+                                     qreal dpr);
 
 signals:
     void reactionToggled(const QString &messageId, const QString &emoji);
@@ -115,6 +120,9 @@ private:
     QPushButton *m_hoverReactButton = nullptr;
     bool m_continuation = false;
     QLabel *m_recipientsLabel = nullptr;
+    QLabel *m_receiptLabel = nullptr;
+    forkmesh::recipients::ReceiptMark m_receiptMark =
+        forkmesh::recipients::ReceiptMark::None;
     QLabel *m_imageLabel = nullptr; // clickable inline image (opens full-size)
     QLabel *m_videoLabel = nullptr; // clickable video poster (opens the player)
     QHBoxLayout *m_reactionsBar;

@@ -387,6 +387,18 @@ can exhaust memory. Browser tests:
 
 ## Recent changes
 
+- 2026-10-13: Chat pushes carry the relay `ref` and key version of the
+  stored ciphertext, and the phones fetch it from new read-only
+  `GET /api/chat/direct-messages/<id>/pending` and
+  `GET /api/chat/channels/<id>/pending` routes and decrypt it on the device,
+  so a banner shows the sender and the text while the server still sees
+  neither, the way Signal does. Direct message pushes are no longer collapsed
+  or coalesced ([chat-push-previews.md](chat-push-previews.md)).
+- 2026-10-13: Every own chat message shows a sending, sent, delivered or read
+  mark on every client, and "Delete for everyone" in a direct message also
+  withdraws the server copy with `forkmesh-superseded`
+  ([chat-private-rooms.md](chat-private-rooms.md#delivery-ticks-on-every-own-message-all-clients-2026-10-13),
+  [delete for everyone](chat-private-rooms.md#delete-for-everyone-replies-and-reactions-in-direct-messages-2026-10-13)).
 - 2026-10-13: A repository can be mirrored to GitHub or GitLab with the
   owner's access token, from the Settings tab or the Code page's Mirror
   button. Code and releases are pushed out; issues, pull requests and

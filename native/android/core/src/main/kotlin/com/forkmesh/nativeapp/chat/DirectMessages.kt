@@ -7,6 +7,7 @@ import com.forkmesh.nativeapp.json.jsonLong
 import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
+import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.security.SecretStore
 import java.net.URI
@@ -36,6 +37,10 @@ object DirectMessageFrames {
     const val SERVER_COPIES = "forkmesh-server-copies"
     const val RECEIVED = "forkmesh-received"
     const val SUPERSEDED = "forkmesh-superseded"
+    const val DELIVERED = "forkmesh-delivered"
+    const val READ = "forkmesh-read"
+    const val RECEIPTS_MAX = 256
+    const val PENDING_MUTATIONS_MAX = 128
     const val RECEIVED_REFS_PER_FRAME = 64
     const val OUTBOX_MAX = 64
     const val OUTBOX_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
@@ -54,6 +59,16 @@ object DirectMessageFrames {
         val ref = envelope["ref"] as? String ?: return ""
         return if (REF.matches(ref)) ref else ""
     }
+
+    fun deliveredRefs(envelope: Map<String, Any?>): List<String>? {
+        if (envelope["kind"] != DELIVERED) return null
+        val refs = envelope["refs"] as? List<*> ?: return emptyList()
+        return refs.filterIsInstance<String>().filter { REF.matches(it) }.distinct().take(RECEIVED_REFS_PER_FRAME)
+    }
+
+    fun isRead(envelope: Map<String, Any?>): Boolean = envelope["kind"] == READ
+
+    fun isMutation(type: String): Boolean = type == "edit" || type == "delete"
 
     fun serverCopies(envelope: Map<String, Any?>): Int? {
         if (envelope["kind"] != SERVER_COPIES) return null
@@ -135,6 +150,14 @@ object DirectMessageFrames {
             self = selfId.isNotEmpty() && senderId == selfId,
             fileName = fileName,
         )
+    }
+
+    fun threadReply(plain: Map<String, Any?>, record: DirectConversation, selfId: String): ChatMessage? {
+        if (jsonText(plain["type"]) != "thread-reply") return null
+        if (jsonText(plain["rootId"]).isEmpty()) return null
+        val asChat = LinkedHashMap(plain)
+        asChat["type"] = "chat"
+        return chatMessage(asChat, record, selfId)
     }
 
     fun isCallFrame(plain: Map<String, Any?>): Boolean = jsonText(plain["type"]).startsWith("call-")
@@ -224,6 +247,20 @@ class DirectMessageService(
 
     val viewOnce = ViewOnceStore()
 
+    private class Receipt(val conversationId: String, var state: ChatReceipt)
+
+    private val receipts = LinkedHashMap<String, Receipt>()
+    private val refIds = LinkedHashMap<String, String>()
+    private val idRefs = LinkedHashMap<String, String>()
+    private val pendingMutations = LinkedHashMap<String, MutableList<Map<String, Any?>>>()
+    private val removed = LinkedHashMap<String, Boolean>()
+
+    @Volatile
+    var replyAuthorOf: ((String) -> String?)? = null
+
+    @Volatile
+    var onRemoved: ((String, String) -> Unit)? = null
+
     @Volatile
     private var focused = ""
 
@@ -274,6 +311,8 @@ class DirectMessageService(
     fun record(conversation: String): DirectConversation? = records.firstOrNull { it.conversation == conversation }
 
     fun messages(conversation: String): List<ChatMessage> = synchronized(lock) { history[conversation].orEmpty() }
+
+    fun receipt(messageId: String): ChatReceipt? = synchronized(lock) { receipts[messageId]?.state }
 
     fun serverCopies(conversation: String): Int? =
         synchronized(lock) { serverCopies[DirectMessageFrames.conversationId(conversation)] }
@@ -537,6 +576,18 @@ class DirectMessageService(
             notifyListeners()
             return
         }
+        OfficeFrames.recipientsAck(envelope)?.let { (ref, _) ->
+            if (advance(listOf(ref), ChatReceipt.SENT)) notifyListeners()
+            return
+        }
+        DirectMessageFrames.deliveredRefs(envelope)?.let { refs ->
+            if (advance(refs, ChatReceipt.DELIVERED)) notifyListeners()
+            return
+        }
+        if (DirectMessageFrames.isRead(envelope)) {
+            if (peerRead(holder.conversationId)) notifyListeners()
+            return
+        }
         val framed = holder.crypto.decrypt(envelope) ?: return
         val replay = envelope["historyReplay"] == true
         if (RoomSeal.isKeyFrame(framed)) {
@@ -556,7 +607,7 @@ class DirectMessageService(
         val plain = holder.seal.unseal(framed) ?: return
         val learned = holder.seal.peerKeyIds.any { it !in known }
         val ref = DirectMessageFrames.relayRef(envelope)
-        handle(plain, record, if (replay) null else holder)
+        handle(plain, record, if (replay) null else holder, ref)
         if (replay) noteOwn(holder, plain, ref, kids, envelope["notify"] == true)
         if (ref.isNotEmpty() && holdReceipt(plain, holder.conversationId, ref)) {
             if (learned) peerLearned(holder)
@@ -589,17 +640,122 @@ class DirectMessageService(
         for (frame in DirectMessageFrames.receivedFrames(refs)) sendOrQueue(holder, frame)
     }
 
-    private fun handle(plain: Map<String, Any?>, record: DirectConversation, live: RoomSocket?) {
+    private fun handle(plain: Map<String, Any?>, record: DirectConversation, live: RoomSocket?, ref: String = "") {
         if (DirectMessageFrames.isCallFrame(plain)) {
             if (live != null) onCallFrame?.invoke(plain, record.conversation)
             return
         }
+        val type = jsonText(plain["type"])
+        if (DirectMessageFrames.isMutation(type) && !mutationAllowed(plain, record)) return
         onFrame?.invoke(plain, record.conversation)
-        val message = DirectMessageFrames.chatMessage(plain, record, selfId()) ?: return
-        trackViewOnce(plain, message)
-        val added = append(message, record.id)
+        val me = selfId()
+        val message = DirectMessageFrames.chatMessage(plain, record, me) ?: DirectMessageFrames.threadReply(plain, record, me)
+        if (message == null) {
+            notifyListeners()
+            return
+        }
+        if (type == "chat") trackViewOnce(plain, message)
+        val added = if (type == "chat") {
+            append(message, record.id)
+        } else {
+            replyAuthorOf?.invoke(message.id) != null && synchronized(lock) { seen.getOrPut(record.id) { HashSet() }.add(message.id) }
+        }
+        if (message.self) track(record.id, message.id, ref, ChatReceipt.SENT)
+        val kept = !added || applyPending(record, message.id)
         notifyListeners()
-        if (added && live != null && !message.self) onMessage?.invoke(message)
+        if (added && kept && live != null && !message.self) onMessage?.invoke(message)
+    }
+
+    private fun authorOf(record: DirectConversation, target: String): String? =
+        synchronized(lock) { history[record.conversation]?.firstOrNull { it.id == target }?.senderId }
+            ?: replyAuthorOf?.invoke(target)
+
+    private fun mutationAllowed(plain: Map<String, Any?>, record: DirectConversation): Boolean {
+        val target = jsonText(plain["target"])
+        val sender = jsonText(plain["senderId"])
+        if (target.isEmpty() || sender.isEmpty()) return false
+        val author = authorOf(record, target)
+        if (author == null) {
+            holdMutation(record.id, target, plain)
+            return false
+        }
+        if (author != sender) return false
+        if (jsonText(plain["type"]) == "delete") remove(record, target)
+        return true
+    }
+
+    private fun holdMutation(conversationId: String, target: String, plain: Map<String, Any?>) = synchronized(lock) {
+        val list = pendingMutations.getOrPut("$conversationId|$target") { ArrayList() }
+        if (list.size < 8) list.add(plain)
+        trim(pendingMutations, DirectMessageFrames.PENDING_MUTATIONS_MAX)
+    }
+
+    private fun applyPending(record: DirectConversation, id: String): Boolean {
+        val held = synchronized(lock) { pendingMutations.remove("${record.id}|$id") } ?: return true
+        for (frame in held) handle(frame, record, null)
+        return authorOf(record, id) != null
+    }
+
+    private fun remove(record: DirectConversation, target: String) {
+        synchronized(lock) {
+            history[record.conversation]?.let { list -> history[record.conversation] = list.filter { it.id != target } }
+            seen.getOrPut(record.id) { HashSet() }.add(target)
+            removed[target] = true
+            trim(removed, DirectMessageFrames.RECEIPTS_MAX)
+            receipts.remove(target)
+            sockets[record.id]?.outbox?.removeAll {
+                jsonText(it.plain["id"]) == target || (jsonText(it.plain["target"]) == target && jsonText(it.plain["type"]) != "delete")
+            }
+        }
+        onRemoved?.invoke(record.conversation, target)
+    }
+
+    private fun <V> trim(map: LinkedHashMap<String, V>, max: Int) {
+        while (map.size > max) map.remove(map.keys.first())
+    }
+
+    private fun linkRef(id: String, ref: String) {
+        if (id.isEmpty() || ref.isEmpty()) return
+        refIds[ref] = id
+        idRefs.remove(id)
+        idRefs[id] = ref
+        trim(refIds, DirectMessageFrames.RECEIPTS_MAX)
+        trim(idRefs, DirectMessageFrames.RECEIPTS_MAX)
+    }
+
+    private fun track(conversationId: String, id: String, ref: String, state: ChatReceipt) = synchronized(lock) {
+        val current = receipts[id]
+        if (current == null) {
+            receipts[id] = Receipt(conversationId, state)
+            trim(receipts, DirectMessageFrames.RECEIPTS_MAX)
+        } else if (state > current.state) {
+            current.state = state
+        }
+        linkRef(id, ref)
+    }
+
+    private fun advance(refs: List<String>, state: ChatReceipt): Boolean = synchronized(lock) {
+        var changed = false
+        for (ref in refs) {
+            val receipt = refIds[ref]?.let { receipts[it] } ?: continue
+            if (state > receipt.state) {
+                receipt.state = state
+                changed = true
+            }
+        }
+        changed
+    }
+
+    private fun peerRead(conversationId: String): Boolean = synchronized(lock) {
+        var changed = false
+        for (receipt in receipts.values) {
+            if (receipt.conversationId != conversationId) continue
+            if (receipt.state == ChatReceipt.SENT || receipt.state == ChatReceipt.DELIVERED) {
+                receipt.state = ChatReceipt.READ
+                changed = true
+            }
+        }
+        changed
     }
 
     private fun append(message: ChatMessage, conversationId: String): Boolean = synchronized(lock) {
@@ -616,6 +772,7 @@ class DirectMessageService(
     private fun noteOwn(holder: RoomSocket, plain: Map<String, Any?>, ref: String, kids: List<String>, notify: Boolean) {
         val me = selfId()
         if (ref.isEmpty() || me.isEmpty() || jsonText(plain["senderId"]) != me || DirectMessageFrames.isCallFrame(plain)) return
+        if (synchronized(lock) { removed.containsKey(jsonText(plain["id"])) }) return
         remember(holder, OutboxEntry(ref, plain, kids, notify, (plain["ts"] as? Number)?.toLong() ?: now()))
     }
 
@@ -671,6 +828,7 @@ class DirectMessageService(
                     superseded.add(entry.ref)
                     entry.ref = OfficeFrames.sentRef(text)
                     entry.kids = kids
+                    linkRef(jsonText(entry.plain["id"]), entry.ref)
                 }
             }
             for (frame in DirectMessageFrames.supersededFrames(superseded)) sendOrQueue(holder, frame)
@@ -756,20 +914,29 @@ class DirectMessageService(
         return sendSealed(record, plain, 0)
     }
 
-    private fun sendSealed(record: DirectConversation, plain: Map<String, Any?>, reached: Int): Boolean {
+    private fun sendSealed(record: DirectConversation, plain: Map<String, Any?>, reached: Int, notify: Boolean = true): Boolean {
         if (synchronized(lock) { sockets[record.id]?.socket == null } && !open(record.conversation)) return keepMeshOnly(record, plain, reached)
         val holder = synchronized(lock) { sockets[record.id] } ?: return keepMeshOnly(record, plain, reached)
         val socket = holder.socket ?: return keepMeshOnly(record, plain, reached)
+        val id = jsonText(plain["id"])
+        val type = jsonText(plain["type"])
+        val content = type == "chat" || type == "thread-reply"
         return try {
             val sealed = holder.seal.seal(plain)
             val envelope = LinkedHashMap(holder.crypto.encrypt(sealed))
             envelope["persist"] = true
-            envelope["notify"] = true
+            if (notify) envelope["notify"] = true
             val frameText = Json.stringify(envelope)
-            if (!socket.sendText(frameText)) return keepMeshOnly(record, plain, reached)
-            remember(holder, OutboxEntry(OfficeFrames.sentRef(frameText), plain, RoomSeal.wrappedKeyIds(sealed), true, now()))
+            val ref = OfficeFrames.sentRef(frameText)
+            if (content) track(record.id, id, ref, ChatReceipt.SENDING)
+            if (!socket.sendText(frameText)) {
+                synchronized(lock) { receipts.remove(id) }
+                return keepMeshOnly(record, plain, reached)
+            }
+            remember(holder, OutboxEntry(ref, plain, RoomSeal.wrappedKeyIds(sealed), notify, now()))
+            if (type == "delete") remove(record, jsonText(plain["target"]))
             onFrame?.invoke(plain, record.conversation)
-            DirectMessageFrames.chatMessage(plain, record, selfId())?.let {
+            if (type == "chat") DirectMessageFrames.chatMessage(plain, record, selfId())?.let {
                 trackViewOnce(plain, it)
                 append(it, record.id)
             }
@@ -780,6 +947,50 @@ class DirectMessageService(
             notifyListeners()
             keepMeshOnly(record, plain, reached)
         }
+    }
+
+    fun sendThreadReply(conversation: String, rootId: String, text: String): Boolean {
+        val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
+        val root = rootId.trim().take(ChatLimits.MAX_ROOT_ID_CHARS)
+        val record = record(conversation) ?: return false
+        if (body.isEmpty() || root.isEmpty()) return false
+        return sendSealed(record, frame(record, "thread-reply", linkedMapOf("rootId" to root, "text" to body)), 0)
+    }
+
+    fun react(conversation: String, target: String, emoji: String, added: Boolean): Boolean {
+        val record = record(conversation) ?: return false
+        if (target.isEmpty() || emoji.isEmpty()) return false
+        val extra = linkedMapOf<String, Any?>(
+            "conversation" to record.conversation,
+            "target" to target,
+            "emoji" to emoji,
+            "reactorId" to selfId(),
+            "reactorName" to displayName().take(ChatLimits.MAX_DISPLAY_NAME_CHARS),
+            "added" to added,
+        )
+        return sendSealed(record, frame(record, "reaction", extra), 0, notify = false)
+    }
+
+    fun edit(conversation: String, target: String, text: String): Boolean {
+        val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
+        val record = record(conversation) ?: return false
+        if (body.isEmpty() || target.isEmpty()) return false
+        val me = selfId()
+        if (me.isEmpty() || authorOf(record, target) != me) return false
+        val extra = linkedMapOf<String, Any?>("conversation" to record.conversation, "target" to target, "text" to body, "editedAt" to now())
+        return sendSealed(record, frame(record, "edit", extra), 0, notify = false)
+    }
+
+    fun deleteMessage(message: ChatMessage): Boolean {
+        val record = record(message.conversation) ?: return false
+        val me = selfId()
+        if (me.isEmpty() || message.senderId != me || authorOf(record, message.id) != me) return false
+        val ref = synchronized(lock) { idRefs[message.id] }
+        val plain = frame(record, "delete", linkedMapOf("conversation" to record.conversation, "target" to message.id))
+        if (!sendSealed(record, plain, 0, notify = false)) return false
+        val holder = synchronized(lock) { sockets[record.id] }
+        if (ref != null && holder != null) for (frame in DirectMessageFrames.supersededFrames(listOf(ref))) sendOrQueue(holder, frame)
+        return true
     }
 
     private fun trackViewOnce(plain: Map<String, Any?>, message: ChatMessage) {

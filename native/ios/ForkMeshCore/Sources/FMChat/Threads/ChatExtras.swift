@@ -74,6 +74,10 @@ public final class ChatExtras {
     @ObservationIgnored public var onChannelJoined: (@MainActor (String) -> Void)?
     @ObservationIgnored public var onChannelRemoved: (@MainActor (String) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
+    @ObservationIgnored public var onRemoved: (@MainActor (String, String) -> Void)?
+    @ObservationIgnored private var pendingEdits: [String: JSONObject] = [:]
+    @ObservationIgnored private var pendingEditOrder: [String] = []
+    @ObservationIgnored private var removedOrder: [String] = []
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored private var lastTypingSent: [String: Date] = [:]
 
@@ -93,6 +97,7 @@ public final class ChatExtras {
     @ObservationIgnored private var fileOrder: [String] = []
     @ObservationIgnored private var fileBytes = 0
     private var hiddenMessageSet: Set<String> = []
+    private var removedSet: Set<String> = []
     private var looks: [String: ChatLook] = [:]
     private var lookEventLists: [String: [ChatLookEvent]] = [:]
     @ObservationIgnored private var hiddenMessageOrder: [String] = []
@@ -139,6 +144,33 @@ public final class ChatExtras {
 
     public func snapshotHiddenMessages() -> [String] { hiddenMessageOrder }
 
+    public func isRemoved(_ id: String) -> Bool { removedSet.contains(id) }
+
+    public func snapshotRemovedMessages() -> [String] { removedOrder }
+
+    public func recordRemoved(_ id: String) {
+        if id.isEmpty { return }
+        forget(id)
+        if removedSet.insert(id).inserted {
+            removedOrder.append(id)
+            let excess = removedOrder.count - ChatLimits.hiddenMessages
+            if excess > 0 {
+                for old in removedOrder.prefix(excess) { removedSet.remove(old) }
+                removedOrder.removeFirst(excess)
+            }
+        }
+        changed()
+    }
+
+    public func restoreRemovedMessages(_ ids: [String]) {
+        var added = false
+        for id in ids where !id.isEmpty && removedSet.insert(id).inserted {
+            removedOrder.append(id)
+            added = true
+        }
+        if added { changed() }
+    }
+
     public func restoreHiddenMessages(_ ids: [String]) {
         var added = false
         for id in ids where rememberHidden(id) { added = true }
@@ -166,9 +198,9 @@ public final class ChatExtras {
 
     public func isEdited(_ id: String) -> Bool { editedText[id] != nil }
 
-    public func reactions(for messageId: String) -> [ReactionChip] {
+    public func reactions(for messageId: String, selfId roomSelfId: String? = nil) -> [ReactionChip] {
         guard let state = reactionState[messageId] else { return [] }
-        let me = selfId
+        let me = roomSelfId ?? selfId
         return (reactionOrder[messageId] ?? []).compactMap { value in
             guard let reactors = state[value], !reactors.isEmpty else { return nil }
             let names = reactors.keys.sorted().map { reactors[$0] ?? "" }.filter { !$0.isEmpty }
@@ -243,11 +275,68 @@ public final class ChatExtras {
 
     public func applyRoomFrame(_ frame: JSONObject, conversation: String, selfId roomSelfId: String) {
         let type = frame["type"]?.text ?? ""
-        if type == "chat" {
+        let senderId = frame["senderId"]?.text ?? ""
+        let id = frame["id"]?.text ?? ""
+        switch type {
+        case "chat":
             rememberFile(frame)
-        } else if type == ChatLookFrames.type {
-            applyLook(frame, senderId: frame["senderId"]?.text ?? "", conversation: conversation, selfId: roomSelfId)
+            retryPendingEdit(id, conversation: conversation)
+        case ChatLookFrames.type:
+            applyLook(frame, senderId: senderId, conversation: conversation, selfId: roomSelfId)
+        case "thread-reply":
+            if removedSet.contains(id) { return }
+            applyReply(frame, senderId: senderId, channel: conversation, selfId: roomSelfId)
+            retryPendingEdit(id, conversation: conversation)
+        case "reaction":
+            applyReaction(frame, senderId: senderId)
+        case "edit":
+            let target = frame["target"]?.text ?? ""
+            if !target.isEmpty, author(of: target, conversation: conversation) == nil {
+                holdEdit(frame, target: target)
+            } else {
+                applyEdit(frame, senderId: senderId, conversation: conversation)
+            }
+        case "delete":
+            applyRoomDelete(frame, senderId: senderId, conversation: conversation)
+        default:
+            break
         }
+    }
+
+    public nonisolated static func reactionFields(added: Bool, messageId: String, value: String, selfId: String) -> JSONObject {
+        ["target": .string(messageId), "emoji": .string(value), "reactorId": .string(selfId), "added": .bool(added)]
+    }
+
+    public func reactionAdds(messageId: String, value: String, selfId: String) -> Bool {
+        reactionState[messageId]?[value]?[selfId] == nil
+    }
+
+    public func roomAuthor(of id: String, conversation: String) -> String? { author(of: id, conversation: conversation) }
+
+    private func holdEdit(_ frame: JSONObject, target: String) {
+        if pendingEdits.updateValue(frame, forKey: target) == nil { pendingEditOrder.append(target) }
+        while pendingEditOrder.count > DirectMessageFrames.maxPendingDeletes {
+            pendingEdits.removeValue(forKey: pendingEditOrder.removeFirst())
+        }
+    }
+
+    private func retryPendingEdit(_ id: String, conversation: String) {
+        guard !id.isEmpty, let frame = pendingEdits.removeValue(forKey: id) else { return }
+        pendingEditOrder.removeAll { $0 == id }
+        applyEdit(frame, senderId: frame["senderId"]?.text ?? "", conversation: conversation)
+    }
+
+    private func applyRoomDelete(_ frame: JSONObject, senderId: String, conversation: String) {
+        let target = frame["target"]?.text ?? ""
+        guard !target.isEmpty, !senderId.isEmpty, let root = replyRoot[target] else { return }
+        guard var list = replies[root], let reply = list.first(where: { $0.id == target }), reply.senderId == senderId else {
+            return
+        }
+        list.removeAll { $0.id == target }
+        replies[root] = list.isEmpty ? nil : list
+        replyRoot.removeValue(forKey: target)
+        recordRemoved(target)
+        onRemoved?(conversation, target)
     }
 
     private func relayConversation(_ frame: JSONObject, senderId: String) -> String {
@@ -285,18 +374,20 @@ public final class ChatExtras {
         changed()
     }
 
-    private func applyReply(_ frame: JSONObject, senderId: String) {
+    private func applyReply(_ frame: JSONObject, senderId: String, channel room: String? = nil, selfId roomSelfId: String? = nil) {
         let rootId = String((frame["rootId"]?.text ?? "").trimmingCharacters(in: .whitespaces).prefix(ChatLimits.maxRootIdChars))
-        let channel = frame["channel"]?.text ?? ""
+        let channel = room ?? (frame["channel"]?.text ?? "")
         let id = frame["id"]?.text ?? ""
-        if rootId.isEmpty || id.isEmpty || !channel.hasPrefix("#") || hiddenChannels.contains(channel) { return }
+        let me = roomSelfId ?? selfId
+        if rootId.isEmpty || id.isEmpty || channel.isEmpty || hiddenChannels.contains(channel) { return }
+        if room == nil && !channel.hasPrefix("#") { return }
         if replyRoot[id] != nil { return }
         let millis = frame["ts"]?.doubleValue.map { Int64($0) } ?? clock.nowMillis
         let message = ChatMessage(
             id: id, conversation: channel, senderId: senderId,
             senderName: ChatFrameText.bounded(frame["sender"], ChatLimits.maxDisplayNameChars),
             text: ChatFrameText.bounded(frame["text"], ChatLimits.maxTextChars), timestamp: Date(epochMillis: millis),
-            isSelf: !senderId.isEmpty && senderId == selfId,
+            isSelf: !senderId.isEmpty && senderId == me,
             fileName: ChatFrameText.bounded(frame["fileName"], ChatLimits.maxFileNameChars))
         if isExpired?(channel, message.timestamp) == true { return }
         var list = replies[rootId] ?? []
@@ -371,6 +462,7 @@ public final class ChatExtras {
         }
         forget(target)
         changed()
+        onRemoved?(ChatFrameText.conversation(of: frame), target)
     }
 
     private func forget(_ id: String) {

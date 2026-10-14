@@ -2733,6 +2733,7 @@ class Default:
             or CHAT_WEBHOOK_DELIVERY_RE.match(url.path)
             or CHAT_CHANNEL_INVITE_RE.match(url.path)
             or CHAT_INVITE_RE.match(url.path)
+            or CHAT_CHANNEL_PENDING_RE.match(url.path)
         ):
             return await chat_channels_api.handle(
                 _ChatChannelsRuntime(self.env, request), url.path)
@@ -2751,6 +2752,7 @@ class Default:
             or CHAT_DIRECT_MESSAGE_USERS_RE.match(url.path)
             or CHAT_DIRECT_MESSAGE_ROOM_ACCESS_RE.match(url.path)
             or CHAT_DIRECT_MESSAGE_READ_RE.match(url.path)
+            or CHAT_DIRECT_MESSAGE_PENDING_RE.match(url.path)
         ):
             return await chat_direct_messages_api.handle(
                 _ChatDirectMessagesRuntime(self.env, request), url.path)

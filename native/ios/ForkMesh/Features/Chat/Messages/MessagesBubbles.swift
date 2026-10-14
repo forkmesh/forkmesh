@@ -116,12 +116,29 @@ struct MessagesBubbleRow: View {
                     .foregroundStyle(colors.meta)
                     .padding(mine ? .trailing : .leading, group && !mine ? 46 : 12)
             }
-            if !bubble.receipt.isEmpty {
-                Text(bubble.receipt)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(colors.meta)
-                    .padding(.trailing, 12)
-                    .accessibilityLabel(bubble.receipt)
+            if let summary = row.thread, let onThread = actions.onThread {
+                Button(action: onThread) {
+                    Text(summary.label)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(MessagesColors.blue)
+                }
+                .buttonStyle(.plain)
+                .padding(mine ? .trailing : .leading, group && !mine ? 46 : 12)
+                .accessibilityHint("Opens the replies")
+            }
+            if let receipt = bubble.receipt {
+                HStack(spacing: 4) {
+                    if let label = OfficeFrames.recipientsLabel(message.recipients),
+                        let description = OfficeFrames.recipientsDescription(message.recipients)
+                    {
+                        Text(label)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(colors.meta)
+                            .accessibilityLabel(description)
+                    }
+                    ChatReceiptMark(receipt: receipt, muted: colors.meta, background: colors.canvas)
+                }
+                .padding(.trailing, 12)
             }
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
@@ -130,7 +147,7 @@ struct MessagesBubbleRow: View {
         .sheet(isPresented: $selecting) { FmSelectableTextSheet(text: copyText) }
         .confirmationDialog("Delete message?", isPresented: $confirmDelete, titleVisibility: .visible) {
             if let onDelete = actions.onDelete {
-                Button("Unsend for everyone", role: .destructive, action: onDelete)
+                Button("Delete for everyone", role: .destructive, action: onDelete)
             }
             if let onHide = actions.onHide {
                 Button("Delete for me", role: .destructive, action: onHide)
@@ -231,6 +248,9 @@ struct MessagesBubbleRow: View {
             }
             ChatReactionMenu(onPick: onReact)
         }
+        if let onThread = actions.onThread {
+            Button(action: onThread) { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+        }
         ChatMessageLaterMenu(actions: actions)
         if !copyText.isEmpty {
             Button(action: copy) { Label("Copy", systemImage: "doc.on.doc") }
@@ -250,7 +270,7 @@ struct MessagesBubbleRow: View {
         }
         if actions.onDelete != nil {
             Button(role: .destructive, action: { confirmDelete = true }) {
-                Label("Undo Send", systemImage: "arrow.uturn.backward")
+                Label("Delete", systemImage: "trash")
             }
         } else if actions.onHide != nil {
             Button(role: .destructive, action: { confirmDelete = true }) { Label("Delete", systemImage: "trash") }

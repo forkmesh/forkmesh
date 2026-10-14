@@ -56,6 +56,19 @@ public:
     QString sendChatWithId(const QString &channel, const QString &text,
                            const QString &messageId);
     static QString moderatedChatText(const QString &text);
+    QString sendThreadReplyWithId(const QString &channel,
+                                  const QString &rootMessageId,
+                                  const QString &text,
+                                  const QString &messageId);
+    void sendRoomReaction(const QString &conversation, const QString &messageId,
+                          const QString &emoji, bool added);
+    void sendRoomEdit(const QString &conversation, const QString &messageId,
+                      const QString &newText);
+    void sendRoomDelete(const QString &conversation, const QString &messageId);
+    QString relayRefForMessage(const QString &messageId) const
+    {
+        return m_sentRefIds.value(messageId);
+    }
     void sendThreadReply(const QString &channel,
                          const QString &rootMessageId,
                          const QString &text) override;
@@ -118,6 +131,9 @@ signals:
     void messageRecipientsKnown(const QString &messageId, int recipients,
                                 const QStringList &names);
     void serverCopiesKnown(int stored);
+    void messagesDelivered(const QStringList &messageIds);
+    void conversationRead();
+    void roomMutationArrived(const QJsonObject &plain);
     void roomSealPeersChanged();
 
 private:
@@ -200,6 +216,8 @@ private:
                 int recipients = -1, const QStringList &recipientNames = {});
     void rememberRecipientRef(const QByteArray &frame, const QString &messageId);
     void handleRecipientsAck(const QJsonObject &envelope);
+    void rememberSentRef(const QString &ref, const QString &messageId);
+    void handleDelivered(const QJsonObject &envelope);
     void noteReceived(const QJsonObject &envelope);
     void flushReceived();
     void rememberPeer(const QString &peerId, const QString &name,
@@ -268,6 +286,9 @@ private:
     QByteArray m_readBuffer;
     QHash<QString, QString> m_recipientRefs;
     QQueue<QString> m_recipientRefOrder;
+    QHash<QString, QString> m_sentRefs;
+    QHash<QString, QString> m_sentRefIds;
+    QQueue<QString> m_sentRefOrder;
     QStringList m_receivedRefs;
     bool m_receivedFlushPending = false;
     bool m_directRoom = false;

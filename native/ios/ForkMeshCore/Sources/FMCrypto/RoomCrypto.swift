@@ -62,10 +62,22 @@ public final class RoomCrypto: @unchecked Sendable {
         slot.lock.lock()
         defer { slot.lock.unlock() }
         if let value = slot.value { return value }
-        let salt = Array(Sha256.hash(Array("ForkMesh room:\(room)".utf8))[0..<16])
-        let value = RoomCrypto(key: Pbkdf2.hmacSha256(password: Array(secret.utf8), salt: salt, iterations: rounds, length: 32))
+        let value = RoomCrypto(key: keyBytes(secret, room))
         slot.value = value
         return value
+    }
+
+    private static func keyBytes(_ secret: String, _ room: String) -> [UInt8] {
+        let salt = Array(Sha256.hash(Array("ForkMesh room:\(room)".utf8))[0..<16])
+        return Pbkdf2.hmacSha256(password: Array(secret.utf8), salt: salt, iterations: rounds, length: 32)
+    }
+
+    public static func derivedKey(_ roomName: String, passphrase: String) -> [UInt8] {
+        keyBytes(passphrase, roomName.dartTrimmed)
+    }
+
+    public static func withKey(_ key: [UInt8]) -> RoomCrypto? {
+        key.count == 32 ? RoomCrypto(key: key) : nil
     }
 
     /// Encrypt a JSON object into the wire envelope.

@@ -3264,6 +3264,9 @@ public:
     static constexpr int kSettingsColumnWidth = 26;
     static constexpr int kUnreadCountRole = Qt::UserRole + 2;
     static constexpr int kPresenceRole = Qt::UserRole + 3;
+    static constexpr int kPreviewRole = Qt::UserRole + 4;
+    static constexpr int kPreviewTimeRole = Qt::UserRole + 5;
+    static constexpr int kAvatarRole = Qt::UserRole + 6;
 
     explicit ChannelGroupTree(QWidget *parent = nullptr) : QTreeWidget(parent)
     {
@@ -3277,7 +3280,7 @@ public:
         setRootIsDecorated(false);
         setExpandsOnDoubleClick(false);
         setIndentation(14);
-        setUniformRowHeights(true);
+        setUniformRowHeights(false);
         setSelectionMode(QAbstractItemView::SingleSelection);
         setDragEnabled(true);
         setAcceptDrops(true);
@@ -3696,6 +3699,7 @@ constexpr int kChatUserAvatarSide = 32;
 constexpr int kChatMembersPanelWidth = 240;
 constexpr int kChatMembersPanelMinBodyWidth = 720;
 constexpr int kChatMemberAvatarSide = 32;
+constexpr int kChatListAvatarSide = 28;
 const QString kChatMembersPanelSetting = QStringLiteral("chat/memberListVisible");
 // Sidebar channel groups, one compact JSON document (ChannelGroups.h).
 const QString kChannelGroupsSetting = QStringLiteral("chat/channelGroups");

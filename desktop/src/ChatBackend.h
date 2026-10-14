@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ChatMessageRetention.h"
+#include "ChatRecipients.h"
 #include "NodeDiagnostics.h"
 #include "UserStatus.h"
 
@@ -95,6 +96,7 @@ struct ChatMessage {
     bool historical = false; // backfill: render/cache without live notifications
     int recipientCount = -1;
     QStringList recipientNames;
+    forkmesh::recipients::Receipt receipt = forkmesh::recipients::Receipt::None;
     QJsonArray blocks;
 
     bool hasFile() const { return !fileName.isEmpty(); }
