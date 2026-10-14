@@ -487,14 +487,14 @@ def serving_nodes(fleet):
     return list(fleet.get("nodes") or []) + list(fleet.get("app_nodes") or [])
 
 
-def caddy_functions(host, wait=CADDY_WAIT):
+def caddy_functions(host, wait=CADDY_WAIT, max_time=3):
     if not HOST_RE.match(str(host)):
         raise GuardError("bad node host name %r" % host)
     return """
 caddy_serving() {{
   for i in $(seq 1 {wait}); do
     if systemctl is-active --quiet caddy &&
-       curl -ks -o /dev/null --max-time 3 --resolve {host}:443:127.0.0.1 https://{host}/readyz
+       curl -ks -o /dev/null --max-time {max_time} --resolve {host}:443:127.0.0.1 https://{host}/readyz
     then return 0; fi
     sleep 1
   done
@@ -528,7 +528,7 @@ caddy_gate() {{
   systemctl restart caddy || echo "caddy: restart failed" >&2
   caddy_ready
 }}
-""".format(host=host, wait=int(wait))
+""".format(host=host, wait=int(wait), max_time=int(max_time))
 
 
 def activate_script(rev, host, timeout=90, vault=False):

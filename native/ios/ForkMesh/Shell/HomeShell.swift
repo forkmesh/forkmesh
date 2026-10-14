@@ -437,6 +437,7 @@ struct HomeShell: View {
         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { (bottom: CGFloat) in
             barBottom = bottom
         }
+        .frame(maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea(.container, edges: .bottom)
     }
 
