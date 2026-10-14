@@ -235,6 +235,11 @@ struct DiffReviewStream<Header: View>: View {
                         pinnedHeaders(top: top, width: proxy.size.width)
                     }
                 }
+                .overlay(alignment: .bottomTrailing) {
+                    if settings.pageButtons && !model.files.isEmpty {
+                        pageButtons
+                    }
+                }
             }
         }
         .background(fm.readingSurface)
@@ -426,6 +431,44 @@ struct DiffReviewStream<Header: View>: View {
         jump = DiffJump(row: row, serial: (jump?.serial ?? 0) + 1, belowHeader: !startsFile(row), atBottom: atBottom)
     }
 
+    private func page(down: Bool) {
+        let row: Int? = down
+            ? model.pageDown(top: anchor.top, bottom: pageMarks.bottom(in: model)) : model.pageUp(top: anchor.top)
+        guard let row else {
+            FmHaptics.warning()
+            return
+        }
+        flip(row, atBottom: !down)
+    }
+
+    private var pageButtons: some View {
+        VStack(spacing: FmSpace.x2) {
+            pageButton("keyboard_arrow_up", "Previous page", id: "diff-page-up") {
+                page(down: false)
+            }
+            pageButton("keyboard_arrow_down", "Next page", id: "diff-page-down") {
+                page(down: true)
+            }
+        }
+        .padding(.trailing, FmSpace.x3)
+        .padding(.bottom, FmSpace.x3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("diff-page-buttons")
+    }
+
+    private func pageButton(_ icon: String, _ label: String, id: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            FmIcon(icon, size: 20, color: fm.textPrimary)
+                .frame(width: 34, height: 34)
+                .shellGlass(Circle())
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
+        .accessibilityIdentifier(id)
+    }
+
     private func submitFind() {
         if let row = model.stepMatch(true) {
             go(row)
@@ -503,6 +546,12 @@ struct DiffReviewStream<Header: View>: View {
                     active: settings.scrollHaptic, cue: .toggle(!settings.scrollHaptic), id: "diff-scroll-haptic"
                 ) {
                     settings.scrollHaptic.toggle()
+                }
+                tiny(
+                    "unfold_more", "Page up and down buttons", active: settings.pageButtons,
+                    cue: .toggle(!settings.pageButtons), id: "diff-page-buttons-toggle"
+                ) {
+                    settings.pageButtons.toggle()
                 }
                 if !extra.isEmpty {
                     separator
@@ -812,12 +861,20 @@ struct DiffReviewStream<Header: View>: View {
         let viewed: Bool = model.isViewed(index)
         let folded: Bool = model.isFolded(index)
         let detail: String = DiffFileRowText.detail(file)
-        let name: Text = Text(DiffFileRowText.name(file))
-            .font(FmFonts.monoFont(size: 13).weight(.semibold))
-            .foregroundColor(viewed ? fm.textSecondary : fm.textPrimary)
-        let path: Text = detail.isEmpty
-            ? name
-            : name + Text("  " + detail).font(FmFonts.monoFont(size: 11)).foregroundColor(fm.textTertiary)
+        let path: some View = HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(DiffFileRowText.name(file))
+                .font(FmFonts.monoFont(size: 13).weight(.semibold))
+                .foregroundColor(viewed ? fm.textSecondary : fm.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+            if !detail.isEmpty {
+                Text("  " + detail)
+                    .font(FmFonts.monoFont(size: 11))
+                    .foregroundColor(fm.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+        }
         return HStack(spacing: 6) {
             if viewed {
                 FmIcon(folded ? "chevron_right" : "expand_more", size: 18, color: fm.textSecondary)
@@ -825,8 +882,6 @@ struct DiffReviewStream<Header: View>: View {
             }
             FmChangeBadge(kind: diffChangeKind(file.status).fmKind, size: 18)
             path
-                .lineLimit(1)
-                .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if file.binary {
                 Text("BIN")
@@ -1376,7 +1431,7 @@ private struct DiffFilesSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(DiffFileRowText.name(entry.file))
                             .fmText(.bodyMedium, color: viewed ? fm.textTertiary : fm.textPrimary, weight: FmType.emphasis)
-                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
                         if !DiffFileRowText.detail(entry.file).isEmpty {
                             Text(DiffFileRowText.detail(entry.file))
                                 .fmMono(color: fm.textTertiary)

@@ -48,6 +48,7 @@ struct ShellHome: View {
     @State private var searchShown: Bool = false
     @State private var contentTop: CGFloat = 0
     @State private var settingsShown: Bool = false
+    @State private var barSettingsShown: Bool = false
 
     @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 22
     @ScaledMetric(relativeTo: .caption) private var labelSize: CGFloat = 12
@@ -188,6 +189,9 @@ struct ShellHome: View {
         }
         .sheet(isPresented: $settingsShown) {
             ShellHomeSettingsSheet(prefs: prefs)
+        }
+        .sheet(isPresented: $barSettingsShown) {
+            ShellBarSettingsSheet(prefs: prefs)
         }
         .onAppear { prefs.drag = nil }
         .onDisappear {
@@ -388,6 +392,12 @@ struct ShellHome: View {
                         .accessibilityIdentifier("shell-home-settings-sheet")
                     }
                     Section("Bottom bar") {
+                        Button {
+                            barSettingsShown = true
+                        } label: {
+                            SwiftUI.Label("Bottom bar settings…", systemImage: "dock.rectangle")
+                        }
+                        .accessibilityIdentifier("shell-home-bar-settings")
                         ShellBarSettingsItems(prefs: prefs)
                     }
                 } label: {

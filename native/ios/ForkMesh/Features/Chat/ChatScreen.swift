@@ -132,10 +132,18 @@ private struct ChatScreenBody: View {
                 onCompose: { composing = true }, onSearch: { searchRequest = ChatSearchRequest() },
                 onClose: { closeChannels() })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(fm.bgRaised.ignoresSafeArea(.container, edges: .bottom))
+            .background { drawerBackdrop }
             .shadow(color: .black.opacity(0.3), radius: 18, x: 6)
             .transition(.move(edge: .leading))
             .zIndex(2)
+        }
+    }
+
+    @ViewBuilder private var drawerBackdrop: some View {
+        if fm.wallpaper, let settings = Services.get(SettingsService.self) {
+            FmWallpaperBackdrop(name: settings.backgroundImage, dim: settings.backgroundDim)
+        } else {
+            fm.bgBase.ignoresSafeArea(.container, edges: .bottom)
         }
     }
 
@@ -723,12 +731,12 @@ extension View {
     @ViewBuilder func chatGlass<S: Shape>(_ shape: S, border: Color) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: shape)
+            self.contentShape(shape).glassEffect(.regular.interactive(), in: shape)
         } else {
-            self.background(shape.fill(.ultraThinMaterial)).overlay(shape.stroke(border.opacity(0.6), lineWidth: 0.5))
+            self.contentShape(shape).background(shape.fill(.ultraThinMaterial)).overlay(shape.stroke(border.opacity(0.6), lineWidth: 0.5))
         }
         #else
-        self.background(shape.fill(.ultraThinMaterial)).overlay(shape.stroke(border.opacity(0.6), lineWidth: 0.5))
+        self.contentShape(shape).background(shape.fill(.ultraThinMaterial)).overlay(shape.stroke(border.opacity(0.6), lineWidth: 0.5))
         #endif
     }
 }

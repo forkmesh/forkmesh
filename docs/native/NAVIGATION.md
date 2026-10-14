@@ -3389,6 +3389,123 @@ follow-up sent to a running agent to show at once.
   send takes it back and returns the text to the composer.
   `PendingPromptsTests` covers it (iOS core, Linux).
 
+### 2.0.99 The Agents tool row is centred (2026-10-14, iPhone)
+
+The user asked for the icons under the top bar on the Agents tab to be
+centred. `AgentsScreen.tabBar` used to pack `tools` to the left with a
+trailing `Spacer`; it now gives the row the full width
+(`frame(maxWidth: .infinity)`), so the chips (stop all, sort, list view,
+queue, usage or runner accounts, terminal, recycle bin, watch, on-device
+chat) sit centred whichever of them are shown.
+
+### 2.0.100 A bottom bar you can style like Home (2026-10-14, iPhone)
+
+The user asked to customize the bottom navigation bar: individual squares or
+bare icons, adjusted the way the Home icons are (2.0.91), with lots of
+options so the bar can look the way they want.
+
+- **Bottom bar settings** (`ShellBarSettingsSheet`/`ShellBarSettingsForm`,
+  `ShellBarSettings.swift`). They open from a long press on any bar icon or
+  folder ("Bottom bar settings…"), from Home's sliders menu under "Bottom
+  bar", from a "Bottom bar" row in the Home screen settings and from
+  Settings → General → Bottom bar (`BottomBarSettingsCard`). The form starts
+  with a live preview (`ShellBarPreview`) of five sample icons over an accent
+  wash, so glass reads, then:
+  - **Shape**: Capsule (the one glass capsule of before, the default), Panel
+    (one rounded rectangle), Squares and Circles (each icon on its own glass
+    button) and Icons only (no backdrop; icons and labels get a soft shadow
+    so they read over the wallpaper). Background: Glass, Clear (iOS 26's
+    `.clear` glass, or a thinner material before 26), Tinted (glass tinted
+    with the accent) and Solid (the raised surface colour, no glass). Corners
+    (Panel and Squares, square to round), Spacing (tight to wide) and Width:
+    Full width or Fit the icons (the bar shrinks to its icons, centred). At
+    full width, squares and circles spread across the bar like a dock, so
+    spacing only applies once they fit their icons.
+  - **Icons**: the four Home icon styles (Outline, Filled, Accent, Tiles), a
+    size (S, M, L, XL: 85%, 100%, 115%, 130% of the icon, cell and label),
+    labels (Always, Selected only, Never; with no labels the cell is 20%
+    shorter, never under 44 pt) and "Match the Home icons".
+  - **Selected icon**: Fill (the tinted shape of before), Outline, Glow, Dot,
+    Line (under the icon) or None. The selected icon stays in the accent
+    colour whatever the mark.
+  - **What the bar shows**: how many icons the bar holds (3 to 8, was a fixed
+    6; a folder counts as one), Show counts (the plain counts Home shows),
+    Show activity (the activity halo and heartbeat count) and Highlight
+    frequently used (Home's glow, behind the glyph).
+  - **Order**: the existing sort, clear usage, reset icons and reset layout
+    (`ShellBarSettingsItems` without Home's reset), and Reset bar look.
+- **Storage.** `ShellBarStyle` (FMApi) holds the look as JSON under
+  `shell/bar-style`; the default writes no key and each field falls back to
+  its default by itself, with corners and spacing clamped to 0–1 and the
+  limit to 3–8. `ShellBarStyle.metrics` does the sizing on plain numbers:
+  slot width, cell height, gap, outer width and whether the bar scrolls. For
+  the default capsule it gives exactly the old sizes (64 × 52 cells shrunk to
+  fit, never under 44, a 2 pt gap). `barRadius`/`cellRadius` give the
+  corners. `ShellBarPrefs.barStyle` and `styleBar` keep it observable, and
+  `ShellBarPrefs` passes the limit to `ShellBarLayout`'s `barSlots`, `inBar`,
+  `barIsFull`, `fit`, `removeFromBar` and `putInBar`, which take a `limit`
+  that defaults to `barLimit` (6). Lowering the limit only hides the extra
+  icons until the bar is next edited; raising it brings them back.
+  `ShellBarStyleTests` and `ShellBarLayoutTests.testTheBarLimitIsAChoice`
+  cover it (iOS core, Linux).
+- **Drawing** (`ShellBarLook.swift`). `ShellBarShapes` gives the bar's shape
+  and each cell's (the end cells of a capsule or panel follow its outer
+  curve, as before). `ShellBarBackdrop` draws a fill on any shape: iOS 26
+  glass (regular, clear or tinted, interactive) or, before 26, the
+  ultra-thin material with a hairline and shadow; Solid draws no glass on
+  any version. `ShellBarSlotChrome` draws the selected mark and, for
+  squares and circles, each cell's own backdrop. With separate buttons the
+  `GlassEffectContainer` spacing is 0 so neighbouring glass does not melt
+  together, and the scroll view stops clipping while nothing scrolls so the
+  buttons' shadows show. `ShellBarCellLabel` takes the style (icon style,
+  label rule, activity) and a heat level; folders follow the same shape,
+  labels and activity, and a folder's popover always shows labels.
+- Android's bar is unchanged. Not built or checked on a device from Linux,
+  which only parses the Swift.
+
+### 2.0.101 A richer channel list over the wallpaper (2026-10-14, iOS)
+
+The user sent a screenshot of the channel drawer (quiet rows with an empty
+second line, so the `#` and lock glyphs sat below their titles, 12 pt text,
+a flat opaque panel) and asked for it to look nicer with more information,
+centred icons, slightly bigger text, the connected apps at the bottom, and
+the custom background showing through.
+
+- **Rows** (`ChatChannelTile`): the icon is an SF Symbol (`number`,
+  `lock.fill`, `at`, the mesh glyph) centred in a 36 pt rounded tile, and the
+  row centres it against both text lines. The bundled Material glyphs sat
+  low in their frame. Titles are `bodyLarge` (15 pt, was 12), previews
+  `bodyMedium` (13 pt), rows at least 56 pt, and the time turns red when the
+  room is unread. People rows use the same 36 pt avatar with the presence dot
+  on its corner.
+- **Every row has a second line.** A room with no messages shows
+  `ChatHub.listFallback`/`ChatListPreviews.fallback` in a fainter tone: the
+  Office topic, else "Public · no messages yet", "Private · N members" or
+  "Private · invited people only", "No messages yet" for a direct message,
+  and "Phones and desktops on this network" for #mesh.
+- **Layout.** A strip of three counts (channels, unread rooms that are not
+  muted, people online) sits under the search bar. Each section (Starred,
+  Channels, Direct messages, People, Connected apps) has an upper-case title
+  with a count and sits on its own rounded card. Group headers use a
+  rotating chevron.
+- **Connected apps** close the list (`ChatChannelSidebar.connectedApps`):
+  one row per installed chat app, grouped from the app command catalog by
+  `ChatListPreviews.apps` (`ChatConnectedApp`, its first three slash
+  commands and "+N"). Discord moved there from the channel list, with a dot
+  for its connection. The desktop on this network is listed when
+  `LocalDesktopText.chip` names one. "Manage" and the app rows open Settings
+  › Installed apps. With none, a row points to the Market. The list loads
+  the catalog on appear and on pull to refresh.
+- **Wallpaper.** With a background image the sidebar draws no fill of its
+  own, the cards are the raised colour at 62%, and the phone drawer paints
+  `FmWallpaperBackdrop` (same image and dim as the rest of the app) instead
+  of the opaque raised colour. The transcript behind the drawer still does
+  not show through. Without a wallpaper, the page is the base colour and
+  the cards are the raised colour. The scroll content clears the bottom bar
+  (`ShellDock.clearance`).
+- `ChatListPreviewTests` covers the fallback lines and the app grouping (iOS
+  core, Linux). The SwiftUI is only parsed on Linux, not built.
+
 ### 2.0.58 Tour can be removed from the phone (2026-10-05, iOS and Android)
 
 Reported: "Was unable to remove tour button in app". On iOS the Tour cell's
