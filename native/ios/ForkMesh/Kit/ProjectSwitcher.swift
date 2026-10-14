@@ -137,7 +137,6 @@ struct ProjectDrawer: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.dismiss) private var dismiss
     @State private var shown: Bool = false
-    @State private var drag: CGFloat = 0
 
     static let widthFraction: CGFloat = 0.75
 
@@ -145,7 +144,7 @@ struct ProjectDrawer: View {
         GeometryReader { (proxy: GeometryProxy) in
             let width: CGFloat = proxy.size.width * ProjectDrawer.widthFraction
             ZStack(alignment: .leading) {
-                Color.black.opacity(shown ? 0.45 * (1 - min(1, -min(0, drag) / max(width, 1))) : 0)
+                Color.black.opacity(shown ? 0.45 : 0)
                     .ignoresSafeArea()
                     .onTapGesture { close(then: nil) }
                     .accessibilityLabel("Close projects")
@@ -155,21 +154,7 @@ struct ProjectDrawer: View {
                     .frame(maxHeight: .infinity, alignment: .top)
                     .background(fm.bgRaised.ignoresSafeArea())
                     .shadow(color: Color.black.opacity(0.3), radius: 18, x: 6)
-                    .offset(x: shown ? min(0, drag) : -(width + 24))
-                    .simultaneousGesture(
-                        DragGesture(minimumDistance: 12)
-                            .onChanged { (value: DragGesture.Value) in
-                                if abs(value.translation.width) > abs(value.translation.height) {
-                                    drag = value.translation.width
-                                }
-                            }
-                            .onEnded { (value: DragGesture.Value) in
-                                if drag < -80 || (drag < 0 && value.predictedEndTranslation.width < -160) {
-                                    close(then: nil)
-                                } else {
-                                    withAnimation(.easeOut(duration: 0.2)) { drag = 0 }
-                                }
-                            })
+                    .offset(x: shown ? 0 : -(width + 24))
             }
         }
         .accessibilityAction(.escape) { close(then: nil) }
@@ -181,7 +166,6 @@ struct ProjectDrawer: View {
     private func close(then: (() -> Void)?) {
         withAnimation(.easeIn(duration: 0.18)) {
             shown = false
-            drag = 0
         } completion: {
             var transaction: Transaction = Transaction()
             transaction.disablesAnimations = true
