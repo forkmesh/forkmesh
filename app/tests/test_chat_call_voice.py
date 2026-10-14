@@ -89,7 +89,9 @@ for (const [caller, f0] of [["male", 115], ["female", 205]]) {
   const x = glottal(f0, 2);
   for (const preset of V.CALL_VOICES) {
     const r = render(x, preset, f0);
-    out.shifts.push({ caller, voice: preset.id, target: preset.pitchHz, achieved: medianPitch(r.y), gaps: zeroRuns(r.y, 4000) });
+    const [low, high] = W.VOICE_LIMITS.ratio;
+    const expected = f0 * Math.min(high, Math.max(low, preset.pitchHz / f0));
+    out.shifts.push({ caller, voice: preset.id, target: expected, achieved: medianPitch(r.y), gaps: zeroRuns(r.y, 4000) });
   }
 }
 const sine = new Float32Array(sr * seconds);
@@ -114,7 +116,7 @@ out.blockDiff = blockDiff;
 out.steadyStep = worstStep(steady.y, 4000);
 const switching = new W.VoiceEngine(sr, 160);
 const sy = new Float32Array(sine.length);
-const order = ["maya", "kofi", "", "ingrid", "theo", "ren", ""];
+const order = ["maya", "kofi", "", "ingrid", "robot", "theo", "older-woman", "ren", "deep", ""];
 for (let i = 0, k = 0; i < sine.length; i += 128) {
   if (i % (sr / 2) === 0) switching.setVoice(V.callVoiceById(order[k++ % order.length]));
   switching.process(sine.subarray(i, i + 128), sy.subarray(i, i + 128), 128);
@@ -129,8 +131,18 @@ out.plans = {
   maleToMaya: W.voicePlan(V.callVoiceById("maya"), 115),
   femaleToKofi: W.voicePlan(V.callVoiceById("kofi"), 210),
   femaleToMaya: W.voicePlan(V.callVoiceById("maya"), 196),
+  robot: W.voicePlan(V.callVoiceById("robot"), 150),
+  olderWoman: W.voicePlan(V.callVoiceById("older-woman"), 150),
   off: W.voicePlan(null, 150),
 };
+out.resolved = {
+  faceKofi: V.resolveCallVoice("face", "kofi"),
+  faceCustom: V.resolveCallVoice("face", "custom"),
+  faceUnknown: V.resolveCallVoice("face", "someone-new"),
+  picked: V.resolveCallVoice("Older-Woman", "maya"),
+  off: V.resolveCallVoice("off", "maya"),
+};
+out.labels = V.CALL_VOICES.map((v) => v.label);
 console.log(JSON.stringify(out));
 '''
 
@@ -242,12 +254,23 @@ def dsp():
     return _node(DSP_HARNESS, "chat-call-voice-worklet.js")
 
 
-def test_every_face_has_a_voice(dsp):
-    assert dsp["voices"] == ["maya", "theo", "kofi", "ingrid", "ren"]
+FACE_VOICES = ["maya", "theo", "kofi", "ingrid", "ren"]
+MORE_VOICES = ["deep", "older-man", "young-man", "warm", "low", "older-woman", "teen", "neutral", "robot"]
+
+
+def test_every_face_has_a_voice_and_more_voices_follow(dsp):
+    assert dsp["voices"] == FACE_VOICES + MORE_VOICES
+    assert len(set(dsp["labels"])) == len(dsp["labels"])
+
+
+def test_match_face_falls_back_to_your_own_voice_for_faces_without_one(dsp):
+    assert dsp["resolved"] == {
+        "faceKofi": "kofi", "faceCustom": "", "faceUnknown": "", "picked": "older-woman", "off": "",
+    }
 
 
 def test_each_voice_lands_on_its_pitch_from_a_male_and_a_female_caller(dsp):
-    assert len(dsp["shifts"]) == 10
+    assert len(dsp["shifts"]) == 2 * len(FACE_VOICES + MORE_VOICES)
     for shift in dsp["shifts"]:
         semitones = 12 * abs(__import__("math").log2(shift["achieved"] / shift["target"]))
         assert semitones < 1.0, shift
@@ -259,7 +282,11 @@ def test_plans_follow_the_caller(dsp):
     assert plans["maleToMaya"]["ratio"] > 1.6 and plans["maleToMaya"]["formant"] > 1.1
     assert plans["femaleToKofi"]["ratio"] < 0.5 and plans["femaleToKofi"]["formant"] < 0.85
     assert 0.95 < plans["femaleToMaya"]["ratio"] < 1.05
-    assert plans["off"] == {"ratio": 1, "formant": 1, "brightness": 0, "breath": 0, "mix": 0}
+    assert plans["robot"]["range"] == 0
+    assert plans["olderWoman"]["jitter"] > 0 and plans["olderWoman"]["tremor"] > 0
+    assert plans["off"] == {
+        "ratio": 1, "formant": 1, "brightness": 0, "breath": 0, "range": 1, "jitter": 0, "tremor": 0, "mix": 0,
+    }
 
 
 def test_own_voice_is_the_input_delayed_within_the_latency_budget(dsp):
@@ -287,7 +314,7 @@ def test_engine_runs_well_inside_a_render_quantum(dsp):
 
 def test_call_sends_the_changed_voice_and_follows_the_picker():
     data = _node(CALLS_HARNESS, "chat-calls.js")
-    assert data["options"] == ["face", "off", "maya", "theo", "kofi", "ingrid", "ren"]
+    assert data["options"] == ["face", "off", *FACE_VOICES, *MORE_VOICES]
     assert data["matchedFace"] == "ingrid"
     assert data["seeded"] == 118
     assert data["stageSeesMic"] is True
@@ -331,7 +358,7 @@ def test_native_call_page_exposes_voice_operations():
     assert '<script type="text/plain" id="fm-call-voice-worklet">' in page
     assert "window.FmCallVoice = (() => {" in page
     assert "async setup(media, iceServers, face) {\n      const voice = arguments[3];" in page
-    for op in ("async voice(id) {", "async voiceList() {", "async preview(media, voice, face, background, image) {", "async monitor(on) {"):
+    for op in ("async voice(id) {", "async voiceList() {", "async preview(media, voice, face, background, image", "async monitor(on) {"):
         assert op in page
     assert 'post({ event: "voice", id });' in page
     assert page.count("await voiceReady();") == 2

@@ -58,7 +58,7 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         return peer
     }
 
-    func preview(face: String, background: String, image: String) async throws -> WebCallPeer {
+    func preview(face: String, background: String, image: String, faceImage: String = "") async throws -> WebCallPeer {
         if let previewed = current, previewed.previewing { return previewed }
         current?.close()
         let peer = WebCallPeer { [weak self] closed in
@@ -68,7 +68,8 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         current = peer
         do {
             try await peer.load()
-            try await peer.preview(media: .video, voice: voice(), face: face, background: background, image: image)
+            try await peer.preview(
+                media: .video, voice: voice(), face: face, background: background, image: image, faceImage: faceImage)
         } catch {
             peer.close()
             throw error
@@ -184,8 +185,9 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
             guard let image = message["image"]?.text else { return }
             let landmarks = message["landmarks"]?.boolValue ?? true
             let mask = message["mask"]?.boolValue ?? false
+            let accurate = message["accurate"]?.boolValue ?? false
             Task { [weak self] in
-                let reply = await CallFaceLandmarks.detect(dataURL: image, landmarks: landmarks, mask: mask)
+                let reply = await CallFaceLandmarks.detect(dataURL: image, landmarks: landmarks, mask: mask, accurate: accurate)
                 self?.replyLandmarks(id: id, regions: reply)
             }
         case "voice":
@@ -234,6 +236,14 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
         Task { _ = try? await run("face", [.string(id)]) }
     }
 
+    func setFace(_ id: String, image: String) {
+        Task { _ = try? await run("face", [.string(id), .string(image)]) }
+    }
+
+    func faceState() async -> String {
+        (try? await run("faceState"))?.text ?? ""
+    }
+
     func setVoice(_ id: String) {
         Task { _ = try? await run("voice", [.string(id)]) }
     }
@@ -258,12 +268,13 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     }
 
     @discardableResult
-    func preview(media: DirectCallKind, voice: String, face: String = "", background: String = "", image: String = "")
-        async throws -> String
-    {
+    func preview(
+        media: DirectCallKind, voice: String, face: String = "", background: String = "", image: String = "",
+        faceImage: String = ""
+    ) async throws -> String {
         try await run(
             "preview",
-            [.string(media.rawValue), .string(voice), .string(face), .string(background), .string(image)]
+            [.string(media.rawValue), .string(voice), .string(face), .string(background), .string(image), .string(faceImage)]
         ).text
     }
 

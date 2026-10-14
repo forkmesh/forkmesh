@@ -150,3 +150,39 @@ test("refuses to record before the preview is open or once the call has started"
   await call(page, "close");
   await context.close();
 });
+
+test("builds a face from the caller's own photo, refuses a photo without a face, and records with it", async () => {
+  test.setTimeout(90_000);
+  const { context, page, errors } = await openPage();
+  const fs = require("node:fs");
+  const photo = "data:image/jpeg;base64," + fs.readFileSync(path.resolve(__dirname, "..", "..", "public", "assets", "call-faces", "ren.jpg")).toString("base64");
+  const list = await call(page, "faceList");
+  expect(list.value.map((face) => face.id)).toEqual(["maya", "theo", "kofi", "ingrid", "ren", "custom"]);
+  expect(list.value[5]).toMatchObject({ label: "Your photo", custom: true });
+  expect((await call(page, "preview", ["video", "", "", "", ""])).ok).toBe(true);
+  expect(await call(page, "face", ["custom"])).toMatchObject({ ok: true, value: "" });
+
+  const blank = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 320;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#6a8";
+    ctx.fillRect(0, 0, 320, 320);
+    return canvas.toDataURL("image/jpeg");
+  });
+  expect(await call(page, "face", ["custom", blank])).toMatchObject({ ok: true, value: "custom" });
+  await expect.poll(async () => (await call(page, "faceState")).value, { timeout: 40_000 }).toBe("failed");
+  expect(await call(page, "record", ["custom", "", ""])).toMatchObject({ ok: false, error: "face_not_found" });
+
+  expect(await call(page, "faceImage", [photo])).toMatchObject({ ok: true });
+  await expect.poll(async () => (await call(page, "faceState")).value, { timeout: 40_000 }).toBe("ready");
+  expect(await call(page, "record", ["custom", "", ""])).toMatchObject({ ok: true, value: true });
+  await page.waitForTimeout(1200);
+  const stopped = await call(page, "recordStop");
+  expect(stopped.ok).toBe(true);
+  expect(stopped.value.size).toBeGreaterThan(1000);
+  await call(page, "close");
+  expect(errors).toEqual([]);
+  await context.close();
+});

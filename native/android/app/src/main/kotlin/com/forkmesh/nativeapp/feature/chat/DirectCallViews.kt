@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -70,6 +72,8 @@ import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmSpace
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class DirectCallView(
@@ -82,6 +86,7 @@ private data class DirectCallView(
     val cameraOff: Boolean,
     val face: String,
     val available: Boolean,
+    val faceImage: String = "",
     val voiceChoice: String = DirectCallEngine.VOICE_MATCH_FACE,
     val voice: String = "",
     val background: String = "",
@@ -99,6 +104,7 @@ private fun DirectCallEngine.view(): DirectCallView = DirectCallView(
     cameraOff = cameraOff,
     face = face,
     available = available,
+    faceImage = faceImage,
     voiceChoice = voiceChoice,
     voice = voice,
     background = background,
@@ -228,6 +234,7 @@ private fun DirectCallScreen(state: DirectCallView) {
     val facesSupported = peers?.facesSupported?.collectAsState()?.value == true
     val thumbs = peers?.backgrounds?.collectAsState()?.value
     val pickPhoto = rememberBackgroundPhotoPicker(previewing = false)
+    val pickFace = rememberFacePhotoPicker(previewing = false)
     val video = state.media == DirectCallKind.VIDEO
     DisposableEffect(hostView) {
         hostView.keepScreenOn = true
@@ -310,8 +317,12 @@ private fun DirectCallScreen(state: DirectCallView) {
                         background = if (state.face.isEmpty()) Color.White.copy(alpha = .18f) else colors.accent,
                     ) {
                         scope.launch {
-                            val choice = pickCallFace(messenger, state.face) ?: return@launch
-                            DirectCallFeature.run { it.setFace(choice) }
+                            val choice = pickCallFace(messenger, state.face, state.faceImage.isNotEmpty()) ?: return@launch
+                            if (choice == PICK_FACE_PHOTO) {
+                                pickFace.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            } else {
+                                DirectCallFeature.run { it.setFace(choice) }
+                            }
                         }
                     }
                 }
@@ -349,7 +360,9 @@ private fun DirectCallScreen(state: DirectCallView) {
     }
 }
 
-private suspend fun pickCallFace(messenger: FmMessenger, current: String): String? =
+private const val PICK_FACE_PHOTO = "pick-photo"
+
+private suspend fun pickCallFace(messenger: FmMessenger, current: String, hasPhoto: Boolean): String? =
     messenger.showModalBottomSheet<String> { close ->
         Column(Modifier.padding(bottom = FmSpace.x4)) {
             Text(
@@ -357,7 +370,9 @@ private suspend fun pickCallFace(messenger: FmMessenger, current: String): Strin
                 modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2),
                 style = Fm.text.titleMedium.copy(color = Fm.colors.textPrimary),
             )
-            val options = listOf("" to "Your own face") + DirectCallEngine.FACES.map { it.id to it.label }
+            val photo = if (hasPhoto) listOf(DirectCallEngine.CUSTOM_FACE to DirectCallEngine.faceLabel(DirectCallEngine.CUSTOM_FACE)) else emptyList()
+            val options = listOf("" to "Your own face") + DirectCallEngine.FACES.map { it.id to it.label } + photo +
+                listOf(PICK_FACE_PHOTO to if (hasPhoto) "Choose another photo…" else "Use a photo of a face…")
             options.forEachIndexed { index, (id, label) ->
                 if (index > 0) FmRowDivider()
                 FmListRow(
@@ -370,6 +385,47 @@ private suspend fun pickCallFace(messenger: FmMessenger, current: String): Strin
             }
         }
     }
+
+@Composable
+private fun rememberFacePhotoPicker(previewing: Boolean): androidx.activity.result.ActivityResultLauncher<PickVisualMediaRequest> {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    return rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        DirectCallFeature.run { engine ->
+            val image = CallFaceStore.fromUri(context, uri)
+            if (image == null) {
+                ChatDepth.post("That photo could not be opened.")
+                return@run
+            }
+            val previous = engine.face
+            if (!engine.setFace(DirectCallEngine.CUSTOM_FACE, image)) return@run
+            val peer = if (previewing) DirectCallFeature.peers?.previewed() else null
+            if (peer != null) {
+                runCatching { peer.setFace(DirectCallEngine.CUSTOM_FACE, image) }
+                runCatching { peer.setVoice(engine.effectiveVoice) }
+                scope.launch(Dispatchers.IO) {
+                    repeat(120) {
+                        when (runCatching { peer.faceState() }.getOrDefault("")) {
+                            "ready" -> return@launch
+                            "failed" -> {
+                                ChatDepth.post("No face was found in that photo. Try a clear photo of one face looking at the camera.")
+                                val back = if (previous == DirectCallEngine.CUSTOM_FACE) "" else previous
+                                DirectCallFeature.run { again ->
+                                    again.setFace(back)
+                                    runCatching { peer.setFace(again.face) }
+                                    runCatching { peer.setVoice(again.effectiveVoice) }
+                                }
+                                return@launch
+                            }
+                        }
+                        delay(250)
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun rememberBackgroundPhotoPicker(previewing: Boolean): androidx.activity.result.ActivityResultLauncher<PickVisualMediaRequest> {
@@ -401,11 +457,13 @@ private fun DirectCallPreviewScreen(conversation: String, state: DirectCallView)
     val ready = peers?.previewing?.collectAsState()?.value == true
     var hearing by remember { mutableStateOf(false) }
     val pickPhoto = rememberBackgroundPhotoPicker(previewing = true)
+    val pickFace = rememberFacePhotoPicker(previewing = true)
     LaunchedEffect(conversation) {
         DirectCallFeature.run { engine ->
             val factory = DirectCallFeature.peers ?: return@run
             val image = if (engine.background == DirectCallEngine.CUSTOM_BACKGROUND) engine.backgroundImage else ""
-            val opened = runCatching { factory.preview(engine.face, engine.background, image) }.getOrNull()
+            val faceImage = if (engine.face == DirectCallEngine.CUSTOM_FACE) engine.faceImage else ""
+            val opened = runCatching { factory.preview(engine.face, engine.background, image, faceImage) }.getOrNull()
             if (opened == null) {
                 ChatDepth.post("The camera could not start.")
                 DirectCallFeature.closePreview()
@@ -457,11 +515,17 @@ private fun DirectCallPreviewScreen(conversation: String, state: DirectCallView)
                     background = if (state.face.isEmpty()) Color.White.copy(alpha = .18f) else colors.accent,
                 ) {
                     scope.launch {
-                        val choice = pickCallFace(messenger, state.face) ?: return@launch
+                        val choice = pickCallFace(messenger, state.face, state.faceImage.isNotEmpty()) ?: return@launch
+                        if (choice == PICK_FACE_PHOTO) {
+                            pickFace.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            return@launch
+                        }
                         DirectCallFeature.run { engine ->
                             engine.setFace(choice)
                             DirectCallFeature.peers?.previewed()?.let { peer ->
-                                runCatching { peer.setFace(engine.face) }
+                                runCatching {
+                                    if (engine.face == DirectCallEngine.CUSTOM_FACE) peer.setFace(engine.face, engine.faceImage) else peer.setFace(engine.face)
+                                }
                                 runCatching { peer.setVoice(engine.effectiveVoice) }
                             }
                         }
@@ -626,7 +690,7 @@ private suspend fun pickCallBackground(messenger: FmMessenger, state: DirectCall
 
 private suspend fun pickCallVoice(messenger: FmMessenger, current: String): String? =
     messenger.showModalBottomSheet<String> { close ->
-        Column(Modifier.padding(bottom = FmSpace.x4)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = FmSpace.x4)) {
             Text(
                 "Voice",
                 modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2),

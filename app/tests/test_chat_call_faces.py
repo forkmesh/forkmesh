@@ -431,7 +431,7 @@ def test_landmark_smoothing_settles_on_the_new_position():
 
 def test_call_face_picker_swaps_the_stage_and_remembers_the_choice():
     data = _node(CALLS_HARNESS, "chat-calls.js")
-    assert data["options"] == ["", "maya", "theo", "kofi", "ingrid", "ren"]
+    assert data["options"] == ["", "maya", "theo", "kofi", "ingrid", "ren", "custom"]
     assert data["savedFace"] == "kofi"
     assert data["pickerShown"] is True
     assert data["previewIsStage"] is True
@@ -495,8 +495,11 @@ def test_native_call_page_exposes_face_operations():
     page = IOS_PAGE.read_text(encoding="utf-8")
     assert "window.FmCallFaces = (() => {" in page
     assert "async setup(media, iceServers, face) {" in page
-    assert "async face(id) {" in page
+    assert "async face(id, image) {" in page
+    assert "async faceImage(image) {" in page
+    assert "async faceState() {" in page
     assert "async faceList() {" in page
+    assert "faces.callFaceChoices()" in page
     assert "videoSender.replaceTrack(track)" in page
     assert "if (stage) stage.stop();" in page
     assert "img-src data:;" in page
@@ -504,7 +507,7 @@ def test_native_call_page_exposes_face_operations():
     for face_id in ("maya", "theo", "kofi", "ingrid", "ren"):
         assert f'"{face_id}": "data:image/jpeg;base64,' in page
     assert "window.FmCallFaceHost = {" in page
-    assert 'post({ event: "landmarks", id, image, width, height, landmarks: wanted.landmarks !== false, mask: Boolean(wanted.mask) });' in page
+    assert 'post({ event: "landmarks", id, image, width, height, landmarks: wanted.landmarks !== false, mask: Boolean(wanted.mask), accurate: Boolean(wanted.accurate) });' in page
     assert "async background(id, image) {" in page
     assert "async backgroundList() {" in page
     assert '<script id="fm-call-models">' in page
@@ -534,7 +537,7 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     assert 'configuration.userContentController.add(proxy, name: "fmCall")' in peer
     assert 'run("face", [.string(id)])' in peer
     assert 'case "landmarks":' in peer
-    assert "await CallFaceLandmarks.detect(dataURL: image, landmarks: landmarks, mask: mask)" in peer
+    assert "await CallFaceLandmarks.detect(dataURL: image, landmarks: landmarks, mask: mask, accurate: accurate)" in peer
     assert 'run("background", [.string(id), .string(image)])' in peer
     assert "if let previewed = current, previewed.previewing, media == .video {" in peer
     assert "window.fmCallLandmarks && window.fmCallLandmarks(" in peer
@@ -544,9 +547,9 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     assert "region.pointsInImage(imageSize: size)" in vision
     assert "size.height - point.y" in vision
     assert "VNGeneratePersonSegmentationRequest()" in vision
-    assert "personRequest.qualityLevel = .balanced" in vision
+    assert "personRequest.qualityLevel = accurate ? .accurate : .balanced" in vision
     preview = (app / "Features" / "Chat" / "Calls" / "DirectCallPreview.swift").read_text(encoding="utf-8")
-    assert "factory.preview(face: engine.face, background: engine.background, image: image)" in preview
+    assert "face: engine.face, background: engine.background, image: image, faceImage: faceImage)" in preview
     assert "PhotosPicker(selection: $photo, matching: .images)" in preview
     assert "DirectCallPreviewButton(hub: hub, engine: engine, dark: dark)" in views
     assert "calls.onBackgroundChanged = {" in install
