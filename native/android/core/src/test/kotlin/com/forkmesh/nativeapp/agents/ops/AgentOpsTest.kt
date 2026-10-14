@@ -481,6 +481,22 @@ class AgentOpsTest {
         other.prepare()
         expect(!other.run())
         expect(!other.conflicted)
+        assertEq(AgentOpsClient.describe("merge_failed"), other.errorText)
+    }
+
+    fun testAFailedMergeSaysWhyWhenTheDesktopDoes() {
+        val channel = FakeControlChannel()
+        channel.reply("agentops.prepare", confirmationJson("merge", typeToConfirm = "agent/fix"))
+        channel.failures["agentops.merge"] =
+            LocalControlException("merge_failed", "Couldn't merge agent/fix: main has uncommitted changes.")
+        val model = MergeCleanupModel(AgentOpsClient(channel), 7)
+        model.prepare()
+        expect(!model.run())
+        assertEq("The merge did not finish. Couldn't merge agent/fix: main has uncommitted changes.", model.errorText)
+        assertEq(
+            AgentOpsClient.describe("merge_failed"),
+            AgentOpsClient.describe(LocalControlException("merge_failed", "  ")),
+        )
     }
 
     fun testMergeFailureExplains() {

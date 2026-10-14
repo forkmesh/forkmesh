@@ -299,6 +299,7 @@ struct ShellBarFolderMenu: View {
     let prefs: ShellBarPrefs
     let onOpen: () -> Void
     let onName: (ShellBarNaming) -> Void
+    var onSettings: (() -> Void)? = nil
 
     var body: some View {
         Section {
@@ -340,6 +341,16 @@ struct ShellBarFolderMenu: View {
             }
             .accessibilityIdentifier("shell-bar-remove-folder")
         }
+        if let onSettings = onSettings {
+            Section {
+                Button {
+                    onSettings()
+                } label: {
+                    SwiftUI.Label("Bottom bar settings…", systemImage: "slider.horizontal.3")
+                }
+                .accessibilityIdentifier("shell-bar-folder-settings")
+            }
+        }
     }
 }
 
@@ -349,6 +360,7 @@ struct ShellBarFolderLabel: View {
     let folder: ShellBarFolder
     let members: [ShellBarItem]
     let iconSize: CGFloat
+    var look: ShellBarStyle = ShellBarStyle()
 
     private var selected: Bool { members.contains { $0.selected } }
 
@@ -358,6 +370,8 @@ struct ShellBarFolderLabel: View {
 
     private var live: Int { members.reduce(0) { $0 + $1.live } }
 
+    private var labelSize: CGFloat { (10 * CGFloat(look.size.scale)).rounded() }
+
     var body: some View {
         VStack(spacing: 3) {
             mini
@@ -366,7 +380,7 @@ struct ShellBarFolderLabel: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(selected ? fm.accent.opacity(0.18) : fm.textPrimary.opacity(0.08)))
                 .background {
-                    if active {
+                    if active && look.showActivity {
                         ShellActivityHalo(size: iconSize + 14)
                             .transition(.scale.combined(with: .opacity))
                     }
@@ -391,18 +405,21 @@ struct ShellBarFolderLabel: View {
                     }
                 }
                 .overlay(alignment: .topLeading) {
-                    if live > 0 {
+                    if live > 0 && look.showActivity {
                         ShellHeartbeatCount(count: live)
                             .offset(x: -14, y: -6)
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
-            Text(folder.name)
-                .font(.system(size: 10, weight: selected ? .semibold : .medium))
-                .foregroundStyle(selected ? fm.accent : fm.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            if look.labels.shows(selected: selected) {
+                Text(folder.name)
+                    .font(.system(size: labelSize, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(selected ? fm.accent : fm.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
+        .shellBarLift(!look.shape.backed, dark: fm.dark)
     }
 
     private var mini: some View {
@@ -443,9 +460,11 @@ struct ShellBarFolderCell: View {
     let iconSize: CGFloat
     let cellWidth: CGFloat
     let cellHeight: CGFloat
-    let shape: UnevenRoundedRectangle
+    let shape: AnyShape
+    var look: ShellBarStyle = ShellBarStyle()
     let onName: (ShellBarNaming) -> Void
     let onPackage: (String) -> Void
+    var onSettings: (() -> Void)? = nil
 
     @State private var open: Bool = false
     @State private var naming: ShellBarNaming?
@@ -457,19 +476,16 @@ struct ShellBarFolderCell: View {
             FmHaptics.selection()
             open.toggle()
         } label: {
-            ShellBarFolderLabel(folder: folder, members: members, iconSize: iconSize)
+            ShellBarFolderLabel(folder: folder, members: members, iconSize: iconSize, look: look)
                 .frame(width: cellWidth, height: cellHeight)
-                .background {
-                    if selected || open {
-                        shape.fill(fm.accent.opacity(0.14))
-                    }
-                }
+                .shellBarSlotChrome(shape, style: look, selected: selected || open)
                 .contentShape(shape)
         }
         .buttonStyle(ShellBarButtonStyle())
         .contextMenu {
             ShellBarFolderMenu(
-                folder: folder, items: items, prefs: prefs, onOpen: { open = true }, onName: onName)
+                folder: folder, items: items, prefs: prefs, onOpen: { open = true }, onName: onName,
+                onSettings: onSettings)
         }
         .popover(isPresented: $open, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
             popover
@@ -484,6 +500,17 @@ struct ShellBarFolderCell: View {
             SwiftUI.Label(folder.name, systemImage: "folder")
         }
         .accessibilityIdentifier("bottom-bar-folder-\(folder.id)")
+    }
+
+    private var popoverLook: ShellBarStyle {
+        var next: ShellBarStyle = look
+        next.labels = .always
+        next.shape = .capsule
+        return next
+    }
+
+    private var popoverHeight: CGFloat {
+        look.labels == .never ? cellHeight / 0.8 : cellHeight
     }
 
     private var rows: [[ShellBarItem]] {
@@ -523,8 +550,8 @@ struct ShellBarFolderCell: View {
             open = false
             ShellBottomBar.run(item, prefs: prefs, reduceMotion: reduceMotion)
         } label: {
-            ShellBarCellLabel(item: shown, iconSize: iconSize)
-                .frame(width: cellWidth, height: cellHeight)
+            ShellBarCellLabel(item: shown, iconSize: iconSize, showsCounts: look.showCounts, look: popoverLook)
+                .frame(width: max(cellWidth, cellHeight), height: popoverHeight)
                 .background {
                     if item.selected {
                         Capsule().fill(fm.accent.opacity(0.14))
