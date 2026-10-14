@@ -280,6 +280,7 @@ struct FmFloatingActionButton: View {
 /// (0...1) it is determinate; without, it spins.
 struct FmCircularProgressIndicator: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.shellTabHidden) private var tabHidden
 
     private let value: Double?
     private let size: CGFloat
@@ -311,7 +312,7 @@ struct FmCircularProgressIndicator: View {
 
     var body: some View {
         if value == nil {
-            TimelineView(.animation) { (context: TimelineViewDefaultContext) in
+            TimelineView(.animation(minimumInterval: nil, paused: tabHidden)) { (context: TimelineViewDefaultContext) in
                 arc
                     .rotationEffect(Angle.degrees(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360))
             }

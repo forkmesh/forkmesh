@@ -220,11 +220,27 @@ public func formatStatusMoment(_ moment: Date, _ now: Date, timeZone: TimeZone =
 }
 
 private func statusFormat(_ pattern: String, _ date: Date, _ timeZone: TimeZone) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = timeZone
-    formatter.dateFormat = pattern
-    return formatter.string(from: date)
+    StatusFormatters.shared.formatter(pattern, timeZone).string(from: date)
+}
+
+private final class StatusFormatters: @unchecked Sendable {
+    static let shared = StatusFormatters()
+
+    private let lock = NSLock()
+    private var made: [String: DateFormatter] = [:]
+
+    func formatter(_ pattern: String, _ timeZone: TimeZone) -> DateFormatter {
+        let key = pattern + "|" + timeZone.identifier
+        lock.lock()
+        defer { lock.unlock() }
+        if let formatter = made[key] { return formatter }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = pattern
+        made[key] = formatter
+        return formatter
+    }
 }
 
 /// Server error codes from `POST /api/accounts/user-status`, written for people.

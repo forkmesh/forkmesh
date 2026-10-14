@@ -12,6 +12,7 @@ struct AgentLineRow: View {
     var view: AgentListView = .compact
     var trailing: AnyView? = nil
     var dialog: String = ""
+    var eagleFeed: AgentEagleFeed? = nil
     var watch: AgentWatchController? = nil
     var watchKeys: [String] = []
 
@@ -110,8 +111,14 @@ struct AgentLineRow: View {
                     AgentEagleStats(line: line)
                         .fixedSize()
                 }
-                AgentEagleStrip(dialog: dialog)
-                    .frame(height: 12)
+                Group {
+                    if let eagleFeed {
+                        AgentEagleLine(feed: eagleFeed, line: line)
+                    } else {
+                        AgentEagleStrip(dialog: dialog)
+                    }
+                }
+                .frame(height: 12)
             }
             ends
         }
@@ -260,9 +267,19 @@ struct AgentEagleStats: View {
     }
 }
 
+struct AgentEagleLine: View {
+    let feed: AgentEagleFeed
+    let line: AgentLine
+
+    var body: some View {
+        AgentEagleStrip(dialog: feed.dialog(line))
+    }
+}
+
 struct AgentEagleStrip: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shellTabHidden) private var tabHidden
     let dialog: String
     @State private var train: [String] = []
     @State private var widths: [String: CGFloat] = [:]
@@ -319,7 +336,7 @@ struct AgentEagleStrip: View {
                 laneWidth = width
             }
             .overlay(alignment: .leading) {
-                TimelineView(.animation(minimumInterval: nil, paused: !scrolls)) { (context: TimelineViewDefaultContext) in
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !scrolls || tabHidden)) { (context: TimelineViewDefaultContext) in
                     let elapsed: Double = scrolls ? context.date.timeIntervalSince(cycleStart) : 0
                     let due: Bool = scrolls && elapsed * Double(Self.speed) >= Double(distance)
                     HStack(spacing: Self.gap) {
