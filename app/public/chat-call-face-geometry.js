@@ -23,9 +23,14 @@ const DEPTH = [
   0.04, 0.13, 0.14, 0.13, 0.04, 0.13, 0.14, 0.13,
 ];
 
+const POSE_WEIGHTS = DEPTH.map((_, i) => (i <= 16 ? 0.4 : i <= 26 ? 0.8 : i <= 35 ? 1.4 : i <= 47 ? 1.4 : 0));
+const RESIDUAL_SOURCES = range(0, 36);
+const RESIDUAL_SIGMA = 0.55;
+const RESIDUAL_ANCHOR = 0.08;
+const FOREHEAD_DEPTH = -0.05;
+const RING_DEPTH = -0.75;
 const CHIN_DROP = [[5, 0.3], [6, 0.6], [7, 0.85], [8, 1], [9, 0.85], [10, 0.6], [11, 0.3]];
-const FOREHEAD_LIFT = 0.5;
-const FEATHER_INSET = 0.14;
+export const FOREHEAD_LIFT = 0.5;
 const MAX_OPEN = 0.42;
 
 function range(start, end) {
@@ -175,26 +180,6 @@ export function fitTemplate(template, anchors) {
   return local.map(([a, b]) => fromFrame(live, a, b));
 }
 
-export function extendLandmarks(points, forehead = FOREHEAD_LIFT) {
-  const frame = faceFrame(points);
-  const lift = forehead * frame.span;
-  const out = points.map((point) => [point[0], point[1]]);
-  const alpha = points.map((_, i) => (i <= 16 ? 0 : 1));
-  for (let i = 17; i <= 26; i += 1) {
-    out.push([points[i][0] - frame.uy[0] * lift, points[i][1] - frame.uy[1] * lift]);
-    alpha.push(0);
-  }
-  const hub = centroid(points, [27, 28, 29, 30, 33]);
-  for (let i = 0; i <= 16; i += 1) {
-    out.push([
-      points[i][0] + (hub[0] - points[i][0]) * FEATHER_INSET,
-      points[i][1] + (hub[1] - points[i][1]) * FEATHER_INSET,
-    ]);
-    alpha.push(1);
-  }
-  return { points: out, alpha };
-}
-
 export function delaunay(points) {
   let minX = Infinity;
   let minY = Infinity;
@@ -252,14 +237,139 @@ export function delaunay(points) {
   return triangles.filter((t) => t.v.every((v) => v < n)).map((t) => t.v);
 }
 
-export function buildFaceMesh(template) {
-  const open = fitTemplate(template, { eyeL: [-50, 0], eyeR: [50, 0], open: 0.6 });
-  const extended = extendLandmarks(open);
-  const triangles = delaunay(extended.points).map((triangle) => ({
+export function headLayout(points, ring, forehead = FOREHEAD_LIFT) {
+  const frame = faceFrame(points);
+  const lift = forehead * frame.span;
+  const out = points.map((point) => [point[0], point[1]]);
+  for (let i = 17; i <= 26; i += 1) {
+    out.push([points[i][0] - frame.uy[0] * lift, points[i][1] - frame.uy[1] * lift]);
+  }
+  for (const point of ring) out.push([point[0], point[1]]);
+  return out;
+}
+
+export function headModel(points, ring) {
+  const frame = faceFrame(points);
+  const layout = headLayout(points, ring);
+  return layout.map((point, i) => {
+    const [a, b] = toFrame(frame, point);
+    const z = i < LANDMARK_COUNT ? DEPTH[i] : i < LANDMARK_COUNT + 10 ? FOREHEAD_DEPTH : RING_DEPTH;
+    return [a / frame.span, b / frame.span, z];
+  });
+}
+
+export function buildHeadMesh(model, template) {
+  const open = fitTemplate(template, { eyeL: [-0.5, 0], eyeR: [0.5, 0], open: 0.6 });
+  const layout = model.map((point, i) => (i < LANDMARK_COUNT ? open[i] : [point[0], point[1]]));
+  const triangles = delaunay(layout).map((triangle) => ({
     v: triangle,
     mouth: triangle.every((v) => v >= 60 && v < 68),
   }));
-  return { triangles, alpha: extended.alpha };
+  return { triangles, count: layout.length };
+}
+
+export function solvePose(model, live) {
+  let total = 0;
+  const mm = [0, 0, 0];
+  const lm = [0, 0];
+  for (let i = 0; i < LANDMARK_COUNT; i += 1) {
+    const w = POSE_WEIGHTS[i];
+    if (!w) continue;
+    total += w;
+    for (let k = 0; k < 3; k += 1) mm[k] += w * model[i][k];
+    lm[0] += w * live[i][0];
+    lm[1] += w * live[i][1];
+  }
+  for (let k = 0; k < 3; k += 1) mm[k] /= total;
+  lm[0] /= total;
+  lm[1] /= total;
+  const mtm = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const ltm = [[0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < LANDMARK_COUNT; i += 1) {
+    const w = POSE_WEIGHTS[i];
+    if (!w) continue;
+    const m = [model[i][0] - mm[0], model[i][1] - mm[1], model[i][2] - mm[2]];
+    const l = [live[i][0] - lm[0], live[i][1] - lm[1]];
+    for (let a = 0; a < 3; a += 1) {
+      for (let b = 0; b < 3; b += 1) mtm[a][b] += w * m[a] * m[b];
+      ltm[0][a] += w * l[0] * m[a];
+      ltm[1][a] += w * l[1] * m[a];
+    }
+  }
+  for (let a = 0; a < 3; a += 1) mtm[a][a] += 1e-4;
+  const inverse = invert3(mtm);
+  const rows = ltm.map((row) => [0, 1, 2].map((b) => row[0] * inverse[0][b] + row[1] * inverse[1][b] + row[2] * inverse[2][b]));
+  const s1 = Math.hypot(...rows[0]) || 1;
+  const s2 = Math.hypot(...rows[1]) || 1;
+  const a = rows[0].map((v) => v / s1);
+  const b = rows[1].map((v) => v / s2);
+  const c = normalize3(a.map((v, i) => v + b[i]));
+  const d = normalize3(a.map((v, i) => v - b[i]));
+  const r1 = c.map((v, i) => (v + d[i]) / Math.SQRT2);
+  const r2 = c.map((v, i) => (v - d[i]) / Math.SQRT2);
+  const scale = (s1 + s2) / 2;
+  const r3 = [r1[1] * r2[2] - r1[2] * r2[1], r1[2] * r2[0] - r1[0] * r2[2], r1[0] * r2[1] - r1[1] * r2[0]];
+  const t = [lm[0] - scale * dot3(r1, mm), lm[1] - scale * dot3(r2, mm)];
+  return {
+    scale,
+    rows: [r1, r2, r3],
+    t,
+    roll: Math.atan2(r2[0], r1[0]),
+    yaw: Math.asin(clampValue(-r3[0], -1, 1)),
+    pitch: Math.asin(clampValue(r3[1], -1, 1)),
+  };
+}
+
+export function projectPose(pose, point) {
+  const [r1, r2] = pose.rows;
+  return [pose.t[0] + pose.scale * dot3(r1, point), pose.t[1] + pose.scale * dot3(r2, point)];
+}
+
+export function liveHead(model, live) {
+  const pose = solvePose(model, live);
+  const out = live.map((point) => [point[0], point[1]]);
+  const residuals = [];
+  for (const i of RESIDUAL_SOURCES) {
+    const projected = projectPose(pose, model[i]);
+    residuals.push([i, live[i][0] - projected[0], live[i][1] - projected[1]]);
+  }
+  for (let v = LANDMARK_COUNT; v < model.length; v += 1) {
+    const projected = projectPose(pose, model[v]);
+    let wx = 0;
+    let wy = 0;
+    let weight = RESIDUAL_ANCHOR;
+    for (const [i, dx, dy] of residuals) {
+      const d2 = (model[v][0] - model[i][0]) ** 2 + (model[v][1] - model[i][1]) ** 2;
+      const w = Math.exp(-d2 / (2 * RESIDUAL_SIGMA * RESIDUAL_SIGMA));
+      wx += w * dx;
+      wy += w * dy;
+      weight += w;
+    }
+    out.push([projected[0] + wx / weight, projected[1] + wy / weight]);
+  }
+  return { points: out, pose };
+}
+
+function dot3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function normalize3(v) {
+  const length = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / length, v[1] / length, v[2] / length];
+}
+
+function invert3(m) {
+  const [[a, b, c], [d, e, f], [g, h, i]] = m;
+  const A = e * i - f * h;
+  const B = -(d * i - f * g);
+  const C = d * h - e * g;
+  const det = a * A + b * B + c * C || 1e-9;
+  return [
+    [A / det, -(b * i - c * h) / det, (b * f - c * e) / det],
+    [B / det, (a * i - c * g) / det, -(a * f - c * d) / det],
+    [C / det, -(a * h - b * g) / det, (a * e - b * d) / det],
+  ];
 }
 
 export function landmarksFromRegions(regions) {
