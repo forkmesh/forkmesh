@@ -415,21 +415,38 @@ public struct UsageWindowMeter: Equatable, Hashable, Sendable, Identifiable {
     public var usedPercent: Int?
     public var resetAtMs: Int64?
     public var state: UsageState
+    public var windowMs: Int64?
 
-    public init(id: String, label: String, usedPercent: Int?, resetAtMs: Int64? = nil, state: UsageState) {
+    public init(
+        id: String, label: String, usedPercent: Int?, resetAtMs: Int64? = nil, state: UsageState,
+        windowMs: Int64? = nil
+    ) {
         self.id = id
         self.label = label
         self.usedPercent = usedPercent
         self.resetAtMs = resetAtMs
         self.state = state
+        self.windowMs = windowMs ?? UsageWindowMeter.inferredWindowMs(id: id, label: label)
     }
 
     public init(json: JSONObject) {
         let used = json.int("usedPercent", -1)
         let reset = json.int64("resetAtMs")
+        let window = json.int64("windowMs")
         self.init(
             id: json.str("id"), label: json.str("label"), usedPercent: used >= 0 ? min(used, 100) : nil,
-            resetAtMs: reset > 0 ? reset : nil, state: UsageState(rawValue: json.str("state")) ?? .unknown)
+            resetAtMs: reset > 0 ? reset : nil, state: UsageState(rawValue: json.str("state")) ?? .unknown,
+            windowMs: window > 0 ? window : nil)
+    }
+
+    public static let hourMs: Int64 = 3_600_000
+    public static let dayMs: Int64 = 86_400_000
+
+    public static func inferredWindowMs(id: String, label: String) -> Int64? {
+        let text = (id + " " + label).lowercased()
+        if text.contains("5h") || text.contains("5-hour") || text.contains("five_hour") { return 5 * hourMs }
+        if text.contains("week") || text.contains("seven_day") || text.contains("fable") { return 7 * dayMs }
+        return nil
     }
 
     public var remainingPercent: Int? { usedPercent.map { 100 - $0 } }
@@ -437,6 +454,34 @@ public struct UsageWindowMeter: Equatable, Hashable, Sendable, Identifiable {
     public func resetLabel(nowMs: Int64) -> String {
         guard let resetAtMs, resetAtMs > nowMs else { return "" }
         return "resets in " + UsageFormat.remaining(ms: resetAtMs - nowMs)
+    }
+
+    public var stepMs: Int64? {
+        guard let windowMs, windowMs > 0 else { return nil }
+        return windowMs > UsageWindowMeter.dayMs ? UsageWindowMeter.dayMs : UsageWindowMeter.hourMs
+    }
+
+    public var segments: Int {
+        guard let windowMs, let stepMs else { return 1 }
+        return Int((windowMs + stepMs - 1) / stepMs)
+    }
+
+    public func elapsedFraction(nowMs: Int64) -> Double? {
+        guard let windowMs, windowMs > 0, let resetAtMs, resetAtMs > nowMs else { return nil }
+        return min(1, max(0, 1 - Double(resetAtMs - nowMs) / Double(windowMs)))
+    }
+
+    public func periodLabel(nowMs: Int64) -> String {
+        guard let windowMs, let stepMs, let elapsed = elapsedFraction(nowMs: nowMs) else { return "" }
+        let current = min(segments, Int(elapsed * Double(windowMs) / Double(stepMs)) + 1)
+        return "\(stepMs == UsageWindowMeter.dayMs ? "Day" : "Hour") \(current) of \(segments)"
+    }
+
+    public func paceLabel(nowMs: Int64) -> String {
+        guard let usedPercent, let elapsed = elapsedFraction(nowMs: nowMs) else { return "" }
+        let ahead = usedPercent - Int((elapsed * 100).rounded())
+        if ahead == 0 { return "on pace" }
+        return "\(abs(ahead))% \(ahead > 0 ? "over" : "under") pace"
     }
 }
 

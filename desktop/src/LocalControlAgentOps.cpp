@@ -722,6 +722,8 @@ QList<UsageWindow> codexWindows(const QJsonArray &rows)
                 : -1;
         window.resetAtMs = qint64(row.value(QStringLiteral("resetAt")).toDouble());
         window.exhausted = window.usedPercent >= 99;
+        window.windowMs =
+            qint64(row.value(QStringLiteral("windowDurationMins")).toDouble()) * 60 * 1000;
         out.append(window);
         if (out.size() >= 8)
             break;
@@ -751,6 +753,8 @@ QJsonObject usageSummary(const QList<UsageProvider> &providers,
                             {QStringLiteral("state"), state}};
             if (!elapsed && window.resetAtMs > 0)
                 row.insert(QStringLiteral("resetAtMs"), double(window.resetAtMs));
+            if (window.windowMs > 0)
+                row.insert(QStringLiteral("windowMs"), double(window.windowMs));
             windows.append(row);
         }
         return windows;

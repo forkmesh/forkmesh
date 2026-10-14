@@ -3142,3 +3142,48 @@ Other field, and Send answer above the transcript.
 
 - iOS: `AgentLinesTests.testFolderFoldsOutliveTheScreen`. Not compiled here
   (no Swift toolchain on Linux).
+
+## Usage pace on the phone, and day and hour segments (2026-10-13, #1982)
+
+The user sent a phone screenshot ("Weekly 59% used · resets in 5d 18h") and
+said the usage showed five days when the week is seven, and asked for the
+desktop's hourly and daily marks on the phone. The reset time was right: the
+`/api/oauth/usage` endpoint gave `seven_day.resets_at` 2026-10-19 20:00 UTC,
+5 d 18 h away. The count was what was wrong. The desktop menu bar (task 1967)
+drew a faint 1 px line at each day of a weekly window; at 132 px the day lines
+land between pixels and blur, the first sat against the pace line and the
+fourth on the end of the 59% fill, so about five could be read. On the 5-hour
+bar the hour lines vanished the same way.
+
+### Desktop
+
+- `TokenUsageMenuRow` cuts the bar into segments instead of drawing lines:
+  each day (or hour, for windows of a day or less) is cut out of the bar as
+  a 2 px gap on a whole pixel, so a weekly bar is seven pieces and a 5-hour
+  bar five, whatever the fill or the pace line covers. The pace line is drawn
+  above and below the bar only, so it no longer hides a gap.
+- `agentops.usage` windows carry `windowMs`: 5 h and 7 d for Claude Code's
+  5-hour, weekly and Fable weekly and Codex's fallback rows, and
+  `windowDurationMins` for Codex's own windows (`codexWindows`), for both the
+  provider rows and each account's rows.
+
+### Phones
+
+- `UsageWindowMeter` reads `windowMs`; when a desktop older than this does
+  not send it, the length is taken from the id or label (5-hour, weekly,
+  Fable). It adds `segments`, `elapsedFraction`, `periodLabel` ("Day 2 of 7",
+  "Hour 3 of 5") and `paceLabel` ("41% over pace", "12% under pace",
+  "on pace"), the phone's `usagePaceNote`.
+- iOS `UsageMeterRow` (the desktop usage card and runner account rows) and
+  the Android usage card draw the bar as the same segments with the pace
+  marks above and below, and add a line under the bar: "Day 2 of 7 · 41%
+  over pace". A window without a reset ahead or a known length keeps the
+  plain bar.
+
+### Tests
+
+- Desktop: `forkmesh-local-control-agentops-tests` checks `windowMs` is
+  carried for a Codex window and left out when unknown. The bar was drawn
+  off-screen with the same painter calls to check the seven and five pieces.
+- iOS: `RemoteAgentOpsClientTests` covers segments, period and pace labels
+  and `windowMs` from JSON. Android: the same cases in `AgentOpsTest`.

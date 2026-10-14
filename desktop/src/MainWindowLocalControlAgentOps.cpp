@@ -450,7 +450,8 @@ QJsonObject MainWindow::localControlAgentOpsUsage()
 {
     QSettings settings;
     auto window = [&settings](const QString &id, const QString &label, const QString &pctKey,
-                              const QString &resetKey, const QString &exhaustedKey) {
+                              const QString &resetKey, const QString &exhaustedKey,
+                              qint64 windowMs) {
         agentops::UsageWindow w;
         w.id = id;
         w.label = label;
@@ -458,6 +459,7 @@ QJsonObject MainWindow::localControlAgentOpsUsage()
                                                   : -1;
         w.resetAtMs = settings.value(resetKey).toLongLong();
         w.exhausted = settings.value(exhaustedKey, false).toBool();
+        w.windowMs = windowMs;
         return w;
     };
     auto accounts = [](const QString &provider) {
@@ -476,13 +478,13 @@ QJsonObject MainWindow::localControlAgentOpsUsage()
     claude.label = QStringLiteral("Claude Code");
     claude.windows << window(QStringLiteral("5h"), QStringLiteral("5-hour"),
                              kClaudeUsage5hPctSetting, kClaudeUsage5hResetSetting,
-                             kClaudeUsage5hExhaustedSetting)
+                             kClaudeUsage5hExhaustedSetting, kAgentLimit5hMs)
                    << window(QStringLiteral("weekly"), QStringLiteral("Weekly"),
                              kClaudeUsageWeekPctSetting, kClaudeUsageWeekResetSetting,
-                             kClaudeUsageWeekExhaustedSetting)
+                             kClaudeUsageWeekExhaustedSetting, kAgentLimitWeekMs)
                    << window(QStringLiteral("fable"), QStringLiteral("Fable weekly"),
                              kClaudeUsageFablePctSetting, kClaudeUsageFableResetSetting,
-                             kClaudeUsageFableExhaustedSetting);
+                             kClaudeUsageFableExhaustedSetting, kAgentLimitWeekMs);
     claude.accounts = accounts(QStringLiteral("claude-code"));
     claude.creditsEnabled = settings.value(kClaudeCreditsEnabledSetting, false).toBool();
     if (claude.creditsEnabled) {
@@ -502,10 +504,10 @@ QJsonObject MainWindow::localControlAgentOpsUsage()
     if (codex.windows.isEmpty())
         codex.windows << window(QStringLiteral("5h"), QStringLiteral("5-hour"),
                                 kCodexUsage5hPctSetting, kCodexUsage5hResetSetting,
-                                kCodexUsage5hExhaustedSetting)
+                                kCodexUsage5hExhaustedSetting, kAgentLimit5hMs)
                       << window(QStringLiteral("weekly"), QStringLiteral("Weekly"),
                                 kCodexUsageWeekPctSetting, kCodexUsageWeekResetSetting,
-                                kCodexUsageWeekExhaustedSetting);
+                                kCodexUsageWeekExhaustedSetting, kAgentLimitWeekMs);
     codex.accounts = accounts(QStringLiteral("codex"));
 
     QJsonObject summary = agentops::usageSummary(
