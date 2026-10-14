@@ -1114,6 +1114,8 @@ host), `realm` (`forkmesh.com`), `port` (3478), `tls_port` (5349),
 
 ## Recent changes
 
+- 2026-10-14: the script budget in `office/perf-budget.json` rose from 129 KB to 130 KB gzip. The merges after the 2026-10-13 chat change took the bundle to 129 024 bytes, 24 over, and every site build (and so every autodeploy) failed at `stage_office`. The bundle has about 1 KB of room again.
+
 - 2026-10-13: the chat conversation list shows the newest line of each
   conversation with its time, and direct-message rows show the other
   person's picture and presence dot
