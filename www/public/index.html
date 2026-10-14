@@ -6385,6 +6385,667 @@
         }
       }
 
+      #mobile-app {
+        scroll-margin-top: 6rem;
+        padding: clamp(3rem, 6vw, 5rem) 1rem clamp(1rem, 3vw, 2rem);
+        font-family: var(--landing-body-font);
+      }
+
+      #mobile-app .mapp-card {
+        --mapp-island: #0e0e11;
+        --mapp-ink: #f4f4f5;
+        --mapp-quiet: #9a9aa3;
+        --mapp-line: rgba(255, 255, 255, 0.08);
+        --mapp-ease: cubic-bezier(0.22, 1, 0.36, 1);
+        --btn-primary-fg: #111113;
+        --btn-primary-fill: linear-gradient(180deg, #ffffff 0%, #e8e8ea 100%);
+        --btn-primary-fill-hover: linear-gradient(180deg, #ffffff 0%, #f1f1f2 100%);
+        --btn-primary-border: #f4f4f5;
+        --btn-primary-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+        --btn-secondary-fg: #f5f5f5;
+        --btn-secondary-fill: linear-gradient(180deg, #222225 0%, #19191b 100%);
+        --btn-secondary-fill-hover: linear-gradient(180deg, #29292c 0%, #1f1f22 100%);
+        --btn-secondary-border: #34343a;
+        --btn-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.4);
+        position: relative;
+        isolation: isolate;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+        align-items: center;
+        gap: clamp(2rem, 4vw, 3.5rem);
+        width: min(100%, 72rem);
+        margin-inline: auto;
+        padding: clamp(2.5rem, 5vw, 4.25rem) clamp(1.5rem, 4.5vw, 4rem);
+        overflow: hidden;
+        border: 1px solid var(--mapp-line);
+        border-radius: 1.75rem;
+        background: var(--mapp-island);
+        color: var(--mapp-ink);
+        box-shadow: var(--home-shadow-raised);
+      }
+
+      html.dark #mobile-app .mapp-card {
+        --mapp-island: #111114;
+      }
+
+      #mobile-app .mapp-backdrop {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background:
+          radial-gradient(48% 70% at 78% 52%, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 55%, transparent 78%),
+          linear-gradient(118deg, rgba(255, 255, 255, 0.035) 0%, transparent 40%);
+      }
+
+      #mobile-app .mapp-schematic {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        color: #ffffff;
+        opacity: 0.16;
+        -webkit-mask-image: radial-gradient(60% 80% at 80% 50%, #000 10%, transparent 100%);
+        mask-image: radial-gradient(60% 80% at 80% 50%, #000 10%, transparent 100%);
+      }
+
+      #mobile-app .mapp-copy {
+        position: relative;
+        z-index: 2;
+        max-width: 31rem;
+      }
+
+      #mobile-app .mapp-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.3rem 0.75rem 0.3rem 0.3rem;
+        border: 1px solid var(--mapp-line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--mapp-quiet);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        text-decoration: none;
+        transition: color 150ms ease, border-color 150ms ease;
+      }
+
+      #mobile-app .mapp-badge b {
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #0a0a0a;
+        font-size: 0.6875rem;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+      }
+
+      #mobile-app .mapp-badge:hover {
+        border-color: rgba(255, 255, 255, 0.18);
+        color: var(--mapp-ink);
+      }
+
+      #mobile-app h2 {
+        margin: 1.25rem 0 0;
+        color: #ffffff;
+        font-family: var(--landing-heading-font);
+        font-size: clamp(2.1rem, 4.2vw, 3.25rem);
+        font-synthesis: none;
+        letter-spacing: -0.02em;
+        line-height: 1.06;
+        text-wrap: balance;
+      }
+
+      #mobile-app .mapp-lede {
+        margin: 1rem 0 0;
+        color: color-mix(in oklab, var(--mapp-ink) 70%, transparent);
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      #mobile-app .mapp-points {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1.1rem 1.4rem;
+        margin: 1.75rem 0 0;
+        padding: 1.5rem 0 0;
+        border-top: 1px solid var(--mapp-line);
+        list-style: none;
+      }
+
+      #mobile-app .mapp-points li {
+        display: grid;
+        grid-template-columns: 2rem minmax(0, 1fr);
+        gap: 0.7rem;
+        align-items: start;
+      }
+
+      #mobile-app .mapp-points svg {
+        width: 2rem;
+        height: 2rem;
+        padding: 0.45rem;
+        border: 1px solid var(--mapp-line);
+        border-radius: 0.6rem;
+        background: linear-gradient(180deg, #1e1e23, #16161a);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        color: var(--mapp-ink);
+      }
+
+      #mobile-app .mapp-points span {
+        color: var(--mapp-quiet);
+        font-size: 0.8125rem;
+        line-height: 1.45;
+      }
+
+      #mobile-app .mapp-points b {
+        display: block;
+        margin-bottom: 0.15rem;
+        color: var(--mapp-ink);
+        font-size: 0.875rem;
+        font-weight: 600;
+      }
+
+      #mobile-app .mapp-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        margin-top: 2rem;
+      }
+
+      #mobile-app .mapp-store {
+        gap: 0.7rem;
+        min-height: 3.35rem;
+        padding: 0.55rem 1.25rem 0.55rem 1rem;
+        border-radius: 0.85rem;
+        text-align: left;
+      }
+
+      #mobile-app .mapp-store > svg {
+        width: 1.45rem;
+        height: 1.45rem;
+        flex: none;
+      }
+
+      #mobile-app .mapp-store span {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        font-size: 1rem;
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      #mobile-app .mapp-store small {
+        font-size: 0.6875rem;
+        font-weight: 500;
+        opacity: 0.7;
+      }
+
+      #mobile-app .mapp-note {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 0.5rem;
+        margin: 1rem 0 0;
+        color: var(--mapp-quiet);
+        font-size: 0.8125rem;
+      }
+
+      #mobile-app .mapp-note i {
+        font-style: normal;
+        opacity: 0.5;
+      }
+
+      #mobile-app .mapp-note a {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding-bottom: 1px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        color: var(--mapp-ink);
+        font-weight: 500;
+        text-decoration: none;
+        transition: border-color 150ms ease;
+      }
+
+      #mobile-app .mapp-note a:hover {
+        border-color: #ffffff;
+      }
+
+      #mobile-app .mapp-qr {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        width: fit-content;
+        margin-top: 1.5rem;
+        padding: 0.5rem 1.1rem 0.5rem 0.5rem;
+        border: 1px dashed rgba(255, 255, 255, 0.16);
+        border-radius: 1rem;
+        background: rgba(255, 255, 255, 0.025);
+        color: var(--mapp-quiet);
+        font-size: 0.75rem;
+        line-height: 1.35;
+        text-decoration: none;
+      }
+
+      #mobile-app .mapp-qr b {
+        display: block;
+        color: var(--mapp-ink);
+        font-size: 0.8125rem;
+        font-weight: 600;
+      }
+
+      #mobile-app .mapp-qr-code {
+        position: relative;
+        flex: none;
+        width: 4.25rem;
+        height: 4.25rem;
+        padding: 0.3rem;
+        overflow: hidden;
+        border-radius: 0.6rem;
+        background: #ffffff;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 10px 24px -12px rgba(0, 0, 0, 0.8);
+      }
+
+      #mobile-app .mapp-qr-code svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      #mobile-app .mapp-qr-code::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 30%;
+        background: linear-gradient(180deg, transparent, rgba(63, 185, 80, 0.32) 85%, rgba(63, 185, 80, 0.9));
+        transform: translateY(-110%);
+        animation: mapp-scan 3.2s var(--mapp-ease) infinite;
+        pointer-events: none;
+      }
+
+      #mobile-app .mapp-stage {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        min-height: clamp(26rem, 44vw, 34rem);
+      }
+
+      #mobile-app .mapp-phones {
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+      }
+
+      #mobile-app .mapp-phone {
+        --pw: clamp(11rem, 18vw, 16rem);
+        --tilt: 0deg;
+        --shift: 0;
+        --lift: 0;
+        position: relative;
+        flex: none;
+        width: var(--pw);
+        margin: 0;
+        padding: calc(var(--pw) * 0.03);
+        border-radius: calc(var(--pw) * 0.175);
+        background: linear-gradient(158deg, #4a4a4a, #1a1a1a 34%, #101010 62%, #3d3d3d);
+        box-shadow:
+          0 2.6rem 4.4rem -1.6rem rgba(0, 0, 0, 0.9),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+        transform: translate(var(--shift), var(--lift)) rotate(var(--tilt));
+        transition: transform 700ms var(--mapp-ease);
+      }
+
+      #mobile-app .mapp-phone::before {
+        content: "";
+        position: absolute;
+        top: 21%;
+        left: calc(var(--pw) * -0.01);
+        width: calc(var(--pw) * 0.013);
+        height: 17%;
+        border-radius: 999px;
+        background: linear-gradient(180deg, #555555 0 44%, transparent 44% 56%, #555555 56% 100%);
+      }
+
+      #mobile-app .mapp-phone::after {
+        content: "";
+        position: absolute;
+        top: 27%;
+        right: calc(var(--pw) * -0.01);
+        width: calc(var(--pw) * 0.013);
+        height: 11%;
+        border-radius: 999px;
+        background: #4a4a4a;
+      }
+
+      #mobile-app .mapp-phone img {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 640 / 1391;
+        border-radius: calc(var(--pw) * 0.145);
+        background: #000000;
+      }
+
+      #mobile-app .mapp-phone.is-center {
+        z-index: 2;
+        animation: mapp-float 7s ease-in-out infinite;
+      }
+
+      #mobile-app .mapp-phone.is-side {
+        --pw: clamp(9rem, 14.5vw, 13rem);
+        z-index: 1;
+        margin-bottom: clamp(1rem, 2.2vw, 2rem);
+        filter: brightness(0.82);
+        transition: transform 700ms var(--mapp-ease), filter 700ms ease;
+      }
+
+      #mobile-app .mapp-phone.is-left {
+        --tilt: -7deg;
+        --shift: 6%;
+        margin-right: calc(var(--pw) * -0.22);
+      }
+
+      #mobile-app .mapp-phone.is-right {
+        --tilt: 7deg;
+        --shift: -6%;
+        margin-left: calc(var(--pw) * -0.22);
+      }
+
+      #mobile-app .mapp-stage:hover .mapp-phone.is-left {
+        --tilt: -11deg;
+        --shift: -10%;
+        --lift: 3%;
+        filter: brightness(0.95);
+      }
+
+      #mobile-app .mapp-stage:hover .mapp-phone.is-right {
+        --tilt: 11deg;
+        --shift: 10%;
+        --lift: 3%;
+        filter: brightness(0.95);
+      }
+
+      #mobile-app .mapp-notice,
+      #mobile-app .mapp-live {
+        position: absolute;
+        z-index: 3;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(36, 36, 42, 0.78);
+        -webkit-backdrop-filter: blur(18px) saturate(1.4);
+        backdrop-filter: blur(18px) saturate(1.4);
+        box-shadow: 0 1.5rem 3rem -1.25rem rgba(0, 0, 0, 0.9);
+        color: #f5f5f5;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif;
+      }
+
+      #mobile-app .mapp-notice {
+        top: 10%;
+        left: -2%;
+        display: grid;
+        grid-template-columns: 2.1rem minmax(0, 1fr);
+        gap: 0.15rem 0.65rem;
+        width: min(17.5rem, 62%);
+        padding: 0.8rem 0.85rem 0.85rem;
+        border-radius: 1.25rem;
+        animation: mapp-notice 9s var(--mapp-ease) infinite;
+      }
+
+      #mobile-app .mapp-notice img {
+        grid-row: 1 / 3;
+        width: 2.1rem;
+        height: 2.1rem;
+        padding: 0.3rem;
+        border-radius: 0.55rem;
+        background: #000000;
+      }
+
+      #mobile-app .mapp-notice-head {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.75rem;
+        opacity: 0.66;
+      }
+
+      #mobile-app .mapp-notice-body {
+        font-size: 0.8125rem;
+        line-height: 1.32;
+      }
+
+      #mobile-app .mapp-notice-body b {
+        display: block;
+        font-weight: 650;
+      }
+
+      #mobile-app .mapp-notice-body code {
+        font-family: Menlo, var(--landing-mono-font);
+        font-size: 0.92em;
+      }
+
+      #mobile-app .mapp-notice-actions {
+        display: grid;
+        grid-column: 1 / -1;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.45rem;
+        margin-top: 0.55rem;
+      }
+
+      #mobile-app .mapp-notice-actions span {
+        padding: 0.5rem 0;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        font-size: 0.8125rem;
+        font-weight: 650;
+        text-align: center;
+      }
+
+      #mobile-app .mapp-notice-actions span:last-child {
+        background: #ffffff;
+        color: #0a0a0a;
+        animation: mapp-press 9s ease infinite;
+      }
+
+      #mobile-app .mapp-live {
+        right: -1%;
+        bottom: 12%;
+        width: min(16rem, 58%);
+        padding: 0.8rem 0.9rem;
+        border-radius: 1.1rem;
+        background: rgba(18, 18, 22, 0.86);
+        animation: mapp-bob 6s ease-in-out infinite;
+      }
+
+      #mobile-app .mapp-live-head {
+        display: grid;
+        grid-template-columns: 1.9rem minmax(0, 1fr) auto;
+        gap: 0.6rem;
+        align-items: center;
+      }
+
+      #mobile-app .mapp-live-icon {
+        display: grid;
+        place-items: center;
+        width: 1.9rem;
+        height: 1.9rem;
+        border-radius: 0.55rem;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      #mobile-app .mapp-live-icon svg {
+        width: 1rem;
+        height: 1rem;
+      }
+
+      #mobile-app .mapp-live-title {
+        min-width: 0;
+        font-size: 0.75rem;
+        line-height: 1.3;
+      }
+
+      #mobile-app .mapp-live-title b {
+        display: block;
+        overflow: hidden;
+        font-size: 0.8125rem;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #mobile-app .mapp-live-title span {
+        opacity: 0.6;
+      }
+
+      #mobile-app .mapp-live-time {
+        font-size: 0.75rem;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.7;
+      }
+
+      #mobile-app .mapp-live-bar {
+        height: 0.3rem;
+        margin-top: 0.7rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      #mobile-app .mapp-live-bar i {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #3fb950, #7ee787);
+        transform-origin: left center;
+        animation: mapp-progress 6s var(--mapp-ease) infinite;
+      }
+
+      #mobile-app .mapp-live-foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        font-size: 0.6875rem;
+      }
+
+      #mobile-app .mapp-live-foot span {
+        opacity: 0.6;
+      }
+
+      #mobile-app .mapp-live-foot b {
+        color: #7ee787;
+        font-weight: 600;
+      }
+
+      @keyframes mapp-float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-0.6rem); }
+      }
+
+      @keyframes mapp-bob {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(0.45rem); }
+      }
+
+      @keyframes mapp-notice {
+        0% { opacity: 0; transform: translateY(-0.9rem) scale(0.96); }
+        8%, 82% { opacity: 1; transform: translateY(0) scale(1); }
+        92%, 100% { opacity: 0; transform: translateY(-0.5rem) scale(0.98); }
+      }
+
+      @keyframes mapp-press {
+        0%, 52%, 62%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+        56% { transform: scale(0.94); box-shadow: 0 0 0 0.35rem rgba(255, 255, 255, 0.16); }
+      }
+
+      @keyframes mapp-progress {
+        0% { transform: scaleX(0.18); }
+        70%, 100% { transform: scaleX(0.94); }
+      }
+
+      @keyframes mapp-scan {
+        0% { transform: translateY(-110%); }
+        60%, 100% { transform: translateY(360%); }
+      }
+
+      @media (max-width: 960px) {
+        #mobile-app .mapp-card {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        #mobile-app .mapp-copy {
+          max-width: 36rem;
+        }
+
+        #mobile-app .mapp-stage {
+          min-height: 0;
+          padding-top: 1rem;
+        }
+
+        #mobile-app .mapp-phone.is-center {
+          --pw: clamp(11rem, 34vw, 14.5rem);
+        }
+
+        #mobile-app .mapp-phone.is-side {
+          --pw: clamp(9rem, 27vw, 11.75rem);
+        }
+      }
+
+      @media (max-width: 560px) {
+        #mobile-app .mapp-card {
+          padding: 2.25rem 1.25rem 0;
+          border-radius: 1.25rem;
+        }
+
+        #mobile-app .mapp-points {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        #mobile-app .mapp-actions > .button-primary,
+        #mobile-app .mapp-actions > .button-outline {
+          flex: 1 1 10rem;
+          justify-content: center;
+        }
+
+        #mobile-app .mapp-qr {
+          display: none;
+        }
+
+        #mobile-app .mapp-stage {
+          margin-inline: -1.25rem;
+          height: 25rem;
+          overflow: hidden;
+          place-items: start center;
+          padding-top: 1.5rem;
+        }
+
+        #mobile-app .mapp-phone.is-center {
+          --pw: 12.5rem;
+        }
+
+        #mobile-app .mapp-phone.is-side {
+          --pw: 9.5rem;
+        }
+
+        #mobile-app .mapp-notice {
+          top: 2.25rem;
+          left: 0.75rem;
+          width: 13.5rem;
+          font-size: 0.9em;
+        }
+
+        #mobile-app .mapp-live {
+          right: 0.75rem;
+          bottom: 1.5rem;
+          width: 12.5rem;
+          padding: 0.65rem 0.75rem;
+        }
+      }
+
     </style>
 
     <!-- ==================================================================
@@ -8593,6 +9254,61 @@
             on-chain pending / finalized results. Community incentives are not
             investments.
           </p>
+        </div>
+      </section>
+
+      <section id="mobile-app" aria-labelledby="mobile-app-title">
+        <div class="mapp-card">
+          <div class="mapp-backdrop" aria-hidden="true">
+            <svg class="mapp-schematic" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" focusable="false"><use href="#hero-schematic-art" /></svg>
+          </div>
+
+          <div class="mapp-copy">
+            <a class="mapp-badge" href="/mobile#on-device"><b>New</b>Gemma 4 now runs on your iPhone <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
+            <h2 id="mobile-app-title">Your mesh,<br />now in your pocket.</h2>
+            <p class="mapp-lede">
+              Send agents to work, review and merge pull requests, and run real
+              Git from a phone that is its own ForkMesh node, with its own keys.
+            </p>
+            <ul class="mapp-points">
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg><span><b>Prompt to pull request</b>Start an agent on a mirror, your desktop or the phone itself.</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5"/></svg><span><b>Real Git, no computer</b>Clone, edit, commit, branch and publish on the go.</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V10a3 3 0 0 0-3-3h-4"/><path d="m13 5-2 2 2 2"/></svg><span><b>Review and merge</b>Files, checks and approvals, straight from a ping.</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M16 7l2.5 2.5M14 9l2 2"/></svg><span><b>Its own node</b>Everything you do is signed by the key on your phone.</span></li>
+            </ul>
+            <div class="mapp-actions">
+              <a class="button-primary mapp-store" href="https://apps.apple.com/app/forkmesh/id6803060735"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M16.4 12.9c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.8-3.5.8-.7 0-1.9-.8-3.1-.8-1.6 0-3 .9-3.8 2.4-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7 1.4 0 1.8.7 3 .7 1.2 0 2-1.1 2.8-2.2.9-1.3 1.2-2.5 1.3-2.6-.1 0-2.4-.9-2.4-3.6zM14.1 5.9c.6-.8 1.1-1.9.9-3-1 0-2.1.6-2.8 1.4-.6.7-1.1 1.8-1 2.9 1.1.1 2.2-.6 2.9-1.3z"/></svg><span><small>Download on the</small>App Store</span></a>
+              <a class="button-outline mapp-store" href="/#downloads"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M7.2 3.6a.5.5 0 0 1 .7-.1l1.3 1.9A7.3 7.3 0 0 1 12 4.9c1 0 1.9.2 2.8.5l1.3-1.9a.5.5 0 1 1 .8.6l-1.2 1.8a6.3 6.3 0 0 1 3.3 5.1H5a6.3 6.3 0 0 1 3.3-5.1L7.1 4.3a.5.5 0 0 1 .1-.7zM9 8.2a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8zm6 0a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8zM5 12h14v6.3a1.7 1.7 0 0 1-1.7 1.7h-.8v2.2a1.3 1.3 0 0 1-2.6 0V20h-3.8v2.2a1.3 1.3 0 0 1-2.6 0V20h-.8A1.7 1.7 0 0 1 5 18.3zM2.3 12.1a1.3 1.3 0 0 1 2.6 0v4.6a1.3 1.3 0 0 1-2.6 0zm16.8 0a1.3 1.3 0 0 1 2.6 0v4.6a1.3 1.3 0 0 1-2.6 0z"/></svg><span><small>Signed APK for</small>Android</span></a>
+            </div>
+            <p class="mapp-note">Free<i>&middot;</i>iPhone and iPad<i>&middot;</i>Android as a signed APK<i>&middot;</i><a href="/mobile">Tour the app <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a></p>
+            <a class="mapp-qr" href="/mobile">
+              <span class="mapp-qr-code"><svg viewBox="-1 -1 31 31" role="img" aria-label="QR code for forkmesh.com/mobile" shape-rendering="crispEdges"><path fill="#0a0a0a" d="M0 0h7v1H0zM10 0h1v1H10zM13 0h1v1H13zM15 0h1v1H15zM18 0h3v1H18zM22 0h7v1H22zM0 1h1v1H0zM6 1h1v1H6zM9 1h1v1H9zM13 1h1v1H13zM15 1h1v1H15zM17 1h3v1H17zM22 1h1v1H22zM28 1h1v1H28zM0 2h1v1H0zM2 2h3v1H2zM6 2h1v1H6zM8 2h1v1H8zM10 2h1v1H10zM12 2h1v1H12zM17 2h1v1H17zM20 2h1v1H20zM22 2h1v1H22zM24 2h3v1H24zM28 2h1v1H28zM0 3h1v1H0zM2 3h3v1H2zM6 3h1v1H6zM9 3h4v1H9zM15 3h1v1H15zM18 3h1v1H18zM20 3h1v1H20zM22 3h1v1H22zM24 3h3v1H24zM28 3h1v1H28zM0 4h1v1H0zM2 4h3v1H2zM6 4h1v1H6zM8 4h2v1H8zM11 4h1v1H11zM14 4h1v1H14zM18 4h1v1H18zM22 4h1v1H22zM24 4h3v1H24zM28 4h1v1H28zM0 5h1v1H0zM6 5h1v1H6zM8 5h1v1H8zM13 5h4v1H13zM18 5h2v1H18zM22 5h1v1H22zM28 5h1v1H28zM0 6h7v1H0zM8 6h1v1H8zM10 6h1v1H10zM12 6h1v1H12zM14 6h1v1H14zM16 6h1v1H16zM18 6h1v1H18zM20 6h1v1H20zM22 6h7v1H22zM10 7h2v1H10zM16 7h2v1H16zM19 7h2v1H19zM1 8h1v1H1zM4 8h1v1H4zM6 8h1v1H6zM8 8h2v1H8zM11 8h1v1H11zM13 8h3v1H13zM18 8h1v1H18zM20 8h2v1H20zM23 8h2v1H23zM26 8h1v1H26zM0 9h1v1H0zM2 9h1v1H2zM4 9h2v1H4zM8 9h1v1H8zM11 9h2v1H11zM14 9h2v1H14zM17 9h2v1H17zM22 9h7v1H22zM0 10h1v1H0zM6 10h1v1H6zM8 10h4v1H8zM14 10h2v1H14zM21 10h1v1H21zM25 10h2v1H25zM28 10h1v1H28zM0 11h4v1H0zM7 11h3v1H7zM11 11h3v1H11zM15 11h4v1H15zM20 11h2v1H20zM24 11h2v1H24zM27 11h2v1H27zM0 12h2v1H0zM3 12h1v1H3zM6 12h4v1H6zM12 12h1v1H12zM15 12h1v1H15zM17 12h1v1H17zM20 12h1v1H20zM23 12h1v1H23zM25 12h1v1H25zM28 12h1v1H28zM1 13h3v1H1zM9 13h2v1H9zM14 13h1v1H14zM17 13h2v1H17zM22 13h1v1H22zM24 13h1v1H24zM26 13h1v1H26zM28 13h1v1H28zM0 14h1v1H0zM5 14h4v1H5zM10 14h4v1H10zM16 14h1v1H16zM18 14h1v1H18zM24 14h1v1H24zM28 14h1v1H28zM1 15h3v1H1zM5 15h1v1H5zM7 15h1v1H7zM10 15h3v1H10zM14 15h1v1H14zM16 15h1v1H16zM19 15h2v1H19zM23 15h1v1H23zM25 15h1v1H25zM27 15h1v1H27zM0 16h2v1H0zM3 16h1v1H3zM6 16h2v1H6zM10 16h1v1H10zM12 16h3v1H12zM16 16h1v1H16zM19 16h3v1H19zM27 16h2v1H27zM0 17h1v1H0zM3 17h1v1H3zM10 17h1v1H10zM13 17h1v1H13zM17 17h2v1H17zM22 17h3v1H22zM28 17h1v1H28zM2 18h3v1H2zM6 18h1v1H6zM11 18h1v1H11zM15 18h1v1H15zM17 18h2v1H17zM20 18h1v1H20zM24 18h3v1H24zM28 18h1v1H28zM4 19h2v1H4zM7 19h5v1H7zM15 19h4v1H15zM24 19h2v1H24zM0 20h2v1H0zM4 20h3v1H4zM9 20h1v1H9zM17 20h1v1H17zM20 20h6v1H20zM28 20h1v1H28zM8 21h6v1H8zM15 21h2v1H15zM18 21h3v1H18zM24 21h1v1H24zM26 21h1v1H26zM28 21h1v1H28zM0 22h7v1H0zM12 22h1v1H12zM15 22h1v1H15zM17 22h1v1H17zM19 22h2v1H19zM22 22h1v1H22zM24 22h1v1H24zM27 22h2v1H27zM0 23h1v1H0zM6 23h1v1H6zM10 23h3v1H10zM14 23h1v1H14zM16 23h5v1H16zM24 23h2v1H24zM27 23h2v1H27zM0 24h1v1H0zM2 24h3v1H2zM6 24h1v1H6zM8 24h2v1H8zM11 24h4v1H11zM18 24h7v1H18zM28 24h1v1H28zM0 25h1v1H0zM2 25h3v1H2zM6 25h1v1H6zM9 25h4v1H9zM16 25h1v1H16zM23 25h1v1H23zM27 25h1v1H27zM0 26h1v1H0zM2 26h3v1H2zM6 26h1v1H6zM9 26h1v1H9zM11 26h2v1H11zM14 26h1v1H14zM16 26h6v1H16zM25 26h1v1H25zM27 26h2v1H27zM0 27h1v1H0zM6 27h1v1H6zM8 27h1v1H8zM10 27h4v1H10zM17 27h2v1H17zM20 27h4v1H20zM27 27h2v1H27zM0 28h7v1H0zM10 28h4v1H10zM15 28h3v1H15zM20 28h1v1H20zM22 28h1v1H22zM24 28h2v1H24zM27 28h1v1H27z"/><rect x="11" y="11" width="7" height="7" rx="1.4" fill="#ffffff"/><image href="/assets/logo.svg" x="12" y="12" width="5" height="5"/></svg></span>
+              <span><b>Scan to install</b>Point your phone&rsquo;s camera here</span>
+            </a>
+          </div>
+
+          <div class="mapp-stage">
+            <div class="mapp-phones">
+              <figure class="mapp-phone is-side is-left"><img src="/assets/mobile/repos.webp" alt="The Code tab: repositories cloned on the phone, and repositories on the network with their mirrors." width="640" height="1391" loading="lazy" decoding="async" /></figure>
+              <figure class="mapp-phone is-center"><img src="/assets/mobile/start-agent.webp" alt="The Agents tab with a Start an agent form: a prompt asking for a dark mode toggle, the forkmesh/forkmesh repository mirrored on the device, and a model picker." width="640" height="1391" loading="lazy" decoding="async" /></figure>
+              <figure class="mapp-phone is-side is-right"><img src="/assets/mobile/review.webp" alt="Review #174 on the phone, with Conversation, Commits, Files and Checks tabs and four changed files." width="640" height="1391" loading="lazy" decoding="async" /></figure>
+            </div>
+            <div class="mapp-notice" aria-hidden="true">
+              <img src="/assets/logo.svg" alt="" width="96" height="96" />
+              <div class="mapp-notice-head"><span>ForkMesh</span><span>now</span></div>
+              <div class="mapp-notice-body"><b>Approval needed</b>An agent on studio-mac wants to run <code>git push</code>.</div>
+              <div class="mapp-notice-actions"><span>Deny</span><span>Approve</span></div>
+            </div>
+            <div class="mapp-live" aria-hidden="true">
+              <div class="mapp-live-head">
+                <span class="mapp-live-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 13.9 9 19.5 11l-5.6 2L12 18.5 10.1 13 4.5 11 10.1 9z"/></svg></span>
+                <span class="mapp-live-title"><b>Fix the flaky relay test</b><span>forkmesh/forkmesh</span></span>
+                <span class="mapp-live-time">4:12</span>
+              </div>
+              <div class="mapp-live-bar"><i></i></div>
+              <div class="mapp-live-foot"><span>Writing the patch</span><b>42 tests passed</b></div>
+            </div>
+          </div>
         </div>
       </section>
 
