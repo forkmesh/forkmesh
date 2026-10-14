@@ -40014,14 +40014,14 @@
 
   function commandPaletteCommands() {
     return [
-      { label: "Browse repositories", hint: "Repositories", url: "/dashboard/repos", keywords: "browse code files" },
-      { label: "Search repositories", hint: "/", action: "search", keywords: "find filter code" },
-      { label: "Create a repository", hint: "New", url: "/dashboard/repos/new", keywords: "clone import mirror" },
-      { label: "Open issues", hint: "Issues", url: state.selectedRepo ? `${repoLinkUrl(state.selectedRepo)}/issues` : "/dashboard/repos", keywords: "issue bug task" },
-      { label: "Review pull requests", hint: "Pulls", url: state.selectedRepo ? `${repoLinkUrl(state.selectedRepo)}/pulls` : "/dashboard/repos", keywords: "review diff changes" },
-      { label: "Open network status", hint: "Network", url: "/dashboard/network", keywords: "offline mirror recovery" },
-      { label: "Switch color theme", hint: "Theme", action: "theme", keywords: "light dark contrast appearance" },
-      { label: "Open keyboard help", hint: "Shortcuts", action: "help", keywords: "commands accessibility" },
+      { group: "Go to", icon: "book-marked", label: "Browse repositories", hint: "Repositories", url: "/dashboard/repos", keywords: "browse code files" },
+      { group: "Go to", icon: "search", label: "Search repositories", hint: "/", key: true, action: "search", keywords: "find filter code" },
+      { group: "Go to", icon: "circle-dot", label: "Open issues", hint: "Issues", url: state.selectedRepo ? `${repoLinkUrl(state.selectedRepo)}/issues` : "/dashboard/repos", keywords: "issue bug task" },
+      { group: "Go to", icon: "git-pull-request", label: "Review pull requests", hint: "Pulls", url: state.selectedRepo ? `${repoLinkUrl(state.selectedRepo)}/pulls` : "/dashboard/repos", keywords: "review diff changes" },
+      { group: "Go to", icon: "share-2", label: "Open network status", hint: "Network", url: "/dashboard/network", keywords: "offline mirror recovery" },
+      { group: "Actions", icon: "plus", label: "Create a repository", hint: "New", url: "/dashboard/repos/new", keywords: "clone import mirror" },
+      { group: "Actions", icon: "sun-moon", label: "Switch color theme", hint: "Theme", action: "theme", keywords: "light dark contrast appearance" },
+      { group: "Actions", icon: "keyboard", label: "Open keyboard help", hint: "Shortcuts", action: "help", keywords: "commands accessibility" },
     ];
   }
 
@@ -40030,26 +40030,30 @@
     const palette = document.createElement("div");
     palette.hidden = true;
     palette.dataset.commandPalette = "";
-    palette.className = "fixed inset-0 z-[90] items-start justify-center bg-background/80 p-4 pt-[10vh] backdrop-blur-sm";
+    palette.className = "fm-spotlight-overlay";
     palette.setAttribute("role", "dialog");
     palette.setAttribute("aria-modal", "true");
     palette.setAttribute("aria-labelledby", "commandPaletteTitle");
     palette.setAttribute("aria-describedby", "commandPaletteHelp");
     palette.innerHTML = `
-      <button data-command-palette-backdrop type="button" tabindex="-1" class="absolute inset-0 cursor-default" aria-label="Close command palette"></button>
-      <section class="fm-popover relative w-full max-w-xl overflow-hidden">
-        <div class="border-b border-border px-3 py-3">
-          <div class="flex items-center justify-between gap-3">
-            <h2 id="commandPaletteTitle" class="text-sm font-semibold">Command palette</h2>
-            <kbd class="rounded border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">Esc</kbd>
-          </div>
-          <p id="commandPaletteHelp" class="mt-1 text-xs text-muted-foreground">Type to filter. Use Up and Down to choose, then Enter.</p>
+      <button data-command-palette-backdrop type="button" tabindex="-1" class="fm-spotlight-backdrop" aria-label="Close command palette"></button>
+      <section class="fm-spotlight">
+        <h2 id="commandPaletteTitle" class="sr-only">Command palette</h2>
+        <p id="commandPaletteHelp" class="sr-only">Type to filter. Use Up and Down to choose, then Enter.</p>
+        <div class="fm-spotlight-search">
+          <i data-lucide="search" aria-hidden="true"></i>
           <label for="commandPaletteInput" class="sr-only">Filter commands</label>
-          <input id="commandPaletteInput" data-command-palette-input type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="commandPaletteResults" aria-expanded="true" class="mt-3 h-control w-full rounded-control border border-border bg-background px-3 text-control text-foreground outline-none focus:border-primary focus:shadow-[inset_0_0_0_1px_rgb(var(--dashboard-primary-rgb))]" placeholder="Search commands" />
+          <input id="commandPaletteInput" data-command-palette-input type="search" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="commandPaletteResults" aria-expanded="true" placeholder="Search ForkMesh" />
+          <kbd>esc</kbd>
         </div>
-        <div id="commandPaletteResults" data-command-palette-results role="listbox" aria-label="Commands" class="fm-menu max-h-[55vh] overflow-y-auto"></div>
+        <div id="commandPaletteResults" data-command-palette-results role="listbox" aria-label="Commands" class="fm-spotlight-results"></div>
+        <div class="fm-spotlight-footer" aria-hidden="true">
+          <span class="fm-spotlight-brand"><i data-lucide="command"></i>ForkMesh</span>
+          <span class="fm-spotlight-keys"><span><kbd>↵</kbd>Open</span><span><kbd>↑</kbd><kbd>↓</kbd>Move</span><span><kbd>esc</kbd>Close</span></span>
+        </div>
       </section>`;
     document.body.appendChild(palette);
+    window.lucide?.createIcons();
 
     const status = document.createElement("div");
     status.dataset.interfaceStatus = "";
@@ -40076,15 +40080,24 @@
     const input = document.querySelector("[data-command-palette-input]");
     if (!results || !input) return;
     if (!commandPaletteState.commands.length) {
-      results.innerHTML = '<div role="status" class="fm-blankslate"><i data-lucide="search" aria-hidden="true"></i><p class="fm-blankslate-title">No commands match</p><p class="fm-blankslate-desc">Try repositories, issues, review, or theme.</p></div>';
+      results.innerHTML = '<div role="status" class="fm-spotlight-empty"><p class="fm-spotlight-empty-title">No results</p><p>Try repositories, issues, review, or theme.</p></div>';
       window.lucide?.createIcons();
       input.removeAttribute("aria-activedescendant");
       return;
     }
+    let group = "";
     results.innerHTML = commandPaletteState.commands.map((command, index) => {
       const selected = index === commandPaletteState.selectedIndex;
-      return `<button id="commandPaletteResult${index}" data-command-palette-result="${index}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" class="flex h-menu-row w-full items-center justify-between gap-3 rounded-control px-2 text-left text-control text-foreground hover:bg-foreground/[.08]"><span class="truncate">${escapeHtml(command.label)}</span><span class="shrink-0 text-xs text-muted-foreground">${escapeHtml(command.hint)}</span></button>`;
+      const heading = command.group !== group
+        ? `<div class="fm-spotlight-group" role="presentation">${escapeHtml(command.group)}</div>`
+        : "";
+      group = command.group;
+      const hint = command.key
+        ? `<kbd>${escapeHtml(command.hint)}</kbd>`
+        : `<span>${escapeHtml(command.hint)}</span>`;
+      return `${heading}<button id="commandPaletteResult${index}" data-command-palette-result="${index}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" class="fm-spotlight-item"><span class="fm-spotlight-icon"><i data-lucide="${escapeHtml(command.icon)}" aria-hidden="true"></i></span><span class="fm-spotlight-label">${escapeHtml(command.label)}</span><span class="fm-spotlight-hint">${hint}</span></button>`;
     }).join("");
+    window.lucide?.createIcons();
     input.setAttribute("aria-activedescendant", `commandPaletteResult${commandPaletteState.selectedIndex}`);
   }
 
@@ -40155,6 +40168,18 @@
       }
       const result = event.target.closest("[data-command-palette-result]");
       if (result) runCommandPaletteCommand(result.dataset.commandPaletteResult);
+    });
+    document.addEventListener("mousemove", (event) => {
+      const result = event.target.closest?.("[data-command-palette-result]");
+      if (!result) return;
+      const index = Number(result.dataset.commandPaletteResult);
+      if (index === commandPaletteState.selectedIndex) return;
+      commandPaletteState.selectedIndex = index;
+      for (const option of document.querySelectorAll("[data-command-palette-result]")) {
+        option.setAttribute("aria-selected", option === result ? "true" : "false");
+      }
+      document.querySelector("[data-command-palette-input]")
+        ?.setAttribute("aria-activedescendant", result.id);
     });
     document.addEventListener("input", (event) => {
       if (!event.target.matches?.("[data-command-palette-input]")) return;
