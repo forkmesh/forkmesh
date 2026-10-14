@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -187,6 +188,8 @@ func TestCloneRejectsCommandExecutingGitTransport(t *testing.T) {
 }
 
 func TestPublicRepositorySyncIsReadableThroughSSHMount(t *testing.T) {
+	previous := syscall.Umask(0o022)
+	t.Cleanup(func() { syscall.Umask(previous) })
 	source, _ := makeBareRepo(t)
 	destination := filepath.Join(t.TempDir(), "public.git")
 	if err := syncRepository(context.Background(), Repository{
