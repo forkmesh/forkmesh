@@ -48,7 +48,7 @@ struct PeopleScreen: View {
                 FmEmptyState(icon: "people_outline", title: "People unavailable", message: "Sign in to a ForkMesh server to see people.")
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("People")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $picked) { (person: PeopleRanked) in

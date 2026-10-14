@@ -414,7 +414,7 @@ struct PatchCommitScreen: View {
         ) {
             header
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle(commit.shortHash)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $openedFile) { (route: DiffFileRoute) in
