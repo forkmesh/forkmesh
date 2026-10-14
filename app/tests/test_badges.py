@@ -110,7 +110,7 @@ def test_catalog_is_a_fixed_known_set():
         "mirror_operator", "qa", "coder", "discord", "poster", "chat",
         "hackathon_builder", "hackathon_connector", "hackathon_finalist",
         "hackathon_winner", "hackathon_ambassador",
-        "distinguished_contributor",
+        "distinguished_contributor", "stargazer", "genies_gift",
     }
     for entry in badges.public_catalog():
         assert entry["name"] and entry["description"] and entry["icon"]
