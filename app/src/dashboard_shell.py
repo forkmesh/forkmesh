@@ -509,6 +509,8 @@ def stamp_js_asset_versions(source, versions):
 def composed_page_assets():
     """The ``public/``-relative documents :data:`PAGES` composes."""
     return {meta["asset"] for meta in PAGES.values()}
+
+
 def theme_declarations(theme, mode):
     lines = [
         "--dashboard-%s-rgb: %s;" % (name, values[mode])

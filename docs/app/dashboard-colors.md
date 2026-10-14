@@ -45,6 +45,10 @@ uses `success`.
 literal colour tokens, that `primary` stays blue and `cta`/`success` green,
 that Tailwind knows every token, and that no dashboard source uses green for
 focus, selection, checkboxes or links.
+`app/tests/test_instance_theme.py` checks the instance-theme tokens against
+the shell after `apply_theme` has filled the markers (the raw `shell.html`
+only holds the markers), and that each one has a dark and a light value in
+`theme.json`.
 
 ## Header search focus
 
