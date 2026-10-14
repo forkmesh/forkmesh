@@ -23,7 +23,7 @@ class NavigationTest {
         Route.Pull(repo, 9, PullTab.Files), Route.Review(repo, 9), Route.Discussion(repo, 2), Route.Run(repo, "r1"),
         Route.Release(repo, "v1/x"), Route.Project(repo, "p"), Route.Milestones(repo), Route.RepoSettings(repo, "git"),
         Route.LocalRepos, Route.LocalRepo("l1"), Route.QuickEdit("l1", "a.txt"), Route.Chat, Route.Channel("general"),
-        Route.Thread("general", "m1"), Route.Dm("bob"), Route.Discord("g", null), Route.Profile("bob"), Route.People,
+        Route.Thread("general", "m1"), Route.Dm("bob"), Route.Discord("g", null), Route.Profile("bob"), Route.People, Route.Docs,
         Route.Search("q", SearchScope.Issues), Route.Notes, Route.Note(""), Route.Tasks("mine"), Route.Task("t"),
         Route.Calendar("2026-09-24", CalendarMode.Week), Route.Event("e"), Route.Timers, Route.Desktops,
         Route.Desktop("d", "logs"), Route.Hosts, Route.Host("mirror35", null), Route.Provision("v1"), Route.Network(null),
@@ -116,6 +116,12 @@ class NavigationTest {
         assertEq(Route.Inbox(InboxFilter.Reviews), RouteParser.parse("forkmesh://inbox/reviews")!!.destination)
         assertEq(Route.Repo(repo, null), RouteParser.parse("forkmesh://fm/app")!!.destination)
         assertEq(listOf(AppTab.barOrder.first().root), RouteParser.parse("forkmesh://dashboard")!!.stack)
+        assertEq(listOf(Route.Docs), RouteParser.parse("https://app.forkmesh.com/dashboard/docs")!!.stack)
+        assertEq(listOf(Route.Docs), RouteParser.parse("forkmesh://docs")!!.stack)
+        assertEq(listOf(Route.Docs), RouteParser.parse("forkmesh://dashboard/docs")!!.stack)
+        assertEq(null, RouteParser.parse("https://forkmesh.com/docs/library"))
+        assertEq("Docs", Route.Docs.title)
+        assertEq(null, GuestGate.action(Route.Docs, guest = true))
     }
 
     fun testInstalledAppsLinksAndConsentStayInTheBrowser() {

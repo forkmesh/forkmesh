@@ -87,6 +87,7 @@ public enum PackageRoutes {
         case "speech": return .speech
         case "glassesAlert": return .glassesAlert
         case "people": return .people
+        case "docs": return .docs
         case "notes": return .notes
         case "tasks": return .tasks(filter: nil)
         case "calendar": return .calendar(date: nil, mode: .month)
