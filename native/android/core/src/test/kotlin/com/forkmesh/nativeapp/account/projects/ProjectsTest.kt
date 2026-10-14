@@ -49,6 +49,8 @@ class ProjectsTest {
         assertEq("https://example.org/#membership", LegalLinks.membershipFor(custom.homepageUri))
         assertEq("https://example.org/design", LegalLinks.designFor(custom.homepageUri))
         assertEq("https://forkmesh.com/design", LegalLinks.designFor(ProjectDefaults.production(0).homepageUri))
+        assertEq("https://forkmesh.com/desktop", LegalLinks.desktopFor(ProjectDefaults.production(0).homepageUri))
+        assertEq("https://example.org/desktop", LegalLinks.desktopFor(custom.homepageUri))
     }
 
     fun testFeatureSetsRoundTripTheDartJson() {

@@ -469,6 +469,7 @@ final class IosUdidLinkTests: XCTestCase {
         XCTAssertEqual(LegalLinks.privacy.absoluteString, "https://forkmesh.com/privacy")
         XCTAssertEqual(LegalLinks.appleHealth.absoluteString, "https://forkmesh.com/privacy#apple-health")
         XCTAssertEqual(LegalLinks.design.absoluteString, "https://forkmesh.com/design")
+        XCTAssertEqual(LegalLinks.desktop.absoluteString, "https://forkmesh.com/desktop")
         XCTAssertEqual(
             LegalLinks.designFor(URL(string: "https://next.forkmesh.com/start?x=1#top")!).absoluteString,
             "https://next.forkmesh.com/design")

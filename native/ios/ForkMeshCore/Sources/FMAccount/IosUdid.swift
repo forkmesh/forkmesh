@@ -109,6 +109,7 @@ public enum LegalLinks {
     public static func privacyFor(_ homepage: URL) -> URL { page(homepage, path: "/privacy") }
     public static func appleHealthFor(_ homepage: URL) -> URL { page(homepage, path: "/privacy", fragment: "apple-health") }
     public static func designFor(_ homepage: URL) -> URL { page(homepage, path: "/design") }
+    public static func desktopFor(_ homepage: URL) -> URL { page(homepage, path: "/desktop") }
 
     public static let productionHomepage = URL(string: "https://forkmesh.com/")!
 
@@ -136,6 +137,7 @@ public enum LegalLinks {
     public static var privacy: URL { privacyFor(activeHomepage) }
     public static var appleHealth: URL { appleHealthFor(activeHomepage) }
     public static var design: URL { designFor(activeHomepage) }
+    public static var desktop: URL { desktopFor(activeHomepage) }
 
     private static func page(_ homepage: URL, path: String, fragment: String? = nil) -> URL {
         guard var components = URLComponents(url: homepage, resolvingAgainstBaseURL: false) else { return homepage }
