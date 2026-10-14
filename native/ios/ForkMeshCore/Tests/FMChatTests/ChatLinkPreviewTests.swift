@@ -190,6 +190,36 @@ final class ChatLinkPreviewTests: XCTestCase {
         XCTAssertEqual(http.requests.count, before)
     }
 
+    @MainActor
+    func testRefusedCrawlerIsRetriedAsABrowserAndStackOverflowUsesTheApi() async {
+        let http = FakeHTTPClient()
+        http.on(where: { $0.url.host == "shy.example.com" }) { request in
+            if (request.headers["User-Agent"] ?? "").contains("ForkMeshBot") { return HTTPResponse(status: 403, text: "no bots") }
+            return HTTPResponse(
+                status: 200, headers: ["content-type": "text/html"],
+                text: "<html><head></head><body><meta property=\"og:title\" content=\"Late tags\"><meta property=\"og:image\" content=\"https://shy.example.com/i.png\"></body></html>")
+        }
+        http.on(path: "/2.3/questions/11227809", json: .object([
+            "items": .array([.object([
+                "title": "Why is processing a sorted array &quot;faster&quot;?", "score": 27000, "answer_count": 26,
+                "is_answered": true, "owner": .object(["display_name": "GManNickG"]),
+            ])]),
+        ]))
+        let service = ChatLinkPreviewService(http: http)
+        let shy = URL(string: "https://shy.example.com/post")!
+        await service.load(shy)
+        XCTAssertEqual(service.preview(for: shy)?.title, "Late tags")
+        XCTAssertEqual(http.requests.filter { $0.url.host == "shy.example.com" }.count, 2)
+        let question = URL(string: "https://stackoverflow.com/questions/11227809/why-is-processing")!
+        await service.load(question)
+        XCTAssertEqual(service.preview(for: question)?.title, "Why is processing a sorted array \"faster\"?")
+        XCTAssertEqual(service.preview(for: question)?.detail, "27000 votes \u{00B7} 26 answers \u{00B7} answered")
+        XCTAssertEqual(service.preview(for: question)?.author, "GManNickG")
+        XCTAssertEqual(http.requests.last?.url.query, "site=stackoverflow&filter=default")
+        XCTAssertEqual(
+            ChatLinkPreviewParsing.stackExchangeQuestion(URL(string: "https://unix.stackexchange.com/questions/4/x")!)?.site, "unix")
+    }
+
     func testCacheRoundTrip() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fm-link-\(UUID().uuidString)")
         let file = dir.appendingPathComponent("previews.json")

@@ -198,6 +198,20 @@ public enum ChatLinkPreviewParsing {
         return parts[at + 1]
     }
 
+    public static func stackExchangeQuestion(_ url: URL) -> (site: String, id: String)? {
+        guard let host = url.host.map(ChatLinkSites.bareHost) else { return nil }
+        let parts = url.path.split(separator: "/").map(String.init)
+        guard parts.count >= 2, parts[0] == "questions" || parts[0] == "q" || parts[0] == "a", parts[1].allSatisfy(\.isNumber)
+        else { return nil }
+        let site: String
+        if host.hasSuffix(".stackexchange.com") {
+            site = String(host.dropLast(".stackexchange.com".count))
+        } else {
+            site = String(host.split(separator: ".").first ?? "")
+        }
+        return site.isEmpty ? nil : (site, parts[1])
+    }
+
     public static func xkcdNumber(_ url: URL) -> String? {
         let parts = url.path.split(separator: "/").map(String.init)
         if parts.isEmpty { return "" }
@@ -206,7 +220,7 @@ public enum ChatLinkPreviewParsing {
     }
 
     public static func parseHTML(_ html: String, page: URL) -> ChatLinkPreview {
-        let head = headSection(html)
+        let head = html
         var meta: [String: String] = [:]
         for tag in tags(named: "meta", in: head) {
             let attributes = attributes(of: tag)
@@ -220,7 +234,7 @@ public enum ChatLinkPreviewParsing {
         let detail = first(meta, ["og:description", "twitter:description", "description"]) ?? ""
         var image = first(meta, ["og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src", "image"]) ?? ""
         if image.isEmpty { image = linkImage(head) }
-        let siteName = first(meta, ["og:site_name", "application-name", "twitter:site"]) ?? ""
+        let siteName = first(meta, ["og:site_name", "application-name"]) ?? ""
         var author = first(meta, ["author", "article:author", "twitter:creator"]) ?? ""
         if author.lowercased().hasPrefix("http") { author = "" }
         let type = (meta["og:type"] ?? "").lowercased()
@@ -235,14 +249,6 @@ public enum ChatLinkPreviewParsing {
     static func first(_ meta: [String: String], _ keys: [String]) -> String? {
         for key in keys { if let value = meta[key], !value.isEmpty { return value } }
         return nil
-    }
-
-    static func headSection(_ html: String) -> String {
-        let lower = html.lowercased()
-        if let end = lower.range(of: "</head>") {
-            return String(html[..<end.lowerBound])
-        }
-        return String(html.prefix(200_000))
     }
 
     static func tags(named name: String, in html: String) -> [String] {

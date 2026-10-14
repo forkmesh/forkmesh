@@ -17,6 +17,7 @@ public enum ChatLinkResolver: Equatable, Sendable {
     case steam
     case xkcd
     case tweet
+    case stackExchange
 }
 
 public struct ChatLinkSite: Equatable, Sendable, Identifiable {
@@ -107,7 +108,7 @@ public enum ChatLinkSites {
         ChatLinkSite(
             "stackoverflow", "Stack Overflow",
             ["stackoverflow.com", "stackexchange.com", "superuser.com", "serverfault.com", "askubuntu.com"],
-            color: 0xF48024, symbol: "square.stack.3d.up.fill", kind: .reference),
+            color: 0xF48024, symbol: "square.stack.3d.up.fill", kind: .reference, resolver: .stackExchange),
         ChatLinkSite("npm", "npm", ["npmjs.com"], color: 0xCB3837, symbol: "shippingbox.fill", kind: .package, resolver: .npm),
         ChatLinkSite("pypi", "PyPI", ["pypi.org"], color: 0x3775A9, symbol: "shippingbox.fill", kind: .package, resolver: .pypi),
         ChatLinkSite("crates", "crates.io", ["crates.io"], color: 0xE6B14C, symbol: "shippingbox.fill", kind: .package, resolver: .crates),

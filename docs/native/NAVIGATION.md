@@ -117,9 +117,9 @@ top bar, the room's details in its place.
   the Chat stack keep their own navigation bar.
 - The room header is a row of glass shapes: a round back chevron that opens
   the channel list (red dot for unread rooms elsewhere), a pill with the room
-  icon, name and `ChatHub.headerDetail` ("4 members • end-to-end" for an
-  Office room with a member list, "3 online • public" otherwise, "Direct
-  message • end-to-end", or the mesh transports), and a capsule with the
+  icon, name and `ChatHub.headerDetail` ("346 members • 4 tabs" for a
+  channel since 2.0.97, "Direct message • end-to-end", or the mesh
+  transports), and a capsule with the
   prompt button and the account avatar, since the top bar that held them is
   gone. Tapping the pill explains the room's encryption.
 - An empty relay or Office room shows a Slack-style intro at the bottom: the
@@ -3264,6 +3264,88 @@ swiped: only the buttons that open and close them may move them.
 - Tests: `ChatNewMessageTests.testTheChatTabReopensTheLastConversation` (iOS
   core). The app sources were parsed (iOS) and compiled (Android) on Linux,
   not run on a device.
+
+### 2.0.97 Slack-style channel room, channel details, link previews and @here/@everyone (2026-10-14, iOS)
+
+The user sent two Slack screenshots (an - channel on iPhone and its
+channel details sheet) and asked for the phone's channels to look like them,
+for previews of popular links like Slack's YouTube card (for 50 kinds of site,
+plus any site's own social image), for the room header to show the total number
+of members instead of who is online, for every feature of the details sheet,
+and then for `@everyone` and `@here` tags that work as in Discord and Slack.
+
+- **Header.** `ChatHub.headerDetail` for a channel is now
+  `ChatHub.channelDetail`: "346 members • 4 tabs". Members are
+  `ChatHub.channelMembers` (below); tabs count Messages and Files & Links, plus
+  Bookmarks when there are any and the canvas when there is one. Direct
+  messages and #mesh keep their old line. Tapping the pill opens the channel
+  details sheet for a channel (`ChatHub.isChannel`); a relay direct message
+  still explains its encryption. The back circle, New agent button and avatar
+  stay (2.0.2, 2.0.66).
+- **Who counts as a member.** Relay `#channels` are labels inside one
+  encrypted room, so the relay cannot list or count a channel's members (it
+  stores ciphertext only). The phone counts everyone it knows is in the
+  channel: the people online in the room (by account, then name) and everyone
+  who has posted in it or its threads, without ForkBot, apps or transient
+  guests. Office and private D1 rooms use the server's member list
+  (`OfficeRoom.members`). The Members page says which rule applies.
+- **Messages.** 38 pt rounded-square avatars (`FmAvatar(corner:)`), the sender's
+  name bold in the text colour with the time beside it, 17 pt body. Reactions
+  are larger capsules with an add-reaction button after them
+  (`ChatAddReactionButton`). A red **NEW** line sits above the first message
+  that was unread when the room was opened (`ChatHub.unreadStart`, set in
+  `select` from the unread count before it is cleared; `ChatHub.firstUnreadId`
+  counts back over other people's messages). A message that mentions you,
+  `@here`, `@channel` or `@everyone` gets a yellow wash and a left bar, and the
+  mention itself is highlighted (`ChatSmartMentions.split`,
+  `chatRichAttributed(own:mentions:)`, `\.chatMentionNames`); other `@names`
+  are bold in the accent.
+- **Composer.** "Message #channel", a round **+**, and a microphone when the
+  field is empty in a room that takes files: it records a voice message with
+  the conversations' `MessagesVoiceRecorder` and sends it as
+  `Audio Message.m4a` through `sendAttachment`. The send button returns as soon
+  as there is text.
+- **Link previews** (`ChatLinkPreviews`, `ChatLinkPreviewCard`): up to three
+  cards under a message, in the Slack layout: title, author or description,
+  the site's badge and name, then the picture (16:9 with a play button for
+  video). Tap opens the link; long-press copies or shares it. Details are in
+  `native/ios/docs/FMChat.md` (Link previews).
+- **Channel details sheet** (`Channels/ChatChannelSheet.swift`,
+  `ChatChannelPages.swift`): × close, the lock or # and the name, the members
+  and tabs line, and a ⋯ menu (star, notification level, mark as read, copy
+  name, message retention, leave). **Add** invites online people to a private
+  relay room, opens the channel settings of a private Office room the account
+  manages, or explains that a public channel is already open to everyone (with
+  Mention someone and Notify @here). **Move** stars the channel or moves it to a
+  sidebar group (`ChatChannelGrouping`, the sidebar's `ChannelGroups`), or a new
+  one. **Search** opens the search sheet with `in:#channel`. Rows: Messages
+  (closes the sheet), Files & Links (every file and link in the loaded
+  history, filterable, with previews and a share button), Bookmarks (links
+  saved to the channel plus messages saved for later from it), Add canvas /
+  the canvas (a titled note per channel, autosaved, can be posted to the
+  channel), Members (count, search, presence, message or view a person),
+  Agents & Apps (ForkBot and the project's app commands; tapping puts the
+  command in the composer), Notifications (All, Mentions, Nothing) and
+  Settings & Details (name, type, member count, topic, the encryption summary,
+  retention, the link preview switch, Office channel settings, leave).
+- **Notification level.** `ChatNotifyLevel` per channel in `ChatWorkspace`.
+  Nothing is the existing mute. Mentions keeps the unread dot off unless an
+  unread message mentions you or uses a broadcast tag (`hasUnreadMention`).
+  Like mute it is local: the relay pushes every message of a room to its phones
+  and cannot read them, so the push banner is not filtered.
+- **@here, @channel, @everyone.** Typing `@` offers them first in a channel
+  ("@here — notify everyone online … (3 online)"), and the + menu has Notify
+  the channel. `@here` reaches the people online, the other two every member.
+  Sending one to six people or more asks first ("Notify 12 people?",
+  `ChatHub.broadcastWarning`), as Slack does. They count as mentions for the
+  Mentions level, the Mentions search and the highlight. Inside backticks they
+  are plain text.
+- Bookmarks, canvases and notification levels are stored per project on this
+  phone (`chat/workspace/<project>/bookmarks|canvases|mentionsOnly`), like
+  stars and mutes; other clients do not see them.
+- Tests: `ChatLinkPreviewTests`, `ChatSmartMentionTests`,
+  `ChatChannelInfoTests`, `ChatHubTests.testTheRoomHeaderNamesTheRoomAndWhoIsIn`
+  (iOS core, Linux). The Android app was not changed.
 
 ### 2.0.58 Tour can be removed from the phone (2026-10-05, iOS and Android)
 
