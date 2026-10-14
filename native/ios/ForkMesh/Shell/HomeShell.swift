@@ -570,7 +570,11 @@ struct HomeShell: View {
             if page != nil || showsTopBar(router.selectedTab) {
                 topBar
             }
-            FmConnectionBanner(state: offlineShown ? .offline : .connected, onRetry: { model.chat?.connect() })
+            if settings?.project.hasInstance == false {
+                NoInstanceBanner(onChoose: { Services.get(SignInCoordinator.self)?.chooseInstance() })
+            } else {
+                FmConnectionBanner(state: offlineShown ? .offline : .connected, onRetry: { model.chat?.connect() })
+            }
             if notice != nil {
                 FmNoticeLine($notice)
                     .padding(.horizontal, FmSpace.x4)
