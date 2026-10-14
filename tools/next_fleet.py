@@ -1142,7 +1142,7 @@ def verify_target_instance(vultr, name, ip):
     return instance
 
 
-SSH_IDENTITY_SCRIPT = "hostname -f; test -d /etc/forkmesh-next && echo fmnext-node"
+SSH_IDENTITY_SCRIPT = "hostname -f; if test -d /etc/forkmesh-next; then echo fmnext-node; fi"
 
 
 def verify_target_ssh(ssh, fleet, name, ip):
@@ -1150,13 +1150,13 @@ def verify_target_ssh(ssh, fleet, name, ip):
         return False
     completed = ssh.run_strict(ip, SSH_IDENTITY_SCRIPT)
     lines = (completed.stdout or b"").decode("utf-8", "replace").split()
-    if completed.returncode != 0 or "fmnext-node" not in lines:
-        raise GuardError("%s (%s): pinned host key check or fleet marker failed: %s" % (
+    if completed.returncode != 0 or not lines:
+        raise GuardError("%s (%s): pinned host key check failed: %s" % (
             name, ip, (completed.stderr or b"").decode("utf-8", "replace").strip()[-300:]))
     expected = "%s.%s" % (name, fleet.get("domain", ""))
     if lines[0] not in (expected, name, parse_target(name)[2]):
         raise GuardError("%s answers as %s, not %s" % (ip, lines[0], expected))
-    return True
+    return "fmnext-node" in lines
 
 
 def verify_target(vultr, ssh, fleet, name, ip):

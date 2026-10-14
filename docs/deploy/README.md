@@ -128,6 +128,8 @@ next to the fleet table) runs the same command
 `add-core-options --json` gives the dialog its defaults, plan prices and
 estimate. `add-core-status --json` reports the last run.
 
+A brand-new VM has no `/etc/forkmesh-next` marker until its first install, so `verify_target_ssh` (`tools/next_fleet.py`) accepts a pinned host that answers with the right hostname but no marker only after the provider confirms the IP belongs to the tagged instance (`verify_target_instance`). Before 2026-10-14 a missing marker was refused outright, which stopped every real `add-core` at the `keys` step.
+
 ### Order of operations
 
 The estimates are wall-clock times on the 1 vCPU / 1 GB cores. `||` marks

@@ -50,6 +50,29 @@ import {
   localDateKey,
   sameLocalDate,
 } from "./chat-date-groups.js";
+import {
+  VIEW_ONCE_KINDS,
+  createViewOnceClient,
+  forgetViewOnceKey,
+  isFinalViewOnceState,
+  openViewOnceViewer,
+  paintViewOnceBubble,
+  renderViewOnceBubble,
+  viewOnceFromEntry,
+  viewOnceStateAfterStatus,
+} from "./chat-view-once.js";
+import {
+  openViewOnceRecorder,
+  registerViewOnceFilterStages,
+  viewOnceRecordingSupported,
+} from "./chat-view-once-recorder.js";
+import {
+  CALL_VOICES,
+  callVoicesSupported,
+  createVoiceStage,
+  rememberCallerPitch,
+  savedCallerPitch,
+} from "./chat-call-voice.js";
 
 // Browser-side ForkMesh room chat. Reimplements the desktop client's room
 // crypto (PBKDF2 + AES-256-GCM) and message envelope so the website can join
@@ -177,6 +200,8 @@ const clearBtn = document.querySelector("#chat-clear");
 const formatButtons = [...document.querySelectorAll("[data-format]")];
 const attachmentInput = document.querySelector("#chat-attachment-input");
 const attachmentBtn = document.querySelector("#chat-attachment-button");
+const viewOnceVideoBtn = document.querySelector("#chat-view-once-video");
+const viewOnceVoiceBtn = document.querySelector("#chat-view-once-voice");
 const attachmentFeedback = document.querySelector("#chat-attachment-feedback");
 const attachmentDraftEl = document.querySelector("#chat-composer-attachments");
 const composerEmojiBtn = document.querySelector("#chat-emoji-button");
@@ -1913,6 +1938,12 @@ function updateAdminChannelControls() {
   const callable = directActions && callsSupported();
   if (callAudioBtn) callAudioBtn.hidden = !callable;
   if (callVideoBtn) callVideoBtn.hidden = !callable;
+  if (viewOnceVideoBtn) {
+    viewOnceVideoBtn.hidden = !(directActions && viewOnceRecordingSupported("video"));
+  }
+  if (viewOnceVoiceBtn) {
+    viewOnceVoiceBtn.hidden = !(directActions && viewOnceRecordingSupported("voice"));
+  }
   if (channelCreateBtn) channelCreateBtn.hidden = !authorsChannels;
   if (channelManageBtn) {
     channelManageBtn.hidden = !(session && channel?.canManage && !isOfficeEmbed);
@@ -4716,7 +4747,8 @@ function requestMessageDelete(record, trigger) {
 
 function confirmMessageDelete() {
   const record = pendingDeleteRecord;
-  if (!record?.self || record.senderId !== selfId) return;
+  if (!record?.self || (record.senderId !== selfId && !record.viewOnce)) return;
+  withdrawViewOnce(record);
   const plain = makePlain("delete", {
     conversation: channelWireLabel(record.channel),
     target: record.id,
@@ -4958,6 +4990,8 @@ function buildRow(record, prev) {
   }
   const attachment = renderAttachment(record);
   if (attachment) main.append(attachment);
+  const viewOnceBubble = renderViewOnceBubble(record, { onOpen: openViewOnceRecord });
+  if (viewOnceBubble) main.append(viewOnceBubble);
   const threadSummary = document.createElement("button");
   threadSummary.type = "button";
   threadSummary.className = "chat-thread-summary";
@@ -5011,7 +5045,8 @@ function buildRow(record, prev) {
       (button) => beginIssueFromMessage(record, button),
     ));
   }
-  if (!record.deleted && record.self && record.senderId === selfId) {
+  if (!record.deleted && record.self &&
+      (record.senderId === selfId || record.viewOnce)) {
     if (record.text) {
       actions.append(messageAction(
         "Edit message",
@@ -5140,6 +5175,7 @@ function appendMessage(
   appMessage = null,
   recipients = null,
   recipientNames = [],
+  viewOnce = null,
   relayed = false,
 ) {
   const channelKey = normalizeChannelKey(channel) || activeChannel;
@@ -5158,6 +5194,12 @@ function appendMessage(
     recipientNames: knownRecipientNames(recipientNames),
     relayed: Boolean(relayed),
   };
+  if (viewOnce) {
+    record.viewOnce = viewOnce;
+    record.viewOnceState = kind === "self" ? "sent" : "ready";
+    if (kind === "self") forgetViewOnceKey(record);
+    queueViewOnceStatus(record);
+  }
   insertMessage(record);
   rememberContext(record.channel, who, text);
 }
@@ -5361,10 +5403,13 @@ function renderChatEntry(
   if (!once(entry.id)) return;
   if (chatRetention.isExpired(entry.ts, channelKey)) return;
   const who = (entry.sender || "peer").slice(0, MAX_NAME);
-  const text = entry.text || "";
-  const attachment = attachmentFromEntry(entry);
-  if (text || attachment) {
-    const renderedKind = entry.senderId === selfId ? "self" : kind;
+  const viewOnce = isDirectMessageKey(scope) ? viewOnceFromEntry(entry) : null;
+  const text = viewOnce ? "" : entry.text || "";
+  const attachment = viewOnce ? null : attachmentFromEntry(entry);
+  if (text || attachment || viewOnce) {
+    const renderedKind = entry.senderId === selfId || isOwnViewOnceEntry(entry)
+      ? "self"
+      : kind;
     appendMessage(
       renderedKind,
       who,
@@ -5378,6 +5423,7 @@ function renderChatEntry(
       appMessageFromEntry(entry, channelKey),
       recipients,
       recipientNames,
+      viewOnce,
       true,
     );
   }
@@ -5791,6 +5837,223 @@ function startDirectCall(media) {
   });
 }
 
+const viewOnceClient = createViewOnceClient({ request: privateChannelRequest });
+const VIEW_ONCE_VOICE_KEY = "forkmesh.chat.viewOnceVoice";
+if (callVoicesSupported()) {
+  registerViewOnceFilterStages({
+    voice: (micTrack, voiceId) => createVoiceStage({
+      sourceTrack: micTrack,
+      voiceId,
+      userPitchHz: savedCallerPitch(),
+      onStats: (stats) => rememberCallerPitch(stats?.userPitchHz),
+    }),
+  });
+}
+
+function savedViewOnceVoice() {
+  try {
+    return String(localStorage.getItem(VIEW_ONCE_VOICE_KEY) || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function rememberViewOnceVoice(id) {
+  try {
+    localStorage.setItem(VIEW_ONCE_VOICE_KEY, String(id || ""));
+  } catch (_) {}
+}
+const viewOnceStatusQueue = new Map();
+let viewOnceStatusTimer = null;
+let activeViewOnceViewer = null;
+
+function ownAccountName() {
+  return String(userSession()?.nodeName || "").trim().toLowerCase();
+}
+
+function isOwnViewOnceEntry(entry) {
+  const own = ownAccountName();
+  return Boolean(
+    entry?.viewOnce && own &&
+    String(entry.sender || "").trim().toLowerCase() === own,
+  );
+}
+
+function holdsViewOnceReceipt(plain) {
+  return Boolean(
+    plain?.type === "chat" &&
+    viewOnceFromEntry(plain) &&
+    !isOwnViewOnceEntry(plain) &&
+    plain.senderId !== selfId,
+  );
+}
+
+function viewOnceRecords(mediaId) {
+  return [...rows.values()].filter((record) =>
+    record.viewOnce?.media === mediaId);
+}
+
+function releaseViewOnceReceipt(record) {
+  if (record && !record.self) roomTransport?.releaseReceipt?.(record.id);
+}
+
+function setViewOnceState(record, state) {
+  if (!record?.viewOnce || !state) return;
+  if (isFinalViewOnceState(record.viewOnceState) && !isFinalViewOnceState(state)) {
+    return;
+  }
+  record.viewOnceState = state;
+  if (isFinalViewOnceState(state)) {
+    forgetViewOnceKey(record);
+    releaseViewOnceReceipt(record);
+  }
+  paintViewOnceBubble(record);
+}
+
+function applyViewOnceState(mediaId, state) {
+  for (const record of viewOnceRecords(mediaId)) {
+    if (state === "opened" && activeViewOnceViewer?.media === mediaId) continue;
+    setViewOnceState(record, state);
+  }
+}
+
+function queueViewOnceStatus(record) {
+  const direct = directMessageForKey(record.channel);
+  if (!direct || !record.viewOnce) return;
+  const ids = viewOnceStatusQueue.get(direct.id) || new Set();
+  ids.add(record.viewOnce.media);
+  viewOnceStatusQueue.set(direct.id, ids);
+  if (viewOnceStatusTimer !== null) return;
+  viewOnceStatusTimer = setTimeout(flushViewOnceStatus, 250);
+}
+
+async function flushViewOnceStatus() {
+  viewOnceStatusTimer = null;
+  const pending = [...viewOnceStatusQueue.entries()];
+  viewOnceStatusQueue.clear();
+  for (const [conversationId, ids] of pending) {
+    const list = [...ids];
+    for (let start = 0; start < list.length; start += 50) {
+      let states;
+      try {
+        states = await viewOnceClient.status(conversationId, list.slice(start, start + 50));
+      } catch (_) {
+        continue;
+      }
+      for (const [mediaId, item] of states) {
+        for (const record of viewOnceRecords(mediaId)) {
+          setViewOnceState(record, viewOnceStateAfterStatus(record, item));
+        }
+      }
+    }
+  }
+}
+
+function startViewOnceRecording(kind) {
+  const direct = directMessageForKey(activeChannel);
+  if (!direct || !userSession() || !VIEW_ONCE_KINDS[kind]) return;
+  const channelKey = activeChannel;
+  openViewOnceRecorder({
+    kind,
+    recipient: direct.otherUser,
+    voices: CALL_VOICES.map((voice) => [voice.id, voice.label]),
+    voiceChoice: savedViewOnceVoice(),
+    onVoiceChoice: rememberViewOnceVoice,
+    onSend: (recording, onProgress) =>
+      sendViewOnce(channelKey, direct, recording, onProgress),
+    onClose: () => (kind === "video" ? viewOnceVideoBtn : viewOnceVoiceBtn)?.focus(),
+  });
+}
+
+async function sendViewOnce(channelKey, direct, recording, onProgress) {
+  const viewOnce = await viewOnceClient.upload(
+    direct.id, recording.kind, recording.blob, recording.durationMs,
+    { mime: recording.mime, onProgress },
+  );
+  const sent = await new Promise((resolve) => {
+    runWhenConnected(() => {
+      if (roomScopeForChannel() !== channelKey) {
+        resolve(false);
+        return;
+      }
+      const plain = makePlain("chat", {
+        channel: channelWireLabel(channelKey),
+        text: VIEW_ONCE_KINDS[recording.kind].text,
+        viewOnce,
+      });
+      Promise.resolve(send(plain)).then((ok) => {
+        if (ok === false) {
+          resolve(false);
+          return;
+        }
+        seen.add(plain.id);
+        appendMessage(
+          "self", plain.sender, "", plain.id, plain.senderId, plain.ts,
+          channelKey, null, null, null, null, [], viewOnce,
+        );
+        const record = rows.get(plain.id);
+        if (record) forgetViewOnceKey(record);
+        resolve(true);
+      }, () => resolve(false));
+    });
+  });
+  if (!sent) {
+    viewOnceClient.withdraw(direct.id, viewOnce.media).catch(() => {});
+    throw new Error("view_once_not_sent");
+  }
+}
+
+function withdrawViewOnce(record) {
+  if (!record?.viewOnce || !record.self) return;
+  const direct = directMessageForKey(record.channel);
+  if (!direct || isFinalViewOnceState(record.viewOnceState)) return;
+  viewOnceClient.withdraw(direct.id, record.viewOnce.media).catch(() => {});
+}
+
+async function openViewOnceRecord(record) {
+  const direct = directMessageForKey(record.channel);
+  const viewOnce = record.viewOnce;
+  if (!direct || !viewOnce?.key || record.self || activeViewOnceViewer) return;
+  setViewOnceState(record, "opening");
+  activeViewOnceViewer = { media: viewOnce.media };
+  let bytes;
+  try {
+    bytes = await viewOnceClient.download(direct.id, viewOnce);
+  } catch (error) {
+    activeViewOnceViewer = null;
+    if (error?.status === 410 || error?.status === 404) {
+      setViewOnceState(record, error?.status === 404 ? "expired" : "opened");
+      flushViewOnceStatusFor(record);
+    } else {
+      setViewOnceState(record, "failed");
+    }
+    return;
+  }
+  let consumed = null;
+  openViewOnceViewer({
+    kind: viewOnce.kind,
+    bytes,
+    mime: viewOnce.mime,
+    onStart: () => {
+      setViewOnceState(record, "playing");
+      consumed = viewOnceClient.consume(direct.id, viewOnce.media).catch(() => null);
+    },
+    onClose: async ({ started }) => {
+      activeViewOnceViewer = null;
+      if (!started) {
+        setViewOnceState(record, "ready");
+        return;
+      }
+      if (consumed) await consumed;
+      setViewOnceState(record, "opened");
+    },
+  });
+}
+
+function flushViewOnceStatusFor(record) {
+  queueViewOnceStatus(record);
+}
+
 function makeForkbotPlain(text) {
   return makePlain("chat", {
     channel: channelDisplayLabel(activeChannel),
@@ -6121,6 +6384,8 @@ function newRoomTransport() {
     onServerCopies: (stored, room) => applyDirectServerCopies(stored, room.scope),
     onDelivered: (ids) => applyDirectDelivered(ids),
     onRead: (room) => applyDirectRead(room.scope),
+    onMedia: (id, state) => applyViewOnceState(id, state),
+    holdReceipt: (plain) => holdsViewOnceReceipt(plain),
     onState: handleTransportState,
     locationLike: { protocol: location.protocol, host: RELAY_HOST },
   });
@@ -6745,6 +7010,8 @@ function wireChatControls() {
   directAddBtn?.addEventListener("click", () => openDirectMessageDialog("add"));
   callAudioBtn?.addEventListener("click", () => startDirectCall("audio"));
   callVideoBtn?.addEventListener("click", () => startDirectCall("video"));
+  viewOnceVideoBtn?.addEventListener("click", () => startViewOnceRecording("video"));
+  viewOnceVoiceBtn?.addEventListener("click", () => startViewOnceRecording("voice"));
   directSearch?.addEventListener("input", scheduleDirectMessageSearch);
   if (attachmentBtn && attachmentInput) {
     attachmentBtn.addEventListener("click", () => attachmentInput.click());

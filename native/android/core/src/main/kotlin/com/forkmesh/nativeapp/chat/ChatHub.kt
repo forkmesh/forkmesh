@@ -157,6 +157,7 @@ data class ChatRow(
     val attachment: ChatAttachment? = null,
     val visitor: Boolean = false,
     val receipt: ChatReceipt? = null,
+    val viewOnce: ViewOnceEntry? = null,
 )
 
 sealed class ChatHubSend {
@@ -418,7 +419,10 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
                 visitor = !message.self && ChatVisitorPresence.isTransientVisitor(name = message.senderName),
                 receipt = receipt(message),
             )
-            if (!rich || message.ephemeral) {
+            val once = if (inDirect && !message.ephemeral) direct?.viewOnce?.entry(message.id) else null
+            if (once != null) {
+                base.copy(text = "", viewOnce = once, deletable = false)
+            } else if (!rich || message.ephemeral) {
                 base
             } else {
                 base.copy(
@@ -732,6 +736,33 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             service.open(conversation)
             service.markRead(conversation)
             queueReadMark(conversation)
+            service.refreshViewOnce(conversation)
+        }
+    }
+
+    fun sendViewOnce(
+        conversation: String,
+        kind: ViewOnceKind,
+        mime: String,
+        durationMs: Long,
+        data: ByteArray,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+    ): Boolean {
+        val service = direct
+        if (service == null || !DirectMessageFrames.isDirect(conversation)) {
+            notice("View-once messages can only be sent in direct messages.")
+            return false
+        }
+        return try {
+            val sent = service.sendViewOnce(conversation, kind, mime, durationMs, data, onProgress)
+            if (!sent) notice("The message could not be sent. Reconnecting...")
+            sent
+        } catch (error: ViewOnceException) {
+            notice(error.message ?: "The message could not be sent.")
+            false
+        } catch (error: Exception) {
+            notice("The message could not be sent.")
+            false
         }
     }
 

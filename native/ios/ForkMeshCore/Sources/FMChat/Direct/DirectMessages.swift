@@ -161,9 +161,10 @@ public enum DirectMessageFrames {
         guard (plain["channel"]?.text ?? "") == record.conversation else { return nil }
         let id = plain["id"]?.text ?? ""
         if id.isEmpty || id.count > 64 { return nil }
-        let text = plain["text"]?.text ?? ""
+        let viewOnce = ViewOnceFrames.parse(plain[ViewOnceFrames.field])
+        let text = viewOnce?.kind.fallbackText ?? plain["text"]?.text ?? ""
         if text.count > ChatLimits.maxTextChars { return nil }
-        let fileName = String((plain["fileName"]?.text ?? "").prefix(ChatLimits.maxFileNameChars))
+        let fileName = viewOnce != nil ? "" : String((plain["fileName"]?.text ?? "").prefix(ChatLimits.maxFileNameChars))
         if text.isEmpty && fileName.isEmpty { return nil }
         let senderId = String((plain["senderId"]?.text ?? "").prefix(64))
         var sender = String((plain["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars))
@@ -237,6 +238,7 @@ final class DirectRoomSocket {
     let connection: WebSocketConnection
     var reader: Task<Void, Never>?
     var persistedAdvert = false
+    var mediaChecked = false
 
     init(conversationId: String, crypto: RoomCrypto, seal: RoomSeal, connection: WebSocketConnection) {
         self.conversationId = conversationId
@@ -310,6 +312,9 @@ public final class DirectMessageService {
     @ObservationIgnored private var pendingDeletes: [String: [String: String]] = [:]
     @ObservationIgnored private var pendingDeleteOrder: [String: [String]] = [:]
     @ObservationIgnored private var removedIds: Set<String> = []
+    @ObservationIgnored public let viewOnce: ViewOnceStore
+    @ObservationIgnored var heldReceipts: [String: (conversationId: String, refs: [String])] = [:]
+    @ObservationIgnored var heldOrder: [String] = []
 
     public private(set) var records: [DirectConversation] = []
     public private(set) var nextCursor = ""
@@ -326,8 +331,10 @@ public final class DirectMessageService {
         displayName: @escaping @MainActor () -> String, clock: Clock = SystemClock(),
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-        }
+        },
+        viewOncePrefs: KeyValueStore? = nil
     ) {
+        self.viewOnce = ViewOnceStore(prefs: viewOncePrefs)
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
@@ -401,6 +408,7 @@ public final class DirectMessageService {
         if replacing {
             for old in records where !merged.contains(where: { $0.id == old.id }) {
                 history.removeValue(forKey: old.conversation)
+                viewOnce.forget(conversation: old.conversation)
                 pinned.remove(old.id)
                 outbox.removeValue(forKey: old.id)
                 reconnects.removeValue(forKey: old.id)?.cancel()
@@ -595,6 +603,15 @@ public final class DirectMessageService {
         if envelope.isEmpty { return }
         if envelope["kind"]?.text == DirectMessageFrames.historyEnd {
             reseal(socket)
+            if !socket.mediaChecked {
+                socket.mediaChecked = true
+                let conversation = record.conversation
+                Task { await self.refreshViewOnce(conversation) }
+            }
+            return
+        }
+        if let update = ViewOnceFrames.relayUpdate(envelope) {
+            applyViewOnce(update.id, update.state)
             return
         }
         if let stored = DirectMessageFrames.serverCopies(envelope) {
@@ -706,14 +723,27 @@ public final class DirectMessageService {
                 conversationId: record.id)
         }
         if type == "delete" { applyDelete(plain, record: record, stash: true) }
+        var held = false
+        if type == "chat", let media = ViewOnceFrames.parse(plain[ViewOnceFrames.field]),
+            let id = plain["id"]?.text, !id.isEmpty
+        {
+            let entry = viewOnce.register(
+                messageId: id, conversation: record.conversation, media: media,
+                mine: !me.isEmpty && plain["senderId"]?.text == me)
+            if viewOnce.isSpent(media.media) { forgetOutbox(media: media.media, conversationId: record.id) }
+            if viewOnce.holdsReceipt(media: media.media) {
+                holdReceipt(entry.messageId, conversationId: record.id, ref: DirectMessageFrames.relayRef(envelope))
+                held = true
+            }
+        }
         guard let message = DirectMessageFrames.chatMessage(plain, record: record, selfId: me) else {
             onFrame?(plain, record.conversation)
-            return true
+            return !held
         }
         let added = append(message, conversationId: record.id)
         onFrame?(plain, record.conversation)
         if added && live && !message.isSelf { onMessage?(message) }
-        return true
+        return !held
     }
 
     private func isGone(_ id: String) -> Bool {
@@ -1110,6 +1140,9 @@ public final class DirectMessageService {
         pendingDeletes = [:]
         pendingDeleteOrder = [:]
         removedIds = []
+        viewOnce.clear()
+        heldReceipts = [:]
+        heldOrder = []
     }
 
     private func call(_ method: String, _ path: String, _ body: JSONObject?) async throws -> JSONObject {
@@ -1132,5 +1165,146 @@ extension DirectMessageService {
             clock: clock, sleep: sleeper)
         onLiveFrame = { [weak engine] plain, conversation in engine?.receive(plain, conversation: conversation) }
         return engine
+    }
+}
+
+extension DirectMessageService {
+    func viewOnceTransfer(_ record: DirectConversation) -> ViewOnceTransfer {
+        ViewOnceTransfer(api: api, conversationId: record.id)
+    }
+
+    func applyViewOnce(_ media: String, _ state: ViewOnceState) {
+        viewOnce.apply(media: media, state: state)
+        if state.isTerminal, let entry = viewOnce.entry(media: media),
+            let id = records.first(where: { $0.conversation == entry.conversation })?.id
+        {
+            forgetOutbox(media: media, conversationId: id)
+            if !viewOnce.holdsReceipt(media: media) { releaseReceipt(entry.messageId) }
+        }
+    }
+
+    public var heldReceiptCount: Int { heldReceipts.count }
+
+    func holdReceipt(_ messageId: String, conversationId: String, ref: String) {
+        guard !ref.isEmpty else { return }
+        var held = heldReceipts[messageId] ?? (conversationId, [])
+        if !held.refs.contains(ref) { held.refs.append(ref) }
+        if heldReceipts[messageId] == nil { heldOrder.append(messageId) }
+        heldReceipts[messageId] = held
+        let limit = DirectMessageFrames.maxMessagesPerRoom * 4
+        while heldOrder.count > limit { heldReceipts.removeValue(forKey: heldOrder.removeFirst()) }
+    }
+
+    func releaseReceipt(_ messageId: String) {
+        guard let held = heldReceipts[messageId], let connection = sockets[held.conversationId]?.connection else { return }
+        heldReceipts.removeValue(forKey: messageId)
+        heldOrder.removeAll { $0 == messageId }
+        Task {
+            for start in stride(from: 0, to: held.refs.count, by: DirectMessageFrames.receivedRefsPerFrame) {
+                let chunk = Array(
+                    held.refs[start..<min(start + DirectMessageFrames.receivedRefsPerFrame, held.refs.count)])
+                try? await connection.send(text: JSON.encode(DirectMessageFrames.receivedFrame(chunk)))
+            }
+        }
+    }
+
+    func forgetOutbox(media: String, conversationId: String) {
+        guard var entries = outbox[conversationId] else { return }
+        entries.removeAll { $0.plain[ViewOnceFrames.field]?.objectValue?["media"]?.text == media }
+        outbox[conversationId] = entries.isEmpty ? nil : entries
+    }
+
+    public func refreshViewOnce(_ conversation: String) async {
+        guard let record = record(for: conversation) else { return }
+        let transfer = viewOnceTransfer(record)
+        for media in viewOnce.pendingConsume.sorted() {
+            guard let entry = viewOnce.entry(media: media), entry.conversation == conversation else { continue }
+            do {
+                _ = try await transfer.consume(media)
+            } catch ViewOnceError.gone {
+            } catch {
+                continue
+            }
+            viewOnce.setConsumePending(media, false)
+            releaseReceipt(entry.messageId)
+        }
+        let ids = viewOnce.unresolved(conversation)
+        guard !ids.isEmpty, let statuses = try? await transfer.statuses(ids) else { return }
+        for status in statuses { applyViewOnce(status.id, status.state) }
+    }
+
+    public func sendViewOnce(
+        _ conversation: String, kind: ViewOnceKind, mime: String, data: Data, durationMs: Int64,
+        progress: (@MainActor (Double) -> Void)? = nil
+    ) async throws {
+        guard let record = record(for: conversation) else { throw ViewOnceError.unavailable }
+        if data.isEmpty { throw ViewOnceError.empty }
+        if data.count + ViewOnceFrames.tagBytes > kind.maxBytes { throw ViewOnceError.tooLarge }
+        if durationMs < 0 || durationMs > kind.maxDurationMs { throw ViewOnceError.tooLong }
+        let type = mime.lowercased()
+        let sealed = try ViewOnceCrypto.seal(Array(data))
+        let transfer = viewOnceTransfer(record)
+        let mediaId = try await transfer.upload(kind: kind, body: sealed.body, durationMs: durationMs, progress: progress)
+        let media = ViewOnceMedia(
+            kind: kind, media: mediaId, key: sealed.key, iv: sealed.iv,
+            mime: type.hasPrefix(kind.mimePrefix) ? type : kind.defaultMime, durationMs: durationMs,
+            size: sealed.body.count, parts: ViewOnceFrames.parts(size: sealed.body.count))
+        let plain = frame(
+            record, type: "chat",
+            extra: ["text": .string(kind.fallbackText), ViewOnceFrames.field: ViewOnceFrames.build(media)])
+        let messageId = plain["id"]?.text ?? ""
+        viewOnce.register(messageId: messageId, conversation: record.conversation, media: media, mine: true)
+        guard await sendSealed(record, plain, reached: 0) else {
+            viewOnce.apply(media: mediaId, state: .failed)
+            _ = try? await transfer.withdraw(mediaId)
+            throw ViewOnceError.unavailable
+        }
+    }
+
+    public func playViewOnce(_ messageId: String, progress: (@MainActor (Double) -> Void)? = nil) async throws
+        -> ViewOnceClip
+    {
+        guard let entry = viewOnce.entry(messageId) else { throw ViewOnceError.unavailable }
+        guard !entry.mine else { throw ViewOnceError.refused("recipient_only") }
+        guard entry.state == .ready, let material = entry.material else { throw ViewOnceError.gone(entry.state) }
+        guard let record = record(for: entry.conversation) else { throw ViewOnceError.unavailable }
+        let transfer = viewOnceTransfer(record)
+        viewOnce.setBusy(messageId, true)
+        defer { viewOnce.setBusy(messageId, false) }
+        do {
+            let plain = try await transfer.download(material, progress: progress)
+            return ViewOnceClip(
+                messageId: messageId, kind: entry.kind, mime: entry.mime, durationMs: entry.durationMs, data: Data(plain))
+        } catch ViewOnceError.gone {
+            let state = (try? await transfer.status(material.media))?.state ?? .expired
+            let final: ViewOnceState = state.isTerminal ? state : .expired
+            applyViewOnce(material.media, final)
+            throw ViewOnceError.gone(final)
+        }
+    }
+
+    public func consumeViewOnce(_ messageId: String) async {
+        guard let entry = viewOnce.entry(messageId), !entry.mine,
+            let record = record(for: entry.conversation)
+        else { return }
+        let media = entry.mediaId
+        viewOnce.setConsumePending(media, true)
+        applyViewOnce(media, .opened)
+        do {
+            _ = try await viewOnceTransfer(record).consume(media)
+        } catch ViewOnceError.gone {
+        } catch {
+            return
+        }
+        viewOnce.setConsumePending(media, false)
+        releaseReceipt(messageId)
+    }
+
+    public func withdrawViewOnce(_ messageId: String) async throws {
+        guard let entry = viewOnce.entry(messageId), entry.mine, !entry.state.isTerminal,
+            let record = record(for: entry.conversation)
+        else { throw ViewOnceError.unavailable }
+        let state = try await viewOnceTransfer(record).withdraw(entry.mediaId)
+        applyViewOnce(entry.mediaId, state.isTerminal ? state : .withdrawn)
     }
 }
