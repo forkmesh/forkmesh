@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Hackathon Builder">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc199"/><stop offset="1" stop-color="#a4451b"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a2a14"/><stop offset="1" stop-color="#2e1409"/></linearGradient>
+<clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#a4451b" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<g transform="rotate(-45 64 64)">
+<rect x="59.5" y="46" width="9" height="50" rx="3.5" fill="#cfd8e0"/>
+<path d="M54 32 A12 12 0 1 0 74 32" fill="none" stroke="#cfd8e0" stroke-width="9" stroke-linecap="butt"/>
+</g>
+<g transform="rotate(45 64 64)">
+<rect x="59.5" y="44" width="9" height="54" rx="3.5" fill="#d9a066"/>
+<rect x="44" y="28" width="40" height="17" rx="4" fill="#f6f8fa"/>
+<rect x="44" y="28" width="9" height="17" rx="3" fill="#cfd8e0"/>
+</g>
+</svg>

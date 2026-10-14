@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Poster">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc58f"/><stop offset="1" stop-color="#c2530a"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6b3410"/><stop offset="1" stop-color="#3d1c06"/></linearGradient>
+<clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#c2530a" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<g transform="rotate(-6 64 66)">
+<path d="M37 37 H91 V85 L79 97 H37 Z" fill="#fff4d6"/>
+<path d="M79 97 V85 H91 Z" fill="#e8c88f"/>
+<rect x="45" y="55" width="38" height="5" rx="2.5" fill="#e0823d"/>
+<rect x="45" y="66" width="38" height="5" rx="2.5" fill="#e0823d"/>
+<rect x="45" y="77" width="24" height="5" rx="2.5" fill="#e0823d"/>
+</g>
+<circle cx="63" cy="38" r="8" fill="#f85149" stroke="#3d1c06" stroke-opacity=".35" stroke-width="2"/>
+<circle cx="60.5" cy="35.5" r="2.6" fill="#ffc1ba"/>
+</svg>

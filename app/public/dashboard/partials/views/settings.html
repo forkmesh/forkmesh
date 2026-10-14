@@ -18,20 +18,20 @@
                   </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 lg:justify-end">
-                  <a href="/dashboard/settings" class="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted">
-                    <i data-lucide="shuffle" class="h-4 w-4 text-muted-foreground"></i>
+                  <a href="/dashboard/settings" class="fm-btn">
+                    <i data-lucide="shuffle"></i>
                     Go to settings page
-                    <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-muted-foreground"></i>
+                    <i data-lucide="chevron-down"></i>
                   </a>
-                  <a href="/dashboard/profile" class="inline-flex h-9 items-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted">
+                  <a href="/dashboard/profile" class="fm-btn">
                     Go to your personal profile
                   </a>
                   <button
                     data-logout-button
                     type="button"
-                    class="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground hover:bg-secondary"
+                    class="fm-btn"
                   >
-                    <i data-lucide="log-out" class="h-4 w-4 text-muted-foreground"></i>
+                    <i data-lucide="log-out"></i>
                     Logout
                   </button>
                 </div>
@@ -41,57 +41,57 @@
                 <aside data-settings-sidebar class="min-w-0">
                   <nav class="grid gap-1 text-sm font-medium text-foreground" aria-label="Settings sections">
                     <button data-settings-section-link="public-profile" type="button" aria-current="page" class="relative flex h-10 items-center gap-3 rounded-md bg-secondary px-3 pl-4 text-left font-semibold text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="user" class="h-5 w-5 text-muted-foreground"></i>
                       Public profile
                     </button>
                     <button data-settings-section-link="account" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="settings" class="h-5 w-5"></i>
                       Account
                     </button>
                     <button data-settings-section-link="ssh-keys" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="key-round" class="h-5 w-5"></i>
                       SSH keys
                     </button>
                     <button data-settings-section-link="appearance" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="paintbrush" class="h-5 w-5"></i>
                       Appearance
                     </button>
                     <button data-settings-section-link="notifications" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="bell" class="h-5 w-5"></i>
                       Pings
                     </button>
                     <button data-settings-section-link="payout" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="wallet-cards" class="h-5 w-5"></i>
                       Verification and payout
                     </button>
                     <button data-settings-section-link="nodes" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="radio-tower" class="h-5 w-5"></i>
                       Nodes
                     </button>
                     <button data-settings-section-link="organizations" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="building-2" class="h-5 w-5"></i>
                       Organizations
                     </button>
                     <button data-settings-section-link="agents" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="bot" class="h-5 w-5"></i>
                       Agents &amp; runners
                     </button>
                     <button data-settings-section-link="apps" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="blocks" class="h-5 w-5"></i>
                       Installed apps
                     </button>
                     <button data-settings-section-link="danger" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
-                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-[#2f81f7]"></span>
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="circle-alert" class="h-5 w-5"></i>
                       Danger zone
                     </button>
@@ -106,12 +106,12 @@
                         <div class="grid gap-2">
                           <label class="grid gap-2 text-sm font-semibold text-foreground">
                             Username
-                            <input data-profile-rename-input type="text" inputmode="latin" autocomplete="off" aria-describedby="profile-rename-status profile-rename-help" placeholder="new-username" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                            <input data-profile-rename-input type="text" inputmode="latin" autocomplete="off" aria-describedby="profile-rename-status profile-rename-help" placeholder="new-username" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                           </label>
                           <p id="profile-rename-status" data-profile-rename-status class="min-h-4 text-xs text-muted-foreground">Enter a new username to check availability.</p>
                           <span id="profile-rename-help" class="text-sm font-normal leading-5 text-muted-foreground">Your username is your node name and repository namespace. It appears around ForkMesh where you contribute or are mentioned; renaming moves owned repository URLs to the new namespace.</span>
-                          <form data-credential-scope class="contents"><input data-profile-rename-password type="password" autocomplete="current-password" placeholder="Current password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" /></form>
-                          <button data-profile-rename-save type="button" disabled class="inline-flex h-9 w-fit items-center justify-center rounded-md border border-border bg-secondary px-4 text-sm font-semibold text-foreground opacity-40 hover:bg-muted transition-colors">
+                          <form data-credential-scope class="contents"><input data-profile-rename-password type="password" autocomplete="current-password" placeholder="Current password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" /></form>
+                          <button data-profile-rename-save type="button" disabled class="fm-btn w-fit">
                             Update username
                           </button>
                         </div>
@@ -126,7 +126,7 @@
 
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Bio
-                          <textarea data-profile-page-bio maxlength="500" rows="4" placeholder="Short bio" class="min-h-24 resize-y rounded-md border border-border bg-card px-3 py-2 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></textarea>
+                          <textarea data-profile-page-bio maxlength="500" rows="4" placeholder="Short bio" class="min-h-24 resize-y rounded-md border border-border bg-card px-3 py-2 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
                           <span class="text-sm font-normal leading-5 text-muted-foreground">You can @mention other users and organizations to link to them.</span>
                         </label>
 
@@ -137,19 +137,19 @@
 
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Location
-                          <input data-profile-page-location type="text" maxlength="120" autocomplete="off" placeholder="City, country, or region" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <input data-profile-page-location type="text" maxlength="120" autocomplete="off" placeholder="City, country, or region" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                         </label>
 
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Time zone
-                          <select data-profile-page-timezone class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]">
+                          <select data-profile-page-timezone class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
                             <option value="">Use browser time zone</option>
                           </select>
                         </label>
 
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Mastodon handle
-                          <input data-profile-page-mastodon type="text" inputmode="latin" autocomplete="off" placeholder="@you@mastodon.social" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <input data-profile-page-mastodon type="text" inputmode="latin" autocomplete="off" placeholder="@you@mastodon.social" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                         </label>
 
                         <div class="grid gap-2">
@@ -159,30 +159,30 @@
                           </div>
                           <div data-profile-links-editor class="grid gap-2">
                             <div data-profile-link-row class="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
-                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Label" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
-                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Label" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                               <p data-profile-link-status class="sm:col-span-2 text-xs text-muted-foreground"></p>
                             </div>
                             <div data-profile-link-row class="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
-                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 2" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
-                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 2" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                               <p data-profile-link-status class="sm:col-span-2 text-xs text-muted-foreground"></p>
                             </div>
                             <div data-profile-link-row class="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
-                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 3" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
-                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 3" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                               <p data-profile-link-status class="sm:col-span-2 text-xs text-muted-foreground"></p>
                             </div>
                             <div data-profile-link-row class="grid gap-2 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
-                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 4" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
-                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-profile-link-label type="text" maxlength="60" autocomplete="off" placeholder="Link to social profile 4" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                              <input data-profile-link-url type="url" maxlength="300" autocomplete="off" placeholder="https://example.com" class="h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                               <p data-profile-link-status class="sm:col-span-2 text-xs text-muted-foreground"></p>
                             </div>
                           </div>
                         </div>
 
                         <label class="flex items-start gap-2 rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
-                          <input data-profile-page-private type="checkbox" class="mt-0.5 h-4 w-4 rounded border-border bg-background" />
+                          <input data-profile-page-private type="checkbox" class="mt-0.5 h-4 w-4 rounded border-border bg-background accent-primary" />
                           <span>
                             <span class="block font-semibold text-foreground">Private profile</span>
                             <span class="mt-1 block leading-5">When enabled, your <span class="font-mono">/@username</span> page returns 404.</span>
@@ -190,7 +190,7 @@
                         </label>
 
                         <label class="flex items-start gap-2 rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">
-                          <input data-profile-page-followers-public type="checkbox" class="mt-0.5 h-4 w-4 rounded border-border bg-background" />
+                          <input data-profile-page-followers-public type="checkbox" class="mt-0.5 h-4 w-4 rounded border-border bg-background accent-primary" />
                           <span>
                             <span class="block font-semibold text-foreground">Show my followers list</span>
                             <span class="mt-1 block leading-5">When off (default), fediverse apps like Mastodon show "This user has chosen to not make their other followers visible" instead of your follower list.</span>
@@ -198,7 +198,7 @@
                         </label>
 
                         <p data-profile-public-hint class="min-h-4 text-xs text-muted-foreground"></p>
-                        <button data-profile-public-save type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                        <button data-profile-public-save type="button" class="fm-btn w-fit">
                           Save public profile
                         </button>
                       </div>
@@ -213,8 +213,8 @@
                             <img data-profile-page-avatar-image class="hidden h-full w-full object-cover" alt="" />
                             <span data-avatar-initial>F</span>
                           </span>
-                          <button data-profile-avatar-edit type="button" aria-haspopup="dialog" class="absolute bottom-6 left-4 inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground shadow-sm hover:bg-secondary">
-                            <i data-lucide="pencil" class="h-4 w-4"></i>
+                          <button data-profile-avatar-edit type="button" aria-haspopup="dialog" class="fm-btn absolute bottom-6 left-4">
+                            <i data-lucide="pencil"></i>
                             Edit
                           </button>
                           <input data-profile-avatar-input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" tabindex="-1" aria-hidden="true" />
@@ -234,25 +234,25 @@
                               <p class="text-sm font-semibold text-foreground">Email verification</p>
                               <p data-profile-page-email-status class="mt-1 text-sm text-muted-foreground">Sign in to view email status.</p>
                             </div>
-                            <button data-profile-page-verify-email type="button" class="shrink-0 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                            <button data-profile-page-verify-email type="button" class="fm-btn fm-btn-sm shrink-0">
                               Send link
                             </button>
                           </div>
                         </div>
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Solana payout address
-                          <input data-profile-page-solana type="text" inputmode="latin" autocomplete="off" placeholder="Your public Solana address" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <input data-profile-page-solana type="text" inputmode="latin" autocomplete="off" placeholder="Your public Solana address" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                           <span class="text-sm font-normal leading-5 text-muted-foreground">Used for optional mirror rewards and direct community donations. Legacy bounty custody is disabled. Leave it empty until you choose to receive a transfer.</span>
-                          <span class="text-xs font-normal leading-5 text-amber-300">Non-custodial: ForkMesh stores only this public address. Wallet keys and recovery phrases remain on your device; never enter them here. User-owned funds, community-pool funds, pending rewards, and completed on-chain transfers are separate states.</span>
+                          <span class="text-xs font-normal leading-5 text-attention">Non-custodial: ForkMesh stores only this public address. Wallet keys and recovery phrases remain on your device; never enter them here. User-owned funds, community-pool funds, pending rewards, and completed on-chain transfers are separate states.</span>
                         </label>
                         <form data-credential-scope class="contents">
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Current password
-                          <input data-profile-page-password type="password" autocomplete="current-password" placeholder="Required for payout changes" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <input data-profile-page-password type="password" autocomplete="current-password" placeholder="Required for payout changes" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                         </label>
                         </form>
                         <p data-profile-page-hint class="min-h-4 text-xs text-muted-foreground"></p>
-                        <button data-profile-page-save type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                        <button data-profile-page-save type="button" class="fm-btn w-fit">
                           Save payout address
                         </button>
                       </div>
@@ -269,7 +269,7 @@
                           <p class="text-muted-foreground">Admin access</p>
                           <p data-profile-page-admin-status class="mt-1 font-mono text-foreground">No</p>
                           <div data-admin-test-email-row class="mt-3 hidden">
-                            <button data-admin-test-email type="button" class="rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                            <button data-admin-test-email type="button" class="fm-btn fm-btn-sm">
                               Send test email
                             </button>
                             <p data-admin-test-email-status role="status" class="mt-2 min-h-4 text-xs text-muted-foreground"></p>
@@ -290,26 +290,26 @@
 
                   <section id="settings-notifications" data-settings-section="notifications" data-ping-settings class="hidden pb-8">
                     <style>
-                      [data-ping-settings], [data-genie-setting] { --ps-border: rgb(var(--dashboard-border-rgb)); --ps-muted: rgb(var(--dashboard-muted-foreground-rgb)); --ps-accent: rgb(var(--dashboard-accent-rgb)); --ps-on: #2f81f7; }
+                      [data-ping-settings], [data-genie-setting] { --ps-border: rgb(var(--dashboard-border-rgb)); --ps-muted: rgb(var(--dashboard-muted-foreground-rgb)); --ps-accent: rgb(var(--dashboard-accent-rgb)); --ps-on: rgb(var(--dashboard-primary-rgb)); }
                       .ping-switch { position: relative; flex-shrink: 0; width: 2.25rem; height: 1.3rem; border-radius: 999px; background: var(--ps-border); transition: background .15s; }
                       .ping-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1.3rem - 4px); height: calc(1.3rem - 4px); border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: translate .15s; }
                       .ping-switch[aria-checked="true"] { background: var(--ps-on); }
                       .ping-switch[aria-checked="true"]::after { translate: .95rem 0; }
                       .ping-switch:disabled { cursor: not-allowed; opacity: .4; }
                       .ping-switch:focus-visible { outline: 2px solid var(--ps-on); outline-offset: 2px; }
-                      .ping-day { min-width: 2.75rem; height: 2rem; border: 1px solid var(--ps-border); border-radius: .375rem; padding: 0 .5rem; font-size: .8rem; font-weight: 600; color: var(--ps-muted); transition: background .15s, color .15s, border-color .15s; }
-                      .ping-day[aria-pressed="true"] { border-color: var(--ps-on); background: rgb(47 129 247 / .14); color: rgb(var(--dashboard-foreground-rgb)); }
+                      .ping-day { min-width: 2.75rem; height: var(--dashboard-control-height-sm); border: 1px solid var(--ps-border); border-radius: var(--dashboard-control-radius); padding: 0 .5rem; font-size: 12px; font-weight: 500; color: var(--ps-muted); transition: background .15s, color .15s, border-color .15s; }
+                      .ping-day[aria-pressed="true"] { border-color: var(--ps-on); background: rgb(var(--dashboard-primary-rgb) / .14); color: rgb(var(--dashboard-foreground-rgb)); }
                       .ping-day:disabled { opacity: .45; cursor: not-allowed; }
                       .ping-kind-row { display: grid; grid-template-columns: minmax(0, 1fr) 4rem 4rem; align-items: center; gap: .75rem; padding: .7rem 1rem; border-top: 1px solid var(--ps-border); transition: background .6s; }
-                      .ping-kind-head { display: grid; grid-template-columns: minmax(0, 1fr) 4rem 4rem; gap: .75rem; padding: .6rem 1rem; font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ps-muted); }
+                      .ping-kind-head { display: grid; grid-template-columns: minmax(0, 1fr) 4rem 4rem; gap: .75rem; padding: .6rem 1rem; font-size: 12px; font-weight: 600; color: var(--ps-muted); }
                       .ping-kind-row > .ping-cell, .ping-kind-head > .ping-cell { display: flex; justify-content: center; }
                       .ping-kind-row[data-ping-muted="true"] .ping-kind-label { color: var(--ps-muted); text-decoration: line-through; text-decoration-color: rgb(var(--dashboard-muted-foreground-rgb) / .5); }
-                      .ping-highlight { background: rgb(47 129 247 / .16) !important; box-shadow: inset 3px 0 0 var(--ps-on); }
+                      .ping-highlight { background: rgb(var(--dashboard-primary-rgb) / .12) !important; }
                       .ping-save-status { min-height: 1rem; font-size: .75rem; color: var(--ps-muted); }
-                      .ping-save-status[data-tone="good"] { color: #3fb950; }
+                      .ping-save-status[data-tone="good"] { color: rgb(var(--dashboard-success-rgb)); }
                       .ping-save-status[data-tone="bad"] { color: rgb(var(--dashboard-destructive-rgb)); }
                       .ping-admin-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
-                      .ping-admin-table th { padding: .6rem 1rem; font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ps-muted); text-align: center; }
+                      .ping-admin-table th { padding: .6rem 1rem; font-size: 12px; font-weight: 600; color: var(--ps-muted); text-align: center; }
                       .ping-admin-table th:first-child, .ping-admin-table td:first-child { text-align: left; }
                       .ping-admin-table td { padding: .65rem 1rem; border-top: 1px solid var(--ps-border); text-align: center; }
                       .ping-admin-table td .ping-switch { display: inline-block; vertical-align: middle; }
@@ -332,17 +332,17 @@
                         </div>
                         <div class="flex flex-wrap items-center gap-3">
                           <p data-ping-pause-state class="text-sm font-semibold text-foreground">Notifications are on</p>
-                          <button data-ping-pause-resume type="button" hidden class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                          <button data-ping-pause-resume type="button" hidden class="fm-btn fm-btn-sm shrink-0">
                             Resume notifications
                           </button>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                          <button data-ping-pause-preset="3600000" type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">For 1 hour</button>
-                          <button data-ping-pause-preset="86400000" type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">For 1 day</button>
-                          <button data-ping-pause-preset="604800000" type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">Until next week</button>
+                          <button data-ping-pause-preset="3600000" type="button" class="fm-btn fm-btn-sm">For 1 hour</button>
+                          <button data-ping-pause-preset="86400000" type="button" class="fm-btn fm-btn-sm">For 1 day</button>
+                          <button data-ping-pause-preset="604800000" type="button" class="fm-btn fm-btn-sm">Until next week</button>
                           <span class="text-sm text-muted-foreground">or until</span>
-                          <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
-                          <button data-ping-pause-custom-apply type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors">Set</button>
+                          <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-control-sm rounded-md border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                          <button data-ping-pause-custom-apply type="button" class="fm-btn fm-btn-sm">Set</button>
                         </div>
                       </div>
 
@@ -362,15 +362,15 @@
                           <div class="flex flex-wrap items-end gap-4">
                             <label class="grid gap-1.5 text-xs font-semibold text-muted-foreground">
                               From
-                              <input data-ping-quiet-start type="time" value="22:00" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-ping-quiet-start type="time" value="22:00" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                             </label>
                             <label class="grid gap-1.5 text-xs font-semibold text-muted-foreground">
                               Until
-                              <input data-ping-quiet-end type="time" value="07:00" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                              <input data-ping-quiet-end type="time" value="07:00" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                             </label>
                             <label class="grid min-w-[14rem] flex-1 gap-1.5 text-xs font-semibold text-muted-foreground">
                               Time zone
-                              <select data-ping-quiet-timezone class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></select>
+                              <select data-ping-quiet-timezone class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-primary"></select>
                             </label>
                           </div>
                           <div class="grid gap-1.5">
@@ -412,13 +412,13 @@
                           <button data-ping-email-master type="button" role="switch" aria-checked="true" aria-label="Email me about pings" class="ping-switch mt-1"></button>
                         </div>
                         <div data-notification-delivery class="grid border-t border-border">
-                          <p class="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email delivery</p>
+                          <p class="px-4 pb-1 pt-3 text-xs font-semibold text-muted-foreground">Email delivery</p>
                           <label class="flex items-start gap-3 px-4 py-3 text-sm text-muted-foreground">
-                            <input data-notification-delivery-mode="digest" name="notification-delivery" type="radio" class="mt-0.5 h-4 w-4 border-border" />
+                            <input data-notification-delivery-mode="digest" name="notification-delivery" type="radio" class="mt-0.5 h-4 w-4 border-border accent-primary" />
                             <span><span class="block font-semibold text-foreground">Periodic digest</span><span class="mt-1 block leading-5">Roll other unread pings into one email, at most one per hour; ones you read in the app first are never emailed. Issues, pull requests and discussions are always emailed right away.</span></span>
                           </label>
                           <label class="flex items-start gap-3 px-4 pb-4 pt-1 text-sm text-muted-foreground">
-                            <input data-notification-delivery-mode="instant" name="notification-delivery" type="radio" class="mt-0.5 h-4 w-4 border-border" />
+                            <input data-notification-delivery-mode="instant" name="notification-delivery" type="radio" class="mt-0.5 h-4 w-4 border-border accent-primary" />
                             <span><span class="block font-semibold text-foreground">Instant</span><span class="mt-1 block leading-5">Send each ping as its own email as soon as it arrives, with the event in the subject line. No hourly wait, and no grace period to read it in the app first.</span></span>
                           </label>
                         </div>
@@ -465,7 +465,7 @@
 
                   <section id="settings-account" data-settings-section="account" class="hidden pb-8">
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">Account</h2>
-                    <p class="mt-1 text-sm leading-6 text-muted-foreground">Your node name is your public account and repository namespace. Change your username from the <button data-settings-section-link="public-profile" type="button" class="inline-flex h-6 align-middle items-center rounded-sm border border-[#2f81f7]/40 bg-[#2f81f7]/10 px-1 font-semibold leading-5 text-[#2f81f7] transition-colors hover:border-[#2f81f7]/70 hover:bg-[#2f81f7]/10 hover:underline focus:outline-none focus:ring-1 focus:ring-[#2f81f7]">Public profile</button> settings — renaming it moves owned repository URLs to the new namespace.</p>
+                    <p class="mt-1 text-sm leading-6 text-muted-foreground">Your node name is your public account and repository namespace. Change your username from the <button data-settings-section-link="public-profile" type="button" class="inline align-baseline font-semibold text-accent hover:underline focus:outline-none focus:ring-1 focus:ring-primary">Public profile</button> settings — renaming it moves owned repository URLs to the new namespace.</p>
                     <div class="mt-6 grid max-w-3xl gap-3 rounded-md border border-border bg-card p-4" data-patreon-connection>
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div class="min-w-0">
@@ -478,7 +478,7 @@
                         <button
                           data-patreon-connect
                           type="button"
-                          class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-border bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-muted"
+                          class="fm-btn fm-btn-sm shrink-0"
                         >
                           Connect Patreon
                         </button>
@@ -486,9 +486,9 @@
                       <p data-patreon-connection-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
                       <p class="text-xs text-muted-foreground">
                         Prefer checkout first?
-                        <a class="font-semibold text-[#2f81f7] hover:underline" href="https://www.patreon.com/16434219/join" target="_blank" rel="noopener">Open Patreon memberships</a>
+                        <a class="font-semibold text-accent hover:underline" href="https://www.patreon.com/16434219/join" target="_blank" rel="noopener">Open Patreon memberships</a>
                         or compare plans on
-                        <a class="font-semibold text-[#2f81f7] hover:underline" href="https://forkmesh.com/#pricing">Pricing</a>.
+                        <a class="font-semibold text-accent hover:underline" href="https://forkmesh.com/#pricing">Pricing</a>.
                       </p>
                     </div>
                     <div class="mt-6 grid max-w-3xl gap-3">
@@ -499,8 +499,8 @@
                             <p data-membership-summary class="mt-1 text-sm leading-6 text-muted-foreground">Loading membership…</p>
                           </div>
                           <div class="flex shrink-0 flex-wrap gap-2">
-                            <a data-membership-choose data-forkmesh-membership href="https://www.patreon.com/16434219/join" target="_blank" rel="noopener" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">Choose membership</a>
-                            <a data-membership-invite href="/referral" hidden class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">Invite a friend</a>
+                            <a data-membership-choose data-forkmesh-membership href="https://www.patreon.com/16434219/join" target="_blank" rel="noopener" class="fm-btn fm-btn-sm">Choose membership</a>
+                            <a data-membership-invite href="/referral" hidden class="fm-btn fm-btn-sm">Invite a friend</a>
                           </div>
                         </div>
                         <p data-membership-status role="status" class="mt-2 min-h-4 text-xs text-muted-foreground"></p>
@@ -512,7 +512,7 @@
                             <p data-plan-usage-summary class="mt-1 text-sm leading-6 text-muted-foreground">Loading usage…</p>
                           </div>
                           <div class="flex shrink-0 flex-wrap gap-2">
-                            <button data-plan-trial-start type="button" hidden class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">Start 14-day Supporter trial</button>
+                            <button data-plan-trial-start type="button" hidden class="fm-btn fm-btn-sm">Start 14-day Supporter trial</button>
                           </div>
                         </div>
                         <dl data-plan-usage-meters hidden class="mt-3 grid gap-2 sm:grid-cols-2"></dl>
@@ -524,21 +524,21 @@
                         <form data-credential-scope class="mt-4 grid gap-3">
                           <label class="grid gap-2 text-sm font-semibold text-foreground">
                             Current password
-                            <input data-account-password-current type="password" autocomplete="current-password" aria-describedby="account-password-status" placeholder="Current password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                            <input data-account-password-current type="password" autocomplete="current-password" aria-describedby="account-password-status" placeholder="Current password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                           </label>
                           <label class="grid gap-2 text-sm font-semibold text-foreground">
                             New password
-                            <input data-account-password-new type="password" autocomplete="new-password" minlength="8" aria-describedby="account-password-status" placeholder="At least 8 characters" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                            <input data-account-password-new type="password" autocomplete="new-password" minlength="8" aria-describedby="account-password-status" placeholder="At least 8 characters" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                           </label>
                           <label class="grid gap-2 text-sm font-semibold text-foreground">
                             Confirm new password
-                            <input data-account-password-confirm type="password" autocomplete="new-password" minlength="8" aria-describedby="account-password-status" placeholder="Repeat the new password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                            <input data-account-password-confirm type="password" autocomplete="new-password" minlength="8" aria-describedby="account-password-status" placeholder="Repeat the new password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                           </label>
-                          <button data-account-password-save type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md border border-border bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                          <button data-account-password-save type="button" class="fm-btn w-fit">
                             Update password
                           </button>
                           <p id="account-password-status" data-account-password-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
-                          <p class="text-xs text-muted-foreground">Forgot your current password? <a class="font-semibold text-[#2f81f7] hover:underline" href="/forgot-password">Reset it by email</a> instead.</p>
+                          <p class="text-xs text-muted-foreground">Forgot your current password? <a class="font-semibold text-accent hover:underline" href="/forgot-password">Reset it by email</a> instead.</p>
                         </form>
                       </div>
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -546,32 +546,32 @@
                           <h3 class="text-base font-semibold text-foreground">Nodes &amp; devices</h3>
                           <p class="mt-1 text-sm leading-6 text-muted-foreground">Desktop and mobile nodes bound to this account. Each node holds its own signing key; revoking one signs out every session it opened and rejects anything it publishes or signs as you from the next request on. Revoking asks for your password again, even while signed in.</p>
                         </div>
-                        <button data-account-devices-revoke-others type="button" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">
+                        <button data-account-devices-revoke-others type="button" class="fm-btn fm-btn-sm fm-btn-danger shrink-0">
                           Sign out all other nodes
                         </button>
                       </div>
                       <p data-account-devices-status role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground"></p>
-                      <form data-account-devices-reauth hidden class="grid gap-3 rounded-md border border-amber-400/40 bg-amber-400/5 p-4">
+                      <form data-account-devices-reauth hidden class="grid gap-3 rounded-md border border-attention/40 bg-attention/10 p-4">
                         <div>
-                          <p data-account-devices-reauth-title class="text-sm font-semibold text-foreground">Confirm it's you</p>
+                          <p data-account-devices-reauth-title class="flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="shield-alert" class="h-4 w-4 shrink-0 text-attention" aria-hidden="true"></i>Confirm it's you</p>
                           <p class="mt-1 text-xs leading-5 text-muted-foreground">Re-enter your password to revoke. Add your authenticator code if two-factor is enabled on this account.</p>
                         </div>
                         <div class="grid gap-3 sm:grid-cols-2">
                           <label class="grid gap-2 text-sm font-semibold text-foreground">
                             Current password
-                            <input data-account-devices-reauth-password type="password" autocomplete="current-password" required placeholder="Required to revoke" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                            <input data-account-devices-reauth-password type="password" autocomplete="current-password" required placeholder="Required to revoke" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                           </label>
                           <label class="grid gap-2 text-sm font-semibold text-foreground">
                             Authenticator code
-                            <input data-account-devices-reauth-totp type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Optional" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                            <input data-account-devices-reauth-totp type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Optional" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                           </label>
                         </div>
-                        <div class="flex flex-wrap gap-2">
-                          <button data-account-devices-reauth-confirm type="submit" class="inline-flex h-9 items-center justify-center rounded-md border border-red-500/50 px-4 text-sm font-semibold text-red-300 hover:bg-red-500/10">
-                            Revoke
-                          </button>
-                          <button data-account-devices-reauth-cancel type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:bg-secondary">
+                        <div class="flex flex-wrap justify-end gap-2">
+                          <button data-account-devices-reauth-cancel type="button" class="fm-btn fm-btn-sm">
                             Cancel
+                          </button>
+                          <button data-account-devices-reauth-confirm type="submit" class="fm-btn fm-btn-sm fm-btn-danger">
+                            Revoke
                           </button>
                         </div>
                       </form>
@@ -584,10 +584,10 @@
                           <p class="mt-1 text-sm leading-6 text-muted-foreground">Review signed-in browsers and desktop clients. A sign-in lasts five years unless you sign it out here. Each row shows a broad device category, the address the sign-in came from, and timestamps. Only you can see this list; raw browser details are never stored.</p>
                         </div>
                         <div class="flex flex-wrap gap-2">
-                          <button data-account-sessions-revoke-others type="button" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">
+                          <button data-account-sessions-revoke-others type="button" class="fm-btn fm-btn-sm shrink-0">
                             Sign out other devices
                           </button>
-                          <button data-account-sessions-revoke-all type="button" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-red-500/50 px-3 text-sm font-semibold text-red-300 hover:bg-red-500/10">
+                          <button data-account-sessions-revoke-all type="button" class="fm-btn fm-btn-sm fm-btn-danger shrink-0">
                             Sign out all devices
                           </button>
                         </div>
@@ -603,10 +603,10 @@
                         </div>
                         <div data-email-footer-preview class="rounded-md border border-border bg-white p-4 text-sm text-zinc-900">Loading your footer…</div>
                         <div class="flex flex-wrap items-center gap-2">
-                          <button data-email-footer-copy type="button" disabled class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">
+                          <button data-email-footer-copy type="button" disabled class="fm-btn fm-btn-sm">
                             Copy footer
                           </button>
-                          <button data-email-footer-copy-html type="button" disabled class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-sm font-semibold text-foreground hover:bg-secondary">
+                          <button data-email-footer-copy-html type="button" disabled class="fm-btn fm-btn-sm">
                             Copy HTML
                           </button>
                           <span data-email-footer-opens class="text-sm text-muted-foreground"></span>
@@ -621,20 +621,21 @@
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">SSH keys</h2>
                     <p class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Register a public key to clone or push through a configured ForkMesh SSH gateway. Repository owner and organization-team write permissions are checked again for every push.</p>
                     <div class="mt-5 grid max-w-3xl gap-5">
-                      <div class="rounded-md border border-amber-400/40 bg-amber-400/5 p-4 text-sm leading-6 text-amber-200">
-                        ForkMesh stores encrypted public keys only. Your private key and passphrase stay on your device. Never paste a private key, recovery phrase, or password here. Adding a public key reserves it to this account; possession is proven later by OpenSSH when you connect, not by this form.
+                      <div class="fm-flash fm-flash-warning">
+                        <i data-lucide="triangle-alert" aria-hidden="true"></i>
+                        <p class="fm-flash-body">ForkMesh stores encrypted public keys only. Your private key and passphrase stay on your device. Never paste a private key, recovery phrase, or password here. Adding a public key reserves it to this account; possession is proven later by OpenSSH when you connect, not by this form.</p>
                       </div>
                       <form data-ssh-key-form class="grid gap-3 rounded-md border border-border bg-card p-4">
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Title
-                          <input data-ssh-key-label type="text" maxlength="80" autocomplete="off" placeholder="Work laptop" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <input data-ssh-key-label type="text" maxlength="80" autocomplete="off" placeholder="Work laptop" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                         </label>
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Public key
-                          <textarea data-ssh-public-key rows="4" maxlength="16384" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@example" class="min-h-28 resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-xs font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]"></textarea>
+                          <textarea data-ssh-public-key rows="4" maxlength="16384" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@example" class="min-h-28 resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-xs font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"></textarea>
                         </label>
                         <p data-ssh-key-status class="min-h-4 text-xs text-muted-foreground"></p>
-                        <button data-ssh-key-add type="submit" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                        <button data-ssh-key-add type="submit" class="fm-btn fm-btn-cta w-fit">
                           Add SSH key
                         </button>
                       </form>
@@ -654,15 +655,28 @@
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">Nodes</h2>
                     <p class="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">A node is one ForkMesh install - the desktop app on your machine, or a headless node you deployed on a server. Nodes hold the repositories and drain this account's issues, comments, chats and pull requests off the relay, so linking at least one is what makes anything you write on the web actually sync.</p>
                     <div class="mt-5 grid max-w-2xl gap-4">
-                      <div data-node-reconnect-callout class="hidden grid gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm leading-6 text-foreground">
-                        <p class="font-semibold text-amber-600 dark:text-amber-400">No node is linked to this account yet</p>
-                        <p>That is what "Reconnect node" in the header is about: until a node links, everything you write on the web is parked on the relay and no machine of yours is serving your repositories. Nothing is lost - it drains as soon as a node comes online. Claim a node you already run below, or start one from "No node yet?" at the bottom of this page.</p>
+                      <div data-node-reconnect-callout class="hidden">
+                        <div class="fm-flash fm-flash-warning">
+                          <i data-lucide="radio-tower" aria-hidden="true"></i>
+                          <div class="fm-flash-body">
+                            <p class="fm-flash-title">No node is linked to this account yet</p>
+                            <p>That is what "Reconnect node" in the header is about: until a node links, everything you write on the web is parked on the relay and no machine of yours is serving your repositories. Nothing is lost - it drains as soon as a node comes online. Claim a node you already run below, or start one from "No node yet?" at the bottom of this page.</p>
+                          </div>
+                        </div>
                       </div>
-                      <div data-link-grant-row class="hidden grid gap-3 rounded-md border border-[#2f81f7]/50 bg-[#2f81f7]/10 p-4">
-                        <p data-link-grant-text class="text-sm leading-6 text-foreground"></p>
-                        <button data-link-grant-confirm type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
-                          Authenticate &amp; link
-                        </button>
+                      <div data-link-grant-row class="hidden">
+                        <div class="fm-flash">
+                          <i data-lucide="link" aria-hidden="true"></i>
+                          <div class="fm-flash-body">
+                            <p class="fm-flash-title">Link a node</p>
+                            <p data-link-grant-text></p>
+                          </div>
+                          <div class="fm-flash-actions">
+                            <button data-link-grant-confirm type="button" class="fm-btn fm-btn-sm fm-btn-cta">
+                              Authenticate &amp; link
+                            </button>
+                          </div>
+                        </div>
                       </div>
                       <p class="text-sm font-semibold text-foreground">Linked nodes</p>
                       <ul data-claim-node-list class="grid gap-1.5 text-sm text-foreground">
@@ -682,24 +696,24 @@
                       </div>
                       <label class="grid gap-2 text-sm font-semibold text-foreground">
                         Node ID
-                        <input data-claim-node-input type="text" inputmode="latin" autocomplete="off" placeholder="mirror-01" aria-describedby="claim-node-id-help" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        <input data-claim-node-input type="text" inputmode="latin" autocomplete="off" placeholder="mirror-01" aria-describedby="claim-node-id-help" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                       </label>
                       <form data-credential-scope class="contents">
                       <label class="grid gap-2 text-sm font-semibold text-foreground">
                         Current password
-                        <input data-claim-node-password type="password" autocomplete="current-password" placeholder="Required to claim a node" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                        <input data-claim-node-password type="password" autocomplete="current-password" placeholder="Required to claim a node" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                       </label>
                       </form>
                       <p data-claim-node-status class="min-h-4 text-xs text-muted-foreground"></p>
-                      <button data-claim-node-send type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md border border-border bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-muted transition-colors">
+                      <button data-claim-node-send type="button" class="fm-btn w-fit">
                         Send claim code
                       </button>
                       <div data-claim-code-row class="hidden grid gap-3 border-t border-border pt-4">
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Confirmation code (shown on the node)
-                          <input data-claim-code-input type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="123456" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <input data-claim-code-input type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="123456" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                         </label>
-                        <button data-claim-code-confirm type="button" class="inline-flex h-9 w-fit items-center justify-center rounded-md bg-[#238636] px-4 text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors">
+                        <button data-claim-code-confirm type="button" class="fm-btn fm-btn-cta w-fit">
                           Link node
                         </button>
                       </div>
@@ -707,7 +721,7 @@
                         <p class="font-semibold text-foreground">No node yet? (browsing from the web only)</p>
                         <p>You do not need one to read, sign in or write - but you do need one for your account to own repositories and to drain what you write off the relay. Two ways to get one, both of which link themselves to this account:</p>
                         <ul class="grid gap-2 list-disc pl-5">
-                          <li>Install the desktop app from <a href="/desktop" class="text-[#2f81f7] underline">the downloads page</a>, then click "Link this machine to your account" on its Profile page. No node ID and no confirmation code to type.</li>
+                          <li>Install the desktop app from <a href="/desktop" class="text-accent underline">the downloads page</a>, then click "Link this machine to your account" on its Profile page. No node ID and no confirmation code to type.</li>
                           <li>Or run a headless node on any always-on machine with <span class="font-mono break-all text-foreground">curl -fsSL https://forkmesh.com/install.sh | bash</span>, then claim it above by the node name you gave it.</li>
                         </ul>
                         <p>Repositories you cannot open in the meantime are waiting on a host: their owner's node or a mirror has to be online to serve them, and linking your own node is what puts yours back online.</p>
@@ -727,8 +741,8 @@
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">Installed apps</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Apps you installed, and the apps installed for organizations you run: what each may do, when it last acted, and a Revoke button that deletes its tokens at once. Organization owners and admins also approve members' app requests and set which apps members may request there.</p>
                     <div class="mt-5 flex flex-wrap gap-2">
-                      <a href="/dashboard/apps" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-secondary">Manage installed apps</a>
-                      <a href="/dashboard/apps/build" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:bg-secondary">Build an app</a>
+                      <a href="/dashboard/apps" class="fm-btn fm-btn-sm">Manage installed apps</a>
+                      <a href="/dashboard/apps/build" class="fm-btn fm-btn-sm">Build an app</a>
                     </div>
                   </section>
 
@@ -739,7 +753,7 @@
                       <div data-agent-profiles-panel class="grid gap-3">
                         <div class="flex flex-wrap items-center gap-2">
                           <h3 class="text-lg font-semibold text-foreground">Desktops</h3>
-                          <button data-agent-profiles-refresh type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
+                          <button data-agent-profiles-refresh type="button" class="fm-btn fm-btn-sm ml-auto"><i data-lucide="refresh-cw"></i>Refresh</button>
                         </div>
                         <p class="text-sm text-muted-foreground">Read live from each ForkMesh desktop app on your account over an encrypted channel. A desktop answers only while the app is running and signed in.</p>
                         <p data-agent-profiles-notice hidden class="text-sm" role="status" aria-live="polite"></p>
@@ -751,14 +765,14 @@
                       <div class="grid gap-3">
                         <div class="flex flex-wrap items-center gap-2">
                           <h3 class="text-lg font-semibold text-foreground">Runners</h3>
-                          <button data-settings-runners-refresh type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
-                          <a href="/dashboard/runners?setup=1" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Set up a runner</a>
+                          <button data-settings-runners-refresh type="button" class="fm-btn fm-btn-sm ml-auto"><i data-lucide="refresh-cw"></i>Refresh</button>
+                          <a href="/dashboard/runners?setup=1" class="fm-btn fm-btn-sm">Set up a runner</a>
                         </div>
                         <p class="text-sm text-muted-foreground">Runners you registered (every runner, for administrators). Each provider can hold several accounts; the active one runs the jobs.</p>
                         <div class="rounded-md border border-border bg-card">
                           <div data-runners-auth-banner hidden class="px-4 py-3 border-b border-border grid gap-2 text-sm" role="alert"></div>
                           <div data-runners-notice hidden class="px-4 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
-                          <div data-runners-list class="px-4 py-4 grid gap-3">
+                          <div data-runners-list class="divide-y divide-border">
                             <p class="text-sm text-muted-foreground">Loading runners…</p>
                           </div>
                           <div data-runner-login hidden class="px-4 py-4 border-t border-border">
@@ -768,8 +782,8 @@
                                 <p data-runner-login-status class="mt-1 text-xs text-muted-foreground" role="status" aria-live="polite"></p>
                               </div>
                               <div class="shrink-0 flex items-center gap-2">
-                                <button data-runner-login-cancel type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel sign-in</button>
-                                <button data-runner-login-close type="button" hidden class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Close</button>
+                                <button data-runner-login-cancel type="button" class="fm-btn fm-btn-sm">Cancel sign-in</button>
+                                <button data-runner-login-close type="button" hidden class="fm-btn fm-btn-sm">Close</button>
                               </div>
                             </div>
                             <div data-runner-login-links class="mt-3 grid gap-1"></div>
@@ -777,7 +791,7 @@
                             <form data-runner-login-form class="mt-3 flex flex-col sm:flex-row gap-2" autocomplete="off">
                               <label class="sr-only" for="settingsRunnerLoginInput">Code from the sign-in page</label>
                               <input id="settingsRunnerLoginInput" data-runner-login-input type="text" maxlength="4000" spellcheck="false" autocomplete="off" placeholder="Paste the code the sign-in page shows you" class="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" />
-                              <button data-runner-login-send type="submit" class="inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity">Send to runner</button>
+                              <button data-runner-login-send type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Send to runner</button>
                             </form>
                             <p class="mt-2 text-xs text-muted-foreground">Open the link, approve the sign-in, then paste the code here. It goes to the runner once and is deleted as soon as the runner has read it. The session ends after 10 minutes.</p>
                           </div>
@@ -803,7 +817,7 @@
                               <i data-lucide="moon" class="h-4 w-4"></i>
                               Dark
                             </span>
-                            <i data-lucide="check" class="hidden h-4 w-4 text-[#2f81f7]" data-appearance-check></i>
+                            <i data-lucide="check" class="hidden h-4 w-4 text-accent" data-appearance-check></i>
                           </span>
                           <span class="grid gap-1.5">
                             <span class="h-2 rounded-full bg-secondary"></span>
@@ -823,7 +837,7 @@
                               <i data-lucide="sun" class="h-4 w-4"></i>
                               Light
                             </span>
-                            <i data-lucide="check" class="hidden h-4 w-4 text-[#2f81f7]" data-appearance-check></i>
+                            <i data-lucide="check" class="hidden h-4 w-4 text-accent" data-appearance-check></i>
                           </span>
                           <span class="grid gap-1.5">
                             <span class="h-2 rounded-full bg-secondary"></span>
@@ -861,24 +875,24 @@
                   </section>
 
                   <section id="settings-danger" data-settings-section="danger" class="hidden pb-8">
-                    <h2 class="text-2xl font-semibold tracking-normal text-[#f85149]">Danger zone</h2>
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Danger zone</h2>
                     <div class="mt-5 grid max-w-2xl overflow-hidden rounded-md border border-destructive/40 bg-card">
                       <div class="grid gap-4 border-b border-destructive/30 p-4">
                         <p class="text-sm leading-6 text-muted-foreground">Deleting your account removes your login, public profile, owned repository records, and active dashboard session. You can register again later with the same node name or email.</p>
                         <form data-credential-scope class="contents">
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Current password
-                          <input data-profile-delete-password type="password" autocomplete="current-password" placeholder="Required to delete account" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <input data-profile-delete-password type="password" autocomplete="current-password" placeholder="Required to delete account" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                         </label>
                         </form>
                         <label class="grid gap-2 text-sm font-semibold text-foreground">
                           Confirmation
-                          <input data-profile-delete-confirm type="text" autocomplete="off" placeholder="Type DELETE" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
+                          <input data-profile-delete-confirm type="text" autocomplete="off" placeholder="Type DELETE" class="h-10 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
                         </label>
                         <p data-profile-delete-hint class="min-h-4 text-xs text-muted-foreground"></p>
                       </div>
                       <div class="flex justify-end bg-background px-4 py-3">
-                        <button data-profile-delete-account type="button" disabled class="inline-flex h-9 items-center justify-center rounded-md border border-destructive/40 px-4 text-sm font-semibold text-destructive opacity-40 hover:bg-destructive/10 transition-colors">
+                        <button data-profile-delete-account type="button" disabled class="fm-btn fm-btn-sm fm-btn-danger">
                           Delete account
                         </button>
                       </div>

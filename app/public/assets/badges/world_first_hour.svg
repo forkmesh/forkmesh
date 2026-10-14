@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="World Explorer">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9ecbff"/><stop offset="1" stop-color="#1f5fbf"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f3a7a"/><stop offset="1" stop-color="#08244f"/></linearGradient>
+<clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#1f5fbf" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<clipPath id="globe"><circle cx="64" cy="64" r="30"/></clipPath>
+<circle cx="64" cy="64" r="30" fill="#388bfd"/>
+<g clip-path="url(#globe)" fill="#3fb950">
+<path d="M38 44 C46 36 58 38 60 46 C62 54 52 54 50 62 C48 70 40 70 36 64 Z"/>
+<path d="M66 40 C76 36 90 44 92 54 C86 56 80 52 76 58 C72 62 66 56 66 50 Z"/>
+<path d="M62 72 C70 68 82 72 82 82 C80 92 70 96 64 90 C60 84 58 76 62 72 Z"/>
+</g>
+<g clip-path="url(#globe)" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="2.5">
+<ellipse cx="64" cy="64" rx="13" ry="30"/>
+<path d="M34 64 H94"/>
+</g>
+<ellipse cx="64" cy="64" rx="43" ry="13" transform="rotate(-24 64 64)" fill="none" stroke="#ffd33d" stroke-width="4.5"/>
+<circle cx="102" cy="46" r="6.5" fill="#ffd33d" stroke="#08244f" stroke-width="2.5"/>
+</svg>

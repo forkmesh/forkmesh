@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Coder">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ff0a0"/><stop offset="1" stop-color="#1a7f37"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1f2933"/><stop offset="1" stop-color="#0d1117"/></linearGradient>
+<clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#1a7f37" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<path d="M46 45 L28 64 L46 83 M82 45 L100 64 L82 83" stroke="#7ee787" stroke-width="9"/>
+<path d="M71 40 L57 88" stroke="#f0f6fc" stroke-width="8"/>
+</g>
+</svg>
