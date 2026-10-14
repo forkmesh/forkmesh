@@ -84,14 +84,14 @@ struct LocalFileEditorScreen: View {
 
     private func startSave() {
         Task { @MainActor in
-            guard await AccountFeature.requireAccount(action: "edit files") else { return }
+            guard await AccountFeature.requireLocalAccess(action: "edit files") else { return }
             await model.save()
         }
     }
 
     private func startDelete() {
         Task { @MainActor in
-            guard await AccountFeature.requireAccount(action: "delete files") else { return }
+            guard await AccountFeature.requireLocalAccess(action: "delete files") else { return }
             confirmingDelete = true
         }
     }
