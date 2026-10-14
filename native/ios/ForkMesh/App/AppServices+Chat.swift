@@ -142,6 +142,12 @@ struct ChatInstaller: AppServicesInstaller {
         let prefs: KeyValueStore? = Services.get(KeyValueStore.self)
         calls.setFace(prefs?.string(forKey: DirectCallEngine.faceKey) ?? "")
         calls.onFaceChanged = { (face: String) in prefs?.set(face, forKey: DirectCallEngine.faceKey) }
+        calls.setBackground(
+            prefs?.string(forKey: DirectCallEngine.backgroundKey) ?? "", image: CallBackgroundStore.load())
+        calls.onBackgroundChanged = { (background: String, image: String) in
+            prefs?.set(background, forKey: DirectCallEngine.backgroundKey)
+            CallBackgroundStore.save(image)
+        }
         calls.setVoiceChoice(prefs?.string(forKey: DirectCallEngine.voiceKey) ?? DirectCallEngine.voiceMatchFace)
         calls.onVoiceChanged = { (choice: String) in prefs?.set(choice, forKey: DirectCallEngine.voiceKey) }
         direct.onCallFrame = { (plain: JSONObject, conversation: String) in

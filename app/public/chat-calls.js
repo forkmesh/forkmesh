@@ -1,10 +1,23 @@
 import {
   CALL_FACES,
   CALL_FACE_STORAGE_KEY,
+  callBackgroundsSupported,
   callFaceById,
   callFacesSupported,
   createFaceStage,
 } from "./chat-call-faces.js";
+import {
+  CALL_BACKGROUNDS,
+  callBackgroundById,
+  callBackgroundThumbUrl,
+  customBackgroundFromFile,
+  rememberCallBackground,
+  savedCallBackground,
+} from "./chat-call-backgrounds.js";
+import {
+  createVoicePreview,
+  mountVoicePreviewControls,
+} from "./chat-call-voice.js";
 import {
   callVoiceChoices,
   callVoiceLabel,
@@ -62,7 +75,9 @@ export function createChatCalls({
   documentRef = globalThis.document,
   storage = globalThis.localStorage,
   facesSupported = () => callFacesSupported(documentRef),
+  backgroundsSupported = () => callBackgroundsSupported(documentRef),
   createFaceStageImpl = createFaceStage,
+  createVoicePreviewImpl = createVoicePreview,
   voicesSupported = () => callVoicesSupported(globalThis),
   createVoiceStageImpl = createVoiceStage,
   voiceModuleUrl = new URL("./chat-call-voice-worklet.js", import.meta.url).href,
@@ -88,6 +103,11 @@ export function createChatCalls({
   const voiceRow = documentRef.querySelector("#chat-call-voice-row");
   const voiceSelect = documentRef.querySelector("#chat-call-voice");
   const voiceState = documentRef.querySelector("#chat-call-voice-state");
+  const backgroundRow = documentRef.querySelector("#chat-call-background-row");
+  const backgroundOptions = documentRef.querySelector("#chat-call-background-options");
+  const backgroundFile = documentRef.querySelector("#chat-call-background-file");
+  const previewSlot = documentRef.querySelector("#chat-call-preview-slot");
+  const startBtn = documentRef.querySelector("#chat-call-start");
 
   let call = null;
   let invite = null;
@@ -116,12 +136,19 @@ export function createChatCalls({
     if (cameraBtn) cameraBtn.hidden = call.media !== "video";
     if (faceRow) faceRow.hidden = call.media !== "video" || !facesSupported();
     if (faceSelect) faceSelect.value = call.stage?.face() || "";
+    renderBackgrounds();
+    const previewing = call.phase === "preview";
+    panel.classList.toggle("is-preview", previewing);
+    if (startBtn) startBtn.hidden = !previewing;
+    if (hangupBtn) hangupBtn.textContent = previewing ? "Close" : "Hang up";
+    if (previewSlot) previewSlot.hidden = !previewing;
     if (muteBtn) muteBtn.textContent = call.muted ? "Unmute" : "Mute";
     if (cameraBtn) {
       cameraBtn.textContent = call.cameraOff ? "Camera on" : "Camera off";
     }
     panel.classList.toggle("is-video", call.media === "video");
     renderVoice();
+    if (voiceRow && call.phase === "preview") voiceRow.hidden = true;
     panel.hidden = false;
   }
 
@@ -137,7 +164,7 @@ export function createChatCalls({
 
   function voiceFace() {
     if (!call) return "";
-    return call.media === "video" ? call.stage?.face() || "" : savedFace();
+    return call.media === "video" ? call.faceId || call.stage?.face() || "" : savedFace();
   }
 
   function audioSender() {
@@ -157,6 +184,10 @@ export function createChatCalls({
   function applyVoice() {
     if (!call) return Promise.resolve();
     const current = call;
+    if (current.phase === "preview") {
+      current.voicePreview?.setFace(current.faceId);
+      return Promise.resolve();
+    }
     const id = resolveCallVoice(current.voiceChoice, voiceFace());
     if (current.voiceStage) {
       current.voiceStage.setVoice(id);
@@ -262,13 +293,34 @@ export function createChatCalls({
     if (!call || call.media !== "video") return;
     const face = callFaceById(id);
     if (face && !facesSupported()) return;
-    if (face && call.stage) {
-      call.stage.setFace(face.id);
-    } else if (face) {
+    call.faceId = face?.id || "";
+    refreshStage();
+  }
+
+  function useBackground(id, image = "") {
+    if (!call || call.media !== "video") return;
+    const background = callBackgroundById(id);
+    if (background?.id && !backgroundsSupported()) return;
+    call.backgroundId = background?.id || "";
+    call.backgroundImage = background?.custom ? image : "";
+    refreshStage();
+  }
+
+  function refreshStage() {
+    if (!call || call.media !== "video") return;
+    const wanted = Boolean(call.faceId || call.backgroundId);
+    if (wanted && call.stage) {
+      if (call.stage.face() !== call.faceId) call.stage.setFace(call.faceId);
+      if ((call.stage.background?.() || "") !== call.backgroundId || call.backgroundId === "custom") {
+        call.stage.setBackground?.(call.backgroundId, call.backgroundImage);
+      }
+    } else if (wanted) {
       try {
         call.stage = createFaceStageImpl({
           cameraStream: call.localStream,
-          faceId: face.id,
+          faceId: call.faceId,
+          backgroundId: call.backgroundId,
+          backgroundImage: call.backgroundImage,
           documentRef,
         });
       } catch (_) {
@@ -288,9 +340,62 @@ export function createChatCalls({
     renderPanel();
   }
 
+  function renderBackgrounds() {
+    if (!backgroundRow || !call) return;
+    backgroundRow.hidden = call.media !== "video" || !backgroundsSupported();
+    for (const button of backgroundOptions?.querySelectorAll?.("[data-background]") || []) {
+      const on = button.getAttribute("data-background") === (call.backgroundId || "");
+      button.setAttribute("aria-checked", on ? "true" : "false");
+      button.classList.toggle("is-selected", on);
+    }
+  }
+
+  function chooseBackground(id, image = "") {
+    const background = callBackgroundById(id);
+    if (!background) return;
+    if (background.custom && !image) {
+      const saved = savedCallBackground(storage);
+      if (saved.id === background.id) image = saved.image;
+      else {
+        backgroundFile?.click?.();
+        return;
+      }
+    }
+    rememberCallBackground(background.id, image, storage);
+    useBackground(background.id, image);
+  }
+
+  function buildBackgroundOptions() {
+    if (!backgroundOptions || backgroundOptions.querySelector?.("[data-background]")) return;
+    for (const background of CALL_BACKGROUNDS) {
+      const button = documentRef.createElement("button");
+      button.type = "button";
+      button.className = "chat-call-background-option";
+      button.setAttribute("role", "radio");
+      button.setAttribute("data-background", background.id);
+      button.setAttribute("aria-checked", "false");
+      button.title = background.label;
+      const swatch = documentRef.createElement("span");
+      swatch.className = `chat-call-background-swatch is-${background.mode}${background.custom ? " is-custom" : ""}`;
+      const thumb = callBackgroundThumbUrl(background);
+      if (thumb) swatch.style.backgroundImage = `url("${thumb}")`;
+      if (background.custom) {
+        const saved = savedCallBackground(storage);
+        if (saved.image) swatch.style.backgroundImage = `url("${saved.image}")`;
+      }
+      const name = documentRef.createElement("span");
+      name.className = "chat-call-background-name";
+      name.textContent = background.label;
+      button.append(swatch, name);
+      button.addEventListener("click", () => chooseBackground(background.id));
+      backgroundOptions.append(button);
+    }
+  }
+
   function teardown() {
     if (!call) return;
     clearCallTimers();
+    stopVoicePreview();
     try {
       call.stage?.stop();
     } catch (_) {}
@@ -314,7 +419,7 @@ export function createChatCalls({
 
   function endCall({ notifyPeer = false, reason = "" } = {}) {
     if (!call) return;
-    if (notifyPeer) void signal("call-bye", reason ? { reason } : {});
+    if (notifyPeer && call.phase !== "preview") void signal("call-bye", reason ? { reason } : {});
     teardown();
   }
 
@@ -387,10 +492,98 @@ export function createChatCalls({
     }
   }
 
+  function useSaved() {
+    const saved = savedCallBackground(storage);
+    call.faceId = facesSupported() ? savedFace() : "";
+    call.backgroundId = backgroundsSupported() ? saved.id : "";
+    call.backgroundImage = saved.image;
+    refreshStage();
+  }
+
+  function takePreview(media) {
+    if (!call || call.phase !== "preview") return null;
+    const kept = call;
+    stopVoicePreview({ keepStream: true });
+    if (media !== "video") {
+      teardown();
+      return null;
+    }
+    clearCallTimers();
+    call = null;
+    return kept;
+  }
+
+  function stopVoicePreview(options) {
+    try {
+      call?.voicePreview?.stop(options);
+    } catch (_) {}
+    try {
+      call?.voicePreviewUnmount?.();
+    } catch (_) {}
+    if (call) {
+      call.voicePreview = null;
+      call.voicePreviewUnmount = null;
+    }
+  }
+
+  async function preview(channelKey, partner) {
+    if (call || !channelKey || !partner) return false;
+    const localStream = await localMedia("video");
+    if (call) {
+      for (const track of localStream.getTracks()) track.stop();
+      return false;
+    }
+    call = {
+      channelKey,
+      callId: "",
+      partner: String(partner),
+      media: "video",
+      role: "preview",
+      phase: "preview",
+      peerId: "",
+      pc: null,
+      localStream,
+      remoteStream: null,
+      pendingIce: [],
+      muted: false,
+      cameraOff: false,
+      stage: null,
+      faceId: "",
+      backgroundId: "",
+      backgroundImage: "",
+      voiceChoice: savedVoiceChoice(storage),
+      voiceStage: null,
+      voiceStarting: null,
+      voicePreview: null,
+      voicePreviewUnmount: null,
+      inviteTimer: null,
+      ringTimer: null,
+      disconnectTimer: null,
+    };
+    useSaved();
+    setPhase("preview", "Preview · only you can see this");
+    renderPanel();
+    const previewing = call;
+    Promise.resolve()
+      .then(() => createVoicePreviewImpl({ micStream: localStream, faceId: call.faceId, storage }))
+      .then((voice) => {
+        if (call !== previewing) {
+          voice?.stop({ keepStream: true });
+          return;
+        }
+        call.voicePreview = voice;
+        call.voicePreviewUnmount = mountVoicePreviewControls(previewSlot, voice, { documentRef });
+      })
+      .catch(() => {});
+    onActiveChange();
+    return true;
+  }
+
   async function start(channelKey, partner, media) {
+    const previewed = call?.phase === "preview" && call.channelKey === channelKey ? takePreview(media) : null;
     if (call || !channelKey || !partner) return false;
     const kind = media === "video" ? "video" : "audio";
-    const localStream = await localMedia(kind);
+    const localStream = previewed?.localStream || await localMedia(kind);
     if (call) {
       for (const track of localStream.getTracks()) track.stop();
       return false;
@@ -409,7 +602,10 @@ export function createChatCalls({
       pendingIce: [],
       muted: false,
       cameraOff: false,
-      stage: null,
+      stage: previewed?.stage || null,
+      faceId: "",
+      backgroundId: "",
+      backgroundImage: "",
       voiceChoice: savedVoiceChoice(storage),
       voiceStage: null,
       voiceStarting: null,
@@ -417,7 +613,14 @@ export function createChatCalls({
       ringTimer: null,
       disconnectTimer: null,
     };
-    if (kind === "video") useFace(savedFace());
+    if (kind === "video" && previewed) {
+      call.faceId = previewed.faceId;
+      call.backgroundId = previewed.backgroundId;
+      call.backgroundImage = previewed.backgroundImage;
+      refreshStage();
+    } else if (kind === "video") {
+      useSaved();
+    }
     void applyVoice();
     attachLocalPreview();
     renderPanel();
@@ -436,10 +639,11 @@ export function createChatCalls({
 
   async function acceptInvite() {
     const pending = invite;
+    const previewed = call?.phase === "preview" ? takePreview(pending?.media) : null;
     if (!pending || call) return;
-    let localStream;
+    let localStream = previewed?.localStream || null;
     try {
-      localStream = await localMedia(pending.media);
+      localStream = localStream || await localMedia(pending.media);
     } catch (error) {
       hideIncoming();
       void sendSignal(pending.channelKey, "call-decline", {
@@ -468,7 +672,10 @@ export function createChatCalls({
       pendingIce: [],
       muted: false,
       cameraOff: false,
-      stage: null,
+      stage: previewed?.stage || null,
+      faceId: "",
+      backgroundId: "",
+      backgroundImage: "",
       voiceChoice: savedVoiceChoice(storage),
       voiceStage: null,
       voiceStarting: null,
@@ -476,7 +683,14 @@ export function createChatCalls({
       ringTimer: null,
       disconnectTimer: null,
     };
-    if (call.media === "video") useFace(savedFace());
+    if (call.media === "video" && previewed) {
+      call.faceId = previewed.faceId;
+      call.backgroundId = previewed.backgroundId;
+      call.backgroundImage = previewed.backgroundImage;
+      refreshStage();
+    } else if (call.media === "video") {
+      useSaved();
+    }
     void applyVoice();
     attachLocalPreview();
     renderPanel();
@@ -673,9 +887,29 @@ export function createChatCalls({
     renderVoice();
   }
   voiceSelect?.addEventListener("change", () => chooseVoice(voiceSelect.value));
+  buildBackgroundOptions();
+  backgroundFile?.addEventListener("change", () => {
+    const file = backgroundFile.files?.[0];
+    backgroundFile.value = "";
+    if (!file) return;
+    customBackgroundFromFile(file, documentRef).then((image) => {
+      const swatch = backgroundOptions?.querySelector?.('[data-background="custom"] .chat-call-background-swatch');
+      if (swatch) swatch.style.backgroundImage = `url("${image}")`;
+      chooseBackground("custom", image);
+    }).catch(() => {});
+  });
+  startBtn?.addEventListener("click", () => {
+    if (call?.phase !== "preview") return;
+    start(call.channelKey, call.partner, "video").catch(() => {});
+  });
 
   return {
     start,
+    preview,
+    previewing: () => call?.phase === "preview",
+    setBackground: (id, image = "") => chooseBackground(id, image),
+    background: () => call?.backgroundId || "",
+    stage: () => call?.stage || null,
     handleFrame,
     hangUp: () => endCall({ notifyPeer: true }),
     active: () => Boolean(call),
