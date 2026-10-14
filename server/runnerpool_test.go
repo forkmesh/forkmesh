@@ -414,6 +414,9 @@ func TestPoolAPIKeyFileMustBeOwnerOnly(t *testing.T) {
 	if err := os.WriteFile(path, []byte("abc\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := readPoolAPIKey(path); err == nil {
 		t.Fatal("world-readable key accepted")
 	}

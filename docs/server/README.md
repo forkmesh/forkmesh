@@ -173,6 +173,16 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
 - Ref updates are compare-and-swap: `reconcileUpstreamRefs` reads refs with
   one `for-each-ref` and retries a guarded `update-ref` that lost a race with
   a direct push (at most three attempts).
+- **Tests run in the Actions sandbox**, not a login shell: `umask 0077`,
+  `GIT_CONFIG_GLOBAL=/dev/null` and a passwd entry git cannot build an identity
+  from. A test that wants a group/world mode bit sets it with `os.Chmod` (or
+  pins `syscall.Umask(0o022)`, the service umask that
+  `makePublicRepositoryTraversable` relies on), and every `git commit` /
+  `commit-tree` passes `-c user.name=… -c user.email=…` or runs in a clone
+  with a local `user.*`. Four tests broke on this from the day the Go suite
+  joined CI (2026-10-14) until it was fixed; reproduce with
+  `umask 077; GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1
+  GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true go test ./...`.
 
 ## Related docs
 

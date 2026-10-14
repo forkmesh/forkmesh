@@ -87,7 +87,8 @@ func TestConflictingCoreMainsStillConvergeOnTheNewerCommit(t *testing.T) {
 	n1, n2 := cloneCore(t, bare), cloneCore(t, bare)
 	commitToCore(t, n1, "README.md", "n1\n")
 	run(t, ".", "git", "--git-dir="+n1, "update-ref", "refs/heads/main",
-		run(t, ".", "git", "--git-dir="+n1, "commit-tree", "-p", "main",
+		run(t, ".", "git", "--git-dir="+n1, "-c", "user.name=Test", "-c", "user.email=test@example.test",
+			"commit-tree", "-p", "main",
 			"-m", "older", run(t, ".", "git", "--git-dir="+n1, "rev-parse", "main^{tree}")))
 	n2Tip := commitToCore(t, n2, "README.md", "n2\n")
 	n1Tip := coreMain(t, n1)
@@ -109,9 +110,11 @@ func TestADivergedSideBranchStillConvergesOnTheNewerCommit(t *testing.T) {
 	run(t, ".", "git", "--git-dir="+bare, "branch", "feature")
 	n1, n2 := cloneCore(t, bare), cloneCore(t, bare)
 	tree := run(t, ".", "git", "--git-dir="+n1, "rev-parse", "main^{tree}")
-	left := run(t, ".", "git", "--git-dir="+n1, "commit-tree", "-p", "feature", "-m", "left", tree)
+	left := run(t, ".", "git", "--git-dir="+n1, "-c", "user.name=Test", "-c", "user.email=test@example.test",
+		"commit-tree", "-p", "feature", "-m", "left", tree)
 	run(t, ".", "git", "--git-dir="+n1, "update-ref", "refs/heads/feature", left)
-	right := run(t, ".", "git", "--git-dir="+n2, "commit-tree", "-p", "feature", "-m", "right", tree)
+	right := run(t, ".", "git", "--git-dir="+n2, "-c", "user.name=Test", "-c", "user.email=test@example.test",
+		"commit-tree", "-p", "feature", "-m", "right", tree)
 	run(t, ".", "git", "--git-dir="+n2, "update-ref", "refs/heads/feature", right)
 	if err := syncRepository(context.Background(), Repository{GitDir: n1}, []string{n2}, ""); err != nil {
 		t.Fatal(err)
