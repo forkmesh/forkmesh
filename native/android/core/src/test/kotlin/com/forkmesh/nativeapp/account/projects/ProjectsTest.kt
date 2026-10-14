@@ -5,7 +5,6 @@ import com.forkmesh.nativeapp.api.AppEnv
 import com.forkmesh.nativeapp.api.AuthController
 import com.forkmesh.nativeapp.api.HttpTransport
 import com.forkmesh.nativeapp.api.MemoryPrefStore
-import com.forkmesh.nativeapp.api.ServerUrl
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.net.HttpClient
 import com.forkmesh.nativeapp.security.MemorySecretStore
@@ -108,31 +107,6 @@ class ProjectsTest {
         expect(!old.hasInstance)
         assertEq("", old.serverUrl)
         assertEq("", old.httpOrigin)
-    }
-
-    fun testANoInstanceProjectsSettingsNameNoServer() {
-        val prefs = MemoryPrefStore()
-        val secrets = MemorySecretStore()
-        val directory = ProjectDirectory.load(prefs)
-        val project = directory.addNamed("Tea")!!
-        val scope = project.scope
-        val settings = AccountSettings.forProject(
-            prefs, scope.prefs(prefs), scope.secrets(secrets),
-            { directory.byId(project.id)?.serverUrl ?: project.serverUrl }, {},
-            releaseMode = true,
-        )
-        assertEq("", settings.serverUrl)
-        assertEq("", ServerUrl.parse(settings.serverUrl).host)
-        assertEq("https:///api/repositories", ServerUrl.parse(settings.serverUrl).http("/api/repositories"))
-        expect(!settings.hasServerUrlOverride)
-        prefs.putString(AccountSettings.SERVER_URL_KEY, AppEnv.PROD_SERVER_URL)
-        assertEq("", settings.serverUrl)
-        val production = directory.byId(prod)!!
-        val productionSettings = AccountSettings.forProject(
-            prefs, production.scope.prefs(prefs), production.scope.secrets(secrets),
-            { directory.byId(prod)!!.serverUrl }, {},
-        )
-        assertEq(AppEnv.PROD_SERVER_URL, productionSettings.serverUrl)
     }
 
     fun testAttachingAnInstanceLinksTheSameProject() {

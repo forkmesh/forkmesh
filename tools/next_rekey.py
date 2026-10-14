@@ -102,6 +102,8 @@ DROP_TABLES = {
     "host_secrets": "the vault: next_vault.py sync re-seals it under the new key",
     "org_office_visits": "Office attendance (14-day retention), keyed by member blind indexes",
     "organization_agent_presence": "Office agent presence (hours of retention), keyed by account blind indexes",
+    "probe_visitors": "404 probe scores keyed by an IP blind index (an hour of window)",
+    "probe_bans": "automatic probe bans keyed by an IP blind index; the next sweep lifts their request_block_rules rows",
 }
 
 # Every *_bi column of the schema (app/migrations + app/src/schema.py).
@@ -123,6 +125,8 @@ BI_COLUMNS = {
     "ap_actors": ("actor_bi",),
     "ap_comments": ("context_bi", "remote_id_bi", "parent_remote_id_bi"),
     "ap_digest_queues": ("scope_bi",),
+    "probe_bans": ("visitor_bi",),
+    "probe_visitors": ("visitor_bi",),
     "ap_followers": ("actor_bi",),
     "ap_mentions": ("remote_id_bi",),
     "ap_objects": ("actor_bi", "context_bi"),
@@ -429,6 +433,7 @@ CIPHER_COLUMNS = {
 CIPHER_COLUMNS["ad_network_ads"] = ("owner_sealed",)
 CIPHER_COLUMNS["world_element_purchases"] = ("deposit_secret",)
 CIPHER_COLUMNS["not_found_paths"] = ("last_client",)
+CIPHER_COLUMNS["probe_bans"] = ("client",)
 
 # Client-sealed chat envelopes under DATA_KEY-derived room passphrases.
 CHAT_TABLE = ("chat_history", "body")

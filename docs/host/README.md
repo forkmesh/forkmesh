@@ -379,6 +379,11 @@ and skip when `rqlited` is missing (`RQLITED=/path` picks a binary).
 
 ## Recent changes
 
+- 2026-10-13: the App adds `request_block_rules` rows itself: a visitor whose
+  404s are scanner probes gets an `auto-probe-*` `ip` (or IPv6 `/64` `cidr`)
+  row with priority 0, deleted when the ban ends. Nothing here changed; the
+  rows load and render into Caddy like any other
+  ([../app/probe-auto-ban.md](../app/probe-auto-ban.md)).
 - 2026-10-07: ChatGPT is no longer answered `403 Forbidden`. The generic
   `bot` keyword rule matched `ChatGPT-User/1.0; +https://openai.com/bot`
   and `OAI-SearchBot`, so forkmesh.com (Cloudflare WAF), app.forkmesh.com

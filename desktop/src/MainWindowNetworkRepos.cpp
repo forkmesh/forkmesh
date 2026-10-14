@@ -686,16 +686,6 @@ void MainWindow::refreshNetworkReposPage()
     // which stands down while this page is hidden; catch up now that it is up.
     if (m_mirrorAdvertStale)
         refreshMirrorAdverts();
-    if (projectInstancePending()) {
-        ++m_networkReposLoadGen;
-        m_networkReposTable->setRowCount(0);
-        m_networkReposStatus->setText(QStringLiteral(
-            "Choose an instance: this project is not connected to one, so it lists no "
-            "repositories from the network."));
-        if (m_networkReposRefreshButton)
-            m_networkReposRefreshButton->setEnabled(true);
-        return;
-    }
     if (!m_networkAccess) {
         m_networkReposStatus->setText(QStringLiteral("Network is not connected."));
         return;

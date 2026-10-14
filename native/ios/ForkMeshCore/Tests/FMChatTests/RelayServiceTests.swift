@@ -6,6 +6,7 @@ import FMBase
 import FMCrypto
 import FMNet
 import Foundation
+import Observation
 import XCTest
 
 @testable import FMChat
@@ -350,6 +351,36 @@ final class RelayServiceTests: XCTestCase {
         await h.close()
     }
 
+    func testRepeatFramesFromAKnownPeerDoNotRedrawTheOnlineCount() async throws {
+        let h = try await RelayHarness.start()
+        let now = Date().epochMillis
+        try await h.sendProtected([
+            "type": "presence", "id": "seen-1", "senderId": "node-a", "sender": "Ada", "ownerUser": "ada",
+            "platform": "linux", "ts": .int(now),
+        ])
+        let joined = await waitUntil(2) { h.relay.onlineCount == 2 }
+        XCTAssertTrue(joined)
+        let flag = RosterChangeFlag()
+        withObservationTracking { _ = h.relay.onlineCount } onChange: { flag.set() }
+        for index in 0..<5 {
+            try await h.sendProtected([
+                "type": "chat", "id": .string("chat-\(index)"), "senderId": "node-a", "sender": "Ada",
+                "ownerUser": "ada", "platform": "linux", "text": "hi", "ts": .int(now + Int64(index)),
+            ])
+        }
+        let delivered = await waitUntil(2) { h.relay.messages("#general").count >= 5 }
+        XCTAssertTrue(delivered)
+        XCTAssertFalse(flag.value, "a known peer's frames only refresh its last-seen time")
+        try await h.sendProtected([
+            "type": "presence", "id": "seen-2", "senderId": "node-b", "sender": "Bo", "ownerUser": "bo",
+            "platform": "ios", "ts": .int(now),
+        ])
+        let grew = await waitUntil(2) { h.relay.onlineCount == 3 }
+        XCTAssertTrue(grew)
+        XCTAssertTrue(flag.value, "a new peer changes the count")
+        await h.close()
+    }
+
     func testYourOtherDevicesJoinYourOwnRosterEntry() async throws {
         let h = try await RelayHarness.start()
         try await h.sendProtected([
@@ -469,4 +500,11 @@ final class RelayServiceTests: XCTestCase {
         let longId = Member(id: "NodeIdentifierLong", name: "")
         XCTAssertEqual(RelayService.shortIdentity(longId), "Node…Long")
     }
+}
+
+final class RosterChangeFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var raised = false
+    var value: Bool { lock.lock(); defer { lock.unlock() }; return raised }
+    func set() { lock.lock(); raised = true; lock.unlock() }
 }

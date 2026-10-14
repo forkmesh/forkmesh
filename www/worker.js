@@ -589,6 +589,7 @@ async function reportNotFound(request, env, ctx, response) {
         path: new URL(request.url).pathname,
         referrer: String(request.headers.get("referer") || "").slice(0, 500),
         userAgent: String(request.headers.get("user-agent") || "").slice(0, 500),
+        fetchSite: String(request.headers.get("sec-fetch-site") || "").slice(0, 20),
       }),
     }), env);
   })().then(() => undefined, () => undefined);

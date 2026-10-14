@@ -1727,8 +1727,6 @@ void MainWindow::updateRepoDetailStatus()
 
 QUrl MainWindow::catalogApiUrl() const
 {
-    if (projectInstancePending())
-        return {};
     QUrl url(canonicalServerUrl(m_serverUrlEdit ? m_serverUrlEdit->text() : QString()));
     if (!url.isValid() || url.host().isEmpty())
         url = QUrl(kDefaultServerUrl);
@@ -1744,8 +1742,6 @@ QUrl MainWindow::catalogApiUrl() const
 
 QString MainWindow::activeRelayOrigin() const
 {
-    if (projectInstancePending())
-        return {};
     const QString input = m_serverUrlEdit ? m_serverUrlEdit->text() : QString();
     thread_local bool cached = false;
     thread_local QString cachedInput;
@@ -1800,8 +1796,6 @@ void MainWindow::stampRepositoryRelay(RepositoryRecord &repo) const
 bool MainWindow::repositoryBelongsToActiveRelay(
     const RepositoryRecord &repo) const
 {
-    if (projectInstancePending())
-        return !repo.previewOnly && !repo.localPath.trimmed().isEmpty();
     const QString active = activeRelayOrigin();
     return !active.isEmpty() &&
            repositoryRelayOrigin(repo).compare(active, Qt::CaseInsensitive) == 0;
@@ -1848,7 +1842,7 @@ void MainWindow::saveRelayRepositoryLists() const
 void MainWindow::refreshRelayRepositoryList()
 {
     const QString origin = activeRelayOrigin();
-    if (!m_networkAccess || origin.isEmpty() || projectInstancePending() ||
+    if (!m_networkAccess || origin.isEmpty() ||
         m_relayRepositoryListInFlight.contains(origin))
         return;
     QNetworkRequest request(catalogListUrl());
