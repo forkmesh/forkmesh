@@ -19,17 +19,16 @@
       };
 
       const overlay = document.createElement("div");
-      overlay.className = "fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-background/80 p-4 pt-10 backdrop-blur-sm";
+      overlay.className = "fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-background/70 p-4 pt-10";
       overlay.setAttribute("role", "dialog");
       overlay.setAttribute("aria-modal", "true");
       overlay.setAttribute("aria-label", options.dialogLabel || "Resize image");
       overlay.innerHTML = `
-        <div class="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl">
-          <div class="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <span class="min-w-0 truncate text-sm font-semibold text-foreground">${escapeHtml(options.title || `Resize "${file.name}"`)}</span>
-            <button type="button" data-resize-cancel class="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">Cancel</button>
+        <div class="fm-dialog w-full max-w-2xl">
+          <div class="fm-dialog-header">
+            <span class="fm-dialog-title truncate">${escapeHtml(options.title || `Resize "${file.name}"`)}</span>
           </div>
-          <div class="grid gap-3 overflow-auto p-4">
+          <div class="fm-dialog-body grid gap-3">
             <p class="text-xs text-muted-foreground">${escapeHtml(options.description || "Drag on the image to crop it, then it's auto-compressed to fit. Attached images share the issue's size limit - redraw a smaller crop if it still doesn't fit.")}</p>
             <div data-resize-stage class="relative mx-auto inline-block max-h-[24rem] max-w-full touch-none select-none overflow-hidden rounded-md border border-border bg-secondary/30">
               <img data-resize-image src="${objectUrl}" class="block max-h-[24rem] max-w-full select-none" alt="" draggable="false" />
@@ -37,11 +36,12 @@
             </div>
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span data-resize-status class="text-muted-foreground">Estimating size…</span>
-              <button type="button" data-resize-reset class="rounded-md border border-border px-2 py-1 text-muted-foreground hover:bg-secondary hover:text-foreground">Reset crop</button>
+              <button type="button" data-resize-reset class="fm-btn fm-btn-sm fm-btn-invisible">Reset crop</button>
             </div>
           </div>
-          <div class="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-            <button type="button" data-resize-add disabled class="inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="check" class="h-3.5 w-3.5"></i>${escapeHtml(confirmLabel)}</button>
+          <div class="fm-dialog-footer">
+            <button type="button" data-resize-cancel class="fm-btn fm-btn-sm">Cancel</button>
+            <button type="button" data-resize-add disabled class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="check"></i>${escapeHtml(confirmLabel)}</button>
           </div>
         </div>`;
       document.body.appendChild(overlay);
@@ -311,8 +311,8 @@
           <button type="button" data-markup-undo title="Undo (Ctrl+Z)" aria-label="Undo" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"><i data-lucide="undo-2" class="h-4 w-4"></i></button>
           <button type="button" data-markup-clear class="inline-flex h-7 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40">Clear</button>
           <span class="ml-auto flex items-center gap-1.5">
-            <button type="button" data-markup-cancel class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>
-            <button type="button" data-markup-done class="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"><i data-lucide="check" class="h-3.5 w-3.5"></i>Done</button>
+            <button type="button" data-markup-cancel class="fm-btn fm-btn-sm">Cancel</button>
+            <button type="button" data-markup-done class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="check"></i>Done</button>
           </span>
         </div>
         <canvas data-markup-canvas aria-label="Mark up ${escapeHtml(name)}" class="block h-auto max-h-[70vh] w-auto max-w-full cursor-crosshair touch-none select-none justify-self-center rounded border border-border bg-secondary/30"></canvas>
@@ -1405,14 +1405,20 @@
     }
     if (action === "delete-issue") {
       const title = String(detail.parsed?.values?.title || `issue #${number}`);
-      if (!window.confirm(
-        `Delete issue #${number} “${title}”?\n\nThe repository's node removes it everywhere once the signed deletion syncs. Its Git history keeps the record.`,
-      )) return;
+      if (!await confirmAccountAction({
+        title: `Delete issue #${number} “${title}”?`,
+        body: "The repository's node removes it everywhere once the signed deletion syncs. Its Git history keeps the record.",
+        confirmLabel: "Delete issue",
+      })) return;
       type = "delete";
       fields = { target: "self" };
     }
     if (action === "delete-comment") {
-      if (!window.confirm("Delete this comment? Its Git history remains recoverable.")) return;
+      if (!await confirmAccountAction({
+        title: "Delete this comment?",
+        body: "Its Git history remains recoverable.",
+        confirmLabel: "Delete comment",
+      })) return;
       type = "delete";
       fields = { target };
     }
@@ -1745,7 +1751,12 @@
       : candidates.length === 1
       ? "Create one sub-issue from this unchecked task? The child will link back here and the task will gain its issue number."
       : `Create ${candidates.length} sub-issues from the unchecked tasks? Each child will link back here and each task will gain its issue number.`;
-    if (!window.confirm(prompt)) return;
+    if (!await confirmAccountAction({
+      title: requestedLine !== null ? "Turn this task into a sub-issue?" : "Create sub-issues?",
+      body: prompt,
+      confirmLabel: requestedLine !== null || candidates.length === 1 ? "Create sub-issue" : "Create sub-issues",
+      danger: false,
+    })) return;
 
     issueTaskMutationPending = true;
     setIssueTaskControlsBusy(true);

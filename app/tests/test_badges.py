@@ -661,3 +661,18 @@ def test_profile_sidebar_lists_earned_badges():
     script = (public / "js" / "04-account.js").read_text(encoding="utf-8")
     assert "renderProfileBadges(session);" in script
     assert 'fetchJson("/api/badges/" + encodeURIComponent(name))' in script
+
+
+def test_every_catalog_badge_has_a_medallion_and_the_card_shows_it():
+    folder = ROOT / "public" / "assets" / "badges"
+    for slug in badges.BADGE_DEFINITIONS:
+        art = (folder / (slug + ".svg")).read_text(encoding="utf-8")
+        assert art.startswith("<svg") and 'viewBox="0 0 128 128"' in art
+        assert "<script" not in art and "href=" not in art
+    script = (ROOT / "public" / "dashboard" / "js" / "04-account.js").read_text(
+        encoding="utf-8")
+    card = script.split("function profileBadgeMedalSources(slug)", 1)[1]
+    card = card.split("function renderProfileBadges(session)", 1)[0]
+    assert '"/assets/badges/" + slug + ".svg"' in card
+    assert "const icon = profileBadgeMedal(badge);" in card
+    assert "badge.icon" not in card

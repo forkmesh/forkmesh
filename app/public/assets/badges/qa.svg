@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="QA">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffdf5d"/><stop offset="1" stop-color="#a66f00"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1d4b3a"/><stop offset="1" stop-color="#0e2a20"/></linearGradient>
+<clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#a66f00" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<path d="M72 72 L92 92" stroke="#f6f8fa" stroke-width="11" stroke-linecap="round"/>
+<circle cx="56" cy="56" r="22" fill="#2b6a52" stroke="#f6f8fa" stroke-width="7"/>
+<g stroke="#ffa657" stroke-width="3.5" stroke-linecap="round">
+<path d="M47 52 L42 49 M47 60 L41 60 M48 67 L43 71 M65 52 L70 49 M65 60 L71 60 M64 67 L69 71"/>
+</g>
+<ellipse cx="56" cy="61" rx="9" ry="11" fill="#ffa657"/>
+<circle cx="56" cy="47" r="5.5" fill="#ffa657"/>
+<path d="M56 51 V71" stroke="#7a3a0b" stroke-width="2.5"/>
+</svg>

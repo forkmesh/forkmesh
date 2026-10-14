@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Hackathon Ambassador">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb8b3"/><stop offset="1" stop-color="#c42b26"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6e1717"/><stop offset="1" stop-color="#3d0a0a"/></linearGradient>
+<clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#c42b26" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<g transform="translate(-6 0)">
+<rect x="30" y="54" width="12" height="22" rx="4" fill="#ffd8d3"/>
+<path d="M42 54 L78 38 V92 L42 76 Z" fill="#ffffff"/>
+<rect x="76" y="34" width="9" height="62" rx="4" fill="#ffd8d3"/>
+<path d="M46 76 L52 94 H62 L58 80" fill="#ffd8d3"/>
+<g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="5">
+<path d="M93 54 A14 14 0 0 1 93 76"/>
+<path d="M100 45 A26 26 0 0 1 100 85" stroke-opacity=".65"/>
+</g>
+</g>
+</svg>
