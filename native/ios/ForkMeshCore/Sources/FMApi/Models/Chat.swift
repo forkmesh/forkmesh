@@ -18,11 +18,12 @@ public struct Member: Equatable, Hashable, Sendable, Identifiable {
     /// time: see `UserStatus.visibleAt`.
     public var userStatus: UserStatus
     public var diagnostics: JSONValue?
+    public var timeZone: String
 
     public init(
         id: String, name: String, isSelf: Bool = false, online: Bool = false, platform: String = "",
         version: String = "", mirrors: [String] = [], owner: String = "",
-        nodeName: String = "", userStatus: UserStatus = .empty, diagnostics: JSONValue? = nil
+        nodeName: String = "", userStatus: UserStatus = .empty, diagnostics: JSONValue? = nil, timeZone: String = ""
     ) {
         self.id = id
         self.name = name
@@ -35,6 +36,7 @@ public struct Member: Equatable, Hashable, Sendable, Identifiable {
         self.nodeName = nodeName
         self.userStatus = userStatus
         self.diagnostics = diagnostics
+        self.timeZone = timeZone
     }
 }
 
@@ -59,6 +61,10 @@ public struct MemberGroup: Equatable, Hashable, Sendable, Identifiable {
     public var userStatus: UserStatus {
         members.first { !$0.userStatus.isEmpty }?.userStatus ?? .empty
     }
+
+    public var timeZone: String { members.first { !$0.timeZone.isEmpty }?.timeZone ?? "" }
+
+    public var account: String { members.first { !$0.owner.isEmpty }?.owner.lowercased() ?? "" }
 
     public var primary: Member { members[0] }
     public var id: String { primary.id }

@@ -3267,7 +3267,7 @@ swiped: only the buttons that open and close them may move them.
 
 ### 2.0.97 Slack-style channel room, channel details, link previews and @here/@everyone (2026-10-14, iOS)
 
-The user sent two Slack screenshots (an - channel on iPhone and its
+The user sent two Slack screenshots (a channel on iPhone and its
 channel details sheet) and asked for the phone's channels to look like them,
 for previews of popular links like Slack's YouTube card (for 50 kinds of site,
 plus any site's own social image), for the room header to show the total number

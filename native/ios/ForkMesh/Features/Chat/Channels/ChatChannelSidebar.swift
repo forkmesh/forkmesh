@@ -26,6 +26,8 @@ struct ChatChannelSidebar: View {
     @State private var inviting: String?
     @State private var managing: OfficeRoom?
     @State private var leaving: String?
+    @State private var person: ChatPersonKey?
+    @State private var showingOnline: Bool = false
 
     private var canSetStatus: Bool { Services.get(UserStatusService.self)?.signedIn ?? false }
 
@@ -78,8 +80,8 @@ struct ChatChannelSidebar: View {
                     card {
                         ForEach(hub.memberGroups) { (group: MemberGroup) in
                             ChatMemberRow(
-                                group: group, selected: hub.currentConversation == "@\(group.id)",
-                                onTap: memberTap(group), onProfile: { onRoute(.profile(name: group.name)) }, retentionHub: hub)
+                                group: group, selected: memberSelected(group),
+                                onTap: memberTap(group), onProfile: { person = ChatPersonKey(group: group) }, retentionHub: hub)
                         }
                     }
                 }
@@ -99,6 +101,23 @@ struct ChatChannelSidebar: View {
             await hub.refreshAppCommands()
         }
         .sheet(isPresented: $statusSheet) { UserStatusSheet() }
+        .sheet(item: $person) { (key: ChatPersonKey) in
+            ChatPersonSheet(
+                hub: hub, person: key, onMessage: { (recipient: ChatRecipient) in open(recipient) },
+                onProfile: { (name: String) in onRoute(.profile(name: name)) })
+        }
+        .sheet(isPresented: $showingOnline) {
+            ChatOnlineSheet(
+                hub: hub,
+                onMessage: { (recipient: ChatRecipient) in
+                    showingOnline = false
+                    open(recipient)
+                },
+                onProfile: { (name: String) in
+                    showingOnline = false
+                    onRoute(.profile(name: name))
+                })
+        }
         .sheet(isPresented: $newChannel) { NewChatChannelSheet(hub: hub, onCreated: { select($0) }) }
         .sheet(item: Binding(get: { inviting.map(ChatSheetKey.init) }, set: { inviting = $0?.value })) { key in
             InviteToChannelSheet(hub: hub, channel: key.value)
@@ -239,8 +258,12 @@ struct ChatChannelSidebar: View {
         HStack(spacing: FmSpace.x2) {
             summaryStat(icon: "number", value: hub.channels.count + hub.officeChannels.count, label: "Channels", tint: fm.accent)
             summaryStat(icon: "envelope.badge", value: unreadCount, label: "Unread", tint: unreadCount > 0 ? fm.danger : fm.textTertiary)
-            summaryStat(
-                icon: "person.2.fill", value: hub.memberGroups.filter(\.online).count, label: "Online", tint: fm.success)
+            Button(action: { showingOnline = true }) {
+                summaryStat(
+                    icon: "person.2.fill", value: hub.memberGroups.filter(\.online).count, label: "Online", tint: fm.success)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows who is online")
         }
     }
 
@@ -459,7 +482,20 @@ struct ChatChannelSidebar: View {
         if group.isSelf {
             return canSetStatus ? { statusSheet = true } : nil
         }
-        return { select("@\(group.id)") }
+        return { open(ChatHub.recipient(for: group)) }
+    }
+
+    private func memberSelected(_ group: MemberGroup) -> Bool {
+        let current: String = hub.currentConversation
+        if current == "@\(group.id)" { return true }
+        guard DirectMessageFrames.isDirect(current), !group.account.isEmpty else { return false }
+        return hub.direct?.record(for: current)?.otherUser == group.account
+    }
+
+    private func open(_ recipient: ChatRecipient) {
+        Task {
+            if await hub.openPerson(recipient) { onSelected?() }
+        }
     }
 }
 
@@ -659,8 +695,8 @@ struct ChatMemberRow: View {
     private var visitor: Bool { ChatVisitorPresence.isTransientVisitor(name: group.name) }
 
     var body: some View {
-        Button(action: { onTap?() }) {
-            HStack(alignment: .center, spacing: FmSpace.x3) {
+        HStack(alignment: .center, spacing: FmSpace.x3) {
+            Button(action: onProfile) {
                 ZStack(alignment: .bottomTrailing) {
                     MessagesPersonAvatar(name: group.name, size: ChatChannelTile.leadingSize)
                     PresenceDot(online: group.online, away: away, size: 10)
@@ -668,18 +704,27 @@ struct ChatMemberRow: View {
                         .offset(x: 2, y: 2)
                 }
                 .frame(width: ChatChannelTile.leadingSize, height: ChatChannelTile.leadingSize)
-                details
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, FmSpace.x2)
-            .padding(.vertical, FmSpace.x2)
-            .frame(minHeight: 56)
-            .background(selected ? fm.accentSubtle : Color.clear)
-            .clipShape(FmRoundedShape(radius: FmRadius.md))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(visitor)
+            .accessibilityLabel("\(group.name)'s profile")
+            Button(action: { onTap?() }) {
+                details
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(onTap == nil)
+            .accessibilityHint(group.isSelf ? "" : "Opens your direct messages with \(group.name)")
         }
-        .buttonStyle(.plain)
-        .disabled(onTap == nil)
+        .padding(.horizontal, FmSpace.x2)
+        .padding(.vertical, FmSpace.x2)
+        .frame(minHeight: 56)
+        .background(selected ? fm.accentSubtle : Color.clear)
+        .clipShape(FmRoundedShape(radius: FmRadius.md))
+        .contentShape(Rectangle())
         .contextMenu {
             if !group.isSelf && !visitor {
                 Button(action: onProfile) { Label("View profile", systemImage: "person.crop.circle") }

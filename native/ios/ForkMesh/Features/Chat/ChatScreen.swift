@@ -220,6 +220,7 @@ private struct ChatTranscript<Drawer: View>: View {
     @State private var meshDebugShown: Bool = false
     @State private var channelInfo: Bool = false
     @State private var broadcast: ChatBroadcastWarning?
+    @State private var person: ChatPersonKey?
     @Environment(\.chatShellActions) private var shell
 
     var body: some View {
@@ -248,6 +249,11 @@ private struct ChatTranscript<Drawer: View>: View {
         }
         .sheet(item: $sharing) { (request: ChatShareRequest) in
             ChatShareMessageSheet(hub: hub, request: request)
+        }
+        .sheet(item: $person) { (key: ChatPersonKey) in
+            ChatPersonSheet(
+                hub: hub, person: key, onMessage: { (recipient: ChatRecipient) in Task { await hub.openPerson(recipient) } },
+                onProfile: { (name: String) in onRoute(.profile(name: name)) })
         }
         .task { await hub.refreshAppCommands() }
         .onChange(of: hub.mesh.unread) { _, _ in if MeshAlerts.foreground { hub.roomShown() } }
@@ -556,7 +562,7 @@ private struct ChatTranscript<Drawer: View>: View {
             delete = { Task { await hub.delete(message) } }
         }
         if !message.isSelf && !row.visitor && message.senderId != "forkbot" && !message.senderId.hasPrefix("app:") {
-            profile = { onRoute(.profile(name: message.senderName)) }
+            profile = { person = ChatPersonKey(name: message.senderName) }
         }
         let issue: () -> Void = {
             let draft: ChatIssueDraft = ChatIssueDraft.fromMessage(
@@ -886,6 +892,8 @@ struct ChatMessageRow: View {
             } else {
                 ChatSenderAvatar(message: message, size: ChatSenderAvatar.roomSize, corner: 9)
                     .padding(.top, 2)
+                    .onTapGesture { actions.onProfile?() }
+                    .accessibilityAddTraits(actions.onProfile == nil ? [] : .isButton)
             }
             VStack(alignment: .leading, spacing: 0) {
                 if actions.saved {
