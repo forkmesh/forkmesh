@@ -261,6 +261,14 @@ one event load). The caller is responsible for its own membership check;
 Marketing calls it only after resolving the member's organization. The
 Marketing package's Performance page is the first caller.
 
+With `pages` (up to 20 `{key, host, path}` sections) the report also returns
+`results.pages`: page views and visitors per `host` + `path` (`rows`, at most
+`pageLimit`, default 200, cap 500; `www.` is dropped from hosts and trailing
+slashes from paths), and per section `views`, `visitors` and `days` (`[[UTC
+day start in ms, views], ...]`) for every page view on that host at or under
+that path (`/` takes the whole host). Marketing passes one section per channel
+link so a Blog channel gets views per post and per day.
+
 ## Browser SDK
 
 `content/sdk/analytics-sdk.js` is dependency-free and exposes

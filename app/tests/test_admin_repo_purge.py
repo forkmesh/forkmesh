@@ -165,6 +165,7 @@ PURGE_EXEMPT = {
     "discord_bug_reports",
     # Not a repository table: the comment above it mentions repo_bi.
     "relay_self",
+    "org_office_visits",
 }
 
 

@@ -1266,7 +1266,7 @@ def test_dashboard_repository_detail_uses_github_like_inner_layout():
     assert 'data-repo-github-header class="rounded-t-lg border border-border' not in render
     assert 'data-repo-github-header class="border-b border-border">\n          <div class="grid' not in render
     assert 'data-lucide="${icon}"' in dashboard_js
-    assert 'icon = isPulls ? "git-pull-request" : "circle-dot"' in dashboard_js
+    assert 'function pullStateIconHtml(stateLabel, extra = "")' in dashboard_js
 
 
 def test_repository_code_page_matches_github_code_layout():
@@ -1580,7 +1580,7 @@ def test_dashboard_repository_tabs_read_public_mirror_data_not_owner_inbox():
         "Object.assign(blobs, await fetchRepoBlobs(",
         "paths.slice(offset, offset + 50), refParams",
         "fetchMissingRepoBlobs(",
-        "Create from desktop client for signed submissions",
+        "so new ones are created from the ForkMesh desktop app.",
     ):
         assert marker in dashboard_js
 
@@ -1745,20 +1745,21 @@ def test_dashboard_repository_issue_and_pull_tabs_match_github_lists():
 
     for marker in (
         "function renderRepoCollectionPanel(kind, repo, openCount, closedCount)",
-        'data-repo-collection-toolbar="${kind}"',
-        'data-repo-filter-menu="${kind}"',
-        'data-repo-filter-query="${kind}"',
-        'placeholder="${kind === "pulls" ? "Search pull requests by title, body, author, or #number" : "Search issues by title, body, author, or #number"}"',
-        'data-dashboard-pull-filter="${filter}"',
+        'data-repo-collection-toolbar="pulls"',
+        'data-repo-filter-query="pulls"',
+        'data-repo-filter-query="issues"',
+        'placeholder="Search pull requests by title, body, author, or #number"',
+        'data-dashboard-pull-filter="${name}"',
+        'data-repo-collection-layout="pulls"',
+        'data-repo-collection-layout="issues"',
         "New issue",
         "New pull request",
-        "Author",
-        "Labels",
-        "Projects",
-        "Milestones",
-        "Assignees",
-        "Sort",
-        "Reviews",
+        "Authored by me",
+        '["Author", "author"]',
+        '["Labels", "label"]',
+        '["Milestones", "milestone"]',
+        '["Assignees", "assignee"]',
+        'select("Author", "author"',
     ):
         assert marker in dashboard_js
 
@@ -1918,7 +1919,7 @@ def test_issue_and_pull_detail_pages_match_github_conversation_layout():
     # both read the live executor snapshot loaded into parsed.pullChecks, so
     # the tab cannot silently regress to a decorative zero again.
     assert 'data-repo-record-tab="checks"' in detail
-    assert "${formatCount(pullCheckCount)}" in detail
+    assert 'tabCounter("data-repo-pull-check-count", pullCheckCount)' in detail
     assert "const pullCheckCount = (parsed.pullChecks?.runs || []).length;" in detail
     assert 'data-repo-record-panel="checks"' in detail
     assert "renderRepoPullChecks(parsed.pullChecks)" in detail

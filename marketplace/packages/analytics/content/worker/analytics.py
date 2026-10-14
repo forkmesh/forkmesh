@@ -2130,6 +2130,7 @@ def session_list(events, query, context, start, end):
 
 
 CAMPAIGN_GROUPS = ("campaign", "content", "source", "landing", "term")
+PAGE_SECTION_LIMIT = 20
 SEARCH_HOSTS = ("google.", "bing.com", "duckduckgo.com", "search.yahoo.",
                 "yandex.", "baidu.com", "ecosia.org", "kagi.com",
                 "search.brave.com", "startpage.com", "qwant.com")
@@ -2299,6 +2300,56 @@ def campaigns(events, query, context, start, end):
             "totals": totals,
             "previous": _campaign_totals(list(previous.values()), goals),
             "rows": rows[:limit], "rowCount": len(rows)}
+
+
+def _page_sections(value):
+    sections = []
+    for item in (value if isinstance(value, list) else [])[:PAGE_SECTION_LIMIT]:
+        if not isinstance(item, dict):
+            continue
+        key = _text(item.get("key"), 80)
+        host = _bare_host(_text(item.get("host"), 253).strip())
+        path = "/" + _text(item.get("path"), 200).strip("/")
+        if key and host:
+            sections.append({"key": key, "host": host, "path": path.rstrip("/") or "/"})
+    return sections
+
+
+def page_views(events, query, context, start, end):
+    filters = _filters(query.get("filters"))
+    sections = _page_sections(query.get("pages"))
+    limit = _bounded(query.get("pageLimit"), 1, 500, 200)
+    pages, totals = {}, {item["key"]: {"views": 0, "visitors": set(), "days": {}}
+                         for item in sections}
+    for event in events:
+        if (event["e"] != "$pageview" or not start <= event["t"] <= end
+                or not _event_matches(event, filters, context)):
+            continue
+        host = _bare_host(event["p"].get("$host"))
+        path = _path_name(event, "$pageview")
+        actor = context.actor(event)
+        entry = pages.setdefault((host, path), {"views": 0, "visitors": set(), "lastAt": 0})
+        entry["views"] += 1
+        entry["visitors"].add(actor)
+        entry["lastAt"] = max(entry["lastAt"], event["t"])
+        day = event["t"] - event["t"] % DAY_MS
+        for section in sections:
+            if host != section["host"] or not (
+                    section["path"] == "/" or path == section["path"]
+                    or path.startswith(section["path"] + "/")):
+                continue
+            total = totals[section["key"]]
+            total["views"] += 1
+            total["visitors"].add(actor)
+            total["days"][day] = total["days"].get(day, 0) + 1
+    rows = sorted(({"host": host, "path": path, "views": entry["views"],
+                    "visitors": len(entry["visitors"]), "lastAt": entry["lastAt"]}
+                   for (host, path), entry in pages.items()),
+                  key=lambda item: (-item["views"], item["host"], item["path"]))
+    return {"rows": rows[:limit], "rowCount": len(rows),
+            "sections": {key: {"views": total["views"], "visitors": len(total["visitors"]),
+                               "days": [[day, count] for day, count in sorted(total["days"].items())]}
+                         for key, total in totals.items()}}
 
 
 INSIGHTS = {
@@ -2789,6 +2840,8 @@ async def campaign_report(runtime, org_bi, query, now=None):
     groups = [item for item in CAMPAIGN_GROUPS if item in groups] or ["campaign"]
     results = {group: campaigns(events, dict(merged, groupBy=group), context,
                                 start, end) for group in groups}
+    if query.get("pages"):
+        results["pages"] = page_views(events, merged, context, start, end)
     return {"status": "ok",
             "project": {key: chosen[key] for key in
                         ("id", "name", "siteDefault", "allowedOrigins")},

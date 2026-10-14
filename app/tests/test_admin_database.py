@@ -72,7 +72,19 @@ def _setup():
         CREATE TABLE host_cron_runs (slot INTEGER, node TEXT);
         CREATE TABLE dns_health_votes (voter TEXT, target TEXT, ok INTEGER);
         CREATE TABLE dns_reconciler_state (k TEXT, v TEXT);
+        CREATE TABLE repositories (
+            key_bi TEXT PRIMARY KEY, owner_bi TEXT NOT NULL,
+            data TEXT NOT NULL);
+        CREATE TABLE chat_history (room_key TEXT, body TEXT);
+        CREATE TABLE funds_received (scope TEXT, key TEXT);
     """)
+    calls = []
+
+    def recorder(name):
+        async def record(*args):
+            calls.append((name,) + tuple(
+                a for a in args if not isinstance(a, SimpleNamespace)))
+        return record
 
     def rows(sql, args):
         return [dict(r) for r in db.execute(sql, args).fetchall()]
@@ -160,7 +172,18 @@ def _setup():
             ADMIN_HIDDEN_TABLES=console["ADMIN_HIDDEN_TABLES"]),
         "_admin_table_counts_cached": counts_cached,
         "_admin_table_counts_forget": counts_forget,
+        "safe_segment": lambda value: str(value or "").strip(),
     }
+    for name in ("invalidate_public_catalog_snapshots",
+                 "_record_repo_delete_tombstone", "_delete_repo_scoped_state",
+                 "_delete_repo_named_state", "_delete_bounties_namespace",
+                 "schedule_public_catalog_republish", "_bump_catalog_rev"):
+        runtime[name] = recorder(name)
+
+    async def purge_caches():
+        calls.append(("purge_catalog_related_caches",))
+
+    runtime["purge_catalog_related_caches"] = purge_caches
     for name in ("_admin_contains_wallet_key", "_admin_redact_wallet_keys",
                  "_admin_selected_rows_have_wallet_keys",
                  "_admin_selected_rows_digest"):
@@ -170,7 +193,7 @@ def _setup():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module._bind_runtime(runtime)
-    return module, db, SimpleNamespace()
+    return module, db, SimpleNamespace(calls=calls)
 
 
 def _sign(canonical):
@@ -471,6 +494,88 @@ def test_delete_is_digest_checked_for_one_row_and_bounded_for_many():
         "SELECT details FROM sensitive_audit_log WHERE outcome='success'"
     ).fetchone()[0])
     assert details["rowCount"] == 3 and len(details["rowDigestBefore"]) == 64
+
+
+def _seed_repository(db, owner, name, sealed=True):
+    key_bi = "bi:" + hashlib.sha256(
+        (owner + "/" + name).encode()).hexdigest()[:16]
+    owner_bi = "bi:" + hashlib.sha256(owner.encode()).hexdigest()[:16]
+    record = {"owner": owner, "name": name, "description": "junk"}
+    data = ("SEALED:" + base64.b64encode(json.dumps(record).encode()).decode()
+            if sealed else "unreadable")
+    db.execute("INSERT INTO repositories (key_bi, owner_bi, data) "
+               "VALUES (?,?,?)", (key_bi, owner_bi, data))
+    db.commit()
+    return key_bi, owner_bi
+
+
+def test_repositories_are_readable_and_only_deletable():
+    module, db, env = _setup()
+    _seed_repository(db, "alice", "junk")
+    assert "repositories" not in module._hidden_tables()
+    inventory = {t["name"]: t for t in _read(module, env).payload["tables"]}
+    repos = inventory["repositories"]
+    assert not repos["restricted"]
+    assert repos["deletable"] and not repos["writable"]
+    assert inventory["telemetry"]["deletable"]
+    assert not inventory["nodes"]["deletable"]
+    rows = _read(module, env, op="rows", table="repositories").payload["rows"]
+    assert rows[0]["data"]["name"] == "junk"
+    for index, payload in enumerate((
+            {"op": "insert", "table": "repositories",
+             "values": {"key_bi": "x", "owner_bi": "y"}},
+            {"op": "update", "table": "repositories",
+             "rowid": rows[0]["rowid"], "values": {"owner_bi": "z"},
+             "digest": rows[0]["digest"]})):
+        response = _write(module, env, payload,
+                          request_id="request-%010d" % (700 + index))
+        assert response.status == 403, payload["op"]
+        assert response.payload["error"] == "write_blocked"
+    assert db.execute("SELECT COUNT(*) FROM repositories").fetchone()[0] == 1
+
+
+def test_repository_delete_purges_the_whole_repository():
+    module, db, env = _setup()
+    key_bi, owner_bi = _seed_repository(db, "alice", "junk")
+    lost_bi, lost_owner_bi = _seed_repository(
+        db, "bob", "lost", sealed=False)
+    _seed_repository(db, "carol", "keep")
+    db.execute("INSERT INTO chat_history VALUES (?, ?)",
+               ("repo:alice/junk:room:general", "hi"))
+    db.execute("INSERT INTO funds_received VALUES ('project', 'alice/junk')")
+    db.commit()
+    rows = {r["values"]["key_bi"]: r for r in _read(
+        module, env, op="rows", table="repositories").payload["rows"]}
+    assert _write(module, env, {
+        "op": "delete", "table": "repositories",
+        "rowids": list(range(
+            module.ADMIN_DATABASE_REPOSITORY_DELETE_MAX + 1))},
+        request_id="request-0000000801").status == 400
+    done = _write(module, env, {
+        "op": "delete", "table": "repositories",
+        "rowids": [rows[key_bi]["rowid"], rows[lost_bi]["rowid"]]},
+        request_id="request-0000000802")
+    assert done.status == 200 and done.payload["rowCount"] == 2
+    left = [r[0] for r in db.execute("SELECT key_bi FROM repositories")]
+    assert len(left) == 1 and left[0] not in (key_bi, lost_bi)
+    assert db.execute("SELECT COUNT(*) FROM chat_history").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM funds_received").fetchone()[0] == 0
+    calls = env.calls
+    assert ("_record_repo_delete_tombstone", key_bi, owner_bi) in calls
+    assert ("_record_repo_delete_tombstone", lost_bi, lost_owner_bi) in calls
+    assert ("_delete_repo_scoped_state", key_bi) in calls
+    assert ("_delete_repo_scoped_state", lost_bi) in calls
+    assert ("_delete_repo_named_state", "alice", "junk") in calls
+    assert ("_delete_bounties_namespace", "alice", "junk") in calls
+    assert ("schedule_public_catalog_republish", "alice", "junk") in calls
+    assert not any(c[0] == "_delete_repo_named_state" and c[1] == "bob"
+                   for c in calls)
+    assert calls.count(("purge_catalog_related_caches",)) == 1
+    assert calls.count(("_bump_catalog_rev",)) == 1
+    actions = [r[0] for r in db.execute(
+        "SELECT action FROM sensitive_audit_log WHERE outcome='success'")]
+    assert actions.count("repository.delete") == 2
+    assert actions.count("admin.database_delete") == 1
 
 
 def test_schema_lists_the_table_ddl_and_indexes():

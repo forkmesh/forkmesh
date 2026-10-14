@@ -27,6 +27,7 @@
       },
     };
     state.pullsView = { filter: "open", query: "" };
+    state.discussionsView = null;
     // Pull requests and discussions load lazily the first time their tab is
     // opened rather than on every page load. Eagerly fetching every record's
     // blob up front is what flooded the host with requests and tripped the rate
@@ -316,7 +317,7 @@
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
             <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><span class="font-mono text-[10px] text-muted-foreground">linked issues · milestones · gantt</span></div><div data-repo-projects></div></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
-            <section data-dashboard-repo-tab-panel="discussions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="message-square" class="h-3.5 w-3.5 text-muted-foreground"></i>Discussions and comments</span><span class="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground">Create from desktop client for signed submissions</span></div><div data-repo-discussions></div></div></section>
+            ${renderRepoDiscussionsPanel(repo)}
             <section data-dashboard-repo-tab-panel="actions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions</span><span class="font-mono text-[10px] text-muted-foreground">workflows in .forkmesh/ · runs from the mirror executor</span></div><div data-repo-actions></div></div></section>
             <section data-dashboard-repo-tab-panel="insights" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex min-w-0 items-start gap-2"><i data-lucide="chart-no-axes-combined" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span><span class="block text-xs font-medium text-foreground">Insights</span><span class="mt-0.5 block text-[10px] text-muted-foreground">Repository-wide code, collaboration, and contributor activity.</span></span></span><button type="button" data-repo-insights-refresh class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-insights></div></div></section>
             <section data-dashboard-repo-tab-panel="sizemap" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-pie" class="h-3.5 w-3.5 text-muted-foreground"></i>Size map</span><span class="font-mono text-[10px] text-muted-foreground">directory sizes · default branch</span></div><div data-repo-sizemap class="p-4"></div></div></section>
@@ -503,10 +504,6 @@
     article.querySelectorAll("[data-repo-record-tab]").forEach((button) => {
       const active = button.dataset.repoRecordTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
-      button.classList.toggle("border-border", active);
-      button.classList.toggle("border-transparent", !active);
-      button.classList.toggle("text-foreground", active);
-      button.classList.toggle("text-muted-foreground", !active);
     });
     article.querySelectorAll("[data-repo-record-panel]").forEach((panel) => {
       panel.classList.toggle(
@@ -2889,6 +2886,37 @@
         return;
       }
 
+      const discussionCategory = event.target.closest("[data-repo-discussion-category]");
+      if (discussionCategory) {
+        setDiscussionFilter("category", discussionCategory.dataset.repoDiscussionCategory || "");
+        return;
+      }
+
+      const pullViewButton = event.target.closest("[data-repo-pull-view]");
+      if (pullViewButton) {
+        setPullView(pullViewButton.dataset.repoPullView || "pulls");
+        return;
+      }
+
+      const pullBaseView = event.target.closest("[data-repo-pull-base-view]");
+      if (pullBaseView) {
+        const value = pullBaseView.dataset.repoPullBaseView || "";
+        const current = String(pullQueryFilters().base || "");
+        setPullCollectionFilter("base", current.toLowerCase() === value.toLowerCase() ? "" : value);
+        return;
+      }
+
+      const pullTipDismiss = event.target.closest("[data-repo-pull-contribution-dismiss]");
+      if (pullTipDismiss && state.selectedRepo) {
+        try {
+          localStorage.setItem(`forkmesh.pull-contribution-tip.v1:${repoKey(state.selectedRepo)}`, "1");
+        } catch (_) {
+          /* storage unavailable: still dismiss this rendered tip */
+        }
+        pullTipDismiss.closest("[data-repo-pull-contribution-tip]")?.remove();
+        return;
+      }
+
       const issueViewButton = event.target.closest("[data-repo-issue-view]");
       if (issueViewButton) {
         setIssueView(issueViewButton.dataset.repoIssueView || "issues");
@@ -3384,6 +3412,21 @@
 
   document.addEventListener("change", (event) => {
     if (handleRepoForgeMirrorChange(event)) return;
+    const discussionFilter = event.target.closest?.("[data-repo-discussion-filter]");
+    if (discussionFilter) {
+      setDiscussionFilter(discussionFilter.dataset.repoDiscussionFilter || "", discussionFilter.value);
+      return;
+    }
+    const pullViewSelect = event.target.closest?.("[data-repo-pull-view-select]");
+    if (pullViewSelect) {
+      setPullView(pullViewSelect.value || "pulls");
+      return;
+    }
+    const pullFilterSelect = event.target.closest?.("[data-repo-pull-filter]");
+    if (pullFilterSelect) {
+      setPullCollectionFilter(pullFilterSelect.dataset.repoPullFilter || "", pullFilterSelect.value);
+      return;
+    }
     const issueViewSelect = event.target.closest?.("[data-repo-issue-view-select]");
     if (issueViewSelect) {
       setIssueView(issueViewSelect.value || "issues");
@@ -3414,7 +3457,7 @@
   // follow the input's horizontal scroll as the caret moves.
   document.addEventListener("selectionchange", () => {
     const input = document.activeElement;
-    if (input?.matches?.('[data-repo-filter-query="issues"]')) renderIssueQueryHighlight(input);
+    if (input?.matches?.('[data-repo-filter-query="issues"], [data-repo-filter-query="pulls"], [data-repo-filter-query="discussions"]')) renderIssueQueryHighlight(input);
   });
 
   document.addEventListener("dragstart", handleIssueTaskDragStart);
@@ -3946,10 +3989,14 @@
       renderIssueQueryHighlight(event.target);
       return;
     }
+    if (event.target?.matches?.('[data-repo-filter-query="discussions"]') && state.selectedRepo) {
+      applyDiscussionQueryText(event.target.value || "");
+      renderIssueQueryHighlight(event.target);
+      return;
+    }
     if (event.target?.matches?.('[data-repo-filter-query="pulls"]') && state.selectedRepo) {
-      state.pullsView.query = event.target.value || "";
-      state.repoCollectionPages.pulls = 1;
-      renderRepoCollection("pulls");
+      applyPullQueryText(event.target.value || "");
+      renderIssueQueryHighlight(event.target);
       return;
     }
     if (event.target?.matches?.("[data-repo-branches-search]") && state.selectedRepo) {
@@ -3988,6 +4035,11 @@
     if (event.key === "Enter" && event.target?.matches?.('[data-repo-filter-query="issues"]')) {
       event.preventDefault();
       syncIssueQueryBox({ force: true });
+      return;
+    }
+    if (event.key === "Enter" && event.target?.matches?.('[data-repo-filter-query="pulls"]')) {
+      event.preventDefault();
+      syncPullQueryBox({ force: true });
       return;
     }
     const typingTarget = event.target?.matches?.("input, textarea, select, [contenteditable='true']");

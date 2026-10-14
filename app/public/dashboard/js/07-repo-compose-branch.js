@@ -706,6 +706,7 @@
     const container = $("[data-repo-pulls]");
     if (!container || !repo) return;
     state.repoCompare = null;
+    setRepoRecordOpen("pulls", true);
     const parent = repoForkParent(repo);
     const targetRepo = pullRequestTargetRepo(repo);
     const sourceLabel = repoDisplayKey(repo);
@@ -845,6 +846,7 @@
     state.loadedRepoTabs.pulls = true;
     stopRepoPullActivityRefresh();
     setRepoTab("pulls");
+    setRepoRecordOpen("pulls", true);
     if (navigate) navigateHistory(repoCompareUrl(repo, base, head));
     const paint = (bodyHtml) => {
       // A read that lands after the reader left for the list, a record, or
@@ -3969,7 +3971,7 @@
           <p>If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
         </div>
         <details class="fm-flash-actions relative text-left">
-          <summary class="fm-btn fm-btn-sm list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
+          <summary class="fm-btn fm-btn-sm inline-flex list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
           <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
             <button type="button" data-repo-issue-contribution-dismiss="repository" class="fm-menu-item">Dismiss for this repository</button>
             <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
@@ -3980,18 +3982,15 @@
 
   function renderRepoCollectionPanel(kind, repo, openCount, closedCount) {
     const isPulls = kind === "pulls";
-    const config = repoCollectionConfig[kind];
-    const icon = isPulls ? "git-pull-request" : "circle-dot";
-    const title = config?.label || (isPulls ? "Pull requests" : "Issues");
     if (!isPulls) {
       // GitHub's Issues page: saved views down the left, the search box
       // carrying the filters as qualifiers, and one green action. Everything
       // marked data-repo-collection-chrome steps aside while an issue is open.
       return `
         <section data-dashboard-repo-tab-panel="issues" class="hidden">
-          <div data-repo-issues-layout data-views-collapsed="${issueViewsCollapsed() ? "true" : "false"}" class="mt-2 grid min-w-0 gap-6">
-            <nav data-repo-issue-views data-repo-collection-chrome aria-label="Issue views" class="hidden min-w-0 self-start pl-2 lg:sticky lg:top-4 lg:block">${renderIssueViewsNav()}</nav>
-            <div class="min-w-0">
+          <div data-repo-issues-layout data-repo-collection-layout="issues" data-views-collapsed="${issueViewsCollapsed() ? "true" : "false"}" class="mt-2 grid min-w-0 gap-6">
+            <nav data-repo-issue-views data-repo-collection-views data-repo-collection-chrome aria-label="Issue views" class="hidden min-w-0">${renderIssueViewsNav()}</nav>
+            <div data-repo-collection-main class="min-w-0">
               <div data-repo-collection-chrome>
                 <div class="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3">
                   <div class="flex min-w-0 items-center gap-2">
@@ -4033,85 +4032,57 @@
           </div>
         </section>`;
     }
-    const pullStateButtons = isPulls ? [
-      ["open", "git-pull-request", "Open", "open"],
-      ["closed", "check", "Closed", "closed"],
-      ["all", "list", "All", ""],
-    ].map(([filter, filterIcon, label, countKind]) => {
-      const count = countKind === "open" ? `<span data-repo-collection-open-count="pulls">${tabCountLabel(openCount)}</span>`
-        : countKind === "closed" ? `<span data-repo-collection-closed-count="pulls">${tabCountLabel(closedCount)}</span>`
-          : "";
-      return `<button type="button" data-dashboard-pull-filter="${filter}" aria-pressed="${pullFilterState() === filter ? "true" : "false"}" class="${pullFilterButtonClass(pullFilterState() === filter)}"><i data-lucide="${filterIcon}" class="h-3.5 w-3.5 ${filter === "open" ? "text-muted-foreground" : ""}"></i>${count}${label}</button>`;
-    }).join("") : "";
-    const filters = [
-      ["Author", isPulls
-        ? ["Any author", repo.owner || "owner", repo.maintainer || "maintainer"]
-        : issueFilterOptions("author"), isPulls ? "" : "author"],
-      ["Labels", isPulls
-        ? ["Any label", "bug", "enhancement", "documentation"]
-        : issueFilterOptions("label"), isPulls ? "" : "label"],
-      ["Projects", ["Any project", "No project"]],
-      ["Milestones", isPulls
-        ? ["Any milestone", "No milestone"]
-        : issueFilterOptions("milestone"), isPulls ? "" : "milestone"],
-      ...(isPulls ? [["Reviews", ["Any review", "Review required", "Approved", "Changes requested"]]] : []),
-      [isPulls ? "Assignee" : "Assignees", isPulls
-        ? ["Anyone", "Assigned to me", "Unassigned"]
-        : issueFilterOptions("assignee"), isPulls ? "" : "assignee"],
-      ["Sort", ["Newest", "Oldest", "Recently updated", "Most commented"]],
-    ];
-
+    const repository = `${repo.owner || "owner"}/${repo.name || "repository"}`;
     return `
-      <section data-dashboard-repo-tab-panel="${kind}" class="hidden">
-        <div class="mt-4">
-          <div class="min-w-0">
-            ${isPulls ? `
-              <div class="mb-4 rounded-lg border border-border bg-background px-4 py-5 text-center">
-                <p class="text-sm font-semibold text-foreground">First time contributing to ${escapeHtml(repo.owner || "owner")}/${escapeHtml(repo.name || "repository")}?</p>
-                <p class="mx-auto mt-2 max-w-xl text-xs leading-5 text-muted-foreground">Review this repository's <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contribution notes</a> before opening a pull request.</p>
-              </div>` : ""}
-            <div data-repo-collection-toolbar="${kind}" class="mb-3 grid gap-2 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
-              <label class="inline-flex h-9 min-w-0 items-center overflow-hidden rounded-md border border-border bg-background text-xs lg:col-span-2">
-                <span class="relative inline-flex h-full items-center gap-1.5 border-r border-border bg-secondary px-3 font-medium text-foreground">
-                  <span>Filters</span>
-                  <i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i>
-                  <select data-repo-filter-menu="${kind}" aria-label="${title} filters" class="absolute inset-0 cursor-pointer opacity-0">
-                    <option>Open ${title.toLowerCase()}</option>
-                    <option>Your ${title.toLowerCase()}</option>
-                    <option>Everything assigned</option>
-                    <option>Recently updated</option>
+      <section data-dashboard-repo-tab-panel="pulls" class="hidden">
+        <div data-repo-collection-layout="pulls" data-views-collapsed="${issueViewsCollapsed() ? "true" : "false"}" class="mt-2 grid min-w-0 gap-6">
+          <nav data-repo-pull-views data-repo-collection-views data-repo-collection-chrome aria-label="Pull request views" class="hidden min-w-0">${renderPullViewsNav()}</nav>
+          <div data-repo-collection-main class="min-w-0">
+            <div data-repo-collection-chrome>
+              <div class="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3">
+                <div class="flex min-w-0 items-center gap-2">
+                  <button type="button" data-repo-issue-views-toggle aria-label="Show pull request views" class="hidden h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="panel-left-open" class="h-4 w-4"></i></button>
+                  <h2 data-repo-pull-view-title class="text-[20px] font-semibold leading-8 text-foreground">All pull requests</h2>
+                  <select data-repo-pull-view-select aria-label="Pull request view" class="h-8 rounded-md border border-border bg-background px-2 text-[14px] text-foreground lg:hidden">
+                    ${PULL_VIEWS.map((view) => `<option value="${view.id}">${escapeHtml(view.label)}</option>`).join("")}
                   </select>
-                </span>
-                <span class="inline-flex min-w-0 flex-1 items-center gap-2 px-3">
-                  <i data-lucide="search" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
-                  <input data-repo-filter-query="${kind}" type="search" autocomplete="off" spellcheck="false" value="${isPulls ? escapeHtml(state.pullsView.query || "") : escapeHtml(state.issuesView.query || "")}" placeholder="${kind === "pulls" ? "Search pull requests by title, body, author, or #number" : "Search issues by title, body, author, or #number"}" class="min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-                </span>
-              </label>
-              ${isPulls
-                ? `<button type="button" data-repo-pull-new class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>New pull request</button>`
-                : `<div class="flex items-center gap-2">
-                    <button type="button" data-repo-issues-refresh aria-busy="false" class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-secondary disabled:cursor-wait disabled:opacity-60"><i data-lucide="refresh-cw" data-repo-issues-refresh-icon class="h-3.5 w-3.5"></i><span data-repo-issues-refresh-label>Refresh</span></button>
-                    <button type="button" data-repo-issue-import class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-secondary"><i data-lucide="upload" class="h-3.5 w-3.5"></i>Import CSV</button>
-                    <button type="button" data-repo-issue-new class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New issue</button>
-                  </div>`}
-              <div class="flex min-w-0 flex-wrap items-center gap-2 lg:col-span-3">
-                ${filters.map(([label, options, issueFilter]) => renderRepoCollectionFilter(label, options, issueFilter)).join("")}
+                </div>
+                <button type="button" data-repo-pull-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
+              </div>
+              ${pullContributionTipDismissed(repo) ? "" : `
+              <aside data-repo-pull-contribution-tip class="fm-flash relative mb-4 flex-wrap">
+                <i data-lucide="heart-handshake"></i>
+                <div class="fm-flash-body">
+                  <span class="fm-flash-title">First time contributing to ${escapeHtml(repository)}?</span>
+                  <p>Review this repository's <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contribution notes</a> before opening a pull request.</p>
+                </div>
+                <div class="fm-flash-actions"><button type="button" data-repo-pull-contribution-dismiss class="fm-btn fm-btn-sm">Dismiss</button></div>
+              </aside>`}
+              <div data-repo-collection-toolbar="pulls" class="mb-4">
+                <label class="flex h-9 min-w-0 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
+                  <span class="relative min-w-0 flex-1 overflow-hidden">
+                    <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre px-3 text-[14px] text-foreground"></span>
+                    <input data-repo-filter-query="pulls" type="search" autocomplete="off" spellcheck="false" aria-label="Search pull requests" value="${escapeHtml(`${serializePullQuery()} `)}" placeholder="Search pull requests by title, body, author, or #number" class="relative h-full w-full bg-transparent px-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
+                  </span>
+                  <span class="inline-flex w-10 shrink-0 items-center justify-center border-l border-border bg-[rgb(var(--dashboard-subtle-rgb))] text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
+                </label>
               </div>
             </div>
             <!-- overflow-clip, not overflow-hidden: hidden would make this card
                  the nearest scroll container, and the pull review pane's sticky
                  file explorer and diff headers would never leave the top of it. -->
-            <div class="overflow-clip rounded-lg border border-border bg-background">
-              <div class="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-                <div class="flex min-w-0 flex-wrap items-center gap-3 text-xs">
-                  ${isPulls ? pullStateButtons : `<span class="inline-flex items-center gap-2 font-semibold text-foreground"><i data-lucide="${icon}" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-collection-open-count="${kind}">${tabCountLabel(openCount)}</span> Open</span>
-                  <span class="inline-flex items-center gap-2 text-muted-foreground"><i data-lucide="check" class="h-3.5 w-3.5"></i><span data-repo-collection-closed-count="${kind}">${tabCountLabel(closedCount)}</span> Closed</span>`}
-                </div>
-                <span class="text-[10px] text-muted-foreground">${isPulls ? "Review and merge signed patches" : "Track signed issues from the live mirror"}</span>
-              </div>
-              <div data-repo-${kind}></div>
+            <div data-repo-collection-box class="overflow-clip rounded-md border border-border bg-background">
+              <div data-repo-pulls></div>
             </div>
           </div>
         </div>
       </section>`;
+  }
+
+  function pullContributionTipDismissed(repo) {
+    try {
+      return localStorage.getItem(`forkmesh.pull-contribution-tip.v1:${repoKey(repo)}`) === "1";
+    } catch (_) {
+      return false;
+    }
   }

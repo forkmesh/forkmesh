@@ -2652,10 +2652,12 @@
       state.agentsView.selectedAgentId = null;
     }
     if (!state.selectedRepo) return;
-    // An issue page has no Back button: the Issues tab is the way back to the
-    // list, as on GitHub, so selecting it leaves the open issue behind.
-    if (tab === "issues" && state.repoRecordDetail?.kind === "issues") {
+    // Record pages have no Back button: the tab is the way back to the list,
+    // as on GitHub, so selecting it leaves the open record behind.
+    if (["issues", "pulls", "discussions"].includes(tab) && state.repoRecordDetail?.kind === tab) {
+      if (tab === "pulls") stopRepoPullActivityRefresh();
       state.repoRecordDetail = null;
+      state.repoRecordSection = "conversation";
     }
     navigateHistory(tab === "code"
       ? (state.repoCodeUrl || repoLinkUrl(state.selectedRepo))
@@ -2706,6 +2708,9 @@
       // to the list those were opened from.
       state.repoCompare = null;
       loadRepoCollection(state.selectedRepo, "pulls", "[data-repo-pulls]");
+    } else if (tab === "discussions") {
+      if (Array.isArray(state.repoCollectionItems.discussions)) renderRepoDiscussions({ syncQuery: true });
+      else loadRepoCollection(state.selectedRepo, "discussions", "[data-repo-discussions]");
     } else if (tab === "issues") {
       // Re-selecting returns to a freshly-read list. Rendering the prior array
       // here made both the list and its header look permanently cached.

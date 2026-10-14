@@ -52,6 +52,8 @@ QList<D1DatabaseTable> parseD1DatabaseInventory(const QJsonObject &inventory)
             object.value(QStringLiteral("rows")).toDouble());
         table.restricted = object.value(QStringLiteral("restricted")).toBool();
         table.writable = object.value(QStringLiteral("writable")).toBool();
+        table.deletable =
+            object.value(QStringLiteral("deletable")).toBool(table.writable);
         table.writeBlockedReason =
             object.value(QStringLiteral("writeBlockedReason")).toString();
         table.rowid = object.value(QStringLiteral("rowid")).toBool(true);
