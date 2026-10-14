@@ -373,7 +373,8 @@ static void testUsage()
     codex.windows = codexWindows(QJsonArray{
         QJsonObject{{QStringLiteral("label"), QStringLiteral("5-hour")},
                     {QStringLiteral("usedPercent"), 99},
-                    {QStringLiteral("resetAt"), 9000.0}},
+                    {QStringLiteral("resetAt"), 9000.0},
+                    {QStringLiteral("windowDurationMins"), 300}},
         QJsonObject{{QStringLiteral("usedPercent"), 1}}});
     check(codex.windows.size() == 1, "codex rows without a label dropped");
     const QJsonObject summary = usageSummary(
@@ -395,6 +396,10 @@ static void testUsage()
     check(xw.at(0).toObject().value(QStringLiteral("state")).toString() ==
               QLatin1String("exhausted"),
           "99% is exhausted");
+    check(xw.at(0).toObject().value(QStringLiteral("windowMs")).toDouble() == 18000000,
+          "codex window length carried for pacing");
+    check(!cw.at(0).toObject().contains(QStringLiteral("windowMs")),
+          "unknown window length omitted");
     check(providers.at(0).toObject().value(QStringLiteral("credits")).toObject()
                   .value(QStringLiteral("limit")).toDouble() == 20,
           "credits carried");

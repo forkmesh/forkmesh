@@ -335,6 +335,7 @@ data class UsageWindowMeter(
     val usedPercent: Int?,
     val resetAtMs: Long? = null,
     val state: UsageState,
+    val windowMs: Long? = inferredWindowMs(id, label),
 ) {
     val remainingPercent: Int? get() = usedPercent?.let { 100 - it }
 
@@ -344,16 +345,60 @@ data class UsageWindowMeter(
         return "resets in " + UsageFormat.remaining(reset - nowMs)
     }
 
+    val stepMs: Long? get() = windowMs?.takeIf { it > 0 }?.let { if (it > DAY_MS) DAY_MS else HOUR_MS }
+
+    val segments: Int get() {
+        val window = windowMs ?: return 1
+        val step = stepMs ?: return 1
+        return ((window + step - 1) / step).toInt()
+    }
+
+    fun elapsedFraction(nowMs: Long): Double? {
+        val window = windowMs?.takeIf { it > 0 } ?: return null
+        val reset = resetAtMs?.takeIf { it > nowMs } ?: return null
+        return (1.0 - (reset - nowMs).toDouble() / window).coerceIn(0.0, 1.0)
+    }
+
+    fun periodLabel(nowMs: Long): String {
+        val window = windowMs ?: return ""
+        val step = stepMs ?: return ""
+        val elapsed = elapsedFraction(nowMs) ?: return ""
+        val current = minOf(segments, (elapsed * window / step).toInt() + 1)
+        return "${if (step == DAY_MS) "Day" else "Hour"} $current of $segments"
+    }
+
+    fun paceLabel(nowMs: Long): String {
+        val used = usedPercent ?: return ""
+        val elapsed = elapsedFraction(nowMs) ?: return ""
+        val ahead = used - Math.round(elapsed * 100).toInt()
+        if (ahead == 0) return "on pace"
+        return "${kotlin.math.abs(ahead)}% ${if (ahead > 0) "over" else "under"} pace"
+    }
+
     companion object {
+        const val HOUR_MS: Long = 3_600_000
+        const val DAY_MS: Long = 86_400_000
+
+        fun inferredWindowMs(id: String, label: String): Long? {
+            val text = "$id $label".lowercase()
+            if ("5h" in text || "5-hour" in text || "five_hour" in text) return 5 * HOUR_MS
+            if ("week" in text || "seven_day" in text || "fable" in text) return 7 * DAY_MS
+            return null
+        }
+
         fun from(json: Map<String, Any?>): UsageWindowMeter {
             val used = json.int("usedPercent", -1)
             val reset = json.long("resetAtMs")
+            val window = json.long("windowMs")
+            val id = json.str("id")
+            val label = json.str("label")
             return UsageWindowMeter(
-                id = json.str("id"),
-                label = json.str("label"),
+                id = id,
+                label = label,
                 usedPercent = if (used >= 0) minOf(used, 100) else null,
                 resetAtMs = if (reset > 0) reset else null,
                 state = UsageState.of(json.str("state")),
+                windowMs = if (window > 0) window else inferredWindowMs(id, label),
             )
         }
     }
