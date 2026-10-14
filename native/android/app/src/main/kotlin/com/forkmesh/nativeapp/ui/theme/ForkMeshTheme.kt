@@ -110,8 +110,8 @@ object FmColors {
     val darkBgElevated = Color(0xFF26262A)
 
     val textPrimary = Color(0xFF0A0A0A)
-    val textSecondary = Color(0x990A0A0A)
-    val textTertiary = Color(0x660A0A0A)
+    val textSecondary = Color(0xB80A0A0A)
+    val textTertiary = Color(0x990A0A0A)
     val textDisabled = Color(0x400A0A0A)
 
     val darkTextPrimary = Color(0xFFF4F4F5)
@@ -123,15 +123,16 @@ object FmColors {
     val accentSubtle = Color(0x1A6161F2)
     val accentOnDark = Color(0xFF6C63FF)
     val accentSubtleOnDark = Color(0x332F2A74)
-    val success = Color(0xFF148A45)
+    val success = Color(0xFF0F7A3B)
     val successOnDark = Color(0xFF46E07F)
     val successBtn = textPrimary
     val successBtnHover = Color(0xFF2A2E36)
     val danger = Color(0xFFC93532)
     val dangerOnDark = Color(0xFFFF6B6B)
-    val warning = Color(0xFFB7791F)
+    val warning = Color(0xFF8F5A0A)
     val warningOnDark = Color(0xFFE5C84C)
     val offline = Color(0xFFA0A7B2)
+    val offlineOnLight = Color(0xFF5F6672)
     val accentEdge = Color(0xFF8250DF)
     val darkBorder = Color(0xFF252529)
     val editorGutter = Color(0xFF101012)
@@ -220,7 +221,7 @@ val LightPalette = FmPalette(
     textPrimary = FmColors.textPrimary, textSecondary = FmColors.textSecondary,
     textTertiary = FmColors.textTertiary, textDisabled = FmColors.textDisabled,
     accent = FmColors.accent, accentSubtle = FmColors.accentSubtle, success = FmColors.success,
-    danger = FmColors.danger, warning = FmColors.warning, offline = FmColors.offline,
+    danger = FmColors.danger, warning = FmColors.warning, offline = FmColors.offlineOnLight,
     accentEdge = FmColors.accentEdge, border = FmColors.borderMuted,
     codeKeyword = FmColors.codeKeywordLight, codeType = FmColors.codeTypeLight,
     codeString = FmColors.codeStringLight, codeComment = FmColors.codeCommentLight,
