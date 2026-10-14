@@ -1,7 +1,7 @@
       <aside id="dashboardSidebar" data-dashboard-sidebar aria-label="Dashboard navigation" class="bg-[rgb(var(--dashboard-sidebar-rgb))]">
         <nav data-sidebar-main-menu class="dashboard-nav">
-          <div role="group" aria-labelledby="sidebarGroupDashboard" class="dashboard-nav-group">
-            <span id="sidebarGroupDashboard" class="dashboard-nav-title">Dashboard</span>
+          <div role="group" aria-labelledby="sidebarGroupDashboard" class="dashboard-nav-group dashboard-nav-workspace">
+            <span id="sidebarGroupDashboard" class="dashboard-nav-title">Workspace</span>
             <a href="https://forkmesh.com/"><span class="dashboard-nav-icon"><i data-lucide="house"></i></span>Home</a>
             <a data-nav="home" data-nav-link href="/dashboard"><span class="dashboard-nav-icon"><i data-lucide="layout-dashboard"></i></span>Dashboard</a>
             <a data-nav="profile" data-nav-link href="/dashboard/profile"><span class="dashboard-nav-icon"><i data-lucide="user-round"></i></span>Profile</a>
@@ -9,46 +9,50 @@
             <a data-nav="agents" data-nav-link href="/dashboard/agents" data-plugin-entry="agents"><span class="dashboard-nav-icon"><i data-lucide="bot"></i></span>Agents</a>
             <a data-nav="apps" data-nav-link href="/dashboard/apps"><span class="dashboard-nav-icon"><i data-lucide="blocks"></i></span>Apps</a>
             <a data-nav="runners" data-nav-link href="/dashboard/runners"><span class="dashboard-nav-icon"><i data-lucide="server"></i></span>Runners</a>
+            <a href="/dashboard/settings"><span class="dashboard-nav-icon"><i data-lucide="settings"></i></span>Settings</a>
           </div>
           <!-- forkmesh:plugin-navigation -->
-          <div role="group" aria-labelledby="sidebarGroupCommunity" class="dashboard-nav-group">
-            <span id="sidebarGroupCommunity" class="dashboard-nav-title">Community</span>
-            <a href="https://world.forkmesh.com/" data-plugin-entry="world"><span class="dashboard-nav-icon"><i data-lucide="globe"></i></span>World</a>
-            <a data-nav="chat" data-nav-link href="/dashboard/chat" data-plugin-entry="chat"><span class="dashboard-nav-icon"><i data-lucide="messages-square"></i></span>Chat</a>
-            <a data-nav="network" data-nav-link href="/dashboard/network" data-plugin-entry="network"><span class="dashboard-nav-icon"><i data-lucide="share-2"></i></span>Network</a>
-            <a href="/ecosystem"><span class="dashboard-nav-icon"><i data-lucide="box"></i></span>Ecosystem</a>
-            <a href="/leaderboards"><span class="dashboard-nav-icon"><i data-lucide="trophy"></i></span>Leaderboards</a>
-            <a data-nav="microjobs" data-nav-link href="/microjobs"><span class="dashboard-nav-icon"><i data-lucide="briefcase"></i></span>Microjobs</a>
-            <a data-nav="bounties" data-nav-link href="/dashboard/bounties"><span class="dashboard-nav-icon"><i data-lucide="badge-dollar-sign"></i></span>Bounties</a>
-            <a data-nav="referrals" data-nav-link href="/referral"><span class="dashboard-nav-icon"><i data-lucide="user-plus"></i></span>Referral</a>
-            <a data-nav="links" data-nav-link href="/dashboard/links"><span class="dashboard-nav-icon"><i data-lucide="link"></i></span>Links</a>
-            <a data-nav="challenges" data-nav-link href="/dashboard/challenges"><span class="dashboard-nav-icon"><i data-lucide="swords"></i></span>Challenges</a>
-            <a data-nav="ads" data-nav-link href="/dashboard/ads"><span class="dashboard-nav-icon"><i data-lucide="megaphone"></i></span>Ads</a>
-            <a data-nav="hackathon" data-nav-link href="/hackathon/me"><span class="dashboard-nav-icon"><i data-lucide="flag"></i></span>Hackathon</a>
-          </div>
-          <div role="group" aria-labelledby="sidebarGroupProduct" class="dashboard-nav-group">
-            <span id="sidebarGroupProduct" class="dashboard-nav-title">Product</span>
-            <a href="/features"><span class="dashboard-nav-icon"><i data-lucide="sparkles"></i></span>Features</a>
-            <a href="/desktop"><span class="dashboard-nav-icon"><i data-lucide="monitor"></i></span>Desktop app</a>
-            <a href="https://forkmesh.com/market"><span class="dashboard-nav-icon"><i data-lucide="store"></i></span>Marketplace<i data-lucide="arrow-up-right" class="dashboard-nav-external"></i></a>
-            <a href="https://forkmesh.com/#pricing"><span class="dashboard-nav-icon"><i data-lucide="tag"></i></span>Pricing</a>
-            <a data-forkmesh-membership href="https://forkmesh.com/#membership"><span class="dashboard-nav-icon"><i data-lucide="heart"></i></span>Membership</a>
-            <a href="/mirror-payouts"><span class="dashboard-nav-icon"><i data-lucide="wallet"></i></span>Mirror payouts</a>
-          </div>
-          <div role="group" aria-labelledby="sidebarGroupResources" class="dashboard-nav-group">
-            <span id="sidebarGroupResources" class="dashboard-nav-title">Resources</span>
-            <a href="/docs"><span class="dashboard-nav-icon"><i data-lucide="book-open"></i></span>Docs</a>
-            <a data-nav="docs" data-nav-link href="/dashboard/docs"><span class="dashboard-nav-icon"><i data-lucide="file-text"></i></span>Developer docs</a>
-            <a href="/blog"><span class="dashboard-nav-icon"><i data-lucide="newspaper"></i></span>Blog</a>
-            <a href="/changelog"><span class="dashboard-nav-icon"><i data-lucide="git-commit-vertical"></i></span>Changelog</a>
-            <a href="/status" data-status-entry><span class="dashboard-nav-icon"><i data-lucide="activity"></i></span>Status</a>
-            <a data-nav="ledger" data-nav-link href="/ledger" data-plugin-entry="ledger"><span class="dashboard-nav-icon"><i data-lucide="receipt"></i></span>Financial ledger</a>
-          </div>
-          <div role="group" aria-labelledby="sidebarGroupCompany" class="dashboard-nav-group">
-            <span id="sidebarGroupCompany" class="dashboard-nav-title">Company</span>
-            <a href="/about"><span class="dashboard-nav-icon"><i data-lucide="info"></i></span>About</a>
-            <a href="/careers"><span class="dashboard-nav-icon"><i data-lucide="users"></i></span>Careers</a>
-            <a href="/press"><span class="dashboard-nav-icon"><i data-lucide="volume-2"></i></span>Press</a>
+          <div class="dashboard-nav-site">
+            <span class="dashboard-nav-title dashboard-nav-site-title">Explore ForkMesh</span>
+            <div role="group" aria-labelledby="sidebarGroupCommunity" class="dashboard-nav-group">
+              <span id="sidebarGroupCommunity" class="dashboard-nav-title">Community</span>
+              <a href="https://world.forkmesh.com/" data-plugin-entry="world"><span class="dashboard-nav-icon"><i data-lucide="globe"></i></span>World</a>
+              <a data-nav="chat" data-nav-link href="/dashboard/chat" data-plugin-entry="chat"><span class="dashboard-nav-icon"><i data-lucide="messages-square"></i></span>Chat</a>
+              <a data-nav="network" data-nav-link href="/dashboard/network" data-plugin-entry="network"><span class="dashboard-nav-icon"><i data-lucide="share-2"></i></span>Network</a>
+              <a href="/ecosystem"><span class="dashboard-nav-icon"><i data-lucide="box"></i></span>Ecosystem</a>
+              <a href="/leaderboards"><span class="dashboard-nav-icon"><i data-lucide="trophy"></i></span>Leaderboards</a>
+              <a data-nav="microjobs" data-nav-link href="/microjobs"><span class="dashboard-nav-icon"><i data-lucide="briefcase"></i></span>Microjobs</a>
+              <a data-nav="bounties" data-nav-link href="/dashboard/bounties"><span class="dashboard-nav-icon"><i data-lucide="badge-dollar-sign"></i></span>Bounties</a>
+              <a data-nav="referrals" data-nav-link href="/referral"><span class="dashboard-nav-icon"><i data-lucide="user-plus"></i></span>Referral</a>
+              <a data-nav="links" data-nav-link href="/dashboard/links"><span class="dashboard-nav-icon"><i data-lucide="link"></i></span>Links</a>
+              <a data-nav="challenges" data-nav-link href="/dashboard/challenges"><span class="dashboard-nav-icon"><i data-lucide="swords"></i></span>Challenges</a>
+              <a data-nav="ads" data-nav-link href="/dashboard/ads"><span class="dashboard-nav-icon"><i data-lucide="megaphone"></i></span>Ads</a>
+              <a data-nav="hackathon" data-nav-link href="/hackathon/me"><span class="dashboard-nav-icon"><i data-lucide="flag"></i></span>Hackathon</a>
+            </div>
+            <div role="group" aria-labelledby="sidebarGroupProduct" class="dashboard-nav-group">
+              <span id="sidebarGroupProduct" class="dashboard-nav-title">Product</span>
+              <a href="/features"><span class="dashboard-nav-icon"><i data-lucide="sparkles"></i></span>Features</a>
+              <a href="/desktop"><span class="dashboard-nav-icon"><i data-lucide="monitor"></i></span>Desktop app</a>
+              <a href="https://forkmesh.com/market"><span class="dashboard-nav-icon"><i data-lucide="store"></i></span>Marketplace<i data-lucide="arrow-up-right" class="dashboard-nav-external"></i></a>
+              <a href="https://forkmesh.com/#pricing"><span class="dashboard-nav-icon"><i data-lucide="tag"></i></span>Pricing</a>
+              <a data-forkmesh-membership href="https://forkmesh.com/#membership"><span class="dashboard-nav-icon"><i data-lucide="heart"></i></span>Membership</a>
+              <a href="/mirror-payouts"><span class="dashboard-nav-icon"><i data-lucide="wallet"></i></span>Mirror payouts</a>
+            </div>
+            <div role="group" aria-labelledby="sidebarGroupResources" class="dashboard-nav-group">
+              <span id="sidebarGroupResources" class="dashboard-nav-title">Resources</span>
+              <a href="/docs"><span class="dashboard-nav-icon"><i data-lucide="book-open"></i></span>Docs</a>
+              <a data-nav="docs" data-nav-link href="/dashboard/docs"><span class="dashboard-nav-icon"><i data-lucide="file-text"></i></span>Developer docs</a>
+              <a href="/blog"><span class="dashboard-nav-icon"><i data-lucide="newspaper"></i></span>Blog</a>
+              <a href="/changelog"><span class="dashboard-nav-icon"><i data-lucide="git-commit-vertical"></i></span>Changelog</a>
+              <a href="/status" data-status-entry><span class="dashboard-nav-icon"><i data-lucide="activity"></i></span>Status</a>
+              <a data-nav="ledger" data-nav-link href="/ledger" data-plugin-entry="ledger"><span class="dashboard-nav-icon"><i data-lucide="receipt"></i></span>Financial ledger</a>
+            </div>
+            <div role="group" aria-labelledby="sidebarGroupCompany" class="dashboard-nav-group">
+              <span id="sidebarGroupCompany" class="dashboard-nav-title">Company</span>
+              <a href="/about"><span class="dashboard-nav-icon"><i data-lucide="info"></i></span>About</a>
+              <a href="/careers"><span class="dashboard-nav-icon"><i data-lucide="users"></i></span>Careers</a>
+              <a href="/press"><span class="dashboard-nav-icon"><i data-lucide="volume-2"></i></span>Press</a>
+            </div>
           </div>
         </nav>
 
