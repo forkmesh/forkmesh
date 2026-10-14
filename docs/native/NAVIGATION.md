@@ -3389,6 +3389,15 @@ follow-up sent to a running agent to show at once.
   send takes it back and returns the text to the composer.
   `PendingPromptsTests` covers it (iOS core, Linux).
 
+### 2.0.99 The Agents tool row is centred (2026-10-14, iPhone)
+
+The user asked for the icons under the top bar on the Agents tab to be
+centred. `AgentsScreen.tabBar` used to pack `tools` to the left with a
+trailing `Spacer`; it now gives the row the full width
+(`frame(maxWidth: .infinity)`), so the chips (stop all, sort, list view,
+queue, usage or runner accounts, terminal, recycle bin, watch, on-device
+chat) sit centred whichever of them are shown.
+
 ### 2.0.58 Tour can be removed from the phone (2026-10-05, iOS and Android)
 
 Reported: "Was unable to remove tour button in app". On iOS the Tour cell's
