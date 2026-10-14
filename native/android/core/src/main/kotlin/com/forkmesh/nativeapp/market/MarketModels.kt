@@ -517,6 +517,7 @@ class MarketModel(
     var options: MarketOptions = MarketOptions()
     var organizationCache: (String) -> Boolean? = { null }
     var legacy: () -> Boolean = { true }
+    var starterPack: () -> StarterPack = { StarterPack.FALLBACK }
 
     fun refresh(organizationNames: List<String>?) {
         try {
@@ -557,7 +558,7 @@ class MarketModel(
     }
 
     fun isInstalled(pkg: MarketPackage): Boolean = when (installMode(pkg)) {
-        PackageInstallMode.ACCOUNT -> accountSwitch(pkg.id) ?: PackageGate.fallback(pkg.id, AccountCatalogEntry.of(pkg), legacy())
+        PackageInstallMode.ACCOUNT -> accountSwitch(pkg.id) ?: PackageGate.fallback(pkg.id, AccountCatalogEntry.of(pkg), legacy(), starterPack())
         PackageInstallMode.ORGANIZATION -> deviceSwitch(pkg.id) != false && organizationInstalled(pkg)
         PackageInstallMode.PHONE -> deviceSwitch(pkg.id) ?: false
         PackageInstallMode.DESKTOP -> pkg.isDefault

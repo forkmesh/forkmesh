@@ -10,6 +10,7 @@ object PackageGate {
     const val CUTOFF = "2026-10-11"
     const val LEGACY_KEY = "packages/legacyProject"
     const val PROJECT_INSTALLS_KEY = "packages/projectInstalls"
+    const val STARTER_PACK_KEY = "packages/starterPack"
 
     const val AGENTS = "agents"
     const val INBOX = "inbox"
@@ -120,12 +121,40 @@ object PackageGate {
     fun organizationInstalled(states: List<OrgPackageState>): Set<String> =
         states.flatMap { state -> state.plugins.filter { it.installed }.map { it.id } }.filter { it in ORGANIZATION_PACKAGES }.toSet()
 
-    fun fallback(id: String, entry: AccountCatalogEntry?, legacy: Boolean): Boolean = when {
-        !legacy && id in STARTER -> true
+    fun starterPack(prefs: PrefStore?): StarterPack = StarterPack.fromId(prefs?.getString(STARTER_PACK_KEY))
+
+    fun chooseStarterPack(pack: StarterPack, prefs: PrefStore?) {
+        prefs?.putString(STARTER_PACK_KEY, pack.id)
+    }
+
+    fun needsStarterPack(prefs: PrefStore?, legacy: Boolean): Boolean =
+        prefs != null && !legacy && prefs.getString(STARTER_PACK_KEY) == null
+
+    fun fallback(id: String, entry: AccountCatalogEntry?, legacy: Boolean, pack: StarterPack = StarterPack.FALLBACK): Boolean = when {
+        !legacy && id in pack.packages -> true
         entry == null -> legacy
         entry.isDefault -> true
         entry.installedBefore.isNotEmpty() -> legacy
         else -> false
+    }
+}
+
+enum class StarterPack(val id: String, val label: String, val summary: String) {
+    MINIMAL("minimal", "Minimal", "Just your code. No agents, chat or inbox; add more from the Market later."),
+    STANDARD("standard", "Standard", "Agents, Chat, Inbox, Code and the tour. A good place to start."),
+    EVERYTHING("everything", "Everything", "Every package on the phone, for people who want it all at once.");
+
+    val packages: Set<String>
+        get() = when (this) {
+            MINIMAL -> setOf(PackageGate.CODE)
+            STANDARD -> PackageGate.STARTER
+            EVERYTHING -> PackageGate.GATED - PackageGate.ORGANIZATION_PACKAGES
+        }
+
+    companion object {
+        val FALLBACK = STANDARD
+
+        fun fromId(id: String?): StarterPack = values().firstOrNull { it.id == id } ?: FALLBACK
     }
 }
 

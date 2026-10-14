@@ -302,6 +302,8 @@ class AccountPackagesStore(
 
     val perProject: Boolean get() = !legacyProject()
 
+    val starterPack: StarterPack get() = PackageGate.starterPack(prefs)
+
     fun addListener(listener: () -> Unit) {
         listeners.add(listener)
     }
@@ -318,7 +320,7 @@ class AccountPackagesStore(
         val row = state?.find(id)
         val own = when {
             !legacyProject() -> projectOwn(id, entry, row)
-            row == null -> PackageGate.fallback(id, entry, true)
+            row == null -> PackageGate.fallback(id, entry, true, starterPack)
             row.legacy -> true
             else -> row.installed
         }
@@ -330,7 +332,7 @@ class AccountPackagesStore(
         return when (projectChoices[id]) {
             false -> false
             true -> accountKeeps
-            null -> id in PackageGate.STARTER || (entry?.isDefault == true && accountKeeps)
+            null -> id in starterPack.packages || (entry?.isDefault == true && accountKeeps)
         }
     }
 
