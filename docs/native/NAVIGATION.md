@@ -3389,7 +3389,16 @@ follow-up sent to a running agent to show at once.
   send takes it back and returns the text to the composer.
   `PendingPromptsTests` covers it (iOS core, Linux).
 
-### 2.0.99 A bottom bar you can style like Home (2026-10-14, iPhone)
+### 2.0.99 The Agents tool row is centred (2026-10-14, iPhone)
+
+The user asked for the icons under the top bar on the Agents tab to be
+centred. `AgentsScreen.tabBar` used to pack `tools` to the left with a
+trailing `Spacer`; it now gives the row the full width
+(`frame(maxWidth: .infinity)`), so the chips (stop all, sort, list view,
+queue, usage or runner accounts, terminal, recycle bin, watch, on-device
+chat) sit centred whichever of them are shown.
+
+### 2.0.100 A bottom bar you can style like Home (2026-10-14, iPhone)
 
 The user asked to customize the bottom navigation bar: individual squares or
 bare icons, adjusted the way the Home icons are (2.0.91), with lots of
