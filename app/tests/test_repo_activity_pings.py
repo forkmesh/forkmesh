@@ -34,8 +34,9 @@ def _load_notifier(name, captured, maintainers=()):
     """
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
     body = [node for node in tree.body
-            if isinstance(node, ast.AsyncFunctionDef) and node.name == name]
-    assert len(body) == 1, name + " not found in entry.py"
+            if isinstance(node, ast.AsyncFunctionDef) and node.name in (
+                name, "_node_owner_among", "_org_fanout_recipients")]
+    assert len(body) == 3, name + " not found in entry.py"
     body.extend(
         node for node in tree.body
         if isinstance(node, ast.Assign) and {
@@ -51,9 +52,13 @@ def _load_notifier(name, captured, maintainers=()):
     async def org_repo_maintainers(_env, _host_owner, _repo):
         return list(maintainers)
 
+    async def account_row(_env, _name):
+        return None, {}
+
     ns = {
         "enqueue_notification": enqueue_notification,
         "_org_repo_maintainers": org_repo_maintainers,
+        "_account_row": account_row,
         "clean_string": lambda value, limit=240: (
             value.strip()[:limit] if isinstance(value, str) else ""),
         "repo_web_href": lambda owner, repo: "/" + owner + "/" + repo,
