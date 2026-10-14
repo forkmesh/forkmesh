@@ -229,6 +229,30 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 ## Recent changes
 
+- 2026-10-14 (branch 1992, iOS): a project with no instance works without
+  one. Asked: "allow for creating new repositories on the device without
+  having an instance connected, and we can remove the On this device only
+  choose instance warning, and put that small in the project list next to
+  the project". Changes:
+  - The shell no longer shows the "On this device only" banner
+    (`NoInstanceBanner` and `AttachInstanceModel.bannerText` are gone). A
+    project with no instance shows no connection banner at all.
+  - In the project drawer (`ProjectSwitcher`), each project with no instance
+    has a small **Choose instance** button beside its row. It opens
+    `ChooseInstanceView` for that project, active or not.
+  - Changes that stay on the phone use `AccountFeature.requireLocalAccess`
+    instead of `requireAccount`. These are creating, importing and mirroring
+    a repository; editing and deleting files; staging and committing;
+    discarding changes; creating branches; and deleting a repository. With
+    no instance, they go ahead without sign-in. With an instance, guests
+    still sign in first. Publish, push and sync still need an instance, so
+    they open the chooser.
+  - The Repos tab neither loads nor shows the Network catalog (or its
+    header) while the project has no instance. The catalog loads once one
+    is attached.
+  - The SwiftUI files are only parse-checked; they have not been run on a
+    device. Android still shows its `NoInstanceBanner`.
+
 - 2026-10-13 (iOS performance round, branch `1996-ios-performance`; asked:
   "the iPhone app is feeling a bit laggy, let's optimize it").
   - Evidence. No phone performance data reaches the server: performance
@@ -330,7 +354,7 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
   without an instance". The full-screen **Choose an instance** gate is gone: a
   project with no instance opens the shell (no sign-in or guest step), so its
   on-device repositories and other local features work. The shell shows an
-  "On this device only" banner (`NoInstanceBanner`, in place of the offline
+  "On this device only" banner (`NoInstanceBanner`, removed on iOS 2026-10-14; in place of the offline
   banner, since there is no relay to reach) whose **Choose instance** opens the
   chooser as a sheet (iOS, from `SignInPresenter`) or a full-screen dialog
   (Android, `ChooseInstanceHost` in `AccountFeature.Gate`); its **Not now**

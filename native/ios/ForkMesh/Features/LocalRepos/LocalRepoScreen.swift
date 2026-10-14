@@ -175,7 +175,7 @@ private struct LocalRepoScreenContent: View {
         case .files:
             LocalFilesTab(model: model, onOpen: openEntry, onNewFile: startNewFile)
         case .changes:
-            LocalChangesTab(model: model, onDiscard: { (path: String) in startDiscard(path) }, onGate: gate)
+            LocalChangesTab(model: model, onDiscard: { (path: String) in startDiscard(path) }, onGate: localGate)
         case .branches:
             LocalBranchesTab(model: model, onNewBranch: startNewBranch)
         case .history:
@@ -268,6 +268,13 @@ private struct LocalRepoScreenContent: View {
         }
     }
 
+    private func localGate(_ action: String, _ body: @escaping @MainActor () async -> Void) {
+        Task { @MainActor in
+            guard await AccountFeature.requireLocalAccess(action: action) else { return }
+            await body()
+        }
+    }
+
     private func openEntry(_ entry: LocalFileEntry) {
         if entry.isDirectory {
             Task { await model.openDirectory(entry.path) }
@@ -277,7 +284,7 @@ private struct LocalRepoScreenContent: View {
     }
 
     private func startNewFile() {
-        gate("create files") {
+        localGate("create files") {
             newFilePath = model.newFilePrefill
             askingNewFile = true
         }
@@ -291,11 +298,11 @@ private struct LocalRepoScreenContent: View {
     }
 
     private func startDiscard(_ path: String) {
-        gate("discard changes") { discarding = path }
+        localGate("discard changes") { discarding = path }
     }
 
     private func startNewBranch() {
-        gate("create branches") { creatingBranch = true }
+        localGate("create branches") { creatingBranch = true }
     }
 
     private func startPublish() {
@@ -339,7 +346,7 @@ private struct LocalRepoScreenContent: View {
     }
 
     private func startDelete() {
-        gate("delete repositories") { confirmingDelete = true }
+        localGate("delete repositories") { confirmingDelete = true }
     }
 
     private func deleteRepository() {
