@@ -3732,6 +3732,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     for (const [selector, hidden] of [["[data-crm-board]", !board || people], ["[data-crm-table]", board || people], ["[data-crm-contact-cards]", board || people], ["[data-crm-people]", !people]]) {
       const node = $(selector); if (node) node.hidden = hidden;
     }
+    const strip = $(`[data-crm-stage-strip]`); if (strip && people) strip.hidden = true;
     if (people) renderCrmPeople();
     if (board && !people) renderCrmBoard(contacts);
     else if ($(`[data-crm-board-note]`)) $(`[data-crm-board-note]`).hidden = true;
@@ -5813,9 +5814,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function crmPeopleRows(query = "") {
     const lists = new Map();
-    for (const view of state.crmView.views) {
+    const pipelines = crmPipelineIds();
+    for (const view of crmTabViews().filter((item) => item.id !== CRM_NO_PIPELINE_TAB)) {
       for (const contact of state.crmView.contacts) {
-        if (!crmContactInView(contact, view)) continue;
+        if (!crmContactOnTab(contact, view, pipelines)) continue;
         if (!lists.has(contact.id)) lists.set(contact.id, []);
         lists.get(contact.id).push(view.name);
       }
