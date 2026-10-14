@@ -259,7 +259,8 @@ DISCORD_OAUTH_CALLBACK_RE = re.compile(
 MAILTRAP_WEBHOOK_RE = re.compile(
     r"^/api/integrations/mailtrap/webhook/?$")
 MAIL_TRACKING_RE = re.compile(
-    r"^/api/mail/t/(o|c|u|l)/([0-9a-f-]{36}\.[0-9a-f]{24})(?:\.gif|\.png)?$")
+    r"^/api/mail/t/(o|c|u|l)/((?:[0-9a-f]{32}|[0-9a-f-]{36})\.[0-9a-f]{24})"
+    r"(?:\.gif|\.png)?$")
 MAIL_FOOTER_IMAGE_RE = re.compile(
     r"^/api/mail/t/f/([0-9a-f]{32}\.[0-9a-f]{24})\.png$")
 MAIL_FOOTER_RE = re.compile(r"^/api/mail/footer/?$")
