@@ -208,6 +208,32 @@ nothing ("no applier" mode).
 - `UserPresence` (`instance`, `override`, `prompt: PresencePrompt?`, `forceDialog`,
   `confirm(reason:dialog:) async -> Bool`); the app's prompt is `LocalAuthPresencePrompt`.
 
+## On-device history file (`Threads/ChatHistoryStore.swift`)
+
+`ChatHub.attachHistory` restores `relay-<scope>.json` from Application Support
+once, and on every relay change asks `ChatHistoryStore.scheduleSave` to save
+again 2 s later. Until 2026-10-14 (branch 1994) that save ran on the main
+thread. It bounded every channel (up to 200 messages and 2 MB of text each),
+JSON-encoded the whole history, and wrote it atomically with file protection.
+It did this even when nothing had changed, because the relay's 60 s presence
+tick notifies its listeners too. Now:
+
+- The main thread only takes `ChatHub.historyParts()`. That is a copy of the
+  relay history, the thread, reaction, edit and look state, the retention and
+  the time, all copy-on-write, so it is cheap.
+- `ChatHistoryParts.snapshot` bounds and filters (retention, orphaned
+  reactions and roots) on a serial utility queue (`ChatHistoryWriter`), which
+  then encodes and writes.
+- The writer remembers the last snapshot it wrote or loaded for each file, and
+  skips the encode and write when the new one is equal.
+- `erase(scope:)` cancels a pending save and removes the file on the same
+  queue, after any write already queued.
+- `save(_:scope:)` still writes synchronously.
+- `flush()` waits for queued writes and returns how many were made.
+
+The restore at attach time still reads and decodes on the main thread, once
+per scope. Tests: `ChatHistoryStoreTests`.
+
 ## Disappearing messages
 
 Chat messages disappear after the account's retention (FMApi `ChatRetentionService`; default
