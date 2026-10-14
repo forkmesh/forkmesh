@@ -26,6 +26,7 @@ class ProductionEndpointTest {
         expect(raw.startsWith("https://app.forkmesh.com/"), raw)
         assertEq("https://app.forkmesh.com", ServerUrl.parse(settings.serverUrl).httpOrigin)
         assertEq("https://app.forkmesh.com/signup", auth.signupUrl)
+        assertEq("https://app.forkmesh.com/forgot-password", auth.forgotPasswordUrl)
     }
 
     fun testASavedLocalWorkerDefaultIsClearedOnce() {
