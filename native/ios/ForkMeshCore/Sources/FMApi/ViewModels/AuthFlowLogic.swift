@@ -29,6 +29,8 @@ public enum AuthCopy {
         "For spam protection, new accounts are created only on the secure ForkMesh website."
     public static let signupBody =
         "The signup page issues a short-lived, one-use browser check. After you confirm your email, return here and log in."
+    public static let signupReturnHint = "When your email is confirmed, log in here with your new account."
+    public static let forgotPassword = "Forgot password?"
 }
 
 /// What Continue on the login form does (`_LoginScreenState._submit`).

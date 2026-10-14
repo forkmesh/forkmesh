@@ -599,6 +599,8 @@ final class AuthServiceTests: XCTestCase {
     func testSignupFollowsTheProductionRelayHost() async throws {
         let h = Harness()
         XCTAssertEqual(h.auth(try h.identity()).signupUrl?.absoluteString, "https://app.forkmesh.com/signup")
+        XCTAssertEqual(
+            h.auth(try h.identity()).forgotPasswordUrl?.absoluteString, "https://app.forkmesh.com/forgot-password")
     }
 
     @MainActor
