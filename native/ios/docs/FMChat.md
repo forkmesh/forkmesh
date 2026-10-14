@@ -653,6 +653,49 @@ target cannot be compiled on Linux: `swiftc -parse` passes for the new files, bu
 been type-checked or run on a device. That includes `CallFaceLandmarks.swift`: the Vision path
 was tested in Chromium with a stand-in host that returns Vision-shaped regions, not with Vision.
 
+### Preview stuck on the spinner; recording from the preview (2026-10-14)
+
+Asked: "record a message ahead of time and send it as an attachment they can watch and that is
+removed after watching", and "the preview only shows a spinning indicator, no video or sound".
+
+**Spinner.** `DirectCallPreviewScreen` put the WebView on screen only after
+`factory.preview(...)` returned, but that call waits for the page's `getUserMedia`. WebKit
+(`getUserMediaRequiresFocus`, on by default) holds a capture request until the document is
+visible, and a `WKWebView` outside a window never is, so the camera never started and the
+spinner stayed for ever. The call screen did not have the bug because it shows
+`factory.current` as soon as the peer exists. The preview now does the same: it shows
+`peer ?? factory.current` from the start, with the spinner over it until the page answers. A
+30 s watchdog ends a preview that still has not started, and the failure text has "Try again".
+
+**Record message.** In a DM (`hub.canSendViewOnce`) the preview has "Record message" beside
+"Start video call" (Close moved to an X at the top left to make room). It records the page's
+outgoing tracks, so the message is exactly the previewed picture and voice: face, background
+and changed voice included. The page operations (`direct-call.html`, both apps):
+
+| Op | Does |
+| --- | --- |
+| `record(face, background, voice)` | Only while previewing (`not_previewing` otherwise or after `setup`). Refuses at once when the page is not showing what the app asked for (`face_unavailable`, `background_unavailable`, `voice_unavailable`), then waits up to 20 s for `stage.ready()` and the voice stage (`face_not_ready`). Starts `MediaRecorder` on the stage track and the voice track: MP4 (H.264/AAC) where supported, else WebM; 900 kbit/s video, 64 kbit/s audio |
+| `recordStop()` | `{mime, durationMs, size}`; keeps the bytes in the page |
+| `recordChunk(offset)` | Base64 of up to 768 KiB from `offset` |
+| `recordDrop()` | Zeroes and forgets the bytes; `close` and `setup` do it too |
+
+`WebCallPeer.startRecording` / `finishRecording` / `dropRecording` drive them;
+`finishRecording` reads every chunk, checks the total, drops the page copy and returns
+`WebCallRecording` (MIME without parameters). The screen stops at 60 s with a countdown, turns
+"Hear myself" off, writes a protected temporary file (`MessagesViewOnceFiles`) and shows the
+review (`MessagesViewOnceReviewVideo`, routed to the speaker without headphones): Discard,
+Re-record, Send. Send is `hub.sendViewOnce(kind: .video, ...)`, the same encrypted view-once
+message as the composer's, and closes the preview; the file is deleted on send, discard or
+close. If a face, background or voice cannot start, nothing is recorded and the screen says
+why, rather than falling back to the raw camera or microphone.
+
+Tests: `app/browser_tests/tests/native-call-record.spec.js` loads the iOS `direct-call.html` in
+Chromium with a fake camera and microphone: preview with a changed voice, refusals, a 2.5 s
+recording read back in chunks that decodes as video, the copy dropped; a background preview
+whose recording waits for the stage; no recording before preview or after `setup`. The Swift
+files pass `swiftc -parse` only (the app target does not build on Linux); not yet run on a
+device.
+
 ## View-once video and voice messages
 
 Requested 2026-10-13 (task 1998): record a video or voice message in a direct message and have it
@@ -705,8 +748,10 @@ state, the status read once per socket and a consume retried).
 
 App (`Features/Chat/Messages/`):
 
-- `MessagesViewOnceCapture.swift`: the composer's More menu offers "View-once Video" and
-  "View-once Voice" in a one-to-one DM. Video uses `AVCaptureSession` with the front camera and
+- `MessagesViewOnceCapture.swift`: the composer's More menu offers "Video Message (Plays Once)"
+  and "Voice Message (Plays Once)" in a one-to-one DM (renamed from "View-once Video/Voice" on
+  2026-10-14: the user did not recognise the old names as the record-ahead feature). The call
+  preview's "Record message" is the other way in (below). Video uses `AVCaptureSession` with the front camera and
   microphone, a live preview, and `AVAssetWriter` to H.264 480x640 at about 1 Mbit/s with AAC
   64 kbit/s mono, so 60 s is about 8 MB, well under the 12 MiB limit. Recording stops by itself at
   60 s, with a countdown. Voice uses `AVAudioRecorder` (AAC, 22.05 kHz, 32 kbit/s) for up to 120 s
