@@ -361,6 +361,8 @@ public struct ViewOnceEntry: Equatable, Sendable, Identifiable {
 
     public var canPlay: Bool { !mine && state == .ready && material != nil }
 
+    public var canUnsend: Bool { mine && (state == .ready || state == .uploading) }
+
     public var stateLabel: String {
         switch state {
         case .sending, .uploading: return "Sending"
@@ -387,7 +389,8 @@ public final class ViewOnceStore {
     @ObservationIgnored private var byMedia: [String: String] = [:]
     @ObservationIgnored private var spent: [String: ViewOnceState] = [:]
     @ObservationIgnored private var spentOrder: [String] = []
-    @ObservationIgnored public var pendingConsume: Set<String> = []
+    public static let consumeKey = "chat/viewOnce/consume"
+    @ObservationIgnored public private(set) var pendingConsume: Set<String> = []
     @ObservationIgnored let prefs: KeyValueStore?
 
     public init(prefs: KeyValueStore? = nil) {
@@ -400,6 +403,18 @@ public final class ViewOnceStore {
             spent[String(pieces[0])] = state
             spentOrder.append(String(pieces[0]))
         }
+        pendingConsume = Set((prefs?.stringList(forKey: ViewOnceStore.consumeKey) ?? []).filter(ViewOnceFrames.validMediaId))
+    }
+
+    public func setConsumePending(_ media: String, _ pending: Bool) {
+        guard ViewOnceFrames.validMediaId(media), pendingConsume.contains(media) != pending else { return }
+        if pending { pendingConsume.insert(media) } else { pendingConsume.remove(media) }
+        prefs?.set(pendingConsume.sorted(), forKey: ViewOnceStore.consumeKey)
+    }
+
+    public func holdsReceipt(media: String) -> Bool {
+        guard let entry = entry(media: media), !entry.mine else { return false }
+        return !entry.state.isTerminal || pendingConsume.contains(media)
     }
 
     public func entry(_ messageId: String) -> ViewOnceEntry? { entries[messageId] }
@@ -465,7 +480,6 @@ public final class ViewOnceStore {
         entries = [:]
         byMedia = [:]
         busy = []
-        pendingConsume = []
     }
 
     private func remember(_ media: String, _ state: ViewOnceState) {

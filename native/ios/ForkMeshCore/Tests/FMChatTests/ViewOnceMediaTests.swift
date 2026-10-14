@@ -528,6 +528,102 @@ final class ViewOnceMediaTests: XCTestCase {
         XCTAssertEqual(server.rows[pendingId]?.state, "opened")
         await service.closeAll()
     }
+
+    @MainActor func receipts(_ connection: FakeWebSocketConnection) -> [String] {
+        connection.sentJSON.filter { $0["kind"]?.text == DirectMessageFrames.receivedKind }
+            .flatMap { $0["refs"]?.arrayValue?.compactMap { $0.stringValue } ?? [] }
+    }
+
+    @MainActor func testReceiptIsHeldUntilTheMessageIsFinal() async throws {
+        let server = FakeMediaServer()
+        prepare(server)
+        let ws = FakeWebSocketConnector()
+        let prefs = InMemoryKeyValueStore()
+        let service = makeService(server, ws, prefs: prefs)
+        let (connection, crypto, peer, conversation) = try await connectPeer(service, ws)
+        func ref(_ c: Character) -> String { String(repeating: c, count: 40) }
+        func deliver(_ plain: JSONObject, _ ref: String, replay: Bool = false) throws {
+            var envelope = try crypto.encrypt(try peer.seal(plain))
+            envelope["ref"] = .string(ref)
+            if replay { envelope["historyReplay"] = true }
+            connection.receive(text: JSON.encode(envelope))
+        }
+        let text: JSONObject = [
+            "type": "chat", "id": "pat-t", "senderId": "pat-node", "sender": "pat", "channel": .string(conversation),
+            "text": "plain", "ts": 900,
+        ]
+        let play = try peerViewOnce(server, sample(300), conversation: conversation, id: "v-play")
+        let expire = try peerViewOnce(server, sample(100), conversation: conversation, id: "v-expire")
+        let withdraw = try peerViewOnce(server, sample(100), conversation: conversation, id: "v-withdraw")
+        let offline = try peerViewOnce(server, sample(100), conversation: conversation, id: "v-offline")
+        try deliver(text, ref("0"))
+        try deliver(play, ref("1"))
+        try deliver(expire, ref("2"))
+        try deliver(withdraw, ref("3"), replay: true)
+        try deliver(offline, ref("4"))
+        let acked = await waitUntil { self.receipts(connection) == [ref("0")] }
+        XCTAssertTrue(acked)
+        XCTAssertEqual(service.heldReceiptCount, 4)
+        try deliver(play, ref("5"))
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(receipts(connection), [ref("0")])
+        _ = try await service.playViewOnce("v-play")
+        await service.consumeViewOnce("v-play")
+        let played = await waitUntil { Set(self.receipts(connection)) == Set([ref("0"), ref("1"), ref("5")]) }
+        XCTAssertTrue(played)
+        let expireId = try XCTUnwrap(service.viewOnce.entry("v-expire")?.mediaId)
+        connection.receive(json: ["kind": "forkmesh-media", "v": 1, "id": .string(expireId), "state": "expired"])
+        let expired = await waitUntil { self.receipts(connection).contains(ref("2")) }
+        XCTAssertTrue(expired)
+        let withdrawId = try XCTUnwrap(service.viewOnce.entry("v-withdraw")?.mediaId)
+        server.rows[withdrawId]?.state = "withdrawn"
+        connection.receive(json: ["kind": "forkmesh-history-end"])
+        let withdrawn = await waitUntil { self.receipts(connection).contains(ref("3")) }
+        XCTAssertTrue(withdrawn)
+        server.failConsume = true
+        await service.consumeViewOnce("v-offline")
+        XCTAssertEqual(service.viewOnce.entry("v-offline")?.state, .opened)
+        XCTAssertEqual(service.heldReceiptCount, 1)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertFalse(receipts(connection).contains(ref("4")))
+        let offlineId = try XCTUnwrap(service.viewOnce.entry("v-offline")?.mediaId)
+        XCTAssertEqual(prefs.stringList(forKey: ViewOnceStore.consumeKey), [offlineId])
+        server.failConsume = false
+        await service.refreshViewOnce(conversation)
+        let retried = await waitUntil { self.receipts(connection).contains(ref("4")) }
+        XCTAssertTrue(retried)
+        XCTAssertEqual(service.heldReceiptCount, 0)
+        XCTAssertEqual(prefs.stringList(forKey: ViewOnceStore.consumeKey), [])
+        try deliver(expire, ref("6"))
+        let late = await waitUntil { self.receipts(connection).contains(ref("6")) }
+        XCTAssertTrue(late)
+        XCTAssertEqual(service.heldReceiptCount, 0)
+        let restarted = ViewOnceStore(prefs: prefs)
+        let unopened = ViewOnceMedia(
+            kind: .voice, media: String(repeating: "c", count: 32), key: media().key, iv: media().iv,
+            mime: "audio/mp4", durationMs: 1_000, size: 100, parts: 1)
+        XCTAssertTrue(restarted.register(messageId: "again", conversation: conversation, media: unopened, mine: false).canPlay)
+        XCTAssertTrue(restarted.holdsReceipt(media: unopened.media))
+        await service.closeAll()
+    }
+
+    @MainActor func testOwnViewOnceFramesAreAckedAndCanBeUnsent() async throws {
+        let server = FakeMediaServer()
+        server.role = "sender"
+        prepare(server)
+        let ws = FakeWebSocketConnector()
+        let service = makeService(server, ws)
+        let (_, _, _, conversation) = try await connectPeer(service, ws)
+        try await service.sendViewOnce(conversation, kind: .voice, mime: "audio/mp4", data: Data(sample(500)), durationMs: 900)
+        let message = try XCTUnwrap(service.messages(conversation).last)
+        XCTAssertEqual(service.viewOnce.entry(message.id)?.canUnsend, true)
+        XCTAssertEqual(service.heldReceiptCount, 0)
+        try await service.withdrawViewOnce(message.id)
+        XCTAssertEqual(service.viewOnce.entry(message.id)?.state, .withdrawn)
+        XCTAssertEqual(service.viewOnce.entry(message.id)?.canUnsend, false)
+        XCTAssertEqual(server.count("DELETE", containing: "/media/"), 1)
+        await service.closeAll()
+    }
 }
 
 final class FailingFinish: ChatAccountCalling {
