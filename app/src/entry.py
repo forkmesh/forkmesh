@@ -30044,13 +30044,155 @@ async def award_genies_gift_badges(env):
     return {"awarded": awarded}
 
 
+BADGE_CONTRIBUTION_SOURCES_SQL = (
+    "src AS (SELECT p.source_repo_bi, p.active_generation_bi, "
+    "ROW_NUMBER() OVER (PARTITION BY p.project_bi "
+    "ORDER BY p.captured_at DESC, p.source_repo_bi) AS rk "
+    "FROM profile_contribution_projects p "
+    "JOIN repositories r ON r.key_bi=p.source_repo_bi "
+    "WHERE p.is_public=1 AND r.is_private=0 "
+    "AND p.active_generation_bi IS NOT NULL)")
+
+BADGE_CONTRIBUTION_DAYS_SQL = (
+    "FROM src s JOIN profile_contribution_days d "
+    "ON d.source_repo_bi=s.source_repo_bi "
+    "AND d.generation_bi=s.active_generation_bi WHERE s.rk=1")
+
+BADGE_METRIC_SQL = {
+    "six_eyes": (
+        BADGE_CONTRIBUTION_SOURCES_SQL + ", "
+        "m AS (SELECT d.subject_user_bi AS account_bi, "
+        "SUM(d.reviews) AS value " + BADGE_CONTRIBUTION_DAYS_SQL + " "
+        "GROUP BY d.subject_user_bi)"),
+    "brood": (
+        "m AS (SELECT COALESCE(NULLIF(po.user_bi, ''), r.owner_bi) "
+        "AS account_bi, COUNT(*) AS value FROM repo_forks f "
+        "JOIN repositories r ON r.key_bi=f.parent_bi "
+        "LEFT JOIN nodes po ON po.node_bi=r.owner_bi "
+        "LEFT JOIN nodes fo ON fo.node_bi=f.account_bi "
+        "WHERE r.is_private=0 "
+        "AND COALESCE(NULLIF(fo.user_bi, ''), f.account_bi)<>"
+        "COALESCE(NULLIF(po.user_bi, ''), r.owner_bi) GROUP BY 1)"),
+    "fan_club": (
+        "m AS (SELECT target_bi AS account_bi, COUNT(*) AS value "
+        "FROM profile_follows WHERE follower_bi<>target_bi "
+        "GROUP BY target_bi)"),
+    "night_watch": (
+        "m AS (SELECT COALESCE(NULLIF(n.user_bi, ''), t.node_key) "
+        "AS account_bi, SUM(t.minutes)/60 AS value "
+        "FROM node_uptime_totals t "
+        "LEFT JOIN nodes n ON n.node_bi=t.node_key GROUP BY 1)"),
+    "bug_catcher": (
+        "m AS (SELECT account_bi, SUM(n) AS value FROM ("
+        "SELECT account_bi, COUNT(*) AS n FROM microjob_claims "
+        "WHERE job='issue_report' AND status='paid' GROUP BY account_bi "
+        "UNION ALL SELECT recipient_bi, COUNT(*) "
+        "FROM contributor_reward_estimates "
+        "WHERE source_kind='issue' AND status='paid' "
+        "GROUP BY recipient_bi) GROUP BY account_bi)"),
+    "lift_off": (
+        "m AS (SELECT COALESCE(NULLIF(n.user_bi, ''), r.owner_bi) "
+        "AS account_bi, COUNT(*) AS value FROM ("
+        "SELECT DISTINCT repo_bi, sha256, ua, ts/86400000 AS day "
+        "FROM release_downloads) d "
+        "JOIN repositories r ON r.key_bi=d.repo_bi "
+        "LEFT JOIN nodes n ON n.node_bi=r.owner_bi "
+        "WHERE r.is_private=0 GROUP BY 1)"),
+    "shopkeeper": (
+        "pub AS (SELECT 'forkmesh-apps' AS market, slug AS package_id, "
+        "owner_bi FROM apps WHERE listing='listed' "
+        "UNION SELECT marketplace_id, package_id, submitted_by_bi "
+        "FROM marketplace_submissions WHERE state='published'), "
+        "m AS (SELECT pub.owner_bi AS account_bi, "
+        "COUNT(DISTINCT x.account_bi) AS value FROM pub "
+        "JOIN marketplace_package_uses x ON x.market=pub.market "
+        "AND x.package_id=pub.package_id "
+        "WHERE x.account_bi<>pub.owner_bi GROUP BY pub.owner_bi)"),
+    "critic": (
+        "m AS (SELECT r.reviewer_bi AS account_bi, COUNT(*) AS value "
+        "FROM marketplace_reviews r WHERE r.hidden=0 AND EXISTS ("
+        "SELECT 1 FROM marketplace_review_votes v "
+        "WHERE v.review_id=r.review_id AND v.voter_bi<>r.reviewer_bi) "
+        "GROUP BY r.reviewer_bi)"),
+    "bounty_hunter": (
+        "m AS (SELECT account_bi, SUM(n) AS value FROM ("
+        "SELECT account_bi, COUNT(*) AS n FROM microjob_claims "
+        "WHERE status='paid' GROUP BY account_bi "
+        "UNION ALL SELECT recipient_bi, COUNT(*) "
+        "FROM contributor_reward_estimates WHERE status='paid' "
+        "GROUP BY recipient_bi) GROUP BY account_bi)"),
+}
+
+BADGE_PROGRESS_SELECT_SQL = (
+    "SELECT m.account_bi, u.username, m.value FROM m "
+    "JOIN users u ON u.user_bi=m.account_bi "
+    "LEFT JOIN badge_progress p ON p.badge_slug=? "
+    "AND p.account_bi=m.account_bi "
+    "WHERE m.value>=? AND m.value>COALESCE(p.value, 0) ")
+
+
+async def _record_swept_progress(env, slug, rows, key="value"):
+    awarded = []
+    for row in rows or []:
+        name, name_bi, _ = await _active_user_account(
+            env, row.get("username") or "")
+        if not name or name_bi != row.get("account_bi"):
+            continue
+        if await _record_badge_progress(env, name, name_bi, slug,
+                                        row.get(key)):
+            awarded.append(name)
+    return awarded
+
+
+async def award_metric_badges(env, slug):
+    await ensure_schema(env)
+    rows = await d1_all(
+        env,
+        "WITH " + BADGE_METRIC_SQL[slug] + " " + BADGE_PROGRESS_SELECT_SQL +
+        "ORDER BY m.value DESC LIMIT ?",
+        slug, badge_catalog.badge_tiers(slug)[0], BADGE_SWEEP_LIMIT)
+    return {"awarded": await _record_swept_progress(env, slug, rows)}
+
+
+async def award_daily_spinner_badges(env):
+    await ensure_schema(env)
+    candidates = await d1_all(
+        env,
+        "WITH " + BADGE_CONTRIBUTION_SOURCES_SQL + ", "
+        "m AS (SELECT d.subject_user_bi AS account_bi, "
+        "COUNT(DISTINCT d.day) AS value " + BADGE_CONTRIBUTION_DAYS_SQL + " "
+        "AND d.commits+d.issues+d.pulls+d.reviews>0 "
+        "GROUP BY d.subject_user_bi) " + BADGE_PROGRESS_SELECT_SQL +
+        "ORDER BY COALESCE(p.updated_at, 0) LIMIT ?",
+        "daily_spinner", badge_catalog.badge_tiers("daily_spinner")[0],
+        BADGE_SWEEP_LIMIT)
+    rows = []
+    for row in candidates or []:
+        days = await d1_all(
+            env,
+            "WITH " + BADGE_CONTRIBUTION_SOURCES_SQL + " "
+            "SELECT DISTINCT d.day " + BADGE_CONTRIBUTION_DAYS_SQL + " "
+            "AND d.subject_user_bi=? "
+            "AND d.commits+d.issues+d.pulls+d.reviews>0",
+            row.get("account_bi"))
+        rows.append(dict(row, streak=badge_catalog.longest_streak(
+            [day.get("day") for day in days or []])))
+    return {"awarded": await _record_swept_progress(
+        env, "daily_spinner", rows, key="streak")}
+
+
 async def run_badge_sweep(env):
     out = {}
-    for key, sweep in (
-            ("distinguished_contributor",
-             award_distinguished_contributor_badges),
-            ("stargazer", award_stargazer_badges),
-            ("genies_gift", award_genies_gift_badges)):
+    sweeps = [
+        ("distinguished_contributor", award_distinguished_contributor_badges),
+        ("stargazer", award_stargazer_badges),
+        ("genies_gift", award_genies_gift_badges),
+        ("daily_spinner", award_daily_spinner_badges),
+    ]
+    for slug in BADGE_METRIC_SQL:
+        sweeps.append(
+            (slug, lambda env, slug=slug: award_metric_badges(env, slug)))
+    for key, sweep in sweeps:
         try:
             out[key] = (await sweep(env)).get("awarded", [])
         except Exception as error:

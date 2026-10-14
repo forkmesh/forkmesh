@@ -9,6 +9,7 @@ writes, and the event hooks that call into this module live in entry.py.
 """
 
 import re
+from datetime import date, timedelta
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 DISTINGUISHED_CONTRIBUTOR_MIN = 15
@@ -111,6 +112,76 @@ BADGE_DEFINITIONS = {
         "description": "Paid a ForkMesh contributor, confirmed on chain.",
         "icon": "\U0001FA94",
     },
+    "six_eyes": {
+        "name": "Six Eyes",
+        "description": "Reviewed pull requests.",
+        "icon": "\U0001F50D",
+        "tiers": (1, 16, 64, 256),
+        "unit": "reviews",
+    },
+    "brood": {
+        "name": "Brood",
+        "description": "Other people forked repositories you own.",
+        "icon": "\U0001F95A",
+        "tiers": (2, 16, 64, 256),
+        "unit": "forks",
+    },
+    "fan_club": {
+        "name": "Fan Club",
+        "description": "Followed by other ForkMesh members.",
+        "icon": "\U0001F496",
+        "tiers": (10, 50, 250, 1000),
+        "unit": "followers",
+    },
+    "night_watch": {
+        "name": "Night Watch",
+        "description": "Kept a ForkMesh node online.",
+        "icon": "\U0001F319",
+        "tiers": (24, 168, 720, 8760),
+        "unit": "hours online",
+    },
+    "daily_spinner": {
+        "name": "Daily Spinner",
+        "description": "Contributed on many days in a row.",
+        "icon": "\U0001F525",
+        "tiers": (7, 30, 100, 365),
+        "unit": "days in a row",
+    },
+    "bug_catcher": {
+        "name": "Bug Catcher",
+        "description": "Reported bugs that were accepted and paid.",
+        "icon": "\U0001F41E",
+        "tiers": (1, 10, 50, 200),
+        "unit": "bug reports",
+    },
+    "lift_off": {
+        "name": "Lift Off",
+        "description": "People downloaded releases of repositories you own.",
+        "icon": "\U0001F680",
+        "tiers": (10, 100, 1000, 10000),
+        "unit": "downloads",
+    },
+    "shopkeeper": {
+        "name": "Shopkeeper",
+        "description": "Published a marketplace package that other members use.",
+        "icon": "\U0001F6CD",
+        "tiers": (10, 100, 1000, 10000),
+        "unit": "users",
+    },
+    "critic": {
+        "name": "Critic",
+        "description": "Wrote marketplace reviews that others found helpful.",
+        "icon": "\U0001F58B",
+        "tiers": (1, 10, 50, 200),
+        "unit": "helpful reviews",
+    },
+    "bounty_hunter": {
+        "name": "Bounty Hunter",
+        "description": "Was paid for completed ForkMesh work.",
+        "icon": "\U0001FA99",
+        "tiers": (1, 5, 25, 100),
+        "unit": "paid jobs",
+    },
 }
 
 
@@ -179,6 +250,24 @@ def public_catalog():
                               for i, t in enumerate(info["tiers"])]
         out.append(entry)
     return out
+
+
+def longest_streak(days):
+    parsed = set()
+    for day in days or ():
+        try:
+            parsed.add(date.fromisoformat(str(day)[:10]))
+        except ValueError:
+            continue
+    best = 0
+    for day in parsed:
+        if day - timedelta(days=1) in parsed:
+            continue
+        run = 1
+        while day + timedelta(days=run) in parsed:
+            run += 1
+        best = max(best, run)
+    return best
 
 
 def contribution_count(row):
