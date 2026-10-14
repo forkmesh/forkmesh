@@ -82,6 +82,19 @@ Runner routing did not change:
 - It matches the target node against `RUNNER_POOL_TARGET_NODES`.
 - Neither depends on node ownership.
 
+## A core with no node account (2026-10-13)
+
+The daemon proves itself to the app only with its node key against `nodes.pubkey`; the `connectorToken` in `mirror-node.json` is the cloudflared tunnel token and is unused on cores. `fmnext-n1`..`n3` had accounts from before the cutover, and nothing in `tools/` created one, so `add-core` left `fmnext-n4` without an account: its catalog publications got HTTP 401, and the repository page listed only n2 and n3 under **Direct access** although n4 served the repository.
+
+```sh
+python3 tools/next_node_owner.py register            # dry-run: which cores lack an account
+python3 tools/next_node_owner.py register n4 --execute
+```
+
+On the node, `python3 -I` signs `forkmesh-reserve-v1\n<node>\n<ts>` and `forkmesh-finalize-v1\n<node>\n\n<ts>` with `/var/lib/forkmesh/identity/ed25519.pem`; only the public key and the two signatures come back. The tool posts them to `/api/accounts/reserve` and `/api/accounts/finalize` with no link code and checks that `nodes.pubkey` reads back as the node's key. `add-core` now runs the same call in its `register` step. The new account has no owner; `transfer --from '' --to jett --accept-key <PEM> --execute` links it like the others (the owner is only the desktop's `ownerUser` label).
+
+If an SSH call fails with `ControlPath too long` (an agent's long `TMPDIR`), set `FMNEXT_SSH_MUX_DIR` to a short directory, or to a path that cannot be created to turn multiplexing off.
+
 ## The `fmnext` account
 
 It is **kept** as an admin service account, and only its ownership was removed. The account is still used by:

@@ -254,3 +254,66 @@ def test_dry_run_changes_nothing(node_key, monkeypatch):
     tool.transfer(db, ssh, Runner(execute=False, out=io.StringIO()), FLEET,
                   "fmnext", "jett", "https://app.invalid")
     assert db.executed == [] and ssh.commands == []
+
+
+class MissingDb:
+    def __init__(self):
+        self.pubkey = ""
+
+    def account(self, name):
+        return {"kind": "node", "status": "active"} if self.pubkey else None
+
+    def node_row(self, name):
+        return {"pubkey": self.pubkey, "username": None} if self.pubkey else None
+
+
+def test_register_creates_a_missing_core_account_with_the_node_key(
+        node_key, monkeypatch):
+    pem, pubkey = node_key
+    db = MissingDb()
+    posted = []
+
+    def fake_post(app_url, path, body):
+        key = Ed25519PublicKey.from_public_bytes(unb64(body["pubkey"]))
+        if path == "reserve":
+            key.verify(unb64(body["sig"]), ("forkmesh-reserve-v1\n%s\n%s" % (
+                body["nodeName"], body["ts"])).encode())
+            posted.append(path)
+            return 201, {"ok": True}
+        key.verify(unb64(body["sig"]), ("forkmesh-finalize-v1\n%s\n\n%s" % (
+            body["nodeName"], body["ts"])).encode())
+        assert body["linkCode"] == "" and body["email"] == ""
+        posted.append(path)
+        db.pubkey = body["pubkey"]
+        return 201, {"ok": True}
+
+    monkeypatch.setattr(tool, "post_account", fake_post)
+    ssh = NodeSsh(pem)
+    tool.register(db, ssh, Runner(execute=True, out=io.StringIO()), FLEET,
+                  "https://app.invalid")
+    assert posted == ["reserve", "finalize"] and db.pubkey == pubkey
+    assert "PRIVATE" not in ssh.commands[0]
+
+
+def test_register_skips_an_active_core_and_dry_run_posts_nothing(
+        node_key, monkeypatch):
+    pem, pubkey = node_key
+    monkeypatch.setattr(tool, "post_account",
+                        lambda *a: pytest.fail("posted"))
+    ssh = NodeSsh(pem)
+    tool.register(FakeDb(pubkey), ssh, Runner(execute=True,
+                                              out=io.StringIO()),
+                  FLEET, "https://app.invalid")
+    tool.register(MissingDb(), ssh, Runner(execute=False, out=io.StringIO()),
+                  FLEET, "https://app.invalid")
+    assert ssh.commands == []
+
+
+def test_register_canonicals_match_the_next_app():
+    if not NEXT_ENTRY.exists():
+        pytest.skip("ForkMesh Next checkout not present")
+    entry = NEXT_ENTRY.read_text()
+    handlers = (REPO / "app" / "src" / "route_handlers.py").read_text()
+    assert '("forkmesh-reserve-v1\\n" + name + "\\n" + ts)' in entry
+    assert ('("forkmesh-finalize-v1\\n" + name + "\\n" + email + "\\n" +\n'
+            '                 ts)') in handlers

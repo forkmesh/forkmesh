@@ -40,6 +40,23 @@ message = "\n".join(["forkmesh-link-grant-v2"] + sys.argv[2:6]).encode()
 print(enc(raw) + " " + enc(key.sign(message)))
 '''
 
+ACCOUNT_SIGNER = r'''
+import base64, sys
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+with open(sys.argv[1], "rb") as handle:
+    key = serialization.load_pem_private_key(handle.read(), None)
+if not isinstance(key, Ed25519PrivateKey):
+    raise SystemExit("identity key is not Ed25519")
+enc = lambda v: base64.urlsafe_b64encode(v).decode().rstrip("=")
+raw = key.public_key().public_bytes(serialization.Encoding.Raw,
+                                    serialization.PublicFormat.Raw)
+node, ts = sys.argv[2], sys.argv[3]
+reserve = ("forkmesh-reserve-v1\n" + node + "\n" + ts).encode()
+finalize = ("forkmesh-finalize-v1\n" + node + "\n\n" + ts).encode()
+print(enc(raw) + " " + enc(key.sign(reserve)) + " " + enc(key.sign(finalize)))
+'''
+
 
 def keyset():
     import next_rekey
@@ -215,14 +232,77 @@ def sign_grant(ssh, node, account, target, ts, nonce):
     return parts[0], parts[1]
 
 
+def sign_account(ssh, node, account, ts):
+    command = "python3 -I - %s %s %s" % (IDENTITY_PEM, account, ts)
+    completed = ssh.run(node["public_ipv4"], command,
+                        input_bytes=ACCOUNT_SIGNER.encode(), timeout=60)
+    parts = (completed.stdout or b"").decode().split()
+    if len(parts) != 3:
+        raise ToolError("%s: the node signer returned no signatures" % account)
+    return parts[0], parts[1], parts[2]
+
+
+def register_core(db, ssh, runner, node, account, app_url):
+    record = db.account(account)
+    row = db.node_row(account)
+    if record and record.get("kind") == "node" and record.get(
+            "status") == "active" and row:
+        runner.say("%s: node account already active" % account)
+        return False
+    if record and record.get("kind") not in (None, "node"):
+        raise GuardError("%s is a %s account; refusing" % (
+            account, record.get("kind")))
+    if not runner.execute:
+        runner.say("[dry-run] %s: node key signs a reserve and a finalize; "
+                   "%s creates the node account" % (account, app_url))
+        return False
+    ts = str(int(time.time() * 1000))
+    pubkey, reserve_sig, finalize_sig = sign_account(ssh, node, account, ts)
+    code, reply = post_account(app_url, "reserve", {
+        "nodeName": account, "pubkey": pubkey, "ts": ts, "sig": reserve_sig})
+    if code not in (201, 409):
+        raise ToolError("%s: reserve answered HTTP %d %s" % (
+            account, code, reply.get("error") or ""))
+    code, reply = post_account(app_url, "finalize", {
+        "nodeName": account, "email": "", "password": "", "pubkey": pubkey,
+        "ts": ts, "sig": finalize_sig, "linkCode": ""})
+    if code != 201:
+        raise ToolError("%s: finalize answered HTTP %d %s" % (
+            account, code, reply.get("error") or ""))
+    after = db.node_row(account) or {}
+    if after.get("pubkey") != pubkey:
+        raise ToolError("%s: nodes.pubkey reads back as %r" % (
+            account, after.get("pubkey")))
+    runner.say("%s: node account registered with its identity key" % account)
+    return True
+
+
+def register(db, ssh, runner, fleet, app_url, names=()):
+    created = 0
+    for node, account in core_accounts(fleet):
+        if names and node["name"] not in names:
+            continue
+        created += register_core(db, ssh, runner, node, account, app_url)
+    runner.say("node accounts registered: %d" % created)
+    return 0
+
+
+def post_account(app_url, path, body):
+    return post_json(app_url.rstrip("/") + "/api/accounts/" + path, body)
+
+
 def post_grant(app_url, body, session=""):
+    return post_json(app_url.rstrip("/") + "/api/accounts/link-grant", body,
+                     session)
+
+
+def post_json(url, body, session=""):
     headers = {"Content-Type": "application/json",
                "User-Agent": "fmnext-tools/1"}
     if session:
         headers["Authorization"] = "Bearer " + session
     request = urllib.request.Request(
-        app_url.rstrip("/") + "/api/accounts/link-grant",
-        data=json.dumps(body).encode(), method="POST", headers=headers)
+        url, data=json.dumps(body).encode(), method="POST", headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             return response.status, json.loads(response.read() or b"{}")
@@ -352,6 +432,10 @@ def main(argv=None):
         description="Fleet node ownership (docs/NODE_OWNERSHIP.md)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("status")
+    reg = sub.add_parser("register")
+    reg.add_argument("names", nargs="*", help="core names (default: every core)")
+    reg.add_argument("--app-url", default=APP_URL)
+    common.add_execute_flags(reg)
     p = sub.add_parser("transfer")
     p.add_argument("--from", dest="source", required=True)
     p.add_argument("--to", dest="target", required=True)
@@ -371,6 +455,9 @@ def main(argv=None):
     try:
         if args.command == "status":
             return status(db, runner, fleet)
+        if args.command == "register":
+            return register(db, ssh, runner, fleet, args.app_url,
+                            [n.strip().lower() for n in args.names])
         return transfer(db, ssh, runner, fleet, args.source.strip().lower(),
                         args.target.strip().lower(), args.app_url,
                         Acceptor(args.accept_key, args.session_env))
