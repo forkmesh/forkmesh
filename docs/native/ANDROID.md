@@ -999,6 +999,76 @@ model in `C/market/MarketModels.kt` (`MarketModel`, `MarketOptions`,
 - Items read `version` so a sort, filter or install recomposes the chip row
   and rows; LazyColumn item lambdas that only capture the model are skipped.
 
+## 15. View-once video and voice messages (2026-10-13)
+
+The Android side of `docs/app/chat-private-rooms.md` ("View-once video and
+voice messages"): direct messages only.
+
+**Files.** `C/chat/ViewOnceMedia.kt` (kind, `viewOnce` codec, AES-256-GCM,
+512 KiB part split, `ViewOnceStore`, `ViewOnceClient` over
+`ChatAccountCalling`, the `forkmesh-media` relay frame, the capture filter
+seam), hooks in `C/chat/DirectMessages.kt` and `C/chat/ChatHub.kt`
+(`ChatRow.viewOnce`), `A/feature/chat/ViewOnceMessages.kt` (recorder, bubble,
+viewer), tests in `ViewOnceMediaTest.kt`.
+
+**Send.** The video and mic buttons sit next to the paperclip in a connected
+DM composer. The recorder asks for CAMERA (+ RECORD_AUDIO) or RECORD_AUDIO,
+records, shows a review (play, discard, record again, send).
+`DirectMessageService.sendViewOnce` encrypts with a fresh key and IV,
+uploads (create, PUT parts as base64, finish; a failed upload is withdrawn),
+then sends the sealed `chat` frame (`persist`, `notify`, text
+"🎥 Video message" / "🎤 Voice message"). If the sealed send fails, the media
+is withdrawn.
+
+**Capture.** No CameraX or Media3 (neither is in the offline Gradle cache),
+so platform APIs: the legacy `android.hardware.Camera` (front camera,
+`SurfaceView` preview) with `MediaRecorder` for video, MP4 H.264 at 640x480
+(or the largest supported size under it), 24 fps, 1 Mbps, AAC 64 kbps mono:
+about 8 MB for 60 s. Voice is `MediaRecorder` AAC in MP4 (`audio/mp4`,
+`.m4a`), 32 kbps, 22.05 kHz mono, with a live waveform from
+`getMaxAmplitude` every 80 ms. Recording is tap to start, tap to stop, and
+stops itself at 60 s / 120 s (`setMaxDuration` half a second later is the
+backstop). The duration sent is read back with `MediaMetadataRetriever`.
+Recordings live in `cacheDir/view-once` and are deleted after sending or on
+discard.
+
+**Receive.** A sealed `chat` frame with a valid `viewOnce` becomes a
+view-once row: the text and any file fields are ignored, the row shows
+"Video message"/"Voice message", duration and state, and has no long-press
+menu (no copy, save, forward, reply or delete). Tapping a ready row opens a
+full-screen viewer with `FLAG_SECURE` (`SecureFlagPolicy.SecureOn`); its text
+says screen capture is blocked on most phones but cannot be guaranteed. It
+downloads every part, decrypts in memory, writes one temp file in
+`cacheDir/view-once`, and plays it with `VideoView` or `MediaPlayer`.
+`consume` is called when playback starts; the temp file is deleted when
+playback ends or the viewer closes. A `410 media_gone` reads the item's state
+and marks the row opened, expired or unsent.
+
+**State.** `ViewOnceStore` holds one entry per message: `sent` (sender),
+`ready` (recipient), `opened`, `expired`, `withdrawn`. Only a ready
+recipient entry holds the key; any final state drops it and a replayed frame
+never brings it back. The sender's entry never holds a key; the sender's
+outbox copy of the frame (kept to re-seal for new devices) is dropped when
+the message reaches a final state. Nothing is written to disk: DM history is
+memory-only on Android. States arrive from the relay's `forkmesh-media`
+frame and from one `GET media?ids=` read per conversation open (after
+`forkmesh-history-end` and on select), which also retries a `consume` that
+failed. The sender can unsend an unopened message (`DELETE`).
+
+**Filter seam.** `MessageCaptureFilters` (`face`, `voice` stages, each
+`process(file, mime)`) is applied to the finished recording before upload,
+through `ViewOnceCapture.filters`. Only the pass-through implementation
+exists; the call filters (`createFaceStage`/`createVoiceStage` in the call
+WebView) are not wired in. A live preview filter would need a camera2
+Surface pipeline instead of the legacy camera.
+
+**Limits.** Recording runs only while the recorder is open (no background
+capture); the legacy camera API is deprecated and is used through its HAL
+shim on newer phones. Orientation assumes a portrait phone. There is no
+on-device test of capture or playback; the core flow is covered by
+`ViewOnceMediaTest` (codec, round trip, upload, download, consume, 410,
+relay frame, key dropped, status read, unsend).
+
 ## Appendix: port map
 
 The Flutter (or Flutter Android) source each Kotlin file was ported from, as
