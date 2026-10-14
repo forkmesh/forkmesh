@@ -627,6 +627,20 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
   - Test: `testLargeAgentAndAccountRepliesDecodeOffTheMainActorTheSame` in
     `ApiAgentsTests` (Linux Swift toolchain).
 
+- 2026-10-14: each signed-in row of the iOS project drawer shows the account
+  there: its avatar, name and status (custom emoji and text, "Away"), with a
+  presence dot that is green on the active project while connected and an
+  amber ring when away. `RelayRowInfo` carries `account`, `avatarPng` (from
+  that project's saved `AuthSession`) and `userStatus`. The active project's
+  status is `RelayService.ownStatus`; every other signed-in project with an
+  instance is read when the drawer opens by
+  `RelaySettingsModel.refreshStatuses()`, an empty-body
+  `POST <origin>/api/accounts/user-status` with that project's Bearer token
+  (8 s deadline; a failed read leaves the status empty). Rows that are not
+  signed in keep the "origin · Not signed in" line.
+  - Test: `testEachSignedInProjectShowsItsAccountAvatarAndStatus` in
+    `RelaySettingsModelTests` (Linux Swift toolchain).
+
 - 2026-10-02: tapping a project in the iOS project drawer opens that
   project's Home page. The active row used to do nothing; now it closes the
   drawer, the You sheet and any presented page and shows Home
