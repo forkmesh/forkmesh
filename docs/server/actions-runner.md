@@ -21,6 +21,11 @@ Code: `server/actions.go`, `server/actions_workflow.go`,
   otherwise; the node's own `forkmesh/*` ledger branches never trigger runs.
 - One run at a time; `needs:`, `runs-on:`, `on.push.paths`, supersede, and a
   restart cancels what was in flight.
+- A run's scratch tree (`<run>/work`) is removed before the run is marked
+  finished; only its log is kept. Marking it first let a reader see a
+  finished run whose tree was still there, which made
+  `TestActionsPushRunsTheWorkflowInTheExportedCommit` fail about three times
+  in four.
 - Workflow YAML is read by a small subset parser (`actions_workflow.go`);
   `uses:` steps are dropped.
 
