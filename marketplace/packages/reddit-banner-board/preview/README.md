@@ -9,6 +9,6 @@ public, edge-cached feed snapshot through the declared host capability.
 
 `market.png` provides the required visual preview for the unified Market list.
 
-The package ships with `install.default: false` (since 2026-09-23): it stays
+The package ships with `install.default: false`: it stays
 listed in the World Marketplace, and World imports its code only after a
 visitor installs it.

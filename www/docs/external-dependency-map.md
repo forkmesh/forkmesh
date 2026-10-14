@@ -1,71 +1,40 @@
 # External dependency and observability map
 
-Status: P0 trust gate (issue #503). Machine-readable map:
-[`conformance/external-dependencies/v1/manifest.json`](../../conformance/external-dependencies/v1/manifest.json).
-Inventory and check tool:
-[`tools/external_dependency_inventory.py`](../../tools/external_dependency_inventory.py).
-
-This page lists every outside service a ForkMesh surface can contact. For each
-one it says what the service can observe, how long that data lasts, where it is
-held, which copy is canonical, and what still works when the service is gone.
-The manifest is the source of truth. The generated block below is rendered
-from it, so if this page and the JSON disagree, the JSON wins.
+This page lists every outside service a ForkMesh surface can contact: what it
+observes, retention, jurisdiction, which copy is canonical, and what still works
+without it. The source of truth is
+[`conformance/external-dependencies/v1/manifest.json`](../../conformance/external-dependencies/v1/manifest.json);
+the block below is rendered from it by
+[`tools/external_dependency_inventory.py`](../../tools/external_dependency_inventory.py)
+`render`. If the page and the JSON disagree, the JSON wins.
 
 ## How the map stays complete
 
-`python3 tools/external_dependency_inventory.py check` fails when any of these
-is true:
-
-- Production source names an outside host that the manifest does not classify
-  as a dependency or as a link-only reference. The scope covers the app Worker,
-  its browser assets, www, World, the Go mirror node, the Qt desktop client,
-  the native iOS and Android apps, bundled marketplace packages, release tooling, and CI workflows.
-  Tests, vendored libraries, and reserved example domains are excluded.
-- A host listed only as a link, namespace, or documentation reference is
-  loaded as a script, image, stylesheet, frame, import, or fetch.
-- A Worker secret in `app/deploy.sh` or an `env` credential read by `app/src`
-  is not assigned to a dependency or listed as first-party key material.
-- A D1 table whose name marks a provider (Discord, Patreon, APNs,
-  Mailtrap, wallets, remote ActivityPub actors) is not described
-  under stored third-party identifiers, or a described column no longer exists.
-- A dependency names evidence or a failure drill that no longer exists, or has
-  neither a drill nor a recorded gap.
-- The generated block on this page is out of date. Run `render` to refresh it.
-
-`report` prints the same result as JSON, including the measures issue #503
-tracks: undocumented dependencies, mandatory hosted dependencies, and
-dependencies that have failure drills. The `external-dependency-map` quality
-gate and the *External dependency map* workflow run the check on Linux, macOS,
-and Windows, and keep the report as evidence.
-
-The scanner reads source text. It cannot see a host that exists only in a
-Cloudflare dashboard setting, a DNS record, or a secret's value, so those hosts
-are listed as `configuredHosts` in each entry. Examples are the ACME certificate authorities Caddy uses and the registries
-package managers reach. The Cloudflare Web Analytics beacon is
-injected by a zone setting; the inventory finds it only because the content
-security policy names it.
-
-## Reading the necessity column
+`python3 tools/external_dependency_inventory.py check` fails when production
+source names an unclassified outside host, a link-only host is loaded as a
+resource, a Worker secret or `env` credential has no dependency, a provider
+table in D1 is undocumented, a dependency has neither a failure drill nor a
+recorded gap, or the generated block is stale. `report` prints the result as
+JSON. The `external-dependency-map` quality gate runs the check on Linux,
+macOS, and Windows. Hosts that exist only in dashboard settings, DNS, or secret
+values are listed as `configuredHosts`.
 
 | Label | Meaning |
 | --- | --- |
-| Mandatory for the hosted service | The hosted `forkmesh.com` service stops without it. A self-host replaces it by running its own instance, or by using the mirror node, which does not need it. |
-| Degrades one feature | One feature stops or shows a named unavailable state. Everything else keeps working. |
+| Mandatory for the hosted service | The hosted service stops without it; a self-host runs its own instance or uses the mirror node. |
+| Degrades one feature | One feature stops or shows a named unavailable state. |
 | Optional, off unless enabled | Nothing is contacted until a user or operator turns it on. |
-| Operator tooling only | Only deploy, provisioning, or maintenance commands contact it, never a request path. |
-| Build and release only | Only builds and CI contact it. Running software never does. |
+| Operator tooling only | Only deploy, provisioning, or maintenance commands contact it. |
+| Build and release only | Only builds and CI contact it. |
 
 ## Self-hosting and offline use
 
 The Go mirror node (`server/`) uses only the standard library and serves Git
-without any service on this page. The only exceptions are the TLS certificate
-authority behind its HTTPS proxy and, if chosen, a DNS provider API. Git clone,
-fetch, and push to a mirror, signed collaboration records, and local desktop
-work all continue when every hosted dependency is unreachable. The
-[product-promise drill](product-promise.md) proves this for clone. A self-hosted
-app Worker still needs a Cloudflare account, because the Worker runtime, D1,
-KV, Durable Objects, and Queues are its storage and compute. Every other service
-the Worker uses is optional and stays off until its secret is set.
+without any service on this page, apart from a TLS certificate authority and,
+optionally, a DNS provider API. Clone, fetch, push to a mirror, signed
+collaboration records, and local desktop work continue when every hosted
+dependency is unreachable; the [product-promise drill](product-promise.md)
+proves this for clone. Every optional service stays off until its secret is set.
 
 <!-- external-dependency-map:begin -->
 

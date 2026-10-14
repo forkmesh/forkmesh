@@ -4,7 +4,7 @@ A visual automation builder in the style of n8n. Connect a trigger (the Run butt
 
 It works on the web, on phones (the page is touch-friendly and the phone Market and Hub open it), and from the desktop rail.
 
-Since 1.1.0 (2026-10-13) Workflows is a plugin like the Home tiles: off in projects and accounts created from 2026-10-14 (`install.installedBefore`), kept where it was already there. Its packs depend on it, so they come and go with it. See [core-plugins.md](../../../docs/marketplace/core-plugins.md).
+Workflows is a plugin like the Home tiles: off in projects and accounts created from 2026-10-14 (`install.installedBefore`), kept where it was already there. Its packs depend on it, so they come and go with it. See [core-plugins.md](../../../docs/marketplace/core-plugins.md).
 
 Its nested packages each add one part and can be turned off on their own:
 

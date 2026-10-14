@@ -36,15 +36,13 @@ relay):
   `{found, event, cause, signature, fixes: [{id, label, detail, icon, score, trusted, autoSafe, primary}]}`,
   best first.
 - `pings.fix {…same, fix}` applies one and returns the refreshed list plus a
-  `message` the phone shows inline (Android: under the ping's Actions card;
-  no snack bar since 2026-10-09). Errors: `unknown_ping`,
+  `message` the phone shows inline under the ping's Actions. Errors: `unknown_ping`,
   `fix_unavailable`, `unknown_repo`, `unknown_run`, `unknown_agent`,
   `wrong_state`, `not_started`.
 
 The desktop finds the ping by `pingId` (`<timestampMs>-<localId>`, as it was
 forwarded), then by the same timestamp, then by the forwarded title and body
-within 15 minutes. Pings from before this change carry no `pingId` and still
-match on text. The Pings journal now keeps each row's `runId`, so a run's ping
+within 15 minutes. The Pings journal keeps each row's `runId`, so a run's ping
 stays fixable after a restart.
 
 ## Causes and fixes

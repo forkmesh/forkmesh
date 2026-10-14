@@ -36,8 +36,7 @@ records it before applying it, so a crash cannot apply it twice.
 - The web Actions tab polls `actions/runs` while runs are live
   (`app/public/dashboard/js/06-repo-actions.js`); that is by design, every read
   is a relay-to-mirror round trip, so the cadence backs off when idle.
-- An Actions executor briefly lived in the desktop (958a1dc87) before moving to
-  the daemon (4f88b2a6d); there is no desktop half.
+- There is no desktop half of the executor; it lives in the daemon.
 - On `role: "runner"`, `enableActions` does not start this executor. It
   takes Actions jobs from the app instead, for pushes that land on the
   cores while the owner's desktop is offline:

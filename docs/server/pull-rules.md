@@ -9,19 +9,14 @@ this page is the implementation.
 
 | Path | Responsibility |
 | --- | --- |
-| `server/pullrules.go` | `forkmesh-pull-rules-v1` parser (`ParsePullRulesPolicy`), the rule evaluator (`evaluatePullRules`), the merge gate (`pullRulesSatisfied`) and the read-only `forkmesh.pull-rules-evaluate-v1` executor request (`evaluateRulesRequest`). |
-| `server/agentattest.go` | The router-signed model grant (`forkmesh-agent-model-grant-v1`), the runner's commit attestation (`forkmesh-agent-commit-v1`, `attestAgentCommit`) and its verification (`verifyAgentCommit`). |
-| `server/runner.go` | `modelGrantFor` and `attestCommits`: the runner rewrites a run's new commits with the attestation before the push. |
-| `server/merge.go` | `Handle` routes the evaluate request; `executeMerge` refuses with `rules_required` after the required-checks gate. |
-| `tools/mirror_gateway.py` | `merge-preview` accepts `rules=1`, `pull`, `orgRules` and asks the executor to evaluate (`GatewayApplication._merge_preview`). |
-| `tools/headless_mirror_refresh.py` | The Python executor fails closed (`rules_required`) on a base with `.forkmesh/pull-rules.json`; it has no Ed25519 verifier. |
-| `app/src/pull_rules.py` | Organization rules (`org_pull_rules` table, `GET/POST /api/orgs/<org>/pull-rules`), the pull-page endpoint `GET /api/repo/<o>/<r>/pulls/<n>/rules`, and `merge_gate`. |
-| `app/src/route_handlers.py` | `repository_pull_merge_handler` calls `merge_gate` before it creates a merge job. |
-| `app/src/runner_leases.py`, `app/src/edge_routing.py` | `_model_grant` and `agent_model_grant_message`: pool-runner claims carry `modelGrant`. |
-| `app/src/repository_file_edits.py` | `create: true` lets the web editor add a file (and its folders); the repository settings card commits the rules file with it. |
-| `app/public/dashboard/js/02-helpers.js` | The shared rule builder (`pullRulesEditorHtml`, `bindPullRulesEditor`, `pullRulesProblem`). |
-| `app/public/dashboard/js/06-repo-content.js` | `loadRepoPullRules`, `renderRepoPullRules`, the merge-button lock, and `loadRepoPullRulesSettings`. |
-| `app/public/dashboard/js/04-account.js` | `loadOrgPullRules`: the organization settings section. |
+| `server/pullrules.go` | `forkmesh-pull-rules-v1` parser (`ParsePullRulesPolicy`), evaluator (`evaluatePullRules`), merge gate (`pullRulesSatisfied`), the read-only `forkmesh.pull-rules-evaluate-v1` executor request |
+| `server/agentattest.go`, `server/runner.go` | Router-signed model grant, runner commit attestation (`attestAgentCommit`, `attestCommits`) and verification (`verifyAgentCommit`) |
+| `server/merge.go` | Routes evaluate requests; `executeMerge` refuses with `rules_required` after the required-checks gate |
+| `tools/mirror_gateway.py` | `merge-preview` with `rules=1`, `pull`, `orgRules` asks the executor to evaluate |
+| `tools/headless_mirror_refresh.py` | Python executor: fails closed (`rules_required`) on a base with `.forkmesh/pull-rules.json` |
+| `app/src/pull_rules.py` | Organization rules (`org_pull_rules`, `GET/POST /api/orgs/<org>/pull-rules`), `GET /api/repo/<o>/<r>/pulls/<n>/rules`, `merge_gate` |
+| `app/src/runner_leases.py`, `app/src/edge_routing.py` | Pool-runner claims carry `modelGrant` |
+| `app/public/dashboard/js/*.js` | Rule builder, pull page display and merge lock, organization settings |
 
 ## Architecture
 
@@ -113,23 +108,11 @@ hex of the grant token>` with its node key. Verification needs the gateway's
 - `attestCommits` rewrites commits, so their ids change between the job's
   workdir and the pushed branch. A follow-up job clones the pushed branch
   again, so this never shows up as divergence.
-- A rules file on a headless Python mirror locks web merges there; those
-  mirrors are retired, but the fail-closed rule stays.
+- A rules file on a headless Python mirror locks web merges there (fail
+  closed).
 
 ## Tests
 
-- Go: `server/pullrules_test.go` (policy parsing, globs, every rule kind
-  through the real merge executor, forged/foreign/amended/disallowed model
-  attestations, clean and evil merges, grant matching on the runner, the relay
-  grant format).
-- Python: `app/tests/test_pull_rules.py`, `test_runner_leases.py`
-  (model grants), `test_mirror_gateway.py`
-  (`test_merge_preview_asks_the_executor_to_evaluate_pull_rules`),
-  `test_pull_merge_executor.py` (headless fail-closed),
-  `test_repository_file_edits.py` (file creation).
-
-## Recent changes
-
-- 2026-10-07: added repository and organization pull request rules, the
-  `rules_required` merge failure, router-signed model grants for pool runners
-  and attested agent commits.
+Go `server/pullrules_test.go`; Python `app/tests/test_pull_rules.py`,
+`test_runner_leases.py`, `test_mirror_gateway.py`,
+`test_pull_merge_executor.py`, `test_repository_file_edits.py`.

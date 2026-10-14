@@ -1,7 +1,7 @@
 # Reference links in the native apps
 
-Parity row 4.34. Added 2026-10-02 because the user asked for every issue, task and
-pull request mention to be a link in all of the mobile apps' messages.
+Every issue, task, pull request and commit mention in the mobile apps' messages
+is a link (parity row 4.34).
 
 ## What is a link
 

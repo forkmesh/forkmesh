@@ -219,23 +219,14 @@ canonical JSON. `conflicts` holds `stance` conflicts, noting whether an
 override resolved them, plus `equivocation` and `history_fork` records. The
 result does not depend on the order of documents, follows, or overrides.
 
-## Telemetry
+## Telemetry and privacy
 
-`telemetry` contains only counts, never keys, list names, or follows:
-documents, duplicates, rejections by code, revocations, lists by state,
-followed and reachable lists, assertions, stance conflicts, overrides, appeals
-by status, expired delegations, and cycle and depth-limited edges. These are
-the issue's primary measures (active lists, cross-client verification,
-overrides, appeals). A client that reports them upstream reports this object
-unchanged, or a subset of it.
-
-## Privacy
-
-Follows and overrides never leave the device and never appear in telemetry.
-Fetching lists one at a time by `listId` from a relay tells that relay which
-lists interest you. Clients SHOULD fetch the whole public bundle, or fetch
-through a mirror they operate. Entries name keys, not account names, so a list
-cannot change its meaning when an account is renamed.
+`telemetry` holds counts only (documents, rejections by code, lists by state,
+assertions, conflicts, overrides, appeals, skipped edges), never keys, list
+names or follows. Follows and overrides never leave the device. Clients SHOULD
+fetch the whole public bundle, or fetch through a mirror they operate, so a
+relay does not learn which lists interest them. Entries name keys, not account
+names.
 
 ## Threats
 
@@ -253,14 +244,11 @@ cannot change its meaning when an account is renamed.
 | Silent winner between lists | `conflict` until the user overrides |
 | Forged appeals | Appeals must be signed by their subject |
 
-## Rollout and rollback
+## Rollout
 
-Version 1 is additive: no existing route, table, or authorization decision
-reads it. Rolling back means removing the resolvers. No stored state migrates,
-because follows and overrides are local and documents are immutable. Any
-change to meaning requires a new schema string. Changing the vectors requires
-regenerating them with `generate_vectors.py` and passing all four resolvers.
-
-Not yet implemented: publishing and fetching lists over relays and mirrors,
-authoring and signing UI in the clients, follow and override settings UI,
-and upstream reporting of telemetry.
+Version 1 is additive: no existing route, table or authorization decision reads
+it, and follows and overrides are local, so removing the resolvers is a full
+rollback. Any change in meaning needs a new schema string; changing the vectors
+means regenerating them with `generate_vectors.py` and passing all four
+resolvers. Publishing lists over relays and the authoring and follow UI are not
+implemented yet.

@@ -24,11 +24,8 @@ cannot be drawn outside Apple devices, so they are listed by name.
 
 Clicking a colour swatch or an icon copies its name and says **Copied** inside
 that swatch or icon, in the muted colour; a failed copy says so there in the
-error colour. The line stays until another swatch or icon is copied. Until
-1.0.1 the page showed a pill at the bottom of the window for a second and a
-half; the user asked for no toasts anywhere, with the information shown inline
-where it is appropriate, so the confirmation moved to the tile that was
-clicked.
+error colour. The line stays until another swatch or icon is copied; there
+are no toasts.
 
 ## Where the button lives
 

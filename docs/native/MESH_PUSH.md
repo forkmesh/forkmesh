@@ -2,14 +2,10 @@
 
 `#mesh` is the LAN and Bluetooth room (`desktop/src/LocalMeshNode.*`, iOS
 `FMChat/Mesh/LocalMeshService.swift`, Android `chat/LocalMeshRoom.kt`). Its
-frames go device to device and never reach the server, so until 2026-09-30 a
-`#mesh` message could not raise a push. iOS suspends the app's sockets soon
-after it goes to the background, which drops the phone out of the room, so a
-phone in a pocket never heard `#mesh` at all. Reported as "not getting chat
-notifications on mobile" (issue 878). The test messages ("Hi mesh", "Hi blue",
-"I did not get a notification did you?") were all in `#mesh`. `#general`
-pushes were working: the log shows `apns: topic chat delivered 11 of 11` for
-its messages.
+frames go device to device and never reach the server, and iOS suspends an
+app's sockets soon after it goes to the background. Two mechanisms keep a
+phone that is not watching the room informed: server wake pushes (iOS) and
+local alerts raised by the phone itself.
 
 ## How it works
 
@@ -39,12 +35,10 @@ its messages.
 
 ## Local alerts over the mesh
 
-Added 2026-10-06 ("someone shouldn't have to be looking at the mesh channel to
-get its messages; having the app installed should be enough"). The wake push
-above needs an account, the internet, and a sender that knew the phone's token.
-Phones now also raise a notification themselves for every `#mesh` message that
-arrives over the mesh while the room is not on screen. Nothing leaves the
-devices, and no account is needed.
+The wake push needs an account, the internet, and a sender that knew the
+phone's token. Phones also raise a notification themselves for every `#mesh`
+message that arrives over the mesh while the room is not on screen. Nothing
+leaves the devices and no account is needed.
 
 - **The rule** (`meshAlert`, Android `chat/MeshAlert.kt`, iOS
   `FMChat/Mesh/MeshAlert.swift`): alert for a message from someone else that
@@ -57,10 +51,8 @@ devices, and no account is needed.
   the room read, which removes it. On iOS it also removes any wake pushes
   ("New message in #mesh") still in Notification Center, and posting a local
   alert removes the generic wake banners it supersedes.
-- **Read only while visible.** Both apps used to mark `#mesh` read whenever
-  its unread count moved while it was the open channel, even with the app in
-  the background. That would have cleared each alert as it was posted, so the
-  mark now waits for the foreground.
+- **Read only while visible.** `#mesh` is marked read only while the app is in
+  the foreground, otherwise each alert would be cleared as it is posted.
 - **The hook.** `LocalMeshRoom.onIncoming` / `LocalMeshService.onIncoming`
   fire once per new chat frame from another device, with the unread count.
   They do not fire for the device's own messages or for history loaded from
@@ -70,18 +62,18 @@ devices, and no account is needed.
   `meshLocal`. `ApplePushBridge.willPresent` still hides room-chat pushes in
   the foreground but shows `meshLocal` ones: they are only posted when the
   room is not on screen.
-- **Permission.** A phone that never signed in was never asked for
-  notification permission. Both apps now ask once, when the first nearby
-  device links (Android `PushFeature.PermissionPrompt`, iOS
+- **Permission.** Both apps ask for notification permission once, when the
+  first nearby device links, so a phone that never signed in still gets
+  alerts (Android `PushFeature.PermissionPrompt`, iOS
   `MeshAlerts.askOnce`).
 
 ### Staying in the room with the app closed
 
-- **Android.** The background connection service now also runs in a
+- **Android.** The background connection service also runs in a
   mesh-only mode when no project is signed in ([ANDROID.md](ANDROID.md)). The
   process stays alive, so the room keeps its LAN and Bluetooth links. Its
   notification channel is "Nearby #mesh messages" (high importance).
-- **iOS.** `UIBackgroundModes` gains `bluetooth-central` and
+- **iOS.** `UIBackgroundModes` includes `bluetooth-central` and
   `bluetooth-peripheral`. The Bluetooth links (`CoreBluetoothMeshTransport`,
   which already scans for its service UUID, as background scanning requires)
   keep running and wake the app for each frame, so a backgrounded iPhone
@@ -103,8 +95,7 @@ secret plus `:mesh-wake-token-v1`. Tokens last 7 days.
 
 The `chat` topic keeps the existing iOS behaviour: the banner is suppressed
 while the app is in the foreground (`ApplePushBridge.willPresent`), and a tap
-opens Chat on `#mesh` (the payload's `conversation`, see `docs/app/README.md`,
-2026-10-03). Ping mutes and quiet hours do not apply, the same as `#general`
+opens Chat on `#mesh` (the payload's `conversation`, see `docs/app/README.md`). Ping mutes and quiet hours do not apply, the same as `#general`
 and channel pushes.
 
 ## Limits

@@ -1,8 +1,8 @@
 # Mirror fleet operations
 
-Running the managed mirror fleet (Vultr hosts named `mirrorN`) and repairing
-it by hand. Host inventory changes often; ask the desktop's Hosts page, not
-this page, which hosts exist. No IP addresses or keys belong here.
+Running a fleet of mirror hosts installed from the desktop and repairing them
+by hand. Ask the desktop's Hosts page which hosts exist. No IP addresses or
+keys belong here.
 
 ## Files on a mirror
 
@@ -87,9 +87,8 @@ errors.
   older build needs a manual `git merge --no-ff <mirror main>` in the source
   checkout.
 - **Feed loops.** A mirror whose upstream is `app.forkmesh.com` may be fed by
-  the fleet itself; with no source publishing, nothing new enters. The deploy
-  box pushes the fleet from the flagship bare mirror with a user timer
-  (`forkmesh-mirror-fanout`, not in this repository): forced for `agent/*` and
-  tags, fast-forward only for `main` and `forkmesh/pulls`.
+  the fleet itself; with no source publishing, nothing new enters. A source
+  must push the fleet: forced for `agent/*` and tags, fast-forward only for
+  `main` and `forkmesh/pulls`.
 - **Unborn HEAD / empty repositories** publish nothing and look like a dead
   node to the autoscaler; see [README.md](README.md#traps).

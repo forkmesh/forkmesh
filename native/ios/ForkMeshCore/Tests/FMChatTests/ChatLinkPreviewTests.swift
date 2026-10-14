@@ -21,7 +21,7 @@ final class ChatLinkPreviewTests: XCTestCase {
 
     func testSiteMatchingUsesHostSuffixAndPath() {
         XCTAssertEqual(ChatLinkSites.site(for: URL(string: "https://en.m.wikipedia.org/wiki/Git")!)?.key, "wikipedia")
-        XCTAssertEqual(ChatLinkSites.site(for: URL(string: "https://youtu.be/plxcVWhdBTM")!)?.key, "youtube")
+        XCTAssertEqual(ChatLinkSites.site(for: URL(string: "https://youtu.be/aBcDeFgHi12")!)?.key, "youtube")
         XCTAssertEqual(ChatLinkSites.site(for: URL(string: "https://google.com/maps/place/x")!)?.key, "googlemaps")
         XCTAssertNil(ChatLinkSites.site(for: URL(string: "https://google.com/search?q=x")!))
         XCTAssertNil(ChatLinkSites.site(for: URL(string: "https://notyoutube.com/watch")!))
@@ -30,12 +30,12 @@ final class ChatLinkPreviewTests: XCTestCase {
 
     func testYouTubeIdsFromEveryLinkShape() {
         let cases = [
-            "https://www.youtube.com/watch?v=plxcVWhdBTM&t=462s", "https://youtu.be/plxcVWhdBTM?t=4",
-            "https://m.youtube.com/shorts/plxcVWhdBTM", "https://youtube.com/live/plxcVWhdBTM",
-            "https://www.youtube-nocookie.com/embed/plxcVWhdBTM",
+            "https://www.youtube.com/watch?v=aBcDeFgHi12&t=462s", "https://youtu.be/aBcDeFgHi12?t=4",
+            "https://m.youtube.com/shorts/aBcDeFgHi12", "https://youtube.com/live/aBcDeFgHi12",
+            "https://www.youtube-nocookie.com/embed/aBcDeFgHi12",
         ]
         for raw in cases {
-            XCTAssertEqual(ChatLinkPreviewParsing.youtubeId(URL(string: raw)!), "plxcVWhdBTM", raw)
+            XCTAssertEqual(ChatLinkPreviewParsing.youtubeId(URL(string: raw)!), "aBcDeFgHi12", raw)
         }
         XCTAssertNil(ChatLinkPreviewParsing.youtubeId(URL(string: "https://www.youtube.com/@channel")!))
         XCTAssertNil(ChatLinkPreviewParsing.youtubeId(URL(string: "https://www.youtube.com/watch?v=<script>")!))
@@ -107,15 +107,15 @@ final class ChatLinkPreviewTests: XCTestCase {
     @MainActor
     func testYouTubeUsesOEmbedAndThumbnail() async {
         let http = FakeHTTPClient()
-        http.on(path: "/oembed", json: .object(["title": "- Spotlight - Project 40", "author_name": "Vandana Verma"]))
+        http.on(path: "/oembed", json: .object(["title": "Example Video", "author_name": "Example Channel"]))
         let service = ChatLinkPreviewService(http: http, clock: FixedClock(Date(timeIntervalSince1970: 1_000)))
-        let url = URL(string: "https://www.youtube.com/watch?v=plxcVWhdBTM&t=462s")!
+        let url = URL(string: "https://www.youtube.com/watch?v=aBcDeFgHi12&t=462s")!
         await service.load(url)
         let preview = service.preview(for: url)
-        XCTAssertEqual(preview?.title, "- Spotlight - Project 40")
-        XCTAssertEqual(preview?.author, "Vandana Verma")
+        XCTAssertEqual(preview?.title, "Example Video")
+        XCTAssertEqual(preview?.author, "Example Channel")
         XCTAssertEqual(preview?.siteName, "YouTube")
-        XCTAssertEqual(preview?.imageUrl, "https://i.ytimg.com/vi/plxcVWhdBTM/hqdefault.jpg")
+        XCTAssertEqual(preview?.imageUrl, "https://i.ytimg.com/vi/aBcDeFgHi12/hqdefault.jpg")
         XCTAssertEqual(preview?.kind, .video)
         XCTAssertEqual(http.requests.count, 1)
         XCTAssertFalse(http.requests[0].followRedirects)
