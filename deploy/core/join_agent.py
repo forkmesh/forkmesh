@@ -142,7 +142,9 @@ def install_credentials(bundle):
 def start_without_ids(script):
     lines = []
     for line in script.splitlines():
-        if line.strip() == "systemctl restart fmnext-ids.service":
+        if line.strip() in ("systemctl restart fmnext-ids.service",
+                            "systemctl try-restart fmnext-ids.service",
+                            "systemctl enable --now fmnext-ids.service"):
             continue
         if line.startswith("systemctl enable --now "):
             line = line.replace(" fmnext-ids.service", "")

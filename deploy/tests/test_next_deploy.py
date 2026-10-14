@@ -856,6 +856,26 @@ def test_ssh_starts_one_detached_master_per_node_and_tunnels_stay_separate(
     assert "[::1]:4002:127.0.0.1:4001" in popened[1]
 
 
+def test_ssh_mux_dir_falls_back_when_the_temp_path_is_too_long(
+        tmp_path, monkeypatch):
+    monkeypatch.delenv("FMNEXT_SSH_MUX_DIR", raising=False)
+    deep = tmp_path / ("x" * 80)
+    deep.mkdir()
+    runtime = tmp_path / "run"
+    runtime.mkdir()
+    name = "fmnext-ssh-%d" % os.getuid()
+    monkeypatch.setattr(next_common.tempfile, "tempdir", str(deep))
+    monkeypatch.setattr(next_common, "SSH_MUX_DIR_MAX",
+                        len(str(runtime / name)))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    ssh = next_common.Ssh(key=tmp_path / "k", known_hosts=tmp_path / "kh",
+                          run=lambda *a, **k: None, mux=True)
+    assert ssh.mux_dir() == runtime / name
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(deep))
+    assert ssh.mux_dir() is None
+    assert "ControlPath=none" in ssh.options()
+
+
 def test_wheels_go_to_a_node_only_when_it_lacks_them(tmp_path, monkeypatch):
     wheels = fake_wheels(tmp_path, monkeypatch)
     tarball = tmp_path / ("fmnext-%s.tar.gz" % REV)
