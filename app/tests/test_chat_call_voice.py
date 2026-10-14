@@ -331,7 +331,7 @@ def test_native_call_page_exposes_voice_operations():
     assert '<script type="text/plain" id="fm-call-voice-worklet">' in page
     assert "window.FmCallVoice = (() => {" in page
     assert "async setup(media, iceServers, face) {\n      const voice = arguments[3];" in page
-    for op in ("async voice(id) {", "async voiceList() {", "async preview(media, voice) {", "async monitor(on) {"):
+    for op in ("async voice(id) {", "async voiceList() {", "async preview(media, voice, face, background, image) {", "async monitor(on) {"):
         assert op in page
     assert 'post({ event: "voice", id });' in page
     assert page.count("await voiceReady();") == 2
