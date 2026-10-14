@@ -210,6 +210,9 @@ roll_daemon = true
 reader_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMG2ajXAEwFNW/LoahHVcCrAoFfL4IOBhTdX/98mVagk fmnext-logread"
 access_log = true
 
+[hosted]
+retired_cores = ["n1"]
+
 [[nodes]]
 name = "n2"
 role = "core"

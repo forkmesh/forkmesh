@@ -1798,10 +1798,6 @@ void MainWindow::loadServers()
     bool migratedDefaultRoom = false;
     bool migratedInstances = false;
     QSet<QString> usedInstanceIds;
-    if (projectInstancePending()) {
-        m_activeServer = -1;
-        return;
-    }
     const QString json = QSettings().value(kServersArray).toString();
     const QJsonArray array = QJsonDocument::fromJson(json.toUtf8()).array();
     for (const QJsonValue &value : array) {
@@ -1880,8 +1876,6 @@ void MainWindow::loadServers()
 
 void MainWindow::saveServers()
 {
-    if (m_servers.isEmpty())
-        return;
     if (m_activeServer < 0 || m_activeServer >= m_servers.size())
         m_activeServer = qBound(0, m_activeServer, qMax(0, m_servers.size() - 1));
 

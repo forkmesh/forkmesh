@@ -227,6 +227,7 @@ struct ShellNewAgentButton: View {
     var tint: Color? = nil
     let paletteTip = PaletteTip()
 
+    @Environment(\.shellTabHidden) private var tabHidden
     @State private var tilt: ShellSparkleTilt = ShellSparkleTilt.shared
     @State private var feeling: Bool = false
     @State private var bornAt: Double = 0
@@ -256,12 +257,13 @@ struct ShellNewAgentButton: View {
             .accessibilityIdentifier("shell-new-agent-button")
             .popoverTip(paletteTip)
             .genieKeepsClear()
-            .onAppear { feel(true) }
+            .onAppear { feel(!tabHidden) }
             .onDisappear { feel(false) }
-            .onChange(of: scenePhase) { _, phase in feel(phase == .active) }
+            .onChange(of: scenePhase) { _, phase in feel(phase == .active && !tabHidden) }
+            .onChange(of: tabHidden) { _, hidden in feel(!hidden && scenePhase == .active) }
             .onChange(of: reduceMotion) { _, _ in
                 feel(false)
-                feel(scenePhase == .active)
+                feel(scenePhase == .active && !tabHidden)
             }
             .onChange(of: running) { (old: Int, next: Int) in
                 if next > old {

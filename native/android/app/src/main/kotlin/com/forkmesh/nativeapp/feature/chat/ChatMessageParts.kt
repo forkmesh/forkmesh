@@ -522,7 +522,12 @@ fun ChatSenderStatus(message: ChatMessage, liveStatus: UserStatus?) {
 @Composable
 fun ChatSenderAvatar(message: ChatMessage) {
     val ownAvatar = Services.get<AuthService>()?.session?.collectAsState()?.value?.avatarPng.orEmpty()
-    val avatar by produceState(if (message.self) ownAvatar else "", message.senderName, message.self, ownAvatar) {
+    val known = if (message.self && ownAvatar.isNotEmpty()) {
+        ownAvatar
+    } else {
+        Services.get<ApiService>()?.knownAccountAvatarPng(message.senderName).orEmpty()
+    }
+    val avatar by produceState(known, message.senderName, message.self, ownAvatar) {
         if (message.self && ownAvatar.isNotEmpty()) {
             value = ownAvatar
             return@produceState

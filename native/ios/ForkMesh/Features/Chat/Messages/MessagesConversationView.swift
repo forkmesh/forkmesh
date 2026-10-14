@@ -394,7 +394,7 @@ struct MessagesConversationAvatar: View {
     }
 
     @ViewBuilder private var groupAvatar: some View {
-        if let data = hub.conversationLook.photo, let picture = UIImage(data: data) {
+        if let data = hub.conversationLook.photo, let picture = FmImageCache.image(data) {
             Image(uiImage: picture)
                 .resizable()
                 .scaledToFill()
@@ -424,25 +424,13 @@ struct MessagesConversationAvatar: View {
 struct MessagesPersonAvatar: View {
     let name: String
     let size: CGFloat
-    @State private var png: String = ""
     @State private var pictures: MessagesPeoplePictures = MessagesPeoplePictures.shared
+    @State private var avatars: ChatAvatarCache = ChatAvatarCache.shared
 
     var body: some View {
         let custom: String = pictures.picture(for: name)
-        FmAvatar(name: name, avatarPng: custom.isEmpty ? png : custom, size: size, fontSize: size * 0.42)
-            .task(id: name) { await load() }
-    }
-
-    private func load() async {
-        let trimmed: String = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, let api = Services.get(ApiService.self) else { return }
-        if let cached = ChatAvatarCache.shared.pngs[trimmed] {
-            png = cached
-            return
-        }
-        let fetched: String = await api.accountAvatarPng(trimmed)
-        ChatAvatarCache.shared.pngs[trimmed] = fetched
-        png = fetched
+        FmAvatar(name: name, avatarPng: custom.isEmpty ? avatars.png(for: name) : custom, size: size, fontSize: size * 0.42)
+            .task(id: name) { await avatars.refresh(name) }
     }
 }
 

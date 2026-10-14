@@ -229,7 +229,7 @@ struct MessagesDetailsScreen: View {
     }
 
     @ViewBuilder private func thumbnail(_ photo: ChatAttachment) -> some View {
-        if let picture = UIImage(data: photo.data) {
+        if let picture = FmImageCache.image(photo.data) {
             Button(action: { viewing = MessagesPhotoBox(attachment: photo) }) {
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)

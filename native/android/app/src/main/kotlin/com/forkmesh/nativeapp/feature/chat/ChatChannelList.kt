@@ -397,7 +397,7 @@ private fun ChannelTile(
 
 @Composable
 private fun DirectAvatar(name: String, presence: Color?) {
-    val avatar by produceState("", name) {
+    val avatar by produceState(Services.get<ApiService>()?.knownAccountAvatarPng(name).orEmpty(), name) {
         val api = Services.get<ApiService>() ?: return@produceState
         if (name.isBlank()) return@produceState
         value = withContext(Dispatchers.IO) { runCatching { api.accountAvatarPng(name) }.getOrDefault("") }
