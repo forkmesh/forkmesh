@@ -1449,19 +1449,26 @@ class Default:
                                 )
                             ),
                         }
-                        # D1 caps bound parameters per query (~100), so delete in
-                        # chunks rather than one giant IN (...) list.
-                        chunk = 90
-                        for start in range(0, len(ids), chunk):
-                            batch = ids[start:start + chunk]
-                            placeholders = ",".join(["?"] * len(batch))
-                            await d1_run(
-                                self.env,
-                                "DELETE FROM " + table
-                                + " WHERE rowid IN (" + placeholders + ")",
-                                *batch,
-                            )
-                        banner = "Deleted %d row(s) from %s." % (len(ids), table)
+                        if table == "repositories":
+                            purged = await _admin_purge_repository_rows(
+                                self.env, ids, account_cookie_name)
+                            banner = "Purged %d repositor%s." % (
+                                purged, "y" if purged == 1 else "ies")
+                        else:
+                            # D1 caps bound parameters per query (~100), so
+                            # delete in chunks rather than one giant IN list.
+                            chunk = 90
+                            for start in range(0, len(ids), chunk):
+                                batch = ids[start:start + chunk]
+                                placeholders = ",".join(["?"] * len(batch))
+                                await d1_run(
+                                    self.env,
+                                    "DELETE FROM " + table
+                                    + " WHERE rowid IN (" + placeholders + ")",
+                                    *batch,
+                                )
+                            banner = "Deleted %d row(s) from %s." % (
+                                len(ids), table)
                 except Exception as error:
                     banner = "Delete failed: " + repr(error)
             elif action in ("update_row", "insert_row"):

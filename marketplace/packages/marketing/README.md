@@ -90,6 +90,7 @@ source stopped refreshing). Both numbers always come from one snapshot.
 | GitHub | `stars`, `forks`, `followers` from the public API (summed over the account's own repositories for an account link). Growth is measured by stars; there is no engagement rate. |
 | Discord | Refresh uses `runtime.discord_guild` (member and online counts) and stores only the newest message time (`feed.lastPostAt`, never moves back) so the posting check sees Discord activity. Falls back to the public invite or widget. **Open** uses a public invite (`openUrl`). |
 | Mastodon | Refresh records followers, following and posts, and keeps the followed handles (`mastodonFollowing`, up to 2000, never sent to clients) so they are not suggested. |
+| Blog | Refresh imports the feed and records `posts` (every feed item seen so far, `marketing_feed_items`) as a snapshot, so a successful read counts as fresh numbers; before 2026-10-14 it recorded nothing and the "Numbers updated in the last 7 days" check failed however often the feed was read. Views come from Analytics (see Performance). |
 
 Starter channels (`STARTER_CHANNELS`) are added to every organization unless
 deleted. `DELETE /api/marketing/<org>/channels/<id>` (owners and admins)
@@ -218,6 +219,18 @@ ranked "where to improve" findings (rules need at least 20 visits).
 event with an optional property match. Without Analytics the page says what to
 set up instead of showing zeros.
 
+**Channel views.** Each enabled channel whose link is on a host Analytics
+sees is sent as a page section (`analytics.campaign_report` `pages`), and the
+response adds `channelViews` (`{<channel>: {host, path, views, visitors,
+days}}`, only channels with views) and `pages` (views and visitors per page
+under those links, at most 300). The desktop shows them as the **Views over
+time** chart beside **Followers over time** on a channel page (recorded `views`
+snapshots when Analytics has none), **Views** and **Visitors** columns for
+each content item whose URL is one of those pages, a views headline on a
+channel card with no audience number, and the sparkline on every channel card
+(daily views when Analytics has them, else the headline number's snapshots
+over the range).
+
 **Referring websites** come from the core `site_referrers` counter (all-time
 visits per referring host to this instance, excluding the instance's own
 hosts); hidden when the organization's site is on another domain.
@@ -281,8 +294,9 @@ asked. Nothing on the desk posts, votes or sends anything to Reddit.
   desks and actions), Ads manager and Growth.
 - **Desktop** (`MarketingDashboard.cpp`, `MarketingPages.cpp`,
   `MarketingCommon.cpp`): the same five sections from the same API, a channel
-  bar with one chip per channel, a page per channel (KPIs, next steps, desk,
-  health, chart, playbook, posts and content, ads, recorded numbers, and
+  bar with one chip per channel (each with a sparkline), a page per channel
+  (KPIs, next steps, desk, health, followers and views charts, playbook, posts
+  and content with views per item, ads, recorded numbers, and
   channel-specific panels), and a square per channel in the status rail. When
   nothing changes for an hour the desktop raises a reminder ping for the
   channel that most needs attention. **Hand off** is web-only; the desktop

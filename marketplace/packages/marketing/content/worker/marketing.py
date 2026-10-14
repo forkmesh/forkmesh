@@ -1982,6 +1982,8 @@ PERFORMANCE_DEFAULT_DAYS = 28
 PERFORMANCE_MAX_DAYS = 92
 PERFORMANCE_GROUPS = ["campaign", "content", "landing", "term", "source"]
 PERFORMANCE_INSIGHT_LIMIT = 12
+CHANNEL_PAGE_SECTIONS = 20
+CHANNEL_PAGE_ROWS = 300
 INSIGHT_LEVELS = ("setup", "action", "warning", "win", "info")
 
 
@@ -2360,7 +2362,8 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
         "from": start, "to": end, "project": _text(params.get("project"), 32)
         or analytics_settings["project"], "host": host,
         "goals": _analytics_goal_series(analytics_settings["goals"]),
-        "groups": PERFORMANCE_GROUPS, "limit": 200}, now)
+        "groups": PERFORMANCE_GROUPS, "limit": 200,
+        "pages": _channel_page_sections(settings), "pageLimit": 500}, now)
     perf["status"] = report.get("status") or "unavailable"
     if perf["status"] != "ok":
         return {**perf, "insights": _analytics_setup(perf["status"])}
@@ -2381,8 +2384,36 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
         "channels": _traffic_channels(
             (results.get("source") or results["campaign"])["rows"], has_goals),
         "keywords": _keyword_rows((results.get("term") or {}).get("rows") or [])})
+    perf.update(_channel_page_views(settings, results.get("pages") or {}))
     perf["insights"] = _performance_insights(perf)
     return perf
+
+
+def _channel_page_sections(settings):
+    sections = []
+    for channel in settings.get("channels", []):
+        parsed, host, _ = _url_parts(channel.get("profileUrl"))
+        if host and channel.get("id") and channel.get("enabled", True):
+            sections.append({"key": channel["id"], "host": host,
+                             "path": parsed.path.rstrip("/") or "/"})
+    return sections[:CHANNEL_PAGE_SECTIONS]
+
+
+def _channel_page_views(settings, pages):
+    sections = _channel_page_sections(settings)
+    found = pages.get("sections") or {}
+    views = {}
+    for section in sections:
+        total = found.get(section["key"])
+        if total and total.get("views"):
+            views[section["key"]] = {"host": section["host"], "path": section["path"],
+                                     **total}
+    rows = [row for row in pages.get("rows") or []
+            if any(row["host"] == section["host"]
+                   and (section["path"] == "/" or row["path"] == section["path"]
+                        or row["path"].startswith(section["path"] + "/"))
+                   for section in sections if section["key"] in views)]
+    return {"channelViews": views, "pages": rows[:CHANNEL_PAGE_ROWS]}
 
 
 def _referring_sites_report_lines(referrers):
@@ -3525,7 +3556,7 @@ def _status_error(error, **codes):
 
 async def _refresh_blog_channel(runtime, channel):
     feed, error = await _read_feed(runtime, channel.get("profileUrl"))
-    return (None, error) if error else ({**feed, "metrics": {}}, "")
+    return (None, error) if error else ({**feed, "metrics": {}, "countsPosts": True}, "")
 
 
 async def _refresh_reddit_channel(runtime, channel):
@@ -4508,6 +4539,12 @@ async def _refresh_channel(runtime, org_bi, org_name, role, account_bi, actor,
     refresh = {"channel": channel_id, "imported": imported,
                "items": len(source.get("items", []))}
     observed = source.get("metrics") or {}
+    if source.get("countsPosts"):
+        seen = await runtime.d1_first(
+            "SELECT COUNT(*) AS posts FROM marketing_feed_items WHERE org_bi=? AND channel=?",
+            org_bi, channel_id)
+        observed = {**observed, "posts": max(len(source.get("items", [])),
+                                             _integer((seen or {}).get("posts")))}
     if observed:
         # A source reports only what it can see; every other figure carries
         # forward from the latest snapshot instead of resetting to zero.

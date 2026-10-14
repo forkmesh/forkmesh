@@ -3,6 +3,7 @@
 import ast
 import asyncio
 import datetime
+import json
 import re
 from pathlib import Path
 
@@ -84,6 +85,7 @@ def _load(accounts=None, runs=None, pushes=None):
 
     ns = {
         "re": re,
+        "json": json,
         "marketing_email": marketing_email,
         "Date": Clock,
         "MAX_NODE_NAME": 63,

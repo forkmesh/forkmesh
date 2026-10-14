@@ -184,10 +184,11 @@ def test_pull_sections_are_addressable_urls():
 def test_pull_header_names_the_source_and_target_repositories():
     # pull.md has no head-repository field: the record lives in the target
     # repo, and a cross-node pull only carries "<contributor>:" on head.
-    assert "const pullRefChip = (repoLabel, branch) =>" in CONTENT
+    assert "const branchChip = (repoLabel, branch) =>" in CONTENT
     assert 'const baseRepoLabel = `${repo.owner || "owner"}/${repo.name || "repo"}`;' in CONTENT
     assert 'headRef.slice(0, headRef.lastIndexOf(":")).trim()' in CONTENT
-    assert "pullRefChip(baseRepoLabel, baseBranch)} from ${pullRefChip(headRepoLabel, headBranch)}" in CONTENT
+    assert "branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}" in CONTENT
+    assert '<span class="opacity-75">${escapeHtml(repoLabel)}:</span>${escapeHtml(branch)}' in CONTENT
 
 
 def test_inline_threads_follow_their_code_across_patchsets_or_say_outdated():
