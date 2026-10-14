@@ -140,7 +140,7 @@ def _award_ns():
     async def d1_run(env, sql, *params):
         writes.append((sql, params))
 
-    ns = _load("_award_badge", extra_globals={
+    ns = _load("_award_badge", "_d1_changed", extra_globals={
         "badge_catalog": badges,
         "ensure_schema": ensure_schema,
         "d1_run": d1_run,
@@ -475,11 +475,11 @@ def _award_email_ns(changes):
     async def d1_run(env, sql, *params):
         return _RunResult(changes)
 
-    async def send_badge_email(env, name, slug):
+    async def send_badge_email(env, name, slug, tier=0, upgraded=False):
         emails.append((name, slug))
         return True
 
-    ns = _load("_award_badge", extra_globals={
+    ns = _load("_award_badge", "_d1_changed", extra_globals={
         "badge_catalog": badges,
         "ensure_schema": ensure_schema,
         "d1_run": d1_run,
@@ -644,7 +644,11 @@ def test_sweep_runs_hourly_from_the_cron_dispatcher():
     assert "elif hourly == 57:" in due
     assert "phases.append('badge-sweep')" in due
     run = _function_source("_run_cron_phase")
-    assert "return await award_distinguished_contributor_badges(env)" in run
+    assert "return await run_badge_sweep(env)" in run
+    sweep = _function_source("run_badge_sweep")
+    for name in ("award_distinguished_contributor_badges",
+                 "award_stargazer_badges", "award_genies_gift_badges"):
+        assert name in sweep
 
 
 def test_badge_mail_kind_is_categorized_and_unsubscribable():
@@ -676,3 +680,265 @@ def test_every_catalog_badge_has_a_medallion_and_the_card_shows_it():
     assert '"/assets/badges/" + slug + ".svg"' in card
     assert "const icon = profileBadgeMedal(badge);" in card
     assert "badge.icon" not in card
+
+
+def test_tiered_badges_have_a_medallion_per_level_and_match_the_generator():
+    import subprocess
+    import sys
+    folder = ROOT / "public" / "assets" / "badges"
+    for slug, info in badges.BADGE_DEFINITIONS.items():
+        if not info.get("tiers"):
+            continue
+        for tier in badges.TIER_NAMES[1:]:
+            art = (folder / ("%s-%s.svg" % (slug, tier))).read_text(
+                encoding="utf-8")
+            assert art.startswith("<svg") and 'viewBox="0 0 128 128"' in art
+            assert "<script" not in art and "href=" not in art
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "build_badge_medallions.py"),
+         "--check"], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+# --- Tiers ---------------------------------------------------------------------
+
+def test_stargazer_uses_githubs_star_thresholds():
+    assert badges.badge_tiers("stargazer") == (16, 128, 512, 4096)
+    assert badges.tier_for_value("stargazer", 15) == -1
+    assert badges.tier_for_value("stargazer", 16) == 0
+    assert badges.tier_for_value("stargazer", 127) == 0
+    assert badges.tier_for_value("stargazer", 128) == 1
+    assert badges.tier_for_value("stargazer", 4095) == 2
+    assert badges.tier_for_value("stargazer", 99999) == 3
+    assert badges.tier_for_value("stargazer", "x") == -1
+    assert badges.badge_tiers("genies_gift") == ()
+    assert badges.tier_for_value("genies_gift", 100) == -1
+
+
+def test_tier_summary_reports_progress_and_the_next_level():
+    summary = badges.tier_summary("stargazer", 1, 300)
+    assert summary["tier"] == "bronze"
+    assert summary["tierLevel"] == 1
+    assert summary["progress"] == 300
+    assert summary["unit"] == "stars"
+    assert summary["nextTier"] == "silver"
+    assert summary["nextThreshold"] == 512
+    top = badges.tier_summary("stargazer", 3, 5000)
+    assert top["tier"] == "gold" and top["nextTier"] == ""
+    assert top["nextThreshold"] == 0
+    assert badges.tier_summary("qa", 0, 3) == {}
+
+
+def test_public_catalog_lists_levels_only_for_tiered_badges():
+    catalog = {entry["slug"]: entry for entry in badges.public_catalog()}
+    assert [t["threshold"] for t in catalog["stargazer"]["tiers"]] == [
+        16, 128, 512, 4096]
+    assert [t["tier"] for t in catalog["stargazer"]["tiers"]] == [
+        "default", "bronze", "silver", "gold"]
+    assert "tiers" not in catalog["genies_gift"]
+    assert "tiers" not in catalog["qa"]
+
+
+def _tier_award_ns(changes):
+    writes = []
+    emails = []
+
+    async def ensure_schema(env):
+        return None
+
+    async def d1_run(env, sql, *params):
+        writes.append((sql, params))
+        return _RunResult(changes.pop(0) if changes else 0)
+
+    async def send_badge_email(env, name, slug, tier=0, upgraded=False):
+        emails.append((name, slug, tier, upgraded))
+        return True
+
+    ns = _load("_award_badge", "_d1_changed", "_record_badge_progress",
+               extra_globals={
+                   "badge_catalog": badges,
+                   "ensure_schema": ensure_schema,
+                   "d1_run": d1_run,
+                   "Date": Clock,
+                   "_send_badge_email": send_badge_email,
+                   "_safe_error_text": str,
+               })
+    return ns, writes, emails
+
+
+def test_a_new_tiered_award_starts_at_the_reached_level():
+    ns, writes, emails = _tier_award_ns([1])
+    assert _run(ns["_award_badge"](None, "ada", "ada-bi", "stargazer", tier=2))
+    sql, params = writes[0]
+    assert "tier, tier_at" in sql
+    assert params == ("stargazer", "ada-bi", "ada", "system",
+                      1_700_000_000_000, 2, 1_700_000_000_000)
+    assert emails == [("ada", "stargazer", 2, False)]
+
+
+def test_an_existing_award_only_moves_up_and_mails_the_upgrade():
+    ns, writes, emails = _tier_award_ns([0, 1])
+    assert _run(ns["_award_badge"](None, "ada", "ada-bi", "stargazer", tier=3))
+    sql, params = writes[1]
+    assert sql.startswith("UPDATE badge_awards SET tier=?, tier_at=?")
+    assert "AND tier<?" in sql
+    assert params == (3, 1_700_000_000_000, "stargazer", "ada-bi", 3)
+    assert emails == [("ada", "stargazer", 3, True)]
+
+    ns, writes, emails = _tier_award_ns([0, 0])
+    assert not _run(ns["_award_badge"](
+        None, "ada", "ada-bi", "stargazer", tier=1))
+    assert emails == []
+
+
+def test_untiered_badges_ignore_a_tier_argument():
+    ns, writes, _ = _tier_award_ns([1])
+    _run(ns["_award_badge"](None, "ada", "ada-bi", "genies_gift", tier=3))
+    assert writes[0][1] == (
+        "genies_gift", "ada-bi", "ada", "system", 1_700_000_000_000)
+
+
+def test_progress_keeps_the_best_value_and_awards_the_reached_level():
+    ns, writes, emails = _tier_award_ns([1, 1])
+    assert _run(ns["_record_badge_progress"](
+        None, "ada", "ada-bi", "stargazer", 130))
+    sql, params = writes[0]
+    assert "INSERT INTO badge_progress" in sql
+    assert "value=MAX(value, excluded.value)" in sql
+    assert params == ("stargazer", "ada-bi", 130, 1_700_000_000_000)
+    assert writes[1][1][5] == 1
+
+    ns, writes, emails = _tier_award_ns([1])
+    assert not _run(ns["_record_badge_progress"](
+        None, "ada", "ada-bi", "stargazer", 15))
+    assert len(writes) == 1 and emails == []
+
+    ns, writes, _ = _tier_award_ns([1])
+    assert not _run(ns["_record_badge_progress"](
+        None, "ada", "ada-bi", "genies_gift", 15))
+    assert writes == []
+
+
+def test_account_badges_report_tier_and_progress_for_tiered_badges():
+    handler, _, _ = _account_badges_ns(
+        is_admin=False,
+        existing_awards=[{"badge_slug": "stargazer", "granted_by": "system",
+                          "created_at": 40, "tier": 2, "tier_at": 90,
+                          "progress": 600}])
+    badge = _run(handler(None, _Req("GET"), "jett"))["data"]["badges"][0]
+    assert badge["tier"] == "silver"
+    assert badge["tierLevel"] == 2
+    assert badge["tierAt"] == 90
+    assert badge["progress"] == 600
+    assert badge["nextTier"] == "gold" and badge["nextThreshold"] == 4096
+    assert badge["awardedAt"] == 40
+
+
+def test_upgrade_email_names_the_new_level():
+    send, sent, _ = _badge_email_ns(_user())
+    assert _run(send(None, "ada", "stargazer", 3, True))
+    assert sent[0]["subject"] == (
+        "Your Stargazer badge is now Gold on ForkMesh")
+    assert "Gold Stargazer" in sent[0]["text"]
+    send, sent, _ = _badge_email_ns(_user())
+    _run(send(None, "ada", "stargazer", 0, False))
+    assert sent[0]["subject"] == "You earned the Stargazer badge on ForkMesh"
+
+
+# --- Stargazer and Genie's Gift ----------------------------------------------
+
+def _star_ns(account, stars):
+    queries = []
+    progress = []
+
+    async def account_row(env, name):
+        return (name + "-bi", account) if account else ("", None)
+
+    async def d1_first(env, sql, *params):
+        queries.append((sql, params))
+        return {"n": stars}
+
+    async def record(env, name, name_bi, slug, value):
+        progress.append((name, name_bi, slug, value))
+        return True
+
+    ns = _load("_active_user_account", "_repo_stargazer_count",
+               "_award_stargazer_for_repo", "_award_genies_gift",
+               extra_globals={
+                   "clean_string": lambda value, limit: str(value or "")[:limit],
+                   "MAX_NODE_NAME": 63,
+                   "valid_node_name": lambda name: bool(name) and name.isalnum(),
+                   "_account_row": account_row,
+                   "_account_kind": lambda r: r.get("kind", ""),
+                   "d1_first": d1_first,
+                   "_record_badge_progress": record,
+                   "_award_badge": None,
+                   "_safe_error_text": str,
+               })
+    return ns, queries, progress
+
+
+def test_a_star_records_the_owners_stargazer_progress_without_their_own_star():
+    ns, queries, progress = _star_ns(_user(), 20)
+    assert _run(ns["_award_stargazer_for_repo"](None, "Ada", "repo-bi"))
+    sql, params = queries[0]
+    assert "WHERE repo_bi=? AND account_bi<>?" in sql
+    assert params == ("repo-bi", "ada-bi")
+    assert progress == [("ada", "ada-bi", "stargazer", 20)]
+
+
+def test_stargazer_skips_organisations_and_inactive_owners():
+    for rec in (_user(kind="org"), _user(status="disabled"), None):
+        ns, queries, progress = _star_ns(rec, 500)
+        assert not _run(ns["_award_stargazer_for_repo"](None, "acme", "r"))
+        assert progress == []
+
+
+def test_star_handler_checks_stargazer_after_a_new_star():
+    source = _function_source("repo_star_handler")
+    insert = source.index("INSERT OR IGNORE INTO repo_stars")
+    hook = source.index("await _award_stargazer_for_repo(env, public_owner, repo_bi)")
+    assert insert < hook < source.index("DELETE FROM repo_stars")
+
+
+def test_genies_gift_needs_a_confirmed_mainnet_payment_to_someone_else():
+    awards = []
+
+    async def award(env, name, name_bi, slug, granted_by="system", tier=0):
+        awards.append((name, slug))
+        return True
+
+    ns, _, _ = _star_ns(_user(), 0)
+    ns["_award_badge"] = award
+    gift = ns["_award_genies_gift"]
+    assert _run(gift(None, "Ada", "bob", "mainnet", True))
+    assert not _run(gift(None, "ada", "bob", "devnet", True))
+    assert not _run(gift(None, "ada", "bob", "mainnet", False))
+    assert not _run(gift(None, "ada", "ada", "mainnet", True))
+    assert awards == [("ada", "genies_gift")]
+
+
+def test_tip_notice_awards_genies_gift_only_for_verified_payments():
+    source = _function_source("_account_tip_notice")
+    assert ("await _award_genies_gift(env, sender, recipient, network, "
+            "bool(context['task']) or reward is not None)") in source
+    assert source.index("INSERT INTO tip_notice") < source.index(
+        "_award_genies_gift")
+
+
+def test_sweeps_backfill_stargazer_and_genies_gift():
+    stars = _function_source("award_stargazer_badges")
+    assert "JOIN repositories r ON r.key_bi=s.repo_bi" in stars
+    assert "r.is_private=0 AND s.account_bi<>r.owner_bi" in stars
+    gifts = _function_source("award_genies_gift_badges")
+    assert "t.network='mainnet'" in gifts and "t.from_bi<>t.to_bi" in gifts
+    assert "e.status='paid'" in gifts
+
+
+def test_badge_tiers_migration_adds_columns_and_progress_table():
+    up = (ROOT / "migrations" / "0264_badge_tiers.sql").read_text()
+    down = (ROOT / "migrations" / "down" / "0264_badge_tiers.sql").read_text()
+    assert "ADD COLUMN tier INTEGER" in up and "ADD COLUMN tier_at" in up
+    assert "CREATE TABLE IF NOT EXISTS badge_progress" in up
+    assert "DROP TABLE IF EXISTS badge_progress" in down
+    assert "CREATE TABLE IF NOT EXISTS badge_progress" in SCHEMA_TEXT

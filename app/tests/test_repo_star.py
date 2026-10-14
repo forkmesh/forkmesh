@@ -43,8 +43,13 @@ def _load_functions(extra_globals):
     module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
     namespace = dict(extra_globals)
     namespace.setdefault("bounded_json_request", json_from_request_double)
+    namespace.setdefault("_award_stargazer_for_repo", _no_badge)
     exec(compile(module, str(ENTRY), "exec"), namespace)
     return namespace
+
+
+async def _no_badge(*args, **kwargs):
+    return False
 
 
 class _Headers:
