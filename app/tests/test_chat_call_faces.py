@@ -534,13 +534,22 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     assert 'configuration.userContentController.add(proxy, name: "fmCall")' in peer
     assert 'run("face", [.string(id)])' in peer
     assert 'case "landmarks":' in peer
-    assert "await CallFaceLandmarks.detect(dataURL: image)" in peer
+    assert "await CallFaceLandmarks.detect(dataURL: image, landmarks: landmarks, mask: mask)" in peer
+    assert 'run("background", [.string(id), .string(image)])' in peer
+    assert "if let previewed = current, previewed.previewing, media == .video {" in peer
     assert "window.fmCallLandmarks && window.fmCallLandmarks(" in peer
     vision = (app / "Features" / "Chat" / "Calls" / "CallFaceLandmarks.swift").read_text(encoding="utf-8")
     assert "VNDetectFaceLandmarksRequest()" in vision
-    assert "request.constellation = .constellation76Points" in vision
+    assert "faceRequest.constellation = .constellation76Points" in vision
     assert "region.pointsInImage(imageSize: size)" in vision
     assert "size.height - point.y" in vision
+    assert "VNGeneratePersonSegmentationRequest()" in vision
+    assert "personRequest.qualityLevel = .balanced" in vision
+    preview = (app / "Features" / "Chat" / "Calls" / "DirectCallPreview.swift").read_text(encoding="utf-8")
+    assert "factory.preview(face: engine.face, background: engine.background, image: image)" in preview
+    assert "PhotosPicker(selection: $photo, matching: .images)" in preview
+    assert "DirectCallPreviewButton(hub: hub, engine: engine, dark: dark)" in views
+    assert "calls.onBackgroundChanged = {" in install
 
 
 def test_android_wires_the_call_engine_screen_and_buttons():

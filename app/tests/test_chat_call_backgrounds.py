@@ -327,3 +327,18 @@ def test_chat_page_has_preview_and_background_picker():
     assert ".chat-call-backgrounds[hidden] { display: none; }" in CSS
     assert ".chat-call-panel.is-preview #chat-call-local" in CSS
     assert "callPreviewBtn?.addEventListener(\"click\", previewDirectCall);" in CHAT
+
+
+def test_android_wires_backgrounds_and_the_preview():
+    feature = ROOT.parent / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "feature" / "chat"
+    views = (feature / "DirectCallViews.kt").read_text(encoding="utf-8")
+    peer = (feature / "WebCallPeer.kt").read_text(encoding="utf-8")
+    installer = (feature / "DirectCallFeature.kt").read_text(encoding="utf-8")
+    assert "previewing != null -> DirectCallPreviewScreen(previewing, state)" in views
+    assert "ActivityResultContracts.PickVisualMedia()" in views
+    assert 'request("background", listOf(id, image))' in peer
+    assert "if (previewed != null && video) {" in peer
+    assert 'const val BACKGROUND_PREF = "chat.callBackground"' in installer
+    core = (ROOT.parent / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "chat" / "DirectCalls.kt").read_text(encoding="utf-8")
+    for background_id in ("blur", "blur-strong", "world", "office", "meeting", "library", "skyline", "custom"):
+        assert f'DirectCallFace("{background_id}"' in core or (background_id == "custom" and "DirectCallFace(CUSTOM_BACKGROUND" in core)

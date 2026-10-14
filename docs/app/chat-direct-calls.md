@@ -99,116 +99,311 @@ preview shows the same disguised track the other person receives. Choosing
 kept in `localStorage` (`forkmesh.chat.callFace`) and applied to the next
 video call.
 
-### Face swap (rewritten 2026-10-13)
+### Face swap: the whole head (rewritten 2026-10-13, branch `1993-call-face-head-and-backgrounds`)
 
-The first version painted hair, brows and a skin tint over the caller's own
-face; it never looked like another person ("doesn't work well at all"). It
-was replaced by the method the open-source face-swap projects use: the
-iOS ones built on Apple Vision (for example Alex13832/FaceSwap-iOS, which
-moved from dlib to Vision landmarks), the Python/OpenCV ones (learnopencv's
-Face Swap, Delaunay triangles from landmarks, one affine warp per triangle),
-and Matthew Earl's "Switching Eds" colour correction (scale the warped face
-by `blur(camera) / blur(face)`). There are no third-party libraries and no
-model downloads; everything runs on the device before encryption.
+The first rewrite warped only the inner face (68 landmarks) and left the
+caller's own hair, ears and head outline around it. The user asked for the
+chosen face to cover "the whole face and hair" and to move naturally, plus
+custom and blurred backgrounds, at the "highest quality". The head swap is
+now a 2.5D warp of the whole stand-in head (face, forehead, hair, ears,
+neck), the caller's own hair is cut out with a hair model and replaced by
+the room behind it, and the colour of the stand-in is matched per frame.
+Everything runs on the device before encryption; models are bundled, never
+downloaded from a third party at runtime.
 
-Four modules in `app/public/`:
+Modules in `app/public/` (all inlined into the apps' `direct-call.html`):
 
-- `chat-call-faces.js`: the five faces, the capture → landmarks → render
-  loop (`createFaceStage`), and the stage API `chat-calls.js` and the
-  native page use (`track`, `face()`, `setFace`, `stop`).
-- `chat-call-face-geometry.js`: the 68-point layout (iBUG order), the mean
-  face (`buildTemplate`, built at load time from the five annotated photos,
-  mirrored and given a hand-set depth per point), `fitTemplate` (places the
-  mean face on tracked eyes and mouth, turns it by yaw, stretches the lower
-  face to the mouth, drops the jaw for an open mouth), Delaunay
-  triangulation (Bowyer–Watson), `landmarksFromRegions` (Apple Vision's
-  regions → 68 points by arc-length resampling, so any Vision constellation
-  works), and a One Euro filter for jitter.
-- `chat-call-face-tracker.js`: the landmark source where the platform has
-  none (browsers, the Android WebView).
-- `chat-call-face-render.js`: the WebGL renderer.
+- `chat-call-faces.js`: the five faces (`CALL_FACES`: 68 landmarks and a
+  28-point head contour per photo), the stage (`createFaceStage`), the
+  adaptive quality levels, and the iOS host bridge.
+- `chat-call-face-geometry.js`: landmarks and the mean face (as before),
+  `headLayout`/`headModel` (landmarks + 10 forehead points + the head
+  contour, each with a depth), `buildHeadMesh` (Delaunay over the mean face
+  with an open mouth plus the face's contour, so every face has a mouth
+  hole), `solvePose` (weak-perspective pose from the 68 points against the
+  stand-in's own 3D model: least-squares affine, then the closest rotation)
+  and `liveHead` (projects the forehead and contour with that pose and adds
+  the landmark residuals with Gaussian weights, so the hair stays attached
+  to the jaw and brows when the caller's face is wider or opens its mouth).
+- `chat-call-face-render.js`: the WebGL 1 compositor.
+- `chat-call-segment.js`: a small WebGL inference engine for the bundled
+  models, the person matte and the hair matte.
+- `chat-call-face-mesh.js`: face detection and 468-point face mesh for
+  browsers and Android, mapped to the 68-point layout.
+- `chat-call-face-tracker.js`: the old heuristic tracker, now only a
+  fallback while the face models load or when float textures are missing.
+- `chat-call-backgrounds.js`: the background list, saving the choice, and
+  preparing a picked photo.
 
-**The photos.** `app/public/assets/call-faces/*.jpg` are 512 px crops of
-StyleGAN faces of people who do not exist, marked public domain on
-Wikimedia Commons ("This Person Does Not Exist example.jpg" → Maya,
-"Male and female deepfake.jpg" → Theo and Ren, "Man 2.jpg" → Kofi,
-"Woman 1.jpg" → Ingrid). Faces of real people were ruled out: a
-wearable copy of a real person's face is an impersonation tool. The 68
-landmarks of each photo were placed by hand on zoomed grids and are
-stored with the face in `CALL_FACES`; they are resampled at load time
-(`canonicalShape`) so the photo and a live Vision face use the same
-spacing along the jaw, eyes and lips.
+**The stand-in photos.** `app/public/assets/call-faces/<id>.jpg` are now the
+whole original public-domain StyleGAN frames (the same Wikimedia Commons
+files as before, 1024 px), padded by 192 px at the top so heads whose hair
+touched the frame edge get a completed crown (an ellipse fitted to the
+hair outline, filled with mirrored hair), scaled to 512 px. Next to each is
+`<id>-matte.png`: red = head matte (person × head region, plus hair), green
+= skin, blue = hair. `app/tools/build_call_face_assets.py` builds both from
+the originals (`numpy` and Pillow; it runs the MediaPipe selfie and hair
+models in numpy offline): person and hair segmentation, a colour guided
+filter for strand-level edges, the neck kept only where it is skin
+coloured (chroma likeness against the cheeks, so collars and shirts fade
+out), a fade at the bottom edge, colour decontamination of the edge
+pixels (the background colour is estimated by push-pull and removed, so
+no blue or green fringe), the remapped landmarks and the 28-ray head
+contour. The landmark annotations are the hand-placed ones from the first
+rewrite, mapped through the old crop (`(160, 272)`, 704 px of 1024).
 
-**The mesh.** One topology for every face: Delaunay over the mean face
-with its mouth open, plus ten forehead points above the brows and an
-inner ring 14 % inside the jaw. Jaw and forehead points carry alpha 0 and
-everything inside alpha 1, so the edge feathers into the caller's own
-skin, hair and ears. A face can narrow this (`look` in `CALL_FACES`):
-Ingrid's bangs reach her brows, so her forehead band is short and her brow
-points carry alpha 0. The swap then fades out between her eyelids and the
-caller's own brows, instead of painting a strip of fringe on a
-short-haired caller. Triangles made only of inner-lip points are the
-mouth hole: alpha 0, so the caller's real teeth and tongue show when they
-open their mouth.
+**Per frame:**
 
-**Rendering, per frame** (WebGL 1): upload the frame; draw the mesh with
-live positions and photo texture coordinates into a full-size target;
-reduce the camera and the warped face (both weighted by the mask) to a
-160-px-wide target and blur them twice: once at 0.22 × the eye distance
-(local shading) and once at about 0.6 × (face-wide colour). The composite
-multiplies the photo by the face-wide colour ratio and by a clamped
-(0.65–1.5) local luminance ratio, then mixes it over the camera by the
-mask. A per-channel local ratio, as in Earl's original, turned dark bangs
-yellow over a light forehead, so only luminance is corrected locally.
+1. Landmarks (Vision on iOS; the face mesh elsewhere), smoothed with a One
+   Euro filter (min cutoff 1.5 Hz, beta 1.5). Pose and head points are a
+   function of the smoothed landmarks, so they need no second filter.
+2. The person matte: the selfie model's 256×144 (or 256×256 for portrait
+   frames) mask, a temporal blend that follows big changes at once and
+   halves small ones (`rate = mix(0.55, 1, smoothstep(0.06, 0.4, |Δ|))`),
+   then a fast guided filter (luma guide at 320 px, radius 4, ε 0.0012),
+   applied at full resolution in the compositor. Hair strands and the
+   space between arm and body come out clean.
+3. With a face chosen, the hair matte: the hair model on a 192×192 crop
+   around the head (6.4 eye distances, kept inside the frame and
+   stretched, never letterboxed: black bands made it miss half the hair),
+   fed its own previous mask as the fourth channel like MediaPipe does,
+   warmed up with three rounds on the first frame, and blended in frame
+   space.
+4. The head mesh is drawn twice into full-size targets: the photo with the
+   matte as alpha, and a second pass with skin, hair, the mouth hole and a
+   "face region" weight (1 on the inner face, 0.25 at jaw and brows, 0 on
+   the forehead and contour).
+5. The caller's head is removed where the stand-in does not cover it:
+   `zone = max(face ellipse without the neck column, dilated hair mask)`,
+   times the caller's matte. Nothing below the shoulders is touched, so a
+   suit or a dress stays (an earlier ellipse-only zone cut into shoulders).
+   The mouth hole keeps the caller's real mouth.
+6. Colour: the skin colour ratio camera/stand-in is measured only where both
+   are face (the region weight), heavily blurred, and blended with the
+   global ratio where the weight runs out, so the forehead never picks up
+   the caller's fringe. Local luminance shading (0.7–1.4) applies only
+   where the inner face weight is high. Hair gets the square root of the
+   global hue and level change, so blond stays blond on a dark-skinned
+   caller while matching the room's white balance.
+7. Composite: `out = backdrop · (1 − keep) + front · (1 − zone)` with
+   `keep = α (1 − zone)` and `front = clamp(cam − (1 − α) · fill, 0, α)`,
+   where `fill` is a push-pull estimate of the room behind the caller.
+   Removing the estimated room from the edge pixels is what stops halos
+   and leftover "ghost" hair at the cut-out edge. The backdrop is the
+   blurred room, the chosen image, or (no background) the real room with a
+   soft blur halo around the head, so the filled-in area behind removed
+   hair does not show as a smudge.
 
-**Where the landmarks come from:**
+**Privacy when tracking fails** is unchanged: the frame blurs from the
+first missed frame until a face is found again; with a background chosen,
+the blurred person is drawn over the background.
 
-- **iOS**: Apple Vision. The page posts a 480-px JPEG of the frame
-  (`{event: "landmarks"}`); `CallFaceLandmarks.swift` runs
-  `VNDetectFaceLandmarksRequest` (76-point constellation) off the main
-  thread and answers with the regions in image pixels through
-  `window.fmCallLandmarks`. Up to two frames are in flight, and each
-  frame is drawn with its own landmarks, so the face never lags the
-  picture. Three failed requests switch the page to the tracker.
-- **Web and Android** (`chat-call-face-tracker.js`), no trained model:
-  an adaptive skin model (generic YCbCr box, then a Gaussian learned from
-  the caller's cheeks), eye candidates from an eye map in the spirit of
-  Hsu, Abdel-Mottaleb & Jain (local darkness, grey-level contrast and the
-  Cb/Cr eye chroma), eye pairs checked for skin below and between the
-  eyes and forehead skin above, and scored by normalised correlation with
-  an average face. There are two 24×28 averages: shading and local
-  darkness, built from the five photos and their mirrors, compared after
-  removing a lighting plane, at three vertical stretches. Mouth evidence
-  (lip redness against the learned skin and the dark lip line) breaks
-  ties. Eye centres are refined with Timm & Barth's gradient method. A
-  new face must be found twice (the second time in a canonical window
-  around the first), the lock re-checks itself every 16 frames, and two
-  agreeing re-checks move it. The mouth opening is measured from the dark
-  gap between the lips. Microphone level is not used: when it disagrees
-  with the picture, the mouth hole shows closed lips inside open ones.
+## Backgrounds (added 2026-10-13)
 
-**Privacy when tracking fails.** The disguise holds the last landmarks for
-half a second, but the frame starts blurring (a 160-px copy blurred four
-times) on the first missed frame, and stays blurred until a face is
-found again, including at the start of the call. The real face is not
-sent unblurred while a disguise is chosen.
+The call panel and the pre-call preview have a **Background** picker with
+thumbnails: No background, Blur, Strong blur, five built-in images, and
+Your photo. It works with or without a face. The choice is saved like the
+face (`forkmesh.chat.callBackground` in `localStorage`, the picked photo as
+a JPEG data URL under `forkmesh.chat.callBackgroundImage`, at most 1920 px;
+the apps keep `chat.callBackground` in their prefs and the photo as
+`call-background.jpg` in app storage) and applied to the next call. The
+local preview is the outgoing track itself, so it shows exactly what the
+other side receives.
 
-**Measured** (headless Chromium, `app/tests/test_chat_call_faces.py`
-covers the pure parts): on moving sequences built from the five photos
-and a held-out face, the tracker kept the lock on every frame with a
-median eye error of 2–6 % of the eye distance, at 11–21 ms per frame
-on a desktop CPU. Cold starts on single stills with random scale,
-rotation, lighting, noise and backgrounds (up to ten tries each) locked
-the right eyes in 80 of 96 cases: 52 of 60 on the five photo faces and
-28 of 36 on three held-out faces. The misses lock onto the hairline or the
-brows; on video, the 16-frame re-check usually moves such a lock back.
-Vision on iOS does not have that weakness.
+- **Blur** is a normalized blur of the room only: room pixels are weighted
+  by `(1 − α)³` with α taken as the maximum over a small neighbourhood, so
+  the person never bleeds into the blur, and the hole they leave is filled
+  by push-pull from the room around it.
+- **Images** are drawn cover-fit; the centre of every built-in image is kept
+  calm so that the centre 9:16 strip phones send also looks right.
+- The matte edge uses the same spill removal as the head swap.
 
-Limits: the canvas is driven by `setInterval`, which browsers slow to
-about 1 Hz in a background tab, so the outgoing video stutters while
-`/chat` is not the visible tab. Strong side profiles (beyond about 40°)
-are drawn as a turned flat face. Without WebGL or `canvas.captureStream`
-the picker is hidden.
+**The five built-in images** (`app/public/assets/call-backgrounds/<id>.jpg`,
+1920×1080, plus 320×180 `-thumb.jpg`, 1.08 MB in all) were requested on
+2026-10-13 ("one must be a ForkMesh World scene, one ForkMesh corporate
+offices", all professional and licence-clean). They are three.js renders
+made by `app/tools/render_call_backgrounds.cjs` (scenes in
+`app/tools/call-backgrounds/scenes.js`; `node
+app/tools/render_call_backgrounds.cjs [world office meeting library
+skyline]`, headless Chromium, the repo's own three.js 0.184, about seven
+minutes; `PLAYWRIGHT_DIR` points at a Playwright install). Each is 24–40
+jittered renders averaged (soft shadows, slight depth of field), then a
+light blur, vignette and JPEG quality picked for a size target. No photos
+or third-party images are used: every texture, painting, book, plant and
+sky is generated in code.
+
+- **ForkMesh World**: the real World scene (`world/public/world`) at 16:30,
+  ground level, the office tower on the right third and the roller coaster
+  on the left. The World's flat sky colour is replaced by a gradient with
+  clouds drawn in code, and the office's upper floors are made visible. The
+  World's beach was left out: its photographic sand texture has no recorded
+  source.
+- **ForkMesh office**: a dedicated set (the World's own office lobby reads
+  as a game interior): oak-slat wall with the repo logo
+  (`www/public/assets/logo.svg`) and the wordmark in the site font (ABC
+  Favorit, `www/public/assets/fonts/ABCFavorit-Bold.woff2`, rendered into
+  the image as the site already uses it), green accent, concrete floor,
+  desks, plants, window walls. The sign sits outside the centre 9:16 strip.
+- **Meeting room**, **Home library** (sage wall, walnut bookcase, lamp,
+  window) and **City window** (dusk skyline of generated towers through
+  floor-to-ceiling glass).
+
+The local self-view is mirrored like other video apps, so text in a
+background reads backwards to the caller; the other side sees it the
+right way round.
+
+## Models on the device
+
+| File (`app/public/assets/call-segmentation/`) | Source model | Size | Use |
+| --- | --- | --- | --- |
+| `selfie-landscape.fmnn`, `selfie-square.fmnn` | MediaPipe Selfie Segmentation (landscape 144×256, general 256×256) | 224 KB each | person matte |
+| `face-detector.fmnn` | MediaPipe BlazeFace short range | 211 KB | finds the face when tracking starts or is lost |
+| `face-mesh.fmnn` | MediaPipe Face Mesh (468 points) | 1.2 MB | landmarks in browsers and Android |
+| `hair-192.fmnn` | MediaPipe Hair Segmentation, reshaped to a 192×192 input | 389 KB | the caller's hair |
+
+All five are Apache 2.0 (Google; the model cards say "Licensed under
+Apache License, Version 2.0"); `LICENSE` next to them is the licence text.
+The hair model is also used offline by the asset tool. `.fmnn` is our own
+container: a JSON graph and float16 weights.
+`app/tools/build_call_segmentation_model.py` converts a `.tflite` file with
+only the standard library (it reads the FlatBuffer directly, folds
+DEQUANTIZE, fuses activations including PReLU into the producing layer,
+turns RESHAPE/CONCATENATION tails into output groups, and can re-infer
+shapes for a new input size: `--size 192,192`). Each converted graph was
+checked against LiteRT on real frames: selfie and face models match to
+1e-5 in numpy and to fp16 precision on the GPU (largest landmark error
+0.07 px of 192; person mask disagreement 0.02 % of pixels). The hair model
+has custom ops LiteRT cannot run, so it was checked layer by layer against
+an independent numpy implementation of the raw `.tflite`.
+
+`chat-call-segment.js` runs a graph as one fragment-shader draw per layer
+on half-float textures (four channels per texel, channel slices side by
+side), with generated shaders per layer: convolution (with dilation),
+depthwise, transposed convolution, add, multiply, global mean (two passes),
+max pool, argmax pooling and unpooling, channel concat and pad, bilinear
+resize, and ReLU, hard-swish, sigmoid and PReLU. Weights are float16
+textures. It needs `OES_texture_half_float` with renderable half floats (or
+float) and 12 texture units; without them the background picker is hidden
+and the face falls back to the old tracker.
+
+Why a bundled model and not "no model downloads": the heuristic tracker
+cannot give a head pose or a hair outline, and no browser API segments a
+person. The models are part of the app (same origin, same CSP, inlined in
+the native page), so nothing is fetched from a third party, and nothing
+leaves the device.
+
+**Where segmentation and landmarks come from:**
+
+- **iOS**: Apple Vision for both. The page asks the app for `{landmarks,
+  mask}` with each 480-px JPEG; `CallFaceLandmarks.swift` runs
+  `VNDetectFaceLandmarksRequest` and `VNGeneratePersonSegmentationRequest`
+  (quality `.balanced`, 8-bit output) in one Vision request, box-downsamples
+  the mask to 256 px wide and returns it as base64 next to the regions
+  (about 50 KB per frame; the page uploads it as a LUMINANCE texture and
+  runs the same temporal blend and guided filter). If twelve answers in a
+  row arrive without a mask (an old app), the page runs the bundled selfie
+  model instead. The hair model runs in the page on iOS too: Vision has no
+  hair segmentation. Kept in the page because the compositing, hair model
+  and colour transfer already live there; moving compositing native would
+  need a second implementation of all of it.
+- **Browsers and the Android WebView**: everything in the page. The face
+  mesh tracks from its own previous result; BlazeFace runs only to find a
+  face again.
+
+**Adaptive quality.** The stage measures each frame from grab to composite
+(on iOS, the composite only) and moves between four levels after 24 steady
+frames: selfie model every frame/hair every frame and a 320-px guide;
+hair every 2nd frame; selfie every 2nd, hair every 3rd, 256-px guide;
+selfie every 3rd, hair every 4th, 192-px guide. It steps down above 34 ms
+and back up below 20 ms. A skipped hair frame reuses the last hair logits
+placed with the current head crop, so the hair mask still moves with the
+head.
+
+## Preview before a call, and the stage API (added 2026-10-13)
+
+`/chat` has a **Preview** button (eye) next to the call buttons in a DM. It
+opens the camera through the same stage the call uses, mirrored and large,
+with the Face and Background pickers and the voice preview controls from
+`chat-call-voice.js` (`createVoicePreview` + `mountVoicePreviewControls`:
+Voice, "Hear myself", headphone hint). **Start video call** turns the
+preview into the call: the camera stream and the stage are kept and the
+same canvas track is offered, so there is no camera restart or flash; the
+voice preview stops and the call's own voice stage starts. An incoming
+call accepted during a preview reuses it the same way. `createChatCalls`
+exposes `preview`, `previewing`, `setBackground`, `background` and `stage`.
+
+The apps have the same screen (`DirectCallPreview.swift`,
+`DirectCallPreviewScreen` in `DirectCallViews.kt`): an eye button in the
+DM header opens the page in preview mode (`preview(media, voice, face,
+background, image)`), with Face, Background (thumbnail sheet; "Your photo"
+uses the system photo picker), Voice and Hear myself. Start video call
+hands the previewing WebView to the call (`WebCallPeerFactory.makePeer` /
+`WebCallPeers.makePeer` run `setup` on it instead of loading a new page).
+
+**Using the pipeline outside a call** (for recorded video messages):
+
+```js
+const stage = createFaceStage({ cameraStream, faceId, backgroundId, backgroundImage });
+stage.track;                      // MediaStreamTrack, 24 fps canvas capture
+stage.setFace(id);                // "" for the caller's own face
+stage.setBackground(id, image);   // ids from CALL_BACKGROUNDS; image = data URL for "custom"
+stage.face(); stage.background();
+stage.stop();
+```
+
+It needs no `RTCPeerConnection`; `stage.track` can go straight into a
+`MediaRecorder` together with `createVoiceStage(...).track`. With
+`{manual: true}` and no camera, `stage.processFrame(source, time)` renders
+a given image or video frame on demand (the test harness uses this). In
+the apps the same functions are `window.FmCallFaces` in `direct-call.html`;
+a record screen can call the page's `preview(...)` operation and then
+record from the page, or call `FmCallFaces.createFaceStage` itself.
+
+## Measuring the video pipeline
+
+`app/tools/call_video_harness.cjs` drives the real modules in headless
+Chromium (Playwright; set `PLAYWRIGHT_DIR` to an installed
+`playwright` package): `render` processes a folder of frames one by one
+through `processFrame` and writes the output frames, the landmarks and
+timings; `native` loads `direct-call.html` with a fake camera
+(`--use-file-for-fake-video-capture` with a `.y4m` clip) and opens a
+preview; `models` times each network. `--gpu` uses the machine's GPU
+through ANGLE (`--use-angle=gl-egl`), otherwise SwiftShader.
+`app/tools/call_video_metrics.py` reports landmark and head-contour jitter
+(the median second difference per frame in eye distances) and the mean
+frame-to-frame change of the output against the camera.
+
+Test footage (kept out of the repo): public-domain US government videos
+from Wikimedia Commons (White House weekly addresses of 8 Oct 2016 and of
+the First Lady, May 2014), cropped to 640×360 and 360×640 at 24 fps, plus
+a version with synthetic roll (±12°), pan and zoom.
+
+**Measured** (2026-10-13; the AMD RX 580 in this box through ANGLE/GL; a
+mid-range phone GPU is several times slower, and the adaptive levels exist
+for that):
+
+- Network times (run + read back): selfie 3.3 ms, face mesh 2.6 ms,
+  BlazeFace 2.2 ms, hair 5.1 ms. They are bound by per-draw overhead (60
+  to 160 draws each), not arithmetic.
+- Whole frame, grab to composite, 640×360: background blur 3–5 ms; face
+  with or without a background 14–21 ms median, 24–26 ms p90.
+- Jitter on a still frame with camera noise (σ 2.5 grey levels): landmarks
+  0.15 % of the eye distance per frame, head contour 0.28 %; the output
+  changed 0.59 grey levels per frame against 1.87 in the camera. On the
+  talking-head clip: landmarks 1.0 %, contour 0.9 % (this includes real
+  speech motion).
+- iOS path, simulated in Chromium with Vision-format replies (regions and
+  an 8-bit mask): composited correctly; 72 KB per frame through the
+  bridge (JPEG and mask).
+
+Limits and what is not verified: the apps' new screens and Vision person
+segmentation were not run on a device (the iOS app target was only
+parse-checked with `swiftc -parse`; the FMChat core and its tests pass on
+Linux; Android `:core:coreTest` passes and `:app:assembleDebug` builds,
+with no emulator run). Phone frame times were not measured. Turns beyond
+about 40° still show a turned flat head, and hair behind the shoulders is
+kept. The canvas is driven by `setInterval`, which browsers slow down in a
+background tab.
 
 ## Calls and faces in the iOS and Android apps
 
@@ -242,10 +437,15 @@ showed a screen. Now:
   `onFaceChanged`, saved under the `chat.callFace` pref), gives it to a
   video peer before the offer or answer, and forwards changes mid-call.
   The page's `face` operation swaps the outgoing track with
-  `replaceTrack`. The sync tool inlines all four face modules and writes
-  the five photos as data URLs into `<script id="fm-call-face-photos">`
-  (the page's CSP allows `img-src data:` for that). On iOS the page asks
-  the app for Apple Vision landmarks (above); Android uses the tracker.
+  `replaceTrack`. The sync tool inlines the face modules (each in its own
+  function scope, so private names cannot clash), writes the photos and
+  mattes as data URLs into `<script id="fm-call-face-photos">`, the
+  background images into `<script id="fm-call-backgrounds">` and the models
+  as base64 into `<script id="fm-call-models">` (the page is about 5 MB).
+  On iOS the page asks the app for Apple Vision landmarks and person
+  masks; Android runs the bundled models in the WebView. The engines keep
+  the background too (`background`, `setBackground(id, image)`,
+  `onBackgroundChanged`, the `chat.callBackground` pref).
 
 Details per platform: `native/ios/docs/FMChat.md` ("Voice and video
 calls"). On Android, `feature/chat/DirectCallFeature.kt` installs the

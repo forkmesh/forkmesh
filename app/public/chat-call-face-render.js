@@ -11,7 +11,7 @@ const WIDE_PASSES = 3;
 const HIDE_SIGMA = 4;
 const HIDE_PASSES = 4;
 const GAUSS = [0.2270, 0.1945, 0.1216, 0.0540, 0.0162];
-const MIN_UNITS = 12;
+const MIN_UNITS = 14;
 const HALO_STRENGTH = 0.25;
 const HAIR_SIDE = 6.4;
 const HAIR_CENTER = [0, 0.5, -0.3];
@@ -111,7 +111,8 @@ float headZone(vec2 uv) {
   float side = abs(q.x);
   float neck = smoothstep(0.8, 1.4, q.y) * (1.0 - smoothstep(0.55, 0.85, side));
   if (uHasHair > 0.5) {
-    float face = 1.0 - smoothstep(0.85, 1.05, length((q - vec2(0.0, 0.0)) / vec2(1.55, 1.95)));
+    float face = 1.0 - smoothstep(0.9, 1.0, length((q - vec2(0.0, -0.3)) / vec2(2.1, 2.6)));
+    face *= 1.0 - smoothstep(1.0, 1.5, q.y) * smoothstep(0.8, 1.05, side);
     float h = texture2D(uHair, uv).r;
     for (int k = 0; k < 8; k++) {
       float a = float(k) * 0.785398;
@@ -566,7 +567,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
     const first = levels[0];
     into(first);
     gl.useProgram(weigh.program);
-    bindTextures(weigh, [["uCam", camera], ["uCoef", matte?.coefficients || camera]]);
+    bindTextures(weigh, [["uCam", camera], ["uCoef", matte?.coefficients || camera], ["uMatteMask", matte?.mask || camera]]);
     gl.uniform1f(weigh.uniforms.uHasMatte, hasMatte ? 1 : 0);
     gl.uniform2f(weigh.uniforms.uStep, 0.25 * (width / first.width) / width, 0.25 * (height / first.height) / height);
     drawQuad(weigh);
@@ -671,7 +672,12 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       const activeMode = mode === 2 && !background.image ? 0 : mode;
       const showFace = Boolean(face && live && presence > 0.001);
       const wantMatte = Boolean(matte) && (activeMode > 0 || showFace || needMatte);
-      const hasMatte = wantMatte && matte.update(camera, w, h, { runNetwork }) && matte.ready;
+      let seed = null;
+      if (live) {
+        const frameOfFace = faceFrame(live);
+        seed = [frameOfFace.mid[0] / w, frameOfFace.mid[1] / h, (0.8 * frameOfFace.span) / h];
+      }
+      const hasMatte = wantMatte && matte.update(camera, w, h, { runNetwork, face: seed }) && matte.ready;
       let zone = null;
       let faceUv = [0.5, 0.5];
       lastHead = null;
@@ -750,6 +756,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
         ["uBackdrop", backdrop],
         ["uLowPlain", targets.plain.texture],
         ["uHair", hair || camera],
+        ["uMatteMask", matte?.mask || camera],
       ]);
       gl.uniform1f(composite.uniforms.uHasHair, hair ? 1 : 0);
       gl.uniform1f(composite.uniforms.uHasMatte, hasMatte ? 1 : 0);
