@@ -229,3 +229,72 @@ def test_chat_page_wires_view_once_without_save_actions():
     filters = (PUBLIC / "chat-view-once-filters.js").read_text(encoding="utf-8")
     assert "registerViewOnceFilterStages({" in filters
     assert "createFaceStage" in filters and "createVoiceStage" in filters
+
+
+def test_face_stage_must_start_or_nothing_is_recorded():
+    filters = PUBLIC / "chat-view-once-filters.js"
+    result = _run(f"""
+      import * as filters from {json.dumps(filters.as_uri())};
+      const made = [];
+      const fake = (options) => {{
+        const stage = {{
+          options, stopped: false, readyAfter: options.readyAfter ?? 2, polls: 0,
+          track: options.noTrack ? null : {{ kind: "video" }},
+          face: () => options.faceId === "nope" ? "" : options.faceId,
+          background: () => options.backgroundId,
+          ready() {{ this.polls += 1; return this.polls >= this.readyAfter; }},
+          stop() {{ this.stopped = true; }},
+        }};
+        made.push(stage);
+        return stage;
+      }};
+      let clock = 0;
+      const run = async (choice, extra = {{}}) => {{
+        try {{
+          const stage = await filters.startViewOnceFaceStage({{}}, choice, {{
+            createFaceStageImpl: (options) => fake({{ ...options, ...extra }}),
+            readyMs: 1000, now: () => clock, wait: async (ms) => {{ clock += ms; }},
+          }});
+          return {{ ok: true, face: stage.face(), background: stage.background() }};
+        }} catch (error) {{
+          return {{ ok: false, error: error.message, stopped: made.at(-1).stopped }};
+        }}
+      }};
+      const ok = await run({{ faceId: "theo", backgroundId: "office", backgroundImage: "" }});
+      const unknown = await run({{ faceId: "nope", backgroundId: "" }});
+      const noTrack = await run({{ faceId: "theo", backgroundId: "" }}, {{ noTrack: true }});
+      const slow = await run({{ faceId: "", backgroundId: "blur" }}, {{ readyAfter: 1e9 }});
+      const store = new Map([
+        ["forkmesh.chat.callFace", "ren"],
+        ["forkmesh.chat.callBackground", "custom"],
+      ]);
+      const storage = {{ getItem: (key) => store.get(key) ?? null }};
+      const choices = filters.viewOnceFilterChoices(
+        {{ faces: true, backgrounds: true, voices: true }}, storage);
+      const plain = filters.viewOnceFilterChoices(
+        {{ faces: false, backgrounds: false, voices: false }}, {{ getItem: () => null }});
+      process.stdout.write(JSON.stringify({{
+        ok, unknown, noTrack, slow,
+        faces: choices.faces.map(([id]) => id),
+        backgrounds: choices.backgrounds.map(([id]) => id),
+        voices: choices.voices.map(([id]) => id),
+        defaults: choices.defaults,
+        match: choices.resolveVoice("face", "theo"),
+        plain: {{ faces: plain.faces, backgrounds: plain.backgrounds, voices: plain.voices,
+          defaults: plain.defaults }},
+      }}));
+    """)
+    assert result["ok"] == {"ok": True, "face": "theo", "background": "office"}
+    assert result["unknown"] == {"ok": False, "error": "face_unavailable", "stopped": True}
+    assert result["noTrack"] == {"ok": False, "error": "face_stage_unavailable", "stopped": True}
+    assert result["slow"] == {"ok": False, "error": "face_stage_timeout", "stopped": True}
+    assert result["faces"] == ["", "maya", "theo", "kofi", "ingrid", "ren"]
+    assert result["backgrounds"] == [
+        "", "blur", "blur-strong", "world", "office", "meeting", "library", "skyline"]
+    assert result["voices"][:2] == ["face", "off"]
+    assert result["defaults"] == {
+        "face": "ren", "background": "", "backgroundImage": "", "voice": "face"}
+    assert result["match"] == "theo"
+    assert result["plain"] == {
+        "faces": [], "backgrounds": [], "voices": [],
+        "defaults": {"face": "", "background": "", "backgroundImage": "", "voice": "face"}}
