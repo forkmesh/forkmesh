@@ -65,6 +65,9 @@ out.saved.push(bg.savedCallBackground(storage));
 bg.rememberCallBackground("", "", storage);
 out.saved.push(bg.savedCallBackground(storage));
 out.fit = [bg.fitSide(4000, 3000), bg.fitSide(800, 600)];
+const office = bg.callBackgroundById("office");
+out.urls = [bg.callBackgroundImageUrl(office), bg.callBackgroundImageUrl(office, true), bg.callBackgroundImageUrl(bg.callBackgroundById("blur"), true)];
+out.portrait = [bg.isPortraitFrame(360, 640), bg.isPortraitFrame(640, 360), bg.isPortraitFrame(480, 480), bg.isPortraitFrame(0, 0)];
 console.log(JSON.stringify(out));
 '''
 
@@ -272,13 +275,26 @@ def test_background_choices_persist_and_custom_needs_a_photo():
     assert data["fit"] == [[1920, 1440], [800, 600]]
 
 
+def test_portrait_frames_use_the_portrait_render():
+    data = _node(MODULES_HARNESS, PUBLIC)
+    assert data["urls"] == ["/assets/call-backgrounds/office.jpg", "/assets/call-backgrounds/office-portrait.jpg", ""]
+    assert data["portrait"] == [True, False, False, False]
+    faces = (PUBLIC / "chat-call-faces.js").read_text(encoding="utf-8")
+    assert "callBackgroundImageUrl(next, portrait)" in faces
+    assert 'if (background.mode === "image" && !background.custom) loadBackground(background.id, \"\", true);' in faces
+    assert "if (!keep) renderer.setBackground({ mode: \"off\" });" in faces
+
+
 def test_built_in_backgrounds_are_bundled_with_thumbnails():
     for stem in ("world", "office", "meeting", "library", "skyline"):
         full = (BACKGROUNDS / f"{stem}.jpg").read_bytes()
         thumb = (BACKGROUNDS / f"{stem}-thumb.jpg").read_bytes()
-        assert full[:3] == b"\xff\xd8\xff" and thumb[:3] == b"\xff\xd8\xff"
+        portrait = (BACKGROUNDS / f"{stem}-portrait.jpg").read_bytes()
+        assert full[:3] == b"\xff\xd8\xff" and thumb[:3] == b"\xff\xd8\xff" and portrait[:3] == b"\xff\xd8\xff"
         height, width = _jpeg_size(full)
         assert (width, height) == (1920, 1080)
+        height, width = _jpeg_size(portrait)
+        assert (width, height) == (720, 1280)
     total = sum(path.stat().st_size for path in BACKGROUNDS.glob("*.jpg"))
     assert total < 1_500_000
 

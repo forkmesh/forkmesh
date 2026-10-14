@@ -142,7 +142,8 @@ bundled; nothing is fetched from a third party at runtime.
 | `chat-call-face-tracker.js` | Heuristic fallback tracker |
 | `chat-call-face-expression.js` | Blink, gaze and tongue measures from the camera image |
 | `chat-call-face-custom.js` | Builds a stand-in from an uploaded photo ("Your photo", id `custom`) |
-| `chat-call-backgrounds.js` | Background list, saved choice, custom photo preparation |
+| `chat-call-backgrounds.js` | Background list, saved choice, custom photo preparation, portrait image choice |
+| `chat-call-outfits.js` | Outfit list (`CALL_OUTFITS`), garment drawing, where the outfit sits on the body |
 | `chat-call-voice.js`, `chat-call-voice-worklet.js` | Voice list (`CALL_VOICES`) and the AudioWorklet engine |
 
 ### Head swap
@@ -223,6 +224,72 @@ room pixels so the person never bleeds in. Choices are saved in
 `localStorage` (`forkmesh.chat.callFace`, `forkmesh.chat.callFaceImage`,
 `forkmesh.chat.callBackground`, `forkmesh.chat.callBackgroundImage`) or app
 preferences (`chat.callFace`, `chat.callBackground`).
+
+**Portrait.** Each built-in image has a portrait render
+(`<stem>-portrait.jpg`, 720x1280) beside the 1920x1080 one. The stage uses it
+whenever the picture is taller than wide (`isPortraitFrame`: height above
+1.05x width), which is how phones and turned tablets send video; covering a
+16:9 image into a 9:16 frame kept only its middle third and cut signs and
+windows in half. The renders come from the same scenes with a portrait camera
+(`render_call_backgrounds.cjs --portrait`): horizontal field of view 0.8x the
+landscape's vertical one, aimed per scene where needed (the office turns left
+to keep the sign in view, the World turns 16 degrees instead of 24). 720x1280
+is enough because the stage never draws more than 960 pixels on a side, and
+keeps all fifteen files under the 1.5 MB budget (portrait adds about 400 KB;
+the native call pages, which inline them, grow by about 570 KB). When
+the camera turns mid-call the stage loads the other image and keeps the old
+one on screen until it arrives. "Your photo" is covered into either shape.
+
+### Outfits
+
+Your own clothes, Suit and tie, Hoodie, Cable-knit sweater, Denim jacket,
+Flannel shirt and Turtleneck (`chat-call-outfits.js`). Each garment is drawn
+in code onto a 1024x1024 canvas (fabric tiles from per-pixel noise, then
+lapels, collars, pockets, cords and buttons), so there are no image files and
+the native pages need nothing extra. Garment space is measured in eye spans
+(the distance between the eye centres, 96 texels each) from the base of the
+neck.
+
+**Placement.** `outfitFrame(points)` puts the neck base 1.35 spans below the
+chin, horizontally halfway between the chin and the eye midpoint. The unit is
+the larger of the eye span and the eye-to-chin distance / 1.9, so turning the
+head (which shrinks the eye span) does not shrink the clothes. Shoulders roll
+at 0.3x the head's roll, because people tilt their heads without tilting
+their shoulders. `createOutfitSmoother` eases centre, size and roll (0.35 per
+frame) and resets when the face is lost or the frame size changes.
+
+**Compositing** happens in the main composite pass, on the person colour
+(`front`) before the background is added, and only with a person matte:
+
+- The garment texture is uploaded premultiplied, so its edges filter cleanly.
+  Its alpha is the garment shape; the neck opening and everything above the
+  shoulder line are cut out. The person matte clips it to your actual
+  outline, so one shape fits every build.
+- Shading comes from the camera: the pixel's brightness over the mean of
+  eight taps 0.35 spans away, raised to 0.4 and clamped to 0.75-1.12. Folds
+  and shadows carry over; a printed pattern on the real shirt shows only as a
+  faint ghost.
+- Hands stay in front: below 1.2-1.9 spans under the neck base, pixels whose
+  chroma is within 0.035-0.07 of the face's (five taps on the cheeks and nose)
+  and whose brightness is 0.45-2x the face's keep the camera. Hair from the
+  hair matte (when a stand-in face is on) and the head zone are kept as well.
+- The outfit fades in and out with tracking (the same 0.3/0.2 fade as faces)
+  and then shows your own clothes, not a blur: clothing is not the identity
+  the privacy rule protects.
+
+An outfit alone (no stand-in face) still runs the face tracker and the person
+matte (`wantsPoints`, `wantsMatte`), and asks the host for landmarks on iOS.
+The composite uses 14 texture units, the `MIN_UNITS` floor that the
+background picker already requires. The Face Changer page has the picker
+(saved under `forkmesh.chat.callOutfit`); calls do not offer outfits yet, and
+`createFaceStage` defaults to none.
+
+Checked on head-and-shoulders test frames (a call-face photo and its matte
+over a drawn torso with a striped shirt and a hand) through
+`call_video_harness.cjs render --outfit ID`, in landscape and portrait, with
+and without a background. Necklines are sized for a real neck (about 1.75
+spans wide, crew neckline about 1.5 spans under the chin); with a short neck
+the old collar shows inside the opening.
 
 ### Models
 
@@ -317,10 +384,11 @@ same stage with Face, Background and Voice pickers and "Hear myself"; Start
 video call keeps the stage and offers its track, with no camera restart.
 
 ```js
-const stage = createFaceStage({ cameraStream, faceId, backgroundId, backgroundImage });
+const stage = createFaceStage({ cameraStream, faceId, backgroundId, backgroundImage, outfitId });
 stage.track;                      // MediaStreamTrack, 24 fps canvas capture
 stage.setFace(id);                // "" for the caller's own face
 stage.setBackground(id, image);   // ids from CALL_BACKGROUNDS; image = data URL for "custom"
+stage.setOutfit(id);              // ids from CALL_OUTFITS; "" for your own clothes
 stage.stop();
 ```
 
@@ -348,6 +416,13 @@ the stage's blur-on-lost-face rule holds there too. Each manifest's
 `plugin_registry.PLUGIN_DEVICE_PAGES`, and `_apply_browser_security_headers`
 gives exactly those routes `camera=(self)` (when asked) and `mediastream:`
 in `media-src`, as `/chat` has.
+
+The face page also has the Outfit picker (thumbnails drawn by
+`callOutfitThumbnail`, one per tick after the page loads so it never blocks),
+and its stage takes the picture's own shape: the `<video>`'s `resize` event
+sets the box's `aspect-ratio` to the stream's, and a portrait stream gets a
+centred box up to 78% of the window high instead of a pillarboxed strip in a
+16:9 box.
 
 ## Measuring
 

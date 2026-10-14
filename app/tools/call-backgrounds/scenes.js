@@ -1,7 +1,23 @@
 import * as THREE from "three";
 
-export const WIDTH = 1920;
-export const HEIGHT = 1080;
+export const LANDSCAPE = [1920, 1080];
+export const PORTRAIT_WIDE = 0.8;
+export const PORTRAIT_OUT = [720, 1280];
+export const PORTRAIT_BYTES = { targetBytes: 118000, maxBytes: 135000 };
+export let WIDTH = LANDSCAPE[0];
+export let HEIGHT = LANDSCAPE[1];
+export let PORTRAIT = false;
+
+export function setPortrait(on) {
+  PORTRAIT = Boolean(on);
+  [WIDTH, HEIGHT] = PORTRAIT ? [LANDSCAPE[1], LANDSCAPE[0]] : LANDSCAPE;
+}
+
+export function frameFov(fov) {
+  if (!PORTRAIT) return fov;
+  const across = (fov * PORTRAIT_WIDE * Math.PI) / 360;
+  return (Math.atan(Math.tan(across) / (WIDTH / HEIGHT)) * 360) / Math.PI;
+}
 
 let seedState = 1;
 export function setSeed(value) {
@@ -613,7 +629,7 @@ export function grade(source, { blur = 1.2, vignette = 0.16, warmth = 0, lift = 
   }
   if (vignette) {
     ctx.globalCompositeOperation = "multiply";
-    const g = ctx.createRadialGradient(WIDTH / 2, HEIGHT * 0.48, HEIGHT * 0.35, WIDTH / 2, HEIGHT * 0.5, WIDTH * 0.62);
+    const g = ctx.createRadialGradient(WIDTH / 2, HEIGHT * 0.48, Math.min(WIDTH, HEIGHT) * 0.35, WIDTH / 2, HEIGHT * 0.5, Math.max(WIDTH, HEIGHT) * 0.62);
     g.addColorStop(0, "rgba(255,255,255,1)");
     g.addColorStop(1, `rgba(${Math.round(255 * (1 - vignette))},${Math.round(255 * (1 - vignette))},${Math.round(255 * (1 - vignette))},1)`);
     ctx.fillStyle = g;
@@ -632,7 +648,17 @@ export function grade(source, { blur = 1.2, vignette = 0.16, warmth = 0, lift = 
   return canvas;
 }
 
+export function finish(canvas, options = {}) {
+  if (!PORTRAIT) return encode(canvas, options);
+  const [out, ctx] = makeCanvas(PORTRAIT_OUT[0], PORTRAIT_OUT[1]);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(canvas, 0, 0, PORTRAIT_OUT[0], PORTRAIT_OUT[1]);
+  return encode(out, { ...options, ...PORTRAIT_BYTES });
+}
+
 export function encode(canvas, { targetBytes = 235000, maxBytes = 270000 } = {}) {
+  const width = canvas.width;
+  const height = canvas.height;
   let low = 0.5;
   let high = 0.92;
   let best = canvas.toDataURL("image/jpeg", low);
@@ -653,17 +679,17 @@ export function encode(canvas, { targetBytes = 235000, maxBytes = 270000 } = {})
     best = top;
     quality = 0.92;
   }
-  const [half, hctx] = makeCanvas(WIDTH / 2, HEIGHT / 2);
+  const [half, hctx] = makeCanvas(width / 2, height / 2);
   hctx.imageSmoothingQuality = "high";
-  hctx.drawImage(canvas, 0, 0, WIDTH / 2, HEIGHT / 2);
-  const [quarter, qctx] = makeCanvas(WIDTH / 4, HEIGHT / 4);
+  hctx.drawImage(canvas, 0, 0, width / 2, height / 2);
+  const [quarter, qctx] = makeCanvas(width / 4, height / 4);
   qctx.imageSmoothingQuality = "high";
-  qctx.drawImage(half, 0, 0, WIDTH / 4, HEIGHT / 4);
+  qctx.drawImage(half, 0, 0, width / 4, height / 4);
   const [thumb, tctx] = makeCanvas(320, 180);
   tctx.imageSmoothingQuality = "high";
   tctx.drawImage(quarter, 0, 0, 320, 180);
   const thumbUrl = thumb.toDataURL("image/jpeg", 0.84);
-  const pixels = canvas.getContext("2d").getImageData(0, 0, WIDTH, HEIGHT).data;
+  const pixels = canvas.getContext("2d").getImageData(0, 0, width, height).data;
   let sum = 0;
   for (let i = 0; i < pixels.length; i += 16) sum += 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
   return {
@@ -691,10 +717,10 @@ export async function loadBrandFont() {
   return "ForkMesh Favorit";
 }
 
-export function camera(fov, position, target) {
-  const cam = new THREE.PerspectiveCamera(fov, WIDTH / HEIGHT, 0.05, 6000);
-  cam.position.set(...position);
-  cam.lookAt(...target);
+export function camera(fov, position, target, portrait = {}) {
+  const cam = new THREE.PerspectiveCamera(frameFov(fov), WIDTH / HEIGHT, 0.05, 6000);
+  cam.position.set(...((PORTRAIT && portrait.position) || position));
+  cam.lookAt(...((PORTRAIT && portrait.target) || target));
   cam.layers.enable(1);
   cam.updateMatrixWorld(true);
   return cam;
@@ -1449,7 +1475,7 @@ SCENES.office = async (renderer) => {
     }),
     ao,
   ];
-  const cam = camera(48, [0.2, 1.25, 1.9], [0.0, 1.2, -8.5]);
+  const cam = camera(48, [0.2, 1.25, 1.9], [0.0, 1.2, -8.5], { target: [-2.4, 1.2, -8.5] });
   renderer.toneMappingExposure = 0.95;
   return { scene, camera: cam, jitters, aperture: 0.035, focus: [0, 1.2, -5], grade: { blur: 1.4, vignette: 0.14, warmth: 0.03 } };
 };
@@ -1465,7 +1491,7 @@ export async function renderStem(stem, { samples = 40 } = {}) {
     jitters: built.jitters,
   });
   const graded = grade(raw, built.grade || {});
-  const result = encode(graded, built.encode || {});
+  const result = finish(graded, built.encode || {});
   result.renderMs = Math.round(performance.now() - started);
   renderer.dispose();
   return result;
@@ -1473,19 +1499,19 @@ export async function renderStem(stem, { samples = 40 } = {}) {
 
 function worldSkyTexture({ horizon = 0.56 } = {}) {
   setSeed(4242);
-  const [canvas, ctx] = makeCanvas(1920, 1080);
-  const h = 1080 * horizon;
-  const gradient = ctx.createLinearGradient(0, 0, 0, 1080);
+  const [canvas, ctx] = makeCanvas(WIDTH, HEIGHT);
+  const h = HEIGHT * horizon;
+  const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
   gradient.addColorStop(0, "#3d78b8");
   gradient.addColorStop(horizon * 0.55, "#7fb0da");
   gradient.addColorStop(horizon * 0.92, "#cfe2ee");
   gradient.addColorStop(horizon, "#e4eef2");
   gradient.addColorStop(1, "#e4eef2");
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 1920, 1080);
-  for (let i = 0; i < 46; i += 1) {
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  for (let i = 0; i < Math.round((46 * WIDTH) / LANDSCAPE[0]); i += 1) {
     const cy = Math.pow(rand(), 1.6) * h * 0.8 + h * 0.04;
-    const cx = rand() * 1920;
+    const cx = rand() * WIDTH;
     const depth = cy / h;
     const width = range(160, 520) * (0.5 + depth);
     const height = width * range(0.06, 0.12);
@@ -1526,14 +1552,14 @@ export async function renderWorld(world, { samples = 24 } = {}) {
   scene.background = worldSkyTexture();
   if (scene.fog) scene.fog.color.set("#d8e7ef");
   const cam = world.camera;
-  cam.fov = 45;
+  cam.fov = frameFov(45);
   cam.near = 0.3;
   cam.far = 3000;
   cam.aspect = WIDTH / HEIGHT;
   cam.clearViewOffset();
   cam.updateProjectionMatrix();
   const from = new THREE.Vector3(90, 9, -60);
-  const yaw = Math.atan2(0 - from.x, -209 - from.z) + (24 * Math.PI) / 180;
+  const yaw = Math.atan2(0 - from.x, -209 - from.z) + ((PORTRAIT ? 16 : 24) * Math.PI) / 180;
   const pitch = (3 * Math.PI) / 180;
   cam.position.copy(from);
   cam.lookAt(from.x + Math.sin(yaw) * Math.cos(pitch), from.y + Math.sin(pitch), from.z + Math.cos(yaw) * Math.cos(pitch));
@@ -1542,7 +1568,7 @@ export async function renderWorld(world, { samples = 24 } = {}) {
   const started = performance.now();
   const raw = await accumulate(renderer, scene, cam, { samples, aperture: 0.35, focus: [20, 8, -185] });
   const graded = grade(raw, { blur: 1.6, vignette: 0.12, warmth: 0.05, saturation: 0.92 });
-  const result = encode(graded, {});
+  const result = finish(graded, {});
   result.renderMs = Math.round(performance.now() - started);
   return result;
 }

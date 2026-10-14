@@ -17,7 +17,8 @@ import { closeLids, createExpressionProbe, tongueWindow } from "./chat-call-face
 import { buildCustomFace, CUSTOM_FACE_ID, CUSTOM_FACE_LABEL, CUSTOM_FACE_SIDE } from "./chat-call-face-custom.js";
 import { backgroundCapable, createFaceRenderer, faceWebGL } from "./chat-call-face-render.js";
 import { sharedSegmentModels, decodeBase64 } from "./chat-call-segment.js";
-import { callBackgroundById, callBackgroundImageUrl } from "./chat-call-backgrounds.js";
+import { callBackgroundById, callBackgroundImageUrl, isPortraitFrame } from "./chat-call-backgrounds.js";
+import { callOutfitById, createOutfitSmoother, drawCallOutfit, outfitFrame } from "./chat-call-outfits.js";
 
 const FRAME_RATE = 24;
 const FRAME_MS = Math.round(1000 / FRAME_RATE);
@@ -332,6 +333,7 @@ export function createFaceStage({
   faceImage = "",
   backgroundId = "",
   backgroundImage = "",
+  outfitId = "",
   documentRef = globalThis.document,
   MediaStreamImpl = globalThis.MediaStream,
   ImageImpl = globalThis.Image,
@@ -376,6 +378,10 @@ export function createFaceStage({
   let loading = 0;
   let backgroundLoading = 0;
   let background = callBackgroundById(backgroundId) || callBackgroundById("");
+  let portrait = isPortraitFrame(width, height);
+  let outfit = null;
+  let dressed = 0;
+  const outfitSmoother = createOutfitSmoother();
   let live = null;
   let seenAt = -Infinity;
   let presence = 0;
@@ -392,13 +398,17 @@ export function createFaceStage({
   const stats = { frames: 0, network: 0, hair: 0, drawMs: 0, maxDrawMs: 0, frameMs: 0, level: 0 };
 
   function wantsMatte() {
-    return Boolean(face) || background.mode !== "off";
+    return Boolean(face || outfit) || background.mode !== "off";
+  }
+
+  function wantsPoints() {
+    return Boolean(face || outfit);
   }
 
   function requestModels() {
     const groups = [];
     if (wantsMatte()) groups.push("segment");
-    if (face && !hostLocate) groups.push("face");
+    if (wantsPoints() && !hostLocate) groups.push("face");
     if (face) groups.push("hair");
     for (const group of groups) {
       if (modelsRequested.has(group)) continue;
@@ -410,16 +420,16 @@ export function createFaceStage({
   }
 
   function presetResult(reply, scale, time) {
-    const found = hostResult(reply, scale, Boolean(face));
+    const found = hostResult(reply, scale, wantsPoints());
     const points = found.points ? pointSmoother.smooth(found.points, time, faceFrame(found.points).span) : null;
     return { points, mask: found.mask, pupils: found.pupils, lids: true };
   }
 
   async function locate(frame, w, h, time) {
     const wantMask = hostMasks && wantsMatte();
-    if (hostLocate && (face || wantMask)) {
+    if (hostLocate && (wantsPoints() || wantMask)) {
       try {
-        const reply = await hostLocate(frame, w, h, { landmarks: Boolean(face), mask: wantMask });
+        const reply = await hostLocate(frame, w, h, { landmarks: wantsPoints(), mask: wantMask });
         hostFailures = 0;
         if (wantMask) {
           if (reply.mask) hostMaskMisses = 0;
@@ -436,7 +446,7 @@ export function createFaceStage({
         return { points: null, mask: null };
       }
     }
-    if (!face) return { points: null, mask: null };
+    if (!wantsPoints()) return { points: null, mask: null };
     if (renderer.faceMesh) {
       const found = renderer.trackFace(frame, w, h);
       if (!found) return { points: null, mask: null, uploaded: true };
@@ -472,6 +482,7 @@ export function createFaceStage({
       anchorSmoother.reset();
       pointSmoother.reset();
       probe.reset();
+      outfitSmoother.reset();
     }
     if (points && face) {
       try {
@@ -484,6 +495,9 @@ export function createFaceStage({
     const ready = Boolean(face?.ready);
     const seen = Boolean(points) && ready;
     presence += ((held && ready ? 1 : 0) - presence) * (held ? FADE_IN : FADE_OUT);
+    const wearing = Boolean(outfit && held);
+    dressed += ((wearing ? 1 : 0) - dressed) * (wearing ? FADE_IN : FADE_OUT);
+    const body = live && outfit ? { points: live, frame: outfitSmoother.smooth(outfitFrame(live)) } : null;
     hide += ((seen ? 0 : 1) - hide) * (seen ? FADE_IN : FADE_OUT);
     const matte = renderer.matte;
     if (matte) {
@@ -504,6 +518,8 @@ export function createFaceStage({
       uploaded: Boolean(result?.uploaded),
       expression,
       tongueBox: drawn ? tongueWindow(drawn) : null,
+      body: body?.frame ? body : null,
+      dressed,
     });
     const spent = now() - started;
     const whole = now() - (startedAt ?? started);
@@ -527,6 +543,12 @@ export function createFaceStage({
       width = w;
       height = h;
       tracker.reset();
+      outfitSmoother.reset();
+      const turned = isPortraitFrame(w, h);
+      if (turned !== portrait) {
+        portrait = turned;
+        if (background.mode === "image" && !background.custom) loadBackground(background.id, "", true);
+      }
     }
     if (frame.canvas.width !== w || frame.canvas.height !== h) {
       frame.canvas.width = w;
@@ -635,7 +657,7 @@ export function createFaceStage({
       .catch(() => {});
   }
 
-  function loadBackground(id, image = "") {
+  function loadBackground(id, image = "", keep = false) {
     const next = callBackgroundById(id) || callBackgroundById("");
     const token = ++backgroundLoading;
     background = next;
@@ -644,8 +666,8 @@ export function createFaceStage({
       renderer.setBackground({ mode: next.mode, strength: next.strength ?? 0.5 });
       return;
     }
-    renderer.setBackground({ mode: "off" });
-    const url = next.custom ? image : callBackgroundImageUrl(next);
+    if (!keep) renderer.setBackground({ mode: "off" });
+    const url = next.custom ? image : callBackgroundImageUrl(next, portrait);
     if (!url) {
       background = callBackgroundById("");
       return;
@@ -656,8 +678,25 @@ export function createFaceStage({
     }).catch(() => {});
   }
 
+  function loadOutfit(id) {
+    const next = callOutfitById(id);
+    let garment = null;
+    if (next?.id) {
+      try {
+        garment = drawCallOutfit(next.id, documentRef);
+      } catch (_) {
+        garment = null;
+      }
+    }
+    outfit = garment ? next : null;
+    renderer.setOutfit(garment);
+    outfitSmoother.reset();
+    requestModels();
+  }
+
   loadFace(faceId, faceImage);
   loadBackground(backgroundId, backgroundImage);
+  loadOutfit(outfitId);
   const timer = manual ? null : setIntervalImpl(tick, FRAME_MS);
 
   return {
@@ -668,8 +707,10 @@ export function createFaceStage({
     faceState: () => (!face ? "" : face.ready ? "ready" : face.failed ? "failed" : "loading"),
     expression: () => expression,
     background: () => background.id,
+    outfit: () => outfit?.id || "",
+    portrait: () => portrait,
     landmarks: () => ({ live, head: renderer.lastHead, presence, hide }),
-    ready: () => Boolean((!face || face.ready) && (background.mode !== "image" || renderer.hasBackgroundImage) && (!wantsMatte() || renderer.segmentation) && (!face || hostLocate || renderer.faceMesh)),
+    ready: () => Boolean((!face || face.ready) && (background.mode !== "image" || renderer.hasBackgroundImage) && (!wantsMatte() || renderer.segmentation) && (!wantsPoints() || hostLocate || renderer.faceMesh)),
     processFrame(source, time = now()) {
       const w = source.videoWidth || source.naturalWidth || source.width;
       const h = source.videoHeight || source.naturalHeight || source.height;
@@ -686,6 +727,9 @@ export function createFaceStage({
     },
     setBackground(id, image = "") {
       loadBackground(id, image);
+    },
+    setOutfit(id) {
+      loadOutfit(id);
     },
     stop() {
       if (stopped) return;
