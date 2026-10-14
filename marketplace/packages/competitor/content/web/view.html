@@ -7,26 +7,27 @@
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                   <select data-competitor-organization aria-label="Organization" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select>
-                  <button data-competitor-manage data-competitor-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="settings" class="mr-1 inline h-3.5 w-3.5"></i>Plugin data</button>
-                  <button data-competitor-new data-competitor-requires-install type="button" class="hidden rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"><i data-lucide="plus" class="mr-1 inline h-3.5 w-3.5"></i>Add competitor</button>
+                  <button data-competitor-manage data-competitor-requires-install type="button" class="fm-btn hidden"><i data-lucide="settings"></i>Plugin data</button>
+                  <button data-competitor-new data-competitor-requires-install type="button" class="fm-btn fm-btn-cta hidden"><i data-lucide="plus"></i>Add competitor</button>
                 </div>
               </div>
-              <div data-competitor-error class="mb-3 hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
-              <div data-competitor-notice class="mb-3 hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+              <div data-competitor-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-competitor-message-text class="fm-flash-body"></p></div>
+              <div data-competitor-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-competitor-message-text class="fm-flash-body"></p></div>
 
-              <section data-competitor-install-panel class="hidden rounded-lg border border-border bg-card p-8 text-center">
-                <h2 class="text-base font-semibold text-foreground">Competitor Watch is not installed for <span data-competitor-install-org class="font-mono"></span></h2>
-                <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Install an encrypted, organization-private competitor watchlist.</p>
-                <button data-competitor-install type="button" class="mt-4 hidden rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Install for this organization</button>
-                <p data-competitor-install-denied class="mt-4 hidden text-sm text-muted-foreground">Ask an organization owner or admin to install Competitor Watch.</p>
+              <section data-competitor-install-panel class="fm-blankslate hidden rounded-lg border border-border bg-card">
+                <i data-lucide="radar"></i>
+                <h2 class="fm-blankslate-title">Competitor Watch is not installed for <span data-competitor-install-org class="font-mono"></span></h2>
+                <p class="fm-blankslate-desc">Install an encrypted, organization-private competitor watchlist.</p>
+                <button data-competitor-install type="button" class="fm-btn fm-btn-sm fm-btn-cta mt-3 hidden">Install for this organization</button>
+                <p data-competitor-install-denied class="fm-blankslate-desc mt-3 hidden">Ask an organization owner or admin to install Competitor Watch.</p>
               </section>
 
               <div data-competitor-app class="hidden">
                 <div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">Watchlist</p><p data-competitor-stat-watchlist class="mt-1 text-2xl font-semibold text-foreground">0</p></div>
-                  <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">Primary</p><p data-competitor-stat-primary class="mt-1 text-2xl font-semibold text-foreground">0</p></div>
-                  <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">Needs review</p><p data-competitor-stat-needsReview class="mt-1 text-2xl font-semibold text-foreground">0</p></div>
-                  <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-semibold uppercase text-muted-foreground">Archived</p><p data-competitor-stat-archived class="mt-1 text-2xl font-semibold text-foreground">0</p></div>
+                  <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-medium text-muted-foreground">Watchlist</p><p data-competitor-stat-watchlist class="mt-1 text-2xl font-semibold text-foreground">0</p></div>
+                  <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-medium text-muted-foreground">Primary</p><p data-competitor-stat-primary class="mt-1 text-2xl font-semibold text-foreground">0</p></div>
+                  <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-medium text-muted-foreground">Needs review</p><p data-competitor-stat-needsReview class="mt-1 text-2xl font-semibold text-foreground">0</p></div>
+                  <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-medium text-muted-foreground">Archived</p><p data-competitor-stat-archived class="mt-1 text-2xl font-semibold text-foreground">0</p></div>
                 </div>
                 <section class="overflow-hidden rounded-lg border border-border bg-card">
                   <div class="flex flex-wrap items-center gap-2 border-b border-border p-3">
@@ -34,16 +35,16 @@
                     <select data-competitor-status-filter class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="">All statuses</option><option value="primary">Primary</option><option value="watch">Watch</option><option value="archived">Archived</option></select>
                   </div>
                   <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-4 py-3 font-semibold">Competitor</th><th class="px-4 py-3 font-semibold">Category</th><th class="px-4 py-3 font-semibold">Positioning</th><th class="px-4 py-3 font-semibold">Last reviewed</th><th class="px-4 py-3 font-semibold">Status</th><th class="px-4 py-3 text-right font-semibold">Actions</th></tr></thead><tbody data-competitor-list class="divide-y divide-border"></tbody></table></div>
-                  <div data-competitor-empty class="hidden p-8 text-center text-sm text-muted-foreground">No competitors match this view.</div>
+                  <div data-competitor-empty class="fm-blankslate hidden"><i data-lucide="search"></i><p class="fm-blankslate-title">No competitors match this view.</p><p class="fm-blankslate-desc">Change the search or status filter, or add a competitor.</p></div>
                 </section>
               </div>
             </div>
 
-            <dialog data-competitor-dialog class="w-full max-w-3xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-competitor-form class="p-5">
-                <div class="mb-4 flex items-center justify-between"><div><h2 data-competitor-dialog-title class="text-base font-semibold">Add competitor</h2><p class="text-xs text-muted-foreground">Shared only with members of this organization.</p></div><button data-competitor-dialog-close type="button">✕</button></div>
+            <dialog data-competitor-dialog class="w-full max-w-3xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <form data-competitor-form class="fm-dialog">
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-competitor-dialog-title class="text-sm font-semibold">Add competitor</h2><p class="text-xs font-normal text-muted-foreground">Shared only with members of this organization.</p></div><button data-competitor-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
                 <input data-competitor-id type="hidden" />
-                <div class="grid gap-3 sm:grid-cols-2">
+                <div class="fm-dialog-body grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground">Name<input data-competitor-name maxlength="160" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Website<input data-competitor-website type="url" maxlength="1000" placeholder="https://…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Category<input data-competitor-category maxlength="100" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -54,13 +55,15 @@
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Notes<textarea data-competitor-notes maxlength="20000" rows="4" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                   <label class="flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2"><input data-competitor-reviewed type="checkbox" checked /> Mark reviewed today</label>
                 </div>
-                <div class="mt-4 flex items-center justify-between"><button data-competitor-delete type="button" class="hidden rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Delete</button><div class="ml-auto flex gap-2"><button data-competitor-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save competitor</button></div></div>
+                <div class="fm-dialog-footer"><button data-competitor-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto hidden">Delete</button><button data-competitor-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save competitor</button></div>
               </form>
             </dialog>
 
-            <dialog data-competitor-manage-dialog class="w-full max-w-lg rounded-lg border border-border bg-card p-5 text-foreground shadow-2xl backdrop:bg-background/80">
-              <h2 class="text-base font-semibold">Competitor Watch data</h2>
-              <p class="mt-2 text-sm text-muted-foreground">Export the organization watchlist, or uninstall the plugin and remove its stored data.</p>
-              <div class="mt-4 flex flex-wrap justify-end gap-2"><button data-competitor-export type="button" class="rounded-md border border-border px-3 py-2 text-xs">Export JSON</button><button data-competitor-uninstall type="button" class="rounded-md border border-destructive px-3 py-2 text-xs text-destructive">Uninstall…</button><button data-competitor-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs">Close</button></div>
+            <dialog data-competitor-manage-dialog class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Competitor Watch data</h2><button data-competitor-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export the organization watchlist, or uninstall the plugin and remove its stored data.</p></div>
+                <div class="fm-dialog-footer"><button data-competitor-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-competitor-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-competitor-export type="button" class="fm-btn fm-btn-sm">Export JSON</button></div>
+              </div>
             </dialog>
           </section>

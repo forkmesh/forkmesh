@@ -30,7 +30,8 @@ window.ForkMeshDashboard.registerPage("water", ({ select: $, selectAll: $$, sess
   function drinkLabel(drink) { const value = String(drink || "water"); return value.charAt(0).toUpperCase() + value.slice(1); }
   function message(kind, value = "") {
     const node = $(`[data-water-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    const slot = node.querySelector("[data-water-message-text]") || node;
+    slot.textContent = value; node.classList.toggle("hidden", !value);
   }
   function apiPath(suffix = "") { return `/api/water${suffix}`; }
   function downloadJson(payload, filename) {
@@ -96,13 +97,13 @@ window.ForkMeshDashboard.registerPage("water", ({ select: $, selectAll: $$, sess
     $(`[data-water-detail]`).textContent = goal <= 0 ? "No daily goal set"
       : total >= goal ? `Goal of ${amount(goal)} reached` : `${amount(goal - total)} to go of ${amount(goal)}`;
     $(`[data-water-presets]`).innerHTML = `<span class="text-xs text-muted-foreground">Quick add</span>` + (profile.presetsMl || [])
-      .map((ml) => `<button type="button" data-water-preset="${Number(ml)}" class="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground">+ ${escapeHtml(amount(ml))}</button>`).join("");
+      .map((ml) => `<button type="button" data-water-preset="${Number(ml)}" class="fm-btn fm-btn-sm">+ ${escapeHtml(amount(ml))}</button>`).join("");
     $(`[data-water-unit]`).textContent = unitLabel();
     const entries = [...(overview.entries || [])].reverse();
     $(`[data-water-entries]`).innerHTML = entries.length ? entries.map((entry) => `<div class="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-secondary">
         <span class="text-sm text-foreground">${escapeHtml(new Date(Number(entry.at || 0)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))} · ${escapeHtml(drinkLabel(entry.drink))}</span>
         <span class="flex items-center gap-3"><span class="text-xs text-muted-foreground">${escapeHtml(SOURCES[entry.source] || "")}</span><span class="text-sm font-semibold text-foreground">${escapeHtml(amount(entry.amountMl))}</span><button type="button" data-water-delete="${escapeHtml(entry.id)}" class="text-xs text-muted-foreground hover:text-destructive" aria-label="Delete this drink">✕</button></span>
-      </div>`).join("") : `<p class="text-sm text-muted-foreground">Nothing logged today. Tap a quick add button after each glass.</p>`;
+      </div>`).join("") : `<div class="fm-blankslate"><p class="fm-blankslate-title">Nothing logged today</p><p class="fm-blankslate-desc">Tap a quick add button after each glass.</p></div>`;
     $(`[data-water-chart]`).innerHTML = chartSvg(overview.days || [], goal);
     $(`[data-water-summary]`).textContent = `Average ${amount(summary.averageMl)} · goal met on ${summary.goalDays || 0} days · streak ${summary.streak || 0}`;
     $(`[data-water-goal]`).value = goal;

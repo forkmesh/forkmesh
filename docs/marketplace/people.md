@@ -40,6 +40,17 @@ Inside a ring people sort by score, then active time, then name.
 Node accounts (`kind: "node"`) are left out; the directory already leaves out
 private and inactive accounts.
 
+## Web states
+
+The fire and its coloured rings are the page itself, so they keep their
+colours. The parts that only appear on an event follow the dashboard shell
+components instead: the load error is an `fm-flash-danger` (its text goes to
+`[data-people-error-text]`), loading is an `fm-blankslate` with the shell
+spinner, a failed follow shows a danger flash in the profile dialog, and the
+dialog itself is a 12px-radius card with a flat tinted header, an outlined ring
+label, a muted invisible close button and 32px buttons (green only for
+Follow). The "You" tag is a neutral outlined label rather than blue capitals.
+
 ## Data
 
 All four apps call the same routes:
