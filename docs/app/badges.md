@@ -73,11 +73,35 @@ level as a chip after the name, and a line such as "640 stars · Gold at
 
 ## Badges planned next
 
-The rest of the GitHub-style set needs the server to see merges, reviews and
-closes, which today live only in each repository's `.forkmesh/` files. They
-come with a sweep over those files. Decided so far: Web Weaver counts only
-pull requests merged into repositories the author does not own, with
-GitHub's Pull Shark thresholds (2 / 16 / 128 / 1024).
+Proposed in October 2026. Medallions for all of them are already drawn by
+the generator; none is in the catalog yet, so none can be awarded until its
+earning code lands. "Ready" means the server already stores the data in a
+table keyed to an account; "Sweep" needs the sweep over each repository's
+`.forkmesh/` records; "Feature" needs a product feature first.
+
+| Slug | Name | Earned by | Levels | Data | Medallion |
+|---|---|---|---|---|---|
+| `web_weaver` | Web Weaver | pull requests merged into repositories the author does not own (GitHub: Pull Shark) | 2 / 16 / 128 / 1024 | Sweep | the Genie in the middle of a glowing web |
+| `many_webs` | Many Webs | distinct repositories, not the author's own, with a merged pull request (Open Sourcerer) | 2 / 8 / 32 / 128 | Sweep | a globe wrapped in web lines, the Genie dangling on top |
+| `six_eyes` | Six Eyes | pull request reviews (`profile_contribution_days.reviews`) | 1 / 16 / 64 / 256 | Ready | the Genie peering through a gold magnifying glass |
+| `quick_silk` | Quick Silk | closed an issue or pull request within 5 minutes of opening it (Quickdraw) | one | Sweep, plus `closedAt` in `pull.md` | the Genie dropping on a thread, stopwatch beside it |
+| `carpet_ride` | Carpet Ride | merged a pull request without a review (YOLO) | one | Sweep, or the web merge `overrideReview` flag | the Genie in pink sunglasses on the magic carpet |
+| `eight_hands` | Eight Hands | co-authored commits on merged pull requests (Pair Extraordinaire) | 1 / 10 / 24 / 48 | Sweep, plus `Co-authored-by` parsing | two spider claws meeting in a high five |
+| `oracle` | Oracle | accepted answers in discussions (Galaxy Brain) | 2 / 8 / 16 / 32 | Feature: mark an answer | a crystal ball holding a galaxy, on a gold stand |
+| `brood` | Brood | forks of your repositories by other accounts (`repo_forks`) | 2 / 16 / 64 / 256 | Ready | a silk egg sac with baby Genies hatching |
+| `fan_club` | Fan Club | followers (`profile_follows`) | 10 / 50 / 250 / 1000 | Ready | the Genie with heart eyes and blush, hearts around it |
+| `night_watch` | Night Watch | hours your nodes were online (`online_hourly_nodes`) | 24 / 168 / 720 / 8760 | Ready, joined through node ownership | a crescent moon with a glowing lantern on a thread |
+| `daily_spinner` | Daily Spinner | longest run of days with a contribution (`profile_contribution_days`) | 7 / 30 / 100 / 365 | Ready | a flame ringed by a silk orbit |
+| `bug_catcher` | Bug Catcher | issue reports accepted and paid (`microjob_claims`, `contributor_reward_estimates`) | 1 / 10 / 50 / 200 | Ready | a ladybird caught in a web, silk across it |
+| `lift_off` | Lift Off | downloads of your releases (`release_downloads`) | 10 / 100 / 1000 / 10000 | Ready | a rocket with a violet nose, the Genie's eyes in the porthole |
+| `shopkeeper` | Shopkeeper | accounts using your marketplace package (`marketplace_package_uses`) | 10 / 100 / 1000 / 10000 | Ready | an open treasure chest spilling gems |
+| `critic` | Critic | marketplace reviews that another account voted helpful (`marketplace_review_votes`) | 1 / 10 / 50 / 200 | Ready | a parchment of stars and the Genie's feather as a quill |
+| `bounty_hunter` | Bounty Hunter | paid microjobs and bounties (`microjob_claims` status `paid`) | 1 / 5 / 25 / 100 | Ready | the Genie in a leather eye patch with a gold coin |
+
+The first pull request, issue and discussion stay the existing Coder, QA and
+Poster badges. Eight of the eighteen generated medallions show the Genie in
+a costume or expression; the rest are objects, so a profile full of badges
+is not a wall of the same face.
 
 ## Medallions
 
