@@ -195,7 +195,7 @@ public final class RelayService: OwnStatusAnnouncer {
         var list = [
             Member(
                 id: nodeId, name: me.name, isSelf: true, online: state == .connected, platform: platform,
-                owner: me.ownerUser, userStatus: ownStatus)
+                owner: me.ownerUser, userStatus: ownStatus, timeZone: TimeZone.current.identifier)
         ]
         for (id, peer) in peers.sorted(by: { $0.value.order < $1.value.order }) {
             if !peer.online || now - peer.lastSeenMs > RelayService.staleMs { continue }
@@ -203,7 +203,7 @@ public final class RelayService: OwnStatusAnnouncer {
                 Member(
                     id: id, name: peer.name, online: true, platform: peer.platform, version: peer.version,
                     mirrors: peer.mirrors, owner: peer.owner, nodeName: peer.nodeName,
-                    userStatus: peer.status ?? .empty, diagnostics: peer.diagnostics))
+                    userStatus: peer.status ?? .empty, diagnostics: peer.diagnostics, timeZone: peer.timeZone))
         }
         return list
     }
@@ -706,6 +706,7 @@ public final class RelayService: OwnStatusAnnouncer {
     private func withOwnStatus(_ frame: JSONObject) -> JSONObject {
         var frame = frame
         if let status = ownStatusValue { frame["userStatus"] = .object(status.toJSON()) }
+        frame["timeZone"] = .string(TimeZone.current.identifier)
         return frame
     }
 
@@ -1052,11 +1053,17 @@ public final class RelayService: OwnStatusAnnouncer {
         if let mirrors = m["mirrors"]?.arrayValue { peer.mirrors = mirrors.map(\.text) }
         if case .array(let findings)? = m["dg"] { peer.diagnostics = .array(Array(findings.prefix(64))) }
         rememberPeerStatus(&peer, m)
+        let zone = m["timeZone"]?.text ?? ""
+        if RelayService.validTimeZone(zone) { peer.timeZone = zone }
         peer.online = true
         let now = clock.nowMillis
         peer.lastSeenMs = now
         peers[id] = peer
         if RelayService.rosterChanged(before, peer, now: now) { rosterRevision &+= 1 }
+    }
+
+    nonisolated public static func validTimeZone(_ identifier: String) -> Bool {
+        !identifier.isEmpty && identifier.count <= 64 && TimeZone(identifier: identifier) != nil
     }
 
     nonisolated static func rosterChanged(_ before: RelayPeer?, _ after: RelayPeer, now: Int64) -> Bool {
@@ -1162,6 +1169,7 @@ struct RelayPeer: Equatable {
     var status: UserStatus?
     var statusTs: Int64 = 0
     var diagnostics: JSONValue?
+    var timeZone = ""
     var online = true
     var lastSeenMs: Int64 = 0
 }

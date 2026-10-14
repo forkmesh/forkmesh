@@ -47,6 +47,8 @@ public enum DirectMessageFrames {
     public static let maxWatchedRooms = 16
     public static let initialReconnectDelay: TimeInterval = 1
     public static let maxReconnectDelay: TimeInterval = 30
+    public static let ackTimeout: TimeInterval = 5
+    public static let ackRetries = 3
 
     public static func frameRef(_ text: String) -> String {
         String(Sha256.hex(Array(text.utf8)).prefix(40))
@@ -298,6 +300,7 @@ public final class DirectMessageService {
     @ObservationIgnored private var backoff: [String: TimeInterval] = [:]
     @ObservationIgnored private var foreground = true
     @ObservationIgnored private var outbox: [String: [DirectOutboxEntry]] = [:]
+    @ObservationIgnored private var unacked: Set<String> = []
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored public var onMessage: (@MainActor (ChatMessage) -> Void)?
     @ObservationIgnored public var onCallFrame: (@MainActor (JSONObject, String) -> Void)?
@@ -842,8 +845,11 @@ public final class DirectMessageService {
         let peers = Set(socket.seal.peerKeyIds)
         var texts: [String] = []
         var superseded: [String] = []
-        if !peers.isEmpty {
-            for index in entries.indices where !peers.isSubset(of: Set(entries[index].kids)) {
+        for index in entries.indices {
+            let stale = !peers.isEmpty && !peers.isSubset(of: Set(entries[index].kids))
+            let messageId = entries[index].messageId
+            let lost = unacked.remove(messageId) != nil && receipts[messageId] == .sending
+            if stale || lost {
                 guard let sealed = try? socket.seal.seal(entries[index].plain),
                     var envelope = try? socket.crypto.encrypt(sealed)
                 else { continue }
@@ -1049,6 +1055,7 @@ public final class DirectMessageService {
                     ref: DirectMessageFrames.frameRef(sent), plain: plain,
                     kids: DirectMessageFrames.wrappedKeyIds(sealed), notify: notify, ts: clock.nowMillis),
                 conversationId: record.id)
+            if receipted { watchAck(id, conversationId: record.id, connection: socket.connection, attempt: 0) }
             if plain["type"]?.text == "delete" { applyDelete(plain, record: record, stash: false) }
             onFrame?(plain, record.conversation)
             return true
@@ -1106,8 +1113,31 @@ public final class DirectMessageService {
         Task { try? await connection.send(text: JSON.encode(envelope)) }
     }
 
+    private func watchAck(_ id: String, conversationId: String, connection: WebSocketConnection, attempt: Int) {
+        let sleeper = self.sleeper
+        Task { [weak self] in
+            do { try await sleeper(DirectMessageFrames.ackTimeout) } catch { return }
+            guard let self, self.receipts[id] == .sending,
+                let socket = self.sockets[conversationId], socket.connection === connection
+            else { return }
+            self.flagUnacked(conversationId)
+            await self.close(socket)
+            guard await self.connect(conversationId), attempt + 1 < DirectMessageFrames.ackRetries,
+                let fresh = self.sockets[conversationId]
+            else { return }
+            self.watchAck(id, conversationId: conversationId, connection: fresh.connection, attempt: attempt + 1)
+        }
+    }
+
+    private func flagUnacked(_ conversationId: String) {
+        for entry in outbox[conversationId] ?? [] where receipts[entry.messageId] == .sending {
+            unacked.insert(entry.messageId)
+        }
+    }
+
     private func dropped(_ conversationId: String, _ connection: WebSocketConnection) {
         guard let socket = sockets[conversationId], socket.connection === connection else { return }
+        flagUnacked(conversationId)
         sockets.removeValue(forKey: conversationId)
         connected.remove(conversationId)
         scheduleReconnect(conversationId)
@@ -1133,6 +1163,7 @@ public final class DirectMessageService {
         pinned = []
         backoff = [:]
         outbox = [:]
+        unacked = []
         liveBudgets = [:]
         receipts = [:]
         receiptOrder = []

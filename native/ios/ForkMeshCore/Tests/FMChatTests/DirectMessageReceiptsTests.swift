@@ -161,6 +161,48 @@ final class DirectMessageReceiptsTests: XCTestCase {
         await room.service.closeAll()
     }
 
+    @MainActor func testAnUnacknowledgedSendReconnectsAndGoesOutAgain() async throws {
+        let ws = FakeWebSocketConnector()
+        let waits = AckWaits()
+        let service = base.makeService(
+            api: base.preparedApi(), ws: ws,
+            sleep: { seconds in
+                if seconds == DirectMessageFrames.ackTimeout && waits.next() == 0 {
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                } else {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                }
+            })
+        let room = try await openRoom(service, ws: ws)
+        let sent = await service.send(room.conversation, text: "stuck on a dead socket")
+        XCTAssertTrue(sent)
+        let message = try XCTUnwrap(service.messages(room.conversation).first)
+        let firstRef = try XCTUnwrap(sealedRef(room, type: "chat", id: message.id))
+        let reopened = await ws.waitForConnections(2)
+        XCTAssertTrue(reopened)
+        XCTAssertNotNil(room.connection.closedByClient)
+        let fresh = try XCTUnwrap(ws.lastConnection)
+        XCTAssertEqual(service.receipt(message.id), .sending)
+        fresh.receive(text: relayFrame(["kind": .string(DirectMessageFrames.historyEnd)]))
+        let again = Room(service: service, connection: fresh, crypto: room.crypto, peer: room.peer, conversation: room.conversation)
+        let resent = await waitUntil { self.sealedRef(again, type: "chat", id: message.id) != nil }
+        XCTAssertTrue(resent)
+        let secondRef = try XCTUnwrap(sealedRef(again, type: "chat", id: message.id))
+        XCTAssertNotEqual(secondRef, firstRef)
+        let superseded = base.sentOfKind(fresh, DirectMessageFrames.supersededKind)
+        XCTAssertEqual(superseded.first?["refs"]?.arrayValue?.map(\.text), [firstRef])
+        fresh.receive(text: relayFrame(["kind": "forkmesh-recipients", "ref": .string(secondRef), "recipients": 1]))
+        let acked = await waitUntil { service.receipt(message.id) == .sent }
+        XCTAssertTrue(acked)
+        let later = await service.send(room.conversation, text: "a fresh socket")
+        XCTAssertTrue(later)
+        fresh.receive(text: relayFrame(["kind": .string(DirectMessageFrames.historyEnd)]))
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let copies = peerFrames(again).filter { $0["text"]?.text == "a fresh socket" }
+        XCTAssertEqual(copies.count, 1, "a send still waiting on a live socket is not sent twice")
+        await service.closeAll()
+    }
+
     @MainActor func testAFailedSendTakesTheMessageBack() async throws {
         let api = base.preparedApi()
         api.failures["GET /api/chat/direct-messages/\(DirectMessagesTests.conversationId)/room-access"] =
@@ -397,5 +439,17 @@ final class DirectMessageReceiptsTests: XCTestCase {
         XCTAssertTrue(restored.replies.allSatisfy { $0.conversation == room.conversation })
         await service.closeAll()
         await h.close()
+    }
+}
+
+final class AckWaits: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+        return count - 1
     }
 }
