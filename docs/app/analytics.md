@@ -74,6 +74,19 @@ The replay player rebuilds recordings inside a script-less sandboxed iframe
 and drops event handlers, `javascript:` URLs, meta refreshes and frames.
 Recorded referrer URLs are shown as plain text, never links.
 
+## Dashboard page components
+
+The package view (`content/web/view.html`, `content/web/src/page.ui.js`)
+uses the dashboard shell's shared components instead of its own: `fm-btn`
+(`fm-btn-sm` in rows, toolbars, cards and dialogs), `fm-flash` for the error,
+saved and truncated-results notices, `fm-dialog` for the editor dialog, the
+person drawer and the data dialog, `fm-blankslate` for empty, loading and
+error states, `fm-label` for badges, and `fm-popover` for chart tooltips.
+Green (`fm-btn-cta`) is kept for each tab's one create action and the dialog
+confirm; Apply, Show and Play are neutral. The good, warning and bad status
+colours come from the theme's success, attention and destructive roles. The
+browser `confirm()` prompts are left as they are.
+
 ## Traps
 
 - Edit `content/sdk/` and `content/web/src/`, then run

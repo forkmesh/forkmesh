@@ -262,7 +262,7 @@
             <span class="min-w-0"><h2 id="pp-head-${entry.id}" class="text-sm font-semibold text-foreground">${entry.title}</h2><p class="text-xs text-muted-foreground">${entry.blurb}</p></span>
             <span class="pp-section-count">${section.people.length}</span>
           </header>
-          ${people ? `<div class="pp-grid">${people}</div>` : `<p class="px-5 py-3 text-xs text-muted-foreground">${state.query ? "No one in this ring matches." : "No one in this ring right now."}</p>`}
+          ${people ? `<div class="pp-grid">${people}</div>` : `<p class="px-5 py-4 text-center text-sm text-muted-foreground">${state.query ? "No one in this ring matches." : "No one in this ring right now."}</p>`}
         </section>`;
       }).join("");
       box.innerHTML = html;
@@ -319,7 +319,7 @@
         </div>
         <div class="flex flex-col gap-4 p-4">
           <div class="flex gap-3">${actions}</div>
-          ${state.actionError ? `<p class="text-sm text-destructive">${escapeHtml(state.actionError)}</p>` : ""}
+          ${state.actionError ? `<div class="fm-flash fm-flash-danger" role="alert"><p class="fm-flash-body">${escapeHtml(state.actionError)}</p></div>` : ""}
           ${profile?.profilePrivate ? `<p class="text-sm text-muted-foreground">This profile is private.</p>` : `
           <div class="pp-stats">
             <div><strong>${profile ? count(social.followers) : "–"}</strong><span>Followers</span></div>
@@ -384,7 +384,7 @@
         $("[data-people-body]")?.classList.remove("hidden");
         render();
       } catch (failure) {
-        if (error) { error.textContent = "Could not load people. Check your connection and try again."; error.classList.remove("hidden"); }
+        if (error) { (error.querySelector("[data-people-error-text]") || error).textContent = "Could not load people. Check your connection and try again."; error.classList.remove("hidden"); }
         $("[data-people-loading]")?.classList.add("hidden");
       }
     }
