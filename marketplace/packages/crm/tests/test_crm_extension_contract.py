@@ -71,7 +71,7 @@ def test_dashboard_creates_a_pipeline_as_a_flow_and_its_own_tab():
     assert 'crmOrganizationPath("/views"), "POST", { name, flow: id }' in WEB_SCRIPT
     assert "flows: [...flows, { id, name, icon, stages" in WEB_SCRIPT
     assert "function crmContactInView(contact, view)" in WEB_SCRIPT
-    assert "if (crmContactInView(contact, view))" in WEB_SCRIPT
+    assert "if (crmContactOnTab(contact, view, pipelines))" in WEB_SCRIPT
 
 
 def test_the_crm_sends_people_to_the_extension_package_and_pins_no_build():

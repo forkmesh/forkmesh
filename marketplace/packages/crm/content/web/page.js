@@ -15,6 +15,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // selected organization (null until the summary has loaded).
     outreach: null,
     views: [], members: [], activeView: "",
+    stageTab: "", virtualColumns: {}, pipelineEdit: null, membersView: "",
     // Sheets other organizations shared with this account, read-only. The
     // detail (columns + rows) is fetched when its tab is first opened.
     sharedViews: [], activeShared: "", sharedCache: {},
@@ -45,6 +46,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
   };
   // Flows past this many are dropped by the Worker when settings are saved.
   const CRM_MAX_FLOWS = 12;
+  const CRM_PIPELINE_TAB_PREFIX = "pipeline:";
+  const CRM_NO_PIPELINE_TAB = "no-pipeline";
+  const CRM_STAGE_SHAPE = /^[a-z][a-z0-9-]*$/;
+  const CRM_SHARE_SHOWN = 15;
+  const CRM_STAGE_PALETTE = ["#58a6ff", "#e3b341", "#bc8cff", "#39c5cf", "#db61a2", "#3fb950", "#db6d28", "#f85149"];
 
   // A wedged Worker isolate answers in a few milliseconds with a 500
   // (Pyodide "NoGilError") or a "hung" cancel before any CRM code runs, and
@@ -348,13 +354,19 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // Tags parse into an array, flow and stage are selects rebuilt per flow.
   const CRM_DIALOG_FIELDS = CRM_CONTACT_FIELDS.filter(
     (field) => !["tags", "flow", "stage"].includes(field));
-  const CRM_SEARCH_FIELDS = ["name", "email", "company", "title", "twitter", "mastodon",
-    "bluesky", "linkedin", "github", "website", "location", "owner"];
+  const CRM_SEARCH_FIELDS = ["name", "email", "company", "title", "phone", "twitter", "mastodon",
+    "bluesky", "linkedin", "github", "website", "location", "owner", "source", "notes",
+    "nextStep", "flow", "stage"];
   // Linking a message moves this date forward on its own, but it is also a
   // judgement call ("we spoke at the conference"), so it edits as a date in
   // place. It closes out the canonical column order the sheets use.
   const CRM_HISTORY_COLUMN = { field: "lastContactedAt", label: "Last contacted", width: "11rem", type: "date" };
   const CRM_BASE_COLUMNS = [...CRM_CONTACT_COLUMNS, CRM_HISTORY_COLUMN];
+  const CRM_COMPUTED_COLUMNS = [
+    { field: "mastodon-latest", label: "Mastodon last update", width: "20rem", computed: true },
+    { field: "linked-emails", label: "Linked emails", width: "20rem", computed: true },
+    { field: "linked-toots", label: "Linked toots", width: "20rem", computed: true },
+  ];
   const CRM_KEPT_COLUMNS = new Set(["name", "email", "flow", "stage", "lastContactedAt"]);
   // What a layout shows before anyone has shaped it. Phone, profiles, source
   // and notes stay one click away in the Columns menu; profile handles still
@@ -375,11 +387,170 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   // --- sheets and their column layouts -----------------------------------
   // A sheet is a saved column layout over the shared contacts: a CSV import
-  // creates one named after the file, ordered like the file. "All contacts" is
-  // not stored on the server, so its layout is this browser's own preference.
+  // creates one named after the file, ordered like the file.
 
   function crmActiveView() {
-    return state.crmView.views.find((view) => view.id === state.crmView.activeView) || null;
+    return crmTabViews().find((view) => view.id === state.crmView.activeView) || null;
+  }
+
+  function crmVirtualViews() {
+    const bound = new Set(state.crmView.views.map((view) => view.flow).filter(Boolean));
+    return crmFlows().filter((flow) => flow.id && !bound.has(flow.id)).map((flow) => ({
+      id: `${CRM_PIPELINE_TAB_PREFIX}${flow.id}`, name: flow.name || flow.id, flow: flow.id, virtual: true,
+    }));
+  }
+
+  function crmNoPipelineView() {
+    return { id: CRM_NO_PIPELINE_TAB, name: "No pipeline", virtual: true };
+  }
+
+  function crmPipelineIds() {
+    return new Set([...state.crmView.views, ...crmVirtualViews()].map((view) => view.flow).filter(Boolean));
+  }
+
+  function crmContactOnTab(contact, view, pipelines = crmPipelineIds()) {
+    return view.id === CRM_NO_PIPELINE_TAB
+      ? !pipelines.has(String(contact.flow || "")) : crmContactInView(contact, view);
+  }
+
+  function crmTabViews() {
+    const pipelines = crmPipelineIds();
+    const noPipeline = crmNoPipelineView();
+    const orphans = state.crmView.contacts.some((contact) => crmContactOnTab(contact, noPipeline, pipelines));
+    return [...state.crmView.views, ...crmVirtualViews(), ...(orphans ? [noPipeline] : [])];
+  }
+
+  function crmTabView(id) {
+    return id === CRM_NO_PIPELINE_TAB ? crmNoPipelineView()
+      : crmTabViews().find((view) => view.id === id) || null;
+  }
+
+  function crmSyncActiveTab() {
+    if (state.crmView.activeShared || state.crmView.sharedOnly) return;
+    const tabs = crmTabViews();
+    const previous = state.crmView.activeView;
+    if (!tabs.some((view) => view.id === previous)) {
+      state.crmView.activeView = tabs[0]?.id || "";
+      if (previous && new URL(location.href).searchParams.get("list") === previous) crmSetListParam("");
+    }
+    selectCrmFirstStage();
+  }
+
+  function crmFirstStage(stages) {
+    return stages.find((stage) => stage.toLowerCase() === "new") || stages[0] || "";
+  }
+
+  function selectCrmFirstStage() {
+    const view = crmActiveView();
+    if (!view || view.id === state.crmView.stageTab) return;
+    const { stages } = crmStripStages(view, view.flow ? "" : String($(`[data-crm-flow]`)?.value || ""));
+    if (!stages.length) return;
+    state.crmView.stageTab = view.id;
+    const select = $(`[data-crm-stage]`);
+    if (!select) return;
+    const first = crmFirstStage(stages);
+    select.value = [...select.options].some((option) => option.value === first) ? first : "";
+  }
+
+  function crmFlowStages(flowId) {
+    return flowId ? [...(crmFlows().find((flow) => flow.id === flowId)?.stages || [])] : [];
+  }
+
+  function crmStripStages(view, flowFilter = "") {
+    const flow = view?.flow || flowFilter || "";
+    const stages = crmFlowStages(flow);
+    const counts = new Map();
+    if (!view) return { stages: [], counts };
+    const pipelines = crmPipelineIds();
+    for (const contact of state.crmView.contacts) {
+      const stage = String(contact.stage || "");
+      if (!crmContactOnTab(contact, view, pipelines) || (flow && contact.flow !== flow) || !stage) continue;
+      counts.set(stage, (counts.get(stage) || 0) + 1);
+    }
+    if (!flow) {
+      const order = [...new Set(crmFlows().flatMap((item) => item.stages || []))];
+      stages.push(...order.filter((stage) => counts.has(stage)));
+      const others = [...counts.keys()].filter((stage) => !stages.includes(stage));
+      others.sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0));
+      stages.push(...others);
+    }
+    return { stages: [...new Set(stages.filter(Boolean))], counts };
+  }
+
+  function crmStageLabel(name) {
+    const label = String(name || "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+    return label ? label[0].toUpperCase() + label.slice(1) : "No stage";
+  }
+
+  function crmStageColor(name, index) {
+    const key = String(name || "").toLowerCase();
+    const any = (words) => words.some((word) => key.includes(word));
+    if (any(["lost", "churn", "reject", "dead", "disqualif", "cancel"])) return "#f85149";
+    if (any(["won", "complete", "done", "customer", "closed", "signed", "paid", "success"])) return "#3fb950";
+    if (any(["progress", "contacted", "working", "active", "follow", "ongoing"])) return "#e3b341";
+    if (any(["qualif", "proposal", "negotiat", "demo", "meeting", "review", "trial"])) return "#bc8cff";
+    if (any(["new", "lead", "prospect", "inbox", "todo", "open", "backlog"])) return "#58a6ff";
+    return CRM_STAGE_PALETTE[Math.max(0, Number(index) || 0) % CRM_STAGE_PALETTE.length];
+  }
+
+  function crmStageInk(color) {
+    const value = parseInt(String(color).slice(1), 16);
+    const channel = (shift) => ((value >> shift) & 255) / 255;
+    return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0) > 0.55 ? "#1f2328" : "#ffffff";
+  }
+
+  function crmStageStripHtml(stages, counts, selected) {
+    return stages.map((stage, index) => {
+      const color = crmStageColor(stage, index);
+      const count = counts.get(stage) || 0;
+      const label = crmStageLabel(stage);
+      const picked = stage === selected;
+      const tip = `${count.toLocaleString()} ${count === 1 ? "contact" : "contacts"} at ${label}\n${picked ? "Click to show every stage" : "Click to show only this stage"}`;
+      return `<button type="button" data-crm-stage-chip="${escapeHtml(stage)}" aria-pressed="${picked}" title="${escapeHtml(tip)}" style="--crm-chip:${color};--crm-chip-ink:${crmStageInk(color)}" class="crm-stage-chip${count ? "" : " crm-stage-empty"}"><span class="crm-stage-chip-label">${escapeHtml(label)}</span><b>${count.toLocaleString()}</b></button>`;
+    }).join("");
+  }
+
+  function renderCrmStageStrip() {
+    const host = $(`[data-crm-stage-strip]`); if (!host) return;
+    const view = crmActiveShared() ? null : crmActiveView();
+    const { stages, counts } = crmStripStages(view, view && !view.flow ? String($(`[data-crm-flow]`)?.value || "") : "");
+    host.hidden = !stages.length;
+    if (!stages.length) { host.innerHTML = ""; return; }
+    const selected = String($(`[data-crm-stage]`)?.value || "");
+    host.classList.toggle("crm-stage-picked", Boolean(selected));
+    host.setAttribute("aria-description", stages.map((stage) => `${crmStageLabel(stage)} ${counts.get(stage) || 0}`).join(", "));
+    host.innerHTML = crmStageStripHtml(stages, counts, selected)
+      + (view.flow ? `<button type="button" data-crm-stage-strip-menu aria-label="Pipeline options" title="Edit this pipeline's stages" class="crm-stage-strip-more">⋯</button>` : "");
+  }
+
+  function pickCrmStage(stage) {
+    const select = $(`[data-crm-stage]`); if (!select) return;
+    const next = stage === select.value ? "" : stage;
+    select.value = [...select.options].some((option) => option.value === next) ? next : "";
+    renderCrmContacts();
+  }
+
+  function crmEditStagesItem(flowId) {
+    const manages = Boolean(state.crmView.canManageSettings);
+    return {
+      label: `Edit “${crmFlowName(flowId)}” stages…`, disabled: !manages,
+      title: manages ? "" : "Only organization owners and admins can edit pipelines",
+      run: () => openCrmPipelineSettings(flowId),
+    };
+  }
+
+  function openCrmStageStripMenu(event) {
+    const flowId = crmActiveView()?.flow || "";
+    if (!flowId) return;
+    openCrmMenu(event, [crmEditStagesItem(flowId)]);
+  }
+
+  function crmFlowName(flowId) {
+    return crmFlows().find((flow) => flow.id === flowId)?.name || flowId;
+  }
+
+  function crmPipelineLists(flowId) {
+    return flowId ? state.crmView.views.filter((view) => view.flow === flowId).map((view) => view.id) : [];
   }
 
   function crmContactInView(contact, view) {
@@ -458,11 +629,22 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return `https://${CRM_ZOHO_MAIL_HOSTS[region] || CRM_ZOHO_MAIL_HOSTS.com}/zm/comp.do?ct=${encodeURIComponent(`mailto:${address}`)}`;
   }
 
+  function crmMailProvider() {
+    return state.crmView.settings?.mailProvider === "gmail" ? "gmail" : "zoho";
+  }
+
+  function crmMailComposeUrl(address) {
+    const to = String(address || "").trim();
+    if (crmMailProvider() === "gmail") return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}`;
+    return crmZohoComposeUrl(to);
+  }
+
   function crmNextChannels(contact, thread = "") {
     const channels = [];
     const email = String(contact.email || "").trim();
+    const gmail = crmMailProvider() === "gmail";
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      channels.push({ kind: "zoho", label: "Email with Zoho", title: `Open a Zoho Mail compose window to ${email}`, url: crmZohoComposeUrl(email) });
+      channels.push({ kind: gmail ? "gmail" : "zoho", label: gmail ? "Email with Gmail" : "Email with Zoho", title: `Open a ${gmail ? "Gmail" : "Zoho Mail"} compose window to ${email}`, url: crmMailComposeUrl(email) });
     const mastodon = crmProfileUrl("mastodon", contact.mastodon);
     if (mastodon)
       channels.push({ kind: "mastodon", label: "Message on Mastodon", title: thread ? `Open the conversation with ${contact.mastodon}` : `Open ${contact.mastodon} on their instance`, url: thread || mastodon });
@@ -580,12 +762,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const contact = next.contact; const id = escapeHtml(contact.id);
     const about = [contact.title, contact.company, contact.stage && titleCaseSlug(contact.stage)].filter(Boolean).map(escapeHtml).join(" · ");
     const channels = crmNextChannels(contact, contact.mastodon ? crmNextThread(contact.id) : "");
-    return frame(`<div class="min-w-0">
+    return frame(`<div class="flex min-w-0 items-start gap-3"><button data-crm-contact-detail="${id}" type="button" title="Open the detail card" aria-label="Open ${escapeHtml(crmContactLabel(contact))}" class="crm-photo-button">${crmPicture(contact, "lg")}</button><div class="min-w-0">
         <button data-crm-contact-detail="${id}" type="button" class="text-left text-base font-semibold text-foreground hover:underline">${escapeHtml(crmContactLabel(contact))}</button>
         ${about ? `<p class="text-xs text-muted-foreground">${about}</p>` : ""}
         <div class="mt-1">${crmLastContacted(contact)}</div>
         <p data-crm-next-reason class="mt-2 text-sm text-foreground"><b>Why them:</b> ${escapeHtml(next.reason)}</p>
-      </div>
+      </div></div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
         ${channels.map((channel, index) => `<a data-crm-next-channel="${channel.kind}" href="${escapeHtml(channel.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(channel.title)}" class="${index === 0 ? "bg-primary text-primary-foreground" : "border border-border text-foreground hover:bg-secondary"} whitespace-nowrap rounded-md px-3 py-2 text-xs font-semibold">${escapeHtml(channel.label)} &#8599;</a>`).join("")}
         <button data-crm-next-ai="${id}" data-crm-next-ai-mode="${mode}" type="button" title="Gather everything about them and us into a prompt for ChatGPT or Claude to write the message" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Write with AI</button>
@@ -599,6 +781,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (crmActiveShared() || !state.crmView.contacts.length) { card.hidden = true; return; }
     card.hidden = false;
     card.innerHTML = CRM_NEXT_MODES.map(crmNextCardHtml).join("");
+    crmWatchPictures();
   }
 
   async function markCrmNextContacted(contactId) {
@@ -928,10 +1111,6 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return cached?.view || state.crmView.sharedViews.find((view) => view.id === id) || null;
   }
 
-  function crmLocalColumnsKey() {
-    return `forkmesh-crm-columns:${state.crmView.organization}`;
-  }
-
   function crmCustomFieldKeys() {
     const keys = [];
     for (const contact of state.crmView.contacts) {
@@ -944,12 +1123,18 @@ window.ForkMeshDashboard.registerPage("crm", ({
         if (column.custom && !keys.includes(column.field)) keys.push(column.field);
       }
     }
+    for (const key of crmSessionColumnKeys()) {
+      if (!keys.includes(key)) keys.push(key);
+    }
     return keys;
   }
 
   function crmColumnLabel(field) {
-    const base = CRM_BASE_COLUMNS.find((column) => column.field === field);
+    const base = [...CRM_BASE_COLUMNS, ...CRM_COMPUTED_COLUMNS].find((column) => column.field === field);
     if (base) return base.label;
+    if (crmSessionColumns.organization === state.crmView.organization && crmSessionColumns.labels.has(field)) {
+      return crmSessionColumns.labels.get(field);
+    }
     for (const view of state.crmView.views) {
       const column = (view.columns || []).find((item) => item.field === field);
       if (column?.label) return column.label;
@@ -959,11 +1144,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function crmStoredColumns() {
     const view = crmActiveShared() || crmActiveView();
-    if (view) return Array.isArray(view.columns) ? view.columns : [];
-    let stored = [];
-    try { stored = JSON.parse(localStorage.getItem(crmLocalColumnsKey()) || "[]"); }
-    catch { stored = []; }
-    return Array.isArray(stored) ? stored : [];
+    if (view?.virtual) return state.crmView.virtualColumns[view.id] || [];
+    return view && Array.isArray(view.columns) ? view.columns : [];
   }
 
   // Stored layouts only decide order and visibility. Any column the layout has
@@ -980,10 +1162,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
         .map((column) => ({ field: column.field, hidden: true, extra: true })),
       ...crmCustomFieldKeys().filter((field) => !known.has(field))
         .map((field) => ({ field, hidden: true, extra: true })),
+      ...CRM_COMPUTED_COLUMNS.filter((column) => !known.has(column.field))
+        .map((column) => ({ field: column.field, hidden: true, extra: true })),
     ];
     const removed = new Set(state.crmView.settings?.removedColumns || []);
     return [...stored, ...extra].filter((column) => !removed.has(column.field)).map((column) => {
-      const base = CRM_BASE_COLUMNS.find((item) => item.field === column.field);
+      const base = [...CRM_BASE_COLUMNS, ...CRM_COMPUTED_COLUMNS].find((item) => item.field === column.field);
       return {
         ...(base || { custom: true, width: "12rem" }),
         field: column.field,
@@ -1236,7 +1420,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ? `<div style="margin:.25rem 0" class="border-t border-border"></div>`
       : item.heading !== undefined
       ? `<p class="truncate px-3 py-1 text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(item.heading)}</p>`
-      : `<button data-crm-menu-item="${index}" type="button" role="menuitem"${item.disabled ? " disabled" : ""} class="block w-full truncate px-3 py-1.5 text-left text-xs ${item.danger ? "text-destructive" : "text-foreground"} hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40">${escapeHtml(item.label)}</button>`)).join("");
+      : `<button data-crm-menu-item="${index}" type="button" role="menuitem"${item.disabled ? " disabled" : ""}${item.title ? ` title="${escapeHtml(item.title)}"` : ""} class="block w-full truncate px-3 py-1.5 text-left text-xs ${item.danger ? "text-destructive" : "text-foreground"} hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40">${escapeHtml(item.label)}</button>`)).join("");
     menu.hidden = false;
     // Clamp into the viewport so a heading near an edge still shows the whole
     // menu rather than pushing the page sideways.
@@ -1279,6 +1463,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       { separator: true },
       { heading: "Fields" },
       ...crmFieldMenuItems(),
+      { label: "Add column…", run: () => void addCrmCustomColumn() },
       ...crmRestoreColumnItems(),
       { separator: true },
       ...crmTableViewMenuItems(),
@@ -1286,7 +1471,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function crmDeleteColumnItems(column) {
-    if (!column || CRM_KEPT_COLUMNS.has(column.field)) return [];
+    if (!column || column.computed || CRM_KEPT_COLUMNS.has(column.field)) return [];
     if (column.custom) return [{ label: "Delete column…", run: () => void deleteCrmColumn(column.field) }];
     const manages = Boolean(state.crmView.canManageSettings);
     return [{
@@ -1347,7 +1532,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     openCrmMenu({
       preventDefault: () => event.preventDefault(), stopPropagation: () => event.stopPropagation(),
       clientX: bounds.left, clientY: bounds.bottom + 4,
-    }, [...crmTableViewMenuItems(), { separator: true }, { heading: "Fields" }, ...crmFieldMenuItems()]);
+    }, [...crmTableViewMenuItems(), { separator: true }, { heading: "Fields" }, ...crmFieldMenuItems(),
+      { label: "Add column…", run: () => void addCrmCustomColumn() }]);
   }
 
   function openCrmSharedMenu(event, id) {
@@ -1361,8 +1547,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   // --- the contact right-click menu ---------------------------------------
-  // The table has no multi-select, so the menu acts on the row under the
-  // pointer. openCrmMenu draws a flat list, so the groups are headings rather
+  // openCrmMenu draws a flat list, so the groups are headings rather
   // than submenus, and a long group is cut short with the tab menu as the way
   // to reach the rest.
   const CRM_MENU_GROUP = 8;
@@ -1381,6 +1566,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ...contact,
       ..."flow" in body ? { flow: body.flow } : {},
       ..."stage" in body ? { stage: body.stage } : {},
+      ..."lastContactedAt" in body ? { lastContactedAt: body.lastContactedAt } : {},
+      ..."owner" in body ? { owner: body.owner } : {},
       views: views.filter((view) => !dropped.has(view)),
     };
   }
@@ -1415,94 +1602,110 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function openCrmContactMenu(event, id) {
     const contact = crmContactById(id);
     if (!contact || crmActiveShared()) return;
+    const ids = crmMenuSelection(id);
+    const contacts = ids.map(crmContactById).filter(Boolean);
+    const many = contacts.length > 1;
     const name = contact.name || contact.email || "Contact";
     const quoted = (value) => `“${value}”`;
     // Belonging to a pipeline list is having its flow, so pipelines are moved
     // to by flow and only plain lists are list memberships.
     const lists = state.crmView.views.filter((view) => !view.flow);
-    const memberships = Array.isArray(contact.views) ? contact.views : [];
-    const flow = crmFlows().find((item) => item.id === contact.flow) || null;
+    const only = (one, view) => (one.views || []).length === 1 && one.views[0] === view.id;
+    const flow = contacts.every((one) => one.flow === contact.flow)
+      ? crmFlows().find((item) => item.id === contact.flow) || null : null;
     const open = crmActiveView();
-    const pipelines = crmMenuGroup(crmFlows()
-      .filter((item) => item.id !== contact.flow)
-      .map((item) => ({
-        label: item.name,
-        run: () => void crmPatchContact(id, {
-          flow: item.id,
-          stage: (item.stages || []).includes(contact.stage)
-            ? contact.stage : (item.stages || [])[0] || contact.stage,
-        }, `${name} moved to ${quoted(item.name)}.`, "Could not move the contact"),
-      })));
+    const pipelines = crmMenuGroup(crmPipelineMoveItems(ids));
     const stages = crmMenuGroup((flow?.stages || [])
-      .filter((stage) => stage !== contact.stage)
       .map((stage) => ({
         label: titleCaseSlug(stage),
-        run: () => void crmPatchContact(id, { stage },
-          `${name} moved to the ${quoted(stage)} stage.`, "Could not move the contact"),
+        disabled: contacts.every((one) => one.stage === stage),
+        run: () => void crmPatchContacts(contacts.filter((one) => one.stage !== stage)
+          .map((one) => ({ id: one.id, stage })), "moved", `to the ${quoted(stage)} stage`),
       })));
     // "Move to" is the target list and no other; "Add to" leaves the rest.
     const moves = crmMenuGroup(lists
-      .filter((view) => !(memberships.length === 1 && memberships[0] === view.id))
+      .filter((view) => contacts.some((one) => !only(one, view)))
       .map((view) => ({
         label: view.name,
-        run: () => void crmPatchContact(id, { setViews: [view.id] },
-          `${name} moved to ${quoted(view.name)}.`, "Could not move the contact"),
+        run: () => void crmPatchContacts(contacts.filter((one) => !only(one, view))
+          .map((one) => ({ id: one.id, setViews: [view.id] })), "moved", `to ${quoted(view.name)} only`),
       })));
     const adds = crmMenuGroup(lists
-      .filter((view) => !memberships.includes(view.id))
+      .filter((view) => contacts.some((one) => !(one.views || []).includes(view.id)))
       .map((view) => ({
         label: view.name,
-        run: () => void crmPatchContact(id, { views: [view.id] },
-          `${name} added to ${quoted(view.name)}.`, "Could not add the contact"),
+        run: () => void crmPatchContacts(contacts.filter((one) => !(one.views || []).includes(view.id))
+          .map((one) => ({ id: one.id, views: [view.id] })), "added", `to ${quoted(view.name)}`),
       })));
-    const merges = crmMenuGroup(crmMergeCandidates(contact).map((other) => ({
-      label: other.email && other.name ? `${other.name} · ${other.email}` : other.name || other.email,
-      run: () => void mergeCrmContact(id, other.id),
+    const keeps = crmMenuGroup(contacts.map((keep) => ({
+      label: crmMergeLabel(keep),
+      run: () => void mergeCrmContacts(ids.filter((other) => other !== keep.id), keep.id),
     })));
     openCrmMenu(event, [
-      { heading: name },
-      { label: "Edit…", run: () => openCrmContact(contact) },
-      { label: "Email", disabled: !contact.email, run: () => openCrmEmail(contact) },
-      { label: "Copy link", run: () => void copyCrmContactLink(id) },
-      ...(pipelines.length ? [{ separator: true }, { heading: "Move to pipeline" }, ...pipelines] : []),
-      ...(stages.length ? [{ separator: true }, { heading: `Stage in ${flow.name}` }, ...stages] : []),
+      { heading: many ? `${contacts.length} contacts` : name },
+      { label: "Mark contacted now", run: () => void crmMarkContacted(ids, Date.now()) },
+      ...(many ? [] : [
+        { label: "Edit…", run: () => openCrmContact(contact) },
+        { label: "Email", disabled: !contact.email, run: () => openCrmEmail(contact) },
+        { label: "Copy prompt", run: () => void copyCrmOutreachPrompt(contact) },
+        { label: "Copy link", run: () => void copyCrmContactLink(id) },
+      ]),
+      ...(pipelines.length ? [{ separator: true }, { heading: "Move to pipeline list" }, ...pipelines] : []),
+      ...(stages.length ? [{ separator: true }, { heading: `Set stage in ${flow.name}` }, ...stages] : []),
       ...(moves.length ? [{ separator: true }, { heading: "Move to list" }, ...moves] : []),
       ...(adds.length ? [{ separator: true }, { heading: "Add to list" }, ...adds] : []),
-      ...(open && !open.flow && memberships.includes(open.id) ? [
+      ...(open && !open.virtual && (!open.flow || crmPipelineLists(open.flow).length > 1)
+        && contacts.some((one) => (one.views || []).includes(open.id)) ? [
         { separator: true },
-        { label: `Remove from ${quoted(open.name)}`,
-          run: () => void crmPatchContact(id, { removeViews: [open.id] },
-            `${name} removed from ${quoted(open.name)}.`, "Could not remove the contact") },
+        { label: `Remove from ${quoted(open.name)}`, run: () => removeCrmContactsFromSheet(ids, open.id) },
       ] : []),
       { separator: true },
+      { label: "Assign owner…", run: () => void assignCrmContactsOwner(ids) },
       { label: "New pipeline…", run: openCrmPipelineDialog },
       { label: "Manage pipelines…", run: openCrmPipelineSettings },
-      ...(merges.length ? [{ separator: true }, { heading: "Merge into" }, ...merges] : []),
       { separator: true },
-      { label: "Delete contact", danger: true, run: () => void deleteCrmContact(id) },
+      ...(many ? [
+        { heading: "Merge selected into" }, ...keeps,
+        { separator: true },
+        { label: `Delete ${contacts.length} contacts…`, danger: true, run: () => void deleteCrmContacts(ids) },
+      ] : [
+        { label: "Merge into…", disabled: state.crmView.contacts.length < 2, run: () => openCrmMergePicker(id) },
+        { label: "Delete contact", danger: true, run: () => void deleteCrmContact(id) },
+      ]),
     ]);
   }
 
-  // The contacts a row most likely duplicates: the same email, shared name
-  // words, or the same company, best first. Nothing unrelated is offered.
-  function crmMergeCandidates(contact) {
+  function crmMergeLabel(contact) {
+    const name = String(contact?.name || "").trim();
+    const email = String(contact?.email || "").trim();
+    if (!name) return email || "(unnamed contact)";
+    return email ? `${name} — ${email}` : name;
+  }
+
+  function crmFlowLabel(flowId) {
+    return crmFlows().find((flow) => flow.id === flowId)?.name || String(flowId || "");
+  }
+
+  function crmMergeTargets(duplicate, contacts = state.crmView.contacts) {
     const words = (value) => new Set(String(value || "").toLowerCase()
-      .split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 1));
-    const names = words(contact.name);
-    const email = String(contact.email || "").toLowerCase();
-    const company = String(contact.company || "").toLowerCase();
-    return state.crmView.contacts
-      .filter((other) => other.id !== contact.id)
+      .split(/[^\p{L}\p{N}_]+/u).filter((word) => word.length > 1));
+    const names = words(duplicate.name);
+    const email = String(duplicate.email || "").trim().toLowerCase();
+    const company = String(duplicate.company || "").trim().toLowerCase();
+    const fold = (value) => value.toLowerCase();
+    return contacts
+      .filter((other) => other.id && other.id !== duplicate.id)
       .map((other) => ({
-        other,
-        score: (email && String(other.email || "").toLowerCase() === email ? 4 : 0)
+        id: other.id,
+        score: (email && String(other.email || "").trim().toLowerCase() === email ? 4 : 0)
           + 2 * [...words(other.name)].filter((word) => names.has(word)).length
-          + (company && String(other.company || "").toLowerCase() === company ? 1 : 0),
+          + (company && String(other.company || "").trim().toLowerCase() === company ? 1 : 0),
+        label: crmMergeLabel(other),
+        detail: [String(other.company || "").trim(), other.flow ? crmFlowLabel(other.flow) : ""]
+          .filter((part) => /\S/.test(part)).join(" · "),
       }))
-      .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score
-        || String(a.other.name || a.other.email).localeCompare(String(b.other.name || b.other.email)))
-      .map((item) => item.other);
+        || (fold(a.label) < fold(b.label) ? -1 : fold(a.label) > fold(b.label) ? 1 : 0));
   }
 
   // Folds a box made twice for one person into the one kept: the kept record's
@@ -1535,71 +1738,348 @@ window.ForkMeshDashboard.registerPage("crm", ({
     await loadCrm();
   }
 
-  async function mergeCrmContact(fromId, intoId) {
-    const from = crmContactById(fromId); const into = crmContactById(intoId);
-    if (!from || !into) return;
-    const label = (contact) => contact.email && contact.name ? `${contact.name} (${contact.email})` : contact.name || contact.email || "this contact";
-    if (!confirm(`Merge ${label(from)} into ${label(into)}?\n\n${label(into)} keeps its details; the other fills its blanks, brings its tags, lists, notes and email history, and is then deleted.`)) return;
+  async function mergeCrmContacts(duplicateIds, keepId) {
+    const keep = crmContactById(keepId);
+    const pending = duplicateIds.filter((id) => id !== keepId && crmContactById(id));
+    if (!keep || !pending.length) return;
+    const names = pending.map((id) => `“${crmMergeLabel(crmContactById(id))}”`).join(", ");
+    const kept = `“${crmMergeLabel(keep)}”`;
+    const one = pending.length === 1;
+    if (!confirm(`Merge ${names} into ${kept}?\n\n${kept} keeps what it has, fills its blanks from ${names} and gains ${one ? "its" : "their"} tags, lists, notes and email history. ${names} ${one ? "is" : "are"} then deleted.`)) return;
+    crmMessage("notice", `Merging ${names} into ${kept}…`);
     try {
-      await crmRequest(crmOrganizationPath("/contacts/merge"), "POST", { from: fromId, into: intoId });
-      crmMessage("notice", `Merged ${label(from)} into ${label(into)}.`);
-    } catch (error) { crmMessage("error", `Could not merge the contacts: ${error.message}`); }
+      for (const id of pending) {
+        await crmRequest(crmOrganizationPath("/contacts/merge"), "POST", { from: id, into: keepId });
+      }
+      crmMessage("notice", `Merged ${pending.length} ${one ? "contact" : "contacts"} into ${kept}.`);
+    } catch (error) { crmMessage("error", `Contacts were not merged into ${kept}: ${error.message}`); }
+    crmSelection.ids = new Set([keepId]);
     state.crmView.duplicates = null;
     await loadCrm();
     if ($(`[data-crm-focus]`)?.value === "duplicates") await loadCrmDuplicates();
   }
 
-  // Pipelines are edited in the settings dialog's flow editors; this opens it
-  // on them rather than making a second place to keep the same list.
-  function openCrmPipelineSettings() {
-    openCrmSettings();
-    $(`[data-crm-flow-editors]`)?.scrollIntoView({ block: "center" });
+  function crmPipelineMoveItems(ids) {
+    const contacts = ids.map(crmContactById).filter(Boolean);
+    const pipelines = crmPipelineIds();
+    return crmTabViews().filter((view) => view.flow).map((view) => {
+      const allThere = contacts.every((contact) => crmContactOnTab(contact, view, pipelines));
+      return {
+        label: crmPipelineLists(view.flow).length > 1 ? `${view.name} · ${crmFlowName(view.flow)}` : view.name,
+        disabled: allThere, title: allThere ? "Already in this list" : "",
+        run: () => moveCrmContactsToSheet(ids, view.id),
+      };
+    });
+  }
+
+  function crmMoveToSheetEdits(ids, sheetId) {
+    const sheet = crmTabView(sheetId);
+    if (!sheet || sheet.id === CRM_NO_PIPELINE_TAB) return [];
+    const flowId = sheet.flow || "";
+    const stages = crmFlowStages(flowId);
+    const siblings = crmPipelineLists(flowId).filter((id) => id !== sheetId);
+    const pipelines = crmPipelineIds();
+    const edits = [];
+    for (const id of ids) {
+      const contact = crmContactById(id);
+      if (!contact || crmContactOnTab(contact, sheet, pipelines)) continue;
+      const edit = { id };
+      if (flowId && contact.flow !== flowId) {
+        const stage = String(contact.stage || "");
+        edit.flow = flowId;
+        edit.stage = stages.includes(stage) || !stages.length ? stage : stages[0];
+      }
+      if (!sheet.virtual) {
+        edit.views = [sheetId];
+        if (flowId && siblings.length) edit.removeViews = siblings;
+      }
+      edits.push(edit);
+    }
+    return edits;
+  }
+
+  async function crmBulkMoveContacts(edits, gerund, past, target) {
+    if (!edits.length) return;
+    const byId = new Map(edits.map((edit) => [edit.id, edit]));
+    state.crmView.contacts = state.crmView.contacts.map((contact) =>
+      byId.has(contact.id) ? crmWithContactEdit(contact, byId.get(contact.id)) : contact);
+    renderCrm();
+    const count = edits.length;
+    const noun = count === 1 ? "contact" : "contacts";
+    crmMessage("notice", `${gerund} ${count} ${noun} ${target}…`);
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits });
+      const saved = new Map((payload.contacts || []).map((contact) => [contact.id, contact]));
+      state.crmView.contacts = state.crmView.contacts.map((contact) => saved.get(contact.id) || contact);
+      renderCrm();
+      const missing = (payload.missing || []).length;
+      if (missing) {
+        crmMessage("error", `${missing} of ${count} contacts were not ${past} ${target}: they no longer exist.`);
+        await loadCrm();
+        return;
+      }
+      crmMessage("notice", `${count} ${noun} ${past} ${target}.`);
+    } catch (error) {
+      crmMessage("error", `${count} ${noun} were not ${past} ${target}: ${error.message}`);
+      await loadCrm();
+    }
+  }
+
+  function moveCrmContactsToSheet(ids, sheetId) {
+    const sheet = crmTabView(sheetId);
+    if (!sheet || !ids.length) return;
+    const edits = crmMoveToSheetEdits(ids, sheetId);
+    if (!edits.length) { crmMessage("notice", `Every selected contact is already in “${sheet.name}”.`); return; }
+    const pipeline = Boolean(sheet.flow);
+    void crmBulkMoveContacts(edits, pipeline ? "Moving" : "Adding", pipeline ? "moved" : "added", `to “${sheet.name}”`);
+  }
+
+  function removeCrmContactsFromSheet(ids, sheetId) {
+    const sheet = crmTabView(sheetId);
+    if (!sheet || !ids.length) return;
+    const edits = ids.map(crmContactById)
+      .filter((contact) => contact && (contact.views || []).includes(sheetId))
+      .map((contact) => ({ id: contact.id, removeViews: [sheetId] }));
+    if (!edits.length) { crmMessage("notice", `No selected contact is on “${sheet.name}”.`); return; }
+    void crmBulkMoveContacts(edits, "Removing", "removed", `from “${sheet.name}”`);
+  }
+
+  function crmSheetShareSummary(view) {
+    const names = crmSheetShareNames(view);
+    const picked = new Set(view?.sharedWith || []);
+    const count = names.length === 1 ? "1 person" : `${names.length} people`;
+    return [
+      !names.length ? "Private to its owner"
+        : view?.visibility === "private" ? `Shared with ${count}`
+        : `Open to ${count} in ${state.crmView.organization}`,
+      ...names.map((name) => (picked.has(name) ? name : `${name} · member`)),
+      `Owner: ${view?.owner || state.crmView.organization}`,
+    ];
+  }
+
+  function crmSheetShareItems(view) {
+    const lines = crmSheetShareSummary(view);
+    const people = lines.slice(1, -1);
+    return [
+      { heading: lines[0] },
+      ...people.slice(0, CRM_SHARE_SHOWN).map((line) => ({ label: line, disabled: true })),
+      ...(people.length > CRM_SHARE_SHOWN ? [{ label: `…and ${people.length - CRM_SHARE_SHOWN} more`, disabled: true }] : []),
+      { label: lines[lines.length - 1], disabled: true },
+    ];
+  }
+
+  function crmCanDeleteList(view) {
+    return Boolean(view && !view.virtual && view.canManage
+      && (!view.flow || crmPipelineLists(view.flow).length > 1));
   }
 
   function openCrmSheetMenu(event, id) {
-    const view = state.crmView.views.find((item) => item.id === id) || null;
-    // The field list edits the layout of the sheet on screen, so it only hangs
-    // off the tab that is actually open.
-    const onScreen = !state.crmView.activeShared
-      && state.crmView.activeView === (view ? view.id : "");
+    const view = crmTabView(id);
+    if (!view) return;
+    const stored = !view.virtual;
+    const manages = Boolean(state.crmView.canManageSettings);
+    const flowId = view.flow || "";
+    const onScreen = !state.crmView.activeShared && state.crmView.activeView === view.id;
     const fields = onScreen
       ? [{ separator: true }, { heading: "Fields" }, ...crmFieldMenuItems()] : [];
     const at = state.crmView.views.findIndex((item) => item.id === id);
-    openCrmMenu(event, view ? [
-      { heading: view.name },
-      { label: "Rename…", run: () => void renameCrmSheet(view) },
-      { label: "Rename or share…", run: () => openCrmSheetDialog(view) },
-      { label: "Copy link", run: () => void copyCrmListLink(view) },
-      { label: "Activity history…", run: () => void openCrmListHistory(view) },
-      { label: "Move left", disabled: at <= 0, run: () => crmMoveSheet(view.id, -1) },
-      { label: "Move right", disabled: at < 0 || at >= state.crmView.views.length - 1,
-        run: () => crmMoveSheet(view.id, 1) },
-      { label: "Import a CSV into this sheet…", run: () => crmPickCsv(view.id) },
-      { label: "Import Mastodon followers into this sheet…", run: () => openCrmMastodonDialog(view.id) },
-      { separator: true },
-      { heading: "Pipeline type" },
-      { label: `${view.flow ? "\u2002\u2002" : "\u2713 "}No pipeline (plain list)`,
-        disabled: !view.canManage || !view.flow,
-        run: () => void crmSetSheetFlow(view, "") },
-      ...crmFlows().map((flow) => ({
-        label: `${view.flow === flow.id ? "\u2713 " : "\u2002\u2002"}${flow.name}`,
-        disabled: !view.canManage || view.flow === flow.id,
-        run: () => void crmSetSheetFlow(view, flow.id),
-      })),
-      { label: "Manage pipelines…", run: openCrmPipelineSettings },
-      ...fields,
-      { separator: true },
-      { label: "Delete sheet", danger: true, disabled: !view.canManage,
-        run: () => void deleteCrmSheet(view) },
-    ] : [
-      { heading: "All contacts" },
-      { label: "New sheet…", run: () => openCrmSheetDialog(null) },
-      { label: "New pipeline…", run: openCrmPipelineDialog },
-      { label: "Manage pipelines…", run: openCrmPipelineSettings },
-      { label: "Import a CSV as a new sheet…", run: () => crmPickCsv("") },
-      { label: "Import Mastodon followers as a new sheet…", run: () => openCrmMastodonDialog("") },
-      ...fields,
-    ]);
+    const canShare = !stored || Boolean(view.canManage);
+    const targets = state.crmView.views.filter((other) => other.id !== id && other.canManage);
+    const flows = crmFlows();
+    const lastPipeline = flows.length === 1 && flows[0].id === flowId;
+    const items = [...crmSheetShareItems(view), { separator: true }];
+    if (id !== CRM_NO_PIPELINE_TAB) {
+      items.push(
+        { label: "Rename…", disabled: !stored && !manages,
+          title: stored || manages ? "" : "Only organization owners and admins can rename pipelines",
+          run: () => void renameCrmSheet(view) },
+        { label: "Add members…", disabled: !canShare,
+          title: canShare ? "" : "Only the list's owner and organization owners and admins can add members",
+          run: () => openCrmMembersDialog(view) });
+    }
+    if (stored) {
+      items.push(
+        { label: "Rename or share…", run: () => openCrmSheetDialog(view) },
+        { label: "Copy link", run: () => void copyCrmListLink(view) },
+        { label: "Activity history…", run: () => void openCrmListHistory(view) },
+        { label: "Move left", disabled: at <= 0, run: () => crmMoveSheet(view.id, -1) },
+        { label: "Move right", disabled: at < 0 || at >= state.crmView.views.length - 1,
+          run: () => crmMoveSheet(view.id, 1) },
+        { label: "Import a CSV into this list…", run: () => crmPickCsv(view.id) },
+        { label: "Import Mastodon followers into this list…", run: () => openCrmMastodonDialog(view.id) },
+        ...(targets.length && view.canManage ? [
+          { separator: true },
+          { heading: "Merge into" },
+          ...crmMenuGroup(targets.map((other) => ({
+            label: other.flow ? `${other.name} · ${crmFlowName(other.flow)}` : other.name,
+            title: "Put every contact on this list onto that one, carry its fields over, and delete this list",
+            run: () => void mergeCrmSheetInto(view.id, other.id),
+          }))),
+        ] : [{ label: "Merge into…", disabled: true,
+          title: view.canManage ? "There is no other list you can merge it into"
+            : "Only the list's owner and organization owners and admins can merge it" }]),
+        { separator: true },
+        { heading: "Pipeline type" },
+        { label: `${view.flow ? "\u2002\u2002" : "\u2713 "}No pipeline (plain list)`,
+          disabled: !manages || !view.flow,
+          run: () => void crmSetSheetFlow(view, "") },
+        ...flows.map((flow) => ({
+          label: `${view.flow === flow.id ? "\u2713 " : "\u2002\u2002"}${flow.name}`,
+          disabled: !manages || view.flow === flow.id,
+          run: () => void crmSetSheetFlow(view, flow.id),
+        })),
+        { label: "New list…", run: () => openCrmSheetDialog(null) },
+        { label: "New pipeline…", disabled: !manages, run: openCrmPipelineDialog },
+        { label: "Manage pipelines…", disabled: !manages, run: () => openCrmPipelineSettings() },
+        ...(flowId ? [crmEditStagesItem(flowId)] : []));
+    } else {
+      items.push(
+        ...(flowId ? [crmEditStagesItem(flowId)] : []),
+        { label: "New list…", run: () => openCrmSheetDialog(null) },
+        { label: "New pipeline…", disabled: !manages, run: openCrmPipelineDialog },
+        { label: "Manage pipelines…", disabled: !manages, run: () => openCrmPipelineSettings() },
+        { label: "Import a CSV as a new list…", run: () => crmPickCsv("") },
+        { label: "Import Mastodon followers as a new list…", run: () => openCrmMastodonDialog("") });
+    }
+    items.push(...fields);
+    if (stored && flowId) {
+      const deletable = crmCanDeleteList(view);
+      items.push({ separator: true }, {
+        label: "Delete list…", danger: true, disabled: !deletable,
+        title: deletable ? "" : !view.canManage
+          ? "Only the list's owner and organization owners and admins can delete it"
+          : `The only list on “${crmFlowName(flowId)}”: use Delete pipeline… to remove it`,
+        run: () => void deleteCrmSheet(view),
+      });
+    }
+    if (flowId) {
+      items.push({ separator: true }, {
+        label: "Delete pipeline…", danger: true, disabled: !manages || lastPipeline,
+        title: !manages ? "Only organization owners and admins can delete pipelines"
+          : lastPipeline ? "An organization keeps at least one pipeline" : "",
+        run: () => void deleteCrmPipeline(view),
+      });
+    } else if (stored) {
+      items.push({ separator: true }, {
+        label: "Delete list…", danger: true, disabled: !view.canManage,
+        run: () => void deleteCrmSheet(view),
+      });
+    }
+    openCrmMenu(event, items);
+  }
+
+  function crmMergePlan(sourceId, targetId) {
+    const source = state.crmView.views.find((view) => view.id === sourceId);
+    const target = state.crmView.views.find((view) => view.id === targetId);
+    if (!source || !target || sourceId === targetId) return null;
+    const flowId = target.flow || "";
+    const stages = crmFlowStages(flowId);
+    const dropped = crmPipelineLists(flowId).filter((id) => id !== targetId);
+    if (!dropped.includes(sourceId)) dropped.push(sourceId);
+    const pipelines = crmPipelineIds();
+    const edits = state.crmView.contacts.filter((contact) => crmContactOnTab(contact, source, pipelines)).map((contact) => {
+      const edit = { id: contact.id, views: [targetId], removeViews: [...dropped] };
+      if (flowId && contact.flow !== flowId) {
+        const stage = String(contact.stage || "");
+        edit.flow = flowId;
+        edit.stage = stages.includes(stage) || !stages.length ? stage : stages[0];
+      }
+      return edit;
+    });
+    const columns = (Array.isArray(target.columns) ? target.columns : []).map((column) => ({ ...column }));
+    const shownIn = (field) => columns.some((column) => column.field === field && !column.hidden);
+    let sourceColumns = Array.isArray(source.columns) ? source.columns : [];
+    if (!columns.some((column) => !column.hidden)) {
+      sourceColumns = [...CRM_CONTACT_COLUMNS.map((column) => ({
+        field: column.field, label: column.label, custom: false, hidden: false,
+      })), ...sourceColumns];
+    }
+    let columnsChanged = false;
+    for (const column of sourceColumns) {
+      const field = String(column?.field || "");
+      if (!field || column.hidden || shownIn(field)) continue;
+      const kept = columns.filter((item) => item.field === field);
+      if (kept.length) kept.forEach((item) => { item.hidden = false; });
+      else columns.push({ ...column, hidden: false });
+      columnsChanged = true;
+    }
+    return { source, target, edits, columns, columnsChanged };
+  }
+
+  async function mergeCrmSheetInto(sourceId, targetId) {
+    const plan = crmMergePlan(sourceId, targetId);
+    if (!plan) return;
+    const { source, target, edits, columns, columnsChanged } = plan;
+    const moving = edits.length === 1 ? "1 contact" : `${edits.length} contacts`;
+    const joins = target.flow
+      ? ` They join the ${crmFlowName(target.flow)} pipeline, keeping a stage it shares and starting the rest at its first stage.` : "";
+    if (!confirm(`Merge “${source.name}” (${moving}) into “${target.name}”?\n\nIts contacts move onto “${target.name}”, every field it shows is shown there too, and “${source.name}” is then deleted.${joins}`)) return;
+    crmMessage("notice", `Merging “${source.name}” into “${target.name}”…`);
+    try {
+      if (edits.length) await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits });
+    } catch (error) {
+      crmMessage("error", `“${source.name}” was not merged into “${target.name}”: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    try {
+      if (columnsChanged) await crmRequest(crmOrganizationPath(`/views/${target.id}`), "PATCH", { columns });
+    } catch (error) {
+      crmMessage("error", `The fields on “${target.name}” were not saved: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    let failure = "";
+    try { await crmRequest(crmOrganizationPath(`/views/${source.id}`), "DELETE", {}); }
+    catch (error) { failure = error.message; }
+    state.crmView.activeView = target.id;
+    crmSetListParam(target.id);
+    await loadCrm();
+    if (failure) crmMessage("error", `The contacts moved to “${target.name}” but “${source.name}” was not deleted: ${failure}`);
+    else crmMessage("notice", `“${source.name}” merged into “${target.name}”.`);
+  }
+
+  async function deleteCrmPipeline(view) {
+    const flowId = view?.flow || "";
+    if (!flowId) return;
+    closeCrmMenu();
+    if (!state.crmView.canManageSettings) {
+      crmMessage("error", "Only organization owners and admins can delete pipelines.");
+      return;
+    }
+    const flows = crmFlows();
+    const remaining = flows.filter((flow) => flow.id !== flowId);
+    if (!remaining.length) {
+      crmMessage("error", "An organization keeps at least one pipeline. Add another before deleting this one.");
+      return;
+    }
+    const lists = crmPipelineLists(flowId);
+    const name = crmFlowName(flowId);
+    const contacts = state.crmView.contacts.filter((contact) => contact.flow === flowId).length;
+    const people = contacts === 0 ? "No contact is in it."
+      : contacts === 1 ? "Its contact stays in the organization, under No pipeline, until it is moved into another pipeline."
+      : `Its ${contacts} contacts stay in the organization, under No pipeline, until they are moved into another pipeline.`;
+    const bound = !lists.length ? "" : lists.length === 1 ? " The list bound to it is deleted too."
+      : ` The ${lists.length} lists bound to it are deleted too.`;
+    if (!confirm(`Delete the “${name}” pipeline for everyone in ${state.crmView.organization}?\n\n${people}${bound}`)) return;
+    crmMessage("notice", `Deleting the “${name}” pipeline…`);
+    try {
+      if (remaining.length !== flows.length) {
+        await crmRequest(crmOrganizationPath("/settings"), "PUT", { flows: remaining });
+      }
+    } catch (error) {
+      crmMessage("error", `The “${name}” pipeline was not deleted: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    let failure = "";
+    for (const listId of lists) {
+      try { await crmRequest(crmOrganizationPath(`/views/${listId}`), "DELETE", {}); }
+      catch (error) { failure = failure || error.message; }
+    }
+    await loadCrm();
+    if (failure) crmMessage("error", `The “${name}” pipeline was deleted, but a list bound to it was not: ${failure}`);
+    else crmMessage("notice", `Pipeline “${name}” deleted.`);
   }
 
   async function crmSetSheetFlow(view, flow) {
@@ -1609,7 +2089,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       await crmRequest(crmOrganizationPath(`/views/${view.id}`), "PATCH", { flow });
       crmMessage("notice", flow
         ? `“${view.name}” now shows the “${crmFlow(flow).name}” pipeline.`
-        : `“${view.name}” is a plain sheet again; it shows only the contacts added to it.`);
+        : `“${view.name}” is a plain list again; it shows only the contacts added to it.`);
       await loadCrm();
     } catch (error) {
       crmMessage("error", `Could not change the pipeline type: ${error.message}`);
@@ -1619,21 +2099,39 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // --- renaming and moving a tab -----------------------------------------
 
   async function renameCrmSheet(view) {
-    if (!view) return;
+    if (!view || view.id === CRM_NO_PIPELINE_TAB) return;
     closeCrmMenu();
-    const typed = prompt(`Rename the "${view.name}" tab`, view.name);
+    const pipeline = Boolean(view.virtual);
+    if (pipeline && !state.crmView.canManageSettings) {
+      crmMessage("error", "Only organization owners and admins can rename pipelines.");
+      return;
+    }
+    const typed = prompt(`Rename the “${view.name}” ${pipeline ? "pipeline" : "list"}`, view.name);
     if (typed === null) return;
     const name = typed.trim().slice(0, 60);
     if (!name || name === view.name) return;
+    if (pipeline) {
+      const flows = crmFlows().map((flow) => (flow.id === view.flow ? { ...flow, name } : flow));
+      state.crmView.settings = { ...state.crmView.settings, flows };
+      renderCrm();
+      try {
+        await crmRequest(crmOrganizationPath("/settings"), "PUT", { flows });
+        crmMessage("notice", `Pipeline renamed to “${name}”.`);
+      } catch (error) {
+        crmMessage("error", `Pipelines were not saved: ${error.message}`);
+      }
+      await loadCrm();
+      return;
+    }
     const previous = view.name;
     view.name = name;
     renderCrmTabs();
     try {
       await crmRequest(crmOrganizationPath(`/views/${view.id}`), "PATCH", { name });
-      crmMessage("notice", `Tab renamed to "${name}".`);
+      crmMessage("notice", `List renamed to “${name}”.`);
     } catch (error) {
       view.name = previous;
-      crmMessage("error", `Could not rename the tab: ${error.message}`);
+      crmMessage("error", `The list was not renamed: ${error.message}`);
       await loadCrm();
     }
   }
@@ -1737,6 +2235,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
   async function selectCrmSharedSheet(id) {
     state.crmView.activeView = "";
     state.crmView.activeShared = String(id || "");
+    if (state.crmView.stageTab) {
+      state.crmView.stageTab = "";
+      const stage = $(`[data-crm-stage]`); if (stage) stage.value = "";
+    }
     crmSetListParam(state.crmView.activeShared);
     renderCrmContacts();
     if (!id || state.crmView.sharedCache[id]) return;
@@ -1744,7 +2246,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const payload = await crmRequest(`/api/crm/-/shared/${encodeURIComponent(id)}`);
       state.crmView.sharedCache[id] = { view: payload.view || null, contacts: payload.contacts || [] };
     } catch (error) {
-      crmMessage("error", `Could not open the shared sheet: ${error.message}`);
+      crmMessage("error", `Could not open the shared list: ${error.message}`);
       if (error.status === 404) {
         state.crmView.sharedViews = state.crmView.sharedViews.filter((view) => view.id !== id);
         state.crmView.activeShared = "";
@@ -1763,7 +2265,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       if (payload.viewId) state.crmView.activeView = payload.viewId;
       crmMessage("notice", `${payload.view?.name || view.name}: ${payload.created || 0} added, ${payload.updated || 0} merged, ${payload.skipped || 0} skipped.`);
       await loadCrm();
-    } catch (error) { crmMessage("error", `Could not copy the sheet: ${error.message}`); }
+    } catch (error) { crmMessage("error", `Could not copy the list: ${error.message}`); }
   }
 
   function renderCrmSheetShare() {
@@ -1807,8 +2309,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const reach = view.shared
       ? `It opens for the people ${view.owner || view.organization} shared it with.`
       : view.visibility === "private" && !(view.sharedWith || []).length
-      ? "The sheet is private, so the link opens only for you until you share it from Rename or share…."
-      : `It opens for everyone the sheet reaches: ${crmSheetShareLabel(view).replace(/^Shared with /, "")}.`;
+      ? "The list is private, so the link opens only for you until you share it from Rename or share…."
+      : `It opens for everyone the list reaches: ${crmSheetShareLabel(view).replace(/^Shared with /, "")}.`;
     crmMessage("notice", `Link to “${view.name}” copied. ${reach}`);
     if (!button) return;
     button.textContent = "Link copied";
@@ -1845,7 +2347,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function openCrmListFromUrl() {
     const id = new URL(location.href).searchParams.get("list") || "";
     if (!id || !state.crmView.installed) return;
-    if (state.crmView.views.some((view) => view.id === id)) { selectCrmSheet(id); return; }
+    if (crmTabViews().some((view) => view.id === id)) { selectCrmSheet(id); return; }
     if (state.crmView.sharedViews.some((view) => view.id === id)) { void selectCrmSharedSheet(id); return; }
     crmSetListParam("");
     crmMessage("error", `That link points to a list you cannot open in ${state.crmView.organization}. It may be private, deleted, or in an organization you are not in.`);
@@ -1854,9 +2356,19 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function openCrmSheetDialog(view = null) {
     const dialog = $(`[data-crm-sheet-dialog]`); if (!dialog) return;
     closeCrmMenu();
-    $(`[data-crm-sheet-dialog-title]`).textContent = view ? "Sheet settings" : "New sheet";
+    $(`[data-crm-sheet-dialog-title]`).textContent = view ? "List settings" : "New list";
     $(`[data-crm-sheet-id]`).value = view?.id || "";
     $(`[data-crm-sheet-name]`).value = view?.name || "";
+    const flow = $(`[data-crm-sheet-flow]`);
+    if (flow) {
+      const open = crmActiveShared() ? "" : crmActiveView()?.flow || "";
+      flow.innerHTML = `<option value="">No pipeline (plain list)</option>` + crmFlows().map((item) =>
+        `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+      flow.value = crmFlows().some((item) => item.id === open) ? open : "";
+      flow.disabled = !state.crmView.canManageSettings;
+      flow.title = state.crmView.canManageSettings ? "" : "Only organization owners and admins can put a list on a pipeline";
+      $(`[data-crm-sheet-flow-row]`)?.classList.toggle("hidden", Boolean(view));
+    }
     // Everyone the sheet reaches may rename it and shape its columns; who else
     // can open it stays with its owner and the organization's owners/admins.
     const manages = !view || Boolean(view.canManage);
@@ -1873,7 +2385,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     users.disabled = !manages;
     const editable = $(`[data-crm-sheet-share-edit]`);
     if (editable) { editable.checked = view?.shareAccess === "edit"; editable.disabled = !manages; }
-    $(`[data-crm-sheet-delete]`)?.classList.toggle("hidden", !view || !view.canManage);
+    $(`[data-crm-sheet-delete]`)?.classList.toggle("hidden", !crmCanDeleteList(view));
     const link = $(`[data-crm-sheet-link]`);
     if (link) { link.classList.toggle("hidden", !view); link.textContent = "Copy link"; }
     renderCrmSheetShare();
@@ -1893,25 +2405,101 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ],
       shareAccess: $(`[data-crm-sheet-share-edit]`)?.checked ? "edit" : "view",
     };
+    const flow = String($(`[data-crm-sheet-flow]`)?.value || "");
+    if (!id && flow && state.crmView.canManageSettings) body.flow = flow;
     try {
       const payload = await crmRequest(
         crmOrganizationPath(`/views${id ? `/${id}` : ""}`), id ? "PATCH" : "POST", body);
       $(`[data-crm-sheet-dialog]`).close();
-      if (payload.view?.id) state.crmView.activeView = payload.view.id;
-      crmMessage("notice", id ? "Sheet updated." : "Sheet created.");
+      if (payload.view?.id) { state.crmView.activeView = payload.view.id; state.crmView.activeShared = ""; }
+      crmMessage("notice", id ? "List updated." : `List “${payload.view?.name || body.name}” created.`);
       await loadCrm();
-    } catch (error) { crmMessage("error", `Could not save the sheet: ${error.message}`); }
+    } catch (error) { crmMessage("error", `Could not save the list: ${error.message}`); }
   }
 
   async function deleteCrmSheet(view) {
-    if (!view || !confirm(`Delete the "${view.name}" sheet? Its contacts stay in the organization.`)) return;
+    if (!crmCanDeleteList(view)) return;
+    closeCrmMenu();
+    if (!confirm(`Delete the “${view.name}” list? Its contacts stay in the organization and on their pipelines.`)) return;
     try {
       await crmRequest(crmOrganizationPath(`/views/${view.id}`), "DELETE", {});
       if (state.crmView.activeView === view.id) { state.crmView.activeView = ""; crmSetListParam(""); }
       $(`[data-crm-sheet-dialog]`)?.close();
-      crmMessage("notice", "Sheet deleted.");
+      crmMessage("notice", `List “${view.name}” deleted.`);
       await loadCrm();
-    } catch (error) { crmMessage("error", `Could not delete the sheet: ${error.message}`); }
+    } catch (error) { crmMessage("error", `The “${view.name}” list was not deleted: ${error.message}`); }
+  }
+
+  function openCrmMembersDialog(view) {
+    const dialog = $(`[data-crm-members-dialog]`);
+    if (!dialog || !view || view.id === CRM_NO_PIPELINE_TAB) return;
+    closeCrmMenu();
+    state.crmView.membersView = view.id;
+    const owner = String(view.owner || "").toLowerCase();
+    const shared = new Set(view.sharedWith || []);
+    $(`[data-crm-members-intro]`).textContent = `Share “${view.name}” with more people. ${view.visibility === "private"
+      ? "Only the people it is shared with can open it."
+      : `Everyone in ${state.crmView.organization} can already open it; people added here keep it if it is made private.`}`;
+    const roster = state.crmView.members.filter((name) => name && name !== owner && !shared.has(name));
+    $(`[data-crm-members-roster]`).innerHTML = roster.length
+      ? roster.map((name) => `<label data-crm-members-person="${escapeHtml(name)}" class="flex items-center gap-2 text-xs text-foreground"><input data-crm-members-pick type="checkbox" value="${escapeHtml(name)}" />${escapeHtml(name)}</label>`).join("")
+      : `<p class="text-xs text-muted-foreground">Every organization member is already on it.</p>`;
+    $(`[data-crm-members-search]`).value = "";
+    $(`[data-crm-members-others]`).value = "";
+    dialog.showModal();
+  }
+
+  function filterCrmMembersRoster() {
+    const query = String($(`[data-crm-members-search]`)?.value || "").trim().toLowerCase();
+    $$(`[data-crm-members-person]`).forEach((row) => {
+      row.hidden = Boolean(query) && !row.dataset.crmMembersPerson.toLowerCase().includes(query);
+    });
+  }
+
+  function crmMembersAdded(view, picked, typed) {
+    const owner = String(view.owner || "").toLowerCase();
+    const shared = view.sharedWith || [];
+    const added = [...picked];
+    for (const raw of String(typed || "").split(/[\s,;]+/)) {
+      const person = raw.replace(/^@/, "").toLowerCase().slice(0, 64);
+      if (person && person !== owner && !shared.includes(person) && !added.includes(person)) added.push(person);
+    }
+    return added;
+  }
+
+  async function saveCrmMembers(event) {
+    event.preventDefault();
+    const view = crmTabView(state.crmView.membersView);
+    if (!view) return;
+    const added = crmMembersAdded(view,
+      $$(`[data-crm-members-pick]`).filter((box) => box.checked).map((box) => box.value),
+      $(`[data-crm-members-others]`)?.value);
+    $(`[data-crm-members-dialog]`)?.close();
+    if (!added.length) return;
+    const wanted = [...(view.sharedWith || []), ...added];
+    let payload;
+    try {
+      payload = view.virtual
+        ? await crmRequest(crmOrganizationPath("/views"), "POST", {
+          name: view.name, flow: view.flow, visibility: "organization", sharedWith: wanted })
+        : await crmRequest(crmOrganizationPath(`/views/${view.id}`), "PATCH", { sharedWith: wanted });
+    } catch (error) {
+      crmMessage("error", `Members were not added to “${view.name}”: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    const saved = payload.view || null;
+    if (saved?.id) {
+      const at = state.crmView.views.findIndex((item) => item.id === saved.id);
+      if (at >= 0) state.crmView.views[at] = saved; else state.crmView.views.push(saved);
+      if (view.virtual && state.crmView.activeView === view.id) state.crmView.activeView = saved.id;
+      renderCrmContacts();
+    }
+    const kept = new Set(saved?.sharedWith || []);
+    const missing = added.filter((person) => !kept.has(person));
+    const count = added.length - missing.length;
+    crmMessage(missing.length ? "error" : "notice",
+      `${count === 1 ? `Added 1 member to “${view.name}”.` : `Added ${count} members to “${view.name}”.`}${missing.length ? ` No ForkMesh account: ${missing.join(", ")}.` : ""}`);
   }
 
   function crmInitials(contact) {
@@ -1927,6 +2515,217 @@ window.ForkMeshDashboard.registerPage("crm", ({
     let hash = 0;
     for (const char of String(contact.email || contact.name || "")) hash = (hash * 31 + char.codePointAt(0)) % 9973;
     return `<span aria-hidden="true" class="crm-avatar crm-hue-${hash % 6 + 1}${size ? ` crm-avatar-${size}` : ""}">${escapeHtml(crmInitials(contact))}</span>`;
+  }
+
+  const CRM_PICTURE_CACHE_KEY = "forkmesh-crm-pictures";
+  const CRM_PICTURE_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
+  const CRM_PICTURE_CACHE_LIMIT = 4000;
+  const CRM_PICTURE_SIZE = 112;
+  const CRM_PICTURES_IN_FLIGHT = 4;
+  const CRM_FORKMESH_AVATARS_MS = 15 * 60 * 1000;
+  const crmPictures = {
+    known: null, queue: [], queued: new Set(), inFlight: 0, observer: null, saveTimer: 0,
+    users: new Map(), usersList: [], usersAt: 0, usersRead: null, usersEmails: false,
+  };
+
+  function crmPictureSources(contact) {
+    const sources = [];
+    const email = String(contact?.email || "").trim().toLowerCase();
+    if (email.includes("@") && crmPictures.users.has(email)) sources.push(`forkmesh:${email}`);
+    const mastodon = crmMastodonKey(contact?.mastodon).toLowerCase();
+    if (mastodon) sources.push(`mastodon:${mastodon}`);
+    const bluesky = crmBlueskyActor(contact?.bluesky);
+    if (bluesky) sources.push(`bluesky:${bluesky}`);
+    const github = crmGithubUser(contact?.github).toLowerCase();
+    if (github) sources.push(`github:${github}`);
+    if (email.includes("@")) sources.push(`gravatar:${email}`);
+    return sources;
+  }
+
+  function crmPictureCache() {
+    if (crmPictures.known) return crmPictures.known;
+    crmPictures.known = new Map();
+    try {
+      const saved = JSON.parse(localStorage.getItem(CRM_PICTURE_CACHE_KEY) || "{}");
+      const now = Date.now();
+      for (const [source, entry] of Object.entries(saved && typeof saved === "object" ? saved : {})) {
+        const [url, at] = Array.isArray(entry) ? entry : [];
+        if (typeof url === "string" && now - Number(at) < CRM_PICTURE_CACHE_MS && (!url || crmPictureUrl(url))) {
+          crmPictures.known.set(source, { url, at: Number(at) });
+        }
+      }
+    } catch { crmPictures.known.clear(); }
+    return crmPictures.known;
+  }
+
+  function crmSavePictureCache() {
+    if (crmPictures.saveTimer) return;
+    crmPictures.saveTimer = setTimeout(() => {
+      crmPictures.saveTimer = 0;
+      const now = Date.now();
+      const kept = [...crmPictureCache().entries()]
+        .filter(([source, entry]) => !source.startsWith("forkmesh:") && now - entry.at < CRM_PICTURE_CACHE_MS)
+        .sort((a, b) => b[1].at - a[1].at).slice(0, CRM_PICTURE_CACHE_LIMIT);
+      try {
+        localStorage.setItem(CRM_PICTURE_CACHE_KEY, JSON.stringify(Object.fromEntries(
+          kept.map(([source, entry]) => [source, [entry.url, entry.at]]))));
+      } catch { crmPictures.saveTimer = 0; }
+    }, 1000);
+  }
+
+  function crmPictureFor(sources) {
+    const known = crmPictureCache();
+    const now = Date.now();
+    for (const source of sources) {
+      if (source.startsWith("forkmesh:")) {
+        const url = crmPictures.users.get(source.slice(9));
+        if (url) return { url, done: true, source };
+        continue;
+      }
+      const entry = known.get(source);
+      if (!entry || now - entry.at >= CRM_PICTURE_CACHE_MS) return { url: "", done: false, source };
+      if (entry.url) return { url: entry.url, done: true, source };
+    }
+    return { url: "", done: true, source: "" };
+  }
+
+  function crmPicture(contact, size = "") {
+    const sources = crmPictureSources(contact);
+    if (!sources.length) return crmAvatar(contact, size);
+    const picture = crmPictureFor(sources);
+    return `<span aria-hidden="true" class="crm-pic${size ? ` crm-pic-${size}` : ""}" data-crm-picture="${escapeHtml(sources.join(" "))}"${picture.done ? "" : " data-crm-picture-wait"}>${crmAvatar(contact, size)}${picture.url ? `<img src="${escapeHtml(picture.url)}" alt="" draggable="false" referrerpolicy="no-referrer" />` : ""}</span>`;
+  }
+
+  function crmWatchPictures() {
+    if (typeof document === "undefined") return;
+    const waiting = $$(`[data-crm-picture-wait]`);
+    crmPictures.observer?.disconnect();
+    if (!waiting.length) return;
+    if (typeof IntersectionObserver !== "function") {
+      waiting.forEach((node) => crmQueuePictureSources(node.dataset.crmPicture.split(" ")));
+      return;
+    }
+    crmPictures.observer ||= new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        crmPictures.observer.unobserve(entry.target);
+        crmQueuePictureSources(String(entry.target.dataset.crmPicture || "").split(" "));
+      }
+    }, { rootMargin: "200px" });
+    waiting.forEach((node) => crmPictures.observer.observe(node));
+  }
+
+  function crmQueuePictureSources(sources) {
+    const picture = crmPictureFor(sources.filter(Boolean));
+    if (picture.done || !picture.source || crmPictures.queued.has(picture.source)) return;
+    crmPictures.queued.add(picture.source);
+    crmPictures.queue.push(picture.source);
+    crmPumpPictures();
+  }
+
+  function crmPumpPictures() {
+    while (crmPictures.queue.length && crmPictures.inFlight < CRM_PICTURES_IN_FLIGHT) {
+      const source = crmPictures.queue.shift();
+      crmPictures.inFlight += 1;
+      void crmReadPicture(source).catch(() => "").then((url) => {
+        crmPictureCache().set(source, { url, at: Date.now() });
+        crmPictures.inFlight -= 1;
+        crmPictures.queued.delete(source);
+        crmSavePictureCache();
+        crmPictureLanded(source);
+        crmPumpPictures();
+      });
+    }
+  }
+
+  function crmPictureLanded(source) {
+    for (const node of $$(`[data-crm-picture]`)) {
+      const sources = String(node.dataset.crmPicture || "").split(" ");
+      if (!sources.includes(source)) continue;
+      const picture = crmPictureFor(sources);
+      if (!picture.done) { crmQueuePictureSources(sources); continue; }
+      node.removeAttribute("data-crm-picture-wait");
+      if (picture.url && !node.querySelector("img")) {
+        const image = document.createElement("img");
+        image.alt = ""; image.draggable = false; image.referrerPolicy = "no-referrer"; image.src = picture.url;
+        node.appendChild(image);
+      }
+    }
+    crmPeopleLater();
+  }
+
+  function crmImageLoads(url) {
+    return new Promise((resolve) => {
+      const image = new Image();
+      const timer = setTimeout(() => resolve(false), CRM_UPDATE_TIMEOUT_MS);
+      image.referrerPolicy = "no-referrer";
+      image.onload = () => { clearTimeout(timer); resolve(image.naturalWidth > 0); };
+      image.onerror = () => { clearTimeout(timer); resolve(false); };
+      image.src = url;
+    });
+  }
+
+  async function crmSha256Hex(text) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function crmReadPicture(source) {
+    const split = source.indexOf(":");
+    const kind = source.slice(0, split);
+    const account = source.slice(split + 1);
+    let url = "";
+    if (kind === "github") {
+      url = `https://avatars.githubusercontent.com/${encodeURIComponent(account)}?s=${CRM_PICTURE_SIZE}`;
+    } else if (kind === "gravatar") {
+      url = `https://gravatar.com/avatar/${await crmSha256Hex(account)}?s=${CRM_PICTURE_SIZE}&d=404`;
+    } else if (kind === "mastodon") {
+      const at = account.lastIndexOf("@");
+      const profile = await crmReadPublicJson(
+        `https://${account.slice(at + 1)}/api/v1/accounts/lookup?acct=${encodeURIComponent(account.slice(0, at))}`);
+      url = crmPictureUrl(profile?.avatar_static || profile?.avatar);
+    } else if (kind === "bluesky") {
+      const profile = await crmReadPublicJson(
+        `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account)}`);
+      url = crmPictureUrl(profile?.avatar);
+    }
+    return url && await crmImageLoads(url) ? url : "";
+  }
+
+  function crmAdmin() {
+    return state.session?.isAdmin === true;
+  }
+
+  function crmForkMeshUsers(force = false) {
+    if (!crmAdmin()) return Promise.resolve(null);
+    if (!force && crmPictures.usersAt && Date.now() - crmPictures.usersAt < CRM_FORKMESH_AVATARS_MS) {
+      return Promise.resolve(crmPictures.usersEmails ? crmPictures.usersList : null);
+    }
+    if (crmPictures.usersRead) return crmPictures.usersRead;
+    crmPictures.usersRead = crmRequest("/api/accounts/users").then((payload) => {
+      const users = Array.isArray(payload?.users) ? payload.users : [];
+      const avatars = new Map();
+      for (const user of users) {
+        const email = String(user?.email || "").trim().toLowerCase();
+        const png = String(user?.avatarPng || "").replace(/\s+/g, "");
+        if (email.includes("@") && /^[A-Za-z0-9+/]+={0,2}$/.test(png)) avatars.set(email, `data:image/png;base64,${png}`);
+      }
+      crmPictures.users = avatars;
+      crmPictures.usersList = users;
+      crmPictures.usersEmails = users.some((user) => String(user?.email || "").includes("@"));
+      crmPictures.usersAt = Date.now();
+      return crmPictures.usersEmails ? users : null;
+    }, (error) => {
+      crmPictures.usersAt = Date.now();
+      throw error;
+    }).finally(() => { crmPictures.usersRead = null; });
+    return crmPictures.usersRead;
+  }
+
+  function crmRefreshForkMeshAvatars() {
+    if (!crmAdmin() || crmPictures.usersRead
+      || (crmPictures.usersAt && Date.now() - crmPictures.usersAt < CRM_FORKMESH_AVATARS_MS)) return;
+    void crmForkMeshUsers().then(() => { renderCrmContacts(); renderCrmUsersImport(); }, () => {});
   }
 
   function crmStageTone(contact) {
@@ -2334,13 +3133,17 @@ window.ForkMeshDashboard.registerPage("crm", ({
       credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
       signal: AbortSignal.timeout?.(CRM_UPDATE_TIMEOUT_MS),
     });
-    if (!response.ok) throw new Error(`the service answered ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(`the service answered ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
     return response.json();
   }
 
   // Two calls against the contact's own instance: the account lookup, which
   // also names the picture, then that account's newest original posts.
-  async function crmMastodonUpdates(account) {
+  async function crmMastodonUpdates(account, limit = CRM_UPDATE_LIMIT) {
     const at = account.key.lastIndexOf("@");
     const [user, host] = [account.key.slice(0, at), account.key.slice(at + 1)];
     const profile = await crmReadPublicJson(
@@ -2348,12 +3151,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (!profile?.id) throw new Error("the instance knows no such account");
     const statuses = await crmReadPublicJson(
       `https://${host}/api/v1/accounts/${encodeURIComponent(profile.id)}/statuses`
-      + `?limit=${CRM_UPDATE_LIMIT}&exclude_replies=true&exclude_reblogs=true`);
+      + `?limit=${limit}&exclude_replies=true&exclude_reblogs=true`);
     return {
       picture: crmPictureUrl(profile.avatar_static || profile.avatar),
       posts: (Array.isArray(statuses) ? statuses : []).map((status) => ({
         at: Date.parse(status?.created_at) || 0,
         text: crmPlainText(crmMastodonText(status?.content)) || "A post with no text",
+        html: String(status?.content || ""),
         url: crmHttpsUrl(status?.url || status?.uri),
       })),
     };
@@ -2718,7 +3522,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (column.field === "lastContactedAt") {
       if (crmActiveShared()) return crmLastContacted(contact);
       // The warmth dot stays beside the date it is read from.
-      return `<span class="flex items-center gap-1" title="${escapeHtml(crmFieldValue(contact, column.field))}">${crmWarmth(contact.lastContactedAt)}<input data-crm-contact-inline-id="${escapeHtml(contact.id)}" data-crm-contact-inline-field="lastContactedAt" aria-label="Last contacted" type="date" value="${escapeHtml(crmDateInputValue(contact.lastContactedAt))}" class="crm-cell" style="min-width:${width || column.width || "10rem"}" /></span>`;
+      return `<span class="flex items-center gap-1" title="${escapeHtml(crmFieldValue(contact, column.field))}">${crmWarmth(contact.lastContactedAt)}<input data-crm-contact-inline-id="${escapeHtml(contact.id)}" data-crm-contact-inline-field="lastContactedAt" aria-label="Last contacted" type="date" value="${escapeHtml(crmDateInputValue(contact.lastContactedAt))}" class="crm-cell" style="min-width:${width || column.width || "10rem"}" /><button type="button" data-crm-contacted-now="${escapeHtml(contact.id)}" title="Record now as the last time you were in touch" class="crm-tile">Now</button></span>`;
+    }
+    if (column.computed) return crmComputedCell(contact, column);
+    if (column.field === "email" && !column.readonly && !crmActiveShared() && crmMailTile(contact)) {
+      return `<span class="flex items-center gap-1">${crmInlineContactField(contact, column, width, line)}${crmMailTile(contact)}</span>`;
     }
     if (column.field === "stage" && crmActiveShared()) {
       return `<span class="crm-stage crm-tone-${crmStageTone(contact)}">${escapeHtml(titleCaseSlug(contact.stage))}</span>`;
@@ -2748,61 +3556,65 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function crmFilteredContacts() {
     const query = String($(`[data-crm-search]`)?.value || "").trim().toLowerCase();
-    const flow = String($(`[data-crm-flow]`)?.value || "");
+    const view = crmActiveView();
+    const flow = view?.flow ? "" : String($(`[data-crm-flow]`)?.value || "");
     const stage = String($(`[data-crm-stage]`)?.value || "");
     const owner = String($(`[data-crm-owner]`)?.value || "");
     const focus = String($(`[data-crm-focus]`)?.value || "");
-    const viewId = state.crmView.activeView;
-    const view = crmActiveView();
     const shared = state.crmView.activeShared;
     const source = shared
       ? (state.crmView.sharedCache[shared]?.contacts || []) : state.crmView.contacts;
+    const pipelines = crmPipelineIds();
     const matched = source.filter((contact) => {
-      if (viewId && !(view ? crmContactInView(contact, view)
-        : (contact.views || []).includes(viewId))) return false;
+      if (!shared && !(view && crmContactOnTab(contact, view, pipelines))) return false;
       if (flow && contact.flow !== flow) return false;
       if (stage && contact.stage !== stage) return false;
       if (owner && !crmOwnerMatches(contact, owner)) return false;
       if (focus && !crmFocusMatches(contact, focus)) return false;
-      if (!query) return true;
-      return [...CRM_SEARCH_FIELDS.map((field) => contact[field]),
-        ...Object.values(contact.fields || {}),
-        ...(contact.tags || [])].some((value) =>
-          String(value || "").toLowerCase().includes(query));
+      return crmContactMatchesQuery(contact, query);
     });
     if (focus === "duplicates") {
       const order = state.crmView.duplicates?.order || new Map();
-      return matched.sort((a, b) => order.get(a.id) - order.get(b.id));
-    }
-    if (focus === "my-queue" || focus === "waiting") {
-      return matched.sort((a, b) => Number(crmWaitingOnUs(b)) - Number(crmWaitingOnUs(a))
+      matched.sort((a, b) => order.get(a.id) - order.get(b.id));
+    } else if (focus === "my-queue" || focus === "waiting") {
+      matched.sort((a, b) => Number(crmWaitingOnUs(b)) - Number(crmWaitingOnUs(a))
         || Number(a.lastContactedAt || 0) - Number(b.lastContactedAt || 0));
     }
-    return matched;
+    return crmSortContacts(matched);
   }
 
   function renderCrmTabs() {
     const host = $(`[data-crm-tabs]`); if (!host) return;
     hideCrmShareCard();
+    const tabs = crmTabViews();
+    const pipelines = crmPipelineIds();
     const counts = new Map();
     for (const contact of state.crmView.contacts) {
-      for (const view of state.crmView.views) {
-        if (crmContactInView(contact, view)) {
+      for (const view of tabs) {
+        if (crmContactOnTab(contact, view, pipelines)) {
           counts.set(view.id, (counts.get(view.id) || 0) + 1);
         }
       }
     }
+    const tip = (view) => {
+      if (view.id === CRM_NO_PIPELINE_TAB) return "Contacts whose pipeline was deleted. Right-click them to move them into another one.";
+      if (!view.flow) return "Double-click to rename, drag to move, right-click for list options";
+      const kind = CRM_FLOW_ICONS.find((item) => item.id === crmFlow(view.flow).icon) || CRM_FLOW_ICONS[0];
+      return view.virtual
+        ? `${kind.label} pipeline: every contact in ${crmFlowName(view.flow)}. Double-click to rename, right-click for pipeline options`
+        : `${kind.label} pipeline: a list on ${crmFlowName(view.flow)}. Double-click to rename, drag to move, right-click for list options`;
+    };
     const tab = (id, label, count, view) => {
       const active = state.crmView.activeView === id;
-      const people = crmSheetShareNames(view);
+      const people = id === CRM_NO_PIPELINE_TAB ? [] : crmSheetShareNames(view);
       // Who the sheet reaches, as a count on the tab; the whole list is the
       // hover card, so the strip stays readable with many tabs.
       const share = people.length
         ? `<span data-crm-share="${escapeHtml(id)}" title="${escapeHtml(crmSheetShareLabel(view))}" style="font-size:10px" class="rounded-full border border-border px-1.5 font-normal text-muted-foreground">\u{1F465} ${people.length}</span>`
         : "";
-      return `<div${id ? ` data-crm-tab-drag="${escapeHtml(id)}" draggable="true" style="cursor:grab"` : ""} class="flex shrink-0 items-center rounded-md border-b-2 ${active ? "border-primary bg-secondary" : "border-transparent"}">
-        <button data-crm-tab="${escapeHtml(id)}" type="button" role="tab" aria-selected="${active}" title="${view?.flow ? `List on the ${escapeHtml(crmFlow(view.flow).name)} pipeline. Double-click to rename, drag to move, right-click for sheet options` : id ? "Double-click to rename, drag to move, right-click for sheet options" : "Every contact in the organization"}" class="flex items-center gap-1.5 whitespace-nowrap py-2 pl-3 pr-2 text-xs font-semibold ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}">${view?.flow ? crmFlowIcon(crmFlow(view.flow).icon) : ""}${escapeHtml(label)}${view?.flow ? `<span style="font-size:9px" class="rounded-full border border-border px-1.5 font-normal uppercase">Pipeline</span>` : ""}${view?.visibility === "private" ? `<span style="font-size:9px" class="rounded-full border border-border px-1.5 font-normal uppercase" title="${escapeHtml(crmSheetShareLabel(view))}">Private</span>` : ""}${share}<span class="rounded-full border border-border px-1.5 text-[10px] font-normal">${count}</span></button>
-        ${id ? `<button data-crm-tab-menu="${escapeHtml(id)}" type="button" aria-label="Options for ${escapeHtml(label)}" class="rounded px-2 py-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground">⋯</button>` : `<span class="pr-2"></span>`}
+      return `<div${view.virtual ? "" : ` data-crm-tab-drag="${escapeHtml(id)}" draggable="true" style="cursor:grab"`} class="flex shrink-0 items-center rounded-md border-b-2 ${active ? "border-primary bg-secondary" : "border-transparent"}">
+        <button data-crm-tab="${escapeHtml(id)}" type="button" role="tab" aria-selected="${active}" title="${escapeHtml(tip(view))}" class="flex items-center gap-1.5 whitespace-nowrap py-2 pl-3 pr-2 text-xs font-semibold ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}">${view.flow ? crmFlowIcon(crmFlow(view.flow).icon) : ""}${escapeHtml(label)}${view.flow ? `<span style="font-size:9px" class="rounded-full border border-border px-1.5 font-normal uppercase">Pipeline</span>` : ""}${view.visibility === "private" ? `<span style="font-size:9px" class="rounded-full border border-border px-1.5 font-normal uppercase" title="${escapeHtml(crmSheetShareLabel(view))}">Private</span>` : ""}${share}<span class="rounded-full border border-border px-1.5 text-[10px] font-normal">${count}</span></button>
+        <button data-crm-tab-menu="${escapeHtml(id)}" type="button" aria-label="Options for ${escapeHtml(label)}" class="rounded px-2 py-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground">⋯</button>
       </div>`;
     };
     const sharedTab = (view) => {
@@ -2815,11 +3627,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
       </div>`;
     };
     const shared = state.crmView.sharedViews;
-    host.innerHTML = (state.crmView.sharedOnly ? "" : tab("", "All contacts", state.crmView.contacts.length, null))
-      + state.crmView.views.map((view) =>
-        tab(view.id, view.name, counts.get(view.id) || 0, view)).join("")
+    host.innerHTML = tabs.map((view) =>
+      tab(view.id, view.name, counts.get(view.id) || 0, view)).join("")
       + (shared.length
-        ? `<span style="align-self:center" class="mb-2 ml-2 shrink-0 text-[10px] font-semibold uppercase text-muted-foreground" title="Sheets other ForkMesh users shared with you">Shared with me</span>`
+        ? `<span style="align-self:center" class="mb-2 ml-2 shrink-0 text-[10px] font-semibold uppercase text-muted-foreground" title="Lists other ForkMesh users shared with you">Shared with me</span>`
           + shared.map(sharedTab).join("")
         : "");
   }
@@ -2834,7 +3645,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const access = (cached?.view || view).canEdit ? "you can add contacts and move them along its stages" : "read-only";
     $(`[data-crm-shared-banner-text]`).textContent = cached
       ? `Shared by ${view.owner || view.organization} from ${view.organization} · ${access} · ${cached.contacts.length} ${cached.contacts.length === 1 ? "contact" : "contacts"} with the columns they chose to show.`
-      : `Loading the sheet ${view.organization} shared with you…`;
+      : `Loading the list ${view.organization} shared with you…`;
     const copy = $(`[data-crm-shared-copy]`);
     if (copy) {
       copy.classList.toggle("hidden", Boolean(state.crmView.sharedOnly));
@@ -2873,7 +3684,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function showCrmShareCard(badge) {
     const card = $(`[data-crm-share-card]`); if (!card) return;
-    const view = state.crmView.views.find((item) => item.id === badge.dataset.crmShare);
+    const view = crmTabView(badge.dataset.crmShare);
     const names = crmSheetShareNames(view);
     if (!names.length) { hideCrmShareCard(); return; }
     const picked = new Set(view.sharedWith || []);
@@ -2894,10 +3705,17 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function renderCrmContacts() {
     const list = $(`[data-crm-contact-list]`); if (!list) return;
+    crmSyncActiveTab();
     const columns = crmVisibleColumns();
     const contacts = crmFilteredContacts();
     const shared = Boolean(crmActiveShared());
+    const people = crmPeople.open && !shared;
+    const shownIds = new Set(contacts.map((contact) => contact.id));
+    crmSelection.shown = contacts.map((contact) => contact.id);
+    crmSelection.ids = new Set([...crmSelection.ids].filter((id) => !shared && shownIds.has(id)));
     renderCrmTabs();
+    renderCrmStageStrip();
+    const flowFilter = $(`[data-crm-flow]`); if (flowFilter) flowFilter.hidden = Boolean(crmActiveView()?.flow);
     renderCrmSharedBanner();
     renderCrmNextContact();
     const board = state.crmView.layout === "board";
@@ -2909,24 +3727,33 @@ window.ForkMeshDashboard.registerPage("crm", ({
     }
     $$(`[data-crm-layout-option]`).forEach((button) =>
       button.setAttribute("aria-pressed", String(button.dataset.crmLayoutOption === state.crmView.layout)));
-    for (const [selector, hidden] of [["[data-crm-board]", !board], ["[data-crm-table]", board], ["[data-crm-contact-cards]", board]]) {
+    const peopleButton = $(`[data-crm-people-toggle]`);
+    if (peopleButton) { peopleButton.setAttribute("aria-pressed", String(people)); peopleButton.disabled = shared; }
+    for (const [selector, hidden] of [["[data-crm-board]", !board || people], ["[data-crm-table]", board || people], ["[data-crm-contact-cards]", board || people], ["[data-crm-people]", !people]]) {
       const node = $(selector); if (node) node.hidden = hidden;
     }
-    if (board) renderCrmBoard(contacts);
+    const strip = $(`[data-crm-stage-strip]`); if (strip && people) strip.hidden = true;
+    if (people) renderCrmPeople();
+    if (board && !people) renderCrmBoard(contacts);
     else if ($(`[data-crm-board-note]`)) $(`[data-crm-board-note]`).hidden = true;
     const head = $(`[data-crm-contact-head]`);
     if (head) {
-      head.innerHTML = columns.map((column) => shared
-        ? `<th data-crm-column="${escapeHtml(column.field)}" class="whitespace-nowrap px-2 py-2 font-semibold">${escapeHtml(column.label)}</th>`
-        : `<th data-crm-column="${escapeHtml(column.field)}" draggable="true" title="Drag to move, or right-click to remove this column" style="cursor:grab" class="whitespace-nowrap px-2 py-2 font-semibold">${escapeHtml(column.label)}</th>`).join("")
-        + (shared ? "" : `<th class="whitespace-nowrap px-2 py-2 text-right font-semibold">Actions</th>`);
+      const sorted = (column) => crmSort.field === column.field
+        ? ` aria-sort="${crmSort.descending ? "descending" : "ascending"}"` : "";
+      const arrow = (column) => crmSort.field === column.field
+        ? `<span aria-hidden="true" class="ml-1">${crmSort.descending ? "\u25BC" : "\u25B2"}</span>` : "";
+      head.innerHTML = (shared ? "" : `<th class="w-8 px-2 py-2"><input type="checkbox" data-crm-select-all aria-label="Select every shown contact" /></th>`)
+        + columns.map((column) => shared
+        ? `<th data-crm-column="${escapeHtml(column.field)}"${sorted(column)} title="Click to sort" style="cursor:pointer" class="whitespace-nowrap px-2 py-2 font-semibold">${escapeHtml(column.label)}${arrow(column)}</th>`
+        : `<th data-crm-column="${escapeHtml(column.field)}"${sorted(column)} draggable="true" title="Click to sort, drag to move, or right-click to remove this column" style="cursor:grab" class="whitespace-nowrap px-2 py-2 font-semibold">${escapeHtml(column.label)}${arrow(column)}</th>`).join("")
+        + (shared ? "" : `<th class="whitespace-nowrap px-2 py-2 text-right font-semibold">Actions</th><th class="px-1 py-2"><button type="button" data-crm-add-column title="Add a column" aria-label="Add a column" class="crm-tile">+</button></th>`);
     }
     // The picture and the name both open the contact's detail card, where
     // every field is edited; a shared sheet is somebody else's read-only copy
     // of a few columns, so there is no record of ours behind it to open.
     const photo = (contact) => shared
       ? crmAvatar(contact)
-      : `<button type="button" data-crm-contact-detail="${escapeHtml(contact.id)}" title="Open the detail card" aria-label="Open ${escapeHtml(crmContactLabel(contact))}" class="crm-photo-button">${crmAvatar(contact)}</button>`;
+      : `<button type="button" data-crm-contact-detail="${escapeHtml(contact.id)}" title="Open the detail card" aria-label="Open ${escapeHtml(crmContactLabel(contact))}" class="crm-photo-button">${crmPicture(contact)}</button>`;
     const name = (contact, column) => shared
       ? crmContactControl(contact, column)
       : `<button type="button" data-crm-contact-detail="${escapeHtml(contact.id)}" title="${escapeHtml(crmContactLabel(contact))} · open the detail card" class="crm-name-open truncate">${escapeHtml(crmContactLabel(contact))}</button>`;
@@ -2937,10 +3764,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ? `<div class="flex items-start gap-2">${photo(contact)}<div class="min-w-0 flex-1">${name(contact, column)}${crmNameMeta(contact, columns)}</div></div>`
       : crmContactControl(contact, column);
     const actions = (contact, compact) => shared ? "" : compact
-      ? `<div class="mt-3 flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
-      : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td>`;
+      ? `<div class="mt-3 flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="rounded border border-border px-2 py-1 text-xs text-foreground">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" class="rounded border border-destructive px-2 py-1 text-xs text-destructive">Delete</button></div>`
+      : `<td class="px-3 py-2 align-top"><div class="crm-row-actions flex justify-end gap-1"><button data-crm-contact-deck="${escapeHtml(contact.id)}" title="Share the investor deck with a private, tracked link" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Deck</button><button data-crm-contact-compose="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Email</button><button data-crm-contact-prompt="${escapeHtml(contact.id)}" title="Copy a prompt for an assistant to write them a toot about ForkMesh" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Copy prompt</button><button data-crm-contact-edit="${escapeHtml(contact.id)}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-background">Edit</button><button data-crm-contact-delete-row="${escapeHtml(contact.id)}" aria-label="Delete ${escapeHtml(contact.name || contact.email || "contact")}" class="whitespace-nowrap rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-background">Delete</button></div></td><td></td>`;
     list.innerHTML = contacts.map((contact) => `
       <tr data-crm-contact-row="${escapeHtml(contact.id)}" class="crm-row">
+        ${shared ? "" : `<td class="px-2 py-2 align-top"><input type="checkbox" data-crm-select="${escapeHtml(contact.id)}" aria-label="Select ${escapeHtml(crmContactLabel(contact))}" class="mt-1.5" /></td>`}
         ${columns.map((column) => `<td class="px-3 py-2 align-top">${cell(contact, column)}</td>`).join("")}
         ${actions(contact, false)}
       </tr>`).join("");
@@ -2958,7 +3786,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
         </div>
         ${actions(contact, true)}
       </article>`).join("");
-    $(`[data-crm-contact-empty]`)?.classList.toggle("hidden", contacts.length > 0);
+    $(`[data-crm-contact-empty]`)?.classList.toggle("hidden", contacts.length > 0 || people);
+    crmPaintSelection();
+    crmWatchPictures();
     const empty = $(`[data-crm-contact-empty]`);
     if (empty) empty.textContent = shared && !state.crmView.sharedCache[state.crmView.activeShared]
       ? "Loading the shared sheet…" : "No contacts match this view.";
@@ -2983,6 +3813,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function setCrmLayout(layout) {
     state.crmView.layout = layout === "board" ? "board" : "table";
+    crmPeople.open = false;
     try { localStorage.setItem(crmLayoutKey(), state.crmView.layout); }
     catch { /* the layout still applies for this visit */ }
     renderCrmContacts();
@@ -3023,7 +3854,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const card = (contact) => {
       const owner = contact.owner ? `<span title="Owner: ${escapeHtml(contact.owner)}" class="truncate">${escapeHtml(contact.owner)}</span>` : "";
       return `<article data-crm-contact-detail="${escapeHtml(contact.id)}" data-crm-board-card="${escapeHtml(contact.id)}" role="button" tabindex="0" aria-label="Open ${escapeHtml(contact.name || contact.email || "contact")}"${shared ? "" : ' draggable="true"'} class="crm-board-card">
-        <div class="flex min-w-0 items-center gap-2">${crmAvatar(contact)}<div class="min-w-0"><p class="truncate text-xs font-semibold text-foreground">${escapeHtml(contact.name || contact.email || "Unnamed contact")}</p><p class="truncate text-xs text-muted-foreground">${escapeHtml(contact.company || contact.email || "")}</p></div></div>
+        <div class="flex min-w-0 items-center gap-2">${crmPicture(contact)}<div class="min-w-0"><p class="truncate text-xs font-semibold text-foreground">${escapeHtml(contact.name || contact.email || "Unnamed contact")}</p><p class="truncate text-xs text-muted-foreground">${escapeHtml(contact.company || contact.email || "")}</p></div></div>
         <div class="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span class="flex items-center">${crmWarmth(contact.lastContactedAt)}${crmShortAge(contact.lastContactedAt)}</span>${owner}</div>
         ${crmQuietTag(contact)}
       </article>`;
@@ -3138,6 +3969,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     renderCrmSections(); renderCrmFlowFilters(); renderCrmContacts(); renderCrmEmails(); renderCrmMail(); renderCrmOutreach();
     renderCrmTeam(); renderCrmMailLinks(); crmNoteListViewed();
     $(`[data-crm-account-evidence]`)?.classList.toggle("hidden", !state.crmView.canManageSettings);
+    renderCrmUsersImport();
+    if ($(`[data-crm-lists-dialog]`)?.open) renderCrmListsOverview();
     const pipelineButton = $(`[data-crm-pipeline-new]`);
     if (pipelineButton) {
       pipelineButton.disabled = !state.crmView.canManageSettings;
@@ -3502,7 +4335,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // A contact typed while a sheet is open would otherwise land outside the
     // tab that is on screen, looking like the save was lost.
     const sheet = crmActiveView();
-    if (sheet && !id) body.views = [sheet.id];
+    if (sheet && !sheet.virtual && !sheet.flow && !id) body.views = [sheet.id];
     const sharedView = crmActiveShared();
     if (sharedView?.canEdit && !id) {
       try {
@@ -3694,8 +4527,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-settings-url]`).value = settings.providerUrlTemplate || "";
     $(`[data-crm-settings-from-name]`).value = settings.fromName || "";
     $(`[data-crm-settings-from-email]`).value = settings.fromEmail || "";
+    $(`[data-crm-settings-mail-provider]`).value = settings.mailProvider === "gmail" ? "gmail" : "zoho";
     $(`[data-crm-settings-mail-boxes]`).value = (settings.mailBoxes || []).join(", ");
-    renderCrmFlowEditors(settings.flows || []);
     const zoho = settings.zoho || {};
     $(`[data-crm-zoho-region]`).value = zoho.region || "com";
     $(`[data-crm-zoho-account]`).value = zoho.accountId || "";
@@ -3720,30 +4553,252 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-settings-dialog]`).showModal();
   }
 
-  function renderCrmFlowEditors(flows) {
-    const host = $(`[data-crm-flow-editors]`); if (!host) return;
-    host.innerHTML = flows.map((flow) => `<div data-crm-flow-editor="${escapeHtml(flow.id)}" class="grid gap-2 rounded-md border border-border bg-secondary p-3 sm:grid-cols-[minmax(0,12rem)_1fr_auto]">
-      <div class="grid gap-2"><label class="grid gap-1 text-xs text-muted-foreground">Flow name<input data-crm-flow-name maxlength="80" value="${escapeHtml(flow.name)}" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
-      <label class="grid gap-1 text-xs text-muted-foreground">Type<select data-crm-flow-icon class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">${crmFlowIconOptions(flow.icon || "pipeline")}</select></label></div>
-      <label class="grid gap-1 text-xs text-muted-foreground">Ordered stages<textarea data-crm-flow-stages rows="2" maxlength="1200" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground">${escapeHtml((flow.stages || []).join("\n"))}</textarea></label>
-      <button data-crm-flow-remove type="button" class="self-end rounded-md border border-destructive px-2 py-2 text-xs text-destructive">Remove</button>
-    </div>`).join("");
+  function crmFlowSlug(label) {
+    let base = String(label || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (!/^[a-z]/.test(base)) base = `pipeline-${base}`.replace(/-+$/, "");
+    return base.slice(0, 34).replace(/-+$/, "");
   }
 
-  function readCrmFlows() {
-    return $$(`[data-crm-flow-editor]`).map((row) => ({
-      id: row.dataset.crmFlowEditor,
-      name: row.querySelector(`[data-crm-flow-name]`).value,
-      icon: row.querySelector(`[data-crm-flow-icon]`).value,
-      stages: row.querySelector(`[data-crm-flow-stages]`).value.split(/[\n,]+/).map((stage) => stage.trim()).filter(Boolean),
+  function crmStageSlug(label) {
+    return String(label || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  }
+
+  function crmPipelineEditState() {
+    let next = 0;
+    const key = () => `draft-${(next += 1)}`;
+    const drafts = crmFlows().map((flow) => ({
+      key: key(), id: flow.id, name: flow.name || flow.id, icon: flow.icon || "pipeline",
+      stages: (flow.stages || []).map((stage) => ({ original: stage, label: crmStageLabel(stage) })),
     }));
+    const lists = state.crmView.views.map((view) => {
+      const bound = drafts.find((draft) => draft.id && draft.id === view.flow)?.key || "";
+      return { id: view.id, name: view.name, owner: view.owner || "", key: bound, initialKey: bound };
+    });
+    return { drafts, lists, shown: drafts.length ? 0 : -1, page: "pipelines", key };
   }
 
-  function addCrmFlowEditor() {
-    const flows = readCrmFlows();
-    const id = `flow-${Date.now().toString(36)}`;
-    flows.push({ id, name: "New flow", icon: "pipeline", stages: ["new", "in-progress", "complete"] });
-    renderCrmFlowEditors(flows);
+  function crmPipelineFlowContacts(flowId) {
+    return flowId ? state.crmView.contacts.filter((contact) => contact.flow === flowId).length : 0;
+  }
+
+  function crmPipelinePlan(edit, contacts) {
+    const taken = edit.drafts.filter((draft) => draft.id && String(draft.name || "").trim()).map((draft) => draft.id);
+    const flows = [];
+    const idByKey = new Map();
+    const renamed = new Map();
+    for (const draft of edit.drafts) {
+      const label = String(draft.name || "").trim().slice(0, 60);
+      if (!label) continue;
+      let id = draft.id;
+      if (!id) {
+        const base = crmFlowSlug(label);
+        id = base;
+        for (let suffix = 2; taken.includes(id); suffix += 1) id = `${base}-${suffix}`;
+        taken.push(id);
+      }
+      idByKey.set(draft.key, id);
+      const slugs = [];
+      const renames = new Map();
+      for (const stage of draft.stages) {
+        const slug = crmStageSlug(stage.label);
+        if (!CRM_STAGE_SHAPE.test(slug) || slugs.includes(slug)) continue;
+        slugs.push(slug);
+        if (draft.id && stage.original && stage.original !== slug) renames.set(stage.original, slug);
+      }
+      if (!slugs.length) slugs.push("lead");
+      for (const from of [...renames.keys()]) if (slugs.includes(from)) renames.delete(from);
+      if (renames.size) renamed.set(id, renames);
+      flows.push({ id, name: label, icon: draft.icon || "pipeline", stages: slugs });
+    }
+    if (!flows.length) return { error: "Keep at least one pipeline, with a name." };
+    const stageEdits = [];
+    for (const contact of contacts) {
+      const to = renamed.get(String(contact.flow || ""))?.get(String(contact.stage || ""));
+      if (to) stageEdits.push({ id: contact.id, stage: to });
+    }
+    const bindings = edit.lists
+      .filter((list) => list.key !== list.initialKey && (!list.key || idByKey.has(list.key)))
+      .map((list) => ({ id: list.id, flow: list.key ? idByKey.get(list.key) : "" }));
+    return { flows, stageEdits, bindings };
+  }
+
+  function crmRemovePipelineDraft(edit, at) {
+    const draft = edit.drafts[at];
+    if (!draft) return;
+    edit.drafts.splice(at, 1);
+    for (const list of edit.lists) if (list.key === draft.key) list.key = "";
+    edit.shown = edit.drafts.length ? Math.min(at, edit.drafts.length - 1) : -1;
+  }
+
+  function crmPipelineBoundNames(edit, key) {
+    return edit.lists.filter((list) => list.key === key).map((list) => list.name);
+  }
+
+  function renderCrmPipelinesDialog() {
+    const edit = state.crmView.pipelineEdit;
+    const body = $(`[data-crm-pipelines-body]`);
+    if (!edit || !body) return;
+    $$(`[data-crm-pipelines-page]`).forEach((button) =>
+      button.setAttribute("aria-selected", String(button.dataset.crmPipelinesPage === edit.page)));
+    const input = "rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground";
+    const small = "rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-secondary disabled:opacity-40";
+    if (edit.page === "lists") {
+      const options = (selected) => `<option value=""${selected ? "" : " selected"}>No pipeline (plain list)</option>`
+        + edit.drafts.map((draft) => `<option value="${escapeHtml(draft.key)}"${draft.key === selected ? " selected" : ""}>${escapeHtml(draft.name || "(unnamed)")}</option>`).join("");
+      body.innerHTML = `<p class="mb-3 text-xs text-muted-foreground">Pick the pipeline each list shows. A list bound to a pipeline shows every contact in it; a plain list shows only the contacts added to it.${edit.lists.length ? "" : " The organization has no lists yet; each pipeline gets its own tab."}</p>
+        ${edit.lists.length ? `<table class="w-full text-left text-xs"><thead class="text-muted-foreground"><tr><th class="px-2 py-1">List</th><th class="px-2 py-1">Owner</th><th class="px-2 py-1">Pipeline</th></tr></thead><tbody>${edit.lists.map((list, index) => `<tr class="border-t border-border"><td class="px-2 py-1.5 font-medium">${escapeHtml(list.name)}</td><td class="px-2 py-1.5 text-muted-foreground">${escapeHtml(list.owner)}</td><td class="px-2 py-1.5"><select data-crm-pipeline-list="${index}" aria-label="Pipeline for ${escapeHtml(list.name)}" class="${input}">${options(list.key)}</select></td></tr>`).join("")}</tbody></table>` : ""}`;
+      return;
+    }
+    const draft = edit.drafts[edit.shown] || null;
+    const people = draft ? crmPipelineFlowContacts(draft.id) : 0;
+    const bound = draft ? crmPipelineBoundNames(edit, draft.key) : [];
+    const peopleLabel = people === 1 ? "1 contact" : `${people} contacts`;
+    body.innerHTML = `<div class="crm-pipelines-grid">
+      <div class="grid content-start gap-2">
+        <div class="grid gap-1">${edit.drafts.map((item, index) => `<button type="button" data-crm-pipeline-pick="${index}" aria-pressed="${index === edit.shown}" class="flex items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs ${index === edit.shown ? "border-primary bg-secondary text-foreground" : "border-border text-muted-foreground hover:text-foreground"}">${crmFlowIcon(item.icon)}<span data-crm-pipeline-pick-name class="truncate">${escapeHtml(item.name || "(unnamed)")}</span></button>`).join("")}</div>
+        <div class="flex flex-wrap gap-1"><button type="button" data-crm-pipeline-act="add" class="${small}">Add</button><button type="button" data-crm-pipeline-act="up" class="${small}"${edit.shown > 0 ? "" : " disabled"}>Up</button><button type="button" data-crm-pipeline-act="down" class="${small}"${edit.shown >= 0 && edit.shown < edit.drafts.length - 1 ? "" : " disabled"}>Down</button><button type="button" data-crm-pipeline-act="remove" class="${small} text-destructive"${draft ? "" : " disabled"}>Remove</button></div>
+      </div>
+      ${draft ? `<div class="grid content-start gap-3">
+        <label class="grid gap-1 text-xs text-muted-foreground">Name<input data-crm-pipeline-draft-name maxlength="60" value="${escapeHtml(draft.name)}" class="${input}" /></label>
+        <label class="grid gap-1 text-xs text-muted-foreground">Type<select data-crm-pipeline-draft-icon class="${input}">${crmFlowIconOptions(draft.icon)}</select></label>
+        <div class="grid gap-1 text-xs text-muted-foreground">Stages
+          <div data-crm-pipeline-stages class="grid gap-1">${draft.stages.map((stage, index) => `<div data-crm-stage-row="${index}" class="flex items-center gap-1"><input data-crm-stage-label="${index}" maxlength="60" value="${escapeHtml(stage.label)}" aria-label="Stage ${index + 1}" class="${input} min-w-0 flex-1 py-1" /><button type="button" data-crm-stage-act="up" class="${small}"${index ? "" : " disabled"} aria-label="Move up">↑</button><button type="button" data-crm-stage-act="down" class="${small}"${index < draft.stages.length - 1 ? "" : " disabled"} aria-label="Move down">↓</button><button type="button" data-crm-stage-act="remove" class="${small} text-destructive">Remove</button></div>`).join("")}</div>
+          <button type="button" data-crm-stage-act="add" class="${small} w-fit">Add stage</button>
+          <span>In order, first to last. Rename a stage in place or move it with the arrows; contacts at a renamed stage move with it.</span>
+        </div>
+        <p class="text-xs text-muted-foreground"><span class="font-semibold">Lists</span> · ${escapeHtml(bound.length
+          ? `${peopleLabel} · shown on ${bound.join(", ")}`
+          : `${peopleLabel} · no list is bound to it, so it has a tab of its own. Bind lists on the Lists page.`)}</p>
+      </div>` : `<p class="text-xs text-muted-foreground">No pipeline is picked.</p>`}
+    </div>`;
+  }
+
+  function openCrmPipelineSettings(focusFlow = "") {
+    const dialog = $(`[data-crm-pipelines-dialog]`); if (!dialog) return;
+    closeCrmMenu();
+    if (!state.crmView.canManageSettings) {
+      crmMessage("error", "Only organization owners and admins can edit pipelines.");
+      return;
+    }
+    const edit = crmPipelineEditState();
+    const focus = edit.drafts.findIndex((draft) => focusFlow && draft.id === focusFlow);
+    if (focus >= 0) edit.shown = focus;
+    state.crmView.pipelineEdit = edit;
+    renderCrmPipelinesDialog();
+    if (!dialog.open) dialog.showModal();
+    if (focus >= 0) $(`[data-crm-stage-label]`)?.focus();
+  }
+
+  function handleCrmPipelinesClick(event) {
+    const edit = state.crmView.pipelineEdit; if (!edit) return;
+    const page = event.target.closest("[data-crm-pipelines-page]");
+    if (page) { edit.page = page.dataset.crmPipelinesPage === "lists" ? "lists" : "pipelines"; renderCrmPipelinesDialog(); return; }
+    const pick = event.target.closest("[data-crm-pipeline-pick]");
+    if (pick) { edit.shown = Number(pick.dataset.crmPipelinePick); renderCrmPipelinesDialog(); return; }
+    const act = event.target.closest("[data-crm-pipeline-act]")?.dataset.crmPipelineAct;
+    const draft = edit.drafts[edit.shown];
+    if (act === "add") {
+      if (edit.drafts.length >= CRM_MAX_FLOWS) { alert(`An organization can have ${CRM_MAX_FLOWS} pipelines. Remove one first.`); return; }
+      edit.drafts.push({ key: edit.key(), id: "", name: "New pipeline", icon: "pipeline",
+        stages: ["New", "In progress", "Complete"].map((label) => ({ original: "", label })) });
+      edit.shown = edit.drafts.length - 1;
+      renderCrmPipelinesDialog();
+      $(`[data-crm-pipeline-draft-name]`)?.select();
+      return;
+    }
+    if ((act === "up" || act === "down") && draft) {
+      const to = edit.shown + (act === "up" ? -1 : 1);
+      if (to < 0 || to >= edit.drafts.length) return;
+      [edit.drafts[edit.shown], edit.drafts[to]] = [edit.drafts[to], edit.drafts[edit.shown]];
+      edit.shown = to;
+      renderCrmPipelinesDialog();
+      return;
+    }
+    if (act === "remove" && draft) {
+      if (edit.drafts.length === 1) { alert("An organization keeps at least one pipeline. Add another first."); return; }
+      const contacts = crmPipelineFlowContacts(draft.id);
+      const bound = crmPipelineBoundNames(edit, draft.key).length;
+      if ((contacts > 0 || bound > 0) && !confirm(`${contacts} contacts are in “${draft.name}” and ${bound} lists show it. Removing it leaves those contacts in the organization without a pipeline, and the lists become plain lists. Remove it?`)) return;
+      crmRemovePipelineDraft(edit, edit.shown);
+      renderCrmPipelinesDialog();
+      return;
+    }
+    const stageAct = event.target.closest("[data-crm-stage-act]")?.dataset.crmStageAct;
+    if (!stageAct || !draft) return;
+    if (stageAct === "add") {
+      draft.stages.push({ original: "", label: "New stage" });
+      renderCrmPipelinesDialog();
+      const inputs = $$(`[data-crm-stage-label]`);
+      inputs[inputs.length - 1]?.select();
+      return;
+    }
+    const at = Number(event.target.closest("[data-crm-stage-row]")?.dataset.crmStageRow);
+    const stage = draft.stages[at];
+    if (!stage) return;
+    if (stageAct === "remove") {
+      const contacts = draft.id && stage.original
+        ? state.crmView.contacts.filter((contact) => contact.flow === draft.id && contact.stage === stage.original).length : 0;
+      if (contacts > 0 && !confirm(`${contacts} contacts are at “${stage.label}”. They keep that stage until they are moved to another one. Remove it?`)) return;
+      draft.stages.splice(at, 1);
+    } else {
+      const to = at + (stageAct === "up" ? -1 : 1);
+      if (to < 0 || to >= draft.stages.length) return;
+      [draft.stages[at], draft.stages[to]] = [draft.stages[to], draft.stages[at]];
+    }
+    renderCrmPipelinesDialog();
+  }
+
+  function handleCrmPipelinesInput(event) {
+    const edit = state.crmView.pipelineEdit; if (!edit) return;
+    const draft = edit.drafts[edit.shown];
+    if (event.target.matches("[data-crm-pipeline-list]")) {
+      const list = edit.lists[Number(event.target.dataset.crmPipelineList)];
+      if (list) list.key = event.target.value;
+      return;
+    }
+    if (!draft) return;
+    if (event.target.matches("[data-crm-pipeline-draft-name]")) {
+      draft.name = event.target.value.trim();
+      const label = $(`[data-crm-pipeline-pick="${edit.shown}"] [data-crm-pipeline-pick-name]`);
+      if (label) label.textContent = draft.name || "(unnamed)";
+    } else if (event.target.matches("[data-crm-pipeline-draft-icon]")) {
+      draft.icon = event.target.value;
+      if (event.type === "change") renderCrmPipelinesDialog();
+    } else if (event.target.matches("[data-crm-stage-label]")) {
+      const stage = draft.stages[Number(event.target.dataset.crmStageLabel)];
+      if (stage) stage.label = event.target.value.trim();
+    }
+  }
+
+  async function saveCrmPipelines(event) {
+    event.preventDefault();
+    const edit = state.crmView.pipelineEdit; if (!edit) return;
+    const plan = crmPipelinePlan(edit, state.crmView.contacts);
+    if (plan.error) { crmMessage("error", plan.error); return; }
+    $(`[data-crm-pipelines-dialog]`)?.close();
+    crmMessage("notice", "Saving pipelines…");
+    try {
+      await crmRequest(crmOrganizationPath("/settings"), "PUT", { flows: plan.flows });
+    } catch (error) {
+      crmMessage("error", `Pipelines were not saved: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    let failure = "";
+    if (plan.stageEdits.length) {
+      try { await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits: plan.stageEdits }); }
+      catch (error) { failure = `the contacts at renamed stages were not moved: ${error.message}`; }
+    }
+    for (const binding of plan.bindings) {
+      try { await crmRequest(crmOrganizationPath(`/views/${binding.id}`), "PATCH", { flow: binding.flow }); }
+      catch (error) { failure = failure || `a list's pipeline was not changed: ${error.message}`; }
+    }
+    await loadCrm();
+    if (failure) { crmMessage("error", `Pipelines were saved, but ${failure}`); return; }
+    const parts = [plan.flows.length === 1 ? "1 pipeline saved" : `${plan.flows.length} pipelines saved`];
+    if (plan.stageEdits.length) parts.push(`${plan.stageEdits.length} contacts moved to renamed stages`);
+    if (plan.bindings.length) parts.push(`${plan.bindings.length} lists given a new pipeline`);
+    crmMessage("notice", `${parts.join("; ")}.`);
   }
 
   function openCrmPipelineDialog() {
@@ -3766,10 +4821,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       crmMessage("error", `An organization can have ${CRM_MAX_FLOWS} pipelines. Remove one in CRM settings first.`);
       return;
     }
-    // Same shape the Worker keeps: a lowercase slug starting with a letter.
-    let base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    if (!/^[a-z]/.test(base)) base = `pipeline-${base}`.replace(/-+$/, "");
-    base = base.slice(0, 34).replace(/-+$/, "");
+    const base = crmFlowSlug(name);
     const taken = new Set(flows.map((flow) => flow.id));
     let id = base;
     for (let suffix = 2; taken.has(id); suffix += 1) id = `${base}-${suffix}`;
@@ -3793,7 +4845,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         providerUrlTemplate: $(`[data-crm-settings-url]`).value,
         fromName: $(`[data-crm-settings-from-name]`).value,
         fromEmail: $(`[data-crm-settings-from-email]`).value,
-        flows: readCrmFlows(),
+        mailProvider: $(`[data-crm-settings-mail-provider]`).value,
         mailBoxes: $(`[data-crm-settings-mail-boxes]`).value.split(",").map((box) => box.trim()).filter(Boolean),
       };
       const zoho = {
@@ -4157,8 +5209,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const page = await crmMastodonFetch(url);
       const accounts = Array.isArray(page.json) ? page.json : [];
       for (const account of accounts) {
-        const key = String(account?.id || account?.acct || "");
-        if (!key || seen.has(key) || rows.length >= CRM_MASTODON_MAX) continue;
+        const acct = String(account?.acct || "").trim();
+        const key = `${String(account?.id || "").trim()}${acct}`;
+        if (!acct || seen.has(key) || rows.length >= CRM_MASTODON_MAX) continue;
         seen.add(key);
         rows.push(crmMastodonFollowerRow(account, host));
       }
@@ -4172,7 +5225,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     event.preventDefault();
     if (crmMastodonBusy) return;
     const input = $(`[data-crm-mastodon-handle]`);
-    const account = crmMastodonAccount(input?.value);
+    const typed = crmMastodonAccount(input?.value);
+    const account = typed && { user: typed.user.toLowerCase(), host: typed.host };
     if (!account) { crmMastodonStatus("Enter a handle like @name@mastodon.social or a profile link.", true); return; }
     const submit = $(`[data-crm-mastodon-submit]`);
     crmMastodonBusy = true;
@@ -4187,13 +5241,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
         return;
       }
       $(`[data-crm-mastodon-dialog]`)?.close();
-      if (rows.length >= CRM_MASTODON_MAX && total > rows.length) {
-        crmMessage("notice", `Only the ${CRM_MASTODON_MAX} most recent of ${handle}'s ${total} followers can be imported at once.`);
-      }
       const csv = ["Name,Mastodon,Notes", ...rows].join("\r\n") + "\r\n";
       const file = new File([csv], `mastodon-followers-${account.user}@${account.host}.csv`, { type: "text/csv" });
       crmImportTarget = crmMastodonTarget;
       await previewCrmCsv(file, `Followers of ${handle}`.slice(0, 60));
+      if (rows.length >= CRM_MASTODON_MAX && total > rows.length) {
+        crmMessage("notice", `Importing the ${CRM_MASTODON_MAX} most recent of ${handle}'s ${total} followers; one import takes at most ${CRM_MASTODON_MAX}.`);
+      }
     } catch (error) {
       crmMastodonStatus(`Could not read the followers of ${handle}: ${error.message}.`, true);
     } finally {
@@ -4266,6 +5320,842 @@ window.ForkMeshDashboard.registerPage("crm", ({
     } catch (error) { crmMessage("error", `CSV export failed: ${error.message}`); }
   }
 
+  const crmSelection = { ids: new Set(), anchor: "", shown: [] };
+  const crmSort = { field: "", descending: false };
+  const crmSessionColumns = { organization: "", labels: new Map() };
+  const crmPeople = { open: false, sort: "recent", timer: 0 };
+  const CRM_MASTODON_FRESH_MS = 15 * 60 * 1000;
+  const CRM_MASTODON_IN_FLIGHT = 4;
+  const crmMastodonLatest = { latest: new Map(), pending: new Set(), queue: [] };
+  const CRM_NUMERIC_SORT = new Set(["lastContactedAt", "value", "linked-emails", "linked-toots", "mastodon-latest"]);
+
+  function crmSessionColumnKeys() {
+    return crmSessionColumns.organization === state.crmView.organization
+      ? [...crmSessionColumns.labels.keys()] : [];
+  }
+
+  function crmTimestamp(ms) {
+    const value = Number(ms) || 0;
+    if (value <= 0) return "—";
+    const date = new Date(value);
+    const pad = (number) => String(number).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function crmSentAt(email) {
+    const sent = Number(email?.sentAt) || 0;
+    return sent > 0 ? sent : Number(email?.createdAt) || 0;
+  }
+
+  function crmLinkedMessages(contactId, toots) {
+    return crmLinkedEmails(contactId)
+      .filter((email) => (email.provider === "mastodon") === Boolean(toots))
+      .sort((a, b) => crmSentAt(b) - crmSentAt(a));
+  }
+
+  function crmLinkedLine(email) {
+    const subject = String(email?.subject || "").trim();
+    return `${email?.direction === "inbound" ? "↙" : "↗"} ${subject || "(no subject)"} · ${crmTimestamp(crmSentAt(email))}`;
+  }
+
+  function crmLinkedCellText(contactId, toots) {
+    const messages = crmLinkedMessages(contactId, toots);
+    if (!messages.length) return "";
+    return crmLinkedLine(messages[0]) + (messages.length > 1 ? `  (+${messages.length - 1} more)` : "");
+  }
+
+  function crmMailTile(contact) {
+    const email = String(contact.email || "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "";
+    const provider = crmMailProvider() === "gmail" ? "Gmail" : "Zoho Mail";
+    return `<a href="${escapeHtml(crmMailComposeUrl(email))}" target="_blank" rel="noopener noreferrer" class="crm-tile" title="Write to ${escapeHtml(email)} in ${provider}" aria-label="Write to ${escapeHtml(email)} in ${provider}">&#9993;</a>`;
+  }
+
+  function crmComputedCell(contact, column) {
+    if (column.field === "mastodon-latest") return crmMastodonLatestCell(crmMastodonKey(contact.mastodon).toLowerCase());
+    const toots = column.field === "linked-toots";
+    const messages = crmLinkedMessages(contact.id, toots);
+    if (!messages.length) return `<span class="block text-xs text-muted-foreground" style="min-width:${column.width}"></span>`;
+    const linked = Boolean(crmHttpsUrl(messages[0].providerUrl));
+    const title = `${messages.map(crmLinkedLine).join("\n")}\n\n${toots ? "Click to open it on Mastodon." : "Click to open it in the mailbox."}`;
+    return `<button type="button" data-crm-linked="${toots ? "toots" : "emails"}" data-crm-linked-id="${escapeHtml(contact.id)}" title="${escapeHtml(title)}" class="block truncate whitespace-nowrap text-left text-xs ${linked ? "crm-link underline" : "text-foreground"}" style="max-width:${column.width};color:${linked ? "var(--dashboard-link)" : "inherit"}">${escapeHtml(crmLinkedCellText(contact.id, toots))}</button>`;
+  }
+
+  function openCrmLinked(event, contactId, toots) {
+    const messages = crmLinkedMessages(contactId, toots);
+    if (!messages.length) return;
+    const noun = toots ? "toot" : "email";
+    const open = (email) => {
+      const url = crmHttpsUrl(email.providerUrl);
+      if (!url) { crmMessage("error", `This ${noun} has no valid HTTPS provider link.`); return; }
+      window.open(url, "_blank", "noopener,noreferrer");
+    };
+    if (messages.length === 1) { open(messages[0]); return; }
+    openCrmMenu(event, [
+      { heading: `${messages.length} linked ${noun}s` },
+      ...messages.map((email) => ({
+        label: crmLinkedLine(email), disabled: !crmHttpsUrl(email.providerUrl), run: () => open(email),
+      })),
+    ]);
+  }
+
+  function crmMastodonLatestCell(key) {
+    if (!key) {
+      return `<span class="block whitespace-nowrap text-xs text-muted-foreground" title="Add a Mastodon handle with its instance (@name@instance) to follow the contact's newest post.">—</span>`;
+    }
+    const latest = crmMastodonLatest.latest.get(key);
+    const running = crmMastodonLatest.pending.has(key) || crmMastodonLatest.queue.includes(key);
+    let text = ""; let title = ""; let url = "";
+    if (!latest) {
+      text = running ? `Looking up @${key}…` : "Not read yet";
+      title = running ? "" : `@${key} has not been read. Use the refresh button on this row to check it now.`;
+    } else if (latest.error) {
+      text = "—"; title = `@${key} could not be read: ${latest.error}`;
+    } else if (latest.postedAt <= 0) {
+      text = "No public posts"; title = `@${key} has no public posts.`;
+    } else {
+      text = `${crmTimestamp(latest.postedAt)} · ${latest.excerpt}`;
+      url = latest.url;
+      title = `${crmTimestamp(latest.postedAt)}\n${latest.detail}${url ? `\n\nClick to open ${url}` : ""}`;
+    }
+    const body = url
+      ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}" class="crm-link block min-w-0 flex-1 truncate whitespace-nowrap text-xs">${escapeHtml(text)}</a>`
+      : `<span title="${escapeHtml(title)}" class="block min-w-0 flex-1 truncate whitespace-nowrap text-xs text-muted-foreground">${escapeHtml(text)}</span>`;
+    return `<span data-crm-mastodon-cell="${escapeHtml(key)}" class="flex items-center gap-1" style="width:20rem">${body}<button type="button" data-crm-mastodon-refresh="${escapeHtml(key)}" title="Check @${escapeHtml(key)} for a newer post now" aria-label="Check @${escapeHtml(key)} for a newer post now"${running ? " disabled" : ""} class="crm-tile">&#8635;</button></span>`;
+  }
+
+  function crmRepaintMastodonLatest(key) {
+    for (const cell of $$(`[data-crm-mastodon-cell]`)) {
+      if (cell.dataset.crmMastodonCell === key) cell.outerHTML = crmMastodonLatestCell(key);
+    }
+  }
+
+  function refreshCrmMastodonNow(key) {
+    if (!key || crmMastodonLatest.pending.has(key) || crmMastodonLatest.queue.includes(key)) return;
+    const latest = crmMastodonLatest.latest.get(key);
+    if (latest) latest.fetchedAt = 0;
+    crmMastodonLatest.queue.push(key);
+    crmPumpMastodonLatest();
+    crmRepaintMastodonLatest(key);
+  }
+
+  function crmPumpMastodonLatest() {
+    const now = Date.now();
+    while (crmMastodonLatest.queue.length && crmMastodonLatest.pending.size < CRM_MASTODON_IN_FLIGHT) {
+      const key = crmMastodonLatest.queue.shift();
+      if (!key || crmMastodonLatest.pending.has(key)) continue;
+      const cached = crmMastodonLatest.latest.get(key);
+      if (cached && now - cached.fetchedAt < CRM_MASTODON_FRESH_MS) continue;
+      void readCrmMastodonLatest(key);
+    }
+  }
+
+  async function readCrmMastodonLatest(key) {
+    crmMastodonLatest.pending.add(key);
+    const latest = { fetchedAt: 0, postedAt: 0, excerpt: "", detail: "", url: "", error: "" };
+    try {
+      const post = ((await crmMastodonUpdates({ key }, 1)).posts || [])[0];
+      if (post) {
+        const plain = crmMastodonText(post.html);
+        latest.postedAt = post.at;
+        latest.excerpt = crmPlainText(plain, 140);
+        latest.detail = crmPlainText(plain, 2000);
+        latest.url = post.url;
+      }
+    } catch (error) {
+      latest.error = [404, 406, 410].includes(error.status) ? "the instance knows no such account"
+        : error.name === "TimeoutError" ? "it did not answer in time"
+        : error instanceof TypeError ? "the instance could not be reached from this browser"
+        : error.message;
+    }
+    latest.fetchedAt = Date.now();
+    crmMastodonLatest.latest.set(key, latest);
+    crmMastodonLatest.pending.delete(key);
+    crmRepaintMastodonLatest(key);
+    crmPumpMastodonLatest();
+  }
+
+  function crmSortKey(contact, field) {
+    if (field === "lastContactedAt") return Number(contact.lastContactedAt) || 0;
+    if (field === "value") return Number(contact.value) || 0;
+    if (field === "linked-emails" || field === "linked-toots") {
+      return crmSentAt(crmLinkedMessages(contact.id, field === "linked-toots")[0]);
+    }
+    if (field === "mastodon-latest") {
+      return crmMastodonLatest.latest.get(crmMastodonKey(contact.mastodon).toLowerCase())?.postedAt || 0;
+    }
+    if (field === "tags") return (contact.tags || []).join(", ");
+    if (CRM_CONTACT_FIELDS.includes(field)) return String(contact[field] ?? "").trim();
+    return String((contact.fields || {})[field] ?? "").trim();
+  }
+
+  function crmSortContacts(contacts, field = crmSort.field, descending = crmSort.descending) {
+    if (!field) return contacts;
+    const numeric = CRM_NUMERIC_SORT.has(field);
+    return contacts.map((contact, index) => ({ contact, index, key: crmSortKey(contact, field) }))
+      .sort((a, b) => {
+        let order = 0;
+        if (numeric) {
+          order = a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+        } else {
+          if (!a.key !== !b.key) return a.key ? -1 : 1;
+          const left = a.key.toLowerCase(); const right = b.key.toLowerCase();
+          order = left < right ? -1 : left > right ? 1 : 0;
+        }
+        return (descending ? -order : order) || a.index - b.index;
+      })
+      .map((item) => item.contact);
+  }
+
+  function crmSortBy(field) {
+    if (!field) return;
+    crmSort.descending = crmSort.field === field ? !crmSort.descending : false;
+    crmSort.field = field;
+    renderCrmContacts();
+  }
+
+  function crmContactMatchesQuery(contact, query) {
+    if (!query) return true;
+    return [...CRM_SEARCH_FIELDS.map((field) => contact[field]),
+      contact.flow ? crmFlowLabel(contact.flow) : "",
+      ...Object.values(contact.fields || {}),
+      ...(contact.tags || [])].some((value) =>
+        String(value || "").toLowerCase().includes(query));
+  }
+
+  function crmMenuSelection(id) {
+    if (!crmSelection.ids.has(id)) {
+      crmSelection.ids = new Set([id]);
+      crmSelection.anchor = id;
+      crmPaintSelection();
+    }
+    return [...crmSelection.ids].filter((item) => crmContactById(item));
+  }
+
+  function crmSelectContact(id, { toggle = false, range = false } = {}) {
+    const order = crmSelection.shown;
+    if (range && crmSelection.anchor && order.includes(crmSelection.anchor) && order.includes(id)) {
+      const from = order.indexOf(crmSelection.anchor); const to = order.indexOf(id);
+      const span = order.slice(Math.min(from, to), Math.max(from, to) + 1);
+      crmSelection.ids = new Set(toggle ? [...crmSelection.ids, ...span] : span);
+    } else if (toggle) {
+      if (crmSelection.ids.has(id)) crmSelection.ids.delete(id); else crmSelection.ids.add(id);
+      crmSelection.anchor = id;
+    } else {
+      crmSelection.ids = new Set([id]);
+      crmSelection.anchor = id;
+    }
+    crmPaintSelection();
+  }
+
+  function crmPaintSelection() {
+    for (const row of $$(`[data-crm-contact-row]`)) {
+      const on = crmSelection.ids.has(row.dataset.crmContactRow);
+      row.classList.toggle("crm-selected", on);
+      const box = row.querySelector("[data-crm-select]");
+      if (box) box.checked = on;
+    }
+    const all = $(`[data-crm-select-all]`);
+    if (!all) return;
+    const count = crmSelection.ids.size;
+    all.checked = count > 0 && count === crmSelection.shown.length;
+    all.indeterminate = count > 0 && !all.checked;
+    all.title = count
+      ? `${count} selected: right-click a selected row for what to do with them`
+      : "Select every shown contact";
+  }
+
+  function handleCrmSelectionClick(event) {
+    if (crmActiveShared()) return;
+    const all = event.target.closest("[data-crm-select-all]");
+    if (all) {
+      crmSelection.ids = all.checked ? new Set(crmSelection.shown) : new Set();
+      crmPaintSelection();
+      return;
+    }
+    const row = event.target.closest("[data-crm-contact-row]");
+    if (!row) return;
+    const box = event.target.closest("[data-crm-select]");
+    const modified = event.ctrlKey || event.metaKey || event.shiftKey;
+    if (!box && !modified) return;
+    if (!box) event.preventDefault();
+    event.stopPropagation();
+    crmSelectContact(row.dataset.crmContactRow, {
+      toggle: Boolean(box) || event.ctrlKey || event.metaKey, range: event.shiftKey,
+    });
+  }
+
+  function handleCrmSelectionPress(event) {
+    if (event.button !== 0 || crmActiveShared() || event.target.closest("[data-crm-select]")) return;
+    if ((event.ctrlKey || event.metaKey || event.shiftKey) && event.target.closest("[data-crm-contact-row]")) {
+      event.preventDefault();
+    }
+  }
+
+  async function crmPatchContacts(edits, past, target) {
+    const changes = edits.filter((edit) => edit && crmContactById(edit.id));
+    if (!changes.length) return;
+    const count = changes.length;
+    const noun = count === 1 ? "contact" : "contacts";
+    const says = (...words) => words.filter(Boolean).join(" ");
+    const byId = new Map(changes.map((edit) => [edit.id, edit]));
+    state.crmView.contacts = state.crmView.contacts.map((contact) =>
+      byId.has(contact.id) ? crmWithContactEdit(contact, byId.get(contact.id)) : contact);
+    renderCrm();
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits: changes });
+      const saved = new Map((payload.contacts || []).map((contact) => [contact.id, contact]));
+      state.crmView.contacts = state.crmView.contacts.map((contact) => saved.get(contact.id) || contact);
+      renderCrm();
+      if (state.crmView.detailContactId) renderCrmContactDetail();
+      const missing = (payload.missing || []).length;
+      if (missing) {
+        crmMessage("error", `${says(`${missing} of ${count} contacts were not`, past, target)}: they no longer exist.`);
+        await loadCrm();
+        return;
+      }
+      crmMessage("notice", `${says(String(count), noun, past, target)}.`);
+    } catch (error) {
+      crmMessage("error", `${says(String(count), noun, "were not", past, target)}: ${error.message}`);
+      await loadCrm();
+    }
+  }
+
+  function crmMarkContacted(ids, stamp) {
+    return crmPatchContacts(ids.filter(Boolean).map((id) => ({ id, lastContactedAt: stamp })),
+      "marked", `as last contacted ${crmTimestamp(stamp)}`);
+  }
+
+  async function assignCrmContactsOwner(ids) {
+    const count = ids.length === 1 ? "contact" : `${ids.length} contacts`;
+    const answer = window.prompt(`Assign the ${count} to which account? Leave empty to unassign.`,
+      String(state.session?.name || ""));
+    if (answer === null) return;
+    const owner = answer.trim();
+    await crmPatchContacts(ids.map((id) => ({ id, owner })),
+      owner ? "assigned" : "unassigned", owner ? `to ${owner}` : "");
+  }
+
+  async function deleteCrmContacts(ids) {
+    const pending = ids.filter((id) => crmContactById(id));
+    if (!pending.length || !confirm(`Delete ${pending.length} contacts? Their email history will remain.`)) return;
+    let done = 0;
+    try {
+      for (const id of pending) {
+        await crmRequest(crmOrganizationPath(`/contacts/${id}`), "DELETE", {});
+        done += 1;
+      }
+      crmMessage("notice", `${done} contacts deleted.`);
+    } catch (error) {
+      crmMessage("error", `${done} of ${pending.length} contacts were deleted before an error: ${error.message}`);
+    }
+    crmSelection.ids = new Set();
+    await loadCrm();
+  }
+
+  let crmMergeDuplicate = "";
+
+  function openCrmMergePicker(duplicateId) {
+    const duplicate = crmContactById(duplicateId);
+    const dialog = $(`[data-crm-merge-dialog]`);
+    if (!duplicate || !dialog) return;
+    const targets = crmMergeTargets(duplicate);
+    if (!targets.length) return;
+    crmMergeDuplicate = duplicateId;
+    $(`[data-crm-merge-intro]`).textContent = `Fold “${crmMergeLabel(duplicate)}” into the contact it duplicates. The one you pick keeps its details; this one fills its blanks, adds its tags, lists, notes and email history, and is then deleted.`;
+    $(`[data-crm-merge-search]`).value = "";
+    $(`[data-crm-merge-list]`).innerHTML = targets.map((target, index) => {
+      const text = target.detail ? `${target.label}  ·  ${target.detail}` : target.label;
+      return `<label data-crm-merge-option="${escapeHtml(text.toLowerCase())}" class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-secondary"><input type="radio" name="crm-merge-target" value="${escapeHtml(target.id)}"${index === 0 && target.score > 0 ? " checked" : ""} /><span class="truncate">${escapeHtml(text)}</span></label>`;
+    }).join("");
+    renderCrmMergePicker();
+    dialog.showModal();
+    $(`[data-crm-merge-search]`)?.focus();
+  }
+
+  function renderCrmMergePicker() {
+    const query = String($(`[data-crm-merge-search]`)?.value || "").trim().toLowerCase();
+    for (const option of $$(`[data-crm-merge-option]`)) {
+      option.hidden = Boolean(query) && !option.dataset.crmMergeOption.includes(query);
+    }
+    const picked = $$(`[name="crm-merge-target"]`).find((input) => input.checked);
+    $(`[data-crm-merge-submit]`).disabled = !picked || Boolean(picked.closest("[data-crm-merge-option]")?.hidden);
+  }
+
+  function submitCrmMergePicker(event) {
+    event.preventDefault();
+    const picked = $$(`[name="crm-merge-target"]`).find((input) => input.checked);
+    if (!picked || picked.closest("[data-crm-merge-option]")?.hidden) return;
+    $(`[data-crm-merge-dialog]`).close();
+    void mergeCrmContacts([crmMergeDuplicate], picked.value);
+  }
+
+  function crmOutreachPrompt(contact, sheetName = "") {
+    const trim = (value) => String(value ?? "").trim();
+    const name = trim(contact.name) || trim(contact.email);
+    const mastodon = trim(contact.mastodon);
+    const flowId = trim(contact.flow);
+    const flow = flowId ? crmFlowLabel(flowId) : "";
+    let group = trim(sheetName);
+    if (!group || group === "No pipeline") group = flow;
+    const audience = `${group} ${flow}`.toLowerCase();
+    const mentions = (words) => words.some((word) => audience.includes(word));
+    const about = [];
+    if (mastodon) {
+      const profile = crmProfileUrl("mastodon", mastodon);
+      about.push(`Mastodon: ${mastodon}${profile && profile !== mastodon ? ` (${profile})` : ""}`);
+    } else {
+      about.push("no Mastodon handle saved, so look it up");
+    }
+    const title = trim(contact.title); const company = trim(contact.company);
+    if (title && company) about.push(`${title} at ${company}`);
+    else if (title || company) about.push(title + company);
+    for (const field of ["website", "location"]) {
+      if (trim(contact[field])) about.push(trim(contact[field]));
+    }
+    const quoted = `“${group}”`;
+    let angle = "";
+    if (mentions(["journalist", "press", "media", "reporter", "writer", "editor", "podcast", "newsletter", "blog"])) {
+      angle = `They are on my ${quoted} sheet as a journalist, so pitch a story: why decentralized code hosting matters now and what is new about ForkMesh, and offer an interview or a demo. No sales talk.`;
+    } else if (mentions(["investor", "angel", "vc", "fund", "capital"])) {
+      angle = `They are on my ${quoted} sheet as an investor, so lead with the opportunity ForkMesh opens and ask for a short call; state only facts you were given or looked up, and never invent traction, numbers or names.`;
+    } else if (mentions(["partner", "integration", "alliance"])) {
+      angle = `They are on my ${quoted} sheet as a potential partner, so show how ForkMesh fits what they build and suggest exploring working together.`;
+    } else if (mentions(["customer", "lead", "user", "developer", "maintainer", "community", "open source"])) {
+      angle = `They are on my ${quoted} sheet as a potential user, so give one concrete way ForkMesh helps their projects and invite them to try it.`;
+    } else if (group) {
+      angle = `They are on my ${quoted} sheet, so pitch it the way that suits that group.`;
+    }
+    return [
+      "Tell me about ForkMesh (https://forkmesh.com).",
+      `Then tell me about ${name} (${about.join("; ")}).`,
+      `Then write a short toot (under 500 characters) I can send them on Mastodon about ForkMesh.${angle ? ` ${angle}` : ""} Mention them by their handle, make it specific to their work, and use at most two hashtags.`,
+    ].join("\n\n");
+  }
+
+  async function copyCrmOutreachPrompt(contact) {
+    if (!contact) return;
+    const name = String(contact.name || "").trim() || String(contact.email || "").trim();
+    try {
+      await navigator.clipboard.writeText(crmOutreachPrompt(contact, crmActiveView()?.name || ""));
+      crmMessage("notice", `Copied a prompt about ${name}. Paste it into your assistant.`);
+    } catch { crmMessage("error", "Could not copy the prompt."); }
+  }
+
+  function crmCustomColumnKey(label) {
+    return String(label || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "").slice(0, 64);
+  }
+
+  function crmCustomColumnLabel(key) {
+    const label = String(key || "").replaceAll("_", " ");
+    return label ? label[0].toUpperCase() + label.slice(1) : label;
+  }
+
+  function crmStoredActiveView() {
+    const view = crmActiveView();
+    return view && !view.virtual && state.crmView.views.includes(view)
+      && !/^(pipeline:|no-pipeline)/.test(String(view.id || "")) ? view : null;
+  }
+
+  async function addCrmCustomColumn() {
+    closeCrmMenu();
+    if (crmActiveShared()) return;
+    const label = String(window.prompt("Column name") || "").trim();
+    if (!label) return;
+    const key = crmCustomColumnKey(label);
+    if (!key) { crmMessage("error", "Use letters or digits in the column name."); return; }
+    const builtin = CRM_BASE_COLUMNS.find((column) => column.field === key);
+    if (builtin && (state.crmView.settings?.removedColumns || []).includes(key)) { await restoreCrmColumn(key); return; }
+    if (builtin) {
+      crmShowColumn(key);
+      crmMessage("notice", `“${builtin.label}” is a built-in column; it is shown again.`);
+      return;
+    }
+    const view = crmStoredActiveView();
+    if (view) {
+      const previous = Array.isArray(view.columns) ? view.columns : [];
+      const at = previous.findIndex((column) => column?.field === key);
+      const layout = at >= 0
+        ? previous.map((column, index) => index === at ? { ...column, hidden: false } : column)
+        : [...previous, { field: key, label: crmCustomColumnLabel(key), custom: true, hidden: false }];
+      if (at < 0 || previous[at].hidden) {
+        view.columns = layout;
+        try {
+          await crmRequest(crmOrganizationPath(`/views/${view.id}`), "PATCH", { columns: layout });
+        } catch (error) {
+          view.columns = previous;
+          crmMessage("error", `The fields on “${view.name}” were not saved: ${error.message}`);
+          await loadCrm();
+          return;
+        }
+      }
+    } else {
+      if (crmSessionColumns.organization !== state.crmView.organization) {
+        crmSessionColumns.organization = state.crmView.organization;
+        crmSessionColumns.labels = new Map();
+      }
+      crmSessionColumns.labels.set(key, crmCustomColumnLabel(key));
+    }
+    crmShowColumn(key);
+    renderCrmContacts();
+    crmMessage("notice", `Column “${crmColumnLabel(key)}” added. Click into a cell to fill it; each value is saved on its contact and shared with the organization.`);
+  }
+
+  function crmPeopleLater() {
+    if (!crmPeople.open || crmPeople.timer) return;
+    crmPeople.timer = setTimeout(() => { crmPeople.timer = 0; renderCrmPeople(); }, 600);
+  }
+
+  function setCrmPeople(open) {
+    crmPeople.open = Boolean(open);
+    renderCrmContacts();
+  }
+
+  function crmPeopleRows(query = "") {
+    const lists = new Map();
+    const pipelines = crmPipelineIds();
+    for (const view of crmTabViews().filter((item) => item.id !== CRM_NO_PIPELINE_TAB)) {
+      for (const contact of state.crmView.contacts) {
+        if (!crmContactOnTab(contact, view, pipelines)) continue;
+        if (!lists.has(contact.id)) lists.set(contact.id, []);
+        lists.get(contact.id).push(view.name);
+      }
+    }
+    let named = 0;
+    const picked = [];
+    for (const contact of state.crmView.contacts) {
+      const sources = crmPictureSources(contact);
+      if (sources.length) named += 1;
+      const picture = crmPictureFor(sources);
+      if (!picture.done) crmQueuePictureSources(sources);
+      if (!picture.url || !crmContactMatchesQuery(contact, query)) continue;
+      picked.push({ contact, lists: lists.get(contact.id) || [] });
+    }
+    const fold = (value) => crmContactLabel(value).toLowerCase();
+    picked.sort((a, b) => crmPeople.sort === "name"
+      ? (fold(a.contact) < fold(b.contact) ? -1 : fold(a.contact) > fold(b.contact) ? 1 : 0)
+      : crmPeople.sort === "contacted"
+      ? Number(b.contact.lastContactedAt || 0) - Number(a.contact.lastContactedAt || 0)
+      : Number(b.contact.createdAt || 0) - Number(a.contact.createdAt || 0));
+    return { named, picked };
+  }
+
+  function renderCrmPeople() {
+    const grid = $(`[data-crm-people-grid]`);
+    if (!grid || !crmPeople.open) return;
+    const query = String($(`[data-crm-search]`)?.value || "").trim().toLowerCase();
+    const { named, picked } = crmPeopleRows(query);
+    grid.innerHTML = picked.map(({ contact, lists }) => {
+      const name = crmContactLabel(contact);
+      const pipeline = !contact.flow ? "No pipeline"
+        : contact.stage ? `${crmFlowLabel(contact.flow)} · ${titleCaseSlug(contact.stage)}` : crmFlowLabel(contact.flow);
+      const listLine = lists.length ? lists.join(", ") : "On no list";
+      const title = `${name}\nLists: ${listLine}\nPipeline: ${pipeline}\nAdded ${crmTimestamp(contact.createdAt)}`;
+      return `<button type="button" data-crm-contact-detail="${escapeHtml(contact.id)}" title="${escapeHtml(title)}" class="crm-person">${crmPicture(contact, "people")}<span class="block w-full truncate text-xs font-semibold text-foreground">${escapeHtml(name)}</span><span class="block w-full truncate text-[11px] text-muted-foreground">${escapeHtml(listLine)}</span><span class="block w-full truncate text-[11px] text-muted-foreground">${escapeHtml(pipeline)}</span></button>`;
+    }).join("");
+    const loading = crmPictures.queue.length || crmPictures.inFlight ? " Pictures are still loading…" : "";
+    const note = $(`[data-crm-people-note]`);
+    if (note) note.textContent = `${picked.length} of ${named} contacts with an account or email address show a picture.${loading}`;
+    const sort = $(`[data-crm-people-sort]`);
+    if (sort) sort.value = crmPeople.sort;
+  }
+
+  function renderCrmListsOverview() {
+    const body = $(`[data-crm-lists-body]`);
+    if (!body) return;
+    const views = state.crmView.views;
+    body.innerHTML = views.length ? views.map((view) => {
+      const columns = Array.isArray(view.columns) ? view.columns : [];
+      const shown = columns.filter((column) => !column?.hidden).length;
+      const people = crmSheetShareNames(view).length;
+      const peopleLabel = people === 1 ? "1 person" : `${people} people`;
+      const reach = view.visibility === "private"
+        ? (people ? `Shared with ${peopleLabel}` : "Only its owner")
+        : `Whole organization · ${peopleLabel}`;
+      const count = state.crmView.contacts.filter((contact) => crmContactInView(contact, view)).length;
+      const cells = [
+        view.flow ? `${view.name} (pipeline)` : view.name,
+        view.flow ? `Every contact in ${crmFlowLabel(view.flow)}` : view.fileName || "",
+        count.toLocaleString(), `${shown} of ${columns.length}`, reach, view.owner || "",
+        crmTimestamp(view.createdAt),
+      ];
+      return `<tr data-crm-lists-row="${escapeHtml(view.id)}" class="border-t border-border align-top">${cells.map((cell, index) => `<td class="px-2 py-1.5${index === 0 ? " font-semibold" : ""}" title="${escapeHtml(index === 4 ? crmSheetShareLabel(view) : cell)}">${index === 0 ? `<button type="button" data-crm-lists-open-row="${escapeHtml(view.id)}" class="crm-link text-left hover:underline" style="color:var(--dashboard-link)">${escapeHtml(cell)}</button>` : escapeHtml(cell)}</td>`).join("")}</tr>`;
+    }).join("") : `<tr><td colspan="7" class="px-2 py-4 text-center text-muted-foreground">No lists yet: import a CSV or create a sheet.</td></tr>`;
+  }
+
+  function openCrmListsOverview() {
+    const dialog = $(`[data-crm-lists-dialog]`);
+    if (!dialog) return;
+    renderCrmListsOverview();
+    if (!dialog.open) dialog.showModal();
+  }
+
+  const CRM_GITHUB_CONTRIBUTORS_MAX = 2000;
+  const CRM_GITHUB_COMMIT_PAGES = 10;
+  const CRM_FORKMESH_USERS_MAX = 2000;
+  const CRM_FORKMESH_USERS_FILE = "forkmesh-users.csv";
+  const CRM_IMPORT_ADDRESS = /^[^@\s<>"(),;:]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+  let crmGithubBusy = false;
+  let crmUsersBusy = false;
+
+  function crmGithubRepositoryPath(value) {
+    const match = String(value || "").trim().match(
+      /^(?:(?:https?:\/\/)?(?:www\.)?github\.com\/|git@github\.com:)?([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?(?:[/?#].*)?$/i);
+    if (!match || match[2] === "." || match[2] === "..") return "";
+    return `${match[1]}/${match[2]}`;
+  }
+
+  function crmMaskedGitEmail(email) {
+    return /(^|[.@+_-])(do-?not-?|no-?)reply([.@+_-]|$)/i.test(String(email || ""));
+  }
+
+  function crmCoAuthors(message) {
+    const authors = [];
+    for (const line of String(message || "").replace(/\r\n?/g, "\n").split("\n")) {
+      const trailer = line.match(/^\s*co-authored-by\s*:\s*(.+?)\s*$/i);
+      const match = trailer && trailer[1].match(/^(.*?)\s*<([^<>]+)>$/);
+      if (match) authors.push([match[1], match[2]]);
+    }
+    return authors;
+  }
+
+  function crmGithubContributorsCsv(commits, limit = CRM_GITHUB_CONTRIBUTORS_MAX) {
+    const people = new Map();
+    for (const item of commits || []) {
+      const commit = item?.commit || {};
+      const signers = [[commit.author?.name, commit.author?.email], [commit.committer?.name, commit.committer?.email],
+        ...crmCoAuthors(commit.message)];
+      const counted = new Set();
+      const day = String(commit.author?.date || "").slice(0, 10);
+      for (const [rawName, rawEmail] of signers) {
+        const email = String(rawEmail || "").trim().toLowerCase();
+        const name = String(rawName || "").replace(/\s+/g, " ").trim();
+        if (counted.has(email) || !CRM_IMPORT_ADDRESS.test(email)
+          || /\.(local|localdomain|lan|home|internal|invalid|example)$/.test(email) || crmMaskedGitEmail(email)
+          || /\[bot\]$/i.test(name) || email.split("@")[0].endsWith("[bot]")) continue;
+        counted.add(email);
+        const person = people.get(email);
+        if (!person) people.set(email, { name, email, last: day, commits: 1 });
+        else { if (!person.name) person.name = name; person.commits += 1; }
+      }
+    }
+    const ranked = [...people.values()].sort((a, b) => b.commits - a.commits
+      || (a.last !== b.last ? (a.last > b.last ? -1 : 1) : a.email < b.email ? -1 : a.email > b.email ? 1 : 0));
+    const rows = ranked.slice(0, limit).map((person) =>
+      [crmCsvCell(person.name), crmCsvCell(person.email), String(person.commits), crmCsvCell(person.last)].join(","));
+    return { csv: ["Name,Email,Commits,Last commit", ...rows].join("\r\n") + "\r\n", found: ranked.length };
+  }
+
+  function crmGithubStatus(text = "", failed = false) {
+    const box = $(`[data-crm-github-status]`); if (!box) return;
+    box.textContent = text;
+    box.classList.toggle("hidden", !text);
+    box.classList.toggle("text-destructive", failed);
+    box.classList.toggle("text-muted-foreground", !failed);
+  }
+
+  function openCrmGithubDialog() {
+    closeCrmMenu();
+    $(`[data-crm-actions]`)?.removeAttribute("open");
+    crmGithubStatus();
+    $(`[data-crm-github-dialog]`)?.showModal();
+    $(`[data-crm-github-repository]`)?.focus();
+  }
+
+  function crmGithubRateLimit(response) {
+    const reset = Number(response.headers.get("x-ratelimit-reset")) * 1000;
+    const when = reset > Date.now() ? ` It resets at ${crmTimestamp(reset)}.` : "";
+    return `GitHub's limit on reads from this browser without signing in is used up.${when}`;
+  }
+
+  async function crmGithubCommits(repository, progress) {
+    const commits = [];
+    let url = `https://api.github.com/repos/${repository}/commits?per_page=100`;
+    let pages = 0;
+    let limited = "";
+    while (url && pages < CRM_GITHUB_COMMIT_PAGES) {
+      let response;
+      try {
+        response = await fetch(url, {
+          headers: { accept: "application/vnd.github+json" },
+          credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
+        });
+      } catch { throw new Error("GitHub could not be reached from this browser"); }
+      if ((response.status === 403 || response.status === 429) && (response.status === 429
+        || response.headers.get("x-ratelimit-remaining") === "0")) {
+        limited = crmGithubRateLimit(response);
+        if (!commits.length) throw new Error(limited);
+        break;
+      }
+      if (response.status === 404) throw new Error("GitHub has no public repository by that name");
+      if (response.status === 409) break;
+      if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
+      const page = await response.json();
+      commits.push(...(Array.isArray(page) ? page : []));
+      pages += 1;
+      progress(commits.length, pages);
+      url = Array.isArray(page) && page.length ? crmMastodonNext(response.headers.get("link"), "api.github.com") : "";
+    }
+    return { commits, limited, more: Boolean(url) && !limited };
+  }
+
+  async function submitCrmGithub(event) {
+    event.preventDefault();
+    if (crmGithubBusy) return;
+    const repository = crmGithubRepositoryPath($(`[data-crm-github-repository]`)?.value);
+    if (!repository) { crmGithubStatus("Enter a repository like owner/name or https://github.com/owner/name.", true); return; }
+    const submit = $(`[data-crm-github-submit]`);
+    crmGithubBusy = true;
+    if (submit) submit.disabled = true;
+    crmGithubStatus(`Reading the contributors of ${repository}…`);
+    try {
+      const { commits, limited, more } = await crmGithubCommits(repository, (count) =>
+        crmGithubStatus(`Reading the contributors of ${repository}… ${count} commits`));
+      const { csv, found } = crmGithubContributorsCsv(commits);
+      if (!found) { crmGithubStatus(`No contributor of ${repository} has a public email address to import.`, true); return; }
+      $(`[data-crm-github-dialog]`)?.close();
+      const notes = [
+        limited && `${limited} Only the ${commits.length} newest commits were read.`,
+        more && `Only the ${commits.length} newest commits were read.`,
+        found > CRM_GITHUB_CONTRIBUTORS_MAX && `Importing the ${CRM_GITHUB_CONTRIBUTORS_MAX} most active of ${repository}'s ${found} contributors; one import takes at most ${CRM_GITHUB_CONTRIBUTORS_MAX}.`,
+      ].filter(Boolean);
+      const file = new File([csv], `github-contributors-${repository.replace("/", "-")}.csv`, { type: "text/csv" });
+      crmImportTarget = "";
+      await previewCrmCsv(file, `Contributors of ${repository}`.slice(0, 60));
+      if (notes.length) crmMessage("notice", notes.join(" "));
+    } catch (error) {
+      crmGithubStatus(`Could not read the contributors of ${repository}: ${error.message}.`, true);
+    } finally {
+      crmGithubBusy = false;
+      if (submit) submit.disabled = false;
+    }
+  }
+
+  function crmForkMeshUsersCsv(users, limit = CRM_FORKMESH_USERS_MAX) {
+    const kept = []; const seen = new Set(); let withoutEmail = 0;
+    for (const user of users || []) {
+      const kind = String(user?.kind || "").trim(); const status = String(user?.status || "").trim();
+      if ((kind && kind !== "user") || (status && status !== "active") || !String(user?.name || "").trim()) continue;
+      const email = String(user?.email || "").trim().toLowerCase();
+      if (!CRM_IMPORT_ADDRESS.test(email)) { withoutEmail += 1; continue; }
+      if (seen.has(email)) continue;
+      seen.add(email);
+      kept.push({ ...user, email });
+    }
+    kept.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+    const rows = kept.slice(0, limit).map((user) => {
+      const created = Number(user.createdAt) || 0;
+      return [crmCsvCell(String(user.name).trim()), crmCsvCell(user.email),
+        created > 0 ? new Date(created).toISOString().slice(0, 10) : "",
+        typeof user.emailNotifications === "boolean" && !user.emailNotifications ? "Off" : "On"].join(",");
+    });
+    return { csv: ["Name,Email,Signed up,Email notifications", ...rows].join("\r\n") + "\r\n", found: kept.length, withoutEmail };
+  }
+
+  function crmForkMeshUsersSheetId() {
+    return state.crmView.views.find((view) => view.fileName === CRM_FORKMESH_USERS_FILE && view.canManage)?.id || "";
+  }
+
+  function renderCrmUsersImport() {
+    const button = $(`[data-crm-users-import]`);
+    if (!button) return;
+    const available = crmAdmin() && state.crmView.installed && !(crmPictures.usersAt && !crmPictures.usersEmails);
+    button.classList.toggle("hidden", !available);
+    const refreshes = Boolean(crmForkMeshUsersSheetId());
+    const label = $(`[data-crm-users-import-label]`);
+    if (label) label.textContent = refreshes ? "Refresh ForkMesh users" : "Import ForkMesh users";
+    button.title = refreshes
+      ? "Read the ForkMesh user directory again: new signups join the ForkMesh users list and the users already on it are updated, matched by email"
+      : "Import every active ForkMesh user with an email address as a new list, ForkMesh users, that Refresh users keeps up to date";
+  }
+
+  async function importCrmForkMeshUsers() {
+    if (crmUsersBusy) return;
+    if (!crmAdmin()) { crmMessage("error", "Only ForkMesh administrators can import the user directory."); return; }
+    crmUsersBusy = true;
+    crmMessage("notice", "Reading the ForkMesh user directory…");
+    try {
+      let users;
+      try { users = await crmForkMeshUsers(true); } catch (error) {
+        crmMessage("error", `Could not read the ForkMesh user directory: ${error.message}.`);
+        return;
+      }
+      renderCrmUsersImport();
+      if (!users) { crmMessage("error", "Only ForkMesh administrators can import the user directory."); return; }
+      const { csv, found, withoutEmail } = crmForkMeshUsersCsv(users);
+      if (!found) { crmMessage("error", "No active ForkMesh user has an email address to import."); return; }
+      const [header = "", ...rows] = crmCsvRecords(csv);
+      const note = found > CRM_FORKMESH_USERS_MAX
+        ? `Importing the ${CRM_FORKMESH_USERS_MAX} newest of ${found} ForkMesh users; one import takes at most ${CRM_FORKMESH_USERS_MAX}.`
+        : withoutEmail ? `Importing ${found} ForkMesh users; ${withoutEmail} without an email address are left out.` : "";
+      await importCrmCsv({
+        file: new File([csv], CRM_FORKMESH_USERS_FILE, { type: "text/csv" }),
+        target: crmForkMeshUsersSheetId(), path: crmOrganizationPath("/contacts/import"),
+        header, rows, delimiter: ",", mapping: ["name", "email", "custom", "custom"], sheetName: "ForkMesh users",
+      });
+      const done = $(`[data-crm-notice]`);
+      if (note && done && !done.classList.contains("hidden")) crmMessage("notice", `${done.textContent} ${note}`);
+      renderCrmUsersImport();
+    } finally { crmUsersBusy = false; }
+  }
+
+  function handleCrmParityClick(event) {
+    const now = event.target.closest("[data-crm-contacted-now]");
+    if (now) { void crmMarkContacted([now.dataset.crmContactedNow], Date.now()); return; }
+    const prompt = event.target.closest("[data-crm-contact-prompt]");
+    if (prompt) { void copyCrmOutreachPrompt(crmContactById(prompt.dataset.crmContactPrompt)); return; }
+    const refresh = event.target.closest("[data-crm-mastodon-refresh]");
+    if (refresh) { refreshCrmMastodonNow(refresh.dataset.crmMastodonRefresh); return; }
+    const linked = event.target.closest("[data-crm-linked]");
+    if (linked) openCrmLinked(event, linked.dataset.crmLinkedId, linked.dataset.crmLinked === "toots");
+  }
+
+  function wireCrmTableParity() {
+    const list = $(`[data-crm-contact-list]`);
+    list?.addEventListener("click", handleCrmSelectionClick, true);
+    list?.addEventListener("mousedown", handleCrmSelectionPress, true);
+    for (const selector of ["[data-crm-contact-list]", "[data-crm-contact-cards]", "[data-crm-contact-detail-dialog]"]) {
+      $(selector)?.addEventListener("click", handleCrmParityClick);
+    }
+    $(`[data-crm-contact-head]`)?.addEventListener("click", (event) => {
+      if (event.target.closest("[data-crm-add-column]")) { void addCrmCustomColumn(); return; }
+      if (event.target.closest("[data-crm-select-all]")) { handleCrmSelectionClick(event); return; }
+      const cell = event.target.closest("[data-crm-column]");
+      if (cell) crmSortBy(cell.dataset.crmColumn);
+    });
+    $(`[data-crm-people-toggle]`)?.addEventListener("click", () => setCrmPeople(!crmPeople.open));
+    $(`[data-crm-people-sort]`)?.addEventListener("change", (event) => { crmPeople.sort = event.target.value; renderCrmPeople(); });
+    $(`[data-crm-people-grid]`)?.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-crm-contact-detail]");
+      if (card) openCrmContactDetail(card.dataset.crmContactDetail);
+    });
+    $(`[data-crm-merge-search]`)?.addEventListener("input", renderCrmMergePicker);
+    $(`[data-crm-merge-list]`)?.addEventListener("change", renderCrmMergePicker);
+    $(`[data-crm-merge-list]`)?.addEventListener("dblclick", (event) => {
+      if (event.target.closest("[data-crm-merge-option]")) $(`[data-crm-merge-form]`)?.requestSubmit();
+    });
+    $(`[data-crm-merge-form]`)?.addEventListener("submit", submitCrmMergePicker);
+    $(`[data-crm-lists-open]`)?.addEventListener("click", openCrmListsOverview);
+    $(`[data-crm-lists-body]`)?.addEventListener("click", (event) => {
+      const open = event.target.closest("[data-crm-lists-open-row]");
+      if (!open) return;
+      $(`[data-crm-lists-dialog]`)?.close();
+      selectCrmSheet(open.dataset.crmListsOpenRow);
+    });
+    $(`[data-crm-github-import]`)?.addEventListener("click", openCrmGithubDialog);
+    $(`[data-crm-github-form]`)?.addEventListener("submit", (event) => void submitCrmGithub(event));
+    $(`[data-crm-users-import]`)?.addEventListener("click", () => void importCrmForkMeshUsers());
+    document.addEventListener("error", (event) => {
+      if (event.target?.matches?.(".crm-pic img")) event.target.remove();
+    }, true);
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !crmSelection.ids.size || document.querySelector("dialog[open]")) return;
+      crmSelection.ids = new Set();
+      crmPaintSelection();
+    });
+  }
+
   async function loadCrm() {
     if (state.crmView.sharedOnly && state.crmView.activeShared) {
       delete state.crmView.sharedCache[state.crmView.activeShared];
@@ -4292,11 +6182,6 @@ window.ForkMeshDashboard.registerPage("crm", ({
       state.crmView.sharedViews = payload.sharedViews || [];
       state.crmView.decks = payload.decks || [];
       state.crmView.activity = payload.activity || { days: [], kinds: [], members: [] };
-      // A sheet another member deleted, or one belonging to the organization
-      // just switched away from, falls back to "All contacts".
-      if (!state.crmView.views.some((view) => view.id === state.crmView.activeView)) {
-        state.crmView.activeView = "";
-      }
       if (!state.crmView.sharedViews.some((view) => view.id === state.crmView.activeShared)) {
         state.crmView.activeShared = "";
       }
@@ -4326,6 +6211,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
           : "Ask an organization owner or admin to connect Zoho Mail";
       }
       renderCrmDraftsLabel(); crmMessage("error", ""); renderCrm();
+      crmRefreshForkMeshAvatars();
     } catch (error) {
       if (error.status === 409 && error.payload?.error === "plugin_not_installed") {
         const record = crmSelectedOrg(); if (record) record.installed = false;
@@ -4527,11 +6413,22 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const button = event.target.closest("[data-crm-outreach-team-remove]");
       if (button) void updateCrmOutreachTeam("remove", button.getAttribute("data-crm-outreach-team-remove"));
     });
-    $(`[data-crm-flow-add]`)?.addEventListener("click", addCrmFlowEditor);
-    $(`[data-crm-flow-editors]`)?.addEventListener("click", (event) => {
-      if (!event.target.closest("[data-crm-flow-remove]")) return;
-      event.target.closest("[data-crm-flow-editor]")?.remove();
+    $(`[data-crm-pipelines-open]`)?.addEventListener("click", () => { $(`[data-crm-settings-dialog]`)?.close(); openCrmPipelineSettings(); });
+    const pipelinesDialog = $(`[data-crm-pipelines-dialog]`);
+    pipelinesDialog?.addEventListener("click", handleCrmPipelinesClick);
+    pipelinesDialog?.addEventListener("input", handleCrmPipelinesInput);
+    pipelinesDialog?.addEventListener("change", handleCrmPipelinesInput);
+    pipelinesDialog?.addEventListener("close", () => { state.crmView.pipelineEdit = null; });
+    $(`[data-crm-pipelines-form]`)?.addEventListener("submit", (event) => void saveCrmPipelines(event));
+    $(`[data-crm-members-form]`)?.addEventListener("submit", (event) => void saveCrmMembers(event));
+    $(`[data-crm-members-search]`)?.addEventListener("input", filterCrmMembersRoster);
+    const strip = $(`[data-crm-stage-strip]`);
+    strip?.addEventListener("click", (event) => {
+      if (event.target.closest("[data-crm-stage-strip-menu]")) { openCrmStageStripMenu(event); return; }
+      const chip = event.target.closest("[data-crm-stage-chip]");
+      if (chip) pickCrmStage(chip.dataset.crmStageChip);
     });
+    strip?.addEventListener("contextmenu", openCrmStageStripMenu);
     $(`[data-crm-zoho-sync]`)?.addEventListener("click", () => {
       if (state.crmView.settings?.zoho?.connected) void syncCrmZoho();
       else if (state.crmView.canManageSettings && state.crmView.settings?.zoho?.oneClick) void connectCrmZoho();
@@ -4576,9 +6473,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
     tabs?.addEventListener("dblclick", (event) => {
       const tab = event.target.closest("[data-crm-tab]");
       const id = tab?.dataset.crmTab;
-      if (!id) return;
+      if (!id || id === CRM_NO_PIPELINE_TAB) return;
       event.preventDefault();
-      void renameCrmSheet(state.crmView.views.find((view) => view.id === id));
+      void renameCrmSheet(crmTabView(id));
     });
     // The count of people a sheet reaches opens the list of who they are.
     tabs?.addEventListener("mouseover", (event) => {
@@ -4673,6 +6570,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // after the page has loaded once.
     $(`[data-crm-refresh]`)?.addEventListener("click", () => void loadCrm());
     $$(`[data-crm-dialog-close], [data-crm-contact-cancel], [data-crm-email-cancel], [data-crm-link-cancel], [data-crm-settings-cancel], [data-crm-sheet-cancel], [data-crm-pipeline-cancel], [data-crm-import-map-cancel], [data-crm-mastodon-cancel]`).forEach((button) => button.addEventListener("click", () => button.closest("dialog")?.close()));
+    wireCrmTableParity();
     if (sharedLink !== null) {
       if (!(await openCrmSharedOnly(sharedLink))) crmMessage("error", "Join or create an organization before using CRM. Nothing has been shared with you yet.");
       return;

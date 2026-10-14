@@ -25,6 +25,7 @@
               [data-view="crm"] select.crm-cell { appearance: none; -webkit-appearance: none; cursor: pointer; }
               [data-view="crm"] textarea.crm-cell { resize: vertical; }
               [data-view="crm"] .crm-row:hover { background: rgb(var(--dashboard-foreground-rgb) / .03); }
+              [data-view="crm"] .crm-row.crm-selected { background: rgb(var(--dashboard-ring-rgb) / .12); }
               [data-view="crm"] .crm-row-actions { opacity: 0; transition: opacity .12s ease; }
               [data-view="crm"] .crm-row:hover .crm-row-actions, [data-view="crm"] .crm-row:focus-within .crm-row-actions { opacity: 1; }
               @media (pointer: coarse) { [data-view="crm"] .crm-row-actions { opacity: 1; } }
@@ -44,6 +45,16 @@
               [data-view="crm"] .crm-name-open:hover, [data-view="crm"] .crm-name-open:focus-visible { color: var(--dashboard-link); text-decoration: underline; outline: none; }
               [data-view="crm"] .crm-detail-heading { margin-bottom: .5rem; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: rgb(var(--dashboard-foreground-rgb) / .6); }
               [data-view="crm"] .crm-detail-line { border-left: 2px solid rgb(var(--dashboard-border-rgb)); padding-left: .625rem; }
+              [data-view="crm"] .crm-pic { position: relative; display: inline-grid; flex: none; margin-top: .125rem; }
+              [data-view="crm"] .crm-pic > .crm-avatar { margin-top: 0; }
+              [data-view="crm"] .crm-pic img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 999px; object-fit: cover; }
+              [data-view="crm"] .crm-pic-lg, [data-view="crm"] .crm-pic-people { margin-top: 0; }
+              [data-view="crm"] .crm-avatar-people { width: 3.5rem; height: 3.5rem; margin-top: 0; font-size: 18px; }
+              [data-view="crm"] .crm-people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr)); gap: .5rem; }
+              [data-view="crm"] .crm-person { display: grid; justify-items: center; gap: .25rem; min-width: 0; padding: .75rem .5rem; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-card-rgb)); text-align: center; cursor: pointer; }
+              [data-view="crm"] .crm-person:hover { border-color: rgb(var(--dashboard-foreground-rgb) / .35); }
+              [data-view="crm"] .crm-person:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 1px; }
+              [data-view="crm"] [data-crm-people-toggle][aria-pressed="true"] { background: rgb(var(--dashboard-foreground-rgb) / .08); font-weight: 600; }
               [data-view="crm"] .crm-hue-1 { background: rgb(125 138 156 / .3); }
               [data-view="crm"] .crm-hue-2 { background: rgb(56 139 253 / .26); }
               [data-view="crm"] .crm-hue-3 { background: rgb(45 164 138 / .28); }
@@ -103,6 +114,26 @@
               [data-view="crm"] .crm-section-tab[aria-selected="true"] { border-bottom-color: rgb(var(--dashboard-foreground-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; }
               [data-view="crm"] .crm-section-tab:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: -2px; border-radius: 6px 6px 0 0; }
               [data-view="crm"] .crm-section-count { min-width: 1.25rem; padding: 0 .375rem; border-radius: 999px; background: rgb(var(--dashboard-foreground-rgb) / .08); font: 500 11px/1.4 "ForkMesh Dashboard Mono", ui-monospace, monospace; text-align: center; color: rgb(var(--dashboard-foreground-rgb) / .75); }
+              [data-view="crm"] .crm-stage-strip { display: flex; align-items: stretch; gap: 3px; overflow-x: auto; padding: .625rem .75rem 0; }
+              [data-view="crm"] .crm-stage-chip { --crm-chip-fill: 26%; display: flex; flex: 1 1 0; min-width: 5.5rem; align-items: center; justify-content: center; gap: .5rem; height: 2rem; margin-left: -.65rem; padding: 0 1rem 0 1.4rem; border: 0; clip-path: polygon(0 0, calc(100% - .65rem) 0, 100% 50%, calc(100% - .65rem) 100%, 0 100%, .65rem 50%); background: color-mix(in srgb, var(--crm-chip) var(--crm-chip-fill), rgb(var(--dashboard-card-rgb))); color: color-mix(in srgb, var(--crm-chip) 70%, white); font-size: 12px; white-space: nowrap; cursor: pointer; }
+              [data-view="crm"] .crm-stage-chip:first-child { margin-left: 0; padding-left: .875rem; border-radius: 6px 0 0 6px; clip-path: polygon(0 0, calc(100% - .65rem) 0, 100% 50%, calc(100% - .65rem) 100%, 0 100%); }
+              [data-view="crm"] .crm-stage-chip-label { overflow: hidden; text-overflow: ellipsis; }
+              [data-view="crm"] .crm-stage-picked .crm-stage-chip { --crm-chip-fill: 16%; }
+              [data-view="crm"] .crm-stage-chip:hover { --crm-chip-fill: 38%; }
+              [data-view="crm"] .crm-stage-picked .crm-stage-chip:hover { --crm-chip-fill: 28%; }
+              [data-view="crm"] .crm-stage-chip[aria-pressed="true"] { background: var(--crm-chip); color: var(--crm-chip-ink); }
+              [data-view="crm"] .crm-stage-chip.crm-stage-empty:not([aria-pressed="true"]) > * { opacity: .65; }
+              [data-view="crm"] .crm-stage-chip:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: -2px; }
+              [data-dashboard-theme="light"] [data-view="crm"] .crm-stage-chip { --crm-chip-fill: 16%; color: color-mix(in srgb, var(--crm-chip) 65%, black); }
+              [data-dashboard-theme="light"] [data-view="crm"] .crm-stage-picked .crm-stage-chip { --crm-chip-fill: 10%; }
+              [data-dashboard-theme="light"] [data-view="crm"] .crm-stage-chip:hover { --crm-chip-fill: 28%; }
+              [data-dashboard-theme="light"] [data-view="crm"] .crm-stage-chip[aria-pressed="true"] { color: var(--crm-chip-ink); }
+              [data-view="crm"] .crm-stage-strip-more { flex: none; border: 0; border-radius: 6px; padding: 0 .5rem; background: transparent; color: rgb(var(--dashboard-foreground-rgb) / .6); cursor: pointer; }
+              [data-view="crm"] .crm-pipelines-grid { display: grid; gap: 1rem; }
+              @media (min-width: 768px) { [data-view="crm"] .crm-pipelines-grid { grid-template-columns: minmax(0, 14rem) minmax(0, 1fr); } }
+              [data-view="crm"] .crm-pipelines-page { padding: .375rem .75rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: rgb(var(--dashboard-foreground-rgb) / .65); font-size: .8125rem; cursor: pointer; }
+              [data-view="crm"] .crm-pipelines-page[aria-selected="true"] { border-bottom-color: rgb(var(--dashboard-foreground-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; }
+              [data-view="crm"] .crm-stage-strip-more:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); color: rgb(var(--dashboard-foreground-rgb)); }
               @media (prefers-reduced-motion: reduce) { [data-view="crm"] .crm-row-actions { transition: none; } }
               [data-view="crm"] .crm-team-viz { --crm-series-1: #2a78d6; --crm-series-2: #eb6834; --crm-series-3: #1baf7a; --crm-grid: rgb(var(--dashboard-border-rgb) / 0.9); --crm-ink-muted: rgb(var(--dashboard-muted-foreground-rgb)); --crm-surface: rgb(var(--dashboard-card-rgb)); }
               :root[data-dashboard-theme="dark"] [data-view="crm"] .crm-team-viz { --crm-series-1: #3987e5; --crm-series-2: #d95926; --crm-series-3: #199e70; }
@@ -130,6 +161,9 @@
                       <p class="px-3 py-1 text-[10px] font-semibold uppercase text-muted-foreground">Contacts</p>
                       <label data-crm-import data-crm-requires-install class="crm-menu-item hidden cursor-pointer"><i data-lucide="upload" class="h-3.5 w-3.5 text-muted-foreground"></i>Import CSV<input data-crm-import-file type="file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel" class="hidden" /></label>
                       <button data-crm-mastodon-import data-crm-requires-install type="button" class="crm-menu-item hidden"><i data-lucide="users" class="h-3.5 w-3.5 text-muted-foreground"></i>Import Mastodon followers</button>
+                      <button data-crm-github-import data-crm-requires-install type="button" title="Read a public GitHub repository's commits and import the email addresses of its contributors as a new list, leaving out masked no-reply addresses" class="crm-menu-item hidden"><i data-lucide="git-branch" class="h-3.5 w-3.5 text-muted-foreground"></i>Import GitHub contributors</button>
+                      <button data-crm-users-import type="button" class="crm-menu-item hidden"><i data-lucide="user-round-plus" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-crm-users-import-label>Import ForkMesh users</span></button>
+                      <button data-crm-lists-open data-crm-requires-install type="button" title="Every list and pipeline list: its file, contacts, columns and who it is shared with" class="crm-menu-item hidden"><i data-lucide="list" class="h-3.5 w-3.5 text-muted-foreground"></i>Lists</button>
                       <button data-crm-export data-crm-requires-install type="button" class="crm-menu-item hidden"><i data-lucide="download" class="h-3.5 w-3.5 text-muted-foreground"></i>Export CSV</button>
                       <button data-crm-account-evidence data-crm-requires-install type="button" title="ForkMesh administrators: record which contacts have a ForkMesh account, pay or are on a trial" class="crm-menu-item hidden"><i data-lucide="badge-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Check ForkMesh accounts</button>
                       <button data-crm-bulk-edit="owner" data-crm-requires-install type="button" class="crm-menu-item hidden"><i data-lucide="user-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Assign shown contacts…</button>
@@ -191,19 +225,20 @@
                 <div data-crm-next aria-label="Who to contact next: reach out or follow up" hidden class="mb-3 grid gap-3 md:grid-cols-2"></div>
                 <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
                   <div class="flex items-end gap-2 border-b border-border px-3 pt-1">
-                    <div data-crm-tabs role="tablist" aria-label="Contact sheets" class="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto"></div>
+                    <div data-crm-tabs role="tablist" aria-label="Contact lists" class="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto"></div>
                     <button data-crm-tab-import data-crm-org-only type="button" title="Pick a CSV; its rows open as a new tab named after the file" class="mb-1 shrink-0 rounded-md border border-dashed border-border px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="upload" class="mr-1 inline h-3.5 w-3.5"></i>Import contacts</button>
                     <button data-crm-pipeline-new data-crm-org-only type="button" title="Create a pipeline with its own stages; it opens as a new tab" class="mb-1 shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">+ Pipeline</button>
-                    <button data-crm-sheet-new data-crm-org-only type="button" title="Create an empty sheet" class="mb-1 shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">+ Sheet</button>
+                    <button data-crm-sheet-new data-crm-org-only type="button" title="Create an empty list, on a pipeline or plain" class="mb-1 shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">+ List</button>
                   </div>
                   <div data-crm-shared-banner class="hidden flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary px-3 py-2 text-xs text-muted-foreground">
                     <span data-crm-shared-banner-text></span>
                     <button data-crm-shared-copy type="button" class="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-card">Copy into my organization</button>
                   </div>
+                  <div data-crm-stage-strip hidden role="group" aria-label="Pipeline stages" class="crm-stage-strip"></div>
                   <div class="flex flex-wrap items-center gap-2 border-b border-border p-3">
                     <div class="relative min-w-0 flex-1">
                       <i data-lucide="search" class="pointer-events-none absolute h-4 w-4 text-muted-foreground" style="left:.7rem;top:.65rem"></i>
-                      <input data-crm-search type="search" placeholder="Search name, email, company, profile, owner, or tag" class="w-full rounded-md border border-border bg-background py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring" style="padding-left:2.25rem;padding-right:.75rem" />
+                      <input data-crm-search type="search" placeholder="Search name, email, company, notes, profile, owner, tag, or any field" class="w-full rounded-md border border-border bg-background py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring" style="padding-left:2.25rem;padding-right:.75rem" />
                     </div>
                     <select data-crm-flow aria-label="Flow" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select>
                     <select data-crm-stage aria-label="Stage" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select>
@@ -226,6 +261,7 @@
                     <select data-crm-table-view aria-label="View" title="The columns the table shows" class="hidden rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground sm:inline-block"></select>
                     <button data-crm-table-view-save type="button" title="Save these columns as a new view" class="hidden items-center gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground hover:bg-secondary disabled:opacity-50">Save view</button>
                     <button data-crm-columns type="button" title="Choose which columns this view shows" class="hidden items-center gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground hover:bg-secondary disabled:opacity-50 sm:inline-flex"><i data-lucide="sliders-horizontal" class="h-4 w-4 text-muted-foreground"></i>Columns</button>
+                    <button data-crm-people-toggle type="button" aria-pressed="false" title="Everyone whose picture loaded, as a grid; the search box filters it" class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="contact" class="h-4 w-4 text-muted-foreground"></i>People</button>
                   </div>
                   <div data-crm-contact-cards class="grid gap-2 p-3 sm:hidden"></div>
                   <p data-crm-board-note hidden class="border-b border-border px-3 py-2 text-xs text-muted-foreground"></p>
@@ -235,6 +271,14 @@
                       <thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr data-crm-contact-head><th class="whitespace-nowrap px-2 py-2 font-semibold">Name</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Email</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Company</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Title</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Phone</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Twitter</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Mastodon</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Bluesky</th><th class="whitespace-nowrap px-2 py-2 font-semibold">LinkedIn</th><th class="whitespace-nowrap px-2 py-2 font-semibold">GitHub</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Website</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Location</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Flow</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Stage</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Deal value</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Next step</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Owner</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Source</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Tags</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Notes</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Last contacted</th><th class="whitespace-nowrap px-2 py-2 text-right font-semibold">Actions</th></tr></thead>
                       <tbody data-crm-contact-list class="divide-y divide-border"></tbody>
                     </table>
+                  </div>
+                  <div data-crm-people hidden class="p-3">
+                    <div class="mb-3 flex flex-wrap items-center gap-2">
+                      <h2 class="text-sm font-semibold text-foreground">People with pictures</h2>
+                      <p data-crm-people-note class="min-w-0 flex-1 text-xs text-muted-foreground"></p>
+                      <label class="flex items-center gap-2 text-xs text-muted-foreground">Sort by<select data-crm-people-sort aria-label="Sort people" class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"><option value="recent">Most recent</option><option value="contacted">Last contacted</option><option value="name">Name</option></select></label>
+                    </div>
+                    <div data-crm-people-grid aria-label="People with pictures" class="crm-people-grid"></div>
                   </div>
                   <div data-crm-contact-empty class="hidden p-8 text-center text-sm text-muted-foreground">No contacts match this view.</div>
                 </section>
@@ -472,24 +516,46 @@ PACKAGE_CRM_ZOHO_OAUTH_REDIRECT_URI=https://app.forkmesh.com/api/crm/-/zoho/call
                   <label class="grid gap-1 text-xs text-muted-foreground">Type<select data-crm-pipeline-icon class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Ordered stages<textarea data-crm-pipeline-stages rows="4" maxlength="1200" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground">new
 in-progress
-complete</textarea><span>One line per stage. Rename or reorder them later in CRM settings.</span></label>
+complete</textarea><span>One line per stage. Rename or reorder them later in Manage pipelines.</span></label>
                 </div>
                 <div class="mt-4 flex justify-end gap-2"><button data-crm-pipeline-cancel type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Create pipeline</button></div>
               </form>
             </dialog>
 
+            <dialog data-crm-pipelines-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-4xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-crm-pipelines-form class="p-5">
+                <div class="mb-3 flex items-center justify-between"><div><h2 class="text-base font-semibold">Pipelines</h2><p class="text-xs text-muted-foreground">A pipeline is an ordered set of stages contacts move through, and its type is the icon on its tab. A list bound to a pipeline shows every contact in it. Removing a pipeline leaves the contacts in it without one.</p></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <div role="tablist" aria-label="Pipeline settings" class="mb-3 flex gap-1 border-b border-border"><button data-crm-pipelines-page="pipelines" type="button" role="tab" aria-selected="true" class="crm-pipelines-page">Pipelines and stages</button><button data-crm-pipelines-page="lists" type="button" role="tab" aria-selected="false" class="crm-pipelines-page">Lists</button></div>
+                <div data-crm-pipelines-body></div>
+                <div class="mt-4 flex justify-end gap-2"><button data-crm-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-crm-members-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-crm-members-form class="p-5">
+                <div class="mb-3 flex items-center justify-between"><div><h2 class="text-base font-semibold">Add members</h2><p data-crm-members-intro class="text-xs text-muted-foreground"></p></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <div class="grid gap-3">
+                  <input data-crm-members-search type="search" placeholder="Search organization members" aria-label="Search organization members" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" />
+                  <div data-crm-members-roster class="grid max-h-64 gap-1 overflow-y-auto rounded-md border border-border bg-background p-2"></div>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Outside the organization<input data-crm-members-others maxlength="2000" placeholder="username, another-user" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                </div>
+                <div class="mt-4 flex justify-end gap-2"><button data-crm-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Add</button></div>
+              </form>
+            </dialog>
+
             <dialog data-crm-sheet-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
               <form data-crm-sheet-form class="p-5">
-                <div class="mb-4 flex items-center justify-between"><div><h2 data-crm-sheet-dialog-title class="text-base font-semibold">Sheet</h2><p class="text-xs text-muted-foreground">Rename this sheet and choose who can open it: your organization, picked teammates, or any ForkMesh user by name.</p></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <div class="mb-4 flex items-center justify-between"><div><h2 data-crm-sheet-dialog-title class="text-base font-semibold">List</h2><p class="text-xs text-muted-foreground">A list holds the contacts you put on it. Give it a pipeline and it walks them through that pipeline's stages; several lists can share one pipeline without sharing contacts. Choose who can open it: your organization, picked teammates, or any ForkMesh user by name.</p></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
                 <input data-crm-sheet-id type="hidden" />
                 <div class="grid gap-3">
-                  <label class="grid gap-1 text-xs text-muted-foreground">Name<input data-crm-sheet-name maxlength="60" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Name<input data-crm-sheet-name maxlength="60" required placeholder="Investors, Q4" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label data-crm-sheet-flow-row class="grid gap-1 text-xs text-muted-foreground">Pipeline<select data-crm-sheet-flow class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Who can open it<select data-crm-sheet-visibility class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="organization">Everyone in the organization</option><option value="private">Only me and the members I pick</option></select></label>
                   <div data-crm-sheet-share-panel class="grid gap-1 text-xs text-muted-foreground">Teammates who can open it<div data-crm-sheet-members class="grid max-h-48 gap-1 overflow-y-auto rounded-md border border-border bg-background p-2"></div></div>
-                  <label class="grid gap-1 text-xs text-muted-foreground">Other ForkMesh users<input data-crm-sheet-users maxlength="2000" placeholder="usernames, comma-separated" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /><span>They see this sheet read-only under "Shared with me" in their own CRM, with only the columns it shows, and can copy it into their organization. Sheets others share with you appear the same way here.</span></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Other ForkMesh users<input data-crm-sheet-users maxlength="2000" placeholder="usernames, comma-separated" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /><span>They see this list read-only under "Shared with me" in their own CRM, with only the columns it shows, and can copy it into their organization. Lists others share with you appear the same way here.</span></label>
                   <label class="flex items-start gap-2 text-xs text-foreground"><input data-crm-sheet-share-edit type="checkbox" class="mt-0.5" /><span>They can add contacts to it and move them along its pipeline's stages. They still see only its columns and no other contact.</span></label>
                 </div>
-                <div class="mt-4 flex items-center justify-between gap-2"><button data-crm-sheet-delete type="button" class="hidden rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Delete sheet</button><div class="ml-auto flex gap-2"><button data-crm-sheet-link type="button" title="Copy a link that opens this sheet for everyone it is shared with" class="hidden rounded-md border border-border px-3 py-2 text-xs font-semibold">Copy link</button><button data-crm-sheet-cancel type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save sheet</button></div></div>
+                <div class="mt-4 flex items-center justify-between gap-2"><button data-crm-sheet-delete type="button" class="hidden rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Delete list…</button><div class="ml-auto flex gap-2"><button data-crm-sheet-link type="button" title="Copy a link that opens this list for everyone it is shared with" class="hidden rounded-md border border-border px-3 py-2 text-xs font-semibold">Copy link</button><button data-crm-sheet-cancel type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save list</button></div></div>
               </form>
             </dialog>
 
@@ -500,6 +566,37 @@ complete</textarea><span>One line per stage. Rename or reorder them later in CRM
                 <p data-crm-mastodon-status role="status" aria-live="polite" class="mt-3 hidden text-xs text-muted-foreground"></p>
                 <div class="mt-4 flex justify-end gap-2"><button data-crm-mastodon-cancel type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button data-crm-mastodon-submit type="submit" class="rounded-md bg-primary disabled:opacity-50 px-3 py-2 text-xs font-semibold text-primary-foreground">Read followers</button></div>
               </form>
+            </dialog>
+
+            <dialog data-crm-github-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-crm-github-form class="p-5">
+                <div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Import GitHub contributors</h2><p class="text-xs text-muted-foreground">Your browser reads the repository's newest commits from GitHub's public API, then every author, committer and co-author email becomes a contact on a list you name next. GitHub's masked addresses (users.noreply.github.com) and other no-reply addresses are left out. Importing the same repository again updates the contributors it added before.</p></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <label class="grid gap-1 text-xs text-muted-foreground">Repository<input data-crm-github-repository required maxlength="320" placeholder="owner/name or https://github.com/owner/name" autocomplete="off" spellcheck="false" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /><span>A public repository on its default branch. Without signing in, GitHub lets a browser read its newest 1,000 commits here, and about 60 pages an hour.</span></label>
+                <p data-crm-github-status role="status" aria-live="polite" class="mt-3 hidden text-xs text-muted-foreground"></p>
+                <div class="mt-4 flex justify-end gap-2"><button data-crm-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button data-crm-github-submit type="submit" class="rounded-md bg-primary disabled:opacity-50 px-3 py-2 text-xs font-semibold text-primary-foreground">Read contributors</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-crm-merge-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-lg rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <form data-crm-merge-form class="p-5">
+                <div class="mb-3 flex items-center justify-between gap-3"><h2 class="text-base font-semibold">Merge contact</h2><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <p data-crm-merge-intro class="mb-3 text-xs text-muted-foreground"></p>
+                <input data-crm-merge-search type="search" placeholder="Search contacts" aria-label="Search contacts" autocomplete="off" class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" />
+                <div data-crm-merge-list role="radiogroup" aria-label="Contact to keep" class="mt-2 max-h-80 overflow-y-auto rounded-md border border-border py-1"></div>
+                <div class="mt-4 flex justify-end gap-2"><button data-crm-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Cancel</button><button data-crm-merge-submit type="submit" disabled class="rounded-md bg-primary disabled:opacity-50 px-3 py-2 text-xs font-semibold text-primary-foreground">Merge</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-crm-lists-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-5xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+              <div class="p-5">
+                <div class="mb-3 flex items-center justify-between gap-3"><div><h2 class="text-base font-semibold">Lists</h2><p class="text-xs text-muted-foreground">Every CSV import becomes its own list, next to a list for every pipeline. Click a list's name to open its tab.</p></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+                <div class="overflow-x-auto rounded-md border border-border">
+                  <table class="w-full text-left text-xs">
+                    <thead class="border-b border-border bg-secondary text-muted-foreground"><tr><th class="whitespace-nowrap px-2 py-2 font-semibold">List</th><th class="whitespace-nowrap px-2 py-2 font-semibold">File</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Contacts</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Columns</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Shared with</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Owner</th><th class="whitespace-nowrap px-2 py-2 font-semibold">Imported</th></tr></thead>
+                    <tbody data-crm-lists-body></tbody>
+                  </table>
+                </div>
+              </div>
             </dialog>
 
             <dialog data-crm-import-map-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-3xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
@@ -540,9 +637,8 @@ complete</textarea><span>One line per stage. Rename or reorder them later in CRM
                 <div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">CRM settings</h2><p class="text-xs text-muted-foreground">Shared flows, mail boxes, sender defaults, and an encrypted Zoho Mail connection.</p></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
                 <div class="grid gap-5 lg:grid-cols-2">
                   <section class="grid content-start gap-3">
-                  <div><p class="text-xs font-semibold uppercase text-muted-foreground">Flows and stages</p><p class="mt-1 text-xs text-muted-foreground">One line per stage. Starter flows can be renamed, reordered, or replaced.</p></div>
-                  <div data-crm-flow-editors class="grid gap-3"></div>
-                  <button data-crm-flow-add type="button" class="w-fit rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Add flow</button>
+                  <div><p class="text-xs font-semibold uppercase text-muted-foreground">Pipelines and stages</p><p class="mt-1 text-xs text-muted-foreground">Rename, reorder, add or remove pipelines and their stages, and pick which pipeline each list shows.</p></div>
+                  <button data-crm-pipelines-open type="button" class="w-fit rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Manage pipelines…</button>
                   <label class="grid gap-1 text-xs text-muted-foreground">Shared mail boxes<input data-crm-settings-mail-boxes maxlength="1000" placeholder="Inbox, Follow-up, Important, Archive" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /><span>Comma-separated; moving a message changes only its CRM box, not its Zoho folder.</span></label>
                   </section>
                   <section class="grid content-start gap-3">
@@ -562,6 +658,7 @@ complete</textarea><span>One line per stage. Rename or reorder them later in CRM
                   </section>
                   <section class="grid content-start gap-3 lg:col-span-2">
                   <div><p class="text-xs font-semibold uppercase text-muted-foreground">Outgoing email</p></div>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Email addresses open in<select data-crm-settings-mail-provider class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"><option value="zoho">Zoho Mail</option><option value="gmail">Gmail</option></select><span>Where a click on a contact's address writes a message.</span></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Provider name<input data-crm-settings-provider maxlength="80" placeholder="Mailtrap, Postmark, internal sender…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Send URL template<input data-crm-settings-url type="url" maxlength="1000" placeholder="https://provider.example/sends/{id}" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /><span>Use <code>{id}</code> where the provider message id belongs.</span></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Default from name<input data-crm-settings-from-name maxlength="120" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
