@@ -52,6 +52,14 @@ public final class DesktopTranscriptStream {
         return await follow()
     }
 
+    @discardableResult
+    public func refollow() async -> Bool {
+        if stopped { return await start() }
+        retry?.cancel()
+        retry = nil
+        return await follow()
+    }
+
     public func stop() {
         if stopped { return }
         stopped = true

@@ -63,6 +63,33 @@ class DesktopTranscriptStreamTest {
         hub.disconnectRelay()
     }
 
+    fun testRefollowPicksUpWhatAQuietFollowMissed() {
+        val desktop = LocalControlTest.FakeDesktop()
+        desktop.followAnswer = output(7, "abc", from = 0) + ("streaming" to true)
+        val channels = ArrayList<LocalControlTest.LoopChannel>()
+        val hub = hub(desktop, channels)
+        val deltas = Collections.synchronizedList(ArrayList<AgentTranscriptDelta>())
+        val stream = DesktopTranscriptStream(hub, 7) { deltas.add(it) }
+        expect(stream.start())
+        assertEq(3, stream.next)
+
+        desktop.followAnswer = output(7, "reply", from = 3) + ("streaming" to true)
+        expect(stream.refollow())
+        val follows = desktop.requests.filter { it["method"] == "agents.follow" }
+            .map { ((it["params"] as Map<*, *>)["since"] as Number).toInt() }
+        assertEq(listOf(0, 3), follows)
+        assertEq(listOf("abc", "reply"), deltas.map { it.text })
+        assertEq(8, stream.next)
+        expect(desktop.requests.none { it["method"] == "agents.unfollow" })
+
+        channels.single().push("agents.output", output(7, "!", from = 8))
+        expect(waitUntil { deltas.size == 3 })
+        assertEq(9, stream.next)
+        stream.stop()
+        expect(!stream.refollow())
+        hub.disconnectRelay()
+    }
+
     fun testAnOlderDesktopLeavesTheCallerReading() {
         val desktop = LocalControlTest.FakeDesktop()
         val hub = hub(desktop, ArrayList())
