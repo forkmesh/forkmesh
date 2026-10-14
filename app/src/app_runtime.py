@@ -1008,6 +1008,10 @@ class Default:
         url = None
         try:
             url = urlparse(request.url)
+            if _probe_ban_local:
+                denied = _probe_ban.denied(self.env, request, url.path)
+                if denied is not None:
+                    return denied
 
             response = _api_cors_preflight_response(
                 self.env, request, url.path)

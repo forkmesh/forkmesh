@@ -34,7 +34,7 @@ kinds:
 
 | Derivation | Format | Where stored |
 |---|---|---|
-| `_data_key` → `encrypt_row` / `decrypt_row` | AES-256-GCM, key `SHA-256(DATA_KEY)`, `base64(iv12 ‖ ct ‖ tag16)` of `json.dumps(obj)` | 95 tables (`CIPHER_COLUMNS`: the `data` column of 92 tables, `ad_network_ads.owner_sealed`, `world_element_purchases.deposit_secret`, `not_found_paths.last_client`). Also any such string nested in a plaintext JSON cell or inside another decrypted row. The tool trial-decrypts **every** text value and JSON leaf (GCM authentication makes a false positive impossible), so it does not depend on the list; the list is for reporting and the coverage test. |
+| `_data_key` → `encrypt_row` / `decrypt_row` | AES-256-GCM, key `SHA-256(DATA_KEY)`, `base64(iv12 ‖ ct ‖ tag16)` of `json.dumps(obj)` | 106 tables (`CIPHER_COLUMNS`: the `data` column of 102 tables, `ad_network_ads.owner_sealed`, `world_element_purchases.deposit_secret`, `not_found_paths.last_client`, `probe_bans.client`). Also any such string nested in a plaintext JSON cell or inside another decrypted row. The tool trial-decrypts **every** text value and JSON leaf (GCM authentication makes a false positive impossible), so it does not depend on the list; the list is for reporting and the coverage test. |
 | `_scoped_key` (plugin/package row keys) | AES-GCM under caller-supplied material | The material is stored inside `encrypt_row` rows, so it is re-encrypted with them. Rows sealed under the scoped key itself do not depend on `DATA_KEY` and are left untouched. |
 | `_room_chat_passphrase` (repository rooms, `world-general`), `_chat_channel_passphrase`, `_chat_direct_passphrase` | `SHA-256(DATA_KEY + suffix)` hex, used by clients as a PBKDF2-SHA256 passphrase (210,000 rounds, salt `SHA-256("ForkMesh room:" + room)[:16]`) → AES-GCM envelope `{kind:"cipher",v:1,nonce,tag,body}` | `chat_history.body`. The tool derives the old and new room key from `room_key` (`repo:<o>/<r>:room:<room>`, `legacy:room:<room>`, `chat-channel:<id>:v<n>`, `chat-direct:<id>:v<n>`), re-seals each envelope with a fresh nonce, and drops the rare row that opens under no candidate. An inner `chat-seal` E2EE layer, when present, is carried unchanged. |
 | Vault: `HKDF-SHA256(DATA_KEY, "fmnext-vault-v1", ...)` (docs/VAULT.md) | AES-256-GCM per row | `host_secrets`. The tool **empties** it; `next_vault.py sync` re-seals every variable under the new key. |
@@ -44,7 +44,7 @@ kinds:
 `blind_index(env, value)` = `HMAC-SHA256(SHA-256(DATA_KEY + ":blind-index"),
 lower(strip(value)))` hex. It is stored in:
 
-- 382 `*_bi` columns in 240 tables (`BI_COLUMNS`, table in section 5);
+- 393 `*_bi` columns in 249 tables (`BI_COLUMNS`, table in section 5);
 - 7 token columns not named `*_bi` (`TOKEN_COLUMNS`): `feedback.ip_hash`,
   `attribution_ip_hourly.ip_hash`, `note_views.viewer_key`,
   `blog_post_view_seen.viewer_key`, `repo_views.viewer_key`,
@@ -105,6 +105,7 @@ is the point.
 | Tracked mail footer image (`/api/mail/t/f/<footer id>.<sig>.png`, `sig` = blind index of `mail-footer:<footer id>`) | The `email_footers` row and its open count are kept, but footers already pasted into a mail signature stop counting opens; the user copies the footer again from Settings → Account → Tracked email footer (same footer id, new signature). |
 | `product_analysis` session (`password|DATA_KEY`) | Sign in again. |
 | `link_codes` (device link codes, one-time link grants) | Emptied; link again. |
+| Automatic probe bans (`probe_bans`, `probe_visitors`) | Emptied; every auto ban is lifted by the next sweep (at most 5 minutes) and scoring starts over. See [app/probe-auto-ban.md](app/probe-auto-ban.md). |
 | Office agent presence (`organization_agent_presence`) | Emptied; rows live at most 8 hours after a run ends and the desktop reports its live runs again on its next reload. |
 | Office attendance (`org_office_visits`) | Emptied; attendance keeps 14 days. Office chat is the site chat since migration 0227 (its channels are ordinary `chat_channels` rows, re-keyed with them); `org_office_channels` only maps an organization's blind index to those channel ids and is recomputed like every other `org_bi`. |
 | OAuth states (`patreon_oauth_states`, `organization_discord_oauth_states`) | Emptied; restart the OAuth flow. |
@@ -451,6 +452,8 @@ or replaced by a consistent pseudonym (section 1.2).
 | `pending_verifications` | name_bi | data | re-encrypt; recompute |
 | `plan_trials` | account_bi | - | recompute |
 | `private_mirror_routes` | binding_bi, repo_bi, node_bi | - | recompute |
+| `probe_bans` | visitor_bi | client | emptied: automatic probe bans keyed by an IP blind index; the next `probe-bans` sweep deletes their `auto-probe-*` rows in `request_block_rules` |
+| `probe_visitors` | visitor_bi | - | emptied: 404 probe scores keyed by an IP blind index |
 | `profile_contribution_days` | generation_bi, subject_user_bi, source_account_bi, source_repo_bi, project_bi | data | re-encrypt; recompute |
 | `profile_contribution_languages` | generation_bi, owner_user_bi, source_repo_bi, project_bi | - | recompute |
 | `profile_contribution_projects` | source_repo_bi, source_account_bi, owner_user_bi, project_bi, active_generation_bi | data | re-encrypt; recompute |

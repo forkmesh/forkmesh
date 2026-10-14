@@ -48,7 +48,11 @@ test("a missing marketing page is relayed to the App's 404 log without its query
   const { ctx, settle } = waited();
   const response = await worker.fetch(
     new Request("https://forkmesh.com/blog/old-post?utm_source=x", {
-      headers: { referer: "https://news.example/item?id=1", "user-agent": "Mozilla/5.0 Test" },
+      headers: {
+        referer: "https://news.example/item?id=1",
+        "user-agent": "Mozilla/5.0 Test",
+        "sec-fetch-site": "cross-site",
+      },
     }),
     env,
     ctx,
@@ -63,6 +67,7 @@ test("a missing marketing page is relayed to the App's 404 log without its query
       path: "/blog/old-post",
       referrer: "https://news.example/item?id=1",
       userAgent: "Mozilla/5.0 Test",
+      fetchSite: "cross-site",
     },
   }]);
 });

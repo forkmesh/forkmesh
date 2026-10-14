@@ -143,13 +143,21 @@ The sidebar badge counts groups that alerted in the last 24 hours.
 
 forkmesh.com serves static assets from the www Worker, which never reaches
 the App. When its asset lookup answers 404 for a GET or HEAD, `reportNotFound`
-posts `{path, referrer, userAgent}` to `POST /api/not-found` on `APP_ORIGIN` inside
+posts `{path, referrer, userAgent, fetchSite}` (`fetchSite` is the visitor's `Sec-Fetch-Site`, read by the auto bans) to `POST /api/not-found` on `APP_ORIGIN` inside
 `waitUntil`, so the visitor's 404 page never waits on it and a failed relay
 changes nothing. The endpoint is unauthenticated on purpose: all it can do is
 add a 404 for a forkmesh.com path, which requesting that path on forkmesh.com
 does anyway. The visitor's IP and country reach the App through the signed
 edge-client header the relay already carries; the User-Agent comes from the
 body, so a direct caller can name any agent but only its own IP.
+
+## Auto bans
+
+Every 404 is also handed to `probe_ban.observe` (before the exceptions
+check, so an ignored path still counts). A visitor whose 404s are scanner
+probes is banned on every core; the 404s page marks those paths with a
+"Probe" pill and lists the bans in its "Auto bans" card, with Lift. See
+[probe-auto-ban.md](probe-auto-ban.md). Added 2026-10-13.
 
 ## Fixed sources
 

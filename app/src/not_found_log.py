@@ -53,6 +53,10 @@ NOTICES = {
                   % MAX_IGNORES, "bad"),
     "csrf": ("Action blocked: invalid or missing CSRF token. Reload the page "
              "and try again.", "bad"),
+    "ban_lifted": ("Ban lifted. The address can reach every site again within "
+                   "a minute.", "ok"),
+    "ban_missing": ("That ban was already gone.", "ok"),
+    "ban_invalid": ("Lift failed: invalid ban.", "bad"),
 }
 _SEGMENT_ID_RE = re.compile(
     r"^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
@@ -247,7 +251,7 @@ def _under_args(path, prefix):
 
 
 async def record(env, site, method, path, referrer="", now=None,
-                 client=None):
+                 client=None, fetch_site=""):
     try:
         site = normalize_site(site)
         method = normalize_method(method)
@@ -256,6 +260,7 @@ async def record(env, site, method, path, referrer="", now=None,
             return False
         now = int(now or _now())
         await ensure_schema(env)
+        await _probe_ban.observe(env, path, client, now, fetch_site)
         matched = ignore_match(await _ignore_rules(env, now), site, path)
         if matched:
             await d1_run(
@@ -385,7 +390,8 @@ async def record_response(env, request, url):
         return await record(
             env, getattr(url, "hostname", "") or "", method_name(request),
             path, referrer_label(env, _header(request, "referer")),
-            client=request_client(request))
+            client=request_client(request),
+            fetch_site=_header(request, "sec-fetch-site"))
     except Exception:
         return False
 
@@ -409,10 +415,12 @@ async def relay_handler(env, request):
         return json_response(
             {"error": "bad_request"}, status=400, cache_control="no-store")
     user_agent = data.get("userAgent")
+    fetch_site = data.get("fetchSite")
     recorded = await record(
         env, site, "GET", path, referrer_label(env, data.get("referrer")),
         client=request_client(
-            request, user_agent if isinstance(user_agent, str) else ""))
+            request, user_agent if isinstance(user_agent, str) else ""),
+        fetch_site=fetch_site if isinstance(fetch_site, str) else "")
     return json_response(
         {"ok": True, "recorded": bool(recorded)}, cache_control="no-store")
 
@@ -486,6 +494,9 @@ async def _handle_post(env, request, params, admin_query, account):
         return _redirect(location(await _add_ignore(env, form, account)))
     if action == "unignore_not_found":
         return _redirect(location(await _remove_ignore(env, form, account)))
+    if action == "lift_probe_ban":
+        return _redirect(location(await _probe_ban.lift(
+            env, _first(form, "rule_id"), account)))
     site = normalize_site(_first(form, "site"))
     method = _first(form, "method")
     path = _first(form, "path")[:PATH_MAX]
@@ -799,7 +810,9 @@ async def render(env, params, csrf_field="", admin_query="", now=None):
             '<td class="r"><div class="actions" '
             'style="justify-content:flex-end">%s%s</div></td></tr>' % (
                 _request_cell(row),
-                shell.pill(source_label(row.get("path"))),
+                shell.pill(source_label(row.get("path")))
+                + ((" " + shell.pill("Probe", "bad"))
+                   if _probe_ban.classify(row.get("path")) else ""),
                 shell.sparkline(
                     frequency, "24-hour frequency: %d hit%s"
                     % (day_hits, "" if day_hits == 1 else "s")),
@@ -855,10 +868,18 @@ async def render(env, params, csrf_field="", admin_query="", now=None):
             "Requests that found nothing on any ForkMesh site, grouped by site, "
             "method and path. A group pings administrators once when it "
             "reaches %d hits. Ignore a path that was deleted on purpose to "
-            "stop logging it." % ALERT_HITS,
+            "stop logging it. Probe marks a path only a scanner asks for; "
+            "those count toward an auto ban." % ALERT_HITS,
             crumb="Reliability")
         + kpis
         + await _render_chart(env, first_hour)
         + '<section class="card">' + tabs
         + '<div class="card-t">' + table + "</div>" + pager + "</section>"
+        + await _probe_ban.render(
+            env,
+            lambda row: _row_form(
+                "lift_probe_ban", row, ("rule_id",), "Lift",
+                "Remove this ban now and forget the visitor's score",
+                csrf_field, admin_query, sort, page),
+            _client_cell, now)
         + await _render_ignores(env, csrf_field, admin_query, sort, page, now))
