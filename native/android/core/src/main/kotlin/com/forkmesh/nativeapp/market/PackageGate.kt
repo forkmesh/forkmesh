@@ -38,7 +38,7 @@ object PackageGate {
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
         "glassesAlert" to "glasses-alert", "localAI" to "on-device-ai", "activity" to "activity",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
-        "tour" to "tour", "world" to "world", "designSystem" to "design-system",
+        "tour" to "tour", "world" to "world", "people" to "people", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
     )
 
@@ -71,6 +71,7 @@ object PackageGate {
         put("coves", Route.Kind.Coves, Route.Kind.Cove)
         put("calories", Route.Kind.Calories)
         put("glasses-alert", Route.Kind.GlassesAlert)
+        put("people", Route.Kind.People)
         put("on-device-ai", Route.Kind.LocalAI)
         put("activity", Route.Kind.Activity)
         put("stats", Route.Kind.Stats)
