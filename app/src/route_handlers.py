@@ -1389,6 +1389,39 @@ def _org_agent_session_projection(row, record):
     }
 
 
+def _org_agent_hide_private_runner(projection, row, record, viewer):
+    if not record.get("runnerPrivate"):
+        return projection
+    if str(record.get("runnerOwner") or "") == viewer:
+        return projection
+    projection["runner"] = ""
+    projection["targetNode"] = str(row.get("target_node") or "")
+    if isinstance(projection.get("queue"), dict):
+        projection["queue"].pop("runner", None)
+    return projection
+
+
+async def _org_agent_private_runner_block(env, row, record, actor):
+    import agent_branches
+    name = agent_branches.session_runner(row, record)
+    if not name:
+        return None
+    runner = await d1_first(
+        env,
+        "SELECT scope,registered_by FROM runner_nodes WHERE name=?", name,
+    ) or {}
+    if (str(runner.get("scope") or "") != "personal"
+            or str(runner.get("registered_by") or "") == actor):
+        return None
+    return _org_agent_error(
+        "runner_private",
+        "This session runs on another member's personal runner, so only "
+        "they can send it a follow-up. Start a new session to run your own.",
+        403,
+        required_action="start_new_session",
+    )
+
+
 _ORG_AGENT_QUEUE_STATUSES = ("queued", "security_pending")
 _ORG_AGENT_RUNNER_ONLINE_GRACE_MS = 30 * 1000
 
@@ -2297,7 +2330,9 @@ async def org_agent_bots_handler(
                 and str(record.get("scope") or "organization")
                     == context.get("scope", "organization")
             ):
-                sessions.append(_org_agent_session_projection(row, record))
+                sessions.append(_org_agent_hide_private_runner(
+                    _org_agent_session_projection(row, record), row, record,
+                    context["actor"]))
         targets = await _org_agent_session_targets(env, context)
         return json_response({
             "ok": True,
@@ -2586,6 +2621,7 @@ async def org_agent_bots_handler(
         target_decision.get("runnerPin"), MAX_NODE_NAME).strip().lower()
     if runner_owner and valid_node_name(runner_pin):
         job["runner"] = runner_pin
+        record["runnerPrivate"] = True
     session_data = await encrypt_row(env, record)
     job_data = await encrypt_row(env, job)
     try:
@@ -2818,7 +2854,8 @@ async def account_agent_sessions_handler(env, request):
                 continue
         elif scope != "owner":
             continue
-        projection = _org_agent_session_projection(row, record)
+        projection = _org_agent_hide_private_runner(
+            _org_agent_session_projection(row, record), row, record, actor)
         projection["scope"] = scope
         projections.append(projection)
         if not is_active:
@@ -3359,6 +3396,7 @@ async def org_agent_bot_handler(
             queue = {}
         if queue:
             session["queue"] = queue
+        _org_agent_hide_private_runner(session, row, record, context["actor"])
         return json_response({
             "ok": True,
             "session": session,
@@ -3435,6 +3473,10 @@ async def org_agent_bot_handler(
             409,
             required_action="start_new_session",
         )
+    blocked = await _org_agent_private_runner_block(
+        env, row, record, context["actor"])
+    if blocked:
+        return blocked
     local_agent_id = int(record.get("localAgentId") or 0)
     if local_agent_id <= 0:
         return _org_agent_error(

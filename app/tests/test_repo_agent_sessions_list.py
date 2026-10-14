@@ -50,6 +50,7 @@ def _load(store):
     async def context(*_args, **_kwargs):
         return {
             "org": "jett", "orgBi": "bi:jett", "repo": "forkmesh",
+            "actor": "jett",
             "scope": "owner", "role": "owner", "engineeringAccess": True,
             "accessBasis": "owner",
         }, None
@@ -68,6 +69,8 @@ def _load(store):
             0, result=[]),
         "_org_agent_session_projection": lambda row, _record: {
             "id": row["session_id"], "status": row["status"]},
+        "_org_agent_hide_private_runner": (
+            lambda projection, row, record, viewer: projection),
         "json_response": lambda data, status=200, **_kwargs: {
             "status": status, "data": data},
     }

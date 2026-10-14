@@ -36,8 +36,8 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[@-Z\\-_]")
 INSTALLS = (
     "the forkmesh-mirror-node binary from the signed ForkMesh release, run "
     "as a runner (it serves no repositories)",
-    "a forkmesh-runner systemd service and an unprivileged forkmesh-job user "
-    "that agent jobs run as",
+    "a forkmesh-runner systemd service and an unprivileged job user of its "
+    "own for your account that agent jobs and their sign-ins live under",
     "Node.js and the Claude Code CLI, when they are missing",
     "firewall rules that keep agent jobs off this machine's private network",
 )

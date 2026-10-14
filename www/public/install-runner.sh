@@ -12,7 +12,14 @@ BINARY=""
 INSTALL_SH_URL="${FORKMESH_INSTALL_SH_URL:-https://forkmesh.com/install.sh}"
 PREFIX="${FORKMESH_RUNNER_PREFIX:-}"
 TEST_MODE="${FORKMESH_RUNNER_TEST:-0}"
-JOB_USER="forkmesh-job"
+JOB_USER=""
+JOB_HOME=""
+WORK=""
+OWNER=""
+EXISTING_NAME=""
+EXISTING_OWNER=""
+EXISTING_JOB_USER=""
+EXISTING_WORK=""
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -34,9 +41,11 @@ Options:
   --binary PATH    use this forkmesh-mirror-node binary instead of the signed release
 
 What it installs: /usr/local/bin/forkmesh-mirror-node (run as a runner, it serves no
-repositories), the forkmesh-runner service, the unprivileged forkmesh-job user that
-agent jobs run as, firewall rules that keep jobs off private networks, and the chosen
-agent CLIs. It keeps any existing ForkMesh data on this machine and deletes nothing.
+repositories), the forkmesh-runner service, an unprivileged job user of its own for your
+ForkMesh account (fmjob-<account>) that agent jobs and their sign-ins live under, firewall
+rules that keep jobs off private networks, and the chosen agent CLIs. The runner is private
+to your account: nobody else can see it or run jobs on it. It keeps any existing ForkMesh
+data on this machine and deletes nothing.
 
 On macOS the service is the com.forkmesh.runner launch daemon, the firewall is a pf
 anchor, and forkmesh-mirror-node is built from source with Go (Homebrew installs Go,
@@ -92,13 +101,13 @@ OPENSSL="openssl"
 if [ "$PLATFORM" = "Darwin" ]; then
   ETC="$PREFIX/private/etc/forkmesh-runner"
   STATE="$PREFIX/private/var/db/forkmesh-runner"
-  JOB_HOME="$PREFIX/private/var/db/$JOB_USER"
+  JOB_BASE="$PREFIX/private/var/db"
   UNIT_DIR="$PREFIX/Library/LaunchDaemons"
   PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 else
   ETC="$PREFIX/etc/forkmesh-runner"
   STATE="$PREFIX/var/lib/forkmesh-runner"
-  JOB_HOME="$PREFIX/var/lib/$JOB_USER"
+  JOB_BASE="$PREFIX/var/lib"
   UNIT_DIR="$PREFIX/etc/systemd/system"
 fi
 BIN="$PREFIX/usr/local/bin/forkmesh-mirror-node"
@@ -252,7 +261,7 @@ create_macos_job_user() {
     gid="$id"
     dscl . -create "/Groups/$JOB_USER"
     dscl . -create "/Groups/$JOB_USER" PrimaryGroupID "$gid"
-    dscl . -create "/Groups/$JOB_USER" RealName "ForkMesh runner jobs"
+    dscl . -create "/Groups/$JOB_USER" RealName "ForkMesh runner jobs for $OWNER"
     dscl . -create "/Groups/$JOB_USER" Password '*'
   fi
   dscl . -create "/Users/$JOB_USER"
@@ -260,14 +269,63 @@ create_macos_job_user() {
   dscl . -create "/Users/$JOB_USER" PrimaryGroupID "$gid"
   dscl . -create "/Users/$JOB_USER" UserShell /usr/bin/false
   dscl . -create "/Users/$JOB_USER" NFSHomeDirectory "$(live_path "$JOB_HOME")"
-  dscl . -create "/Users/$JOB_USER" RealName "ForkMesh runner jobs"
+  dscl . -create "/Users/$JOB_USER" RealName "ForkMesh runner jobs for $OWNER"
   dscl . -create "/Users/$JOB_USER" Password '*'
   dscl . -create "/Users/$JOB_USER" IsHidden 1
   dscacheutil -flushcache >/dev/null 2>&1 || true
   say "Created the job user $JOB_USER (uid $id)"
 }
 
+job_user_for() {
+  local account="$1" hash
+  if [ "${#account}" -le 26 ]; then
+    printf 'fmjob-%s' "$account"
+    return 0
+  fi
+  hash="$(printf '%s' "$account" | "$OPENSSL" dgst -sha256 -r | cut -c1-6)"
+  printf 'fmjob-%s-%s' "${account:0:19}" "$hash"
+}
+
+read_existing() {
+  local fields
+  if [ -s "$IDENTITY" ]; then
+    EXISTING_NAME="$(python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1]))["node"]["name"])
+except Exception: print("")' "$IDENTITY" 2>/dev/null || true)"
+    [[ "$EXISTING_NAME" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || EXISTING_NAME=""
+  fi
+  [ -s "$CONFIG" ] || return 0
+  fields="$(python3 -c 'import json,sys
+try:
+    r=json.load(open(sys.argv[1]))["runner"]
+    owners=r.get("allowedOwners") or []
+    print(owners[0] if len(owners)==1 else "", r.get("jobUser") or "", r.get("workRoot") or "", sep="\x1f")
+except Exception: print("\x1f\x1f")' "$CONFIG" 2>/dev/null || true)"
+  IFS=$'\x1f' read -r EXISTING_OWNER EXISTING_JOB_USER EXISTING_WORK <<<"$fields" || true
+  [[ "$EXISTING_OWNER" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || EXISTING_OWNER=""
+  [[ "$EXISTING_JOB_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$EXISTING_JOB_USER" != "root" ] || EXISTING_JOB_USER=""
+  case "$EXISTING_WORK" in
+    "$(live_path "$STATE")"/*) case "$EXISTING_WORK" in *..*) EXISTING_WORK="" ;; esac ;;
+    *) EXISTING_WORK="" ;;
+  esac
+}
+
+choose_job_user() {
+  if [ -n "$EXISTING_OWNER" ] && [ "$EXISTING_OWNER" != "$OWNER" ]; then
+    warn "This machine ran runner ${EXISTING_NAME:-?} for the ForkMesh account $EXISTING_OWNER. It now runs $NAME for $OWNER; $EXISTING_OWNER's job user and sign-ins stay where they are and $NAME never uses them."
+  fi
+  if [ "$EXISTING_OWNER" = "$OWNER" ] && [ "$EXISTING_NAME" = "$NAME" ]; then
+    JOB_USER="$EXISTING_JOB_USER"
+    [ -n "$EXISTING_WORK" ] && WORK="$PREFIX$EXISTING_WORK"
+  fi
+  [ -n "$JOB_USER" ] || JOB_USER="$(job_user_for "$OWNER")"
+  [[ "$JOB_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "Could not derive a job user name for $OWNER."
+  JOB_HOME="$JOB_BASE/$JOB_USER"
+  [ -n "$WORK" ] || WORK="$STATE/jobs/$JOB_USER"
+}
+
 ensure_job_user() {
+  step "Job user $JOB_USER for $OWNER"
   if [ "$TEST_MODE" != "1" ] && [ "$PLATFORM" = "Darwin" ]; then
     dscl . -read "/Users/$JOB_USER" UniqueID >/dev/null 2>&1 || create_macos_job_user
     install -d -o "$JOB_USER" -g "$JOB_USER" -m 0700 "$JOB_HOME" "$JOB_HOME/.claude" "$JOB_HOME/.codex"
@@ -279,11 +337,13 @@ ensure_job_user() {
   else
     install -d -m 0700 "$JOB_HOME" "$JOB_HOME/.claude" "$JOB_HOME/.codex"
   fi
+  install -d -m 0711 "$WORK"
+  say "Agent jobs for $OWNER run as $JOB_USER (home $(live_path "$JOB_HOME"), work $(live_path "$WORK"))"
 }
 
 ensure_dirs() {
   install -d -m 0700 "$ETC"
-  install -d -m 0711 "$STATE" "$STATE/work"
+  install -d -m 0711 "$STATE" "$STATE/jobs"
   install -d -m 0700 "$STATE/identity" "$STATE/gateway"
   install -d -m 1777 "$STATE/tmp"
   local dir
@@ -357,6 +417,12 @@ b64url() { base64 | tr '+/' '-_' | tr -d '=\n'; }
 
 ensure_identity() {
   step "Runner identity"
+  if [ -s "$KEY" ] && [ -n "$EXISTING_NAME" ] && [ "$EXISTING_NAME" != "$NAME" ]; then
+    local aside="$KEY.$EXISTING_NAME"
+    [ -e "$aside" ] && aside="$aside.$(date +%s)"
+    mv "$KEY" "$aside"
+    say "Kept the key of runner $EXISTING_NAME at $aside; $NAME gets its own key"
+  fi
   if [ -s "$KEY" ]; then
     say "Reusing the runner key at $KEY"
   else
@@ -402,17 +468,21 @@ except Exception: d={}
 print(d.get("message") or d.get("error") or "")' 2>/dev/null || true)"
     die "ForkMesh refused the registration (HTTP $status): ${message:-no details}"
   fi
-  OWNERS_JSON="$(printf '%s' "$answer" | python3 -c 'import json,sys
-d=json.load(sys.stdin)
-owners=[o for o in d["runner"]["allowedOwners"] if isinstance(o,str)]
-print(json.dumps(owners))')"
-  say "Registered $NAME for $(printf '%s' "$OWNERS_JSON" | tr -d '[]"')."
+  OWNER="$(printf '%s' "$answer" | python3 -c 'import json,sys
+d=json.load(sys.stdin)["runner"]
+owners=[o for o in d.get("allowedOwners") or [] if isinstance(o,str)]
+owner=d.get("registeredBy") or (owners[0] if len(owners)==1 else "")
+print(owner if owners==[owner] else "")')"
+  [[ "$OWNER" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] ||
+    die "ForkMesh did not answer with the one account this runner belongs to."
+  OWNERS_JSON="[\"$OWNER\"]"
+  say "Registered $NAME as a private runner of $OWNER."
 }
 
 write_config() {
   step "Writing the runner configuration"
   FM_NAME="$NAME" FM_KEY="$PUBLIC_KEY" FM_IDENTITY="$IDENTITY" FM_CONFIG="$CONFIG" \
-  FM_KEYFILE="$KEY" FM_APP="$APP_URL" FM_OWNERS="$OWNERS_JSON" FM_WORK="$STATE/work" \
+  FM_KEYFILE="$KEY" FM_APP="$APP_URL" FM_OWNERS="$OWNERS_JSON" FM_WORK="$WORK" \
   FM_JOB_USER="$JOB_USER" FM_TEST="$TEST_MODE" FM_PREFIX="$PREFIX" python3 - <<'PY'
 import json, os
 def write(path, doc):
@@ -731,17 +801,19 @@ check_and_start() {
 require_system
 install_packages
 ensure_dirs
-ensure_job_user
+read_existing
 ensure_binary
 ensure_identity
 register_runner
+choose_job_user
+ensure_job_user
 write_config
 write_units
 install_providers
 check_and_start
 
 say ""
-say "Done. $NAME is registered as your personal runner."
+say "Done. $NAME is registered as your private runner; its jobs run as $JOB_USER."
 say "Next: open https://forkmesh.com/dashboard/runners and press Connect Claude (or Codex)"
 say "to sign the agent CLI in. The login stays on this machine."
 exit 0

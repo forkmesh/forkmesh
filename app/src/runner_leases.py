@@ -17,16 +17,17 @@ Endpoints (all JSON, ``Cache-Control: no-store``):
     runner's key. Registration is deliberately the simplest possible choice
     (no link code): an app admin may register ``pool`` runners for any
     non-empty owner list (an owner is served only once listed: the opt-in);
-    any other account may register only a
+    every account, admins included, may register only a
     ``personal`` runner whose ``allowedOwners`` is exactly its own name. A name
     registered to someone else, an existing account/claimed node name, or a
     configured pool target name is refused. Re-registering your own name
     rotates its key and settings.
 
 ``POST /api/runners/revoke``
-    Account-session authenticated, body ``{name}``; the registrant or an admin
-    sets the runner's status to ``revoked``. Its signatures stop verifying at
-    once; its leases requeue when their grants expire.
+    Account-session authenticated, body ``{name}``; the registrant (or an
+    admin, for a pool runner) sets the runner's status to ``revoked``. Its
+    signatures stop verifying at once; its leases requeue when their grants
+    expire.
 
 ``POST /api/runners/claim``
     Runner-signed (see ``_signed_caller``). Body ``{max, providers,
@@ -68,8 +69,8 @@ A job is eligible for runner R when all of these hold:
   runner (a personal runner takes pool-target jobs only when pinned to it,
   or, for a ``steer``, when it held the session's latest lease);
 * its owner (record ``organization``, else the target node) is allowed by R
-  (personal: listed; pool: listed or the list is empty) and by the
-  ``allowedOwners`` the runner sent, if any;
+  (personal: the registrant, who also requested the job; pool: listed) and
+  by the ``allowedOwners`` the runner sent, if any;
 * its provider is one the runner offered;
 * ``start`` jobs get their named ``agent/`` branch or
   ``refs/heads/agent/<session>``; ``continue`` jobs only when their branch
@@ -260,7 +261,7 @@ async def _register(runtime, raw):
     if scope == "pool" and not admin:
         return _error(runtime, "forbidden", 403,
                       "Only an administrator registers pool runners.")
-    if scope == "personal" and not admin and owners != [actor]:
+    if scope == "personal" and owners != [actor]:
         return _error(runtime, "forbidden", 403,
                       "A personal runner may serve only your own account.")
     if not owners:
@@ -302,16 +303,20 @@ async def _revoke(runtime, raw):
         return _error(runtime, "unauthorized", 401)
     name = str(data.get("name") or "").strip().lower()
     row = await runtime.d1_first(
-        "SELECT registered_by FROM runner_nodes WHERE name=?", name)
-    if not row:
+        "SELECT registered_by,scope FROM runner_nodes WHERE name=?", name)
+    if not row or not await _may_revoke(runtime, actor, row):
         return _error(runtime, "not_found", 404)
-    if row.get("registered_by") != actor and not await runtime.is_admin(actor):
-        return _error(runtime, "forbidden", 403)
     await runtime.d1_run(
         "UPDATE runner_nodes SET status='revoked',updated_at=? WHERE name=?",
         runtime.now(), name)
     await runtime.audit(actor, "runner.revoke", name)
     return runtime.response({"ok": True, "name": name, "status": "revoked"})
+
+
+async def _may_revoke(runtime, actor, row):
+    if row.get("registered_by") == actor:
+        return True
+    return row.get("scope") == "pool" and await runtime.is_admin(actor)
 
 
 # --- signed requests ------------------------------------------------------
@@ -412,7 +417,16 @@ def _owner_allowed(runner, owner, requested):
     allowed = runner.get("allowedOwners") or []
     if owner not in allowed:
         return False
+    if runner.get("scope") != "pool" and owner != runner.get("registeredBy"):
+        return False
     return requested is None or owner in requested
+
+
+def _requester_allowed(runner, record):
+    if runner.get("scope") == "pool":
+        return True
+    requester = str(record.get("requestedBy") or "").strip().lower()
+    return bool(requester) and requester == runner.get("registeredBy")
 
 
 async def _job_ref(runtime, runner, record, session_id):
@@ -619,6 +633,8 @@ async def _lease_jobs(runtime, runner, pool, targets, providers, requested,
             continue
         owner = str(record.get("organization") or target).strip().lower()
         if not _owner_allowed(runner, owner, requested):
+            continue
+        if not _requester_allowed(runner, record):
             continue
         if str(record.get("provider") or row.get("provider")) not in providers:
             continue
@@ -1113,11 +1129,12 @@ class WorkerRuntime:
         await notify_account_event(self.env, account, topic)  # noqa: F821
 
     async def alert_runner_auth(self, runner, provider, state, title, body,
-                                href, dedupe, email=False, extra=()):
+                                href, dedupe, email=False, extra=(),
+                                admins=True):
         now = self.now()
         recipients = list(
             await _operator_alerts._operator_alert_admins(  # noqa: F821
-                self.env) or [])
+                self.env) or []) if admins else []
         for name in extra or ():
             name = str(name or "").strip().lower()
             if NAME_RE.fullmatch(name) and name not in recipients:
@@ -1131,7 +1148,7 @@ class WorkerRuntime:
                     meta={"runner": runner, "provider": provider,
                           "state": state}):
                 pings += 1
-        if email:
+        if email and admins:
             for address in await _repository_monitor_admin_emails(  # noqa: F821
                     self.env) or []:
                 await _send_email(  # noqa: F821

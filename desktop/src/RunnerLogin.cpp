@@ -540,12 +540,10 @@ RunnerLoginSession::applyStartReply(int httpStatus, const QJsonObject &body)
         if (httpStatus == 401)
             message = QStringLiteral(
                 "Sign in to your ForkMesh account on this desktop first.");
-        else if (httpStatus == 403)
+        else if (httpStatus == 403 || httpStatus == 404)
             message = QStringLiteral(
-                "Only an administrator, or the registrant of a personal "
-                "runner, may sign its agent CLIs in.");
-        else if (httpStatus == 404)
-            message = QStringLiteral("That runner is not registered.");
+                "That runner is not one of yours. Only the account that "
+                "added a runner can see it or sign its agent CLIs in.");
         else if (!code.isEmpty())
             message = code;
         else

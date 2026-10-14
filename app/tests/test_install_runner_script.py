@@ -20,8 +20,9 @@ def unb64(value):
 
 
 class App:
-    def __init__(self, status=201):
+    def __init__(self, status=201, owner="alice"):
         self.status = status
+        self.owner = owner
         self.bodies = []
         app = self
 
@@ -38,7 +39,8 @@ class App:
                     unb64(body["publicKey"])).verify(unb64(body["proof"]), message)
                 answer = ({"ok": True, "runner": {
                     "name": body["name"], "scope": "personal",
-                    "allowedOwners": ["alice"], "publicKey": body["publicKey"]}}
+                    "allowedOwners": [app.owner], "registeredBy": app.owner,
+                    "publicKey": body["publicKey"]}}
                     if app.status < 300 else
                     {"ok": False, "error": "invalid_token",
                      "message": "The setup token is unknown, used or expired."})
@@ -124,7 +126,9 @@ def test_registers_with_a_signed_proof_and_writes_a_runner_config(tmp_path):
     assert config["gatewayConfig"] == "/var/lib/forkmesh-runner/gateway/config.json"
     assert config["runner"]["allowedOwners"] == ["alice"]
     assert config["runner"]["appUrl"] == app.url
-    assert config["runner"]["workRoot"] == "/var/lib/forkmesh-runner/work"
+    assert config["runner"]["workRoot"] == "/var/lib/forkmesh-runner/jobs/fmjob-alice"
+    assert (root / "var/lib/forkmesh-runner/jobs/fmjob-alice").is_dir()
+    assert (root / "var/lib/fmjob-alice/.claude").is_dir()
     assert config["listen"] != "127.0.0.1:8791"
     identity = json.loads((root / "var/lib/forkmesh-runner/gateway/config.json").read_text())
     assert identity == {"schemaVersion": 1, "node": {
@@ -133,7 +137,8 @@ def test_registers_with_a_signed_proof_and_writes_a_runner_config(tmp_path):
     assert "--config /etc/forkmesh-runner/runner.json" in unit
     assert "NoNewPrivileges=true" in unit and "IPAddressDeny=169.254.0.0/16" in unit
     nft = (root / "etc/forkmesh-runner/jobs.nft").read_text()
-    assert 'meta skuid "forkmesh-job"' in nft and "192.168.0.0/16" in nft
+    assert 'meta skuid "fmjob-alice"' in nft and "192.168.0.0/16" in nft
+    assert "/var/lib/fmjob-alice" in unit
     assert "flush ruleset" not in nft
     assert TOKEN not in json.dumps(config) and TOKEN not in unit
     assert (root / "usr/local/bin/forkmesh-mirror-node").is_file()
@@ -182,8 +187,8 @@ def test_macos_installs_a_launch_daemon_and_a_pf_anchor(tmp_path):
     root = tmp_path / "root"
     config = json.loads((root / "private/etc/forkmesh-runner/runner.json").read_text())
     assert config["identityKey"] == "/private/var/db/forkmesh-runner/identity/ed25519.pem"
-    assert config["runner"]["workRoot"] == "/private/var/db/forkmesh-runner/work"
-    assert (root / "private/var/db/forkmesh-job/.claude").is_dir()
+    assert config["runner"]["workRoot"] == "/private/var/db/forkmesh-runner/jobs/fmjob-alice"
+    assert (root / "private/var/db/fmjob-alice/.claude").is_dir()
     assert not (root / "etc/systemd").exists() and not (root / "var/lib").exists()
     plist = (root / "Library/LaunchDaemons/com.forkmesh.runner.plist").read_text()
     assert "<string>/private/etc/forkmesh-runner/runner.json</string>" in plist
@@ -195,3 +200,72 @@ def test_macos_installs_a_launch_daemon_and_a_pf_anchor(tmp_path):
     firewall = (root / "Library/LaunchDaemons/com.forkmesh.runner-firewall.plist").read_text()
     assert "pfctl -a com.apple/forkmesh-runner -f /private/etc/forkmesh-runner/jobs.pf" in firewall
     assert "pfctl -F" not in firewall and "pf.conf" not in firewall
+
+
+def test_another_account_gets_its_own_job_user_key_and_work_root(tmp_path):
+    binary = fake_binary(tmp_path)
+    root = tmp_path / "root"
+    config_path = root / "etc/forkmesh-runner/runner.json"
+    key = root / "var/lib/forkmesh-runner/identity/ed25519.pem"
+    app = App(owner="alice")
+    try:
+        assert run(tmp_path, "--token", TOKEN, "--name", "alice-box", "--app",
+                   app.url, "--binary", str(binary)).returncode == 0
+        alice_key = key.read_bytes()
+        (root / "var/lib/forkmesh-runner/jobs/fmjob-alice/.accounts").mkdir()
+        app.owner = "bob"
+        result = run(tmp_path, "--token", TOKEN, "--name", "bob-box", "--app",
+                     app.url, "--binary", str(binary))
+    finally:
+        app.close()
+    assert result.returncode == 0, result.stderr
+    assert "alice's job user and sign-ins stay where they are" in result.stderr
+    assert "Kept the key of runner alice-box" in result.stdout
+    assert (root / "var/lib/forkmesh-runner/identity/ed25519.pem.alice-box").read_bytes() == alice_key
+    assert key.read_bytes() != alice_key
+    assert app.bodies[-1][1]["publicKey"] != app.bodies[0][1]["publicKey"]
+    config = json.loads(config_path.read_text())
+    assert config["runner"]["allowedOwners"] == ["bob"]
+    assert config["runner"]["workRoot"] == "/var/lib/forkmesh-runner/jobs/fmjob-bob"
+    assert (root / "var/lib/fmjob-bob/.claude").is_dir()
+    assert (root / "var/lib/forkmesh-runner/jobs/fmjob-alice/.accounts").is_dir()
+    nft = (root / "etc/forkmesh-runner/jobs.nft").read_text()
+    assert 'meta skuid "fmjob-bob"' in nft and "fmjob-alice" not in nft
+
+
+def test_a_reinstall_for_the_same_account_keeps_its_job_user_and_work_root(tmp_path):
+    binary = fake_binary(tmp_path)
+    root = tmp_path / "root"
+    etc = root / "etc/forkmesh-runner"
+    app = App(owner="alice")
+    try:
+        assert run(tmp_path, "--token", TOKEN, "--name", "alice-box", "--app",
+                   app.url, "--binary", str(binary)).returncode == 0
+        config = json.loads((etc / "runner.json").read_text())
+        config["runner"]["jobUser"] = "forkmesh-job"
+        config["runner"]["workRoot"] = "/var/lib/forkmesh-runner/work"
+        (etc / "runner.json").write_text(json.dumps(config))
+        again = run(tmp_path, "--token", TOKEN, "--name", "alice-box", "--app",
+                    app.url, "--binary", str(binary))
+    finally:
+        app.close()
+    assert again.returncode == 0, again.stderr
+    config = json.loads((etc / "runner.json").read_text())
+    assert config["runner"]["workRoot"] == "/var/lib/forkmesh-runner/work"
+    assert 'meta skuid "forkmesh-job"' in (etc / "jobs.nft").read_text()
+
+
+def test_a_long_account_name_gets_a_short_unique_job_user(tmp_path):
+    owner = "a" + "b" * 40
+    app = App(owner=owner)
+    try:
+        result = run(tmp_path, "--token", TOKEN, "--name", "long-box", "--app",
+                     app.url, "--binary", str(fake_binary(tmp_path)))
+    finally:
+        app.close()
+    assert result.returncode == 0, result.stderr
+    digest = hashlib.sha256(owner.encode()).hexdigest()[:6]
+    user = "fmjob-" + owner[:19] + "-" + digest
+    assert len(user) == 32
+    config = json.loads((tmp_path / "root/etc/forkmesh-runner/runner.json").read_text())
+    assert config["runner"]["workRoot"] == "/var/lib/forkmesh-runner/jobs/" + user
