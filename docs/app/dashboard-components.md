@@ -56,6 +56,16 @@ would stay on screen. With the display under `:where`, `hidden`, responsive
 - Runner sign-in attention and **Reconnect node**: `fm-label fm-label-lg`
   links in the header, amber; the runner chip turns red when its
   `data-state` is `expired`.
+- Command palette (Ctrl/Command+K, `js/09-daily-interface.js`): styled after
+  macOS Spotlight, `fm-spotlight-*` in the shell. A 20px borderless search
+  field, commands grouped under **Go to** and **Actions** with an icon each,
+  and a footer naming the keys. It is the one floating surface allowed a
+  translucent, blurred fill and a drop shadow, because that is what makes it
+  read as Spotlight. The selected row is a solid blue fill with white text;
+  dark mode uses `rgb(31 111 235)` instead of the theme's lighter primary so
+  white text keeps 4.5:1 contrast. Pointer hover moves the selection without
+  re-rendering. The dialog name, `Filter commands` combobox and option roles
+  are unchanged for `browser_tests/tests/daily-interface.spec.js`.
 - Pings dropdown, account menu and the header's **Start an agent** composer:
   `fm-popover` with menu rows; the account menu's log-out rows use
   `fm-menu-item-danger`.
