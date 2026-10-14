@@ -158,10 +158,11 @@ class FakeRuntime:
 
     # fixtures
     def add_runner(self, name, key, scope="pool", owners=("alice",), status="active"):
+        registrant = "root" if scope == "pool" or not owners else owners[0]
         self.db.execute(
             "INSERT INTO runner_nodes (name,public_key,registered_by,scope,"
             "allowed_owners,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
-            (name, key.public, "root", scope, json.dumps(list(owners)),
+            (name, key.public, registrant, scope, json.dumps(list(owners)),
              status, NOW, NOW))
         self.db.commit()
 
@@ -282,6 +283,10 @@ def test_registration_rules():
     # Non-admin: no pool runner, no serving other owners.
     assert register(runtime, "alice", Key(), "alice-p", "pool", [])["status"] == 403
     assert register(runtime, "alice", Key(), "alice-2", owners=["bob"])["status"] == 403
+    # Admins too: a personal runner serves only the account that added it.
+    assert register(runtime, "root", Key(), "root-2", owners=["alice"])["status"] == 403
+    assert register(runtime, "root", Key(), "root-3",
+                    owners=["root", "alice"])["status"] == 403
     # Proof must come from the runner key, name the registrant, and be fresh.
     assert register(runtime, "bob", Key(), "bob-box",
                     proof_key=Key())["status"] == 401
@@ -296,12 +301,17 @@ def test_registration_rules():
     assert register(runtime, "root", Key(), "core-a", "pool", ["alice"])["status"] == 409
     # The registrant may rotate its own runner's key.
     assert register(runtime, "alice", Key(), "alice-box")["status"] == 200
-    # Revocation: only the registrant or an admin.
-    revoke = lambda actor: call(runtime.use(  # noqa: E731
-        json.dumps({"name": "alice-box"}).encode(), actor=actor),
+    # Revocation: a personal runner only by its registrant (anyone else is
+    # told it does not exist); a pool runner also by an admin.
+    revoke = lambda actor, name="alice-box": call(runtime.use(  # noqa: E731
+        json.dumps({"name": name}).encode(), actor=actor),
         "/api/runners/revoke")
-    assert revoke("bob")["status"] == 403
+    assert revoke("bob")["status"] == 404
+    assert revoke("root")["status"] == 404
     assert revoke("alice")["status"] == 200
+    runtime.admins.add("ops")
+    assert revoke("alice", "pool-1")["status"] == 404
+    assert revoke("ops", "pool-1")["status"] == 200
     assert runtime.db.execute(
         "SELECT status FROM runner_nodes WHERE name='alice-box'"
     ).fetchone()[0] == "revoked"
@@ -398,10 +408,23 @@ def test_eligibility_filters():
     runtime.db.commit()
     assert claim(runtime, "pool-1", pool_key,
                  {"max": 4, "providers": ["codex"]})["data"]["jobs"] == []
-    # Pinned to the personal runner and owned by alice: it may take it.
+    # Pinned to the personal runner: only alice's own jobs, requested by
+    # alice, ever reach it, whatever its owner list says.
+    bob_asked = runtime.add_job(repo="r10", session="p10", runner="alice-box",
+                                requestedBy="bob")
+    no_requester = runtime.add_job(repo="r11", session="p11",
+                                   runner="alice-box", requestedBy="")
+    org_job = runtime.add_job(repo="r12", session="p12", runner="alice-box",
+                              organization="acme")
+    runtime.db.execute(
+        "UPDATE runner_nodes SET allowed_owners='[\"alice\",\"acme\"]' "
+        "WHERE name='alice-box'")
+    runtime.db.commit()
     pinned = runtime.add_job(repo="r9", session="p9", runner="alice-box")
-    jobs = claim(runtime, "alice-box", own_key)["data"]["jobs"]
+    jobs = claim(runtime, "alice-box", own_key, {"max": 4})["data"]["jobs"]
     assert [j["jobId"] for j in jobs] == [pinned]
+    for job in (bob_asked, no_requester, org_job):
+        assert runtime.job_status(job) == "queued"
 
 
 def test_pool_runner_without_owners_serves_nobody():

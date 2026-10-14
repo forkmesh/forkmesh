@@ -860,7 +860,8 @@ def _bot_handler(extra):
     return namespace["org_agent_bot_handler"]
 
 
-def _bot_harness(body, owner=True, status="completed", record=None):
+def _bot_harness(body, owner=True, status="completed", record=None,
+                 private_block=None):
     calls = {"own_session": [], "batches": []}
 
     async def member_context(env, request, org, repo, data, owner_scope=False,
@@ -919,6 +920,7 @@ def _bot_harness(body, owner=True, status="completed", record=None):
         "json_response": lambda payload, **kwargs: {
             "payload": payload, "status": kwargs.get("status", 200)},
         "_org_agent_error": lambda code, *args, **kwargs: {"error": code},
+        "_org_agent_private_runner_block": private_block or nothing,
     })
     return handler, calls
 
@@ -957,6 +959,70 @@ def test_a_follow_up_on_a_runner_session_names_the_runner_owner():
         assert response["status"] == 202
         job = calls["batches"][0][1][1][5]
         assert job["organization"] == owner
+
+
+def test_a_follow_up_on_someone_elses_personal_runner_is_refused():
+    async def refuse(env, row, record, actor):
+        assert actor == "alice" and record["runnerNode"] == "fmnext-r1"
+        return {"error": "runner_private"}
+
+    handler, calls = _bot_harness({"prompt": "go on"}, private_block=refuse)
+    response = run(handler(object(), object(), "fmnext-n1", "proj", "s1",
+                           owner_scope=True))
+    assert response == {"error": "runner_private"}
+    assert calls["batches"] == []
+
+
+def _route_functions(*names, **extra):
+    tree = ast.parse((SRC / "route_handlers.py").read_text("utf-8"))
+    nodes = [node for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+             and node.name in names]
+    namespace = dict(extra)
+    exec(compile(ast.fix_missing_locations(
+        ast.Module(body=nodes, type_ignores=[])), "route_handlers.py",
+        "exec"), namespace)
+    return [namespace[name] for name in names]
+
+
+def test_only_the_runner_owner_may_follow_up_on_a_personal_runner_session():
+    runners = {"alice-box": {"scope": "personal", "registered_by": "alice"},
+               "pool-1": {"scope": "pool", "registered_by": "root"}}
+
+    async def d1_first(env, sql, name):
+        return runners.get(name)
+
+    [block] = _route_functions(
+        "_org_agent_private_runner_block", d1_first=d1_first,
+        _org_agent_error=lambda code, *args, **kwargs: {"error": code})
+    row = {"target_node": "fmnext-n1"}
+
+    def check(runner, actor):
+        record = {"runnerNode": runner, "route": "runner_pool"}
+        return run(block(object(), row, record, actor))
+
+    assert check("alice-box", "alice") is None
+    assert check("alice-box", "bob") == {"error": "runner_private"}
+    assert check("pool-1", "bob") is None
+    assert run(block(object(), row, {"runnerNode": ""}, "bob")) is None
+
+
+def test_a_personal_runner_is_hidden_from_other_members_of_the_session():
+    [hide] = _route_functions("_org_agent_hide_private_runner")
+    row = {"target_node": "fmnext-n1"}
+    record = {"runnerPrivate": True, "runnerOwner": "alice",
+              "runnerNode": "alice-box"}
+
+    def projection():
+        return {"runner": "alice-box", "targetNode": "alice-box",
+                "queue": {"jobId": 1, "runner": {"name": "alice-box"}}}
+
+    assert hide(projection(), row, record, "alice") == projection()
+    hidden = hide(projection(), row, record, "bob")
+    assert hidden == {"runner": "", "targetNode": "fmnext-n1",
+                      "queue": {"jobId": 1}}
+    shared = dict(record, runnerPrivate=False)
+    assert hide(projection(), row, shared, "bob") == projection()
 
 
 def test_a_follow_up_on_a_mirror_session_keeps_the_organization():

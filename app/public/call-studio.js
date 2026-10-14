@@ -223,6 +223,60 @@ export function downloadStudioBlob(blob, fileName, documentRef = globalThis.docu
   globalThis.setTimeout(() => globalThis.URL.revokeObjectURL(url), 60000);
 }
 
+export const STUDIO_SHARE_CHUNK = 384 * 1024;
+
+export function studioShareBridge(globalRef = globalThis) {
+  const ios = globalRef.webkit?.messageHandlers?.fmShare;
+  if (ios && typeof ios.postMessage === "function") return (message) => ios.postMessage(JSON.stringify(message));
+  const android = globalRef.FmShareBridge;
+  if (android && typeof android.post === "function") return (message) => android.post(JSON.stringify(message));
+  return null;
+}
+
+export function canShareStudioFiles(type, globalRef = globalThis) {
+  if (studioShareBridge(globalRef)) return true;
+  const navigatorRef = globalRef.navigator;
+  if (typeof navigatorRef?.canShare !== "function" || typeof globalRef.File !== "function") return false;
+  try {
+    return navigatorRef.canShare({ files: [new globalRef.File([], studioFileName("clip", studioClipExtension(type)), { type })] });
+  } catch {
+    return false;
+  }
+}
+
+export function studioBase64(bytes) {
+  let text = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    text += String.fromCharCode.apply(null, bytes.subarray(offset, offset + 0x8000));
+  }
+  return globalThis.btoa(text);
+}
+
+export async function shareStudioBlob(blob, fileName, { title = "", globalRef = globalThis } = {}) {
+  const bridge = studioShareBridge(globalRef);
+  if (bridge) {
+    const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    bridge({ event: "begin", id, name: fileName, mime: blob.type || "application/octet-stream", size: blob.size, title });
+    for (let offset = 0; offset < blob.size; offset += STUDIO_SHARE_CHUNK) {
+      const part = new Uint8Array(await blob.slice(offset, offset + STUDIO_SHARE_CHUNK).arrayBuffer());
+      bridge({ event: "chunk", id, data: studioBase64(part) });
+    }
+    bridge({ event: "end", id });
+    return "native";
+  }
+  const navigatorRef = globalRef.navigator;
+  if (typeof navigatorRef?.share !== "function" || typeof globalRef.File !== "function") return "unsupported";
+  const file = new globalRef.File([blob], fileName, { type: blob.type });
+  if (typeof navigatorRef.canShare === "function" && !navigatorRef.canShare({ files: [file] })) return "unsupported";
+  try {
+    await navigatorRef.share(title ? { files: [file], title } : { files: [file] });
+    return "shared";
+  } catch (error) {
+    if (error?.name === "AbortError") return "cancelled";
+    throw error;
+  }
+}
+
 export function studioSnapshot(canvas, type = "image/png") {
   return new Promise((resolve, reject) => {
     if (!canvas?.toBlob) {

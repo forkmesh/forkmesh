@@ -16,6 +16,7 @@ final class PackageRoutesTests: XCTestCase {
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "water", name: "Water Intake")), .water)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "speech", name: "Speech Playground")), .speech)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "glasses-alert", name: "Glasses Alert")), .glassesAlert)
+        XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "face-changer", name: "Face Changer")), .faceChanger)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "people", name: "People")), .people)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "docs", name: "Docs")), .docs)
         XCTAssertNil(PackageRoutes.route(for: MarketPackage(id: "voice-changer", name: "V", desktop: true)))

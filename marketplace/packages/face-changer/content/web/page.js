@@ -17,12 +17,15 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
   const faceFile = el("face-file");
   const backgroundGrid = el("backgrounds");
   const backgroundFile = el("background-file");
+  const outfitGrid = el("outfits");
+  const stageBox = root.querySelector(".fc-stage");
   const voiceSlot = el("voice-slot");
   const voiceEmpty = el("voice-empty");
   const voiceLabel = el("voice-label");
   const clipPanel = el("clip");
   const clipPlayer = el("clip-player");
   const clipDownload = el("clip-download");
+  const clipShare = el("clip-share");
   const clipDiscard = el("clip-discard");
   const clipMeta = el("clip-meta");
 
@@ -38,11 +41,13 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     faceImage: "",
     backgroundId: "",
     backgroundImage: "",
+    outfitId: "",
     starting: false,
     recording: null,
     clip: null,
     clipUrl: "",
     popout: null,
+    native: false,
     unwatchFace: null,
     generation: 0,
   };
@@ -60,7 +65,8 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
       import("/chat-call-backgrounds.js"),
       import("/chat-call-voice.js"),
       import("/call-studio.js"),
-    ]).then(([faces, custom, backgrounds, voice, studio]) => ({ faces, custom, backgrounds, voice, studio }));
+      import("/chat-call-outfits.js"),
+    ]).then(([faces, custom, backgrounds, voice, studio, outfits]) => ({ faces, custom, backgrounds, voice, studio, outfits }));
   }
 
   function live() {
@@ -79,6 +85,7 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     stopRecordButton.hidden = !recording;
     snapshotButton.disabled = !on;
     popoutButton.disabled = !on;
+    popoutButton.hidden = state.native;
     const popped = Boolean(state.popout && !state.popout.closed());
     popoutButton.setAttribute("aria-pressed", popped ? "true" : "false");
     recBadge.hidden = !recording;
@@ -89,6 +96,12 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
       button.setAttribute("aria-checked", chosen ? "true" : "false");
       button.disabled = !state.support?.backgrounds || recording;
     }
+    for (const button of outfitGrid.querySelectorAll("[data-outfit]")) {
+      const chosen = button.getAttribute("data-outfit") === state.outfitId;
+      button.setAttribute("aria-checked", chosen ? "true" : "false");
+      button.disabled = !state.support?.backgrounds || recording;
+    }
+    fitStage();
     voiceEmpty.hidden = Boolean(state.voiceUnmount);
     voiceLabel.hidden = Boolean(state.voiceUnmount);
   }
@@ -132,6 +145,57 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
       button.addEventListener("click", () => chooseBackground(background.id));
       backgroundGrid.append(button);
     }
+  }
+
+  function fitStage() {
+    const width = live() ? video.videoWidth : 0;
+    const height = live() ? video.videoHeight : 0;
+    stageBox.style.aspectRatio = width && height ? `${width} / ${height}` : "";
+    stageBox.classList.toggle("is-portrait", Boolean(width && height && height > width));
+  }
+
+  function buildOutfitOptions() {
+    const { outfits } = state.m;
+    outfitGrid.replaceChildren();
+    const pending = [];
+    for (const outfit of outfits.CALL_OUTFITS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "fc-bg";
+      button.setAttribute("role", "radio");
+      button.setAttribute("data-outfit", outfit.id);
+      button.setAttribute("aria-checked", "false");
+      button.title = outfit.label;
+      const swatch = document.createElement("span");
+      swatch.className = outfit.id ? "fc-swatch is-outfit" : "fc-swatch is-outfit is-off";
+      if (outfit.id) pending.push([outfit.id, swatch]);
+      const name = document.createElement("span");
+      name.className = "fc-bg-name";
+      name.textContent = outfit.label;
+      button.append(swatch, name);
+      button.addEventListener("click", () => chooseOutfit(outfit.id));
+      outfitGrid.append(button);
+    }
+    const next = () => {
+      const entry = pending.shift();
+      if (!entry) return;
+      try {
+        const image = outfits.callOutfitThumbnail(entry[0], document);
+        if (image) entry[1].style.backgroundImage = `url("${image}")`;
+      } catch (_) {}
+      setTimeout(next, 0);
+    };
+    setTimeout(next, 0);
+  }
+
+  function chooseOutfit(id) {
+    const { outfits } = state.m;
+    const outfit = outfits.callOutfitById(id);
+    if (!outfit) return;
+    outfits.rememberCallOutfit(outfit.id);
+    state.outfitId = outfit.id;
+    state.stage?.setOutfit(state.outfitId);
+    render();
   }
 
   function applyFace() {
@@ -224,6 +288,7 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
         faceImage: state.support.faces ? state.faceImage : "",
         backgroundId: state.support.backgrounds ? state.backgroundId : "",
         backgroundImage: state.support.backgrounds ? state.backgroundImage : "",
+        outfitId: state.support.backgrounds ? state.outfitId : "",
       });
       if (!state.stage?.track) throw new Error("face_stage_unavailable");
       video.srcObject = new MediaStream([state.stage.track]);
@@ -290,7 +355,25 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     player.setAttribute("aria-label", "Play back your clip");
     clipPlayer.append(player);
     clipMeta.textContent = `${studio.formatStudioTime(result.durationMs)} · ${studio.formatStudioSize(result.blob.size)}`;
+    clipShare.hidden = !studio.canShareStudioFiles(result.mime);
+    clipDownload.hidden = state.native;
     clipPanel.hidden = false;
+  }
+
+  async function shareBlob(blob, name, title) {
+    try {
+      const outcome = await state.m.studio.shareStudioBlob(blob, name, { title });
+      if (outcome === "unsupported") status("Sharing is not available in this browser. Download it instead.", "error");
+      else if (outcome !== "cancelled") status("");
+    } catch (_) {
+      status("It could not be shared. Try again.", "error");
+    }
+  }
+
+  function shareClip() {
+    if (!state.clip) return;
+    const { studio } = state.m;
+    void shareBlob(state.clip.blob, studio.studioFileName("face-changer", studio.studioClipExtension(state.clip.mime)), "Face Changer clip");
   }
 
   async function startRecording() {
@@ -315,7 +398,9 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
       const result = await state.recording.done;
       if (result.blob.size) {
         showClip(result);
-        status("Clip ready. Play it back, download it or discard it.");
+        status(clipShare.hidden
+          ? "Clip ready. Play it back, download it or discard it."
+          : "Clip ready. Play it back, share it or discard it.");
       } else {
         status("Nothing was recorded. Try again.", "error");
       }
@@ -336,6 +421,10 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     const { studio } = state.m;
     try {
       const blob = await studio.studioSnapshot(state.stage.canvas);
+      if (state.native) {
+        await shareBlob(blob, studio.studioFileName("face-changer", "png"), "Face Changer snapshot");
+        return;
+      }
       studio.downloadStudioBlob(blob, studio.studioFileName("face-changer", "png"));
       status("Snapshot saved.");
     } catch (_) {
@@ -407,6 +496,8 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
       chooseBackground("custom", image);
     }).catch(() => status("That file could not be read as a photo.", "error"));
   });
+  video.addEventListener("loadedmetadata", fitStage);
+  video.addEventListener("resize", fitStage);
   startButton.addEventListener("click", () => void startCamera());
   stopButton.addEventListener("click", () => {
     stopCamera();
@@ -421,6 +512,7 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     const { studio } = state.m;
     studio.downloadStudioBlob(state.clip.blob, studio.studioFileName("face-changer", studio.studioClipExtension(state.clip.mime)));
   });
+  clipShare.addEventListener("click", shareClip);
   clipDiscard.addEventListener("click", () => {
     clearClip();
     status("Clip discarded.");
@@ -433,15 +525,18 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
   render();
   loadModules().then((modules) => {
     state.m = modules;
-    const { studio, backgrounds } = modules;
+    const { studio, backgrounds, outfits } = modules;
     state.support = studio.studioSupport(globalThis);
+    state.native = Boolean(studio.studioShareBridge());
     state.faceId = state.support.faces ? studio.savedStudioFace() : "";
     state.faceImage = studio.studioFaceImage(state.faceId);
     const saved = state.support.backgrounds ? backgrounds.savedCallBackground() : { id: "", image: "" };
     state.backgroundId = saved.id;
     state.backgroundImage = saved.image;
+    state.outfitId = state.support.backgrounds ? outfits.savedCallOutfit() : "";
     buildFaceOptions();
     buildBackgroundOptions();
+    buildOutfitOptions();
     if (!state.support.media) {
       emptyText.textContent = "This browser does not offer a camera to this page. Open it over https in a current browser.";
     } else if (!state.support.faces && !state.support.backgrounds) {

@@ -441,6 +441,20 @@ default in new projects except the chosen starter pack
   install (`MarketModel.cardAction`). Desktop-only packages
   (`PackageInstallMode.DESKTOP`) offer no phone install. The list pads the
   safe area and insets so the last row is reachable.
+  Sorts include Most opened and Installed first, as on iOS. Installed cards
+  show Uninstall and each package page has a ⋯ menu with Rate and Uninstall,
+  both driven by `MarketModel.uninstallAction` and confirmed through
+  `A/feature/market/PackageUninstall.kt`: account packages leave every
+  device, per-phone and organization packages with a phone switch hide on
+  this phone, and the organization-wide removal stays on the package page's
+  Organizations section.
+- **Face Changer.** `A/feature/facechanger/` hosts `/dashboard/face-changer`
+  in a WebView limited to the server's host (`C/market/FaceChangerPage.kt`),
+  grants the camera and microphone only there after the runtime prompt, and
+  receives shared clips over `FmShareBridge`. `C/market/ShareTransfer.kt`
+  validates each begin, chunk and end message (media type, 512 MiB cap, safe
+  name); the file goes to the `face-changer-share` cache path and out through
+  an `ACTION_SEND` chooser.
 
 ## 14. Chat features
 

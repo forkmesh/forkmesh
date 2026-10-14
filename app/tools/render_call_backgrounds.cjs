@@ -42,10 +42,11 @@ function loadPlaywright() {
 }
 
 function parseArgs(argv) {
-  const options = { stems: [], samples: 0, out: path.join(REPOSITORY, "app", "public", "assets", "call-backgrounds") };
+  const options = { stems: [], samples: 0, portrait: false, out: path.join(REPOSITORY, "app", "public", "assets", "call-backgrounds") };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--samples") options.samples = Number(argv[++i]);
+    else if (arg === "--portrait") options.portrait = true;
     else if (arg === "--out") options.out = path.resolve(argv[++i]);
     else if (STEMS.includes(arg)) options.stems.push(arg);
     else throw new Error(`unknown argument ${arg}; stems are ${STEMS.join(", ")}`);
@@ -64,7 +65,7 @@ window.__ready = true;
 </script></body></html>`;
 
 const WORLD_PAGE = `<!doctype html><html><head><meta charset="utf-8">${IMPORTMAP}
-<style>html,body{margin:0;background:#000;overflow:hidden}#world{width:1920px;height:1080px;position:relative}#labels{display:none}</style></head>
+<style>html,body{margin:0;background:#000;overflow:hidden}#world{width:1920px;height:1080px;position:relative}#world.portrait{width:1080px;height:1920px}#labels{display:none}</style></head>
 <body><div id="world"></div><div id="labels"></div>
 <script>
 (() => {
@@ -97,6 +98,10 @@ import * as THREE from "three";
 import * as S from "/app/tools/call-backgrounds/scenes.js";
 import * as world from "/world/world-scene.js";
 window.__S = S;
+if (new URLSearchParams(location.search).has("portrait")) {
+  S.setPortrait(true);
+  document.getElementById("world").classList.add("portrait");
+}
 try { await world.QR_MODULE_READY; } catch {}
 window.__world = await world.createWorldScene({
   THREE,
@@ -134,24 +139,29 @@ function serve() {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 
-function writeResult(out, stem, result) {
+function writeResult(out, stem, result, portrait) {
   fs.mkdirSync(out, { recursive: true });
   const decode = (url) => Buffer.from(url.slice(url.indexOf(",") + 1), "base64");
-  fs.writeFileSync(path.join(out, `${stem}.jpg`), decode(result.full));
-  fs.writeFileSync(path.join(out, `${stem}-thumb.jpg`), decode(result.thumb));
+  if (portrait) {
+    fs.writeFileSync(path.join(out, `${stem}-portrait.jpg`), decode(result.full));
+  } else {
+    fs.writeFileSync(path.join(out, `${stem}.jpg`), decode(result.full));
+    fs.writeFileSync(path.join(out, `${stem}-thumb.jpg`), decode(result.thumb));
+  }
   const summary = { ...result };
   delete summary.full;
   delete summary.thumb;
-  process.stdout.write(`${stem}: ${JSON.stringify(summary)}\n`);
+  process.stdout.write(`${stem}${portrait ? " portrait" : ""}: ${JSON.stringify(summary)}\n`);
 }
 
-async function openPage(browser, port, name) {
-  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+async function openPage(browser, port, name, portrait) {
+  const viewport = portrait ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 };
+  const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
   page.on("pageerror", (error) => process.stderr.write(`${name} page error: ${String(error).slice(0, 400)}\n`));
   page.on("console", (message) => {
     if (message.type() === "error") process.stderr.write(`${name} console: ${message.text().slice(0, 400)}\n`);
   });
-  await page.goto(`http://127.0.0.1:${port}/__${name}.html`);
+  await page.goto(`http://127.0.0.1:${port}/__${name}.html${portrait ? "?portrait" : ""}`);
   await page.waitForFunction("window.__ready === true", null, { timeout: 900000, polling: 1000 });
   return page;
 }
@@ -167,23 +177,26 @@ async function main() {
   try {
     const sceneStems = options.stems.filter((stem) => stem !== "world");
     if (sceneStems.length) {
-      const page = await openPage(browser, port, "scene");
+      const page = await openPage(browser, port, "scene", options.portrait);
       for (const stem of sceneStems) {
         const result = await page.evaluate(
-          ([name, samples]) => window.__S.renderStem(name, samples ? { samples } : {}),
-          [stem, options.samples],
+          ([name, samples, portrait]) => {
+            window.__S.setPortrait(portrait);
+            return window.__S.renderStem(name, samples ? { samples } : {});
+          },
+          [stem, options.samples, options.portrait],
         );
-        writeResult(options.out, stem, result);
+        writeResult(options.out, stem, result, options.portrait);
       }
       await page.close();
     }
     if (options.stems.includes("world")) {
-      const page = await openPage(browser, port, "world");
+      const page = await openPage(browser, port, "world", options.portrait);
       const result = await page.evaluate(
         (samples) => window.__S.renderWorld(window.__world, samples ? { samples } : {}),
         options.samples,
       );
-      writeResult(options.out, "world", result);
+      writeResult(options.out, "world", result, options.portrait);
       await page.close();
     }
   } finally {

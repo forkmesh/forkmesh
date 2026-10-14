@@ -84,7 +84,7 @@ data class MarketPackage(
             "crm" to "crm", "marketing" to "marketing", "analytics" to "analytics", "competitor" to "competitors",
             "ledger" to "ledger", "vault" to "vault", "calories" to "calories", "notes" to "notes", "tasks" to "tasks",
             "calendar" to "calendar", "timers" to "timers", "tour" to "tour", "status-page" to "status",
-            "glasses-alert" to "glassesAlert", "people" to "people", "docs" to "docs", "agents" to "agents", "inbox" to "inbox", "code" to "code", "chat" to "chat",
+            "glasses-alert" to "glassesAlert", "face-changer" to "faceChanger", "people" to "people", "docs" to "docs", "agents" to "agents", "inbox" to "inbox", "code" to "code", "chat" to "chat",
             "bug-reports" to "reportBug", "desktops" to "desktops", "special-agents" to "teammates", "shortcuts" to "shortcuts",
             "hosts" to "hosts", "network" to "network", "coves" to "coves", "on-device-ai" to "localAI", "activity" to "activity",
             "stats" to "stats", "organizations" to "orgs", "sign-in" to "signIn", "issues" to "repo-issues", "commits" to "repo-commits", "branches" to "repo-branches",
@@ -153,7 +153,9 @@ enum class MarketSort(val wire: String, val title: String) {
     INSTALLS("installs", "Most installed"),
     DOWNLOADS("downloads", "Most downloaded"),
     USED("used", "Most used"),
+    OPENED("opened", "Most opened"),
     RATING("rating", "Top rated"),
+    INSTALLED_FIRST("installed-first", "Installed first"),
     NAME("name", "Name A–Z");
 
     companion object {
@@ -198,6 +200,12 @@ data class MarketOptions(
 }
 
 enum class MarketCardAction { OPEN, INSTALLED, INSTALL, INSTALL_ON_PHONE, PICK_ORGANIZATION, NEEDS_ORGANIZATION, DESKTOP }
+
+sealed class MarketUninstall {
+    data object Account : MarketUninstall()
+    data object Phone : MarketUninstall()
+    data class Organization(val organizations: List<String>) : MarketUninstall()
+}
 
 object MarketText {
     fun typeLabel(type: String): String = when (type) {
@@ -585,6 +593,21 @@ class MarketModel(
         }
     }
 
+    fun uninstallAction(pkg: MarketPackage, signedIn: Boolean): MarketUninstall? {
+        if (!isInstalled(pkg)) return null
+        return when (installMode(pkg)) {
+            PackageInstallMode.ACCOUNT -> MarketUninstall.Account.takeIf { signedIn && accountSwitch(pkg.id) == true }
+            PackageInstallMode.PHONE -> MarketUninstall.Phone.takeIf { deviceSwitch(pkg.id) == true }
+            PackageInstallMode.ORGANIZATION -> when {
+                deviceSwitch(pkg.id) != null -> MarketUninstall.Phone
+                !signedIn -> null
+                else -> organizations.filter { it.canManage && it.isInstalled(pkg.id) }.map { it.organization }
+                    .takeIf { it.isNotEmpty() }?.let(MarketUninstall::Organization)
+            }
+            PackageInstallMode.DESKTOP -> null
+        }
+    }
+
     fun marketParent(pkg: MarketPackage): String? {
         val parent = pkg.dependencies.firstOrNull() ?: return null
         return parent.takeIf { it != pkg.id && packages.any { other -> other.id == it } }
@@ -624,6 +647,8 @@ class MarketModel(
             MarketSort.INSTALLS -> compareByDescending<MarketPackage> { counts[it.id]?.installs ?: 0 }.thenByDescending { counts[it.id]?.downloads ?: 0 }.then(byName)
             MarketSort.DOWNLOADS -> compareByDescending<MarketPackage> { counts[it.id]?.downloads ?: 0 }.thenByDescending { counts[it.id]?.installs ?: 0 }.then(byName)
             MarketSort.USED -> compareByDescending<MarketPackage> { usage[it.id]?.people ?: 0 }.thenByDescending { usage[it.id]?.opens ?: 0 }.then(byName)
+            MarketSort.OPENED -> compareByDescending<MarketPackage> { usage[it.id]?.opens ?: 0 }.then(byName)
+            MarketSort.INSTALLED_FIRST -> compareByDescending<MarketPackage> { isInstalled(it) }.then(byName)
             MarketSort.RATING -> compareByDescending<MarketPackage> { ratings[it.id]?.takeIf { r -> r.count > 0 }?.average ?: -1.0 }.thenByDescending { ratings[it.id]?.count ?: 0 }.then(byName)
         }
         return rows.sortedWith(order)

@@ -14,6 +14,7 @@
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QVector>
 #include <QWidget>
 
 #include <functional>
@@ -193,9 +194,13 @@ private:
         QColor stateColor;
         double value = 0;
         bool paused = false;
+        QVector<double> spark;
+        QString sparkTip;
         QList<ChannelAction> actions;
     };
     ChannelCard channelCard(const QJsonObject &item);
+    QJsonObject channelViews(const QString &id) const;
+    QVector<double> channelSpark(const QString &id, const char *key) const;
     QWidget *channelTile(const QJsonObject &item);
     QWidget *channelChip(const QJsonObject &item, const QJsonArray &agents);
     QString channelLabel(const QString &id) const;
@@ -339,6 +344,8 @@ private:
     DashboardPanel *m_detailChartPanel = nullptr;
     QButtonGroup *m_detailMetric = nullptr;
     LineChart *m_detailChart = nullptr;
+    DashboardPanel *m_detailViewsPanel = nullptr;
+    LineChart *m_detailViewsChart = nullptr;
     DashboardPanel *m_detailSnapshotsPanel = nullptr;
     QTableWidget *m_detailSnapshots = nullptr;
     DashboardPanel *m_detailContentPanel = nullptr;

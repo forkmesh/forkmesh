@@ -185,6 +185,21 @@ private:
     QColor m_color;
 };
 
+class Sparkline final : public QWidget
+{
+public:
+    explicit Sparkline(QWidget *parent = nullptr);
+    void setValues(const QVector<double> &values, const QColor &color);
+    QSize sizeHint() const override { return {72, 22}; }
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QVector<double> m_values;
+    QColor m_color;
+};
+
 class LineChart final : public QWidget
 {
 public:

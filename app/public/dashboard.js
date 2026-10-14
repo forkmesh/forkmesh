@@ -41265,7 +41265,7 @@
       const empty = runnersEl("div", "px-4 py-10 text-center");
       empty.append(runnersEl("p", "text-sm font-semibold text-foreground", "No runners yet"));
       empty.append(runnersEl("p", "mt-1 text-sm text-muted-foreground",
-        "No runners you can manage. Administrators see every runner; others see the personal runners they registered."));
+        "Runners are private: you see only the runners you added, and nobody else can see or use them."));
       list.append(empty);
       return;
     }
@@ -41375,7 +41375,7 @@
       : null;
     if (!card) {
       setRunnersNotice(focus.runner
-        ? `${focus.runner} is not a runner you can manage. Ask an administrator or the runner's registrant to sign ${provider.label} in again.`
+        ? `${focus.runner} is not one of your runners. Only the account that added it can sign ${provider.label} in again.`
         : `Pick the runner that ran the job and sign ${provider.label} in again.`, Boolean(focus.runner));
       return;
     }

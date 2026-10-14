@@ -186,6 +186,7 @@ public enum Route: Codable, Hashable, Sendable {
     case foodGuide
     case speech
     case glassesAlert
+    case faceChanger
     case localAI
     case activity
     // Insights and admin (WS20)
@@ -288,6 +289,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .foodGuide: return .foodGuide
         case .speech: return .speech
         case .glassesAlert: return .glassesAlert
+        case .faceChanger: return .faceChanger
         case .localAI: return .localAI
         case .activity: return .activity
         case .stats: return .stats
@@ -316,7 +318,7 @@ public enum Route: Codable, Hashable, Sendable {
         case notes, note, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, localAI, activity
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, faceChanger, localAI, activity
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
 
@@ -345,7 +347,8 @@ public enum Route: Codable, Hashable, Sendable {
                 .ledger:
                 return "WS19"
             case .vault, .coves, .cove: return "WS21"
-            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .localAI, .orgs, .org:
+            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .faceChanger, .localAI, .orgs,
+                .org:
                 return "existing"
             case .projects, .projectAccess: return "WS1"
             }

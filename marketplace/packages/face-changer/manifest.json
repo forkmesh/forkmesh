@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Privacy",
-  "version": "1.0.0",
-  "summary": "Wear a stand-in face, swap your background and change your voice live in the browser. Record a clip, take a snapshot, or pop the picture out to share into any call or meeting app. Video and sound stay on your device.",
+  "version": "1.2.0",
+  "summary": "Wear a stand-in face and a new outfit, swap your background and change your voice live in the browser or the phone app. Share a clip, take a snapshot, or pop it out into any call or meeting app. Video and sound stay on your device.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -42,7 +42,7 @@
       "config": {
         "route": "/dashboard/face-changer",
         "title": "Face Changer",
-        "description": "Wear a stand-in face, swap your background and change your voice live, then record a clip or share the picture into any call or meeting app.",
+        "description": "Wear a stand-in face and a new outfit, swap your background and change your voice live, then record a clip or share the picture into any call or meeting app.",
         "script": "dashboard-script",
         "devices": ["camera", "microphone"],
         "navigation": {
@@ -86,6 +86,7 @@
     "default": false,
     "sync": "account",
     "places": [
+      "mobile",
       "desktop",
       "web"
     ]

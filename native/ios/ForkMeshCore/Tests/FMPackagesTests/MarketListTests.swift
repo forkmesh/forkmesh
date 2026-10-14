@@ -161,6 +161,55 @@ final class MarketListTests: XCTestCase {
         XCTAssertEqual(model.cardAction(crm, signedIn: true), .askAdmin)
     }
 
+    @MainActor func testAnInstalledPackageSaysHowToUninstallIt() async {
+        await withSettings { settings in
+            let transport = FakePackagesTransport()
+            transport.on("GET", "/api/market/packages", ["packages": [
+                row("tasks", accountSync: true), row("aquarium"), row("vault", defaultOn: true),
+                row("crm", scope: "organization"), row("winamp", defaultOn: true),
+            ]])
+            transport.on("GET", "/api/plugins/@account", ["packages": [["id": "tasks", "installed": true]]])
+            transport.on("GET", "/api/plugins/acme", [
+                "organization": "acme", "role": "owner", "canManage": true, "plugins": [["id": "crm", "installed": true]],
+            ])
+            transport.on("GET", "/api/plugins/beta", [
+                "organization": "beta", "role": "member", "canManage": false, "plugins": [["id": "crm", "installed": true]],
+            ])
+            let store = AccountPackagesStore(
+                client: PackagesClient(transport: transport), prefs: InMemoryKeyValueStore(), signedIn: { true })
+            let model = MarketModel(client: PackagesClient(transport: transport), account: store)
+            await model.refresh(organizations: ["acme", "beta"])
+            XCTAssertEqual(model.uninstallAction(model.package("tasks")!, signedIn: true), .account)
+            XCTAssertNil(model.uninstallAction(model.package("tasks")!, signedIn: false))
+            XCTAssertNil(model.uninstallAction(model.package("aquarium")!, signedIn: true))
+            settings.setAquariumOn(true)
+            XCTAssertEqual(model.uninstallAction(model.package("aquarium")!, signedIn: true), .device)
+            XCTAssertEqual(model.uninstallAction(model.package("vault")!, signedIn: true), .phone)
+            XCTAssertEqual(model.uninstallAction(model.package("crm")!, signedIn: true), .phone)
+            XCTAssertNil(model.uninstallAction(model.package("winamp")!, signedIn: true))
+            settings.setPackageRemoved("vault", removed: true)
+            XCTAssertNil(model.uninstallAction(model.package("vault")!, signedIn: true))
+        }
+    }
+
+    @MainActor func testAnOrganizationPackageWithoutAPhoneScreenUninstallsFromTheOrganizationsYouManage() async {
+        let transport = FakePackagesTransport()
+        transport.on("GET", "/api/market/packages", ["packages": [row("wiki", scope: "organization", web: "/dashboard/wiki")]])
+        transport.on("GET", "/api/plugins/acme", [
+            "organization": "acme", "role": "owner", "canManage": true, "plugins": [["id": "wiki", "installed": true]],
+        ])
+        transport.on("GET", "/api/plugins/beta", [
+            "organization": "beta", "role": "member", "canManage": false, "plugins": [["id": "wiki", "installed": true]],
+        ])
+        let model = MarketModel(client: PackagesClient(transport: transport))
+        await model.refresh(organizations: ["acme", "beta"])
+        let wiki = model.package("wiki")!
+        XCTAssertEqual(model.uninstallAction(wiki, signedIn: true), .organization(["acme"]))
+        XCTAssertNil(model.uninstallAction(wiki, signedIn: false))
+        await model.refresh(organizations: ["beta"])
+        XCTAssertNil(model.uninstallAction(wiki, signedIn: true))
+    }
+
     @MainActor func testEverySortOrdersTheList() async {
         let transport = FakePackagesTransport()
         transport.on("GET", "/api/market/packages", ["packages": [row("zeta"), row("alpha"), row("mid")]])

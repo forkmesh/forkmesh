@@ -20,6 +20,9 @@ struct MarketScreen: View {
     private let client: PackagesClient
     @State private var model: MarketModel
     @State private var accountAction: AccountPackageAction?
+    @State private var uninstallRequest: PackageUninstallRequest?
+    @State private var exportURL: URL?
+    @State private var exporting = false
 
     init(client: PackagesClient, filter: MarketFilter) {
         self.client = client
@@ -47,7 +50,11 @@ struct MarketScreen: View {
                 ForEach(rows) { (package: MarketPackage) in
                     MarketCard(
                         package: package, model: model, signedIn: PackagesFeature.signedIn,
-                        onInstall: { (action: MarketCardAction) in Task { await run(action, package) } })
+                        onInstall: { (action: MarketCardAction) in Task { await run(action, package) } },
+                        onUninstall: { (uninstall: MarketUninstall, organization: String) in
+                            uninstallRequest = PackageUninstallRequest(
+                                package, uninstall, organization: organization, account: model.account)
+                        })
                     Divider()
                 }
             }
@@ -78,6 +85,14 @@ struct MarketScreen: View {
         } message: { (action: AccountPackageAction) in
             Text(action.message)
         }
+        .packageUninstall($uninstallRequest, market: model) { (removal: PackageRemoval) in
+            exportURL = PackageUninstallRequest.exportFile(removal)
+            exporting = removal.export != nil
+        }
+        .fileExporter(
+            isPresented: $exporting, document: model.removed?.export.map(PackageExportDocument.init(data:)), contentType: .json,
+            defaultFilename: exportURL?.lastPathComponent
+        ) { _ in model.dismissRemoval() }
     }
 
     @ViewBuilder private var emptyState: some View {
@@ -299,9 +314,10 @@ struct MarketCard: View {
     let model: MarketModel
     let signedIn: Bool
     let onInstall: (MarketCardAction) -> Void
+    let onUninstall: (MarketUninstall, String) -> Void
 
     static let thumbnailWidth: CGFloat = 112
-    static let actionWidth: CGFloat = 76
+    static let actionWidth: CGFloat = 84
 
     static func kindTitle(_ kind: String) -> String {
         switch kind {
@@ -329,8 +345,13 @@ struct MarketCard: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("market-card-" + package.id)
             .overlay(alignment: .topTrailing) {
-                MarketActionButton(package: package, action: action, onInstall: onInstall)
-                    .frame(width: MarketCard.actionWidth, alignment: .trailing)
+                VStack(alignment: .trailing, spacing: FmSpace.x2) {
+                    MarketActionButton(package: package, action: action, onInstall: onInstall)
+                    if let uninstall = model.uninstallAction(package, signedIn: signedIn) {
+                        MarketUninstallButton(package: package, uninstall: uninstall, onUninstall: onUninstall)
+                    }
+                }
+                .frame(width: MarketCard.actionWidth, alignment: .trailing)
             }
             if let error = model.installErrors[package.id] {
                 HStack(alignment: .firstTextBaseline, spacing: FmSpace.x2) {
@@ -537,6 +558,44 @@ struct MarketActionButton: View {
     }
 }
 
+struct MarketUninstallButton: View {
+    let package: MarketPackage
+    let uninstall: MarketUninstall
+    let onUninstall: (MarketUninstall, String) -> Void
+
+    var body: some View {
+        content
+            .font(.caption.weight(.semibold))
+            .controlSize(.small)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .tint(.red)
+            .accessibilityIdentifier("market-uninstall-" + package.id)
+    }
+
+    @ViewBuilder private var content: some View {
+        if case .organization(let organizations) = uninstall, organizations.count > 1 {
+            Menu {
+                PackageUninstallMenuItems(package: package, uninstall: uninstall) { onUninstall(uninstall, $0) }
+            } label: {
+                Text("Uninstall")
+            }
+            .accessibilityLabel("Uninstall \(package.name) from an organization")
+        } else {
+            Button {
+                if case .organization(let organizations) = uninstall {
+                    onUninstall(uninstall, organizations.first ?? "")
+                } else {
+                    onUninstall(uninstall, "")
+                }
+            } label: {
+                Text("Uninstall")
+            }
+            .accessibilityLabel("Uninstall \(package.name)")
+        }
+    }
+}
+
 struct MarketScreenshotImage: View {
     let screenshot: PackageScreenshot
     var cornerRadius: CGFloat = 10
@@ -617,11 +676,10 @@ struct PackageDetailScreen: View {
     @State private var market: MarketModel
     @State private var reviews: PackageReviewsModel
     @State private var installTarget: OrgPackageState?
-    @State private var removeTarget: OrgPackageState?
+    @State private var uninstallRequest: PackageUninstallRequest?
     @State private var exportURL: URL?
     @State private var exporting = false
     @State private var rating = false
-    @State private var removingFromPhone = false
     @State private var quickRating = false
     @State private var accountAction: AccountPackageAction?
     @State private var monitorName = ""
@@ -667,23 +725,26 @@ struct PackageDetailScreen: View {
         }
         .navigationTitle(market.package(packageId)?.name ?? "Package")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let package = market.package(packageId) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        moreMenu(package)
+                    } label: {
+                        Label("More", systemImage: "ellipsis.circle")
+                    }
+                    .accessibilityIdentifier("market-package-more")
+                }
+            }
+        }
         .fmRefreshable { await refresh() }
         .task {
             if PackagesFeature.signedIn { PackageActivity.shared.report(packageId, kind: .view, client: client) }
             await refresh()
         }
-        .confirmationDialog(
-            "Remove \(market.package(packageId)?.name ?? "") from this phone?",
-            isPresented: $removingFromPhone, titleVisibility: .visible
-        ) {
-            Button("Uninstall", role: .destructive) {
-                PhonePackages.setRemoved(packageId, removed: true)
-                PackageGateSync.publish()
-                FmHaptics.commit()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("It disappears from your home menu and shortcuts on this phone until you install it again here. Your data is kept.")
+        .packageUninstall($uninstallRequest, market: market) { (removal: PackageRemoval) in
+            exportURL = PackageUninstallRequest.exportFile(removal)
+            exporting = exportURL != nil
         }
         .confirmationDialog(
             "Install \(market.package(packageId)?.name ?? "") for \(installTarget?.organization ?? "")?",
@@ -701,25 +762,6 @@ struct PackageDetailScreen: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Everyone in the organization gets it. Removing it later exports and deletes its data.")
-        }
-        .confirmationDialog(
-            "Remove \(market.package(packageId)?.name ?? "") from \(removeTarget?.organization ?? "")?",
-            isPresented: Binding(get: { removeTarget != nil }, set: { if !$0 { removeTarget = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Remove", role: .destructive) {
-                guard let package = market.package(packageId), let target = removeTarget else { return }
-                Task {
-                    guard await market.uninstall(package, organization: target.organization) else { return }
-                    FmHaptics.commit()
-                    await HubPackageState.shared.refresh()
-                    exportURL = market.removed.flatMap(exportFile)
-                    exporting = exportURL != nil
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Everyone in the organization loses it. Its data is deleted from the server; you get a copy to save right after.")
         }
         .fileExporter(
             isPresented: $exporting, document: market.removed?.export.map(PackageExportDocument.init(data:)), contentType: .json,
@@ -739,6 +781,22 @@ struct PackageDetailScreen: View {
             Button("Cancel", role: .cancel) {}
         } message: { (action: AccountPackageAction) in
             Text(action.message)
+        }
+    }
+
+    @ViewBuilder private func moreMenu(_ package: MarketPackage) -> some View {
+        Button {
+            rating = true
+        } label: {
+            Label(reviews.page?.viewer.review == nil ? "Rate" : "Edit your rating", systemImage: "star")
+        }
+        .disabled(reviews.page == nil)
+        .accessibilityIdentifier("market-package-more-rate")
+        if let uninstall = market.uninstallAction(package, signedIn: PackagesFeature.signedIn) {
+            Divider()
+            PackageUninstallMenuItems(package: package, uninstall: uninstall) { (organization: String) in
+                uninstallRequest = PackageUninstallRequest(package, uninstall, organization: organization, account: market.account)
+            }
         }
     }
 
@@ -823,7 +881,7 @@ struct PackageDetailScreen: View {
                     .accessibilityIdentifier("market-package-phone-install")
                 } else {
                     Button(role: .destructive) {
-                        removingFromPhone = true
+                        uninstallRequest = PackageUninstallRequest(package, .phone, account: nil)
                     } label: {
                         Label("Uninstall from this phone", systemImage: "trash")
                     }
@@ -967,7 +1025,11 @@ struct PackageDetailScreen: View {
                                 .foregroundStyle(.green)
                                 .accessibilityLabel("Installed")
                             if org.canManage {
-                                Button("Remove", role: .destructive) { removeTarget = org }.buttonStyle(.bordered)
+                                Button("Remove", role: .destructive) {
+                                    uninstallRequest = PackageUninstallRequest(
+                                        package, .organization([org.organization]), organization: org.organization, account: nil)
+                                }
+                                .buttonStyle(.bordered)
                             }
                         } else if org.canManage {
                             Button("Install") { installTarget = org }.buttonStyle(.bordered)
@@ -1188,17 +1250,6 @@ struct PackageDetailScreen: View {
         }
     }
 
-    private func exportFile(_ removal: PackageRemoval) -> URL? {
-        guard let data = removal.export else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(removal.filename)
-        do {
-            try data.write(to: url, options: [.atomic, .completeFileProtection])
-        } catch {
-            return nil
-        }
-        return url
-    }
-
     @ViewBuilder private var reviewsSection: some View {
         Section {
             if let page = reviews.page {
@@ -1333,6 +1384,13 @@ struct RatePackageSheet: View {
 
     var body: some View {
         Form {
+            if let page = model.page, !page.viewer.canRate {
+                Section {
+                    Label(page.viewer.cannotRateReason, systemImage: "info.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section {
                 HStack {
                     ForEach(1...5, id: \.self) { star in

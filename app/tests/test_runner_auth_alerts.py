@@ -143,6 +143,7 @@ def test_poll_with_expired_login_alerts_once_and_is_stored():
     alert = runtime.alerts[0]
     assert alert["runner"] == "pool-1" and alert["provider"] == "claude-code"
     assert alert["state"] == "expired" and alert["email"] is False
+    assert alert["admins"] is True and alert["extra"] == ["root"]
     assert alert["href"] == "/dashboard/runners?runner=pool-1&provider=claude-code"
     assert alert["dedupe"] == "runner-auth:pool-1:claude-code:expired:%d" % NOW
     assert stored(runtime)["claude-code"]["auth"]["state"] == "expired"
@@ -151,16 +152,16 @@ def test_poll_with_expired_login_alerts_once_and_is_stored():
     assert pool["availability"]["claude-code"]["auth"]["reason"] == "job_failed"
 
 
-def test_expiring_login_warns_without_email_and_personal_runner_owner_is_told():
+def test_a_personal_runner_alerts_only_its_owner():
     runtime, _pool_key, own_key = setup()
     poll(runtime, own_key, availability("expiring", expires_at=NOW + 6 * 3600_000),
          runner="alice-box")
     poll(runtime, own_key, availability("expired", login="expired", failed_at=NOW),
          runner="alice-box")
     assert [a["state"] for a in runtime.alerts] == ["expiring", "expired"]
-    assert runtime.alerts[0]["email"] is False
-    assert runtime.alerts[1]["email"] is True
-    assert runtime.alerts[1]["extra"] == ["alice"]
+    for alert in runtime.alerts:
+        assert alert["email"] is False and alert["admins"] is False
+        assert alert["extra"] == ["alice"]
 
 
 def test_reconnect_then_expire_again_alerts_again():

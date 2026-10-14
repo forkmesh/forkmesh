@@ -171,7 +171,7 @@ final class RunnerSignInParsingTests: XCTestCase {
         let refused = RunnerLoginSession(runner: "r", provider: "codex")
         XCTAssertEqual(refused.applyStartReply(status: 403, body: [:]), .failed)
         XCTAssertFalse(refused.open)
-        XCTAssertTrue(refused.statusText.contains("administrator"))
+        XCTAssertTrue(refused.statusText.contains("not one of yours"))
 
         let b64 = { (text: String) in JSONValue.string(Data(text.utf8).base64EncodedString()) }
         let first = session.applyOutputReply([

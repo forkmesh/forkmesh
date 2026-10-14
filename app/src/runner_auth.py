@@ -170,8 +170,8 @@ def status_reason(runner, availability):
 
 def submit_message(runner, provider):
     short = provider_short(provider)
-    return ("Runner %s needs %s reconnected. An admin can reconnect it from "
-            "Runners (Connect %s); the job was not queued."
+    return ("Runner %s needs %s reconnected. Reconnect it from Runners "
+            "(Connect %s); the job was not queued."
             % (runner, short, short))
 
 
@@ -200,7 +200,6 @@ async def notify(runtime, runner, changes, now, registered_by="", scope=""):
             runner=runner, provider=provider, state=state, title=title,
             body=body, href=runners_href(runner, provider),
             dedupe=dedupe_key(runner, provider, state, auth, now),
-            email=state == "expired" and scope != "pool",
-            extra=[registered_by] if scope == "personal" and registered_by
-            else [])
+            email=False, admins=scope == "pool",
+            extra=[registered_by] if registered_by else [])
     return sent

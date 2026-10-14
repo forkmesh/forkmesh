@@ -1,6 +1,7 @@
 import { centroid, faceFrame, liveHead, projectPose, vertexDepths } from "./chat-call-face-geometry.js";
 import { createFaceMesh } from "./chat-call-face-mesh.js";
 import { createHairMatte, createMatte, floatTargets, MATTE_SAMPLE } from "./chat-call-segment.js";
+import { OUTFIT_NECK, OUTFIT_SIZE, OUTFIT_UNIT } from "./chat-call-outfits.js";
 
 const LOW_WIDTH = 160;
 const FILL_WIDTH = 192;
@@ -21,6 +22,11 @@ const LOOK_GAIN = 0.55;
 const PHOTO_SOFTEN = 0.35;
 const GRAIN = 0.012;
 const LIP_SHADOW = 0.22;
+const OUTFIT_REACH = 0.35;
+const OUTFIT_DETAIL = 0.4;
+const OUTFIT_SHADE = [0.75, 1.12];
+const OUTFIT_HANDS = [1.2, 1.9];
+const OUTFIT_OFF = Object.freeze({ center: [-1e5, -1e5], x: [0, 0], y: [0, 0], unit: 1 });
 
 export const BACKGROUND_MODES = Object.freeze({ off: 0, blur: 1, image: 2 });
 
@@ -248,10 +254,46 @@ uniform vec2 uTongueX;
 uniform vec2 uTongueY;
 uniform float uSkinRed;
 uniform float uSeed;
+uniform sampler2D uOutfit;
+uniform float uOutfitOn;
+uniform vec2 uOutfitCenter;
+uniform vec2 uOutfitX;
+uniform vec2 uOutfitY;
+uniform vec2 uOutfitReach;
+uniform vec2 uOutfitFace;
 varying vec2 vUv;
 ${MATTE_SAMPLE}
 ${ZONE}
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+vec3 chroma(vec3 c) {
+  return c / (c.r + c.g + c.b + 0.03);
+}
+vec3 dress(vec3 front, vec3 cam, float alpha, float zone) {
+  vec2 d = vUv * uPixels - uOutfitCenter;
+  vec2 q = vec2(dot(d, uOutfitX), dot(d, uOutfitY));
+  vec4 cloth = texture2D(uOutfit, (vec2(${OUTFIT_NECK[0].toFixed(1)}, ${OUTFIT_NECK[1].toFixed(1)}) + q * ${OUTFIT_UNIT.toFixed(1)}) / ${OUTFIT_SIZE.toFixed(1)});
+  if (cloth.a < 0.002) return front;
+  float mean = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float angle = float(i) * 0.785398;
+    mean += dot(texture2D(uCam, vUv + uOutfitReach * vec2(cos(angle), sin(angle))).rgb, LUMA);
+  }
+  mean = mean / 8.0;
+  float detail = clamp(pow(dot(cam, LUMA) / max(mean, 0.02), ${OUTFIT_DETAIL.toFixed(2)}), ${OUTFIT_SHADE[0].toFixed(2)}, ${OUTFIT_SHADE[1].toFixed(2)});
+  vec3 skin = vec3(0.0);
+  for (int i = 0; i < 5; i++) {
+    vec2 offset = i == 0 ? vec2(0.0) : uOutfitReach * vec2(i == 1 ? 1.0 : i == 2 ? -1.0 : 0.0, i == 3 ? 1.0 : i == 4 ? -1.0 : 0.0);
+    skin += texture2D(uCam, uOutfitFace + offset).rgb;
+  }
+  skin = skin / 5.0;
+  float near = 1.0 - smoothstep(0.035, 0.07, distance(chroma(cam), chroma(skin)));
+  float bright = dot(cam, LUMA) / max(dot(skin, LUMA), 0.02);
+  float hands = near * smoothstep(0.45, 0.65, bright) * (1.0 - smoothstep(1.6, 2.0, bright)) * smoothstep(${OUTFIT_HANDS[0].toFixed(2)}, ${OUTFIT_HANDS[1].toFixed(2)}, q.y);
+  float hair = uHasHair > 0.5 ? smoothstep(0.4, 0.8, texture2D(uHair, vUv).r) : 0.0;
+  float g = cloth.a * uOutfitOn * (1.0 - hands) * (1.0 - hair) * (1.0 - zone);
+  vec3 tint = cloth.rgb / cloth.a;
+  return mix(front, tint * detail * alpha, g);
+}
 float grain(vec2 at) {
   return fract(sin(dot(floor(at) + vec2(uSeed, uSeed * 0.61), vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
 }
@@ -279,6 +321,7 @@ void main() {
   }
   vec3 front = clamp(cam - (1.0 - alpha) * fill, vec3(0.0), vec3(alpha));
   vec3 behind = alpha < 0.98 ? (cam - front) / (1.0 - alpha) : fill;
+  if (uOutfitOn > 0.001 && uHasMatte > 0.5) front = dress(front, cam, alpha, zone);
   vec3 backdrop = behind;
   if (uMode > 1.5) {
     backdrop = texture2D(uBackdrop, uImageRect.xy + vUv * uImageRect.zw).rgb;
@@ -506,6 +549,8 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
   const photo = texture(gl, gl.LINEAR_MIPMAP_LINEAR);
   const auxPhoto = texture(gl, gl.LINEAR_MIPMAP_LINEAR);
   const imageTexture = texture(gl);
+  const outfitTexture = texture(gl, gl.LINEAR_MIPMAP_LINEAR);
+  let outfit = false;
   let matte = null;
   let faceMesh = null;
   let hairMatte = null;
@@ -742,10 +787,23 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
     get hasBackgroundImage() {
       return Boolean(background.image);
     },
+    setOutfit(image) {
+      outfit = Boolean(image);
+      if (!image) return;
+      gl.bindTexture(gl.TEXTURE_2D, outfitTexture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.generateMipmap(gl.TEXTURE_2D);
+    },
+    get hasOutfit() {
+      return outfit;
+    },
     get lastHead() {
       return lastHead;
     },
-    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, runHair = true, needMatte = false, uploaded = false, expression = null, tongueBox = null } = {}) {
+    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, runHair = true, needMatte = false, uploaded = false, expression = null, tongueBox = null, body = null, dressed = 0 } = {}) {
       if (gl.isContextLost()) {
         lost = true;
         return false;
@@ -757,13 +815,16 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       const mode = BACKGROUND_MODES[background.mode] ?? 0;
       const activeMode = mode === 2 && !background.image ? 0 : mode;
       const showFace = Boolean(face && live && presence > 0.001);
-      const wantMatte = Boolean(matte) && (activeMode > 0 || showFace || needMatte);
+      const wearing = Boolean(outfit && body && dressed > 0.001);
+      const wantMatte = Boolean(matte) && (activeMode > 0 || showFace || wearing || needMatte);
       let seed = null;
-      if (live) {
-        const frameOfFace = faceFrame(live);
+      const seen = live || body?.points || null;
+      if (seen) {
+        const frameOfFace = faceFrame(seen);
         seed = [frameOfFace.mid[0] / w, frameOfFace.mid[1] / h, (0.8 * frameOfFace.span) / h];
       }
       const hasMatte = wantMatte && matte.update(camera, w, h, { runNetwork, face: seed }) && matte.ready;
+      const showOutfit = wearing && hasMatte;
       let zone = null;
       let faceUv = [0.5, 0.5];
       lastHead = null;
@@ -829,7 +890,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       let fill = camera;
       let backdrop = camera;
       let imageRect = [0, 0, 1, 1];
-      if (hasMatte && (activeMode > 0 || showFace)) fill = buildFill(true, showFace ? zone : null);
+      if (hasMatte && (activeMode > 0 || showFace || showOutfit)) fill = buildFill(true, showFace ? zone : null);
       if (activeMode === 1 && hasMatte) backdrop = buildBlurBackdrop(background.strength);
       else if (activeMode === 0 && hasMatte && showFace) backdrop = buildBlurBackdrop(HALO_STRENGTH);
       if (activeMode === 2) {
@@ -856,6 +917,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
         ["uLowPlain", targets.plain.texture],
         ["uHair", hair || camera],
         ["uMatteMask", matte?.mask || camera],
+        ["uOutfit", outfitTexture],
       ]);
       gl.uniform1f(composite.uniforms.uHasHair, hair ? 1 : 0);
       gl.uniform1f(composite.uniforms.uHasMatte, hasMatte ? 1 : 0);
@@ -874,6 +936,14 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       gl.uniform1f(composite.uniforms.uSkinRed, expression?.skinRed ?? 0.12);
       frameCount = (frameCount + 1) % 4096;
       gl.uniform1f(composite.uniforms.uSeed, (frameCount * 7.31) % 97);
+      const wear = showOutfit ? body.frame : OUTFIT_OFF;
+      const wearFace = showOutfit ? faceFrame(body.points) : null;
+      gl.uniform1f(composite.uniforms.uOutfitOn, showOutfit ? Math.min(1, dressed) : 0);
+      gl.uniform2f(composite.uniforms.uOutfitCenter, wear.center[0], wear.center[1]);
+      gl.uniform2f(composite.uniforms.uOutfitX, wear.x[0], wear.x[1]);
+      gl.uniform2f(composite.uniforms.uOutfitY, wear.y[0], wear.y[1]);
+      gl.uniform2f(composite.uniforms.uOutfitReach, (OUTFIT_REACH * wear.unit) / w, (OUTFIT_REACH * wear.unit) / h);
+      gl.uniform2f(composite.uniforms.uOutfitFace, wearFace ? wearFace.mid[0] / w : 0.5, wearFace ? (wearFace.mid[1] + 0.6 * wearFace.span) / h : 0.5);
       setZone(composite, zone);
       drawQuad(composite, 1);
       return true;

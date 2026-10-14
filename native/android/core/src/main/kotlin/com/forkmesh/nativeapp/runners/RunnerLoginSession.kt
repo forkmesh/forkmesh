@@ -129,8 +129,7 @@ class RunnerLoginSession(runner: String, provider: String) {
         val text = body.str("message").trim().ifEmpty {
             when {
                 status == 401 -> "Sign in to your ForkMesh account on this phone first."
-                status == 403 -> "Only an administrator, or the registrant of a personal runner, may sign its agent CLIs in."
-                status == 404 -> "That runner is not registered."
+                status == 403 || status == 404 -> "That runner is not one of yours. Only the account that added a runner can see it or sign its agent CLIs in."
                 code.isNotEmpty() -> code
                 else -> "The sign-in could not be started."
             }
