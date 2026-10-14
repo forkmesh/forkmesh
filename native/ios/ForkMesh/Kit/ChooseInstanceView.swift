@@ -7,11 +7,12 @@ import SwiftUI
 struct ChooseInstanceView: View {
     @Environment(\.fmPalette) private var fm
     let project: RelayProfile
+    let onClose: () -> Void
     @State private var model: AttachInstanceModel
-    @State private var switching: Bool = false
 
-    init(project: RelayProfile) {
+    init(project: RelayProfile, onClose: @escaping () -> Void) {
         self.project = project
+        self.onClose = onClose
         let http: HTTPClient = Services.get(HTTPClient.self) ?? URLSessionHTTPClient()
         let projectId = project.id
         _model = State(
@@ -51,13 +52,13 @@ struct ChooseInstanceView: View {
                     if let verified = model.verified {
                         FmFilledButton(
                             "Connect to \(verified.host)", fillWidth: true,
-                            onPressed: model.checking ? nil : { Task { await model.attach() } })
+                            onPressed: model.checking ? nil : { Task { if await model.attach() { onClose() } } })
                     } else {
                         FmFilledButton(
                             model.checkLabel, fillWidth: true,
                             onPressed: model.checking || !model.hasHost ? nil : { Task { await model.check() } })
                     }
-                    FmOutlinedButton("Switch project", fillWidth: true, onPressed: { switching = true })
+                    FmOutlinedButton("Not now", fillWidth: true, onPressed: onClose)
                 }
                 .padding(.top, FmSpace.x4)
             }
@@ -65,8 +66,29 @@ struct ChooseInstanceView: View {
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
-        .background(fm.bgBase.ignoresSafeArea())
-        .projectDrawer(isPresented: $switching)
+        .background(fm.canvas.ignoresSafeArea())
         .accessibilityIdentifier("choose-instance")
+    }
+}
+
+struct NoInstanceBanner: View {
+    @Environment(\.fmPalette) private var fm
+    let onChoose: () -> Void
+
+    var body: some View {
+        HStack(spacing: FmSpace.x2) {
+            FmIcon("dns_outlined", size: 16, color: fm.textSecondary)
+            Text(AttachInstanceModel.bannerText)
+                .fmText(.bodySmall, color: fm.textSecondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            FmTextButton("Choose instance", onPressed: onChoose)
+                .accessibilityIdentifier("no-instance-choose")
+        }
+        .padding(.leading, FmSpace.x4)
+        .padding(.trailing, FmSpace.x2)
+        .padding(.vertical, FmSpace.x1)
+        .background(fm.accentSubtle)
+        .accessibilityIdentifier("no-instance-banner")
     }
 }

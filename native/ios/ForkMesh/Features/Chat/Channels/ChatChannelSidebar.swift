@@ -220,11 +220,15 @@ struct ChatChannelSidebar: View {
         let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(conversation)
         let icon: String = conversation == meshConversation ? "lan_outlined" : (person ? "alternate_email" : (locked ? "lock_outline" : "tag"))
         let title: String = direct.map { $0.name } ?? hub.conversationLabel(conversation)
+        let preview: ChatListPreview? = hub.listPreview(conversation)
+        let row: ChatDirectRow? = direct ?? (person ? hub.directRows.first(where: { $0.conversation == conversation }) : nil)
         ChatChannelTile(
             title: title, icon: icon, selected: hub.currentConversation == conversation, unread: hub.isUnread(conversation),
             onTap: { select(conversation) }, muted: hub.workspace.isMuted(conversation),
             draft: hub.workspace.hasDraft(conversation) && hub.currentConversation != conversation,
-            count: hub.workspace.isMuted(conversation) ? 0 : (direct?.unread ?? 0), online: direct?.online)
+            count: hub.workspace.isMuted(conversation) ? 0 : (row?.unread ?? 0), online: row?.online,
+            preview: preview?.text ?? "", time: preview.map { hub.listTimeLabel($0) } ?? "",
+            avatar: person ? (row?.name ?? String(title.drop(while: { $0 == "@" }))) : nil)
             .contextMenu {
                 conversationMenu(conversation)
                 if person || conversation == meshConversation {
@@ -291,11 +295,13 @@ struct ChatChannelSidebar: View {
     @ViewBuilder private func channelTile(_ channel: String) -> some View {
         let office: OfficeRoom? = hub.office?.room(for: channel)
         let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(channel)
+        let preview: ChatListPreview? = hub.listPreview(channel)
         ChatChannelTile(
             title: office?.name.isEmpty == false ? "#\(office!.name)" : channel, icon: locked ? "lock_outline" : "tag",
             selected: hub.currentConversation == channel, unread: hub.isUnread(channel), onTap: { select(channel) },
             muted: hub.workspace.isMuted(channel),
-            draft: hub.workspace.hasDraft(channel) && hub.currentConversation != channel)
+            draft: hub.workspace.hasDraft(channel) && hub.currentConversation != channel,
+            preview: preview?.text ?? "", time: preview.map { hub.listTimeLabel($0) } ?? "")
             .contextMenu {
                 conversationMenu(channel)
                 Button(action: { moving = channel }) { Label("Move to group", systemImage: "folder") }
@@ -347,21 +353,37 @@ struct ChatChannelTile: View {
     var draft: Bool = false
     var count: Int = 0
     var online: Bool? = nil
+    var preview: String? = nil
+    var time: String = ""
+    var avatar: String? = nil
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: FmSpace.x3) {
-                ZStack(alignment: .bottomTrailing) {
-                    FmIcon(icon, size: 17, color: selected ? fm.accent : fm.textTertiary)
-                    if let online {
-                        PresenceDot(online: online, size: 7).offset(x: 3, y: 3)
+                leading
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: FmSpace.x2) {
+                        Text(title)
+                            .fmText(.bodySmall, color: selected ? fm.textPrimary : (unread ? fm.textPrimary : fm.textSecondary),
+                                    weight: selected || unread ? FmType.emphasis : FmType.regular)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if !time.isEmpty {
+                            Text(time)
+                                .fmText(.bodySmall, color: fm.textTertiary, tabular: true)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
+                    if let preview {
+                        Text(preview.isEmpty ? " " : preview)
+                            .fmText(.bodySmall, color: fm.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityHidden(preview.isEmpty)
                     }
                 }
-                Text(title)
-                    .fmText(.bodySmall, color: selected ? fm.textPrimary : (unread ? fm.textPrimary : fm.textSecondary),
-                            weight: selected || unread ? FmType.emphasis : FmType.regular)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 if draft {
                     Image(systemName: "pencil")
                         .font(.system(size: 12, weight: .semibold))
@@ -395,6 +417,28 @@ struct ChatChannelTile: View {
         }
         .buttonStyle(.plain)
         .padding(.bottom, FmSpace.x1)
+    }
+
+    @ViewBuilder private var leading: some View {
+        if let avatar {
+            ZStack(alignment: .bottomTrailing) {
+                MessagesPersonAvatar(name: avatar, size: 28)
+                if let online {
+                    PresenceDot(online: online, size: 9)
+                        .overlay { Circle().strokeBorder(selected ? fm.accentSubtle : fm.bgRaised, lineWidth: 1.5) }
+                        .offset(x: 2, y: 2)
+                }
+            }
+            .frame(width: 28, height: 28)
+        } else {
+            ZStack(alignment: .bottomTrailing) {
+                FmIcon(icon, size: 17, color: selected ? fm.accent : fm.textTertiary)
+                if let online {
+                    PresenceDot(online: online, size: 7).offset(x: 3, y: 3)
+                }
+            }
+            .frame(width: 28)
+        }
     }
 }
 

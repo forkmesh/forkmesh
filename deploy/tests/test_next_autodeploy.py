@@ -222,7 +222,8 @@ DOC_INSTANCES = {"fmnext-core-1": {"ip": "203.0.113.11", "ipv6": "2001:19f0:ffff
 
 
 def test_next_deploy_dry_run_takes_no_lock(sandbox):
-    common.save_json(sandbox / "fleet-instances.json", DOC_INSTANCES)
+    from fakes import repo_fleet_instances
+    common.save_json(sandbox / "fleet-instances.json", repo_fleet_instances())
     held = common.DeployLock(what="other").acquire()
     try:
         assert next_deploy.main(["build"], run=lambda *a, **k: None) in (0, 1)

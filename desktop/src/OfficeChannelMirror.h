@@ -92,6 +92,19 @@ struct ChannelWebhook {
 bool chatMessageFromPlain(const QJsonObject &plain, const QString &conversation,
                           const QString &selfId, ChatMessage *out);
 
+struct RoomMutation {
+    QString type;
+    QString id;
+    QString target;
+    QString senderId;
+    QString text;
+    QString emoji;
+    QString reactorName;
+    bool added = false;
+};
+
+bool roomMutationFromPlain(const QJsonObject &plain, RoomMutation *out);
+
 } // namespace forkmesh::office
 
 class OfficeChannelMirror : public QObject
@@ -133,6 +146,13 @@ public:
     bool sendFile(const QString &conversation, const QString &fileName,
                   const QString &mimeType, const QByteArray &data);
     bool sendBotMessage(const QString &conversation, const QString &text);
+    bool sendThreadReply(const QString &conversation, const QString &rootId,
+                         const QString &text);
+    bool sendReaction(const QString &conversation, const QString &messageId,
+                      const QString &emoji, bool added);
+    bool editMessage(const QString &conversation, const QString &messageId,
+                     const QString &text);
+    bool deleteMessage(const QString &conversation, const QString &messageId);
     bool setTopic(const QString &conversation, const QString &topic);
 
     // Channel settings, all manager-only and all signed with the account key.
@@ -180,6 +200,16 @@ signals:
                                 const QString &messageId, int recipients,
                                 const QStringList &names);
     void directServerCopiesKnown(const QString &conversation, int stored);
+    void messagesDelivered(const QString &conversation,
+                           const QStringList &messageIds);
+    void conversationRead(const QString &conversation);
+    void reactionChanged(const QString &conversation, const QString &messageId,
+                         const QString &emoji, const QString &reactorName,
+                         bool added);
+    void messageEdited(const QString &conversation, const QString &messageId,
+                       const QString &senderId, const QString &newText);
+    void messageDeleted(const QString &conversation, const QString &messageId,
+                        const QString &senderId);
     void sendActivity(const QString &text);
     void messageSendFailed(const QString &conversation, const QString &messageId,
                            const QString &text, const QString &reason);
@@ -197,6 +227,11 @@ private:
         QString fileName;
         QString fileMime;
         QByteArray fileData;
+        QString kind;
+        QString rootId;
+        QString target;
+        QString emoji;
+        bool added = false;
     };
 
     struct Room {
@@ -242,6 +277,9 @@ private:
     void fetchRoomAccess(const QString &channelId);
     void openSender(const QString &channelId, const QJsonObject &payload);
     bool reservePendingSlot(Room &room);
+    Room *findRoom(const QString &conversation);
+    bool queueMutation(const QString &conversation, const PendingText &pending);
+    void applyMutation(Room &room, const QJsonObject &plain);
     void flushPending(Room &room);
     void failPending(Room &room, const QString &reason);
     void rememberSeen(Room &room, const QString &messageId);

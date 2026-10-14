@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.MutableContextWrapper
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
@@ -32,21 +35,77 @@ import kotlinx.coroutines.flow.asStateFlow
 class WebCallPeers(
     private val context: Context,
     private val callbacks: Executor,
+    private val voice: () -> String = { "" },
     private val face: () -> String,
 ) : DirectCallPeerFactory {
     private val viewState = MutableStateFlow<WebView?>(null)
     private val facesState = MutableStateFlow(false)
+    private val backgroundsState = MutableStateFlow<Map<String, String>?>(null)
+    private val previewState = MutableStateFlow(false)
+
+    @Volatile
+    private var previewPeer: WebCallPeer? = null
 
     val view: StateFlow<WebView?> = viewState.asStateFlow()
     val facesSupported: StateFlow<Boolean> = facesState.asStateFlow()
+    val backgrounds: StateFlow<Map<String, String>?> = backgroundsState.asStateFlow()
+    val previewing: StateFlow<Boolean> = previewState.asStateFlow()
+
+    fun previewed(): WebCallPeer? = previewPeer
+
+    fun preview(face: String, background: String, image: String): WebCallPeer {
+        val peer = previewPeer ?: WebCallPeer(context, callbacks) { gone -> viewState.compareAndSet(gone, null) }.also { made ->
+            try {
+                viewState.value = made.load()
+            } catch (error: Exception) {
+                made.close()
+                throw error
+            }
+            previewPeer = made
+        }
+        try {
+            peer.preview(DirectCallKind.VIDEO, voice(), face, background, image)
+            learn(peer, true)
+        } catch (error: Exception) {
+            endPreview()
+            throw error
+        }
+        previewState.value = true
+        return peer
+    }
+
+    fun endPreview() {
+        val peer = previewPeer ?: return
+        previewPeer = null
+        previewState.value = false
+        peer.close()
+    }
+
+    private fun learn(peer: WebCallPeer, video: Boolean) {
+        facesState.value = video && (peer.request("faceList", emptyList()) as? List<*>).orEmpty().isNotEmpty()
+        backgroundsState.value = if (video) peer.backgroundThumbnails() else null
+    }
 
     override fun makePeer(media: DirectCallKind, iceServers: List<String>): DirectCallPeer {
         val video = media == DirectCallKind.VIDEO
+        val previewed = previewPeer
+        if (previewed != null && video) {
+            previewPeer = null
+            previewState.value = false
+            try {
+                previewed.request("setup", listOf(media.wire, iceServers, "", voice()))
+            } catch (error: Exception) {
+                previewed.close()
+                throw error
+            }
+            return previewed
+        }
+        endPreview()
         val peer = WebCallPeer(context, callbacks) { gone -> viewState.compareAndSet(gone, null) }
         try {
             viewState.value = peer.load()
-            peer.request("setup", listOf(media.wire, iceServers, if (video) face() else ""))
-            facesState.value = video && (peer.request("faceList", emptyList()) as? List<*>).orEmpty().isNotEmpty()
+            peer.request("setup", listOf(media.wire, iceServers, if (video) face() else "", voice()))
+            learn(peer, video)
         } catch (error: Exception) {
             peer.close()
             throw error
@@ -79,6 +138,9 @@ class WebCallPeer internal constructor(
 
     @Volatile
     private var closed = false
+
+    @Volatile
+    private var voiceObserver: ((String) -> Unit)? = null
 
     private val ready = CountDownLatch(1)
     private val pending = ConcurrentHashMap<Int, CompletableFuture<Any?>>()
@@ -145,6 +207,10 @@ class WebCallPeer internal constructor(
             "ice" -> {
                 val candidate = message["candidate"].asJsonMap()
                 if (candidate.isNotEmpty()) deliver { onIceCandidate?.invoke(candidate) }
+            }
+            "voice" -> {
+                val applied = jsonText(message["id"])
+                deliver { voiceObserver?.invoke(applied) }
             }
             "live" -> deliver { onLive?.invoke() }
             "closed" -> deliver { onClosed?.invoke() }
@@ -223,6 +289,33 @@ class WebCallPeer internal constructor(
         request("face", listOf(id))
     }
 
+    override fun setVoice(id: String) {
+        request("voice", listOf(id))
+    }
+
+    override fun observeVoice(handler: (String) -> Unit) {
+        voiceObserver = handler
+    }
+
+    fun preview(media: DirectCallKind, voice: String, face: String = "", background: String = "", image: String = ""): String =
+        jsonText(request("preview", listOf(media.wire, voice, face, background, image)))
+
+    override fun setBackground(id: String, image: String) {
+        request("background", listOf(id, image))
+    }
+
+    fun backgroundThumbnails(): Map<String, String> {
+        val list = request("backgroundList", emptyList()) as? List<*> ?: return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        for (entry in list) {
+            val item = entry.asJsonMap()
+            out[jsonText(item["id"])] = jsonText(item["thumb"])
+        }
+        return out
+    }
+
+    fun setMonitor(on: Boolean): Boolean = request("monitor", listOf(on)) == true
+
     override fun close() {
         if (closed) return
         closed = true
@@ -243,6 +336,19 @@ class WebCallPeer internal constructor(
             }, DESTROY_DELAY_MS)
         }
     }
+}
+
+fun callHeadphonesConnected(context: Context): Boolean {
+    val audio = context.getSystemService(AudioManager::class.java) ?: return false
+    val worn = mutableSetOf(
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+    )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) worn.add(AudioDeviceInfo.TYPE_BLE_HEADSET)
+    return audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type in worn }
 }
 
 fun WebView.adoptContext(context: Context): WebView {

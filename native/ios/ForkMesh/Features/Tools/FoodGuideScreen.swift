@@ -17,7 +17,7 @@ struct FoodGuideScreen: View {
             .task { await model.load() }
             .navigationTitle(FoodGuideModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
     }
 }
 

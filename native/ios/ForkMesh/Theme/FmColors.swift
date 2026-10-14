@@ -74,8 +74,8 @@ enum FmColors {
     static let darkBgElevated = Color(fmARGB: 0xFF26262A)
 
     static let textPrimary = Color(fmARGB: 0xFF0A0A0A)
-    static let textSecondary = Color(fmARGB: 0x990A0A0A)
-    static let textTertiary = Color(fmARGB: 0x660A0A0A)
+    static let textSecondary = Color(fmARGB: 0xB80A0A0A)
+    static let textTertiary = Color(fmARGB: 0x990A0A0A)
     static let textDisabled = Color(fmARGB: 0x400A0A0A)
 
     static let darkTextPrimary = Color(fmARGB: 0xFFF4F4F5)
@@ -89,15 +89,16 @@ enum FmColors {
     static let accentSubtle = Color(fmARGB: 0x1A007AFF)
     static let accentOnDark = Color(fmARGB: 0xFF0A84FF)
     static let accentSubtleOnDark = Color(fmARGB: 0x33164A8C)
-    static let success = Color(fmARGB: 0xFF148A45)
+    static let success = Color(fmARGB: 0xFF0F7A3B)
     static let successOnDark = Color(fmARGB: 0xFF46E07F)
     static let successBtn = FmColors.textPrimary
     static let successBtnHover = Color(fmARGB: 0xFF2A2E36)
     static let danger = Color(fmARGB: 0xFFC93532)
     static let dangerOnDark = Color(fmARGB: 0xFFFF6B6B)
-    static let warning = Color(fmARGB: 0xFFB7791F)
+    static let warning = Color(fmARGB: 0xFF8F5A0A)
     static let warningOnDark = Color(fmARGB: 0xFFE5C84C)
     static let offline = Color(fmARGB: 0xFFA0A7B2)
+    static let offlineOnLight = Color(fmARGB: 0xFF5F6672)
     static let accentEdge = Color(fmARGB: 0xFF8250DF)
     static let darkBorder = Color(fmARGB: 0xFF252529)
     static let editorGutter = Color(fmARGB: 0xFF101012)
@@ -158,8 +159,17 @@ enum FmColors {
 /// it keeps contrast on the near-black canvas. Blue is the default.
 enum FmAccent: String, CaseIterable {
     case blue
-    case purple
+    case cyan
     case teal
+    case green
+    case lime
+    case amber
+    case orange
+    case red
+    case pink
+    case violet
+    case purple
+    case graphite
 
     static let fallback: FmAccent = .blue
 
@@ -175,42 +185,44 @@ enum FmAccent: String, CaseIterable {
     var label: String {
         switch self {
         case .blue: return "Blue"
-        case .purple: return "Purple"
+        case .cyan: return "Cyan"
         case .teal: return "Teal"
+        case .green: return "Green"
+        case .lime: return "Lime"
+        case .amber: return "Amber"
+        case .orange: return "Orange"
+        case .red: return "Red"
+        case .pink: return "Pink"
+        case .violet: return "Violet"
+        case .purple: return "Purple"
+        case .graphite: return "Graphite"
         }
     }
 
-    var light: Color {
+    private var rgb: (light: UInt32, onDark: UInt32, subtleOnDark: UInt32) {
         switch self {
-        case .blue: return Color(fmARGB: 0xFF007AFF)
-        case .purple: return Color(fmARGB: 0xFF6161F2)
-        case .teal: return Color(fmARGB: 0xFF0D9488)
+        case .blue: return (light: 0x007AFF, onDark: 0x0A84FF, subtleOnDark: 0x164A8C)
+        case .cyan: return (light: 0x0E7490, onDark: 0x22D3EE, subtleOnDark: 0x0E7490)
+        case .teal: return (light: 0x0D9488, onDark: 0x2DD4BF, subtleOnDark: 0x115E59)
+        case .green: return (light: 0x15803D, onDark: 0x4ADE80, subtleOnDark: 0x15803D)
+        case .lime: return (light: 0x4D7C0F, onDark: 0xA3E635, subtleOnDark: 0x4D7C0F)
+        case .amber: return (light: 0xB45309, onDark: 0xFBBF24, subtleOnDark: 0xB45309)
+        case .orange: return (light: 0xC2410C, onDark: 0xFB923C, subtleOnDark: 0xC2410C)
+        case .red: return (light: 0xDC2626, onDark: 0xF87171, subtleOnDark: 0xB91C1C)
+        case .pink: return (light: 0xDB2777, onDark: 0xF472B6, subtleOnDark: 0xBE185D)
+        case .violet: return (light: 0x9333EA, onDark: 0xC084FC, subtleOnDark: 0x7E22CE)
+        case .purple: return (light: 0x6161F2, onDark: 0x6C63FF, subtleOnDark: 0x2F2A74)
+        case .graphite: return (light: 0x52525B, onDark: 0xA1A1AA, subtleOnDark: 0x52525B)
         }
     }
 
-    var subtle: Color {
-        switch self {
-        case .blue: return Color(fmARGB: 0x1A007AFF)
-        case .purple: return Color(fmARGB: 0x1A6161F2)
-        case .teal: return Color(fmARGB: 0x1A0D9488)
-        }
-    }
+    var light: Color { return Color(fmARGB: 0xFF000000 | rgb.light) }
 
-    var onDark: Color {
-        switch self {
-        case .blue: return Color(fmARGB: 0xFF0A84FF)
-        case .purple: return Color(fmARGB: 0xFF6C63FF)
-        case .teal: return Color(fmARGB: 0xFF2DD4BF)
-        }
-    }
+    var subtle: Color { return Color(fmARGB: 0x1A000000 | rgb.light) }
 
-    var subtleOnDark: Color {
-        switch self {
-        case .blue: return Color(fmARGB: 0x33164A8C)
-        case .purple: return Color(fmARGB: 0x332F2A74)
-        case .teal: return Color(fmARGB: 0x33115E59)
-        }
-    }
+    var onDark: Color { return Color(fmARGB: 0xFF000000 | rgb.onDark) }
+
+    var subtleOnDark: Color { return Color(fmARGB: 0x33000000 | rgb.subtleOnDark) }
 }
 
 /// FmTheme's colours resolved for one brightness and one accent:
@@ -220,6 +232,7 @@ struct FmPalette: Equatable {
     /// FmTheme.isDark(context).
     let dark: Bool
     let accentChoice: FmAccent
+    let wallpaper: Bool
 
     let bgBase: Color
     let bgRaised: Color
@@ -247,9 +260,10 @@ struct FmPalette: Equatable {
     /// FmTheme.editorActiveLine.
     let editorActiveLine: Color
 
-    init(dark: Bool, accent: FmAccent = .fallback) {
+    init(dark: Bool, accent: FmAccent = .fallback, wallpaper: Bool = false) {
         self.dark = dark
         self.accentChoice = accent
+        self.wallpaper = wallpaper
         bgBase = dark ? FmColors.darkBgBase : FmColors.bgBase
         bgRaised = dark ? FmColors.darkBgRaised : FmColors.bgRaised
         bgOverlay = dark ? FmColors.darkBgOverlay : FmColors.bgOverlay
@@ -277,7 +291,7 @@ struct FmPalette: Equatable {
     static let light = FmPalette(dark: false)
     static let darkDefault = FmPalette(dark: true)
 
-    var offline: Color { return FmColors.offline }
+    var offline: Color { return dark ? FmColors.offline : FmColors.offlineOnLight }
     var accentEdge: Color { return FmColors.accentEdge }
     var count: Color { return dark ? FmAccent.blue.onDark : FmAccent.blue.light }
 
@@ -287,7 +301,12 @@ struct FmPalette: Equatable {
     /// FmTheme.listSurface: explorer rows sit on the raised white layer in
     /// light and the base near-black canvas in dark, so they read as part of
     /// the page rather than as stacked cards.
-    var listSurface: Color { return dark ? FmColors.darkBgBase : FmColors.bgRaised }
+    var listSurface: Color {
+        let surface: Color = dark ? FmColors.darkBgBase : FmColors.bgRaised
+        return wallpaper ? surface.opacity(0.6) : surface
+    }
+
+    var canvas: Color { return wallpaper ? Color.clear : bgBase }
 
     /// FmTheme.editorSurface.
     var editorSurface: Color { return dark ? FmColors.darkBgBase : FmColors.bgRaised }

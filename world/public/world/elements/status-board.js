@@ -175,14 +175,15 @@ export function build({ THREE, params, net }) {
         titleY,
       );
 
+      const node = /^(core|runner):/.test(String(system?.id || ""));
       context.textAlign = "right";
       context.font = `700 ${Math.max(11, 24 * scale)}px ${MONO}`;
-      context.fillText(percent(system?.uptime24hPct), 800, titleY);
-      context.fillText(percent(system?.uptimePct), 968, titleY);
+      context.fillText(percent(system?.uptime24hPct), node ? 968 : 800, titleY);
+      if (!node) context.fillText(percent(system?.uptimePct), 968, titleY);
       context.fillStyle = "#686b74";
       context.font = `500 ${Math.max(9, 15 * scale)}px ${FONT}`;
-      context.fillText("24h", 800, titleY + Math.max(11, 20 * scale));
-      context.fillText("30d", 968, titleY + Math.max(11, 20 * scale));
+      context.fillText("24h", node ? 968 : 800, titleY + Math.max(11, 20 * scale));
+      if (!node) context.fillText("30d", 968, titleY + Math.max(11, 20 * scale));
       context.textAlign = "left";
 
       const days = list(system?.days).slice(-30);
@@ -207,7 +208,7 @@ export function build({ THREE, params, net }) {
         graphWidth,
         cellHeight,
       );
-      strip(
+      if (!node) strip(
         context,
         days.map(dayState),
         30,

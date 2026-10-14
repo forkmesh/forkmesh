@@ -49,7 +49,7 @@ struct PingDetailScreen: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle(PingDetailCopy.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

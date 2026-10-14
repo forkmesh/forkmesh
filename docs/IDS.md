@@ -143,7 +143,8 @@ holds plaintext columns (such as `users.is_admin`), and with
 it and remove it as a voter, but the IDS never takes the cluster down:
 
 - The locked-down node stops its own rqlite only when its `/nodes` shows
-  **at least two other reachable voters and a leader**, and no other node
+  **other reachable voters that are a majority of all the voters (at least
+  two) and a leader**, and no other node
   is already quarantined. Otherwise rqlite keeps running, and the lockdown
   firewall admits only Raft from the cores. A second simultaneous lockdown
   (for example a bad deploy on every node) therefore never costs quorum.
@@ -151,6 +152,10 @@ it and remove it as a voter, but the IDS never takes the cluster down:
   peer does it (the rendezvous-first healthy node). It waits until the node
   has been unreachable for 2 minutes and two reachable voters with a leader
   remain, and it never shrinks the cluster below two voters.
+- The majority rule replaced a fixed "two others" on 2026-10-13: with four
+  voters (a promoted spare during a core replacement) two reachable others
+  are not a quorum without the node, so stopping it would have taken the
+  cluster down ([deploy/README.md](deploy/README.md#no-fixed-main-node)).
 - With three voters, removing a dead one leaves the same fault tolerance as
   keeping it (zero further failures). Removal adds that the node cannot
   rejoin, vote, or serve reads if the attacker restarts it.
@@ -588,3 +593,44 @@ during the 2026-10-01 roll (incident `k6imdgf0t4x_FvyY`, released as a false
 positive). `files_expectation` now also expects each `*.d` parent directory
 under `/etc/systemd/system` of a rendered file as `"dir"`; any other new
 directory there still alarms.
+
+## A fresh node's first start takes the baseline last (2026-10-14)
+
+The IDS makes its first baseline when it first starts, and an expected-change
+manifest can only be pushed to an IDS that is running. The `start` step used
+to start `fmnext-ids` in its first `systemctl enable --now`, together with
+every other unit, and then went on to change watched paths: it enabled
+`forkmesh-app.service` (a new `multi-user.target.wants` link) and wrote the
+log reader's line into `/root/.ssh/authorized_keys`. On a brand-new node the
+step's expectation had been skipped ("the IDS is not running there"), so the
+IDS that had just started saw those changes as unexpected. On 2026-10-14 the
+`join` step of `add-core n4` locked n4 down this way (`integrity_modified`
+on authorized_keys, rqlite stopped with `RQLITE_STOPPED`). It was released
+as a false positive with `next_ids.py release n4 --no-unseal`.
+
+Now `start_script` (`tools/next_fleet.py`):
+
+- leaves `fmnext-ids.service` out of the bulk `enable --now`;
+- runs `systemctl try-restart fmnext-ids.service` where the restart used to
+  be: an IDS that is already running picks up its new code and `ids.json`
+  before the reader key is written (docs/NODE_LOGS.md), and an IDS that is
+  not running stays stopped;
+- ends with `systemctl enable --now fmnext-ids.service`, after the app link,
+  the firewall and ufw changes and the reader key. A fresh node's first
+  baseline therefore already holds everything the step wrote, and add-core's
+  `ids` step (`install --steps logread`, then `next_ids.py baseline`) signs
+  it off. On a running node this line changes nothing.
+
+Running nodes keep the full protection: their IDS is running during the
+step, receives the signed expectation, and judges every change against it.
+
+The `logread` step uses `try-restart` too and stops with "fmnext-ids is not
+running: run the start step first" instead of starting a stopped IDS halfway
+through its own changes. Autoscaled nodes already started the IDS last
+(`deploy/core/join_agent.py`); their join bundle (`fleet_api.build_bundle`)
+now renders the start script with `start_ids=False`, so it has no IDS line
+at all, and `start_without_ids` also drops the two new lines for bundles
+rendered elsewhere. `deploy/tests/test_ids_first_start.py` runs the rendered
+start script for a core and a runner against a stub `systemctl` and checks
+that a fresh IDS first starts as the script's last command, with the final
+authorized_keys already in place.

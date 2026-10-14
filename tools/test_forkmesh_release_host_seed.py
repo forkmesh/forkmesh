@@ -46,3 +46,15 @@ def test_seed_mirrors_uses_each_hosts_own_key(tmp_path, monkeypatch):
     assert str(tmp_path / "fleet") in by_host["root@10.0.0.2"]
     assert "UserKnownHostsFile=%s" % (tmp_path / "kh") in by_host["root@10.0.0.2"]
     assert "BASE=/srv/repo.git/forkmesh-releases" in by_host["root@10.0.0.2"][-1]
+
+
+def test_seed_hosts_follow_the_fleet_and_keep_other_lines():
+    text = ("# cores\nfmnext-n1 192.0.2.1\nfmnext-n2 192.0.2.2\n"
+            "mirror9 198.51.100.9\n")
+    cores = [("fmnext-n2", "192.0.2.2"), ("fmnext-n3", "192.0.2.3"),
+             ("fmnext-n4", "192.0.2.4")]
+    assert release_host.seed_hosts(text, cores) == cores + [("mirror9", "198.51.100.9")]
+    assert release_host.seed_hosts(text, []) == [
+        ("fmnext-n1", "192.0.2.1"), ("fmnext-n2", "192.0.2.2"),
+        ("mirror9", "198.51.100.9")]
+    assert release_host.seed_hosts("", cores) == cores

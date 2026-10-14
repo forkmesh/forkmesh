@@ -71,7 +71,7 @@ struct SettingsScreen: View {
                 FmEmptyState(icon: "settings_outlined", title: "Settings")
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("Settings")
         .sheet(isPresented: $showStatusSheet) {
             UserStatusSheet()
@@ -659,6 +659,9 @@ struct SettingsScreen: View {
                 if let push = push, showsPushSection(settings: settings, guest: guest) {
                     SettingsCardBox {
                         PushNotificationsCard(push: push)
+                    }
+                    SettingsCardBox {
+                        NotificationContentCard()
                     }
                 }
             }

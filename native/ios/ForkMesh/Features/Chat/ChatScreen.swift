@@ -5,6 +5,7 @@ import FMAccount
 import FMApi
 import FMBase
 import FMChat
+import Observation
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -105,7 +106,7 @@ private struct ChatScreenBody: View {
                     hub: hub, onSelected: nil, onRoute: { pushed = $0 }, onCompose: { composing = true },
                     onSearch: { searchRequest = ChatSearchRequest() })
                     .frame(width: 240)
-                fm.bgBase.frame(width: FmSpace.x2)
+                fm.canvas.frame(width: FmSpace.x2)
                 transcript
             }
         } else {
@@ -291,7 +292,7 @@ private struct ChatTranscript<Drawer: View>: View {
                 drawer
             }
         }
-        .background { MessagesBackdrop(look: hub.conversationLook, canvas: fm.bgBase).ignoresSafeArea() }
+        .background { MessagesBackdrop(look: hub.conversationLook, canvas: fm.canvas).ignoresSafeArea() }
     }
 
     private var roomColumn: some View {
@@ -499,7 +500,7 @@ private struct ChatTranscript<Drawer: View>: View {
 
     private func actions(for row: ChatRow) -> ChatRowActions {
         let message: ChatMessage = row.message
-        let relayRoom: Bool = !hub.inMesh && !hub.inOffice
+        let relayRoom: Bool = !hub.inMesh && !hub.isReadOnly(message.conversation)
         let channel: String = message.conversation
         var react: ((String) -> Void)? = nil
         var thread: (() -> Void)? = nil
@@ -509,7 +510,7 @@ private struct ChatTranscript<Drawer: View>: View {
         let ephemeral: Bool = message.app?.ephemeral == true
         if relayRoom && !ephemeral {
             react = { (value: String) in hub.toggleReaction(message, value: value) }
-            if channel.hasPrefix("#") {
+            if ChatHub.hasThreads(channel) {
                 thread = { onRoute(.thread(channel: channel, id: message.id)) }
             }
         }
@@ -867,6 +868,12 @@ struct ChatMessageRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .topTrailing) {
+                if row.continuesGroup, let receipt = row.receipt {
+                    ChatReceiptMark(receipt: receipt, muted: fm.textTertiary, background: fm.bgBase)
+                        .padding(.top, 3)
+                }
+            }
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, row.continuesGroup ? 1 : FmSpace.x3)
@@ -903,7 +910,7 @@ struct ChatMessageRow: View {
             ChatReactionMenu(onPick: onReact)
         }
         if let onThread = actions.onThread {
-            Button(action: onThread) { Label("Reply in thread", systemImage: "bubble.left.and.bubble.right") }
+            Button(action: onThread) { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         }
         ChatMessageLaterMenu(actions: actions)
         if !copyText.isEmpty {
@@ -951,6 +958,10 @@ struct ChatMessageRow: View {
             Text(ChatHub.timeLabel(message.timestamp))
                 .fmText(.bodySmall, color: fm.textTertiary, tabular: true)
                 .padding(.leading, FmSpace.x2)
+            if let receipt = row.receipt {
+                ChatReceiptMark(receipt: receipt, muted: fm.textTertiary, background: fm.bgBase)
+                    .padding(.leading, FmSpace.x1)
+            }
             if let label = OfficeFrames.recipientsLabel(message.recipients),
                 let description = OfficeFrames.recipientsDescription(message.recipients)
             {
@@ -1010,36 +1021,130 @@ struct ChatMessageBody: View {
 /// accounts without one).
 struct ChatSenderAvatar: View {
     let message: ChatMessage
-    @State private var png: String = ""
     @State private var pictures: MessagesPeoplePictures = MessagesPeoplePictures.shared
+    @State private var avatars: ChatAvatarCache = ChatAvatarCache.shared
 
     var body: some View {
         let custom: String = message.isSelf ? "" : pictures.picture(for: message.senderName)
-        FmAvatar(name: message.senderName, avatarPng: custom.isEmpty ? png : custom, size: 28, fontSize: FmType.meta)
-            .task(id: message.senderName) { await load() }
+        FmAvatar(name: message.senderName, avatarPng: custom.isEmpty ? known : custom, size: 28, fontSize: FmType.meta)
+            .task(id: message.senderName) {
+                if message.isSelf && !own.isEmpty { return }
+                await avatars.refresh(message.senderName)
+            }
     }
 
-    private func load() async {
-        if message.isSelf, let own = Services.get(AuthService.self)?.session?.avatarPng, !own.isEmpty {
-            png = own
-            return
-        }
-        let name: String = message.senderName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty, let api = Services.get(ApiService.self) else { return }
-        if let cached = ChatAvatarCache.shared.pngs[name] {
-            png = cached
-            return
-        }
-        let fetched: String = await api.accountAvatarPng(name)
-        ChatAvatarCache.shared.pngs[name] = fetched
-        png = fetched
+    private var own: String {
+        Services.get(AuthService.self)?.session?.avatarPng ?? ""
+    }
+
+    private var known: String {
+        if message.isSelf && !own.isEmpty { return own }
+        return avatars.png(for: message.senderName)
     }
 }
 
 @MainActor
+@Observable
 final class ChatAvatarCache {
-    static let shared: ChatAvatarCache = ChatAvatarCache()
-    var pngs: [String: String] = [:]
+    static let shared: ChatAvatarCache = ChatAvatarCache(file: ChatAvatarCache.defaultFile)
+    nonisolated static let maxPeople: Int = 200
+
+    private var pngs: [String: String] = [:]
+    @ObservationIgnored private var order: [String] = []
+    @ObservationIgnored private var touched: Set<String> = []
+    @ObservationIgnored private let file: URL?
+    @ObservationIgnored private var warmed: Bool = false
+    @ObservationIgnored private var saveQueued: Bool = false
+
+    init(file: URL?) {
+        self.file = file
+    }
+
+    nonisolated static var defaultFile: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("chat-avatars.json")
+    }
+
+    nonisolated static func key(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    func png(for name: String) -> String {
+        pngs[ChatAvatarCache.key(name)] ?? ""
+    }
+
+    func refresh(_ name: String) async {
+        let trimmed: String = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let api = Services.get(ApiService.self) else { return }
+        guard let png = await api.accountAvatarPngIfReached(trimmed) else { return }
+        store(png, for: trimmed)
+    }
+
+    func store(_ png: String, for name: String) {
+        let key: String = ChatAvatarCache.key(name)
+        if key.isEmpty { return }
+        touched.insert(key)
+        if (pngs[key] ?? "") == png { return }
+        order.removeAll { $0 == key }
+        if png.isEmpty {
+            pngs[key] = nil
+        } else {
+            pngs[key] = png
+            order.append(key)
+        }
+        while order.count > ChatAvatarCache.maxPeople {
+            pngs[order.removeFirst()] = nil
+        }
+        scheduleSave()
+    }
+
+    func warm() {
+        if warmed { return }
+        warmed = true
+        guard let file else { return }
+        Task {
+            let saved: [[String]] = await Task.detached(priority: .userInitiated) { ChatAvatarCache.read(file) }.value
+            var merged: [String: String] = pngs
+            var keys: [String] = []
+            for pair in saved where !touched.contains(pair[0]) && merged[pair[0]] == nil {
+                merged[pair[0]] = pair[1]
+                keys.append(pair[0])
+            }
+            if keys.isEmpty { return }
+            order = keys + order
+            pngs = merged
+        }
+    }
+
+    private func scheduleSave() {
+        if saveQueued { return }
+        saveQueued = true
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            saveQueued = false
+            guard let file else { return }
+            let snapshot: [[String]] = order.compactMap { key in pngs[key].map { [key, $0] } }
+            await Task.detached(priority: .utility) { ChatAvatarCache.write(snapshot, to: file) }.value
+        }
+    }
+
+    nonisolated static func read(_ file: URL) -> [[String]] {
+        guard let data = try? Data(contentsOf: file),
+            let pairs = try? JSONDecoder().decode([[String]].self, from: data)
+        else { return [] }
+        return pairs.filter { $0.count == 2 && !$0[0].isEmpty && !$0[1].isEmpty }
+    }
+
+    nonisolated static func write(_ pairs: [[String]], to file: URL) {
+        guard let data = try? JSONEncoder().encode(pairs) else { return }
+        do {
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } catch {
+            Log.warning("chat", "could not save chat pictures: \(error)")
+        }
+    }
 }
 
 /// The sender's status emoji: the live relay value when their node is here, else the account's

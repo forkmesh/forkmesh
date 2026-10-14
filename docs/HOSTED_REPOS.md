@@ -463,8 +463,17 @@ line).
   on 25 GB nodes. Watch `du -sh /var/lib/forkmesh/hosted` and lower
   `HOSTED_REPO_MAX_PER_ACCOUNT` if it grows.
 - Turn it off:
-  - In the app: set `HOSTED_GIT_CORE_NODES = ""`. The create form falls back
-    to the single-node or desktop flow.
+  - On the cores the app's `HOSTED_GIT_CORE_NODES` comes from the fleet:
+    `deploy/core/render.py` writes `FORKMESH_VAR_HOSTED_GIT_CORE_NODES` (every
+    core in `fleet.toml`, or empty when `[hosted] enabled = false`) into
+    `app.env`, which overrides `app/wrangler.toml` (2026-10-13, so a core
+    added or removed is in or out of hosting with the next render). Setting
+    the wrangler value to `""` turns hosting off only where no `app.env`
+    sets it. With the list empty the create form falls back to the
+    single-node or desktop flow.
+  - `FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS` is that list plus every core in
+    `[hosted] retired_cores`, so repositories whose node was a removed core
+    stay core-held ([CORE_PUSH.md](CORE_PUSH.md#a-removed-core-keeps-its-repositories-core-held-2026-10-13)).
   - On the nodes: set `[hosted] enabled = false` in `deploy/fleet.toml`, then
     run the rollout's steps 1 and 2. Existing entries stay served as
     configured repositories until they are removed.

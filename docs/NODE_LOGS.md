@@ -80,6 +80,10 @@ the key can never open an interactive session.
 The authorized-keys line is written only after `fmnext-ids` has restarted
 with the new `ids.json`, both in the `start` step and in the `logread` step.
 Otherwise a reader login in between would be an `ssh_unknown_key` lockdown.
+On a node whose IDS is not running yet (its first `start`), the IDS stays
+stopped until the key line is written and then starts as the step's last
+command, so its first baseline already holds the key
+([IDS.md](IDS.md#a-fresh-nodes-first-start-takes-the-baseline-last-2026-10-14)).
 The block touches only lines ending in ` fmnext-logread`, and it refuses to
 write if any other key would change.
 

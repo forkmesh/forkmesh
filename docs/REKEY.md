@@ -325,6 +325,8 @@ or replaced by a consistent pseudonym (section 1.2).
 | `chat_channel_webhooks` | token_bi, created_by_bi | data | re-encrypt; recompute |
 | `chat_channels` | name_bi, created_by_bi | data | re-encrypt; recompute |
 | `chat_direct_conversations` | pair_bi | data | re-encrypt; recompute |
+| `chat_direct_media` | sender_bi, recipient_bi | data | re-encrypt; recompute |
+| `chat_direct_media_parts` | - | data (client-encrypted media, sealed again) | re-encrypt |
 | `chat_read_marks` | account_bi | - | recompute; keep the conversation keys and read timestamps |
 | `chat_direct_participants` | participant_bi | data | re-encrypt; recompute |
 | `chat_history` | - | body (room envelope) | envelopes re-sealed under the new room key; undecryptable rows dropped |

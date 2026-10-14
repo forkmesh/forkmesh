@@ -222,6 +222,25 @@ final class RemoteAgentOpsClientTests: XCTestCase {
         XCTAssertEqual(claude.windows[0].remainingPercent, 0)
         XCTAssertNil(claude.windows[1].usedPercent)
         XCTAssertEqual(claude.windows[0].resetLabel(nowMs: 30_000), "resets in 1m")
+        let hour: Int64 = 3_600_000
+        let weekly = UsageWindowMeter(
+            id: "weekly", label: "Weekly", usedPercent: 59, resetAtMs: 168 * hour, state: .ok)
+        XCTAssertEqual(weekly.windowMs, 168 * hour)
+        XCTAssertEqual(weekly.segments, 7)
+        XCTAssertEqual(weekly.periodLabel(nowMs: 30 * hour), "Day 2 of 7")
+        XCTAssertEqual(weekly.paceLabel(nowMs: 30 * hour), "41% over pace")
+        let session = UsageWindowMeter(
+            id: "5h", label: "5-hour", usedPercent: 10, resetAtMs: 5 * hour, state: .ok)
+        XCTAssertEqual(session.segments, 5)
+        XCTAssertEqual(session.periodLabel(nowMs: 2 * hour + 1), "Hour 3 of 5")
+        XCTAssertEqual(session.paceLabel(nowMs: 2 * hour), "30% under pace")
+        let codex = UsageWindowMeter(json: [
+            "id": "weekly", "label": "Weekly", "usedPercent": 50, "resetAtMs": 36_000_000,
+            "windowMs": 72_000_000, "state": "ok",
+        ])
+        XCTAssertEqual(codex.windowMs, 20 * hour)
+        XCTAssertEqual(codex.paceLabel(nowMs: 0), "on pace")
+        XCTAssertEqual(UsageWindowMeter(id: "w", label: "Credits", usedPercent: 1, state: .ok).paceLabel(nowMs: 0), "")
         XCTAssertEqual(claude.activeAccount?.label, "Work")
         XCTAssertEqual(claude.accounts[0].signedIn, true)
         XCTAssertEqual(claude.accounts[0].identity, "me@example.com")

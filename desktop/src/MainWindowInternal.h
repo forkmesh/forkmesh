@@ -1463,9 +1463,26 @@ protected:
                          m_label);
 
         const QRectF bar(96, 8, 132, 8);
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const bool paced = m_windowMs > 0 && m_resetAtMs > now;
+        QPainterPath shape;
+        shape.addRoundedRect(bar, 4, 4);
+        if (paced) {
+            const qint64 step =
+                m_windowMs > kDayMs ? kDayMs : qint64(60 * 60 * 1000);
+            for (qint64 t = step; t < m_windowMs; t += step) {
+                const qreal x = std::round(
+                    bar.left() + bar.width() * t / double(m_windowMs));
+                QPainterPath gap;
+                gap.addRect(QRectF(x - 1, bar.top() - 1, 2, bar.height() + 2));
+                shape = shape.subtracted(gap);
+            }
+        }
+        painter.save();
+        painter.setClipPath(shape);
         painter.setPen(Qt::NoPen);
         painter.setBrush(track);
-        painter.drawRoundedRect(bar, 4, 4);
+        painter.drawRect(bar);
         if (m_percent >= 0) {
             const qreal width = bar.width() * qBound(0, m_percent, 100) / 100.0;
             if (width > 0) {
@@ -1474,30 +1491,20 @@ protected:
                                                     ? QColor("#d29922")
                                                     : QColor("#3fb950");
                 painter.setBrush(fill);
-                painter.drawRoundedRect(QRectF(bar.left(), bar.top(), width,
-                                               bar.height()),
-                                        4, 4);
+                painter.drawRect(QRectF(bar.left(), bar.top(), width,
+                                        bar.height()));
             }
         }
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        if (m_windowMs > 0 && m_resetAtMs > now) {
-            const qint64 step =
-                m_windowMs > kDayMs ? kDayMs : qint64(60 * 60 * 1000);
-            painter.setPen(QPen(QColor(text.red(), text.green(), text.blue(),
-                                       110),
-                                1.0));
-            for (qint64 t = step; t < m_windowMs; t += step) {
-                const qreal x =
-                    bar.left() + bar.width() * t / double(m_windowMs);
-                painter.drawLine(QPointF(x, bar.top()),
-                                 QPointF(x, bar.bottom()));
-            }
+        painter.restore();
+        if (paced) {
             const qreal elapsed = qBound(
                 0.0, 1.0 - (m_resetAtMs - now) / double(m_windowMs), 1.0);
             const qreal x = bar.left() + bar.width() * elapsed;
             painter.setPen(QPen(text, 1.5));
-            painter.drawLine(QPointF(x, bar.top() - 3),
-                             QPointF(x, bar.bottom() + 3));
+            painter.drawLine(QPointF(x, bar.top() - 4),
+                             QPointF(x, bar.top() - 1));
+            painter.drawLine(QPointF(x, bar.bottom() + 1),
+                             QPointF(x, bar.bottom() + 4));
         }
 
         painter.setPen(text);
@@ -3264,6 +3271,9 @@ public:
     static constexpr int kSettingsColumnWidth = 26;
     static constexpr int kUnreadCountRole = Qt::UserRole + 2;
     static constexpr int kPresenceRole = Qt::UserRole + 3;
+    static constexpr int kPreviewRole = Qt::UserRole + 4;
+    static constexpr int kPreviewTimeRole = Qt::UserRole + 5;
+    static constexpr int kAvatarRole = Qt::UserRole + 6;
 
     explicit ChannelGroupTree(QWidget *parent = nullptr) : QTreeWidget(parent)
     {
@@ -3277,7 +3287,7 @@ public:
         setRootIsDecorated(false);
         setExpandsOnDoubleClick(false);
         setIndentation(14);
-        setUniformRowHeights(true);
+        setUniformRowHeights(false);
         setSelectionMode(QAbstractItemView::SingleSelection);
         setDragEnabled(true);
         setAcceptDrops(true);
@@ -3696,6 +3706,7 @@ constexpr int kChatUserAvatarSide = 32;
 constexpr int kChatMembersPanelWidth = 240;
 constexpr int kChatMembersPanelMinBodyWidth = 720;
 constexpr int kChatMemberAvatarSide = 32;
+constexpr int kChatListAvatarSide = 28;
 const QString kChatMembersPanelSetting = QStringLiteral("chat/memberListVisible");
 // Sidebar channel groups, one compact JSON document (ChannelGroups.h).
 const QString kChannelGroupsSetting = QStringLiteral("chat/channelGroups");

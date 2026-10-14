@@ -54,7 +54,7 @@ struct InboxItemScreen: View {
             }
         }
         .listStyle(.insetGrouped)
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle(item.kindLabel)
         .navigationBarTitleDisplayMode(.inline)
         .task {

@@ -77,6 +77,7 @@ FIRST_PARTY_PACKAGES = {
     "notes": "Notes",
     "on-device-ai": "On-device AI",
     "organizations": "Organizations",
+    "people": "People",
     "pull-requests": "Pull requests",
     "reddit-banner-board": "Reddit Banner Board",
     "releases": "Releases",

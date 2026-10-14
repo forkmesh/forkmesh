@@ -31,7 +31,8 @@ HEALTH_TIMEOUT = 300
 SYNC_NUDGE_SECONDS = 60
 DAEMON_STATUS = "curl -fsS --max-time 10 http://127.0.0.1:8791/v1/status"
 DAEMON_SYNC = "curl -fsS --max-time 10 -X POST http://127.0.0.1:8791/v1/control/sync"
-RQLITE_READY = "curl -fsS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:4001/readyz"
+RQLITE_READY = ("curl -sS --max-time 5 -K /etc/forkmesh-next/rqlite.curlrc -o /dev/null "
+                "-w '%{http_code}' http://127.0.0.1:4001/readyz")
 
 STEPS = (
     ("plan", "Plan: name, region, plan, rqlite role, release", 2),
@@ -47,7 +48,7 @@ STEPS = (
     ("ids", "Log reader and IDS baseline", 20),
     ("health", "Health checks: readyz, units, IDS, public probes", 20),
     ("dns", "Add it to DNS after the health probes pass", 15),
-    ("register", "Monitoring, backups, DNS health loop, autodeploy and roll", 2),
+    ("register", "Node account and owner; monitoring, backups, DNS health loop, autodeploy and roll", 8),
     ("commit", "Commit deploy/fleet.toml to a branch", 2),
 )
 STEP_IDS = tuple(step for step, _, _ in STEPS)
@@ -981,6 +982,7 @@ class FleetBackend:
         entry = next_dns.node_entry(job.name)
         if job.execute and (not entry.get("in_dns") or entry.get("held")):
             raise ToolError("%s is not a released member of the DNS health loop" % job.name)
+        self.register_account(job, fleet)
         unit = subprocess.run(["systemctl", "--user", "is-active",
                                "fmnext-dns-health.service"], capture_output=True,
                               text=True, check=False).stdout.strip()
@@ -990,6 +992,20 @@ class FleetBackend:
                 "the Network tab lists %s from fleet-instances.json" % job.state.get("label"))
         job.say("autodeploy and roll read deploy/fleet.toml on main: they include "
                 "%s once the commit below is merged" % job.name)
+
+    def register_account(self, job, fleet):
+        import next_node_owner
+        account = next_node_owner.NODE_PREFIX + job.name
+        if not job.execute:
+            job.say("[dry-run] %s: the node key signs a reserve and a finalize; "
+                    "%s creates the node account, then the node is linked to "
+                    "the other cores' owner with this desktop's key" % (
+                        account, next_node_owner.APP_URL))
+            return
+        node = dict(name=job.name, public_ipv4=self.ip(job))
+        db = next_node_owner.Db(fleet, self.ssh, next_node_owner.keyset())
+        next_node_owner.provision_core(db, self.ssh, job.runner, fleet, node,
+                                       next_node_owner.APP_URL)
 
     def step_commit(self, job):
         branch = BRANCH_PREFIX + job.name
@@ -1141,7 +1157,12 @@ class FleetBackend:
                     "to %s" % (name, next_dns.UNDRAIN_PROBES, ", ".join(
                         self.served_names(job)))]
         if step == "register":
-            return ["DNS health loop: %s released (in_dns, not held)" % name,
+            return ["node account fmnext-%s: the node key signs a reserve and a "
+                    "finalize, the app stores its public key (no account = HTTP 401 "
+                    "on every catalog, replica and event call)" % name,
+                    "owner: linked to the other cores' owner, accepted with this "
+                    "desktop's identity key when it is that owner's key",
+                    "DNS health loop: %s released (in_dns, not held)" % name,
                     "backups and status: read from the fleet file and "
                     "fleet-instances.json; nothing else to add",
                     "autodeploy and roll: read deploy/fleet.toml on main"]

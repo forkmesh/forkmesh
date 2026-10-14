@@ -51,8 +51,17 @@ def test_another_instance_label_is_refused():
         next_fleet.verify_target(NoVultr(), ssh, FLEET, "r1", "203.0.113.21")
 
 
-def test_missing_fleet_marker_is_refused():
-    ssh = FakeSsh(stdout=b"n1.next.example.test\n")
+def test_missing_fleet_marker_falls_back_to_the_provider(monkeypatch):
+    seen = []
+    monkeypatch.setattr(next_fleet, "verify_target_instance",
+                        lambda vultr, name, ip: seen.append((name, ip)) or {"ok": 1})
+    ssh = FakeSsh(stdout=b"fmnext-core-4\n")
+    assert next_fleet.verify_target(object(), ssh, FLEET, "n4", "203.0.113.14") == {"ok": 1}
+    assert seen == [("n4", "203.0.113.14")]
+
+
+def test_missing_fleet_marker_with_a_wrong_hostname_is_refused():
+    ssh = FakeSsh(stdout=b"somewhere-else\n")
     with pytest.raises(GuardError):
         next_fleet.verify_target(NoVultr(), ssh, FLEET, "n1", "203.0.113.11")
 

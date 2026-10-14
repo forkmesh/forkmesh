@@ -3,6 +3,7 @@
 // service extension compile it. The group and service are the ones the retired
 // Flutter app wrote, so its items are read as they are: the format is the same.
 
+import FMPush
 import Foundation
 import Security
 
@@ -13,6 +14,8 @@ struct PushCredentials {
     let origin: String
     let account: String
     let session: String
+    var deviceKeyName: String = ""
+    var preview: String = ""
 }
 
 /// The one place the app and its notification extension exchange a session.
@@ -44,6 +47,7 @@ enum PushCredentialStore {
     static let accessGroup = "742ZANCB57.com.forkmesh.forkmesh"
     static let service = "com.forkmesh.forkmesh.push"
     static let account = "session"
+    static let secureService = "com.forkmesh.forkmesh.secure"
 
     /// Each project (ForkMesh, ForkMesh Next, a self-hosted instance) the app
     /// is signed in to keeps its own item, keyed by its host, so a push from
@@ -51,12 +55,16 @@ enum PushCredentialStore {
     /// another's. The unkeyed item is still written for the most recent
     /// project: it is what a push from a relay that names no origin falls back
     /// to, as before projects existed.
-    static func save(origin: String, account accountName: String, session: String) {
-        let payload: [String: String] = [
+    static func save(
+        origin: String, account accountName: String, session: String, deviceKeyName: String = "", preview: String = ""
+    ) {
+        var payload: [String: String] = [
             "origin": origin,
             "account": accountName,
             "session": session,
         ]
+        if !deviceKeyName.isEmpty { payload["deviceKeyName"] = deviceKeyName }
+        if !preview.isEmpty { payload["preview"] = preview }
         guard !origin.isEmpty, !accountName.isEmpty, !session.isEmpty,
             let data = try? JSONSerialization.data(withJSONObject: payload)
         else {
@@ -133,13 +141,56 @@ enum PushCredentialStore {
         let account = fields["account"] ?? ""
         let session = fields["session"] ?? ""
         if origin.isEmpty || account.isEmpty || session.isEmpty { return nil }
-        return PushCredentials(origin: origin, account: account, session: session)
+        return PushCredentials(
+            origin: origin, account: account, session: session, deviceKeyName: fields["deviceKeyName"] ?? "",
+            preview: fields["preview"] ?? "")
+    }
+
+    static func setPreview(_ value: String) {
+        let lookup: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccessGroup as String: accessGroup,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        var found: CFTypeRef?
+        guard SecItemCopyMatching(lookup as CFDictionary, &found) == errSecSuccess, let rows = found as? [[String: Any]]
+        else { return }
+        for row in rows {
+            guard let item = row[kSecAttrAccount as String] as? String, item.hasPrefix(account),
+                let data = row[kSecValueData as String] as? Data,
+                var fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: String]
+            else { continue }
+            fields["preview"] = value
+            guard let updated = try? JSONSerialization.data(withJSONObject: fields) else { continue }
+            write(updated, item: item)
+        }
+    }
+
+    static func deviceKey(named name: String) -> [UInt8]? {
+        guard !name.isEmpty else { return nil }
+        let lookup: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: secureService,
+            kSecAttrAccount as String: name,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var found: CFTypeRef?
+        guard SecItemCopyMatching(lookup as CFDictionary, &found) == errSecSuccess, let data = found as? Data,
+            let text = String(data: data, encoding: .utf8),
+            let bytes = Data(base64Encoded: text.trimmingCharacters(in: .whitespacesAndNewlines)), bytes.count == 32
+        else { return nil }
+        return Array(bytes)
     }
 
     /// Called on sign-out. A stale session would keep fetching a signed-out
     /// account's notifications into banners on a handset that has left it.
     static func clear() {
         SecItemDelete(query() as CFDictionary)
+        SecItemDelete(query(item: PushRoomKeys.item) as CFDictionary)
     }
 
     private static func query(item: String = account) -> [String: Any] {

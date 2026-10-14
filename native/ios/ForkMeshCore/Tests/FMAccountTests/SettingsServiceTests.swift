@@ -199,7 +199,36 @@ final class SettingsServiceTests: XCTestCase {
         h.prefs.set("magenta", forKey: SettingsService.accentKey)
         XCTAssertEqual(h.settings.themeMode, .system)
         XCTAssertEqual(h.settings.accent, .blue)
-        XCTAssertEqual(AccentChoice.allCases.map(\.label), ["Blue", "Purple", "Teal"])
+        XCTAssertEqual(
+            AccentChoice.allCases.map(\.label),
+            ["Blue", "Cyan", "Teal", "Green", "Lime", "Amber", "Orange", "Red", "Pink", "Violet", "Purple", "Graphite"])
+        h.settings.setAccent(.graphite)
+        XCTAssertEqual(h.prefs.string(forKey: SettingsService.accentKey), "graphite")
+        XCTAssertEqual(AccentChoice.fromName("orange"), .orange)
+    }
+
+    @MainActor
+    func testBackgroundImageIsAFileNameAndDimIsClamped() async {
+        let h = Harness()
+        XCTAssertEqual(h.settings.backgroundImage, "")
+        XCTAssertEqual(h.settings.backgroundDim, SettingsService.defaultBackgroundDim)
+
+        h.settings.setBackgroundImage("wallpaper-1.jpg")
+        XCTAssertEqual(h.prefs.string(forKey: SettingsService.backgroundImageKey), "wallpaper-1.jpg")
+        XCTAssertEqual(h.settings.backgroundImage, "wallpaper-1.jpg")
+        h.prefs.set("../escape.jpg", forKey: SettingsService.backgroundImageKey)
+        XCTAssertEqual(h.settings.backgroundImage, "")
+        h.settings.setBackgroundImage("")
+        XCTAssertEqual(h.settings.backgroundImage, "")
+
+        h.settings.setBackgroundDim(0.25)
+        XCTAssertEqual(h.settings.backgroundDim, 0.25)
+        h.settings.setBackgroundDim(3)
+        XCTAssertEqual(h.settings.backgroundDim, SettingsService.maxBackgroundDim)
+        h.settings.setBackgroundDim(-1)
+        XCTAssertEqual(h.settings.backgroundDim, 0)
+        h.prefs.set(Double.nan, forKey: SettingsService.backgroundDimKey)
+        XCTAssertEqual(h.settings.backgroundDim, SettingsService.defaultBackgroundDim)
     }
 
     // MARK: Other preferences

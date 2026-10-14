@@ -5,6 +5,13 @@ import Foundation
 import Observation
 import WebKit
 
+enum CallAudioRoute {
+    static var headphonesConnected: Bool {
+        let worn: Set<AVAudioSession.Port> = [.headphones, .bluetoothA2DP, .bluetoothHFP, .bluetoothLE]
+        return AVAudioSession.sharedInstance().currentRoute.outputs.contains { worn.contains($0.portType) }
+    }
+}
+
 enum WebCallError: Error {
     case missingPage
     case notReady
@@ -15,8 +22,20 @@ enum WebCallError: Error {
 @Observable
 final class WebCallPeerFactory: DirectCallPeerMaking {
     private(set) var current: WebCallPeer?
+    var voice: @MainActor () -> String = { "" }
 
     func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
+        if let previewed = current, previewed.previewing, media == .video {
+            previewed.previewing = false
+            do {
+                _ = try await previewed.run(
+                    "setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice())])
+            } catch {
+                previewed.close()
+                throw error
+            }
+            return previewed
+        }
         current?.close()
         let peer = WebCallPeer { [weak self] closed in
             if self?.current === closed { self?.current = nil }
@@ -24,12 +43,36 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         current = peer
         do {
             try await peer.load()
-            _ = try await peer.run("setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string("")])
+            _ = try await peer.run(
+                "setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice())])
         } catch {
             peer.close()
             throw error
         }
         return peer
+    }
+
+    func preview(face: String, background: String, image: String) async throws -> WebCallPeer {
+        if let previewed = current, previewed.previewing { return previewed }
+        current?.close()
+        let peer = WebCallPeer { [weak self] closed in
+            if self?.current === closed { self?.current = nil }
+        }
+        peer.previewing = true
+        current = peer
+        do {
+            try await peer.load()
+            try await peer.preview(media: .video, voice: voice(), face: face, background: background, image: image)
+        } catch {
+            peer.close()
+            throw error
+        }
+        return peer
+    }
+
+    func endPreview() {
+        guard let previewed = current, previewed.previewing else { return }
+        previewed.close()
     }
 
     static func requestAccess(for media: DirectCallKind) async -> Bool {
@@ -65,6 +108,8 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
     private var nextId = 1
     private var closed = false
+    private var voiceObserver: (@MainActor (String) -> Void)?
+    var previewing = false
 
     init(onDispose: @escaping @MainActor (WebCallPeer) -> Void) {
         self.onDispose = onDispose
@@ -131,10 +176,14 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
         case "landmarks":
             let id = message["id"]?.intValue ?? 0
             guard let image = message["image"]?.text else { return }
+            let landmarks = message["landmarks"]?.boolValue ?? true
+            let mask = message["mask"]?.boolValue ?? false
             Task { [weak self] in
-                let regions = await CallFaceLandmarks.detect(dataURL: image)
-                self?.replyLandmarks(id: id, regions: regions)
+                let reply = await CallFaceLandmarks.detect(dataURL: image, landmarks: landmarks, mask: mask)
+                self?.replyLandmarks(id: id, regions: reply)
             }
+        case "voice":
+            voiceObserver?(message["id"]?.text ?? "")
         case "live":
             onLive?()
         case "closed":
@@ -177,6 +226,44 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
 
     func setFace(_ id: String) {
         Task { _ = try? await run("face", [.string(id)]) }
+    }
+
+    func setVoice(_ id: String) {
+        Task { _ = try? await run("voice", [.string(id)]) }
+    }
+
+    func setBackground(_ id: String, image: String) {
+        Task { _ = try? await run("background", [.string(id), .string(image)]) }
+    }
+
+    func backgroundThumbnails() async -> [String: String] {
+        let list = (try? await run("backgroundList"))?.arrayValue ?? []
+        var out: [String: String] = [:]
+        for entry in list {
+            guard let item = entry.objectValue, let id = item["id"]?.text, let thumb = item["thumb"]?.text, !thumb.isEmpty
+            else { continue }
+            out[id] = thumb
+        }
+        return out
+    }
+
+    func observeVoice(_ handler: @escaping @MainActor (String) -> Void) {
+        voiceObserver = handler
+    }
+
+    @discardableResult
+    func preview(media: DirectCallKind, voice: String, face: String = "", background: String = "", image: String = "")
+        async throws -> String
+    {
+        try await run(
+            "preview",
+            [.string(media.rawValue), .string(voice), .string(face), .string(background), .string(image)]
+        ).text
+    }
+
+    @discardableResult
+    func setMonitor(_ on: Bool) async -> Bool {
+        (try? await run("monitor", [.bool(on)]))?.boolValue ?? false
     }
 
     func close() {

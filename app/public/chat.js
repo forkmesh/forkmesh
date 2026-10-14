@@ -50,6 +50,22 @@ import {
   localDateKey,
   sameLocalDate,
 } from "./chat-date-groups.js";
+import {
+  VIEW_ONCE_KINDS,
+  createViewOnceClient,
+  forgetViewOnceKey,
+  isFinalViewOnceState,
+  openViewOnceViewer,
+  paintViewOnceBubble,
+  renderViewOnceBubble,
+  viewOnceFromEntry,
+  viewOnceStateAfterStatus,
+} from "./chat-view-once.js";
+import {
+  openViewOnceRecorder,
+  viewOnceRecordingSupported,
+} from "./chat-view-once-recorder.js";
+import { installViewOnceFilters, viewOnceFilterChoices } from "./chat-view-once-filters.js";
 
 // Browser-side ForkMesh room chat. Reimplements the desktop client's room
 // crypto (PBKDF2 + AES-256-GCM) and message envelope so the website can join
@@ -177,6 +193,8 @@ const clearBtn = document.querySelector("#chat-clear");
 const formatButtons = [...document.querySelectorAll("[data-format]")];
 const attachmentInput = document.querySelector("#chat-attachment-input");
 const attachmentBtn = document.querySelector("#chat-attachment-button");
+const viewOnceVideoBtn = document.querySelector("#chat-view-once-video");
+const viewOnceVoiceBtn = document.querySelector("#chat-view-once-voice");
 const attachmentFeedback = document.querySelector("#chat-attachment-feedback");
 const attachmentDraftEl = document.querySelector("#chat-composer-attachments");
 const composerEmojiBtn = document.querySelector("#chat-emoji-button");
@@ -266,6 +284,7 @@ const directDialogClose = document.querySelector("#chat-direct-dialog-close");
 const directAddBtn = document.querySelector("#chat-direct-add");
 const callAudioBtn = document.querySelector("#chat-call-audio");
 const callVideoBtn = document.querySelector("#chat-call-video");
+const callPreviewBtn = document.querySelector("#chat-call-preview");
 const directSearch = document.querySelector("#chat-direct-search");
 const directOptions = document.querySelector("#chat-direct-options");
 const directEmpty = document.querySelector("#chat-direct-empty");
@@ -383,6 +402,8 @@ const channelMeta = new Map();
 const readMarks = new Map();
 const pendingReadMarks = new Map();
 let readMarkTimer = 0;
+const roomPreviewChannels = new Set();
+let roomPreviewTimer = 0;
 // messageId -> Map(emoji -> Map(reactorId -> reactorName)); same shape as the
 // desktop's m_reactions so toggles converge across clients.
 const reactions = new Map();
@@ -1503,6 +1524,7 @@ function renderRooms() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "chat-room" + (name === activeChannel ? " is-active" : "");
+    btn.dataset.channel = name;
     const channel = privateChannelForKey(name);
     const isPrivate = Boolean(channel) && channel.visibility !== "public";
     const icon = document.createElement("span");
@@ -1526,7 +1548,7 @@ function renderRooms() {
       );
       btn.title = visibilityLabel;
     }
-    btn.append(label);
+    btn.append(roomTextColumn(label, name));
     if (meta.unread > 0 && name !== activeChannel) {
       const badge = document.createElement("span");
       badge.className = "chat-room-unread";
@@ -1557,15 +1579,14 @@ function renderRooms() {
 function renderDirectMessages() {
   if (!directListEl) return;
   directListEl.textContent = "";
-  const conversations = [...directMessages.values()]
-    .sort((a, b) => a.otherUser.localeCompare(b.otherUser));
-  for (const direct of conversations) {
+  for (const direct of sortedDirectMessages()) {
     const key = directMessageKey(direct.id);
     const meta = channelMeta.get(key) || { unread: 0 };
     const button = document.createElement("button");
     button.type = "button";
     button.className =
       "chat-room chat-direct-row" + (key === activeChannel ? " is-active" : "");
+    button.dataset.channel = key;
     button.setAttribute("aria-label", `Direct message with ${direct.otherUser}`);
     button.title = `Direct message with ${direct.otherUser}`;
     button.dataset.filter = "@" + direct.otherUser.toLowerCase();
@@ -1579,9 +1600,10 @@ function renderDirectMessages() {
     const label = document.createElement("span");
     label.className = "chat-room-name";
     label.textContent = direct.otherUser;
-    button.append(label);
+    const column = roomTextColumn(label, key);
     const directBadge = userStatusBadge(direct.otherUser);
-    if (directBadge) button.append(directBadge);
+    if (directBadge) label.after(directBadge);
+    button.append(column);
     if (meta.unread > 0 && key !== activeChannel) {
       const badge = document.createElement("span");
       badge.className = "chat-room-unread";
@@ -1592,6 +1614,116 @@ function renderDirectMessages() {
     directListEl.append(button);
   }
   applyRoomFilter();
+}
+
+function directRecency(direct) {
+  const updated = Number(direct.updatedAt) || 0;
+  const updatedMs = updated && updated < 1e12 ? updated * 1000 : updated;
+  return Math.max(updatedMs, Number(conversationPreviewRecord(
+    directMessageKey(direct.id))?.ts) || 0);
+}
+
+function sortedDirectMessages() {
+  return [...directMessages.values()]
+    .map((direct) => ({ direct, recency: directRecency(direct) }))
+    .sort((a, b) => b.recency - a.recency ||
+      a.direct.otherUser.localeCompare(b.direct.otherUser))
+    .map((entry) => entry.direct);
+}
+
+function conversationPreviewRecord(channel) {
+  const list = channelMessages.get(channel) || [];
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const record = list[index];
+    if (!record.deleted && !record.rootId &&
+        (record.text || record.attachment)) return record;
+  }
+  return null;
+}
+
+function conversationPreviewText(record) {
+  if (!record) return "";
+  const source = record.richText?.source
+    ? plainTextFromRichSource(record.richText.source)
+    : record.text;
+  const body = String(source || "").replace(/\s+/g, " ").trim().slice(0, 200) ||
+    (record.attachment?.fileName ? `📎 ${record.attachment.fileName}` : "");
+  if (!body) return "";
+  if (isOwnChatMessage(record)) return `You: ${body}`;
+  if (isDirectMessageKey(record.channel)) return body;
+  return `${record.sender || "peer"}: ${body}`;
+}
+
+function roomPreviewTime(ts, nowValue = Date.now()) {
+  const value = Number(ts) || 0;
+  if (!value) return "";
+  if (sameLocalDate(value, nowValue)) return fmtTime(value);
+  const date = new Date(value);
+  const age = nowValue - value;
+  if (age > 0 && age < 6 * 86400000) {
+    return date.toLocaleDateString("en-US", { weekday: "short" });
+  }
+  const options = { day: "numeric", month: "short" };
+  if (date.getFullYear() !== new Date(nowValue).getFullYear()) {
+    options.year = "numeric";
+  }
+  return date.toLocaleDateString("en-GB", options);
+}
+
+function roomTextColumn(label, channel) {
+  const column = document.createElement("span");
+  column.className = "chat-room-text";
+  const line = document.createElement("span");
+  line.className = "chat-room-line";
+  const time = document.createElement("span");
+  time.className = "chat-room-time";
+  line.append(label, time);
+  const preview = document.createElement("span");
+  preview.className = "chat-room-preview";
+  column.append(line, preview);
+  paintRoomPreview(column, channel);
+  return column;
+}
+
+function paintRoomPreview(column, channel) {
+  const record = conversationPreviewRecord(channel);
+  const text = conversationPreviewText(record);
+  const preview = column.querySelector(".chat-room-preview");
+  const time = column.querySelector(".chat-room-time");
+  if (preview) preview.textContent = text;
+  if (time) time.textContent = text ? roomPreviewTime(record.ts) : "";
+}
+
+function queueRoomPreview(channel) {
+  if (!channel) return;
+  roomPreviewChannels.add(channel);
+  if (!roomPreviewTimer) roomPreviewTimer = setTimeout(flushRoomPreviews, 50);
+}
+
+function directOrderChanged() {
+  const shown = [...(directListEl?.querySelectorAll(".chat-direct-row") || [])]
+    .map((row) => row.dataset.channel);
+  const wanted = sortedDirectMessages()
+    .map((direct) => directMessageKey(direct.id));
+  return shown.join() !== wanted.join();
+}
+
+function flushRoomPreviews() {
+  roomPreviewTimer = 0;
+  const channels = new Set(roomPreviewChannels);
+  roomPreviewChannels.clear();
+  if (directListEl && [...channels].some(isDirectMessageKey) &&
+      directOrderChanged()) {
+    renderDirectMessages();
+  }
+  for (const row of [
+    ...(roomsEl?.querySelectorAll(".chat-room") || []),
+    ...(directListEl?.querySelectorAll(".chat-room") || []),
+  ]) {
+    if (!channels.has(row.dataset.channel)) continue;
+    const column = row.querySelector(".chat-room-text");
+    if (column) paintRoomPreview(column, row.dataset.channel);
+  }
 }
 
 function directPartnerOnline(name) {
@@ -1800,6 +1932,13 @@ function updateAdminChannelControls() {
   const callable = directActions && callsSupported();
   if (callAudioBtn) callAudioBtn.hidden = !callable;
   if (callVideoBtn) callVideoBtn.hidden = !callable;
+  if (callPreviewBtn) callPreviewBtn.hidden = !callable;
+  if (viewOnceVideoBtn) {
+    viewOnceVideoBtn.hidden = !(directActions && viewOnceRecordingSupported("video"));
+  }
+  if (viewOnceVoiceBtn) {
+    viewOnceVoiceBtn.hidden = !(directActions && viewOnceRecordingSupported("voice"));
+  }
   if (channelCreateBtn) channelCreateBtn.hidden = !authorsChannels;
   if (channelManageBtn) {
     channelManageBtn.hidden = !(session && channel?.canManage && !isOfficeEmbed);
@@ -1877,6 +2016,7 @@ function pruneExpiredMessages() {
       threads.deleteTarget(record.id);
       if (activeThreadRootId === record.id) closeThread({ restoreFocus: false });
     }
+    queueRoomPreview(channel);
     if (channel === activeChannel) activeChanged = true;
   }
   if (activeChanged) repaintChannel(activeChannel);
@@ -3829,6 +3969,8 @@ function portableMessageRecord(record) {
     deleted: Boolean(record.deleted),
     recipients: knownRecipientCount(record.recipients),
     recipientNames: knownRecipientNames(record.recipientNames),
+    receipt: typeof record.receipt === "string" ? record.receipt : "",
+    relayed: Boolean(record.relayed),
   };
 }
 
@@ -3885,7 +4027,7 @@ function applyRecipientCount(id, value, names = []) {
     rec.recipients = count;
     rec.recipientNames = recipientNames;
     paintRecipientLabel(rec.recipientsEl, count, recipientNames);
-    paintDirectReceipt(rec);
+    paintReceipt(rec);
     threads.updateTarget(id, { recipients: count, recipientNames });
     if (activeThreadRootId === id) renderThread();
     return;
@@ -3896,29 +4038,36 @@ function applyRecipientCount(id, value, names = []) {
   if (activeThreadRootId === reply.rootId) renderThread();
 }
 
-const DIRECT_RECEIPT_LABELS = {
+const RECEIPT_LABELS = {
   pending: "Sending",
   sent: "Sent",
   delivered: "Delivered",
   read: "Read",
 };
-const DIRECT_RECEIPT_CHECK = "M9.7 7.2l1.6 1.6 3.1-3.3";
-const DIRECT_RECEIPT_BACK_RING = "M7.56 2.25A5 5 0 1 0 7.56 11.75";
-const DIRECT_RECEIPT_BACK_DOT =
-  "M8.19 1.74A5.7 5.7 0 1 0 8.19 12.26A6.5 6.5 0 0 1 8.19 1.74Z";
+const RECEIPT_FRONT_TICK = "M11.7 7.2L13.4 8.9L16.4 5.6";
+const RECEIPT_BACK_TICK = "M6.2 7.2L7.9 8.9L8.87 7.86";
+const RECEIPT_BACK_TICK_READ = "M6.2 7.2L7.33 8.33";
+const RECEIPT_BACK_RING = "M11.25 2.59A5.2 5.2 0 1 0 11.25 11.41";
+const RECEIPT_BACK_DISC =
+  "M10.21 1.35A5.9 5.9 0 1 0 10.21 12.65A6.8 6.8 0 0 1 10.21 1.35Z";
 
-function directReceiptState(record) {
-  if (!record?.self || !isDirectMessageKey(record.channel)) return "";
-  if (record.receipt === "read" || record.receipt === "delivered") {
+function receiptState(record) {
+  if (!record?.self || record.deleted) return "";
+  if (isDirectMessageKey(record.channel) &&
+      (record.receipt === "read" || record.receipt === "delivered")) {
     return record.receipt;
   }
-  return knownRecipientCount(record.recipients) === null ? "pending" : "sent";
+  if (record.receipt === "sent" || record.relayed ||
+      knownRecipientCount(record.recipients) !== null) {
+    return "sent";
+  }
+  return "pending";
 }
 
-function directReceiptIcon(state) {
+function receiptIcon(state) {
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", "0 0 18 14");
+  svg.setAttribute("viewBox", "0 0 22 14");
   svg.setAttribute("fill", "none");
   svg.setAttribute("stroke", "currentColor");
   svg.setAttribute("stroke-width", "1.4");
@@ -3932,56 +4081,93 @@ function directReceiptIcon(state) {
     }
     svg.append(shape);
   };
+  const front = { cx: "14", cy: "7", r: "5.2" };
   if (state === "read") {
-    add("path", { d: DIRECT_RECEIPT_BACK_DOT, fill: "currentColor", stroke: "none" });
-    add("circle", { cx: "12", cy: "7", r: "5.7", fill: "currentColor", stroke: "none" });
-    add("path", { d: DIRECT_RECEIPT_CHECK, class: "chat-receipt-check" });
+    add("path", { d: RECEIPT_BACK_DISC, fill: "currentColor", stroke: "none" });
+    add("circle", { ...front, fill: "currentColor" });
+    add("path", { d: RECEIPT_BACK_TICK_READ, class: "chat-receipt-check" });
+    add("path", { d: RECEIPT_FRONT_TICK, class: "chat-receipt-check" });
     return svg;
   }
-  if (state === "delivered") add("path", { d: DIRECT_RECEIPT_BACK_RING });
-  const ring = { cx: "12", cy: "7", r: "5" };
-  if (state === "pending") ring["stroke-dasharray"] = "2.2 1.9";
-  add("circle", ring);
-  if (state !== "pending") add("path", { d: DIRECT_RECEIPT_CHECK });
+  if (state === "delivered") {
+    add("path", { d: RECEIPT_BACK_RING });
+    add("path", { d: RECEIPT_BACK_TICK });
+  }
+  if (state === "pending") front["stroke-dasharray"] = "1.6 1.7";
+  add("circle", front);
+  if (state !== "pending") add("path", { d: RECEIPT_FRONT_TICK });
   return svg;
 }
 
-function paintDirectReceipt(record) {
+function paintReceipt(record) {
   const mark = record?.receiptEl;
   if (!mark) return;
-  const state = directReceiptState(record);
+  const state = receiptState(record);
   if (!state || mark.dataset.state === state) return;
   mark.dataset.state = state;
   mark.className = "chat-receipt is-" + state;
-  mark.title = DIRECT_RECEIPT_LABELS[state];
-  mark.setAttribute("aria-label", DIRECT_RECEIPT_LABELS[state]);
-  mark.replaceChildren(directReceiptIcon(state));
+  mark.title = RECEIPT_LABELS[state];
+  mark.setAttribute("aria-label", RECEIPT_LABELS[state]);
+  mark.replaceChildren(receiptIcon(state));
 }
 
-function makeDirectReceipt(record) {
+function makeReceipt(record) {
   const mark = document.createElement("span");
   mark.setAttribute("role", "img");
   record.receiptEl = mark;
-  paintDirectReceipt(record);
+  paintReceipt(record);
   return mark;
+}
+
+function updateReceipt(id, receipt, allow) {
+  const rec = rows.get(id);
+  if (rec) {
+    if (!allow(receiptState(rec))) return false;
+    rec.receipt = receipt;
+    paintReceipt(rec);
+    threads.updateTarget(id, { receipt });
+    if (activeThreadRootId === id) renderThread();
+    return true;
+  }
+  const reply = threads.target(id);
+  if (!reply?.rootId || !allow(receiptState(reply))) return false;
+  threads.updateTarget(id, { receipt });
+  if (activeThreadRootId === reply.rootId) renderThread();
+  return true;
+}
+
+function applyReceiptSent(id) {
+  updateReceipt(String(id || ""), "sent", (state) => state === "pending");
 }
 
 function applyDirectDelivered(ids) {
   for (const id of ids) {
-    const rec = rows.get(id);
-    if (!directReceiptState(rec) || rec.receipt === "read") continue;
-    rec.receipt = "delivered";
-    paintDirectReceipt(rec);
+    const rec = rows.get(id) || threads.target(id);
+    if (!isDirectMessageKey(rec?.channel)) continue;
+    updateReceipt(id, "delivered",
+      (state) => state === "pending" || state === "sent");
   }
 }
 
 function applyDirectRead(scope) {
   if (!isDirectMessageKey(scope)) return;
+  const readable = (state) => state === "sent" || state === "delivered";
   for (const rec of channelMessages.get(scope) || []) {
-    const state = directReceiptState(rec);
-    if (state !== "sent" && state !== "delivered") continue;
-    rec.receipt = "read";
-    paintDirectReceipt(rec);
+    if (readable(receiptState(rec))) {
+      rec.receipt = "read";
+      paintReceipt(rec);
+      threads.updateTarget(rec.id, { receipt: "read" });
+    }
+    for (const reply of threads.replies(rec.id)) {
+      if (readable(receiptState(reply))) {
+        threads.updateTarget(reply.id, { receipt: "read" });
+      }
+    }
+  }
+  if (activeThreadRootId &&
+      (rows.get(activeThreadRootId) || threads.root(activeThreadRootId))
+        ?.channel === scope) {
+    renderThread();
   }
 }
 
@@ -4256,10 +4442,13 @@ function threadMessageHeader(record) {
   time.textContent = fmtTime(record.ts);
   time.title = new Date(Number(record.ts) || Date.now()).toLocaleString();
   meta.append(author, time);
-  if (knownRecipientCount(record.recipients) !== null) {
+  const receipt = receiptState(record);
+  if (knownRecipientCount(record.recipients) !== null &&
+      !(receipt && isDirectMessageKey(record.channel))) {
     meta.append(makeRecipientLabel(
       record.recipients, "chat-thread-recipients", record.recipientNames));
   }
+  if (receipt) meta.append(makeReceipt(record));
   header.append(avatar, meta);
   return header;
 }
@@ -4490,6 +4679,7 @@ async function saveMessageEdit(record, source) {
     renderThreadSummary(record.rootId);
   } else {
     renderRecordBody(record);
+    queueRoomPreview(record.channel);
     if (activeThreadRootId === record.id) renderThread();
   }
   seen.add(plain.id);
@@ -4552,7 +4742,8 @@ function requestMessageDelete(record, trigger) {
 
 function confirmMessageDelete() {
   const record = pendingDeleteRecord;
-  if (!record?.self || record.senderId !== selfId) return;
+  if (!record?.self || (record.senderId !== selfId && !record.viewOnce)) return;
+  withdrawViewOnce(record);
   const plain = makePlain("delete", {
     conversation: channelWireLabel(record.channel),
     target: record.id,
@@ -4561,7 +4752,11 @@ function confirmMessageDelete() {
   pendingDeleteTrigger = null;
   seen.add(plain.id);
   removeMessage(record.id);
-  runWhenConnected(() => send(plain));
+  runWhenConnected(() => send(plain).then((sent) => {
+    if (sent && isDirectMessageKey(record.channel)) {
+      roomTransport?.supersede?.([record.id]);
+    }
+  }));
 }
 
 // ---- convert a message into a repository issue ------------------------------
@@ -4790,6 +4985,8 @@ function buildRow(record, prev) {
   }
   const attachment = renderAttachment(record);
   if (attachment) main.append(attachment);
+  const viewOnceBubble = renderViewOnceBubble(record, { onOpen: openViewOnceRecord });
+  if (viewOnceBubble) main.append(viewOnceBubble);
   const threadSummary = document.createElement("button");
   threadSummary.type = "button";
   threadSummary.className = "chat-thread-summary";
@@ -4800,14 +4997,15 @@ function buildRow(record, prev) {
   reactionsEl.className = "chat-reactions";
   main.append(reactionsEl);
   row.append(main);
-  if (directReceiptState(record)) {
+  const receipt = receiptState(record);
+  if (receipt && isDirectMessageKey(record.channel)) {
     record.recipientsEl = null;
-    row.append(makeDirectReceipt(record));
   } else {
     record.recipientsEl = makeRecipientLabel(
       record.recipients, "chat-recipients", record.recipientNames);
     row.append(record.recipientsEl);
   }
+  if (receipt) row.append(makeReceipt(record));
   record.el = row;
   record.body = body;
   record.reactionsEl = reactionsEl;
@@ -4842,7 +5040,8 @@ function buildRow(record, prev) {
       (button) => beginIssueFromMessage(record, button),
     ));
   }
-  if (!record.deleted && record.self && record.senderId === selfId) {
+  if (!record.deleted && record.self &&
+      (record.senderId === selfId || record.viewOnce)) {
     if (record.text) {
       actions.append(messageAction(
         "Edit message",
@@ -4927,6 +5126,7 @@ function insertMessage(record) {
   list.splice(index, 0, record);
   rows.set(record.id, record);
   threads.registerRoot(portableMessageRecord(record));
+  queueRoomPreview(channel);
   if (historyBatchChannels) {
     historyBatchChannels.add(channel);
     if (channel !== activeChannel && !isOwnChatMessage(record)) {
@@ -4970,6 +5170,8 @@ function appendMessage(
   appMessage = null,
   recipients = null,
   recipientNames = [],
+  viewOnce = null,
+  relayed = false,
 ) {
   const channelKey = normalizeChannelKey(channel) || activeChannel;
   const record = {
@@ -4985,7 +5187,14 @@ function appendMessage(
     appMessage,
     recipients: knownRecipientCount(recipients),
     recipientNames: knownRecipientNames(recipientNames),
+    relayed: Boolean(relayed),
   };
+  if (viewOnce) {
+    record.viewOnce = viewOnce;
+    record.viewOnceState = kind === "self" ? "sent" : "ready";
+    if (kind === "self") forgetViewOnceKey(record);
+    queueViewOnceStatus(record);
+  }
   insertMessage(record);
   rememberContext(record.channel, who, text);
 }
@@ -5012,6 +5221,7 @@ function removeMessage(id) {
     reactions.delete(id);
     threads.deleteTarget(id);
     repaintChannel(rec.channel);
+    queueRoomPreview(rec.channel);
     if (activeThreadRootId === id) renderThread();
     return;
   }
@@ -5024,6 +5234,7 @@ function removeMessage(id) {
   if (activeThreadRootId === id) closeThread({ restoreFocus: false });
   // Re-render so grouping headers stay correct around the gap.
   repaintChannel(rec.channel);
+  queueRoomPreview(rec.channel);
 }
 
 // Re-render a channel, or — inside a replayed backlog — leave it to the single
@@ -5187,10 +5398,13 @@ function renderChatEntry(
   if (!once(entry.id)) return;
   if (chatRetention.isExpired(entry.ts, channelKey)) return;
   const who = (entry.sender || "peer").slice(0, MAX_NAME);
-  const text = entry.text || "";
-  const attachment = attachmentFromEntry(entry);
-  if (text || attachment) {
-    const renderedKind = entry.senderId === selfId ? "self" : kind;
+  const viewOnce = isDirectMessageKey(scope) ? viewOnceFromEntry(entry) : null;
+  const text = viewOnce ? "" : entry.text || "";
+  const attachment = viewOnce ? null : attachmentFromEntry(entry);
+  if (text || attachment || viewOnce) {
+    const renderedKind = entry.senderId === selfId || isOwnViewOnceEntry(entry)
+      ? "self"
+      : kind;
     appendMessage(
       renderedKind,
       who,
@@ -5204,6 +5418,8 @@ function renderChatEntry(
       appMessageFromEntry(entry, channelKey),
       recipients,
       recipientNames,
+      viewOnce,
+      true,
     );
   }
 }
@@ -5248,6 +5464,7 @@ function renderThreadEntry(
     self: entry.senderId === selfId,
     recipients,
     recipientNames,
+    relayed: true,
   });
   threads.addReply(record);
   renderThreadSummary(record.rootId);
@@ -5417,6 +5634,7 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
       rec.editedAt = Number(plain.editedAt) || Number(plain.ts) || Date.now();
       threads.updateTarget(rec.id, patch);
       renderRecordBody(rec);
+      queueRoomPreview(rec.channel);
       if (activeThreadRootId === rec.id) renderThread();
     }
   } else if (type === "delete") {
@@ -5543,6 +5761,9 @@ function send(plain) {
   }
   return roomTransport.send(plain, { persist: envelope.persist }).then((sent) => {
     if (sent) recordOwnChatBadgeActivity(plain);
+    if (sent && envelope.persist && scope === "public-world-general") {
+      applyReceiptSent(plain.id);
+    }
     return sent;
   });
 }
@@ -5595,9 +5816,17 @@ function offerRequestedCall(partner) {
   startDirectCall(requested);
 }
 
-function startDirectCall(media) {
+function previewDirectCall() {
   const direct = directMessageForKey(activeChannel);
   if (!direct || !userSession() || chatCalls.active()) return;
+  chatCalls.preview(activeChannel, direct.otherUser).catch(() => {
+    setStatus("The camera or microphone is unavailable", "unavailable");
+  });
+}
+
+function startDirectCall(media) {
+  const direct = directMessageForKey(activeChannel);
+  if (!direct || !userSession() || (chatCalls.active() && !chatCalls.previewing())) return;
   const channelKey = activeChannel;
   runWhenConnected(() => {
     chatCalls.start(channelKey, direct.otherUser, media).catch(() => {
@@ -5609,6 +5838,197 @@ function startDirectCall(media) {
       );
     });
   });
+}
+
+const viewOnceClient = createViewOnceClient({ request: privateChannelRequest });
+const viewOnceFilterSupport = installViewOnceFilters();
+const viewOnceStatusQueue = new Map();
+let viewOnceStatusTimer = null;
+let activeViewOnceViewer = null;
+
+function ownAccountName() {
+  return String(userSession()?.nodeName || "").trim().toLowerCase();
+}
+
+function isOwnViewOnceEntry(entry) {
+  const own = ownAccountName();
+  return Boolean(
+    entry?.viewOnce && own &&
+    String(entry.sender || "").trim().toLowerCase() === own,
+  );
+}
+
+function holdsViewOnceReceipt(plain) {
+  return Boolean(
+    plain?.type === "chat" &&
+    viewOnceFromEntry(plain) &&
+    !isOwnViewOnceEntry(plain) &&
+    plain.senderId !== selfId,
+  );
+}
+
+function viewOnceRecords(mediaId) {
+  return [...rows.values()].filter((record) =>
+    record.viewOnce?.media === mediaId);
+}
+
+function releaseViewOnceReceipt(record) {
+  if (record && !record.self) roomTransport?.releaseReceipt?.(record.id);
+}
+
+function setViewOnceState(record, state) {
+  if (!record?.viewOnce || !state) return;
+  if (isFinalViewOnceState(record.viewOnceState) && !isFinalViewOnceState(state)) {
+    return;
+  }
+  record.viewOnceState = state;
+  if (isFinalViewOnceState(state)) {
+    forgetViewOnceKey(record);
+    releaseViewOnceReceipt(record);
+  }
+  paintViewOnceBubble(record);
+}
+
+function applyViewOnceState(mediaId, state) {
+  for (const record of viewOnceRecords(mediaId)) {
+    if (state === "opened" && activeViewOnceViewer?.media === mediaId) continue;
+    setViewOnceState(record, state);
+  }
+}
+
+function queueViewOnceStatus(record) {
+  const direct = directMessageForKey(record.channel);
+  if (!direct || !record.viewOnce) return;
+  const ids = viewOnceStatusQueue.get(direct.id) || new Set();
+  ids.add(record.viewOnce.media);
+  viewOnceStatusQueue.set(direct.id, ids);
+  if (viewOnceStatusTimer !== null) return;
+  viewOnceStatusTimer = setTimeout(flushViewOnceStatus, 250);
+}
+
+async function flushViewOnceStatus() {
+  viewOnceStatusTimer = null;
+  const pending = [...viewOnceStatusQueue.entries()];
+  viewOnceStatusQueue.clear();
+  for (const [conversationId, ids] of pending) {
+    const list = [...ids];
+    for (let start = 0; start < list.length; start += 50) {
+      let states;
+      try {
+        states = await viewOnceClient.status(conversationId, list.slice(start, start + 50));
+      } catch (_) {
+        continue;
+      }
+      for (const [mediaId, item] of states) {
+        for (const record of viewOnceRecords(mediaId)) {
+          setViewOnceState(record, viewOnceStateAfterStatus(record, item));
+        }
+      }
+    }
+  }
+}
+
+function startViewOnceRecording(kind) {
+  const direct = directMessageForKey(activeChannel);
+  if (!direct || !userSession() || !VIEW_ONCE_KINDS[kind]) return;
+  const channelKey = activeChannel;
+  openViewOnceRecorder({
+    kind,
+    recipient: direct.otherUser,
+    ...viewOnceFilterChoices(viewOnceFilterSupport),
+    onSend: (recording, onProgress) =>
+      sendViewOnce(channelKey, direct, recording, onProgress),
+    onClose: () => (kind === "video" ? viewOnceVideoBtn : viewOnceVoiceBtn)?.focus(),
+  });
+}
+
+async function sendViewOnce(channelKey, direct, recording, onProgress) {
+  const viewOnce = await viewOnceClient.upload(
+    direct.id, recording.kind, recording.blob, recording.durationMs,
+    { mime: recording.mime, onProgress },
+  );
+  const sent = await new Promise((resolve) => {
+    runWhenConnected(() => {
+      if (roomScopeForChannel() !== channelKey) {
+        resolve(false);
+        return;
+      }
+      const plain = makePlain("chat", {
+        channel: channelWireLabel(channelKey),
+        text: VIEW_ONCE_KINDS[recording.kind].text,
+        viewOnce,
+      });
+      Promise.resolve(send(plain)).then((ok) => {
+        if (ok === false) {
+          resolve(false);
+          return;
+        }
+        seen.add(plain.id);
+        appendMessage(
+          "self", plain.sender, "", plain.id, plain.senderId, plain.ts,
+          channelKey, null, null, null, null, [], viewOnce,
+        );
+        const record = rows.get(plain.id);
+        if (record) forgetViewOnceKey(record);
+        resolve(true);
+      }, () => resolve(false));
+    });
+  });
+  if (!sent) {
+    viewOnceClient.withdraw(direct.id, viewOnce.media).catch(() => {});
+    throw new Error("view_once_not_sent");
+  }
+}
+
+function withdrawViewOnce(record) {
+  if (!record?.viewOnce || !record.self) return;
+  const direct = directMessageForKey(record.channel);
+  if (!direct || isFinalViewOnceState(record.viewOnceState)) return;
+  viewOnceClient.withdraw(direct.id, record.viewOnce.media).catch(() => {});
+}
+
+async function openViewOnceRecord(record) {
+  const direct = directMessageForKey(record.channel);
+  const viewOnce = record.viewOnce;
+  if (!direct || !viewOnce?.key || record.self || activeViewOnceViewer) return;
+  setViewOnceState(record, "opening");
+  activeViewOnceViewer = { media: viewOnce.media };
+  let bytes;
+  try {
+    bytes = await viewOnceClient.download(direct.id, viewOnce);
+  } catch (error) {
+    activeViewOnceViewer = null;
+    if (error?.status === 410 || error?.status === 404) {
+      setViewOnceState(record, error?.status === 404 ? "expired" : "opened");
+      flushViewOnceStatusFor(record);
+    } else {
+      setViewOnceState(record, "failed");
+    }
+    return;
+  }
+  let consumed = null;
+  openViewOnceViewer({
+    kind: viewOnce.kind,
+    bytes,
+    mime: viewOnce.mime,
+    onStart: () => {
+      setViewOnceState(record, "playing");
+      consumed = viewOnceClient.consume(direct.id, viewOnce.media).catch(() => null);
+    },
+    onClose: async ({ started }) => {
+      activeViewOnceViewer = null;
+      if (!started) {
+        setViewOnceState(record, "ready");
+        return;
+      }
+      if (consumed) await consumed;
+      setViewOnceState(record, "opened");
+    },
+  });
+}
+
+function flushViewOnceStatusFor(record) {
+  queueViewOnceStatus(record);
 }
 
 function makeForkbotPlain(text) {
@@ -5941,6 +6361,8 @@ function newRoomTransport() {
     onServerCopies: (stored, room) => applyDirectServerCopies(stored, room.scope),
     onDelivered: (ids) => applyDirectDelivered(ids),
     onRead: (room) => applyDirectRead(room.scope),
+    onMedia: (id, state) => applyViewOnceState(id, state),
+    holdReceipt: (plain) => holdsViewOnceReceipt(plain),
     onState: handleTransportState,
     locationLike: { protocol: location.protocol, host: RELAY_HOST },
   });
@@ -6565,6 +6987,9 @@ function wireChatControls() {
   directAddBtn?.addEventListener("click", () => openDirectMessageDialog("add"));
   callAudioBtn?.addEventListener("click", () => startDirectCall("audio"));
   callVideoBtn?.addEventListener("click", () => startDirectCall("video"));
+  callPreviewBtn?.addEventListener("click", previewDirectCall);
+  viewOnceVideoBtn?.addEventListener("click", () => startViewOnceRecording("video"));
+  viewOnceVoiceBtn?.addEventListener("click", () => startViewOnceRecording("voice"));
   directSearch?.addEventListener("input", scheduleDirectMessageSearch);
   if (attachmentBtn && attachmentInput) {
     attachmentBtn.addEventListener("click", () => attachmentInput.click());

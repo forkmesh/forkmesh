@@ -69,12 +69,14 @@ extension, an older build with no extension — falls back to the generic alert
 above rather than to no banner.
 
 Chat and direct messages are the exception: the relay stores ciphertext and
-can describe a message no better than Apple can, so the phone does not even
-ask — those banners read "New message" and "New direct message". It knows
-which is which because the alert for those two topics names its topic beside
-`aps`, and only those two: they are exactly the topics that already carry an
-`apns-collapse-id` spelling the same category out to Apple in a header, so the
-mark discloses nothing further.
+can describe a message no better than Apple can, so it does not ask the relay
+for text. Those alerts name their topic beside `aps` and carry the relay `ref`
+and `keyVersion` of the stored ciphertext (plus `channelId` for a channel).
+The notification service extension fetches that ciphertext from a read-only
+route and decrypts it on the phone, the way Signal does; when it cannot, the
+banner stays "Direct message from alice" / "New message in #design" with an
+"End-to-end encrypted" body. See
+[docs/app/chat-push-previews.md](../../../docs/app/chat-push-previews.md).
 
 Topics that wake a phone (`APNS_PUSH_TOPICS` in `app/src/apns.py`): `pings`
 (the alert inbox), `code-push`, `direct-messages`, and `chat` (a message in a
@@ -96,8 +98,11 @@ without buzzing. The **Code pushes** ping setting (default on) turns it off.
 Every ping is its own alert. The socket frame only means "re-read your inbox",
 so frames for one account coalesce inside a two-second window; the APNs alert
 for `pings` and `code-push` deliberately does not, and carries no collapse id,
-so two pings are two notifications. `direct-messages` and `chat` collapse on
-the phone, so a conversation in full flow is one banner rather than a stack.
+so two pings are two notifications. Since 2026-10-13 `direct-messages` is
+not coalesced or collapsed either: each message shows its own text, so each
+is its own banner, grouped per conversation by `thread-id`. `chat` still
+collapses on the phone and is still limited to one push per room every two
+seconds.
 
 Every payload carries `origin` (the Worker's `APP_ORIGIN`) beside the topic,
 `alertId` and `href`, so a phone signed in to several ForkMesh projects (for

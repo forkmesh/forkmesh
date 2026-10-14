@@ -279,6 +279,22 @@ class AgentOpsTest {
         assertEq(0, claude.windows[0].remainingPercent)
         assertEq(null, claude.windows[1].usedPercent)
         assertEq("resets in 1m", claude.windows[0].resetLabel(30_000))
+        val hour = 3_600_000L
+        val weekly = UsageWindowMeter("weekly", "Weekly", 59, 168 * hour, UsageState.Ok)
+        assertEq(168 * hour, weekly.windowMs)
+        assertEq(7, weekly.segments)
+        assertEq("Day 2 of 7", weekly.periodLabel(30 * hour))
+        assertEq("41% over pace", weekly.paceLabel(30 * hour))
+        val session = UsageWindowMeter("5h", "5-hour", 10, 5 * hour, UsageState.Ok)
+        assertEq(5, session.segments)
+        assertEq("Hour 3 of 5", session.periodLabel(2 * hour + 1))
+        assertEq("30% under pace", session.paceLabel(2 * hour))
+        val codexWeekly = UsageWindowMeter.from(
+            mapOf("id" to "weekly", "label" to "Weekly", "usedPercent" to 50, "resetAtMs" to 36_000_000L, "windowMs" to 72_000_000L, "state" to "ok"),
+        )
+        assertEq(72_000_000L, codexWeekly.windowMs)
+        assertEq("on pace", codexWeekly.paceLabel(0))
+        assertEq("", UsageWindowMeter("w", "Credits", 1, null, UsageState.Ok).paceLabel(0))
         assertEq("Work", claude.activeAccount?.label)
         assertEq("3.50 of 20.00 USD", claude.credits?.label)
         assertEq(1.5, usage.totalSpendUsd)

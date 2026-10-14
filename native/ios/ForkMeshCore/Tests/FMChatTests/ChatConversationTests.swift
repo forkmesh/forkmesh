@@ -52,12 +52,12 @@ final class ChatConversationTests: XCTestCase {
         XCTAssertEqual(items.map(\.id), ["time-a", "a", "b", "c", "d", "e", "time-f", "f", "g"])
         let laid = bubbles(items)
         XCTAssertEqual(laid.map(\.position), [.first, .middle, .last, .single, .single, .first, .last])
-        XCTAssertEqual(laid.map(\.receipt), ["", "", "", "", "", "", "Sent"])
+        XCTAssertEqual(laid.map(\.receipt), [nil, nil, nil, .sent, nil, .sent, .sent])
         XCTAssertTrue(laid.allSatisfy { !$0.showsSender }, "a direct message never names the sender")
         let group = bubbles(ChatConversationLayout.items(rows: rows, events: [], group: true))
         XCTAssertEqual(group.map(\.showsSender), [true, false, false, false, true, false, false])
         let answered = bubbles(ChatConversationLayout.items(rows: Array(rows.prefix(5)), events: [], group: false))
-        XCTAssertTrue(answered.allSatisfy { $0.receipt.isEmpty }, "no receipt once the other side has answered")
+        XCTAssertEqual(answered.map(\.receipt), [nil, nil, nil, .sent, nil], "every own message keeps its mark")
     }
 
     func testANewDayAlwaysGetsATimeHeader() {
@@ -86,16 +86,17 @@ final class ChatConversationTests: XCTestCase {
         XCTAssertEqual(mine.text, "You named the conversation \u{201C}Weekend\u{201D}.")
     }
 
-    func testReceiptsComeFromOfficeRecipientCounts() {
+    func testReceiptsFollowTheRowStatusOnOwnMessagesOnly() {
         var delivered = row("a", sender: "me", at: 0, mine: true)
-        delivered = ChatRow(
-            message: ChatMessage(
-                id: "a", conversation: "#office/crew", senderId: "me", senderName: "Me", text: "hi", timestamp: Date(),
-                isSelf: true, recipients: 2), continuesGroup: false, queued: false, deletable: false)
-        XCTAssertEqual(ChatConversationLayout.receipt(delivered), "Delivered")
-        XCTAssertEqual(ChatConversationLayout.receipt(row("b", sender: "me", at: 0, mine: true)), "Sent")
+        delivered.receipt = .delivered
+        XCTAssertEqual(ChatConversationLayout.receipt(delivered), .delivered)
+        XCTAssertEqual(ChatConversationLayout.receipt(row("b", sender: "me", at: 0, mine: true)), .sent)
         let queued = ChatRow(message: delivered.message, continuesGroup: false, queued: true, deletable: false)
-        XCTAssertEqual(ChatConversationLayout.receipt(queued), "Not delivered yet")
+        XCTAssertEqual(ChatConversationLayout.receipt(queued), .sending)
+        var theirs = row("c", sender: "pat", at: 0)
+        theirs.receipt = .read
+        XCTAssertNil(ChatConversationLayout.receipt(theirs))
+        XCTAssertEqual(ChatReceipt.allCases.map(\.label), ["Sending", "Sent", "Delivered", "Read"])
     }
 
     func testJumboEmoji() {

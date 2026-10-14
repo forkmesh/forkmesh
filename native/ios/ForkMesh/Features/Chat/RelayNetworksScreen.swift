@@ -58,7 +58,7 @@ private struct RelayNetworksBody: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .fmRefreshable { await model.refresh() }
         .navigationTitle("All networks")
         .toolbar {

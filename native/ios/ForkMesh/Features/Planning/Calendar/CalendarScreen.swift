@@ -79,7 +79,7 @@ struct CalendarScreen: View {
                 FmEmptyState(icon: "calendar_today_outlined", title: "The calendar is unavailable")
             }
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("Calendar")
         .navigationBarTitleDisplayMode(.inline)
     }

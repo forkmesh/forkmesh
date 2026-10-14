@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "PeopleModel.h",
+    "PeopleModel.cpp",
+    "PeopleFeature.h",
+    "PeopleFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_people_model.cpp",
+    "PeopleModel.h",
+    "PeopleModel.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Widgets"
+  ]
+}

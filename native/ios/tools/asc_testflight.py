@@ -14,7 +14,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from asc_bundle_ids import APP_BUNDLE_ID, call, token  # noqa: E402
+from asc_bundle_ids import APP_BUNDLE_ID, call, download, token  # noqa: E402
 
 
 class Session:
@@ -22,11 +22,17 @@ class Session:
         self.bearer = ""
         self.minted = 0.0
 
-    def __call__(self, method, path, body=None):
+    def fresh(self) -> str:
         if time.time() - self.minted > 480:
             self.bearer = token()
             self.minted = time.time()
-        return call(self.bearer, method, path, body)
+        return self.bearer
+
+    def __call__(self, method, path, body=None):
+        return call(self.fresh(), method, path, body)
+
+    def download(self, path):
+        return download(self.fresh(), path)
 
 
 def app_id(api) -> str:

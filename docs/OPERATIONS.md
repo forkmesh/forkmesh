@@ -147,8 +147,8 @@ Cloudflare token and never change DNS. Never let both change records: keep
 
 ```sh
 K=~/projects/forkmesh/ssh/fleet/next_fleet_ed25519
-# rqlite: 3 reachable voters, one leader.
-ssh -i $K root@<n1-ip> "curl -fsS -K /etc/forkmesh-next/rqlite.curlrc 'http://127.0.0.1:4001/nodes?nonvoters'"
+# rqlite: 3 reachable voters, one leader (ask any core).
+ssh -i $K root@<any-core-ip> "curl -fsS -K /etc/forkmesh-next/rqlite.curlrc 'http://127.0.0.1:4001/nodes?nonvoters'"
 # Every node serves the shared names with a valid certificate and is ready.
 for ip in <n1-ip> <n2-ip> <n3-ip>; do
   curl -fsS --resolve app.next.forkmesh.com:443:$ip https://app.next.forkmesh.com/readyz
@@ -169,8 +169,9 @@ leader mid-write.
 
 - **Deploy**: `python3 tools/next_deploy.py all --execute`. Migrations run
   through the first node with a healthy rqlite (rqlite forwards the writes);
-  the restart goes one node at a time in fleet order (only the app restarts,
-  so the rqlite leader's node is not special). Each node is gated on
+  the restart goes one node at a time, in an order that rotates per release
+  (only the app restarts, so the rqlite leader's node is not special, and no
+  core is always first). Each node is gated on
   `127.0.0.1:8080/readyz` and on `/api/version` reporting the new rev, then
   on Caddy serving `https://nN.<domain>/readyz` on loopback. Caddy gets up to
   30 s (a crash restart under `Restart=on-failure` fits in it); if it still
@@ -336,12 +337,22 @@ leader mid-write.
   is healthy. It resumes after a failure. See
   [deploy/README.md](deploy/README.md#adding-a-core-node). A core that is new
   to `dns-health.json` starts held out of DNS until `next_dns.py undrain`.
-- **Replace a core node**: add `n4` to `deploy/fleet.toml`, then run
-  `python3 tools/next_fleet.py replace-core n1 --new n4 --execute`. It
-  creates `fmnext-core-4`, installs it as a joining voter, waits for 4
-  healthy voters, runs `rqlite remove n1`, and destroys `fmnext-core-1`.
-  Afterwards, re-render the peers (`install nN --steps files,start`) and run
-  `next_dns.py ensure --execute`.
+- **Remove a core node**: `python3 tools/next_fleet.py remove-core nN
+  --execute` (dry run without `--execute`), or **Remove…** on the core's
+  row in Network → Hosts. Any core can go, `n1` included: no core is the
+  main one ([deploy/README.md](deploy/README.md#no-fixed-main-node)). It is
+  refused below 3 cores or 3 healthy voters; when a non-voter core exists,
+  it is promoted to a voter first. It also lists the core in `[hosted]
+  retired_cores`, so the repositories its node account owns (the flagship
+  is linked to `fmnext-n1`) still take pushes on the live cores
+  ([CORE_PUSH.md](CORE_PUSH.md#a-removed-core-keeps-its-repositories-core-held-2026-10-13)). See
+  [deploy/README.md](deploy/README.md#removing-a-core-node).
+- **Replace a core node**: add one, then remove the old one
+  ([deploy/README.md](deploy/README.md#replace-a-core-add-one-then-remove-one)):
+  `add-core --execute`, merge `fleet/add-core-nN`, `remove-core n1
+  --execute`, merge `fleet/remove-core-n1`. The older one-shot
+  `replace-core n1 --new n4 --execute` still exists but leaves the peers'
+  re-render, DNS and the fleet file to you.
 
 - **Switching a running fleet to leaderless cron/DNS/certificates** (the
   release that adds migration 0196, one-time):

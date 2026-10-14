@@ -7,6 +7,7 @@ import FMAccount
 import FMAgents
 import FMApi
 import FMBase
+import FMPush
 import SwiftUI
 import Speech
 import UIKit
@@ -497,7 +498,7 @@ struct DeviceRow: View {
 
     private var tone: Color {
         switch deviceTone(device) {
-        case .offline: return FmColors.offline
+        case .offline: return fm.offline
         case .success: return fm.success
         case .warning: return fm.warning
         }
@@ -743,6 +744,29 @@ struct PushNotificationsCard: View {
     }
 }
 
+struct NotificationContentCard: View {
+    @AppStorage(PushPreviewMode.preferenceKey) private var stored: String = PushPreviewMode.nameAndMessage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: FmSpace.x2) {
+            Picker("Notification content", selection: Binding<String>(
+                get: { PushPreviewMode.parse(stored).rawValue },
+                set: { (value: String) in
+                    stored = value
+                    PushCredentialStore.setPreview(value)
+                })
+            ) {
+                ForEach(PushPreviewMode.allCases, id: \.rawValue) { (mode: PushPreviewMode) in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.navigationLink)
+            .accessibilityIdentifier("settings-notification-content")
+            SettingsNote(text: "What a chat notification shows. The server never sees the message: this phone fetches the still-encrypted message and opens it itself, as Signal does. Name only shows who wrote; No name or message shows only that something arrived.")
+        }
+    }
+}
+
 // MARK: Appearance
 
 /// Theme mode and accent colour, applied the moment they
@@ -774,7 +798,7 @@ struct AppearanceCard: View {
     }
 
     private var swatches: some View {
-        HStack(spacing: FmSpace.x5) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: FmSpace.x2)], spacing: FmSpace.x3) {
             ForEach(FmAccent.allCases, id: \.self) { (accent: FmAccent) in
                 AccentSwatch(
                     accent: accent,
@@ -793,6 +817,10 @@ struct AppearanceCard: View {
             Text("Accent colour").fmText(.labelMedium, color: fm.textSecondary)
                 .padding(.top, FmSpace.x4)
             swatches
+                .padding(.top, FmSpace.x2)
+            Text("Background").fmText(.labelMedium, color: fm.textSecondary)
+                .padding(.top, FmSpace.x4)
+            AppearanceBackgroundRow(settings: settings)
                 .padding(.top, FmSpace.x2)
         }
     }
@@ -858,7 +886,7 @@ private struct AccentSwatch: View {
                 .fill(color)
                 .overlay {
                     if selected {
-                        FmIcon("check_rounded", size: 20, color: Color.white)
+                        FmIcon("check_rounded", size: 20, color: fm.onPrimary)
                     }
                 }
                 .padding(3)
@@ -871,7 +899,10 @@ private struct AccentSwatch: View {
                     .bodySmall,
                     color: selected ? fm.textPrimary : fm.textSecondary,
                     weight: selected ? FmType.emphasis : FmType.regular)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
             if selected {

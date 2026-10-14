@@ -44,6 +44,7 @@ struct DirectCallHeaderButtons: View {
     var body: some View {
         if let engine = hub.calls, engine.available, hub.inDirect {
             HStack(spacing: 6) {
+                DirectCallPreviewButton(hub: hub, engine: engine, dark: dark)
                 button("video.fill", label: "Video call", media: .video, engine: engine)
                 button("phone.fill", label: "Voice call", media: .audio, engine: engine)
             }
@@ -145,6 +146,7 @@ struct DirectCallIncomingBanner: View {
 struct DirectCallScreen: View {
     let engine: DirectCallEngine
     let factory: WebCallPeerFactory?
+    @State private var showingBackgrounds = false
 
     var body: some View {
         ZStack {
@@ -169,6 +171,12 @@ struct DirectCallScreen: View {
                     Text(engine.stateLine)
                         .font(.system(size: 13))
                         .opacity(0.8)
+                    if !engine.voice.isEmpty {
+                        Text("Voice: \(DirectCallEngine.voiceLabel(engine.voice))")
+                            .font(.system(size: 12, weight: .medium))
+                            .opacity(0.8)
+                            .accessibilityIdentifier("chat-call-voice-state")
+                    }
                 }
                 .foregroundStyle(.white)
                 .shadow(radius: 4)
@@ -180,6 +188,10 @@ struct DirectCallScreen: View {
             }
         }
         .statusBarHidden(engine.media == .video)
+        .sheet(isPresented: $showingBackgrounds) {
+            DirectCallBackgroundSheet(engine: engine, peer: factory?.current)
+                .presentationDetents([.medium, .large])
+        }
     }
 
     private var controls: some View {
@@ -195,7 +207,15 @@ struct DirectCallScreen: View {
                     engine.toggleCamera()
                 }
                 faceMenu
+                control(
+                    "photo.on.rectangle", label: "Background", on: !engine.background.isEmpty
+                ) {
+                    showingBackgrounds = true
+                }
+                .accessibilityValue(DirectCallEngine.backgroundLabel(engine.background))
+                .accessibilityIdentifier("chat-call-background")
             }
+            voiceMenu
             Button(action: { Task { await engine.hangUp() } }) {
                 Image(systemName: "phone.down.fill")
                     .font(.system(size: 22, weight: .semibold))
@@ -228,6 +248,28 @@ struct DirectCallScreen: View {
         .accessibilityValue(DirectCallEngine.faces.first { $0.id == engine.face }?.label ?? "Your own face")
         .accessibilityHint("Shows the other person a different face that follows your head and lips")
         .accessibilityIdentifier("chat-call-face")
+    }
+
+    private var voiceMenu: some View {
+        Menu {
+            Picker("Voice", selection: Binding(get: { engine.voiceChoice }, set: { engine.setVoiceChoice($0) })) {
+                Text("Match face").tag(DirectCallEngine.voiceMatchFace)
+                Text("Your own voice").tag(DirectCallEngine.voiceOff)
+                ForEach(DirectCallEngine.voices) { (voice: DirectCallFace) in
+                    Text(voice.label).tag(voice.id)
+                }
+            }
+        } label: {
+            Image(systemName: "waveform")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(engine.voice.isEmpty ? Color.white : Color.black)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(engine.voice.isEmpty ? Color.white.opacity(0.18) : Color.white))
+        }
+        .accessibilityLabel("Voice")
+        .accessibilityValue("Voice: \(DirectCallEngine.voiceLabel(engine.voice))")
+        .accessibilityHint("Changes how your voice sounds to the other person")
+        .accessibilityIdentifier("chat-call-voice")
     }
 
     private func control(_ symbol: String, label: String, on: Bool, action: @escaping () -> Void) -> some View {

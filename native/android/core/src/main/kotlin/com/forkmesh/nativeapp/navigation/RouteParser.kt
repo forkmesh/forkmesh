@@ -278,6 +278,7 @@ object RouteParser {
         "vault" -> listOf(Route.Vault(first))
         "calories" -> listOf(Route.Calories)
         "glasses-alert" -> listOf(Route.GlassesAlert)
+        "people" -> listOf(Route.People)
         "activity" -> listOf(Route.Activity)
         "timers" -> listOf(Route.Timers)
         "hosts" -> listOf(Route.Hosts)

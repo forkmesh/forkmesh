@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.control.LocalControlException
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.json.Json
@@ -134,8 +135,11 @@ class OfficeChannelsTest {
         assertEq(true, chatEnvelope["persist"])
         val chatText = socket.sent.first { crypto.decrypt(Json.parseObject(it))?.get("type") == "chat" }
         assertEq(null, service.messages("#office/lobby").first { it.self }.recipients)
+        val ownId = service.messages("#office/lobby").first { it.self }.id
+        assertEq(ChatReceipt.SENDING, service.receipt(ownId))
         socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1L, "ref" to OfficeFrames.sentRef(chatText), "recipients" to 4L)))
         assertEq(4, service.messages("#office/lobby").first { it.self }.recipients)
+        assertEq(null, service.receipt(ownId))
         socket.onText(
             Json.stringify(
                 crypto.encrypt(mapOf("type" to "chat", "id" to "live-1", "senderId" to "peer", "sender" to "Pat", "text" to "welcome", "ts" to 9_999_999_999_999L)) +

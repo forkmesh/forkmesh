@@ -36,6 +36,12 @@ public enum DirectMessageFrames {
     public static let receivedKind = "forkmesh-received"
     public static let receivedRefsPerFrame = 64
     public static let supersededKind = "forkmesh-superseded"
+    public static let deliveredKind = "forkmesh-delivered"
+    public static let readKind = "forkmesh-read"
+    public static let maxTrackedRefs = 256
+    public static let maxReceipts = 512
+    public static let maxPendingDeletes = 64
+    public static let roomFrameTypes: Set<String> = ["thread-reply", "reaction", "edit", "delete"]
     public static let outboxLimit = 64
     public static let outboxMaxAgeMs: Int64 = 7 * 24 * 60 * 60 * 1000
     public static let maxWatchedRooms = 16
@@ -59,6 +65,32 @@ public enum DirectMessageFrames {
         guard ref.count == 40, ref.allSatisfy({ ("0"..."9").contains($0) || ("a"..."f").contains($0) })
         else { return "" }
         return ref
+    }
+
+    public static func isRef(_ value: String) -> Bool {
+        value.count == 40 && value.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+    }
+
+    public static func acknowledgedRef(_ envelope: JSONObject) -> String? {
+        guard envelope["kind"]?.text == OfficeFrames.recipientsKind else { return nil }
+        return relayRef(envelope)
+    }
+
+    public static func deliveredRefs(_ envelope: JSONObject) -> [String]? {
+        guard envelope["kind"]?.text == deliveredKind else { return nil }
+        return (envelope["refs"]?.arrayValue ?? []).map(\.text).filter(isRef)
+    }
+
+    public static func isReadReceipt(_ envelope: JSONObject) -> Bool { envelope["kind"]?.text == readKind }
+
+    public static func carriesReceipt(_ plain: JSONObject) -> Bool {
+        let type = plain["type"]?.text ?? ""
+        return type == "chat" || type == "thread-reply"
+    }
+
+    public static func frameConversation(_ plain: JSONObject) -> String {
+        let named = plain["conversation"]?.text ?? ""
+        return named.isEmpty ? (plain["channel"]?.text ?? "") : named
     }
 
     public static func serverCopies(_ envelope: JSONObject) -> Int? {
@@ -129,9 +161,10 @@ public enum DirectMessageFrames {
         guard (plain["channel"]?.text ?? "") == record.conversation else { return nil }
         let id = plain["id"]?.text ?? ""
         if id.isEmpty || id.count > 64 { return nil }
-        let text = plain["text"]?.text ?? ""
+        let viewOnce = ViewOnceFrames.parse(plain[ViewOnceFrames.field])
+        let text = viewOnce?.kind.fallbackText ?? plain["text"]?.text ?? ""
         if text.count > ChatLimits.maxTextChars { return nil }
-        let fileName = String((plain["fileName"]?.text ?? "").prefix(ChatLimits.maxFileNameChars))
+        let fileName = viewOnce != nil ? "" : String((plain["fileName"]?.text ?? "").prefix(ChatLimits.maxFileNameChars))
         if text.isEmpty && fileName.isEmpty { return nil }
         let senderId = String((plain["senderId"]?.text ?? "").prefix(64))
         var sender = String((plain["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars))
@@ -205,12 +238,29 @@ final class DirectRoomSocket {
     let connection: WebSocketConnection
     var reader: Task<Void, Never>?
     var persistedAdvert = false
+    var mediaChecked = false
 
     init(conversationId: String, crypto: RoomCrypto, seal: RoomSeal, connection: WebSocketConnection) {
         self.conversationId = conversationId
         self.crypto = crypto
         self.seal = seal
         self.connection = connection
+    }
+}
+
+struct DirectRefBook: Sendable {
+    var ids: [String: String] = [:]
+    var refs: [String: String] = [:]
+    var order: [String] = []
+
+    mutating func track(_ ref: String, id: String) {
+        guard !ref.isEmpty, !id.isEmpty else { return }
+        if ids.updateValue(id, forKey: ref) == nil { order.append(ref) }
+        refs[id] = ref
+        while order.count > DirectMessageFrames.maxTrackedRefs {
+            let dropped = order.removeFirst()
+            if let old = ids.removeValue(forKey: dropped), refs[old] == dropped { refs.removeValue(forKey: old) }
+        }
     }
 }
 
@@ -255,6 +305,16 @@ public final class DirectMessageService {
     @ObservationIgnored private var liveBudgets: [String: (perWindow: Int, windowMs: Int)] = [:]
     @ObservationIgnored public var onFrame: (@MainActor (JSONObject, String) -> Void)?
     @ObservationIgnored public var meshSender: (@MainActor (JSONObject, [String]) async -> Int)?
+    @ObservationIgnored public var isRemoved: (@MainActor (String) -> Bool)?
+    @ObservationIgnored public var onRemoved: (@MainActor (String, String) -> Void)?
+    @ObservationIgnored private var refBooks: [String: DirectRefBook] = [:]
+    @ObservationIgnored private var receiptOrder: [String] = []
+    @ObservationIgnored private var pendingDeletes: [String: [String: String]] = [:]
+    @ObservationIgnored private var pendingDeleteOrder: [String: [String]] = [:]
+    @ObservationIgnored private var removedIds: Set<String> = []
+    @ObservationIgnored public let viewOnce: ViewOnceStore
+    @ObservationIgnored var heldReceipts: [String: (conversationId: String, refs: [String])] = [:]
+    @ObservationIgnored var heldOrder: [String] = []
 
     public private(set) var records: [DirectConversation] = []
     public private(set) var nextCursor = ""
@@ -262,6 +322,7 @@ public final class DirectMessageService {
     public private(set) var lastError: String?
     public private(set) var connected: Set<String> = []
     public private(set) var serverCopies: [String: Int] = [:]
+    public private(set) var receipts: [String: ChatReceipt] = [:]
     private var history: [String: [ChatMessage]] = [:]
 
     public init(
@@ -270,8 +331,10 @@ public final class DirectMessageService {
         displayName: @escaping @MainActor () -> String, clock: Clock = SystemClock(),
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-        }
+        },
+        viewOncePrefs: KeyValueStore? = nil
     ) {
+        self.viewOnce = ViewOnceStore(prefs: viewOncePrefs)
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
@@ -293,6 +356,12 @@ public final class DirectMessageService {
     }
 
     public func messages(_ conversation: String) -> [ChatMessage] { history[conversation] ?? [] }
+
+    public func receipt(_ messageId: String) -> ChatReceipt? { receipts[messageId] }
+
+    public func ref(of messageId: String, in conversation: String) -> String? {
+        refBooks[DirectMessageFrames.conversationId(conversation)]?.refs[messageId]
+    }
 
     public func serverCopies(_ conversation: String) -> Int? {
         serverCopies[DirectMessageFrames.conversationId(conversation)]
@@ -339,6 +408,7 @@ public final class DirectMessageService {
         if replacing {
             for old in records where !merged.contains(where: { $0.id == old.id }) {
                 history.removeValue(forKey: old.conversation)
+                viewOnce.forget(conversation: old.conversation)
                 pinned.remove(old.id)
                 outbox.removeValue(forKey: old.id)
                 reconnects.removeValue(forKey: old.id)?.cancel()
@@ -533,6 +603,15 @@ public final class DirectMessageService {
         if envelope.isEmpty { return }
         if envelope["kind"]?.text == DirectMessageFrames.historyEnd {
             reseal(socket)
+            if !socket.mediaChecked {
+                socket.mediaChecked = true
+                let conversation = record.conversation
+                Task { await self.refreshViewOnce(conversation) }
+            }
+            return
+        }
+        if let update = ViewOnceFrames.relayUpdate(envelope) {
+            applyViewOnce(update.id, update.state)
             return
         }
         if let stored = DirectMessageFrames.serverCopies(envelope) {
@@ -542,6 +621,20 @@ public final class DirectMessageService {
         }
         if let budget = DirectLiveFrames.budget(envelope) {
             liveBudgets[conversationId] = budget
+            return
+        }
+        if let ref = DirectMessageFrames.acknowledgedRef(envelope) {
+            if let id = refBooks[conversationId]?.ids[ref] { setReceipt(.sent, id) }
+            return
+        }
+        if let refs = DirectMessageFrames.deliveredRefs(envelope) {
+            for ref in refs {
+                if let id = refBooks[conversationId]?.ids[ref] { setReceipt(.delivered, id) }
+            }
+            return
+        }
+        if DirectMessageFrames.isReadReceipt(envelope) {
+            markReadByPeer(conversationId)
             return
         }
         guard let framed = socket.crypto.decrypt(envelope) else { return }
@@ -607,7 +700,21 @@ public final class DirectMessageService {
             return true
         }
         let me = selfId()
-        if !live, !me.isEmpty, plain["senderId"]?.text == me {
+        let type = plain["type"]?.text ?? ""
+        let messageId = plain["id"]?.text ?? ""
+        let mine = !me.isEmpty && plain["senderId"]?.text == me
+        if DirectMessageFrames.roomFrameTypes.contains(type), DirectMessageFrames.frameConversation(plain) != record.conversation {
+            return true
+        }
+        if DirectMessageFrames.carriesReceipt(plain) {
+            if isGone(messageId) { return true }
+            if consumePendingDelete(plain, record: record) { return true }
+        }
+        if mine && DirectMessageFrames.carriesReceipt(plain) {
+            refBooks[record.id, default: DirectRefBook()].track(DirectMessageFrames.relayRef(envelope), id: messageId)
+            setReceipt(.sent, messageId)
+        }
+        if !live, mine {
             remember(
                 DirectOutboxEntry(
                     ref: DirectMessageFrames.relayRef(envelope), plain: plain, kids: kids,
@@ -615,11 +722,102 @@ public final class DirectMessageService {
                     ts: plain["ts"]?.doubleValue.map { Int64($0) } ?? clock.nowMillis),
                 conversationId: record.id)
         }
-        onFrame?(plain, record.conversation)
-        guard let message = DirectMessageFrames.chatMessage(plain, record: record, selfId: me) else { return true }
+        if type == "delete" { applyDelete(plain, record: record, stash: true) }
+        var held = false
+        if type == "chat", let media = ViewOnceFrames.parse(plain[ViewOnceFrames.field]),
+            let id = plain["id"]?.text, !id.isEmpty
+        {
+            let entry = viewOnce.register(
+                messageId: id, conversation: record.conversation, media: media,
+                mine: !me.isEmpty && plain["senderId"]?.text == me)
+            if viewOnce.isSpent(media.media) { forgetOutbox(media: media.media, conversationId: record.id) }
+            if viewOnce.holdsReceipt(media: media.media) {
+                holdReceipt(entry.messageId, conversationId: record.id, ref: DirectMessageFrames.relayRef(envelope))
+                held = true
+            }
+        }
+        guard let message = DirectMessageFrames.chatMessage(plain, record: record, selfId: me) else {
+            onFrame?(plain, record.conversation)
+            return !held
+        }
         let added = append(message, conversationId: record.id)
+        onFrame?(plain, record.conversation)
         if added && live && !message.isSelf { onMessage?(message) }
+        return !held
+    }
+
+    private func isGone(_ id: String) -> Bool {
+        !id.isEmpty && (removedIds.contains(id) || isRemoved?(id) == true)
+    }
+
+    private func setReceipt(_ receipt: ChatReceipt, _ id: String) {
+        guard !id.isEmpty, !removedIds.contains(id) else { return }
+        if let current = receipts[id] {
+            if current.rank >= receipt.rank { return }
+        } else {
+            receiptOrder.append(id)
+        }
+        receipts[id] = receipt
+        while receiptOrder.count > DirectMessageFrames.maxReceipts {
+            receipts.removeValue(forKey: receiptOrder.removeFirst())
+        }
+    }
+
+    private func forgetReceipt(_ id: String) {
+        guard receipts.removeValue(forKey: id) != nil else { return }
+        receiptOrder.removeAll { $0 == id }
+    }
+
+    private func markReadByPeer(_ conversationId: String) {
+        guard let book = refBooks[conversationId] else { return }
+        for id in book.refs.keys {
+            if let current = receipts[id], current == .sent || current == .delivered { receipts[id] = .read }
+        }
+    }
+
+    @discardableResult
+    private func applyDelete(_ plain: JSONObject, record: DirectConversation, stash: Bool) -> Bool {
+        let target = plain["target"]?.text ?? ""
+        let senderId = plain["senderId"]?.text ?? ""
+        guard !target.isEmpty, !senderId.isEmpty else { return false }
+        if let message = history[record.conversation]?.first(where: { $0.id == target }) {
+            guard message.senderId == senderId else { return false }
+            removeLocal(target, record: record)
+            return true
+        }
+        guard stash, !removedIds.contains(target) else { return false }
+        var waiting = pendingDeletes[record.id] ?? [:]
+        var order = pendingDeleteOrder[record.id] ?? []
+        if waiting.updateValue(senderId, forKey: target) == nil { order.append(target) }
+        while order.count > DirectMessageFrames.maxPendingDeletes { waiting.removeValue(forKey: order.removeFirst()) }
+        pendingDeletes[record.id] = waiting
+        pendingDeleteOrder[record.id] = order
+        return false
+    }
+
+    private func consumePendingDelete(_ plain: JSONObject, record: DirectConversation) -> Bool {
+        let id = plain["id"]?.text ?? ""
+        guard !id.isEmpty, let sender = pendingDeletes[record.id]?[id], sender == (plain["senderId"]?.text ?? "") else {
+            return false
+        }
+        pendingDeletes[record.id]?.removeValue(forKey: id)
+        pendingDeleteOrder[record.id]?.removeAll { $0 == id }
+        removedIds.insert(id)
+        seen[record.id, default: []].insert(id)
+        onRemoved?(record.conversation, id)
         return true
+    }
+
+    private func removeLocal(_ id: String, record: DirectConversation) {
+        if var list = history[record.conversation] {
+            list.removeAll { $0.id == id }
+            history[record.conversation] = list.isEmpty ? nil : list
+        }
+        removedIds.insert(id)
+        seen[record.id, default: []].insert(id)
+        if outbox[record.id] != nil { outbox[record.id]?.removeAll { $0.messageId == id } }
+        forgetReceipt(id)
+        onRemoved?(record.conversation, id)
     }
 
     private func remember(_ entry: DirectOutboxEntry, conversationId: String) {
@@ -655,6 +853,9 @@ public final class DirectMessageService {
                 let text = JSON.encode(envelope)
                 if !entries[index].ref.isEmpty { superseded.append(entries[index].ref) }
                 entries[index].ref = DirectMessageFrames.frameRef(text)
+                if DirectMessageFrames.carriesReceipt(entries[index].plain) {
+                    refBooks[id, default: DirectRefBook()].track(entries[index].ref, id: entries[index].messageId)
+                }
                 entries[index].kids = DirectMessageFrames.wrappedKeyIds(sealed)
                 texts.append(text)
             }
@@ -734,6 +935,7 @@ public final class DirectMessageService {
         else { return false }
         var frame = plain
         frame["type"] = .string("chat")
+        if isGone(plain["id"]?.text ?? "") { return false }
         guard let message = DirectMessageFrames.chatMessage(frame, record: record, selfId: selfId()),
             append(message, conversationId: record.id)
         else { return false }
@@ -748,12 +950,21 @@ public final class DirectMessageService {
         return await meshSender(plain, keys)
     }
 
-    private func keepMeshOnly(_ record: DirectConversation, _ plain: JSONObject, reached: Int) -> Bool {
-        if reached <= 0 { return false }
-        if let message = DirectMessageFrames.chatMessage(plain, record: record, selfId: selfId()) {
-            append(message, conversationId: record.id)
+    private func settleUnsent(_ record: DirectConversation, _ plain: JSONObject, shown: Bool, reached: Int) -> Bool {
+        let id = plain["id"]?.text ?? ""
+        if reached > 0 {
+            if shown { setReceipt(.sent, id) }
+            return true
         }
-        return true
+        if shown {
+            if var list = history[record.conversation] {
+                list.removeAll { $0.id == id }
+                history[record.conversation] = list.isEmpty ? nil : list
+            }
+            seen[record.id]?.remove(id)
+        }
+        forgetReceipt(id)
+        return false
     }
 
     @discardableResult
@@ -814,31 +1025,64 @@ public final class DirectMessageService {
     private func sendSealed(_ record: DirectConversation, _ plain: JSONObject, reached: Int, notify: Bool = true) async
         -> Bool
     {
-        if sockets[record.id] == nil, !(await open(record.conversation)) {
-            return keepMeshOnly(record, plain, reached: reached)
+        let id = plain["id"]?.text ?? ""
+        let receipted = DirectMessageFrames.carriesReceipt(plain)
+        var shown = false
+        if let message = DirectMessageFrames.chatMessage(plain, record: record, selfId: selfId()) {
+            shown = append(message, conversationId: record.id)
         }
-        guard let socket = sockets[record.id] else { return keepMeshOnly(record, plain, reached: reached) }
+        if receipted { setReceipt(.sending, id) }
+        if sockets[record.id] == nil, !(await open(record.conversation)) {
+            return settleUnsent(record, plain, shown: shown, reached: reached)
+        }
+        guard let socket = sockets[record.id] else { return settleUnsent(record, plain, shown: shown, reached: reached) }
         do {
             let sealed = try socket.seal.seal(plain)
             var envelope = try socket.crypto.encrypt(sealed)
             envelope["persist"] = true
             if notify { envelope["notify"] = true }
             let sent = JSON.encode(envelope)
+            if receipted { refBooks[record.id, default: DirectRefBook()].track(DirectMessageFrames.frameRef(sent), id: id) }
             try await socket.connection.send(text: sent)
             remember(
                 DirectOutboxEntry(
                     ref: DirectMessageFrames.frameRef(sent), plain: plain,
                     kids: DirectMessageFrames.wrappedKeyIds(sealed), notify: notify, ts: clock.nowMillis),
                 conversationId: record.id)
+            if plain["type"]?.text == "delete" { applyDelete(plain, record: record, stash: false) }
             onFrame?(plain, record.conversation)
-            if let message = DirectMessageFrames.chatMessage(plain, record: record, selfId: selfId()) {
-                append(message, conversationId: record.id)
-            }
             return true
         } catch {
             lastError = "\(error)"
-            return keepMeshOnly(record, plain, reached: reached)
+            return settleUnsent(record, plain, shown: shown, reached: reached)
         }
+    }
+
+    @discardableResult
+    public func sendFrame(_ conversation: String, type: String, fields: JSONObject) async -> JSONObject? {
+        guard DirectMessageFrames.roomFrameTypes.contains(type), let record = record(for: conversation) else { return nil }
+        var plain = frame(record, type: type, extra: fields)
+        if type != "thread-reply" {
+            plain.removeValue(forKey: "channel")
+            plain["conversation"] = .string(record.conversation)
+        }
+        if type == "reaction", (plain["reactorName"]?.text ?? "").isEmpty { plain["reactorName"] = plain["sender"] }
+        if type == "edit", plain["editedAt"] == nil { plain["editedAt"] = plain["ts"] }
+        return await sendSealed(record, plain, reached: 0, notify: type == "thread-reply") ? plain : nil
+    }
+
+    @discardableResult
+    public func deleteForEveryone(_ conversation: String, messageId: String) async -> Bool {
+        guard !messageId.isEmpty, let record = record(for: conversation) else { return false }
+        let original = refBooks[record.id]?.refs[messageId]
+        guard await sendFrame(conversation, type: "delete", fields: ["target": .string(messageId)]) != nil else {
+            return false
+        }
+        outbox[record.id]?.removeAll { $0.messageId == messageId }
+        if let original, let connection = sockets[record.id]?.connection {
+            try? await connection.send(text: JSON.encode(DirectMessageFrames.supersededFrame([original])))
+        }
+        return true
     }
 
     @discardableResult
@@ -890,6 +1134,15 @@ public final class DirectMessageService {
         backoff = [:]
         outbox = [:]
         liveBudgets = [:]
+        receipts = [:]
+        receiptOrder = []
+        refBooks = [:]
+        pendingDeletes = [:]
+        pendingDeleteOrder = [:]
+        removedIds = []
+        viewOnce.clear()
+        heldReceipts = [:]
+        heldOrder = []
     }
 
     private func call(_ method: String, _ path: String, _ body: JSONObject?) async throws -> JSONObject {
@@ -912,5 +1165,146 @@ extension DirectMessageService {
             clock: clock, sleep: sleeper)
         onLiveFrame = { [weak engine] plain, conversation in engine?.receive(plain, conversation: conversation) }
         return engine
+    }
+}
+
+extension DirectMessageService {
+    func viewOnceTransfer(_ record: DirectConversation) -> ViewOnceTransfer {
+        ViewOnceTransfer(api: api, conversationId: record.id)
+    }
+
+    func applyViewOnce(_ media: String, _ state: ViewOnceState) {
+        viewOnce.apply(media: media, state: state)
+        if state.isTerminal, let entry = viewOnce.entry(media: media),
+            let id = records.first(where: { $0.conversation == entry.conversation })?.id
+        {
+            forgetOutbox(media: media, conversationId: id)
+            if !viewOnce.holdsReceipt(media: media) { releaseReceipt(entry.messageId) }
+        }
+    }
+
+    public var heldReceiptCount: Int { heldReceipts.count }
+
+    func holdReceipt(_ messageId: String, conversationId: String, ref: String) {
+        guard !ref.isEmpty else { return }
+        var held = heldReceipts[messageId] ?? (conversationId, [])
+        if !held.refs.contains(ref) { held.refs.append(ref) }
+        if heldReceipts[messageId] == nil { heldOrder.append(messageId) }
+        heldReceipts[messageId] = held
+        let limit = DirectMessageFrames.maxMessagesPerRoom * 4
+        while heldOrder.count > limit { heldReceipts.removeValue(forKey: heldOrder.removeFirst()) }
+    }
+
+    func releaseReceipt(_ messageId: String) {
+        guard let held = heldReceipts[messageId], let connection = sockets[held.conversationId]?.connection else { return }
+        heldReceipts.removeValue(forKey: messageId)
+        heldOrder.removeAll { $0 == messageId }
+        Task {
+            for start in stride(from: 0, to: held.refs.count, by: DirectMessageFrames.receivedRefsPerFrame) {
+                let chunk = Array(
+                    held.refs[start..<min(start + DirectMessageFrames.receivedRefsPerFrame, held.refs.count)])
+                try? await connection.send(text: JSON.encode(DirectMessageFrames.receivedFrame(chunk)))
+            }
+        }
+    }
+
+    func forgetOutbox(media: String, conversationId: String) {
+        guard var entries = outbox[conversationId] else { return }
+        entries.removeAll { $0.plain[ViewOnceFrames.field]?.objectValue?["media"]?.text == media }
+        outbox[conversationId] = entries.isEmpty ? nil : entries
+    }
+
+    public func refreshViewOnce(_ conversation: String) async {
+        guard let record = record(for: conversation) else { return }
+        let transfer = viewOnceTransfer(record)
+        for media in viewOnce.pendingConsume.sorted() {
+            guard let entry = viewOnce.entry(media: media), entry.conversation == conversation else { continue }
+            do {
+                _ = try await transfer.consume(media)
+            } catch ViewOnceError.gone {
+            } catch {
+                continue
+            }
+            viewOnce.setConsumePending(media, false)
+            releaseReceipt(entry.messageId)
+        }
+        let ids = viewOnce.unresolved(conversation)
+        guard !ids.isEmpty, let statuses = try? await transfer.statuses(ids) else { return }
+        for status in statuses { applyViewOnce(status.id, status.state) }
+    }
+
+    public func sendViewOnce(
+        _ conversation: String, kind: ViewOnceKind, mime: String, data: Data, durationMs: Int64,
+        progress: (@MainActor (Double) -> Void)? = nil
+    ) async throws {
+        guard let record = record(for: conversation) else { throw ViewOnceError.unavailable }
+        if data.isEmpty { throw ViewOnceError.empty }
+        if data.count + ViewOnceFrames.tagBytes > kind.maxBytes { throw ViewOnceError.tooLarge }
+        if durationMs < 0 || durationMs > kind.maxDurationMs { throw ViewOnceError.tooLong }
+        let type = mime.lowercased()
+        let sealed = try ViewOnceCrypto.seal(Array(data))
+        let transfer = viewOnceTransfer(record)
+        let mediaId = try await transfer.upload(kind: kind, body: sealed.body, durationMs: durationMs, progress: progress)
+        let media = ViewOnceMedia(
+            kind: kind, media: mediaId, key: sealed.key, iv: sealed.iv,
+            mime: type.hasPrefix(kind.mimePrefix) ? type : kind.defaultMime, durationMs: durationMs,
+            size: sealed.body.count, parts: ViewOnceFrames.parts(size: sealed.body.count))
+        let plain = frame(
+            record, type: "chat",
+            extra: ["text": .string(kind.fallbackText), ViewOnceFrames.field: ViewOnceFrames.build(media)])
+        let messageId = plain["id"]?.text ?? ""
+        viewOnce.register(messageId: messageId, conversation: record.conversation, media: media, mine: true)
+        guard await sendSealed(record, plain, reached: 0) else {
+            viewOnce.apply(media: mediaId, state: .failed)
+            _ = try? await transfer.withdraw(mediaId)
+            throw ViewOnceError.unavailable
+        }
+    }
+
+    public func playViewOnce(_ messageId: String, progress: (@MainActor (Double) -> Void)? = nil) async throws
+        -> ViewOnceClip
+    {
+        guard let entry = viewOnce.entry(messageId) else { throw ViewOnceError.unavailable }
+        guard !entry.mine else { throw ViewOnceError.refused("recipient_only") }
+        guard entry.state == .ready, let material = entry.material else { throw ViewOnceError.gone(entry.state) }
+        guard let record = record(for: entry.conversation) else { throw ViewOnceError.unavailable }
+        let transfer = viewOnceTransfer(record)
+        viewOnce.setBusy(messageId, true)
+        defer { viewOnce.setBusy(messageId, false) }
+        do {
+            let plain = try await transfer.download(material, progress: progress)
+            return ViewOnceClip(
+                messageId: messageId, kind: entry.kind, mime: entry.mime, durationMs: entry.durationMs, data: Data(plain))
+        } catch ViewOnceError.gone {
+            let state = (try? await transfer.status(material.media))?.state ?? .expired
+            let final: ViewOnceState = state.isTerminal ? state : .expired
+            applyViewOnce(material.media, final)
+            throw ViewOnceError.gone(final)
+        }
+    }
+
+    public func consumeViewOnce(_ messageId: String) async {
+        guard let entry = viewOnce.entry(messageId), !entry.mine,
+            let record = record(for: entry.conversation)
+        else { return }
+        let media = entry.mediaId
+        viewOnce.setConsumePending(media, true)
+        applyViewOnce(media, .opened)
+        do {
+            _ = try await viewOnceTransfer(record).consume(media)
+        } catch ViewOnceError.gone {
+        } catch {
+            return
+        }
+        viewOnce.setConsumePending(media, false)
+        releaseReceipt(messageId)
+    }
+
+    public func withdrawViewOnce(_ messageId: String) async throws {
+        guard let entry = viewOnce.entry(messageId), entry.mine, !entry.state.isTerminal,
+            let record = record(for: entry.conversation)
+        else { throw ViewOnceError.unavailable }
+        let state = try await viewOnceTransfer(record).withdraw(entry.mediaId)
+        applyViewOnce(entry.mediaId, state.isTerminal ? state : .withdrawn)
     }
 }

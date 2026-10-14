@@ -163,8 +163,18 @@ async def notify_repo_mirrors(
             }
         except Exception:
             core_nodes = set()
+    core_owners = set(core_nodes)
+    core_owners_of = globals().get("hosted_core_owners")
+    if core_nodes and callable(core_owners_of):
+        try:
+            core_owners |= {
+                str(value or "").strip().lower()
+                for value in (core_owners_of(env) or [])
+            }
+        except Exception:
+            pass
     targets = set(mirror_nodes)
-    if source_owner in core_nodes:
+    if source_owner in core_owners:
         targets |= core_nodes
     ownership_complete = True
     if mirror_nodes:

@@ -397,7 +397,7 @@ struct RepoWorktreeDetailScreen: View {
             }
             .padding(20)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("Worktree: \(branch.name)")
         .navigationBarTitleDisplayMode(.inline)
     }

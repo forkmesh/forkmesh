@@ -51,12 +51,24 @@ struct StatusScreen: View {
                     StatusCurrentGrid(current: report.current)
                 }
                 Section("Systems") {
-                    ForEach(report.coreSystems) { system in
+                    ForEach(report.serviceSystems) { system in
                         NavigationLink {
                             StatusSystemDetail(system: system)
                                 .shellPageClearance()
                         } label: {
                             StatusSystemRow(system: system)
+                        }
+                    }
+                }
+                if !report.nodeSystems.isEmpty {
+                    Section("Nodes") {
+                        ForEach(report.nodeSystems) { system in
+                            NavigationLink {
+                                StatusSystemDetail(system: system)
+                                    .shellPageClearance()
+                            } label: {
+                                StatusSystemRow(system: system)
+                            }
                         }
                     }
                 }
@@ -95,7 +107,7 @@ struct StatusCurrentGrid: View {
             row("Nodes online", current.onlineNodes.map(String.init) ?? "–")
             row("Errors, 24 h", current.errors24h.map(String.init) ?? "–")
             if let online = current.mainnodeOnline {
-                row("Main node", online ? "online" : "offline")
+                row("Verified mirror", online ? "online" : "offline")
             }
             if current.lastSampleTs > 0 {
                 row("Last check", InsightsTime.relative(current.lastSampleTs))
@@ -170,7 +182,9 @@ struct StatusSystemDetail: View {
             Section {
                 LabeledContent("State", value: system.state.label)
                 LabeledContent("Uptime, 24 h", value: StatsFormat.percent(system.uptime24h, digits: 2))
-                LabeledContent("Uptime, 30 days", value: StatsFormat.percent(system.uptime30d, digits: 2))
+                if !system.isNode {
+                    LabeledContent("Uptime, 30 days", value: StatsFormat.percent(system.uptime30d, digits: 2))
+                }
                 LabeledContent("Checks, 24 h", value: "\(system.checks24h)")
                 LabeledContent("Failures, 24 h", value: "\(system.failures24h)")
                 if system.observedAt > 0 {

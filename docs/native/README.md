@@ -50,9 +50,9 @@ The Commits screen's Graph tab (lane graph, where Desktop, Web and Mobile are):
 
 | Path | Responsibility |
 | --- | --- |
-| `native/ios/ForkMeshCore/` | Swift package with everything that is not a view; builds and tests on Linux. Modules FMBase, FMCrypto, FMNet, FMGit, FMDiff, FMVault, FMAccount, FMApi, FMChat, FMCode, FMLocalAI, FMAgents, FMTools, FMAssistant. |
+| `native/ios/ForkMeshCore/` | Swift package with everything that is not a view; builds and tests on Linux. Modules FMBase, FMCrypto, FMNet, FMGit, FMDiff, FMVault, FMAccount, FMApi, FMChat, FMCode, FMLocalAI, FMAgents, FMTools, FMAssistant, FMPush. |
 | `native/ios/ForkMesh/` | The app target: SwiftUI views and iOS glue (`App/`, `Platform/`, `Theme/`, `Kit/`, `Shell/`, `Features/`). |
-| `native/ios/NotificationService/`, `native/ios/Shared/` | Notification service extension; code compiled into both targets. |
+| `native/ios/NotificationService/`, `native/ios/Shared/` | Notification service extension (links the `ForkMeshPushCore` product: FMBase, FMCrypto, FMPush); code compiled into both targets. |
 | `native/ios/Config/` | Info.plists, entitlements, `Version.xcconfig`, `Package.resolved`, `ExportOptions.plist`. |
 | `native/ios/tools/` | `generate_project.rb` (the Xcode project is generated), `check_swift_syntax.sh`, `asc_bundle_ids.py`. |
 | `native/ios/docs/` | One API note per core module. |
@@ -63,7 +63,7 @@ The Commits screen's Graph tab (lane graph, where Desktop, Web and Mobile are):
 | `.forkmesh/shortcuts/deploy-native-ios-ad-hoc-mac.sh` | The same ad hoc deploy on the office MacBook instead of Codemagic (no Codemagic minutes): runs `tools/mac_adhoc_deploy.py --execute`, which waits for the cores to serve `main`, builds Codemagic's `ios-native-adhoc` steps on the Mac with the live log, then publishes the IPA and emails the install link. See [MAC_BUILD.md](MAC_BUILD.md), "The shortcut". |
 | `.forkmesh/shortcuts/build-desktop-macos-mac.sh` | Builds the universal macOS desktop `.dmg` from `main` on the office MacBook: runs `tools/mac_adhoc_deploy.py --desktop --execute` and copies the image to `~/projects/forkmesh/data/mac-adhoc/desktop/<time>/`. The iPhone's Desktops page runs both Mac shortcuts from the Office MacBook row ([MAC_BUILD.md](MAC_BUILD.md), "The macOS desktop shortcut") |
 | `.forkmesh/shortcuts/deploy-native-ios-app-store-mac.sh` | Ships `main` to the App Store for review from the office MacBook: runs `tools/mac_adhoc_deploy.py --app-store --execute`, which waits for the cores to serve `main`, builds Codemagic's `ios-native-release` steps on the Mac with `FORKMESH_IOS_APP_STORE=1`, uploads the build, adds it to TestFlight internal testing and submits it for App Review. See [MAC_BUILD.md](MAC_BUILD.md), "The App Store shortcut". |
-| `.forkmesh/shortcuts/ios-app-store-status.sh` | Read-only report on the iOS app in App Store Connect: runs `tools/mac_adhoc_deploy.py --store-status`, using `ASC_KEY_ID` and `ASC_ISSUER_ID` from its environment or desktop Actions variables, then the authenticated office-Mac connection if needed. It shows App Store versions (waiting for review, in review, rejected), App Review submissions, the newest TestFlight builds and their groups, every TestFlight group, tester feedback and customer reviews ([IOS_RELEASE.md](IOS_RELEASE.md), "Store status shortcut"). Added 2026-10-09. |
+| `.forkmesh/shortcuts/ios-app-store-status.sh` | Read-only report on the iOS app in App Store Connect: runs `tools/mac_adhoc_deploy.py --store-status`, using `ASC_KEY_ID` and `ASC_ISSUER_ID` from its environment or desktop Actions variables, then the authenticated office-Mac connection if needed. It shows App Store versions (waiting for review, in review, rejected), App Review submissions, the app's downloads (all time and the last 7 and 30 days, from the Sales reports; needs `ASC_VENDOR_NUMBER`, added 2026-10-13), the newest TestFlight builds and their groups, every TestFlight group, tester feedback and customer reviews ([IOS_RELEASE.md](IOS_RELEASE.md), "Store status shortcut"). Added 2026-10-09. |
 | `.forkmesh/shortcuts/testflight-feedback-to-tasks.sh` | Turns TestFlight tester feedback into tasks in `forkmesh/forkmesh`, each with the tester's comment, device, build and screenshots attached, and deletes a feedback from App Store Connect once its task is done: runs `tools/testflight_feedback_tasks.py` (`--dry-run` changes nothing). See [IOS_RELEASE.md](IOS_RELEASE.md), "TestFlight feedback to tasks". |
 | `.forkmesh/shortcuts/task-mobile-app-store-deploy.sh` | Creates a reminder task, "Reminder: deploy the iOS app to the App Store", in `forkmesh/forkmesh`, assigned to Kaif (`mdkaifansari04`), through `create_task` in `tools/forkmesh_mcp_server.py`, signed with this node's identity as the desktop account. The details give the iOS `MARKETING_VERSION`, the newest `v*` tag and `main`'s head, the `native/ios/tools/asc_appstore.py status` and `plan` commands, how to start `ios-native-release` with `FORKMESH_IOS_APP_STORE=1`, and a link to [IOS_RELEASE.md](IOS_RELEASE.md), "App Store rollout for a tagged release". Added 2026-10-07 as a task for the Mobile special agent; the same day it became a plain reminder for Kaif, who does the App Store releases, and the instructions written for the agent were dropped. |
 | `.forkmesh/shortcuts/task-mobile-play-store-deploy.sh` | Creates a reminder task, "Reminder: deploy the Android app to the Play Store", in `forkmesh/forkmesh`, assigned to Kaif (`mdkaifansari04`), the same way as the App Store reminder above. The details give the Android `versionName` and `versionCode` defaults from `native/android/app/build.gradle.kts`, the newest `v*` tag and `main`'s head, and the steps: sign in to Play Console with the ForkMesh Google account already created, build `:app:bundleRelease` as `com.forkmesh.forkmesh` with the upload key, keep Play App Signing (or request an upload key reset if Play holds an older upload key), fill in the listing, Data safety, content rating and privacy policy, and go through Internal testing to Production. Added 2026-10-09 at the user's request. |
@@ -91,8 +91,9 @@ The Commits screen's Graph tab (lane graph, where Desktop, Web and Mobile are):
   is its id. Production owns the unprefixed legacy namespace; every other
   project uses `p/<projectId>/`. A project made from a name alone has
   `hasInstance` false, a `local-<slug>-<random>` id and no server URL: it is
-  linked to no instance and shows "Choose an instance" until one is attached
-  (see 2026-10-13 below). A project row may name a `logo` file.
+  linked to no instance and works on the device alone; "Choose an instance"
+  is offered, never required (see 2026-10-13 below). A project row may name a
+  `logo` file.
 - **Relay features.** `/api/version` declares a `features` list; the core
   (`accounts`, `repositories`, `repoRead`) is required, every other feature
   gates its own UI, and a missing one leaves the UI absent rather than broken.
@@ -269,6 +270,9 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
     every `ChatRow`); pictures, backgrounds and avatars go through
     `FmImageCache` (decoded once, display-ready, 48 MB cap) instead of
     `UIImage(data:)` in `body`; status times reuse their `DateFormatter`s.
+    Main's own avatar cache from the same day (`FmAvatarImages`, a
+    256-entry `NSCache` for first-frame avatars) now reads through
+    `FmImageCache`, so the app keeps one image cache.
   - Market: `MarketModel.visible` groups nested packages in one pass
     (160 packages, Linux release: 7.9 ms to 0.5 ms per evaluation).
   - Measured: before-and-after numbers for the tour were not recorded; the
@@ -291,6 +295,47 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
     account the relay never connects, so the relay fixes are covered by the
     unit tests, not the tour.
 
+- 2026-10-13 (branch 1974, secure chat, round 2): the iOS chat list shows a
+  second, muted line per channel and direct message with the newest
+  top-level message the phone holds ("You: ..." for your own, "<sender>: ..."
+  in channels, "📎 <file>" for a file), a short time on the name line, and
+  the other person's profile picture with the presence dot on direct-message
+  rows. Asked: "Make sure threads still work too also in the chat list show
+  the last line per channel and per message with users also show their user
+  icon in the chat list". Thread replies in direct messages and office
+  channels were checked with new tests; no regression found. Details:
+  [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md), "Chat list
+  last line, avatars and threads". The SwiftUI row is parse-checked only.
+- 2026-10-13 (branch 1974, secure chat): iOS draws Signal-style receipt marks
+  on every own message (sending, sent, delivered, read; channels stop at
+  sent), lets you delete for everyone what you sent, and react to, edit and
+  reply in a thread on messages in direct messages and office rooms. Chat
+  pushes now show the message: the extension fetches the still-encrypted
+  frame (`/pending?ref=`), decrypts it with the device key and shows sender
+  and text, as Signal does; Settings, Notifications has "Notification
+  content" (Name and message, Name only, No name or message). Asked: "add
+  these symbols for each chat message", "make it so that you can delete for
+  everyone something you sent", "make it so that chat text shows in the push
+  notifications - signal has a way of doing it securely so lets do it like
+  they do", "also have it so you can reply and react to chats from others in
+  p2p". The new FMPush module holds the testable push logic and is linked
+  into the extension as `ForkMeshPushCore`. Details:
+  [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md), "Receipt
+  marks, deletes, reactions and replies in direct messages" and "Message text
+  in push notifications". Not verified on a device: the extension's keychain
+  read of the device key, the PBKDF2 time inside the extension, and the
+  SwiftUI views (parse-checked only).
+- 2026-10-13: a project does not need an instance. Asked: "Don't make
+  instance a requirement projects can manage repos on the device for example
+  without an instance". The full-screen **Choose an instance** gate is gone: a
+  project with no instance opens the shell (no sign-in or guest step), so its
+  on-device repositories and other local features work. The shell shows an
+  "On this device only" banner (`NoInstanceBanner`, in place of the offline
+  banner, since there is no relay to reach) whose **Choose instance** opens the
+  chooser as a sheet (iOS, from `SignInPresenter`) or a full-screen dialog
+  (Android, `ChooseInstanceHost` in `AccountFeature.Gate`); its **Not now**
+  closes it. An action that needs an account (`requireAccount`, `openSignIn`)
+  opens the chooser instead of sign-in and does not go ahead.
 - 2026-10-13: a new project is not linked to any instance unless you name
   one. Before, a project made from a name alone stored the build's default
   server URL, so it signed in on app.forkmesh.com and listed that instance's

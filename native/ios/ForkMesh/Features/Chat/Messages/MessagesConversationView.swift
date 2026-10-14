@@ -26,6 +26,7 @@ struct MessagesConversationView<Drawer: View>: View {
     @State private var viewing: MessagesPhotoBox?
     @State private var lastSeenId: String = ""
     @State private var touching: Bool = false
+    @State private var viewOnceOpen: ViewOnceEntry?
 
     private var look: ChatLook { hub.conversationLook }
 
@@ -96,6 +97,7 @@ struct MessagesConversationView<Drawer: View>: View {
             })
         }
         .fullScreenCover(item: $viewing) { (box: MessagesPhotoBox) in MessagesPhotoViewer(attachment: box.attachment) }
+        .fullScreenCover(item: $viewOnceOpen) { (entry: ViewOnceEntry) in MessagesViewOnceViewer(hub: hub, entry: entry) }
     }
 
     private func transcript(_ palette: MessagesColors) -> some View {
@@ -148,14 +150,26 @@ struct MessagesConversationView<Drawer: View>: View {
         case .event(let event):
             MessagesSystemLine(text: event.text, colors: palette)
         case .message(let bubble):
-            MessagesBubbleRow(
-                bubble: bubble, group: group, colors: palette, actions: actions(bubble.row),
-                onTapback: {
-                    FmHaptics.selection()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tapbackTarget = bubble.row }
-                },
-                onPhoto: { viewing = MessagesPhotoBox(attachment: $0) })
+            if let entry = hub.viewOnce(for: bubble.row.message) {
+                MessagesViewOnceRow(
+                    bubble: bubble, entry: entry, group: group, colors: palette,
+                    busy: hub.direct?.viewOnce.isBusy(entry.messageId) ?? false,
+                    onOpen: { viewOnceOpen = entry },
+                    onUnsend: { Task { await hub.unsendViewOnce(entry.messageId) } })
+            } else {
+                messageRow(bubble, palette: palette, group: group)
+            }
         }
+    }
+
+    private func messageRow(_ bubble: ChatBubble, palette: MessagesColors, group: Bool) -> some View {
+        MessagesBubbleRow(
+            bubble: bubble, group: group, colors: palette, actions: actions(bubble.row),
+            onTapback: {
+                FmHaptics.selection()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tapbackTarget = bubble.row }
+            },
+            onPhoto: { viewing = MessagesPhotoBox(attachment: $0) })
     }
 
     private func stopSharing(_ conversation: String) {
@@ -233,6 +247,7 @@ struct MessagesConversationView<Drawer: View>: View {
                     Color.clear.frame(width: 44, height: 44)
                 }
             }
+            .zIndex(1)
             Button(action: { details = true }) {
                 VStack(spacing: 4) {
                     MessagesConversationAvatar(hub: hub, size: 50)
@@ -282,6 +297,7 @@ struct MessagesConversationView<Drawer: View>: View {
                     Color.clear.frame(width: 44, height: 44)
                 }
             }
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, FmSpace.x1)
@@ -303,6 +319,7 @@ struct MessagesHeaderLayout: Layout {
         var title: CGSize
         var trailing: CGSize
         var titleX: CGFloat
+        var trailingX: CGFloat
 
         var height: CGFloat { max(leading.height, title.height, trailing.height) }
     }
@@ -316,7 +333,8 @@ struct MessagesHeaderLayout: Layout {
         let low: CGFloat = leading.width + spacing
         let high: CGFloat = width - trailing.width - spacing - title.width
         let titleX: CGFloat = max(low, min((width - title.width) / 2, high))
-        return Frames(leading: leading, title: title, trailing: trailing, titleX: titleX)
+        let trailingX: CGFloat = max(low, width - trailing.width)
+        return Frames(leading: leading, title: title, trailing: trailing, titleX: titleX, trailingX: trailingX)
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -331,7 +349,7 @@ struct MessagesHeaderLayout: Layout {
         subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY), proposal: ProposedViewSize(laid.leading))
         subviews[1].place(at: CGPoint(x: bounds.minX + laid.titleX, y: bounds.minY), proposal: ProposedViewSize(laid.title))
         subviews[2].place(
-            at: CGPoint(x: bounds.maxX - laid.trailing.width, y: bounds.minY), proposal: ProposedViewSize(laid.trailing))
+            at: CGPoint(x: bounds.minX + laid.trailingX, y: bounds.minY), proposal: ProposedViewSize(laid.trailing))
     }
 }
 
@@ -406,25 +424,13 @@ struct MessagesConversationAvatar: View {
 struct MessagesPersonAvatar: View {
     let name: String
     let size: CGFloat
-    @State private var png: String = ""
     @State private var pictures: MessagesPeoplePictures = MessagesPeoplePictures.shared
+    @State private var avatars: ChatAvatarCache = ChatAvatarCache.shared
 
     var body: some View {
         let custom: String = pictures.picture(for: name)
-        FmAvatar(name: name, avatarPng: custom.isEmpty ? png : custom, size: size, fontSize: size * 0.42)
-            .task(id: name) { await load() }
-    }
-
-    private func load() async {
-        let trimmed: String = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, let api = Services.get(ApiService.self) else { return }
-        if let cached = ChatAvatarCache.shared.pngs[trimmed] {
-            png = cached
-            return
-        }
-        let fetched: String = await api.accountAvatarPng(trimmed)
-        ChatAvatarCache.shared.pngs[trimmed] = fetched
-        png = fetched
+        FmAvatar(name: name, avatarPng: custom.isEmpty ? avatars.png(for: name) : custom, size: size, fontSize: size * 0.42)
+            .task(id: name) { await avatars.refresh(name) }
     }
 }
 
@@ -442,6 +448,7 @@ struct MessagesComposer: View {
     @State private var background: Bool = false
     @State private var importing: Bool = false
     @State private var recorder: MessagesVoiceRecorder = MessagesVoiceRecorder()
+    @State private var viewOnceRecording: MessagesViewOnceRequest?
 
     private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -466,6 +473,9 @@ struct MessagesComposer: View {
         .sheet(isPresented: $background) { MessagesBackgroundPicker(hub: hub) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
             if case .success(let url) = result { sendFile(url) }
+        }
+        .fullScreenCover(item: $viewOnceRecording) { (request: MessagesViewOnceRequest) in
+            MessagesViewOnceRecorderSheet(hub: hub, kind: request.kind)
         }
         .fullScreenCover(isPresented: $camera) {
             MessagesCameraPicker(
@@ -506,6 +516,16 @@ struct MessagesComposer: View {
                 if !OfficeFrames.isOffice(hub.currentConversation) {
                     Button(action: { importing = true }) { Label("File", systemImage: "paperclip") }
                 }
+            }
+            if hub.canSendViewOnce {
+                Button(action: { viewOnceRecording = MessagesViewOnceRequest(kind: .video) }) {
+                    Label("View-once Video", systemImage: "video.badge.ellipsis")
+                }
+                .accessibilityLabel("Record a view-once video message")
+                Button(action: { viewOnceRecording = MessagesViewOnceRequest(kind: .voice) }) {
+                    Label("View-once Voice", systemImage: "waveform.badge.mic")
+                }
+                .accessibilityLabel("Record a view-once voice message")
             }
             if hub.canChangeLook {
                 Button(action: { background = true }) { Label("Background", systemImage: "photo.artframe") }

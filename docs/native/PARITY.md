@@ -89,6 +89,63 @@ Passkeys/WebAuthn and QR device linking are not rows; see section 2.3.
 | 19 | Theme, accents, frosted surfaces, design kit | **Done**: `NI/ForkMesh/Theme/*`, `NI/ForkMesh/Kit/*` | **Done**: `A/ui/theme/*`, `A/ui/kit/*` | — | — |
 | 20 | World (the `world-general` room plus the external World link) | **Done**: `HomeShell.swift` (`FORKMESH_WORLD_URL`) | **Missing** | — | — |
 
+Light-mode text contrast (2026-10-13). Settings subtitles, device timelines,
+status badges and placeholders were hard to read in light mode: tertiary text
+was 40% black (about 2.7:1 on the page), the warning amber 3.4:1, and the
+offline grey 2.3:1. Every light-mode text colour now clears WCAG AA (4.5:1)
+on `bgBase`, `bgRaised` and `bgOverlay` and inside its own 11% status-badge
+tint. Both `FmColors.swift` and `ForkMeshTheme.kt` carry the same values:
+
+| Token | Was | Now | Contrast on `bgBase` |
+|---|---|---|---|
+| `textSecondary` | 60% `#0A0A0A` | 72% (`0xB8`) | 8.0:1 |
+| `textTertiary` | 40% | 60% (`0x99`) | 5.1:1 |
+| `success` | `#148A45` | `#0F7A3B` | 5.1:1 |
+| `warning` | `#B7791F` | `#8F5A0A` | 5.4:1 |
+| `offline` (palette, light only) | `#A0A7B2` | `#5F6672` (`offlineOnLight`) | 5.4:1 |
+
+Dark mode is unchanged. `FmColors.offline` stays the raw grey for presence
+dots; the Settings device rows and relay badge read the palette's `offline`, so
+they get the darker grey in light mode. `textDisabled` stays 25%, since
+disabled controls and chevrons are not body text. The accents are unchanged:
+the default blue `#007AFF` is 4.0:1 on white and teal 3.7:1, so they suit
+buttons and larger text rather than small captions.
+
+Accents and a background image (2026-10-13). Settings, General, Appearance
+offers twelve accents instead of three: blue, cyan, teal, green, lime, amber,
+orange, red, pink, violet, purple and graphite, in a grid that wraps. They are
+stored by name in `appearance/accent` as before, so a name an older build does
+not know still falls back to blue. iOS (`FmAccent`, `AccentChoice`) and Android
+(`AccentChoice` in `Appearance.kt`) carry the same names and values. Each new
+light-mode accent is a 600-700 shade that keeps white button labels at about
+4.5:1 or better; each dark-mode accent is a 300-400 shade under the near-black
+`onPrimary` label. The swatch's check mark now uses `onPrimary` too, because a
+white check vanished on the bright dark-mode swatches.
+
+iOS also takes a background image ("Choose image…" under the accents). The
+picture is downscaled to 2800 px on its long side, saved as a JPEG in
+Application Support `wallpapers/`, and named in `appearance/backgroundImage`;
+`appearance/backgroundDim` (0 to 90%, default 40%) lays `bgBase` at that
+opacity over it so text stays readable. `FmWallpaperBackdrop` draws it once,
+behind `AppHomeView`, and the palette's `wallpaper` flag makes the rest of the
+app let it through:
+
+- `fm.canvas` is clear with a background image and `bgBase` without one. Full
+  pages paint `fm.canvas` instead of `bgBase`; bars, inputs, chips, sheets and
+  the opaque reading surfaces (terminals, the diff viewer, the file viewer)
+  keep `bgBase`, so text that scrolls under them stays legible.
+- `listSurface` drops to 60% opacity, so explorer rows tint the picture rather
+  than hide it.
+- `HomeShell` gives each tab's `NavigationStack` a clear navigation container
+  background (iOS 18 and later) and hides the scroll-content background of
+  `List` and `Form`, whose rows keep their own grouped surface.
+- A chat's own conversation background, set in the conversation's details,
+  still wins over the app background.
+
+Liquid Glass (the bottom bar, top bar and prompt card) refracts whatever is
+under it, so with a background image the glass picks up its colours. Android
+has the accents but not the background image yet.
+
 ### 1.4 Code, repositories and Git
 
 | # | Feature | iOS native | Android native | Effort | Depends on |
@@ -143,7 +200,7 @@ calories, and the wallet is the read-only funding panel in #33.
 | 48 | Code-push pings (`codePushes` switch; a push opens the commit or branch) | **Done** (WS2): "Code pushes" switch; `PushOpen.isCodePush`; `NotificationDeepLink` parses `commits/<branch>` into `branch` (selecting that branch in the commits tab is still FMCode work) | **Missing** | S | #47 |
 | 49 | Live account events (`/api/nodes/events` doorbell) and the agent-list doorbell (`agents`, `cloud-agents` topics) | **Done**: `NIC/FMApi/Services/AccountEventChannel.swift`, `AgentListSignal` | **Done**: `C/api/AccountEventLoop.kt`, `A/feature/account/AccountEventChannel.kt` | — | — |
 | 50 | APNs register, unregister, environment, test push, badge, pending tap | **Done** (WS2): client complete (`NIC/FMApi/Services/PushNotificationService.swift`, `NI/ForkMesh/Platform/ApplePushBridge.swift`); the server now sends each token under the bundle id it registered with (`apns_device_tokens.bundle_id`, 5.2) | **Missing**: no FCM, by design (`A/feature/account/PushNotificationService.kt`) | S (server) | — |
-| 51 | Notification service extension: `GET /api/push/alert`, portrait, badge, de-duplication; a direct message's sender portrait from `GET /api/accounts/<sender>` (the push's top-level `sender`, 2026-09-29) | **Done**: `NI/NotificationService/NotificationService.swift` | N/A (no push) | — | #50 |
+| 51 | Notification service extension: `GET /api/push/alert`, portrait, badge, de-duplication; a direct message's sender portrait from `GET /api/accounts/<sender>` (the push's top-level `sender`, 2026-09-29); chat and direct-message text decrypted on the phone from `GET …/pending?ref=` with the "Notification content" setting (2026-10-13, branch 1974) | **Done**: `NI/NotificationService/NotificationService.swift`, `NIC/FMPush/PushChat.swift` | Android has no push transport: the same decryption runs from the account event socket in `BackgroundLinkService` (branch 1974, Android agent; [ANDROID.md](ANDROID.md)) | — | #50 |
 | 52 | **Per-project push**: one keychain item per project host; the extension picks the project named in the push; a tap switches project | **Done** (WS2): per-host keychain items, extension picks the push's `origin`, per-project registration (`attach`), a tap switches project (`AppServices+Push.swift`); project id read from `settings.relays` until WS1's `ProjectScope` lands | **Missing** | M | #12, #50 |
 | 53 | In-app deep links from a ping (repo, tab, number, commit, branch) | **Done**: `NIC/FMApi/Models/NotificationDeepLink.swift`, `HomeShell.swift` | **Partial**: `C/model/NotificationDeepLink.kt`; its target is a placeholder | — | — |
 

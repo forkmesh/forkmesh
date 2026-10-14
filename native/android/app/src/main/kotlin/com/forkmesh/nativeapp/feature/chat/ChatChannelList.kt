@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.feature.chat
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,14 +28,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.chat.ChannelGroups
+import com.forkmesh.nativeapp.chat.ChatListPreview
+import com.forkmesh.nativeapp.chat.ChatListPreviews
 import com.forkmesh.nativeapp.chat.ChatVisitorPresence
 import com.forkmesh.nativeapp.chat.MESH_CONVERSATION
 import com.forkmesh.nativeapp.chat.MeshSnapshot
@@ -45,6 +52,7 @@ import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.account.settings.showUserStatusSheet
 import com.forkmesh.nativeapp.model.MemberGroup
 import com.forkmesh.nativeapp.model.UserStatus
+import com.forkmesh.nativeapp.ui.kit.FmAvatar
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
@@ -82,6 +90,10 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
     }
     val channels = remember(relay.channels, revision) { hub?.channels ?: relay.channels }
     val offices = remember(revision) { hub?.officeChannels.orEmpty() }
+    val directs = remember(relay, revision) { hub?.directListRows().orEmpty() }
+    val previews = remember(relay, revision, channels, offices) {
+        (channels + offices).mapNotNull { conversation -> hub?.listPreview(conversation)?.let { conversation to it } }.toMap()
+    }
     val rows = remember(channels, revision, groupsVersion) {
         ChannelGroups.visibleRows(ChannelGroups.layout(store?.state ?: ChannelGroups.State(), channels))
     }
@@ -170,6 +182,7 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
                             unread = relay.hasUnread(channel),
                             onTap = { select(channel) },
                             onLongPress = { menu = true },
+                            preview = previews[channel],
                         )
                         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             FmDropdownMenuItem("Move to group", icon = "folder_outlined", onClick = {
@@ -239,6 +252,7 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
                             unread = relay.hasUnread(conversation),
                             onTap = { select(conversation) },
                             onLongPress = { menu = true },
+                            preview = previews[conversation],
                         )
                         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             FmDropdownMenuItem("Messages disappear after…", icon = "timer_outlined", onClick = {
@@ -253,6 +267,34 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
                             }
                         }
                     }
+                }
+            }
+        }
+        if (directs.isNotEmpty()) {
+            item { Spacer(Modifier.height(FmSpace.x4)) }
+            item { FmSectionHeader(title = "Direct messages") }
+            item { Spacer(Modifier.height(FmSpace.x2)) }
+            for ((record, preview) in directs) {
+                item(key = "direct:${record.id}") {
+                    val presence = groups.firstOrNull { !it.self && it.name.equals(record.otherUser, ignoreCase = true) }?.let { group ->
+                        val now = System.currentTimeMillis()
+                        val away = group.online && group.members.firstNotNullOfOrNull { it.userStatus }?.visible(now)?.away == true
+                        when {
+                            away -> Fm.colors.warning
+                            group.online -> Fm.colors.success
+                            else -> Fm.colors.offline
+                        }
+                    }
+                    ChannelTile(
+                        title = record.otherUser,
+                        icon = "person_outline",
+                        selected = relay.currentConversation == record.conversation,
+                        unread = record.unreadCount > 0,
+                        onTap = { select(record.conversation) },
+                        preview = preview,
+                        unreadCount = record.unreadCount,
+                        leading = { DirectAvatar(record.otherUser, presence) },
+                    )
                 }
             }
         }
@@ -283,7 +325,17 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChannelTile(title: String, icon: String, selected: Boolean, unread: Boolean, onTap: () -> Unit, onLongPress: (() -> Unit)? = null) {
+private fun ChannelTile(
+    title: String,
+    icon: String,
+    selected: Boolean,
+    unread: Boolean,
+    onTap: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+    preview: ChatListPreview? = null,
+    unreadCount: Int = 0,
+    leading: (@Composable () -> Unit)? = null,
+) {
     val colors = Fm.colors
     Row(
         Modifier
@@ -295,22 +347,72 @@ private fun ChannelTile(title: String, icon: String, selected: Boolean, unread: 
             .padding(horizontal = FmSpace.x3, vertical = FmSpace.x2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FmIcon(icon, size = 17.dp, tint = if (selected) colors.accent else colors.textTertiary)
+        if (leading != null) leading() else FmIcon(icon, size = 17.dp, tint = if (selected) colors.accent else colors.textTertiary)
         Spacer(Modifier.width(FmSpace.x3))
-        Text(
-            title,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = Fm.text.bodyMedium.copy(
-                color = if (selected) colors.textPrimary else colors.textSecondary,
-                fontSize = FmType.small,
-                fontWeight = if (selected) FmType.emphasis else FmType.regular,
-            ),
-        )
-        if (unread) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = Fm.text.bodyMedium.copy(
+                        color = if (selected) colors.textPrimary else colors.textSecondary,
+                        fontSize = FmType.small,
+                        fontWeight = if (selected || unread) FmType.emphasis else FmType.regular,
+                    ),
+                )
+                val time = preview?.let { ChatListPreviews.timeLabel(it.timestamp, System.currentTimeMillis()) }.orEmpty()
+                if (time.isNotEmpty()) {
+                    Spacer(Modifier.width(FmSpace.x2))
+                    Text(time, maxLines = 1, style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+                }
+            }
+            if (preview != null) {
+                Text(
+                    preview.line,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = Fm.text.bodySmall.copy(fontSize = FmType.meta, color = colors.textTertiary),
+                )
+            }
+        }
+        if (unreadCount > 0) {
+            Spacer(Modifier.width(FmSpace.x2))
+            Box(
+                Modifier.heightIn(min = 18.dp).background(colors.danger, CircleShape).padding(horizontal = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (unreadCount > 99) "99+" else unreadCount.toString(),
+                    style = Fm.text.labelMedium.copy(fontSize = FmType.micro, color = Color.White, fontWeight = FmType.emphasis),
+                )
+            }
+        } else if (unread) {
             Spacer(Modifier.width(FmSpace.x2))
             Box(Modifier.size(8.dp).background(colors.danger, CircleShape))
+        }
+    }
+}
+
+@Composable
+private fun DirectAvatar(name: String, presence: Color?) {
+    val avatar by produceState(Services.get<ApiService>()?.knownAccountAvatarPng(name).orEmpty(), name) {
+        val api = Services.get<ApiService>() ?: return@produceState
+        if (name.isBlank()) return@produceState
+        value = withContext(Dispatchers.IO) { runCatching { api.accountAvatarPng(name) }.getOrDefault("") }
+    }
+    Box(Modifier.size(28.dp)) {
+        FmAvatar(name = name.ifEmpty { "?" }, size = 28.dp, avatarPng = avatar, textStyle = Fm.text.bodySmall)
+        if (presence != null) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 1.dp, y = 1.dp)
+                    .size(10.dp)
+                    .background(presence, CircleShape)
+                    .border(2.dp, Fm.colors.bgRaised, CircleShape),
+            )
         }
     }
 }

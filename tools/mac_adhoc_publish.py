@@ -202,16 +202,30 @@ def record_mail_log_note(host: tuple[str, str, list[str]], note: dict) -> None:
 
 def send(host: tuple[str, str, list[str]], message: EmailMessage) -> None:
     _, ip, options = host
-    result = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", *options, f"root@{ip}",
-         f"/usr/sbin/sendmail -t -f {SENDER}"],
-        input=message.as_bytes(), capture_output=True, timeout=120, check=False)
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", *options, f"root@{ip}",
+             f"/usr/sbin/sendmail -t -f {SENDER}"],
+            input=message.as_bytes(), capture_output=True, timeout=120, check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SystemExit(f"sendmail on {ip} failed: {type(error).__name__}")
     failed = result.returncode != 0
     record_mail_log_note(host, mail_log_note(
         message, "failed" if failed else "accepted",
         f"sendmail exit {result.returncode}" if failed else ""))
     if failed:
         raise SystemExit(f"sendmail on {ip} failed: {result.stderr.decode(errors='replace')[-300:]}")
+
+
+def on_any_host(hosts: list[tuple[str, str, list[str]]], call):
+    failure: SystemExit | None = None
+    for host in hosts:
+        try:
+            return call(host)
+        except SystemExit as error:
+            failure = error
+            print(f"{host[0]}: {error}; trying the next core")
+    raise failure or SystemExit("no seed hosts")
 
 
 def parse_testers(output: str) -> dict:
@@ -358,12 +372,14 @@ def main(argv=None) -> int:
         return 0
 
     module = release_host()
-    hosts = module.seed_targets(module.parse_hosts(args.seed_hosts_file.read_text()),
-                                args.seed_ssh_key, args.seed_known_hosts)
+    hosts = module.seed_targets(
+        module.seed_hosts(args.seed_hosts_file.read_text()
+                          if args.seed_hosts_file.is_file() else ""),
+        args.seed_ssh_key, args.seed_known_hosts)
     if not hosts:
         raise SystemExit(f"no seed hosts in {args.seed_hosts_file}")
     recipients = list(dict.fromkeys(address.strip().lower() for address in args.to)) \
-        if args.to else early_ios_testers(hosts[0])
+        if args.to else on_any_host(hosts, early_ios_testers)
     if not recipients:
         print(f"No early iOS testers with a verified email; sending to {DEFAULT_TO}.")
         recipients = [DEFAULT_TO]
@@ -387,11 +403,14 @@ def main(argv=None) -> int:
     for address in recipients:
         if address in sent:
             continue
-        send(hosts[0], build_email(address, info, build, page, install, ipa_url))
+        message = build_email(address, info, build, page, install, ipa_url)
+        on_any_host(hosts, lambda host, m=message: send(host, m))
         sent.append(address)
         record(False)
     if not args.to:
-        pinged = ping_testers(hosts[0], ping_spec(manifest_digest, info, build["commit"])) or []
+        spec = ping_spec(manifest_digest, info, build["commit"])
+        pinged = next((result for result in (ping_testers(host, spec) for host in hosts)
+                       if result is not None), None) or []
     record(True)
     forkmesh_safe_delete.remove_tree(cas / "sha256" / digest[:2] / digest, cas, ignore_errors=True)
     print(f"Seeded to {len(hosts)} cores and emailed {len(recipients)}: {', '.join(recipients)}.")

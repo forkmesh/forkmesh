@@ -39,6 +39,20 @@ def test_rollout_is_fleet_order_without_any_leader_lookup(tmp_path):
     assert [n["name"] for n in order] == ["n1", "n2", "n3"]
 
 
+def test_the_first_node_of_a_rollout_rotates_with_the_release(tmp_path):
+    data = fleet(tmp_path)
+    firsts = {next_deploy.rollout_order(data, rev="%012x" % i)[0]["name"]
+              for i in range(40)}
+    assert firsts == {"n1", "n2", "n3"}
+    order = next_deploy.rollout_order(data, rev=REV)
+    assert sorted(n["name"] for n in order) == ["n1", "n2", "n3"]
+    assert order == next_deploy.rollout_order(data, rev=REV)
+
+
+def ips_in_order(data):
+    return [n["public_ipv4"] for n in next_deploy.rollout_order(data, rev=REV)]
+
+
 def test_restart_dry_run_runs_nothing(tmp_path):
     ssh = FakeSsh([leader_is("n2")])
     runner = Runner(execute=False)
@@ -73,14 +87,16 @@ def test_restart_lets_the_cluster_see_a_node_before_the_next_drains(
               ("203.0.113.11", "203.0.113.12", "203.0.113.13")}
     ssh = FakeSsh([(lambda host, script: "switch_to" in script, activate),
                    state_answer(states)])
-    next_deploy.restart(fleet(tmp_path), REV, ssh, Runner(execute=True),
+    data = fleet(tmp_path)
+    first, second, third = ips_in_order(data)
+    next_deploy.restart(data, REV, ssh, Runner(execute=True),
                         parallel=parallel,
                         settle=lambda seconds: events.append(seconds))
-    assert events[:2] == ["203.0.113.11", 3]
+    assert events[:2] == [first, 3]
     if parallel:
-        assert sorted(events[2:]) == ["203.0.113.12", "203.0.113.13"]
+        assert sorted(events[2:]) == sorted([second, third])
     else:
-        assert events[2:] == ["203.0.113.12", 3, "203.0.113.13"]
+        assert events[2:] == [second, 3, third]
 
 
 def test_restart_executes_in_order_and_stops_at_first_failed_gate(tmp_path):
@@ -91,14 +107,15 @@ def test_restart_executes_in_order_and_stops_at_first_failed_gate(tmp_path):
         code = 4 if host == "203.0.113.13" else 0
         return subprocess.CompletedProcess(["ssh"], code, b"", b"gate failed")
     old = "aaaaaaaaaaaa"
+    data = fleet(tmp_path)
     states = {"203.0.113.11": lambda: (REV, REV), "203.0.113.12": lambda: (REV, REV),
               "203.0.113.13": lambda: (old, old)}
     ssh = FakeSsh([(lambda host, script: "switch_to" in script, activate),
                    state_answer(states)])
     with pytest.raises(ToolError, match="n3 failed.*current aaaaaaaaaaaa"):
-        next_deploy.restart(fleet(tmp_path), REV, ssh, Runner(execute=True))
-    # n1, n2 done, n3 failed (and rolled back on the node, so no second try).
-    assert activations == ["203.0.113.11", "203.0.113.12", "203.0.113.13"]
+        next_deploy.restart(data, REV, ssh, Runner(execute=True))
+    expected = ips_in_order(data)
+    assert activations == expected[:expected.index("203.0.113.13") + 1]
     assert not any("/status" in script for _, script, _ in ssh.runs)
 
 
@@ -839,6 +856,26 @@ def test_ssh_starts_one_detached_master_per_node_and_tunnels_stay_separate(
     assert "[::1]:4002:127.0.0.1:4001" in popened[1]
 
 
+def test_ssh_mux_dir_falls_back_when_the_temp_path_is_too_long(
+        tmp_path, monkeypatch):
+    monkeypatch.delenv("FMNEXT_SSH_MUX_DIR", raising=False)
+    deep = tmp_path / ("x" * 80)
+    deep.mkdir()
+    runtime = tmp_path / "run"
+    runtime.mkdir()
+    name = "fmnext-ssh-%d" % os.getuid()
+    monkeypatch.setattr(next_common.tempfile, "tempdir", str(deep))
+    monkeypatch.setattr(next_common, "SSH_MUX_DIR_MAX",
+                        len(str(runtime / name)))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    ssh = next_common.Ssh(key=tmp_path / "k", known_hosts=tmp_path / "kh",
+                          run=lambda *a, **k: None, mux=True)
+    assert ssh.mux_dir() == runtime / name
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(deep))
+    assert ssh.mux_dir() is None
+    assert "ControlPath=none" in ssh.options()
+
+
 def test_wheels_go_to_a_node_only_when_it_lacks_them(tmp_path, monkeypatch):
     wheels = fake_wheels(tmp_path, monkeypatch)
     tarball = tmp_path / ("fmnext-%s.tar.gz" % REV)
@@ -861,24 +898,21 @@ def test_wheels_go_to_a_node_only_when_it_lacks_them(tmp_path, monkeypatch):
 
 
 def test_join_tree_carries_only_the_public_addresses(sandbox, tmp_path):
-    next_common.save_json(sandbox / "fleet-instances.json", {
-        "fmnext-core-1": {"id": "x", "plan": "p", "region": "ewr",
-                          "ip": "203.0.113.11", "ipv6": "2001:19f0:ffff::11"},
-        "fmnext-core-2": {"id": "y", "ip": "203.0.113.12"},
-        "fmnext-core-3": {"id": "z", "ip": "203.0.113.13"},
-        "fmnext-run-1": {"id": "w", "ip": "203.0.113.21"}})
+    from fakes import repo_fleet_instances
+    instances = repo_fleet_instances()
+    private = {label: dict(info, id="id-" + label, plan="p", region="ewr")
+               for label, info in instances.items()}
+    next_common.save_json(sandbox / "fleet-instances.json", private)
     stage = tmp_path / "stage"
     next_deploy.stage_join_tree(stage, state={})
     written = json.loads((stage / "deploy" / "fleet-instances.public.json").read_text())
-    assert written["fmnext-core-1"] == {"ip": "203.0.113.11", "ipv6": "2001:19f0:ffff::11"}
-    assert written["fmnext-run-1"] == {"ip": "203.0.113.21"}
+    assert written == instances
     import render
     fleet = render.load_fleet(
         stage / "deploy" / "fleet.toml", state={},
         instances_path=stage / "deploy" / "fleet-instances.public.json")
     assert [n["public_ipv4"] for n in fleet["nodes"]] == [
-        "203.0.113.11", "203.0.113.12", "203.0.113.13"]
-
+        instances[n["label"]]["ip"] for n in fleet["nodes"]]
 
 def test_prune_dist_keeps_newest_releases_and_the_named_one(tmp_path):
     names = ["%012x" % n for n in range(9)]

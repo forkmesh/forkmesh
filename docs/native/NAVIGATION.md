@@ -2117,6 +2117,25 @@ longer lifted above that footer, so it reaches the bottom edge of the screen.
 After a loaded core, runner or service check reports trouble, the top-right
 account-avatar dot is red while the relay itself remains connected.
 
+### The bar touches the bottom of the phone (2026-10-13, iPhone)
+
+The user asked for the bottom bar to move all the way down until it touches
+the bottom of the phone.
+
+- `HomeShell.barStack`'s `.ignoresSafeArea(.container, edges: .bottom)` did
+  nothing on its own: the bar has a fixed height, so the area it is placed in
+  grew into the home indicator inset but the capsule stayed on the safe-area
+  line, 34 pt plus its 4 pt bottom padding above the screen's edge. A
+  throwaway SwiftUI app on the office Mac's iPhone 17 simulator showed this.
+- `barStack` now fills the overlay (`.frame(maxHeight: .infinity, alignment:
+  .bottom)`) before ignoring the bottom safe area, so the bar is placed at the
+  bottom of the larger area. `ShellBottomBar` drops its bottom padding, so the
+  capsule's lower edge is the screen's bottom edge.
+- The bar's height and `barBottom` are still read on the bar itself, before
+  the frame, so `barClearance`, `ShellDock.bottom` and the docked prompt's
+  gap follow the capsule down.
+- Checked with that simulator app only. The full app was not built.
+
 ### Core icons over the status dots when the packed line is too wide (2026-10-08, iPhone)
 
 The same request as 2.0.73, from a parallel branch: the user asked for the
@@ -3031,6 +3050,19 @@ flat cards split by hairlines, and an installed state that matches reality.
   bug) and the updated `MarketTests`; all ForkMeshCore tests pass on Linux.
   The app files were only parsed.
 
+### 2.0.94 People: everyone around the campfire (2026-10-13, iOS and Android)
+
+The user asked for a phone page showing members' avatars and names in rings by
+engagement, like the World campfire, with a profile that offers Follow and
+Message, as a plugin on every platform. Route `.people` (`Route.People` on
+Android), URL `/dashboard/people`, menu App group after Organizations, gated
+by the `people` package. The screen is a campfire with five rings (Blazing,
+Glowing, Kindling, Warm, Embers), a row of ring chips that focus one ring, and
+a card per ring listing everyone in it; a sheet shows the profile with Follow
+(`PeopleProfileModel.toggleFollow`, `POST`/`DELETE /api/accounts/<name>/follow`)
+and Message (`.dm(user:)`, `Route.Dm`), behind `requireAccount` for guests.
+Rules, layout and the shared fixture: [People](../marketplace/people.md).
+
 ### 2.1 Behaviour of the tab row (WS3 builds it, WS8 checks it against this list)
 
 - **Selecting and reselecting.** Tapping a tab always shows its root
@@ -3156,6 +3188,42 @@ Context rules, from the most specific to the least:
 
 The composer always shows its target as an editable chip, so the result is
 never a surprise.
+
+### 2.0.95 Chat pictures without a flash (2026-10-13, iOS and Android)
+
+The user saw a slight flash on the chat page: each avatar drew its letter
+circle, then swapped to the person's picture a moment later, and asked for it
+to load faster or not flash.
+
+- **Why it flashed (iOS).** Every avatar took two async hops after it
+  appeared: `ChatSenderAvatar` and `MessagesPersonAvatar` read the picture in
+  a `.task` (even from `ChatAvatarCache`), then `FmAvatar` decoded it in a
+  second `.task`. So each row painted the initial for a frame or more, on
+  every visit. The cache lived in memory only, so the first visit after a
+  launch also waited on the network for every person.
+- **First frame paints the picture.** `FmAvatar` decodes through
+  `FmAvatarImages` (an `NSCache` of decoded images keyed by the base64, 256
+  entries) inside `body`, so a picture seen before is drawn at once and a new
+  one is decoded once. `ChatAvatarCache` is `@Observable`; both avatar views
+  read it in `body` and only refresh it in their `.task`.
+- **Kept across launches.** `ChatAvatarCache` saves the pictures (newest 200
+  people, empty answers not kept) to Caches `chat-avatars.json`, written off
+  the main thread a second after a change. `ChatFeature.register` warms it
+  off the main thread at launch, so the chat list and transcript open with
+  the pictures from the last session; the server's answer then replaces any
+  that changed.
+- **Offline keeps the saved picture.** `ApiService.accountAvatarPngIfReached`
+  returns nil when the account read failed with an `HTTPError` (no route,
+  timeout), so a saved picture is not cleared; a missing account or no
+  picture is still "". `accountAvatarPng` is unchanged for other callers.
+- **Android.** `ApiService.knownAccountAvatarPng` returns a picture already
+  fetched this session without blocking; `ChatSenderAvatar` and the DM row's
+  `DirectAvatar` start from it, so returning to the chat page no longer
+  flashes. Android does not keep the pictures across launches yet.
+- Tests: `ApiServiceTests.testAccountAvatarTellsAnUnreachableServerFromNoPicture`
+  (iOS core), `ApiServiceTest.testKnownAccountAvatarIsReadWithoutARequest`
+  (Android core). The app sources were only parsed on Linux, not run on a
+  device.
 
 ### 2.0.58 Tour can be removed from the phone (2026-10-05, iOS and Android)
 
@@ -3592,6 +3660,63 @@ desktop older than this change (it answers `unsupported`), the strip is as
 before. The strip's accessibility label reads the desktop's latest four
 values before the phone's.
 
+### 4.x Version, What's new and Send diagnostics (2026-10-13)
+
+The user asked for the version and build number in the avatar hub, opening a
+plain-language changelog, and then for a button beside it that sends
+diagnostics to a coding agent and turns red when the app is slow.
+
+- **Where.** The last row of the hub (iOS `YouHubSheet.versionRow`, Android
+  `HubVersionRow` in `feature/tools/AboutAndDiagnostics.kt`): "Version 1.4.1
+  (219)" with "What's new" under it, and the diagnostics capsule at the end.
+  iOS reads `CFBundleShortVersionString` and `CFBundleVersion`
+  (`AppChangelog.label(infoDictionary:)`); Android reads `versionName` and
+  `versionCode` from the package manager.
+- **What's new.** iOS pushes `WhatsNewScreen` inside the hub's
+  `NavigationStack`; Android swaps the hub sheet's content for
+  `WhatsNewPage` (back returns to the hub). Each build is a section headed
+  with its version, build number and date, the running one marked
+  Installed, with area titles (Market, Calls, Projects...) over bullets. The
+  data is the bundled `Changelog.json` (iOS resource) or `changelog.json`
+  (Android asset), built per [MAC_BUILD.md](MAC_BUILD.md#whats-new-changelog-2026-10-13).
+  `AppChangelog.forRunningBuild` puts the running build first even when the
+  file was made for another build (an Xcode or debug build), with "No notes
+  were written for this build". No commit hashes are shown.
+- **Send diagnostics.** The rule is `PerformanceAlert.evaluate` (iOS
+  `FMTools/PerformanceAlert.swift`, Android `tools/PerformanceDiagnostics.kt`),
+  checked when the hub opens and every 5 s while it is open. Red ("Slow, send
+  report") when, since the last send: an OS diagnostic arrived in the last 24
+  h (iOS MetricKit hang, crash, CPU or slow-launch report; Android
+  `ApplicationExitInfo` ANR or crash, API 30+); else a main-thread
+  (`eventLoop` or `sync`) stall of 250 ms or more in the last 10 min; else 5
+  or more dropped-frame (`frame`) stalls in the last 10 min. Otherwise it is
+  a neutral "Send diagnostics". The telemetry files were not changed; the
+  rule only reads `PerformanceMonitorService.events` and the crash store.
+- **The bundle.** iOS: the existing `PerformanceReport` text
+  (`PerformanceReportBuilder`: app version and debug or release, device, OS,
+  memory, thermal state, metrics, slow events, MetricKit reports with stack
+  frames, stall log tail, app log, tab, screen and recent screens) plus the
+  build label, commit and alert. Android has no report builder, so
+  `DiagnosticsBundle.report` writes a smaller one (version, device, OS,
+  metrics, the 8 slowest events with 3 stack frames, exit reasons, last 15 log
+  lines, tab, screen and recents). The confirm sheet lists what is sent, has
+  an "Include recent log lines" toggle (it drops the log sections) and a
+  preview. `DiagnosticsBundle.scrub` removes bearer tokens and `token=`,
+  `password`, `api_key`, `cookie`, `session` values, JWTs, `"text"`, `"body"`,
+  `"message"`, `"content"`, `"prompt"`, `"title"`, `"note"`, `"subject"` JSON
+  values, emails, URL query strings, `+` phone numbers, opaque strings of 32+
+  characters and the user folder in file paths.
+- **The agent.** Send starts a run on `forkmesh/forkmesh` through the
+  composer's quick launcher (iOS `composer.launcher.send(prompt:repository:onDevice:)`,
+  Android `ComposerFeature.quick()`), with a prompt asking it to diagnose the
+  issue in the native app, fix it on a branch with tests and explain the
+  cause, followed by the bundle, cut to the 8000-character prompt limit. The
+  relay only takes image attachments (`ORG_AGENT_ATTACHMENT_TYPES`), so the
+  bundle travels in the prompt rather than as a file. On success the hub
+  closes, the Agents tab opens on the new session, and the red state clears
+  until new issues appear (the send time is kept in `UserDefaults` /
+  `PrefStore`). A failure stays on the sheet with the launcher's message.
+
 ## 5. Search, the command palette and quick actions
 
 ### 5.1 Search
@@ -4021,6 +4146,7 @@ destination.
 | Discord (through the desktop) | `.discord(guild, channel)` | Chat | 9.17 | WS13 |
 | Mesh room | `.channel(.mesh)` | Chat | 8.7 | — |
 | Profile of a user or organization (`/@name`) | `.profile(name)` | current | 8.5, 9.4 | WS18 |
+| People: members in campfire rings, profile sheet with Follow and Message | `.people` | current (hub: App) | 8.5, 9.10 | WS18 |
 | Global search | `.search(query, scope)` | current | 1.5–1.7 | WS8 |
 | Notes, note | `.notes`, `.note(id)` | current (hub) | 10.1, 10.2 | WS15 |
 | Tasks, task | `.tasks(filter)`, `.task(id)` | current (hub) | 2.30, 5.25 | WS15 |

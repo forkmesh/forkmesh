@@ -16,6 +16,9 @@ final class FakeCallPeer: DirectCallPeer {
     var muted: [Bool] = []
     var cameraOff: [Bool] = []
     var faces: [String] = []
+    var backgrounds: [String] = []
+    var voices: [String] = []
+    var voiceObserver: (@MainActor (String) -> Void)?
     var closed = false
 
     func offer() async throws -> JSONObject {
@@ -37,6 +40,12 @@ final class FakeCallPeer: DirectCallPeer {
     func setCameraOff(_ value: Bool) { cameraOff.append(value) }
 
     func setFace(_ id: String) { faces.append(id) }
+
+    func setBackground(_ id: String, image: String) { backgrounds.append(image.isEmpty ? id : "\(id):\(image)") }
+
+    func setVoice(_ id: String) { voices.append(id) }
+
+    func observeVoice(_ handler: @escaping @MainActor (String) -> Void) { voiceObserver = handler }
 
     func close() { closed = true }
 }
@@ -157,6 +166,31 @@ final class DirectCallsTests: XCTestCase {
         XCTAssertEqual(saved, ["kofi", "ren", ""])
     }
 
+    @MainActor func testBackgroundIsAppliedToAVideoPeerAndRemembered() async throws {
+        let engine = makeEngine()
+        let factory = FakeCallPeerFactory()
+        engine.peerFactory = factory
+        var saved: [String] = []
+        engine.onBackgroundChanged = { saved.append($1.isEmpty ? $0 : "\($0):\($1)") }
+        engine.setBackground("nowhere")
+        engine.setBackground(DirectCallEngine.customBackground)
+        XCTAssertEqual(engine.background, "")
+        engine.setBackground("world")
+        await engine.start(DirectCallsTests.conversation, media: .video)
+        await engine.handleFrame(
+            frame("call-accept", call: engine.callId, extra: ["to": "me-node"]),
+            conversation: DirectCallsTests.conversation)
+        let peer = try XCTUnwrap(factory.peers.first)
+        XCTAssertEqual(peer.backgrounds, ["world"])
+        engine.setBackground(DirectCallEngine.customBackground, image: "data:image/jpeg;base64,AA")
+        engine.setBackground("blur")
+        engine.setBackground(DirectCallEngine.customBackground)
+        XCTAssertEqual(peer.backgrounds, ["world", "custom:data:image/jpeg;base64,AA", "blur", "custom:data:image/jpeg;base64,AA"])
+        XCTAssertEqual(saved, ["world", "custom:data:image/jpeg;base64,AA", "blur:data:image/jpeg;base64,AA", "custom:data:image/jpeg;base64,AA"])
+        XCTAssertEqual(DirectCallEngine.backgrounds.map(\.id), ["", "blur", "blur-strong", "world", "office", "meeting", "library", "skyline", "custom"])
+        await engine.hangUp()
+    }
+
     @MainActor func testVoiceCallsNeverSendAFace() async throws {
         let engine = makeEngine()
         let factory = FakeCallPeerFactory()
@@ -171,6 +205,42 @@ final class DirectCallsTests: XCTestCase {
         XCTAssertEqual(engine.face, "maya")
         XCTAssertEqual(DirectCallEngine.faces.map(\.id), ["maya", "theo", "kofi", "ingrid", "ren"])
         await engine.hangUp()
+    }
+
+    @MainActor func testVoiceMatchesTheFaceUntilAnotherVoiceIsChosen() async throws {
+        let engine = makeEngine()
+        let factory = FakeCallPeerFactory()
+        engine.peerFactory = factory
+        var saved: [String] = []
+        engine.onVoiceChanged = { saved.append($0) }
+        XCTAssertEqual(engine.voiceChoice, "face")
+        engine.setVoiceChoice("nobody")
+        XCTAssertEqual(engine.voiceChoice, "face")
+        engine.setFace("kofi")
+        XCTAssertEqual(engine.effectiveVoice, "kofi")
+        await engine.start(DirectCallsTests.conversation, media: .audio)
+        await engine.handleFrame(
+            frame("call-accept", call: engine.callId, extra: ["to": "me-node"]),
+            conversation: DirectCallsTests.conversation)
+        let peer = try XCTUnwrap(factory.peers.first)
+        XCTAssertEqual(peer.faces, [])
+        XCTAssertEqual(peer.voices, ["kofi"])
+        XCTAssertEqual(engine.voice, "kofi")
+        engine.setFace("maya")
+        XCTAssertEqual(peer.voices, ["kofi", "maya"])
+        engine.setVoiceChoice("off")
+        XCTAssertEqual(peer.voices, ["kofi", "maya", ""])
+        engine.setVoiceChoice("ren")
+        engine.setFace("theo")
+        XCTAssertEqual(peer.voices, ["kofi", "maya", "", "ren"])
+        peer.voiceObserver?("")
+        XCTAssertEqual(engine.voice, "")
+        XCTAssertEqual(saved, ["off", "ren"])
+        XCTAssertEqual(DirectCallEngine.voiceLabel("ren"), "Ren")
+        XCTAssertEqual(DirectCallEngine.voiceLabel(""), "Your own")
+        await engine.hangUp()
+        XCTAssertEqual(engine.voice, "")
+        XCTAssertEqual(engine.voiceChoice, "ren")
     }
 
     @MainActor func testCallerFlowOffersAfterAcceptAndQueuesIce() async throws {

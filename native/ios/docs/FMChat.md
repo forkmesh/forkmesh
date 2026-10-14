@@ -245,11 +245,9 @@ turns `rows` plus the look events into `ChatConversationItem`s: a centred time l
 from the previous entry is 15 minutes or more or the entry starts a new local day (`timeZone:`,
 default `.current`) ("Today 6:39 AM", "Yesterday", a weekday within a
 week, then "Sep 3 at" / "Sep 3, 2025 at"), runs of one sender (`ChatBubblePosition`; only the last
-bubble of a run has a tail), the sender's name above a run in groups, and a receipt under your own
-message only while it is the newest one. Receipts are only what the transport knows: office rooms
-report a recipient count ("Delivered" when it is above zero), relay rooms have no acknowledgement,
-so they say "Sent", and a queued mesh message says "Not delivered yet". One to three emoji with
-nothing else are drawn large without a bubble (`isJumboEmoji`).
+bubble of a run has a tail), the sender's name above a run in groups, and a receipt mark under
+every one of your own messages (`ChatBubble.receipt`, a `ChatReceipt`; see "Receipt marks" below).
+One to three emoji with nothing else are drawn large without a bubble (`isJumboEmoji`).
 
 **Shared look (`Threads/ChatLook.swift`).** A conversation's background (one of
 `ChatBackgroundCatalog.presets` or a JPEG), group name and group photo travel as `look` frames
@@ -296,10 +294,9 @@ summary. "Delete Conversation" hides its messages on this phone only (`clearConv
 "Leave this Conversation" leaves a relay private channel (`leaveGroupConversation`). Relay private
 channels have no server roster, so nobody can be removed from one.
 
-**Not done.** Inline replies, message effects, stickers, live location and read receipts need
-fields the other clients do not send or understand yet. FaceTime-style calls exist only for
-`direct:` rooms (see "Voice and video calls" below). Office rooms still
-have no reactions, edits or deletes. The Android app has not been changed.
+**Not done.** Inline quoted replies (replies open a thread instead), message effects, stickers and
+live location need fields the other clients do not send or understand yet. FaceTime-style calls
+exist only for `direct:` rooms (see "Voice and video calls" below).
 
 ## Slack-style workspace
 
@@ -443,6 +440,152 @@ nobody could ever open it. The rules every client follows are in `docs/app/chat-
 Not verified: no Swift toolchain was available when this was written, so the change and its tests
 (`DirectMessagesTests`) were checked by reading only, not compiled or run.
 
+## Receipt marks, deletes, reactions and replies in direct messages (branch 1974)
+
+Asked 2026-10-13: Signal-style marks on every message, "delete for everyone" for what you sent,
+and replies and reactions on anyone's message in a direct message. The shared design and wire
+rules are in the branch spec (`docs/app/chat-private-rooms.md` on the server side).
+
+**Receipt marks.** `ChatReceipt` (FMApi `Models/Chat.swift`) is `sending`, `sent`, `delivered` or
+`read`, with `label` ("Sending", ...) and a `rank` so a mark only moves forward. `ChatRow.receipt`
+is set by `ChatHub.receipt(for:queued:)` for your own messages only: direct messages ask
+`DirectMessageService.receipt(_)`, office rooms `OfficeChannelService.receipt(_)`, a queued
+`#mesh` message is `sending`, and everything else (relay rooms, history) is `sent`.
+`ChatConversationLayout.receipt(_)` gives every own bubble its mark, not only the newest one.
+The app draws it with `ChatReceiptMark` (`ForkMesh/Features/Chat/Messages/ChatReceiptMark.swift`),
+a `Canvas` in the shared 22 x 14 geometry scaled to 17 x 11: a dotted ring at 70 % for sending, a
+ring with a tick for sent, two overlapping rings with ticks for delivered (the back ring and tick
+are clipped outside the front ring), and two filled accent-blue discs with ticks cut out in the
+background colour for read. VoiceOver reads the label. Bubbles and the Slack-style rows both show
+it; office rooms keep their "to N" label beside it.
+
+- Direct messages: a chat or thread reply is shown at once as `sending` and its relay ref (first
+  40 hex of SHA-256 of the exact envelope) goes into a per-conversation `DirectRefBook` (256 refs,
+  id to ref and back). `forkmesh-recipients` for that ref makes it `sent`;
+  `{"kind":"forkmesh-delivered","refs":[...]}` makes those `delivered`; `{"kind":"forkmesh-read"}`
+  turns every own message already `sent` or `delivered` into `read` (a message still `sending`
+  stays). Own frames replayed from history or sent from another device of the same account are
+  `sent` and their relay `ref` is tracked too. A send that cannot reach the relay takes the
+  message back out (unless the mesh delivered it, which counts as `sent`). Marks live in
+  `receipts` (512 ids) for the session; after a restart own messages show `sent` until the relay
+  says more.
+- Office rooms: `post` and `postFrame` show the message as `sending` before the socket write and
+  `forkmesh-recipients` makes it `sent`. Channels never reach `delivered` or `read`: the relay
+  sends those only for direct rooms.
+
+**Delete for everyone.** `DirectMessageService.deleteForEveryone(_:messageId:)` sends a sealed
+`delete` frame (`conversation`, `target`, `persist`, no `notify`), removes the message, drops it
+from the outbox so a later reseal never sends it again, and then sends
+`{"kind":"forkmesh-superseded","refs":[<original ref>]}` when the ref is known, so the relay drops
+a copy the other person has not received yet. The delete frame itself stays on the relay for an
+offline recipient. `OfficeChannelService.deleteForEveryone` does the same through `postFrame`.
+Receiving: a `delete` is honoured only when its `senderId` is the target's `senderId`; a delete
+whose target has not arrived yet is held (64 per room) and swallows the target when it comes, so a
+history replay in any order ends with the message gone. Every removal calls `onRemoved`, and
+`ChatHub.messageRemoved` records the id in `ChatExtras.recordRemoved` (2,000 ids, saved in the
+chat history file as `removed`), drops its reactions, edit and attachment, removes the local ping
+(`chat:<id>`) and calls `ChatHub.onMessageRemoved`; the app uses that to remove any delivered
+notification whose `userInfo["messageId"]` is that id (`Platform/ChatNotificationCleanup.swift`).
+`isRemoved` keeps a removed id from coming back from a replay after a restart.
+
+**Reactions, edits and replies.** `ChatHub.toggleReaction`, `edit`, `delete`, `deleteReply` and
+`replyInThread` send `reaction`, `edit`, `delete` and `thread-reply` frames through
+`DirectMessageService.sendFrame(_:type:fields:)` (sealed like chat; `thread-reply` keeps
+`channel` and notifies, the others carry `conversation` and do not) or
+`OfficeChannelService.postFrame` for office rooms. Incoming room frames reach
+`ChatExtras.applyRoomFrame`, which now applies replies (under the room's conversation, so threads
+work for `direct:` and `#office/` rooms), reactions, edits (author-checked; an edit for a message
+not seen yet is held until it arrives) and reply deletes. `ChatHub.rows` gives DM and office rows
+reactions, edited text, thread summaries and edit/delete for your own messages; read-only office
+rooms get none. The context menus offer Reply, the reactions, Copy, Edit and Delete (Delete for
+everyone or Delete for me); a bubble with replies shows "N replies", which opens the thread.
+`ChatThreadScreen` takes a `direct:` channel (the route no longer prefixes `#` to it).
+
+Tests: `DirectMessageReceiptsTests` (sending to read, replayed own frames, failed sends, delete for
+everyone with superseded, author check and delete-before-target, and a hub test covering reactions,
+edits held for a late message, replies, deletes and the saved tombstones), the office test in
+`OfficeChannelsTests`, and `ChatConversationTests` for the marks.
+
+## Chat list last line, avatars and threads (branch 1974, round 2)
+
+Asked 2026-10-13: "Make sure threads still work too also in the chat list show the last line per
+channel and per message with users also show their user icon in the chat list".
+
+**Last line.** `ChatHub.listPreview(_:)` (`ViewModels/ChatListPreview.swift`) walks
+`messages(in:)` from the newest message back and returns the first one that is not hidden
+(Delete for me), removed (Delete for everyone), a thread reply or an ephemeral app message, with
+its timestamp. The text is `ChatExtras.text(for:)`, so an edit of the newest message updates the
+line (the `#mesh` room has no edits and uses the plain text). `ChatListPreviews` makes the line:
+`plain(_:)` drops quote markers, code fences and the bold, italic, strike and code markers
+(through `ChatRichText.spans`), collapses newlines and runs of spaces, and cuts at 160 characters
+with an ellipsis; `line(_:text:direct:)` gives "You: <text>" for your own message, "<text>" for
+the other person's in a direct message (`direct:` or `@peer`) and "<sender>: <text>" in a channel;
+a file with no text reads "📎 <file name>". A message whose line would be empty is skipped. The line
+is built from what the phone already holds and decrypted; nothing new is stored or sent.
+`timeLabel(_:now:timeZone:)` gives the short time on the name line: the clock time today, the
+weekday ("Tue") within six days, "Oct 3" this year, "Mar 14, 2025" before. A conversation with no
+message yet keeps an empty second line so every row has the same height.
+
+**Rows.** `ChatChannelTile` takes `preview`, `time` and `avatar`. Channel, office, `#mesh`,
+starred and direct-message tiles all pass a preview. Direct-message tiles (also when starred) show
+`MessagesPersonAvatar` at 28 pt, the same loader and `ChatAvatarCache` the conversation header
+uses, falling back to the initials avatar, with the presence dot (ringed in the row background)
+over its bottom-right corner; channel icons sit in a 28 pt column so titles line up.
+
+**Threads after round 1.** Checked and covered by tests: a peer's thread reply in a direct message
+builds the thread, stays out of the conversation and the list line, and is not deletable; an own
+reply replayed from another device is own, deletable and `sent`; a reply sent here goes `sending`
+to `sent` on `forkmesh-recipients` and carries `notify`; DM replies are saved in the chat history
+file under their `direct:` conversation. The same checks run for a public office channel (peer
+reply, own reply with `rootId` and `#name` channel, ack, reply count). No regression was found.
+
+Tests: `ChatListPreviewTests` (plain text, sender prefixes, file fallback, skipped messages and
+edits, short times, and a relay channel where a thread reply, an edit, an own message and Delete
+for me move the line), `DirectMessageReceiptsTests.testThreadRepliesFromEitherSideBuildTheDirectMessageThread`
+(also the DM list line before and after Delete for everyone) and
+`OfficeChannelsTests.testThreadRepliesInAnOfficeChannelGoBothWays`.
+
+## Message text in push notifications (branch 1974)
+
+Asked 2026-10-13: "make it so that chat text shows in the push notifications - signal has a way
+of doing it securely so lets do it like they do". The push carries no text. A direct-message push
+now carries `ref` (the relay ref of the frame that rang), `keyVersion` and `conversation`; a
+channel push carries `channelId` and `ref`. `NotificationService` asks the relay for the
+still-encrypted frame with the account's session (`GET /api/chat/direct-messages/<id>/pending?ref=`
+or `/api/chat/channels/<id>/pending?ref=`; side-effect free on the server: no read mark, no
+acknowledgement), opens it on the phone and shows the sender as the title and the text (or
+"📎 <file>") as the body; a channel reads "<sender> in #<channel>". It sets `threadIdentifier` to
+the conversation and `userInfo["messageId"]` to the message id. Anything that fails (row already
+received, frame not sealed for this device, timeout) leaves the server's generic alert. The
+extension never acknowledges, marks read or sends anything to the relay.
+
+The logic is in a new module, **FMPush** (`ForkMeshCore/Sources/FMPush/PushChat.swift`, deps FMBase
+and FMCrypto), tested on Linux by `FMPushTests/PushChatTests`:
+
+- `PushChatRequest.parse(_)` reads `ref` (40 lowercase hex), `conversation` (`direct:<32 hex>`) or
+  `channelId` (32 hex), `keyVersion` and `sender`; `pendingPath` and `threadIdentifier` follow.
+- `PushChatOpener.open(_:request:privateKey:keys:)` checks the pending answer names the same
+  conversation or channel, decrypts the outer `RoomCrypto` envelope, unseals it with the device's
+  X25519 key (`RoomSeal.fromPrivateKey`, no store) and accepts only `chat` and `thread-reply` for
+  that conversation. A direct message must be sealed; a public channel frame is plain inside the
+  room cipher.
+- `PushRoomKeys` caches derived room keys (one keychain item, `room-keys`, 32 entries, keyed by a
+  hash of room and passphrase) so only the first push of a room pays the 210,000 PBKDF2 rounds.
+  `RoomCrypto.derivedKey(_:passphrase:)` and `RoomCrypto.withKey(_)` were added for it.
+- `PushPreviewMode` is the "Notification content" setting (Settings, Notifications): Name and
+  message (default), Name only ("New message" under the name, no fetch), No name or message
+  (title "ForkMesh", body "New message", no portrait). `PushPreviewText.preview` builds the text.
+
+What the extension needs comes through the shared keychain (`Shared/PushCredentialStore.swift`):
+the credential JSON written at registration now also holds `deviceKeyName` (the full keychain
+account of `chat/e2ee/x25519PrivateV2` in the active project's namespace,
+`ProjectKeyPolicy.secureKey`) and `preview`. `PushCredentialStore.deviceKey(named:)` reads that
+key from the app's `com.forkmesh.forkmesh.secure` items (no access group given, so every group the
+extension holds is searched; the app writes without one, which lands in its first
+`keychain-access-groups` entry, the group the two targets share). `setPreview` rewrites the
+preference into every stored credential when the setting changes. The extension links the new
+`ForkMeshPushCore` product (FMBase, FMCrypto, FMPush), not the whole core.
+
 ## Voice and video calls
 
 Requested 2026-10-12: call buttons in one-to-one chats on the phone, plus the five video-call
@@ -470,6 +613,26 @@ five face photos inlined (`app/tools/sync_native_call_faces.py` writes both the 
 Android copy; `app/tests/test_chat_call_faces.py` fails when they drift). Its `face` operation
 swaps the outgoing video with `RTCRtpSender.replaceTrack`, as the web does.
 
+The voice is engine state too: `voiceChoice` ("face", "off" or a face id), saved under
+`chat.callVoice`, and `effectiveVoice`, which `WebCallPeerFactory.voice` passes to the page's
+`setup`. `DirectCallPeer.setVoice` and `observeVoice` have default empty bodies; `WebCallPeer`
+forwards the page's `{event: "voice"}` so `engine.voice` is the voice actually applied. Audio is
+processed inside the page (an AudioWorklet), not with AVAudioEngine; see
+docs/app/chat-direct-calls.md, "Voices". `CallAudioRoute.headphonesConnected` and
+`WebCallPeer.preview` / `setMonitor` are there for the pre-call preview.
+
+The background is engine state as well: `DirectCallEngine.backgrounds` (No background, Blur,
+Strong blur, five images, Your photo), `setBackground(_:image:)` and `onBackgroundChanged`. The
+installer saves the id under `chat.callBackground` and the picked photo as
+`Application Support/ForkMesh/call-background.jpg` (`CallBackgroundStore`). A video peer gets it
+before it offers or answers, like the face. `DirectCallPreview.swift` holds the pre-call
+preview (the eye button in a DM header): `WebCallPeerFactory.preview(face:background:image:)`
+loads the page in preview mode, and `makePeer` reuses that page for the call, so the camera and
+the disguise keep running. `CallFaceLandmarks` also answers person masks: the page asks for
+`{landmarks, mask}`, and Vision's `VNGeneratePersonSegmentationRequest` (`.balanced`, 8-bit)
+runs in the same request; the mask goes back as 256-px-wide base64 bytes. See
+docs/app/chat-direct-calls.md, "Backgrounds" and "Models on the device".
+
 The face is a real photo warped onto the caller's face over a 68-point mesh
 (docs/app/chat-direct-calls.md, "Face swap"). On iOS the landmarks come from Apple Vision:
 the page posts `{event: "landmarks", id, image}` with a 480-px JPEG of the frame,
@@ -489,6 +652,108 @@ foreground, with that DM among the watched rooms). There is no CallKit or VoIP p
 target cannot be compiled on Linux: `swiftc -parse` passes for the new files, but they have not
 been type-checked or run on a device. That includes `CallFaceLandmarks.swift`: the Vision path
 was tested in Chromium with a stand-in host that returns Vision-shaped regions, not with Vision.
+
+## View-once video and voice messages
+
+Requested 2026-10-13 (task 1998): record a video or voice message in a direct message and have it
+deleted once the other person has played it. The wire format, server routes and deletion rules are
+in `docs/app/chat-private-rooms.md` ("View-once video and voice messages"); this is the iOS side.
+
+ForkMeshCore (`Direct/ViewOnceMedia.swift`, Linux-tested):
+
+- `ViewOnceFrames` parses and builds the sealed frame's `viewOnce` field (version 1, `video` or
+  `voice`, a 32-hex media id, a 32-byte key and 12-byte IV in base64url with or without padding, a
+  MIME type under `video/` or `audio/`, `durationMs` within the server limit, `size` within the
+  kind's limit plus 1 KiB, `parts = ceil(size / 524288)`). Anything else is not a view-once
+  message, and the row falls back to the frame's text. It also reads the outer
+  `{"kind":"forkmesh-media","v":1,"id","state"}` relay frame (only `opened`, `expired`,
+  `withdrawn`) and the `GET media` status objects.
+- `ViewOnceCrypto` seals with `AesGcm` (CryptoKit on Apple, the portable path on Linux): a fresh
+  random key and IV per message, body = ciphertext followed by the 16-byte tag, as WebCrypto
+  produces it. `split` cuts the body into 512 KiB parts.
+- `ViewOnceTransfer` drives the routes through `ChatAccountCalling` (the app's `ApiService`):
+  create, `PUT` each part as base64 JSON, `finish` (a failed upload is withdrawn with `DELETE`);
+  download every part, check index, count and total size, then decrypt; `consume`; `withdraw`;
+  `GET media/<id>` and `GET media?ids=` in batches of 50. `media_gone` (410) becomes
+  `ViewOnceError.gone`; the service then reads that media's status to tell opened, expired and
+  withdrawn apart.
+- `ViewOnceStore` holds one `ViewOnceEntry` per message: kind, MIME type, duration, whether it is
+  ours, state, and the key material for a received message that is still `ready`. The key is
+  dropped the moment the state turns final (opened, expired, withdrawn, failed), and the sender's
+  entry never holds it. Final media ids (never keys) are remembered in an optional
+  `KeyValueStore` under `chat/viewOnce/spent` (512 at most), so a history replay after a restart
+  does not pick the key up again.
+- `DirectMessageService`: a received `chat` frame with a valid `viewOnce` registers an entry and
+  becomes a `ChatMessage` whose text is "🎥 Video message" / "🎤 Voice message" (the frame's own
+  `text` and any `fileName` are ignored). The relay frame updates the state. After the first
+  `forkmesh-history-end` on each socket the service reads `GET media?ids=` once for the
+  conversation's unresolved entries and retries any `consume` that failed offline.
+  `sendViewOnce` checks size and length, encrypts, uploads, then sends the sealed frame
+  (`persist`, `notify`); if the frame cannot be sent, the upload is withdrawn. `playViewOnce`
+  downloads and decrypts in memory; `consumeViewOnce` marks it opened locally (dropping the key) and
+  calls `consume`. The outbox entry that would reseal the frame for a late device is removed once
+  the message is final, so the key does not linger there either. DM history is not written to the
+  chat history file (`ChatHistoryCodec.bounded` keeps only `#` and `@` rooms), so the key is never
+  on disk.
+- `ChatHub.canSendViewOnce`, `viewOnce(for:)` and `sendViewOnce(...)` (`ViewModels/ChatViewOnce.swift`).
+
+Tests: `Tests/FMChatTests/ViewOnceMediaTests.swift` (round trip and tamper, the WebCrypto layout,
+part counts, the frame codec and its refusals, text ignored, relay frame parsing, key dropped and
+spent ids remembered, upload/download/consume against a fake media server, failed upload withdrawn,
+quota message, the full send and receive flows over a fake socket, 410 resolved to the server's
+state, the status read once per socket and a consume retried).
+
+App (`Features/Chat/Messages/`):
+
+- `MessagesViewOnceCapture.swift`: the composer's More menu offers "View-once Video" and
+  "View-once Voice" in a one-to-one DM. Video uses `AVCaptureSession` with the front camera and
+  microphone, a live preview, and `AVAssetWriter` to H.264 480x640 at about 1 Mbit/s with AAC
+  64 kbit/s mono, so 60 s is about 8 MB, well under the 12 MiB limit. Recording stops by itself at
+  60 s, with a countdown. Voice uses `AVAudioRecorder` (AAC, 22.05 kHz, 32 kbit/s) for up to 120 s
+  with a live meter. Both end in a review step: play back, Discard, Re-record, Send (with upload
+  progress). Recordings are temporary files in `NSTemporaryDirectory()` with
+  `FileProtectionType.complete`, deleted on send, discard or close.
+- `MessagesViewOnceViewer.swift`: the bubble shows "Video message" / "Voice message", the duration
+  and the state ("Tap to play once", "Sent", "Opened", "Expired", "Withdrawn"). Only a received,
+  ready message is a button; these rows have no context menu, so no copy, save, share or forward.
+  The viewer downloads and decrypts, writes a protected temporary file, starts playback
+  (`AVPlayerLayer` for video, so there are no system share controls; `AVAudioPlayer` with a level
+  meter and progress for voice), and calls `consume` as playback starts. When playback ends or the
+  viewer closes, the player and file are dropped. Closing before playback starts leaves the
+  message unopened. A MIME type iOS cannot play (`audio/webm`, `video/webm` from a browser) is
+  reported and not consumed.
+- Screen capture: while `UIScreen.isCaptured` is true the video is blanked and a notice says so;
+  after `userDidTakeScreenshotNotification` the viewer says a screenshot was taken and that
+  ForkMesh cannot prevent screenshots or recordings. Nothing is sent to the sender.
+- `Config/ForkMesh-Info.plist`: the camera and microphone strings now mention messages.
+
+Filter seam: `MessageCaptureFilters` (in `MessagesViewOnceCapture.swift`) has `processVideo`
+(per `CVPixelBuffer`, before the writer's pixel buffer adaptor) and `processAudio` (per
+`CMSampleBuffer`) hooks on the video recorder. Only `MessagePassThroughFilters` exists today; the
+call face and voice stages (`createFaceStage` / `createVoiceStage`) run in the call WebView and
+are not wired in. Voice messages go through `AVAudioRecorder`, which has no sample hook, so a
+voice filter would need an `AVAudioEngine` recorder first.
+
+Held receipts: the phone keeps no DM history on disk, so acknowledging a view-once frame
+(`forkmesh-received`) would let the relay delete the only copy of an unopened message. A sealed
+chat frame with a valid `viewOnce` from the other account is therefore not acknowledged, live or
+replayed, while the message is unopened or its `consume` is still owed. Its refs are kept per
+message id (`heldReceipts`, at most 800) and sent once the message is final: `consume` succeeded
+or answered 410, or the relay frame or the status read said opened, expired or withdrawn. With no
+socket open at that moment the refs stay held; a later replay of a final message is acknowledged at
+once. A `consume` that failed offline is remembered under `chat/viewOnce/consume` and retried when
+the conversation's status is next read. Same rule as web (`holdReceipt`) and Android.
+
+Unsend: the sender's unopened row has an "Unsend" button (with a confirmation) that calls
+`ChatHub.unsendViewOnce`, which withdraws the media (`DELETE`); the row then says "Withdrawn".
+
+Limits: desktop and web clients that do not know `viewOnce` show only the fallback text.
+
+Verified: ForkMeshCore tests on Linux (`swift test`, the new suite and the whole package). The
+held receipts and Unsend came later and were checked with the FMChat tests and `swiftc -parse`
+only. The rest of the app target was compiled on the office Mac (Xcode 26.6, Debug, iOS Simulator x86_64, no signing,
+in a scratch folder) with no errors or warnings in the new files. Nothing was run on a device:
+capture, playback and the screen-capture notices are untested on hardware.
 
 ## Views (ForkMesh/Features/Chat)
 

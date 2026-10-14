@@ -185,6 +185,10 @@ def load_fleet(path, state_path=None, state=None, instances=None,
             wg_ips.append(str(ipaddress.IPv4Address(runner["wg_ip"])))
     if len(set(wg_ips)) != len(wg_ips):
         raise RenderError("duplicate WireGuard addresses")
+    retired = (fleet.get("hosted") or {}).get("retired_cores") or []
+    if not isinstance(retired, list) or not all(
+            NODE_NAME.match(str(name)) for name in retired):
+        raise RenderError("hosted.retired_cores must list names like n1: %r" % (retired,))
     if "acme_issuer" in fleet:
         raise RenderError("acme_issuer is gone: certificate issuance is "
                           "leaderless (deploy/core/certsync.py); remove it")
@@ -500,6 +504,29 @@ def production_settings(fleet):
     for name, value in sorted((prod.get("vars") or {}).items()):
         lines.append("FORKMESH_VAR_%s=%s" % (name, value))
     return "\n".join(lines)
+
+
+def core_daemon_names(fleet):
+    return ["fmnext-%s" % n["name"] for n in fleet.get("nodes") or []
+            if not is_app_node(n)]
+
+
+def retired_core_names(fleet):
+    live = {n["name"] for n in fleet.get("nodes") or []}
+    return ["fmnext-%s" % name
+            for name in (fleet.get("hosted") or {}).get("retired_cores") or []
+            if name not in live]
+
+
+def core_role_settings(fleet):
+    names = ",".join(core_daemon_names(fleet))
+    enabled = (fleet.get("hosted") or {}).get("enabled", True)
+    hosted = names if enabled else ""
+    owners = ",".join(core_daemon_names(fleet) + retired_core_names(fleet)) \
+        if enabled else ""
+    return "\n".join(["", "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=%s" % names,
+                      "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=%s" % hosted,
+                      "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=%s" % owners])
 
 
 def public_hosts(fleet):
@@ -1900,7 +1927,7 @@ def render_core(fleet, node_name, replacement=False):
         else dns_settings(fleet),
         "IDS_SETTINGS": ids_env_settings(fleet),
         "PUBLIC_HOSTS": ",".join(public_hosts(fleet)),
-        "PRODUCTION_SETTINGS": production_settings(fleet),
+        "PRODUCTION_SETTINGS": production_settings(fleet) + core_role_settings(fleet),
         "TURN_SETTINGS": turn_app_settings(fleet),
         "MESH_PEERS": mesh_peers(fleet),
         **request_rules_paths(paths),

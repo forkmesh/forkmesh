@@ -219,7 +219,10 @@ builds that install beside it.
   `GET /api/accounts/event-ticket`): payload-free frames naming a topic
   (`pings`, `issues`, `direct-messages`); the app answers with the read it
   would otherwise poll for. Keepalive 4 min. Direct-message frames carry no
-  sender or text, so on one the app reads `GET /api/chat/direct-messages`
+  sender or text; since 2026-10-13 they name the conversation, the relay
+  `ref` and `keyVersion`, and the background link decrypts the message on
+  the phone (section 17). When that is not possible (no `ref`, row already
+  received, key missing) the app reads `GET /api/chat/direct-messages`
   and takes the newest conversation with unread messages as the sender: the
   notification then says "Direct message from <name>" and carries that
   account's avatar (`accountAvatarPng`) as its large icon. When that read
@@ -998,6 +1001,240 @@ model in `C/market/MarketModels.kt` (`MarketModel`, `MarketOptions`,
   on. Installed packages with a native route show Open. Errors stay on the row.
 - Items read `version` so a sort, filter or install recomposes the chip row
   and rows; LazyColumn item lambdas that only capture the model are skipped.
+
+## 15. Version, What's new and Send diagnostics (2026-10-13)
+
+Parity with the iOS You hub ([NAVIGATION.md](NAVIGATION.md), §4.x): the hub's
+last row shows `versionName (versionCode)`, opens `WhatsNewPage` from the
+bundled `changelog.json` asset ([MAC_BUILD.md](MAC_BUILD.md#whats-new-changelog-2026-10-13)),
+and has the Send diagnostics capsule. The rule, the scrubbing and the bundle
+live in core (`tools/PerformanceDiagnostics.kt`, `tools/AppChangelog.kt`,
+tested by `PerformanceDiagnosticsTest` and `AppChangelogTest`); the app side
+is `feature/tools/AboutAndDiagnostics.kt`. Android has the same stall
+telemetry as iOS (`PerformanceMonitorService` events: frame, event loop,
+sync) but no MetricKit and no performance report builder, so the OS
+diagnostics are `ApplicationExitInfo` ANRs and crashes (API 30+) and the
+bundle is a smaller report written by `DiagnosticsBundle.report`. The hub
+pages swap inside the one bottom sheet instead of pushing screens.
+
+## 16. View-once video and voice messages (2026-10-13)
+
+The Android side of `docs/app/chat-private-rooms.md` ("View-once video and
+voice messages"): direct messages only.
+
+**Files.** `C/chat/ViewOnceMedia.kt` (kind, `viewOnce` codec, AES-256-GCM,
+512 KiB part split, `ViewOnceStore`, `ViewOnceClient` over
+`ChatAccountCalling`, the `forkmesh-media` relay frame, the capture filter
+seam), hooks in `C/chat/DirectMessages.kt` and `C/chat/ChatHub.kt`
+(`ChatRow.viewOnce`), `A/feature/chat/ViewOnceMessages.kt` (recorder, bubble,
+viewer), tests in `ViewOnceMediaTest.kt`.
+
+**Send.** The video and mic buttons sit next to the paperclip in a connected
+DM composer. The recorder asks for CAMERA (+ RECORD_AUDIO) or RECORD_AUDIO,
+records, shows a review (play, discard, record again, send).
+`DirectMessageService.sendViewOnce` encrypts with a fresh key and IV,
+uploads (create, PUT parts as base64, finish; a failed upload is withdrawn),
+then sends the sealed `chat` frame (`persist`, `notify`, text
+"🎥 Video message" / "🎤 Voice message"). If the sealed send fails, the media
+is withdrawn.
+
+**Capture.** No CameraX or Media3 (neither is in the offline Gradle cache),
+so platform APIs: the legacy `android.hardware.Camera` (front camera,
+`SurfaceView` preview) with `MediaRecorder` for video, MP4 H.264 at 640x480
+(or the largest supported size under it), 24 fps, 1 Mbps, AAC 64 kbps mono:
+about 8 MB for 60 s. Voice is `MediaRecorder` AAC in MP4 (`audio/mp4`,
+`.m4a`), 32 kbps, 22.05 kHz mono, with a live waveform from
+`getMaxAmplitude` every 80 ms. Recording is tap to start, tap to stop, and
+stops itself at 60 s / 120 s (`setMaxDuration` half a second later is the
+backstop). The duration sent is read back with `MediaMetadataRetriever`.
+Recordings live in `cacheDir/view-once` and are deleted after sending or on
+discard.
+
+**Receive.** A sealed `chat` frame with a valid `viewOnce` becomes a
+view-once row: the text and any file fields are ignored, the row shows
+"Video message"/"Voice message", duration and state, and has no long-press
+menu (no copy, save, forward, reply or delete). Tapping a ready row opens a
+full-screen viewer with `FLAG_SECURE` (`SecureFlagPolicy.SecureOn`); its text
+says screen capture is blocked on most phones but cannot be guaranteed. It
+downloads every part, decrypts in memory, writes one temp file in
+`cacheDir/view-once`, and plays it with `VideoView` or `MediaPlayer`.
+`consume` is called when playback starts; the temp file is deleted when
+playback ends or the viewer closes. A `410 media_gone` reads the item's state
+and marks the row opened, expired or unsent.
+
+**State.** `ViewOnceStore` holds one entry per message: `sent` (sender),
+`ready` (recipient), `opened`, `expired`, `withdrawn`. Only a ready
+recipient entry holds the key; any final state drops it and a replayed frame
+never brings it back. The sender's entry never holds a key; the sender's
+outbox copy of the frame (kept to re-seal for new devices) is dropped when
+the message reaches a final state. Nothing is written to disk: DM history is
+memory-only on Android. States arrive from the relay's `forkmesh-media`
+frame and from one `GET media?ids=` read per conversation open (after
+`forkmesh-history-end` and on select), which also retries a `consume` that
+failed. The sender can unsend an unopened message (`DELETE`).
+Because that history is memory-only, the `forkmesh-received` receipt for a
+view-once frame from the other person is held (by message id, every ref of
+it, live or replayed) until the message is opened (`consume` succeeded or
+answered 410), expired or withdrawn, from the viewer, the relay frame or the
+status read; until then the relay keeps the frame, so after a restart it is
+replayed and the status read corrects its state, as the web's held receipts.
+
+**Filter seam.** `MessageCaptureFilters` (`face`, `voice` stages, each
+`process(file, mime)`) is applied to the finished recording before upload,
+through `ViewOnceCapture.filters`. Only the pass-through implementation
+exists; the call filters (`createFaceStage`/`createVoiceStage` in the call
+WebView) are not wired in. A live preview filter would need a camera2
+Surface pipeline instead of the legacy camera.
+
+**Limits.** Recording runs only while the recorder is open (no background
+capture); the legacy camera API is deprecated and is used through its HAL
+shim on newer phones. Orientation assumes a portrait phone. There is no
+on-device test of capture or playback; the core flow is covered by
+`ViewOnceMediaTest` (codec, round trip, upload, download, consume, 410,
+relay frame, key dropped, status read, unsend).
+
+## 17. Secure chat: receipts, DM replies and deletes, message previews (2026-10-13)
+
+Shared design for all clients: branch 1974 spec, `docs/app/chat-private-rooms.md`
+and `docs/app/chat-push-previews.md`.
+
+- **Receipt marks** (`ChatReceipt` in `C/model/Chat.kt`, `ChatRow.receipt`,
+  drawn by `A/feature/chat/ChatReceiptMark.kt` on a Compose `Canvas` in the
+  shared 22 x 14 geometry, 17 x 11 dp, accessible name "Sending", "Sent",
+  "Delivered", "Read"). Every own message and own thread reply shows one,
+  next to the time on a header row and at the trailing edge of a grouped
+  row; ephemeral app rows and #mesh do not (#mesh keeps its "Queued" line).
+  `ChatHub.receipt` asks the service that owns the room and falls back to
+  Sent:
+  - DMs (`DirectMessageService`): a send is Sending until the relay's
+    `forkmesh-recipients` for its ref, then Sent; `forkmesh-delivered` naming
+    the ref makes it Delivered; `forkmesh-read` turns every own message
+    already Sent or Delivered in that DM into Read. An own frame that arrives
+    from another of my devices or in the history replay is Sent. The service
+    keeps bounded maps (256 each) of message id -> state, ref -> id and
+    id -> latest ref; the ref is recorded before the frame is written, so an
+    ack that beats `sendText` back is not lost, and a re-seal updates it.
+  - Office rooms: Sending from `sendFrame` until the recipients ack
+    (`OfficeChannelService.receipt`), then Sent; history rows are Sent.
+    Channels never reach Delivered or Read (the relay only reports those for
+    direct rooms) and keep the "to N" label after the mark.
+  - Relay rooms (`#channel`, legacy `@` DMs): the shared room relay sends no
+    ack, and `sendMessage` returns only after the socket accepted the frame,
+    so own messages show Sent.
+- **DM replies, reactions, edits, delete for everyone.** The frames are the
+  relay-room ones (`thread-reply`, `reaction`, `edit`, `delete`, with
+  `conversation`/`channel` = `direct:<id>`), sealed like `chat` through
+  `sendSealed`; replies notify, the others persist without `notify`.
+  `ChatExtras` stores DM thread replies (it took only `#` channels),
+  reactions and edits as for channels, and its author lookup now goes through
+  `ChatHub.messages`, so DM and Office messages are found. `ChatHub` routes
+  `toggleReaction` (the emoji character goes on the wire, as on the web),
+  `edit`, `deleteMessage` and `replyInThread` for `direct:` to the service.
+  This fixes "Delete for everyone" in a DM, which used to call the relay
+  room's delete and send it into the wrong room.
+  - Receiving: an `edit` or `delete` is honoured only when its `senderId` is
+    the target's author (DM history or a DM thread reply). One whose target is
+    not here yet is held (128 targets, 8 frames each) and applied when the
+    target arrives, so a replayed delete that overtakes its message still
+    removes it and no notification is raised for it.
+  - A delete removes the message from the transcript, its reactions, edits
+    and attachment, and its own outbox entry (and edits or reactions on it),
+    so a re-seal cannot send it again. Android keeps no DM transcript on disk
+    (DMs come back from the relay's replay), so the id also goes into the
+    persisted hidden-message list (`extras.hideMessage`, saved with the chat
+    history) and a later replay cannot show it.
+  - After sending the delete, the sender sends `forkmesh-superseded` with the
+    original's ref when it knows it (own sends, own replayed frames), so the
+    relay drops the stored ciphertext the other person has not received. The
+    delete frame stays on the relay until their device receives it.
+  - UI: long-press offers reactions, Reply in thread (`ChatHub.canReplyInThread`),
+    Edit and Delete (for everyone or for me) on DM rows; the thread screen
+    works for `direct:` (`ChatHub.rootMessage` reads `messages`, title
+    "Thread with <name>", the composer stays enabled because a DM send opens
+    its socket on demand).
+  - Not done: the same frames in Office rooms. `OfficeChannelService` still
+    accepts only `chat`, and the long-press sheet keeps reactions and edits
+    off there.
+- **Message text in DM notifications, the Signal way** (`C/push/DirectMessagePreview.kt`,
+  `A/feature/push/PingAlerts.kt`, `PingNotifier.postDirectMessagePreview`).
+  Android has no push transport; the background link's account event socket
+  (`AccountEventLoop.onEvent`, which now passes the whole frame) gets a
+  `direct-messages` frame naming `conversation` and `ref`. The service then
+  `GET`s `/api/chat/direct-messages/<id>/pending?ref=<ref>` (side-effect free:
+  it does not mark read, acknowledge or delete), decrypts the stored envelope
+  with the room passphrase (`RoomCrypto`, PBKDF2 cached per process) and
+  unseals it with this device's X25519 key (`RoomSeal.existing`: it reads the
+  project's key and never creates one, and it does not persist peers, so it
+  cannot race the chat screen's own seal). Only sealed `chat` or
+  `thread-reply` frames for that conversation are shown. The server never
+  sees the text.
+  - One notification per conversation (tag project, id from
+    `direct-messages/<id>`), with `Notification.MessagingStyle` listing each
+    message (up to 8, deduplicated by message id) and the sender as a
+    `Person` with their avatar. The platform style is used (API 28+, minSdk
+    26 gets `BigTextStyle`), so no new dependency. A tap opens the
+    conversation as before. The lock screen gets a public version that says
+    only "New message".
+  - The "Notification content" setting (Pings settings, "This phone" card;
+    `NotificationContent`, stored in the app's `Prefs` under
+    `notifications/content` for the whole phone): Name and message (default),
+    Name only (title is the sender, body "New message"), No name or message
+    (nothing is fetched; the fallback notification is posted without the
+    sender's name).
+  - Falls back to the old notification when the frame has no `ref`, the row
+    is gone (already received on another device), the frame is not sealed
+    for this device or anything fails. Quiet hours and pause hold both.
+  - Channel messages: the account event socket carries no channel event
+    (channel pushes are APNs only, `push_chat_room_apns`), so Android shows
+    no channel notifications; this needs a socket topic first.
+- Tests: `DirectMessagesTest` (receipt states, replies and reactions, own
+  edits, delete for everyone with superseded, author checks and held
+  mutations), `DirectMessagePreviewTest` (event parse, on-device decrypt,
+  refusals, content setting, line merge), `OfficeAndDiscordTest` (Office
+  Sending until the ack).
+
+### Round 2: threads, last line in the chat list, DM avatars
+
+- **Threads after round 1.** Channel and DM threads were checked end to end
+  (open thread, send, receive, reply count, thread pane); no regression was
+  found. `DirectMessagesTest.testDirectThreadRepliesStayInTheThreadAndCarryTheirOwnMarks`
+  covers what was missing for DMs: a replayed reply is shown once and stays
+  out of the transcript, an own reply walks Sending -> Sent -> Delivered on
+  its own ref, own replies can be edited (a peer cannot edit them) and
+  deleted for everyone, the peer's delete of their reply clears the thread
+  and the reply count.
+- **Direct messages section.** `ChatChannelPanel` (`A/feature/chat/ChatChannelList.kt`)
+  now lists the server DMs (`ChatHub.directListRows`, from
+  `DirectMessageService.records`) under "Direct messages", after Office and
+  before Discord. Order: newest first, by the later of the record's
+  `updatedAt` (seconds or ms, `ChatListPreviews.recencyMs`) and the newest
+  message held on the phone. A row shows the unread count as a red pill, and
+  a tap selects the conversation through `ChatHub.select`, the path a DM
+  notification takes. Before this, a server DM was reachable only from its
+  notification.
+- **Last line per row** (`C/chat/ChatListPreview.kt`, `ChatHub.listPreview`).
+  Channel, Office and DM rows get a second, muted, single-line, ellipsised
+  line built only from messages the phone already holds (nothing is added to
+  any server API or stored): the newest top-level message, skipping thread
+  replies, ephemeral rows, deleted messages and messages hidden with Delete
+  for me; an edit of the newest message updates it (`ChatExtras.text`).
+  DMs show the text, channels "<sender>: <text>", own messages "You: <text>".
+  A file with no text is "📎 <name>". Markdown is reduced to plain text
+  (link labels, emphasis and code markers, headings, quotes and list marks
+  dropped; newlines collapsed; 160 chars). A row with no known message stays
+  one line, as before. A short time ("14:02" today, weekday within a week,
+  "3 Oct" otherwise, `ChatListPreviews.timeLabel`) sits on the name line.
+  #mesh and Discord rows keep one line (their messages live in other stores).
+- **DM avatars.** DM rows lead with a 28 dp round avatar (`DirectAvatar`:
+  `ApiService.accountAvatarPng`, which caches per name, then the initials
+  `FmAvatar`). It starts from `ApiService.knownAccountAvatarPng`, so a
+  picture already fetched paints on the first frame instead of after the
+  initial (see `NAVIGATION.md` 2.0.95). The presence dot (online, away, offline) sits on its corner
+  when the other user is in the relay roster; otherwise no dot is drawn.
+- Tests: `ChatListPreviewTest` (plain text, prefixes, file fallback, skip
+  rules, time labels, channel preview through edits, deletes and Delete for
+  me), `DirectMessagesTest.testDirectListPreviewShowsTheNewestTopLevelLine`,
+  `testDirectListRowsAreNewestFirst`.
 
 ## Appendix: port map
 

@@ -30,6 +30,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // of its connected accounts answered with, keyed "service:handle".
     detailContactId: "", detailUpdates: {},
     nextSkipped: new Set(),
+    ai: null,
     },
   };
 
@@ -587,6 +588,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       </div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
         ${channels.map((channel, index) => `<a data-crm-next-channel="${channel.kind}" href="${escapeHtml(channel.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(channel.title)}" class="${index === 0 ? "bg-primary text-primary-foreground" : "border border-border text-foreground hover:bg-secondary"} whitespace-nowrap rounded-md px-3 py-2 text-xs font-semibold">${escapeHtml(channel.label)} &#8599;</a>`).join("")}
+        <button data-crm-next-ai="${id}" data-crm-next-ai-mode="${mode}" type="button" title="Gather everything about them and us into a prompt for ChatGPT or Claude to write the message" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Write with AI</button>
         <button data-crm-next-contacted="${id}" type="button" title="Stamp Last contacted now and show the next person" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Mark contacted</button>
         <button data-crm-next-skip="${id}" type="button" title="Show the next person; nothing is saved" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-secondary">Skip</button>
       </div>`);
@@ -613,8 +615,310 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (event.target.closest("[data-crm-next-unskip]")) { state.crmView.nextSkipped.clear(); renderCrmNextContact(); return; }
     const contacted = event.target.closest("[data-crm-next-contacted]");
     if (contacted) { contacted.disabled = true; void markCrmNextContacted(contacted.dataset.crmNextContacted); return; }
+    const ai = event.target.closest("[data-crm-next-ai]");
+    if (ai) {
+      const mode = ai.dataset.crmNextAiMode === "reach" ? "reach" : "follow";
+      const next = crmNextContact(mode);
+      openCrmAi(ai.dataset.crmNextAi, mode, next.contact?.id === ai.dataset.crmNextAi ? next.reason : "");
+      return;
+    }
     const detail = event.target.closest("[data-crm-contact-detail]");
     if (detail) openCrmContactDetail(detail.dataset.crmContactDetail);
+  }
+
+  const CRM_AI_TARGETS = {
+    chatgpt: { label: "ChatGPT", url: "https://chatgpt.com/" },
+    claude: { label: "Claude", url: "https://claude.ai/new" },
+  };
+  const CRM_AI_FORMATS = [
+    { id: "email", label: "Email" },
+    { id: "message", label: "Direct message" },
+    { id: "toot", label: "Toot" },
+  ];
+  const CRM_AI_URL_LIMIT = 14000;
+  const CRM_AI_MESSAGE_LIMIT = 6;
+  const CRM_AI_MESSAGE_CHARS = 900;
+  const CRM_AI_NOTES_CHARS = 2500;
+  const CRM_AI_FIELD_LIMIT = 40;
+  const CRM_AI_BRIEF_LIMIT = 8000;
+  const CRM_FORKMESH_BRIEF = [
+    "ForkMesh (https://forkmesh.com) lets developers collaborate on, mirror and preserve source-code repositories across independent hosts, without relying on any single hosting provider. It is open source.",
+    "- Git stays the source of truth. Repository bytes live on developer-operated hosts and mirrors; clones are served from a live, signed, integrity-checked mirror, so a repository stays reachable when its source host goes offline.",
+    "- Collaboration travels with the code: issues, discussions, pull requests, reviews, projects and releases are signed records stored in the repository, not only in a hosted database.",
+    "- Stock Git works with no account: git clone https://forkmesh.com/<owner>/<repo>. ForkMesh's own source is https://forkmesh.com/forkmesh/forkmesh.",
+    "- The desktop app (Linux, macOS, Windows) is a full node: it hosts and mirrors repositories and runs Codex or Claude Code agents in isolated worktrees whose work becomes pull requests. iPhone and Android apps are access clients.",
+    "- The protocol, self-hosting, public read and clone, and portable Git data are free; only bounded hosted services are paid.",
+    "- The public proof uses ordinary developer actions: collaborate, add a mirror, take the source host offline, and clone again.",
+    "Links:",
+    "- Website: https://forkmesh.com",
+    "- Web app: https://app.forkmesh.com",
+    "- 3D ForkMesh World: https://world.forkmesh.com",
+    "- Docs: https://forkmesh.com/docs/",
+    "- Blog: https://forkmesh.com/blog",
+    "- Changelog: https://forkmesh.com/changelog",
+    "- Press kit: https://forkmesh.com/press",
+    "- Status: https://forkmesh.com/status",
+    "- Install the desktop node on Linux or macOS: curl -fsSL https://forkmesh.com/install.sh | bash",
+    "Recent updates: read the blog and the changelog above for what shipped lately.",
+  ].join("\n");
+
+  function crmAiBrief() {
+    const saved = String(state.crmView.settings?.messageBrief || "").trim();
+    if (saved) return saved;
+    return state.crmView.organization.toLowerCase() === "forkmesh" ? CRM_FORKMESH_BRIEF : "";
+  }
+
+  function crmAiDefaultFormat(contact) {
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(contact.email || "").trim())) return "email";
+    return crmMastodonKey(contact.mastodon) ? "toot" : "message";
+  }
+
+  function crmAiMode(contact, messages) {
+    return Number(contact.lastContactedAt || 0) > 0 || messages.some((message) =>
+      message.direction === "inbound" || !CRM_NEXT_UNSENT_STATUSES.has(String(message.status || "").toLowerCase()))
+      ? "follow" : "reach";
+  }
+
+  function crmAiMessageText(text) {
+    const lines = [];
+    for (const line of String(text || "").replace(/\r\n?/g, "\n").split("\n")) {
+      if (/^On .{4,200}wrote:\s*$/.test(line.trim()) || /^-{2,}\s*Original Message\s*-{2,}$/i.test(line.trim())) break;
+      if (!line.trimStart().startsWith(">")) lines.push(line);
+    }
+    const flat = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return flat.length > CRM_AI_MESSAGE_CHARS ? `${flat.slice(0, CRM_AI_MESSAGE_CHARS - 1)}…` : flat;
+  }
+
+  const CRM_AI_ANGLES = [
+    { words: ["journalist", "press", "media", "reporter", "writer", "editor", "podcast", "newsletter", "blog"],
+      angle: (group) => `They are on our "${group}" list as a journalist, so pitch a story: why it matters now and what is new, and offer an interview or a demo. No sales talk.` },
+    { words: ["investor", "angel", "vc", "fund", "capital"],
+      angle: (group) => `They are on our "${group}" list as an investor, so lead with the opportunity and ask for a short call; never invent traction, numbers or names.` },
+    { words: ["partner", "integration", "alliance"],
+      angle: (group) => `They are on our "${group}" list as a potential partner, so show how we fit what they build and suggest exploring working together.` },
+    { words: ["customer", "lead", "user", "developer", "maintainer", "community", "open source"],
+      angle: (group) => `They are on our "${group}" list as a potential user, so give one concrete way we help their projects and invite them to try it.` },
+  ];
+
+  function crmAiAngle(group, flowName) {
+    const name = String(group || flowName || "").trim();
+    if (!name) return "";
+    const audience = `${group || ""} ${flowName || ""}`.toLowerCase();
+    const match = CRM_AI_ANGLES.find((item) => item.words.some((word) => audience.includes(word)));
+    return match ? match.angle(name) : `They are on our "${name}" list, so pitch it the way that suits that group.`;
+  }
+
+  function crmAiPrompt(input) {
+    const { contact, format, mode } = input;
+    const name = crmContactLabel(contact);
+    const organization = input.organization || "our organization";
+    const sender = input.sender || `the ${organization} team`;
+    const day = (at) => crmDay(at) || "an unknown date";
+    const mastodon = crmMastodonKey(contact.mastodon);
+    const ask = {
+      email: `an email to ${name}. Start with a "Subject:" line, then the body, signed by ${sender}. Keep the body under 150 words.`,
+      message: `a short direct message to ${name} for LinkedIn, X or Bluesky: under 80 words, no subject line, signed by ${sender}.`,
+      toot: `a Mastodon post (toot) to ${name}${mastodon ? ` that mentions @${mastodon} at the start` : ""}, at most 500 characters including the mention and any link, with no more than two hashtags.${input.thread ? ` Write it as a reply in our existing thread: ${input.thread}` : ""}`,
+    }[format] || "";
+    const goal = mode === "reach"
+      ? `This is our first contact with ${name}: introduce ${organization} in a sentence and give them one concrete reason it matters to them in particular.`
+      : `We are already in touch with ${name}: pick up where the conversation below left off, answer anything they asked, and do not repeat the first pitch.`;
+    const angle = crmAiAngle(input.group, input.flowName);
+    const facts = [
+      ["Title", contact.title], ["Company", contact.company], ["Location", contact.location],
+      ["Pipeline", [input.flowName, contact.stage && titleCaseSlug(contact.stage)].filter(Boolean).join(", stage ")],
+      ["Deal value", Number(contact.value) > 0 ? Number(contact.value).toLocaleString("en-US") : ""],
+      ["Next step on our record", contact.nextStep], ["Owner", contact.owner], ["Source", contact.source],
+      ["Tags", (contact.tags || []).join(", ")],
+      ["Last contacted", contact.lastContactedAt ? day(contact.lastContactedAt) : "never"],
+      ["Added to our CRM", contact.createdAt ? `${day(contact.createdAt)}${contact.createdBy ? ` by ${contact.createdBy}` : ""}` : ""],
+      ["ForkMesh account", crmAccountProof(contact)],
+      ["Email", contact.email],
+      ...CRM_PROFILE_FIELDS.map((field) => [crmColumnLabel(field), crmProfileUrl(field, contact[field]) || contact[field]]),
+      ["Phone", contact.phone],
+      ["Their investor deck link", input.deckUrl],
+      ...Object.entries(contact.fields || {}).slice(0, CRM_AI_FIELD_LIMIT)
+        .map(([key, value]) => [crmColumnLabel(key), crmPlainText(value, 200)]),
+    ].filter(([, value]) => String(value ?? "").trim()).map(([label, value]) => `- ${label}: ${String(value).trim()}`);
+    const notes = String(contact.notes || "").trim();
+    const posts = (input.updates || []).map((update) => {
+      const head = `${update.label} ${update.handle}${update.url ? ` (${update.url})` : ""}`;
+      if (update.error) return `${head}: could not be read (${update.error}); open the profile yourself.`;
+      if (!(update.posts || []).length) return `${head}: no public posts.`;
+      return [`${head}:`, ...update.posts.map((post) => `- ${day(post.at)}: ${post.text}${post.url ? ` (${post.url})` : ""}`)].join("\n");
+    });
+    const messages = [...(input.messages || [])].sort((a, b) => (a.at || 0) - (b.at || 0)).map((message) => {
+      const who = message.direction === "inbound" ? "They wrote" : `We wrote${message.sender ? ` (${message.sender})` : ""}`;
+      const unsent = message.direction !== "inbound" && CRM_NEXT_UNSENT_STATUSES.has(String(message.status || "").toLowerCase())
+        ? ` [${String(message.status).toLowerCase()}, not delivered]` : "";
+      const head = `- ${day(message.at)} · ${who} via ${message.via}${unsent}${message.subject ? ` · Subject: ${message.subject}` : ""}${message.url ? ` · ${message.url}` : ""}`;
+      const text = crmAiMessageText(message.text);
+      return text ? `${head}\n${text.split("\n").map((line) => `  > ${line}`).join("\n")}` : head;
+    });
+    return [
+      `You are helping ${sender} at ${organization} write ${ask}`,
+      "",
+      goal,
+      ...(angle ? [angle] : []),
+      "",
+      "How to write it:",
+      "- Make it personal. Open with something specific to them, taken from their recent posts, work or links below, never a compliment that would fit anyone.",
+      "- Say plainly who we are, why we are writing to them in particular, and why now.",
+      "- End with one clear, low-effort ask (a reply, a short call, or trying one thing).",
+      "- Plain, warm words, short paragraphs, no hype, no emoji, no [placeholders]. Use only facts given here or found on the linked pages; leave out anything you cannot back up.",
+      "- If you can browse, open their profiles and posts and our site, blog and changelog below first, and use anything newer than what is written here.",
+      "- Reply with the finished message, ready to paste, then two alternative opening lines.",
+      "",
+      `## About us: ${organization}`,
+      String(input.brief || "").trim() || `(No description saved yet. Look ${organization} up before writing.)`,
+      "",
+      `## About ${name}`,
+      ...(facts.length ? facts : ["- Nothing beyond the name is on record."]),
+      ...(notes ? ["", "Our notes on them:", notes.length > CRM_AI_NOTES_CHARS ? `…${notes.slice(-CRM_AI_NOTES_CHARS)}` : notes] : []),
+      "",
+      "## Their recent public posts",
+      ...(input.updates == null ? ["Not read yet: open their profiles linked above."]
+        : posts.length ? posts : ["No Mastodon, Bluesky or GitHub account on record; look at the links above."]),
+      "",
+      "## Our conversation so far (oldest first)",
+      ...(messages.length ? messages : ["Nothing on record yet: this is the first message."]),
+      ...(input.reason ? ["", "## Why now", input.reason] : []),
+    ].join("\n");
+  }
+
+  function crmAiTargetUrl(target, prompt) {
+    const base = CRM_AI_TARGETS[target]?.url || CRM_AI_TARGETS.chatgpt.url;
+    const url = `${base}?q=${encodeURIComponent(prompt)}`;
+    return url.length <= CRM_AI_URL_LIMIT ? { url, filled: true } : { url: base, filled: false };
+  }
+
+  function crmAiMessageStubs(contact) {
+    return crmLinkedEmails(contact.id)
+      .map((email) => ({
+        id: email.id, at: Number(email.sentAt || email.createdAt || 0), direction: email.direction,
+        status: email.status, subject: email.subject, sender: email.sender,
+        via: crmProviderLabel(email), url: crmHttpsUrl(email.providerUrl), text: "",
+      }))
+      .sort((a, b) => b.at - a.at).slice(0, CRM_AI_MESSAGE_LIMIT);
+  }
+
+  async function crmAiMessages(stubs) {
+    return Promise.all(stubs.map(async (stub) => {
+      try {
+        const payload = await crmRequest(crmOrganizationPath(`/emails/${encodeURIComponent(stub.id)}`));
+        return { ...stub, text: String(payload.email?.text || "").trim() || crmMastodonText(payload.email?.html) };
+      } catch { return stub; }
+    }));
+  }
+
+  async function crmAiUpdates(contact) {
+    return Promise.all(crmLiveAccounts(contact).map(async (account) => {
+      const update = { label: account.label, handle: account.handle, url: account.url, posts: [] };
+      try {
+        update.posts = (await CRM_UPDATE_READERS[account.service](account)).posts || [];
+      } catch (error) {
+        update.error = error.name === "TimeoutError" ? "it did not answer in time" : error.message;
+      }
+      return update;
+    }));
+  }
+
+  function renderCrmAiPrompt(force = false) {
+    const ai = state.crmView.ai; const contact = crmContactById(ai?.contactId);
+    const box = $(`[data-crm-ai-prompt]`); if (!ai || !contact || !box) return;
+    if (ai.edited && !force) return;
+    ai.edited = false;
+    box.value = crmAiPrompt({
+      contact, format: ai.format, mode: ai.mode, reason: ai.reason,
+      brief: $(`[data-crm-ai-brief]`)?.value ?? crmAiBrief(),
+      organization: state.crmView.organization, sender: String(state.session?.name || ""),
+      flowName: crmFlow(contact.flow)?.name || "", group: crmActiveView()?.name || "",
+      messages: ai.messages, updates: ai.updates,
+      deckUrl: crmDeckFor(contact.id)?.url || "", thread: crmNextThread(contact.id), now: Date.now(),
+    });
+  }
+
+  function renderCrmAiStatus(text) {
+    const status = $(`[data-crm-ai-status]`); if (status) status.textContent = text;
+  }
+
+  function openCrmAi(contactId, mode = "", reason = "") {
+    const contact = crmContactById(contactId);
+    const dialog = $(`[data-crm-ai-dialog]`);
+    if (!contact || !dialog) return;
+    const token = {};
+    const stubs = crmAiMessageStubs(contact);
+    const accounts = crmLiveAccounts(contact).length; const linked = stubs.length;
+    state.crmView.ai = {
+      contactId: contact.id, token, reason, edited: false, messages: stubs, updates: accounts ? null : [],
+      mode: mode || crmAiMode(contact, stubs), format: crmAiDefaultFormat(contact),
+    };
+    $(`[data-crm-ai-title]`).textContent = `Write to ${crmContactLabel(contact)} with AI`;
+    $(`[data-crm-ai-formats]`).innerHTML = CRM_AI_FORMATS.map((format) => `<label class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-foreground"><input type="radio" name="crm-ai-format" value="${format.id}"${format.id === state.crmView.ai.format ? " checked" : ""} />${escapeHtml(format.label)}</label>`).join("");
+    const brief = $(`[data-crm-ai-brief]`);
+    brief.value = crmAiBrief();
+    brief.placeholder = `What ${state.crmView.organization} does, who it is for, links, recent news`;
+    $(`[data-crm-ai-brief-save]`).hidden = !crmCanManage();
+    renderCrmAiPrompt(true);
+    renderCrmAiStatus(accounts || linked
+      ? `Reading ${[linked && `${linked} past message${linked === 1 ? "" : "s"}`, accounts && `${accounts} public account${accounts === 1 ? "" : "s"}`].filter(Boolean).join(" and ")}…`
+      : "Nothing to read: the prompt holds the record, our notes and the brief.");
+    if (!dialog.open) dialog.showModal();
+    if (!accounts && !linked) return;
+    void Promise.all([crmAiMessages(stubs), crmAiUpdates(contact)]).then(([messages, updates]) => {
+      const ai = state.crmView.ai;
+      if (ai?.token !== token) return;
+      ai.messages = messages; ai.updates = updates;
+      const posts = updates.reduce((total, update) => total + (update.posts || []).length, 0);
+      renderCrmAiStatus(`${ai.edited ? "Read, but your edits to the prompt were kept" : "Ready"}: ${messages.length} past message${messages.length === 1 ? "" : "s"} and ${posts} recent post${posts === 1 ? "" : "s"} are in the prompt.`);
+      renderCrmAiPrompt();
+    });
+  }
+
+  function sendCrmAi(target) {
+    const prompt = String($(`[data-crm-ai-prompt]`)?.value || "");
+    const label = CRM_AI_TARGETS[target]?.label || "ChatGPT";
+    const { url, filled } = crmAiTargetUrl(target, prompt);
+    window.open(url, "_blank", "noopener,noreferrer");
+    const copied = navigator.clipboard?.writeText(prompt) || Promise.reject(new Error("no clipboard"));
+    void copied.then(
+      () => renderCrmAiStatus(filled
+        ? `Opened ${label} with the prompt filled in. It is on your clipboard too.`
+        : `The prompt is too long for a link, so it is on your clipboard: paste it into ${label}.`),
+      () => renderCrmAiStatus(filled
+        ? `Opened ${label} with the prompt filled in.`
+        : `The prompt is too long for a link and could not be copied: select it here, copy it and paste it into ${label}.`));
+  }
+
+  async function saveCrmAiBrief(button) {
+    const brief = String($(`[data-crm-ai-brief]`)?.value || "").trim().slice(0, CRM_AI_BRIEF_LIMIT);
+    button.disabled = true;
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/settings"), "PUT", { messageBrief: brief });
+      state.crmView.settings = { ...state.crmView.settings, ...(payload.settings || { messageBrief: brief }) };
+      renderCrmAiStatus(`Saved as ${state.crmView.organization}'s brief for every member.`);
+    } catch (error) { renderCrmAiStatus(`Could not save the brief: ${error.message}`); }
+    button.disabled = false;
+  }
+
+  function handleCrmAiClick(event) {
+    const send = event.target.closest("[data-crm-ai-open]");
+    if (send) { sendCrmAi(send.dataset.crmAiOpen); return; }
+    if (event.target.closest("[data-crm-ai-copy]")) {
+      const prompt = String($(`[data-crm-ai-prompt]`)?.value || "");
+      const copied = navigator.clipboard?.writeText(prompt) || Promise.reject(new Error("no clipboard"));
+      void copied.then(() => renderCrmAiStatus("Prompt copied."),
+        () => renderCrmAiStatus("Could not copy the prompt: select it here and copy it."));
+      return;
+    }
+    const save = event.target.closest("[data-crm-ai-brief-save]");
+    if (save) void saveCrmAiBrief(save);
+  }
+
+  function handleCrmAiChange(event) {
+    const ai = state.crmView.ai; if (!ai) return;
+    if (event.target.name === "crm-ai-format") { ai.format = event.target.value; renderCrmAiPrompt(true); return; }
+    if (event.target.matches("[data-crm-ai-brief]")) renderCrmAiPrompt(true);
   }
 
   function crmActiveShared() {
@@ -2281,6 +2585,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         </section>
         <div class="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
           <button type="button" data-crm-contact-compose="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Email</button>
+          <button type="button" data-crm-contact-ai="${id}" title="Gather everything about them and us into a prompt for ChatGPT or Claude to write the message" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Write with AI</button>
           <button type="button" data-crm-contact-deck="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Deck</button>
           <button type="button" data-crm-contact-link="${id}" title="Copy a link that opens this contact for members of ${escapeHtml(contact.organization || state.crmView.organization)}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Copy link</button>
           <button type="button" data-crm-contact-edit="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Open the full form</button>
@@ -2336,11 +2641,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // Every live account on the record, read in parallel so a slow instance
   // does not hold the others up. A card closed or reopened meanwhile drops
   // whatever is still in flight.
+  const CRM_UPDATE_READERS = {
+    mastodon: crmMastodonUpdates, bluesky: crmBlueskyUpdates, github: crmGithubUpdates,
+  };
+
   async function loadCrmContactUpdates(contact) {
     const accounts = crmLiveAccounts(contact);
-    const readers = {
-      mastodon: crmMastodonUpdates, bluesky: crmBlueskyUpdates, github: crmGithubUpdates,
-    };
     for (const account of accounts) {
       state.crmView.detailUpdates[`${account.service}:${account.key}`] =
         { loading: true, posts: [], picture: account.picture };
@@ -2350,7 +2656,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const slot = `${account.service}:${account.key}`;
       let result = { loading: false, posts: [], picture: account.picture };
       try {
-        result = { ...result, ...await readers[account.service](account) };
+        result = { ...result, ...await CRM_UPDATE_READERS[account.service](account) };
       } catch (error) {
         result.error = error.name === "TimeoutError" ? "it did not answer in time" : error.message;
       }
@@ -4079,6 +4385,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-contact-list]`)?.addEventListener("click", handleContactAction);
     $(`[data-crm-contact-cards]`)?.addEventListener("click", handleContactAction);
     $(`[data-crm-next]`)?.addEventListener("click", handleCrmNextClick);
+    $(`[data-crm-ai-dialog]`)?.addEventListener("click", handleCrmAiClick);
+    $(`[data-crm-ai-dialog]`)?.addEventListener("change", handleCrmAiChange);
+    $(`[data-crm-ai-prompt]`)?.addEventListener("input", () => { if (state.crmView.ai) state.crmView.ai.edited = true; });
+    $(`[data-crm-ai-dialog]`)?.addEventListener("close", () => { state.crmView.ai = null; });
     const handleContactMenu = (event) => {
       const row = event.target.closest("[data-crm-contact-row]");
       if (row) openCrmContactMenu(event, row.dataset.crmContactRow);
@@ -4141,6 +4451,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       }
       const link = event.target.closest("[data-crm-contact-link]");
       if (link) { void copyCrmContactLink(link.dataset.crmContactLink, link); return; }
+      const ai = event.target.closest("[data-crm-contact-ai]");
+      if (ai) { detailDialog.close(); openCrmAi(ai.dataset.crmContactAi); return; }
       const advance = event.target.closest("[data-crm-account-advance]");
       if (advance) { detailDialog.close(); void advanceCrmFromAccount(advance.dataset.crmAccountAdvance); return; }
       // Email, Deck and the full form are dialogs of their own: the card

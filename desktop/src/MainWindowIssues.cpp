@@ -2,6 +2,7 @@
 #include "MainWindow.h"
 #include "Tooltips.h"
 #include "MainWindowInternal.h"
+#include "ChatListPreview.h"
 #include "DiscordClient.h"
 #include "FederatedThreadView.h"
 #include "CurrentPageStack.h"
@@ -12388,11 +12389,13 @@ QWidget *MainWindow::buildChatSection()
 namespace {
 
 constexpr int kChatRoomRowHeight = 32;
+constexpr int kChatRoomTallRowHeight = 44;
 constexpr int kChatRoomRowPadX = 16;
 constexpr int kChatRoomGearPadX = 2;
 constexpr int kChatRoomGlyphGap = 8;
 constexpr int kChatRoomChevronGap = 4;
 constexpr int kChatRoomGlyphSize = 14;
+constexpr int kChatRoomLeadSize = 28;
 constexpr int kChatRoomHashFontPx = 20;
 constexpr int kChatRoomGearSize = 14;
 constexpr int kChatRoomUnreadDot = 6;
@@ -12400,11 +12403,17 @@ constexpr int kChatRoomPresenceDot = 8;
 constexpr int kChatRoomBadgeHeight = 18;
 constexpr int kChatRoomGroupFontPx = 13;
 constexpr int kChatRoomFontPx = 15;
+constexpr int kChatRoomPreviewFontPx = 13;
+constexpr int kChatRoomTimeFontPx = 11;
+constexpr int kChatRoomLineGap = 1;
 constexpr int kChatRoomRowInset = 8;
 constexpr int kChatRoomRowRadius = 4;
 
 struct ChatRoomRow {
     QString label;
+    QString preview;
+    qint64 previewTimeMs = 0;
+    QPixmap avatar;
     bool group = false;
     bool collapsed = false;
     bool unread = false;
@@ -12438,6 +12447,10 @@ ChatRoomRow chatRoomRow(const QModelIndex &index)
     row.direct = presence.isValid();
     row.online = presence.toBool();
     row.unreadCount = index.data(ChannelGroupTree::kUnreadCountRole).toInt();
+    row.preview = index.data(ChannelGroupTree::kPreviewRole).toString();
+    row.previewTimeMs =
+        index.data(ChannelGroupTree::kPreviewTimeRole).toLongLong();
+    row.avatar = index.data(ChannelGroupTree::kAvatarRole).value<QPixmap>();
     return row;
 }
 
@@ -12450,8 +12463,18 @@ public:
                    const QModelIndex &index) const override
     {
         QSize hint = QStyledItemDelegate::sizeHint(option, index);
-        if (Theme::isNext())
-            hint.setHeight(kChatRoomRowHeight);
+        const bool group =
+            index.siblingAtColumn(0).data(ChannelGroupTree::kGroupRole).isValid();
+        if (Theme::isNext()) {
+            hint.setHeight(group ? kChatRoomRowHeight : kChatRoomTallRowHeight);
+            return hint;
+        }
+        if (!group)
+            hint.setHeight(qMax(hint.height() +
+                                    QFontMetrics(previewFont(option.font))
+                                        .height() +
+                                    kChatRoomLineGap,
+                                kChatRoomLeadSize + 12));
         return hint;
     }
 
@@ -12459,7 +12482,7 @@ public:
                const QModelIndex &index) const override
     {
         if (!Theme::isNext()) {
-            QStyledItemDelegate::paint(painter, option, index);
+            paintClassic(painter, option, index);
             return;
         }
         const auto *tree = qobject_cast<const QTreeView *>(option.widget);
@@ -12521,7 +12544,7 @@ public:
         int right = option.rect.right() - kChatRoomRowPadX;
         if (gearColumn)
             right = option.rect.right() - kChatRoomGearPadX;
-        else if (row.unread)
+        else if (row.unread || !row.preview.isEmpty())
             right = option.rect.right() - kChatRoomGearPadX -
                     ChannelGroupTree::kSettingsColumnWidth;
         if (row.group) {
@@ -12539,8 +12562,12 @@ public:
         font.setPixelSize(row.group ? kChatRoomGroupFontPx : kChatRoomFontPx);
         font.setWeight(row.unread ? QFont::Bold : QFont::Normal);
 
-        if (row.direct) {
-            const QRectF dot(left + (kChatRoomGlyphSize - kChatRoomPresenceDot) / 2.0,
+        if (row.direct && !row.avatar.isNull()) {
+            painter->drawPixmap(glyphRect(option.rect, left, kChatRoomLeadSize),
+                                row.avatar);
+            left += kChatRoomLeadSize + kChatRoomGlyphGap;
+        } else if (row.direct) {
+            const QRectF dot(left + (kChatRoomLeadSize - kChatRoomPresenceDot) / 2.0,
                              option.rect.top() +
                                  (option.rect.height() - kChatRoomPresenceDot) / 2.0,
                              kChatRoomPresenceDot, kChatRoomPresenceDot);
@@ -12552,23 +12579,25 @@ public:
                 painter->setBrush(Qt::NoBrush);
             }
             painter->drawEllipse(dot.adjusted(0.7, 0.7, -0.7, -0.7));
-            left += kChatRoomGlyphSize + kChatRoomGlyphGap;
+            left += kChatRoomLeadSize + kChatRoomGlyphGap;
         } else if (row.locked) {
             painter->drawPixmap(
-                glyphRect(option.rect, left, kChatRoomGlyphSize),
+                glyphRect(option.rect,
+                          left + (kChatRoomLeadSize - kChatRoomGlyphSize) / 2,
+                          kChatRoomGlyphSize),
                 tintedOcticonPixmap(QStringLiteral("lock"), ink,
                                     kChatRoomGlyphSize));
-            left += kChatRoomGlyphSize + kChatRoomGlyphGap;
+            left += kChatRoomLeadSize + kChatRoomGlyphGap;
         } else if (!row.group) {
             QFont hashFont = font;
             hashFont.setWeight(QFont::Normal);
             hashFont.setPixelSize(kChatRoomHashFontPx);
             painter->setFont(hashFont);
             painter->setPen(railText);
-            painter->drawText(QRect(left - 1, option.rect.top(),
-                                    kChatRoomGlyphSize + 2, option.rect.height()),
+            painter->drawText(QRect(left, option.rect.top(), kChatRoomLeadSize,
+                                    option.rect.height()),
                               Qt::AlignCenter, QStringLiteral("#"));
-            left += kChatRoomGlyphSize + kChatRoomGlyphGap;
+            left += kChatRoomLeadSize + kChatRoomGlyphGap;
         }
 
         QString label = row.label;
@@ -12577,7 +12606,45 @@ public:
         else if (!row.group && label.startsWith(QLatin1Char('#')))
             label.remove(0, 1);
 
+        const bool twoLine = !row.group && !row.preview.isEmpty();
+        const QFont subFont = previewFont(option.font);
+        const QFontMetrics nameMetrics(font);
+        const QFontMetrics subMetrics(subFont);
+        QRect nameLine = option.rect;
+        QRect subLine;
+        if (twoLine) {
+            const int block =
+                nameMetrics.height() + kChatRoomLineGap + subMetrics.height();
+            nameLine.setTop(option.rect.top() +
+                            (option.rect.height() - block) / 2);
+            nameLine.setHeight(nameMetrics.height());
+            subLine = QRect(nameLine.left(),
+                            nameLine.bottom() + 1 + kChatRoomLineGap,
+                            nameLine.width(), subMetrics.height());
+        }
+        int nameRight = right;
+        int subRight = right;
+
+        if (twoLine) {
+            const QString when = forkmesh::chatlist::timeLabel(
+                row.previewTimeMs, QDateTime::currentDateTime());
+            if (!when.isEmpty()) {
+                QFont timeFont = option.font;
+                timeFont.setPixelSize(kChatRoomTimeFontPx);
+                timeFont.setWeight(QFont::Normal);
+                const int width = QFontMetrics(timeFont).horizontalAdvance(when);
+                painter->setFont(timeFont);
+                painter->setPen(railText);
+                painter->drawText(QRect(nameRight + 1 - width, nameLine.top(),
+                                        width, nameLine.height()),
+                                  Qt::AlignRight | Qt::AlignVCenter, when);
+                nameRight -= width + kChatRoomGlyphGap;
+            }
+        }
+
         if (row.unread && !row.group) {
+            const QRect badgeLine = twoLine ? subLine : option.rect;
+            int &badgeRight = twoLine ? subRight : nameRight;
             const QString count =
                 row.unreadCount > 99 ? QStringLiteral("99+")
                                      : row.unreadCount > 0
@@ -12587,11 +12654,11 @@ public:
                 painter->setPen(Qt::NoPen);
                 painter->setBrush(ink);
                 painter->drawEllipse(QRectF(
-                    right + 1 - kChatRoomUnreadDot,
-                    option.rect.top() +
-                        (option.rect.height() - kChatRoomUnreadDot) / 2.0,
+                    badgeRight + 1 - kChatRoomUnreadDot,
+                    badgeLine.top() +
+                        (badgeLine.height() - kChatRoomUnreadDot) / 2.0,
                     kChatRoomUnreadDot, kChatRoomUnreadDot));
-                right -= kChatRoomUnreadDot + kChatRoomGlyphGap;
+                badgeRight -= kChatRoomUnreadDot + kChatRoomGlyphGap;
             } else {
                 QFont badgeFont = option.font;
                 badgeFont.setPixelSize(11);
@@ -12599,40 +12666,109 @@ public:
                 const int width = qMax(
                     kChatRoomBadgeHeight,
                     QFontMetrics(badgeFont).horizontalAdvance(count) + 12);
+                const int height =
+                    qMin(kChatRoomBadgeHeight, qMax(badgeLine.height(), 14));
                 const QRectF badge(
-                    right + 1 - width,
-                    option.rect.top() +
-                        (option.rect.height() - kChatRoomBadgeHeight) / 2.0,
-                    width, kChatRoomBadgeHeight);
+                    badgeRight + 1 - width,
+                    badgeLine.top() + (badgeLine.height() - height) / 2.0,
+                    width, height);
                 painter->setPen(Qt::NoPen);
                 painter->setBrush(Theme::chatColor(QStringLiteral("chatNew")));
-                painter->drawRoundedRect(badge, kChatRoomBadgeHeight / 2.0,
-                                         kChatRoomBadgeHeight / 2.0);
+                painter->drawRoundedRect(badge, height / 2.0, height / 2.0);
                 painter->setFont(badgeFont);
                 painter->setPen(Qt::white);
                 painter->drawText(badge, Qt::AlignCenter, count);
-                right -= width + kChatRoomGlyphGap;
+                badgeRight -= width + kChatRoomGlyphGap;
             }
         }
 
-        const QRect textRect(left, option.rect.top(), qMax(0, right + 1 - left),
-                             option.rect.height());
+        const QRect textRect(left, nameLine.top(), qMax(0, nameRight + 1 - left),
+                             nameLine.height());
         painter->setFont(font);
         painter->setPen(ink);
         painter->drawText(textRect,
                           Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
-                          QFontMetrics(font).elidedText(label, Qt::ElideRight,
-                                                        textRect.width()));
+                          nameMetrics.elidedText(label, Qt::ElideRight,
+                                                 textRect.width()));
+        if (twoLine) {
+            const QRect previewRect(left, subLine.top(),
+                                    qMax(0, subRight + 1 - left),
+                                    subLine.height());
+            painter->setFont(subFont);
+            painter->setPen(Theme::chatColor(row.unread ? QStringLiteral("chatText")
+                                                        : QStringLiteral("chatMuted")));
+            painter->drawText(previewRect,
+                              Qt::AlignLeft | Qt::AlignVCenter |
+                                  Qt::TextSingleLine,
+                              subMetrics.elidedText(row.preview, Qt::ElideRight,
+                                                    previewRect.width()));
+        }
         painter->restore();
     }
 
 private:
+    static QFont previewFont(const QFont &base)
+    {
+        QFont font = base;
+        font.setPixelSize(Theme::isNext() ? kChatRoomPreviewFontPx : 12);
+        font.setWeight(QFont::Normal);
+        font.setBold(false);
+        return font;
+    }
+
+    void paintClassic(QPainter *painter, const QStyleOptionViewItem &option,
+                      const QModelIndex &index) const
+    {
+        const ChatRoomRow row = chatRoomRow(index.siblingAtColumn(0));
+        if (row.group || index.column() != 0) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+        QStyleOptionViewItem opt(option);
+        initStyleOption(&opt, index);
+        if (!row.avatar.isNull()) {
+            QIcon icon;
+            icon.addPixmap(row.avatar, QIcon::Normal);
+            icon.addPixmap(row.avatar, QIcon::Selected);
+            icon.addPixmap(row.avatar, QIcon::Active);
+            opt.icon = icon;
+            opt.decorationSize = row.avatar.deviceIndependentSize().toSize();
+            opt.decorationAlignment = Qt::AlignCenter;
+            opt.features |= QStyleOptionViewItem::HasDecoration;
+        }
+        if (!row.preview.isEmpty())
+            opt.displayAlignment = Qt::AlignLeft | Qt::AlignTop;
+        const QWidget *widget = option.widget;
+        QStyle *style = widget ? widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
+        if (row.preview.isEmpty())
+            return;
+        const QRect text =
+            style->subElementRect(QStyle::SE_ItemViewItemText, &opt, widget);
+        const QFont subFont = previewFont(option.font);
+        const QFontMetrics metrics(subFont);
+        const QRect previewRect(text.left() + 4,
+                                text.bottom() + 1 - metrics.height(),
+                                qMax(0, text.width() - 8), metrics.height());
+        const bool selected = opt.state.testFlag(QStyle::State_Selected);
+        QColor color = selected ? QColor(Qt::white)
+                                : opt.palette.color(QPalette::Text);
+        color.setAlphaF(selected || row.unread ? 0.85 : 0.6);
+        painter->save();
+        painter->setFont(subFont);
+        painter->setPen(color);
+        painter->drawText(previewRect,
+                          Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
+                          metrics.elidedText(row.preview, Qt::ElideRight,
+                                             previewRect.width()));
+        painter->restore();
+    }
+
     static QRect glyphRect(const QRect &cell, int left, int size)
     {
         return QRect(left, cell.top() + (cell.height() - size) / 2, size, size);
     }
 };
-
 
 }
 
@@ -12734,16 +12870,16 @@ QWidget *MainWindow::buildChatSidebar(QPushButton *&addChannelButton)
 
     const auto fitToRows = [](QAbstractItemView *view) {
         QAbstractItemModel *model = view->model();
-        int rows = 0;
+        int height = 0;
         if (auto *tree = qobject_cast<QTreeView *>(view)) {
             for (QModelIndex index = model->index(0, 0); index.isValid();
                  index = tree->indexBelow(index))
-                ++rows;
+                height += qMax(1, view->sizeHintForIndex(index).height());
         } else {
-            rows = model->rowCount();
+            for (int row = 0; row < model->rowCount(); ++row)
+                height += qMax(1, view->sizeHintForRow(row));
         }
-        const int rowHeight = rows > 0 ? qMax(1, view->sizeHintForRow(0)) : 0;
-        view->setFixedHeight(rows * rowHeight + 2 * view->frameWidth());
+        view->setFixedHeight(height + 2 * view->frameWidth());
     };
     for (QAbstractItemView *view :
          {static_cast<QAbstractItemView *>(m_channelList),

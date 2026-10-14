@@ -101,6 +101,92 @@ inline QByteArray supersededFrame(const QStringList &refs)
     return refsFrame(QStringLiteral("forkmesh-superseded"), refs);
 }
 
+inline bool isDeliveredFrame(const QJsonObject &envelope)
+{
+    return envelope.value(QLatin1String("kind")).toString() ==
+           QLatin1String("forkmesh-delivered");
+}
+
+inline bool isReadFrame(const QJsonObject &envelope)
+{
+    return envelope.value(QLatin1String("kind")).toString() ==
+           QLatin1String("forkmesh-read");
+}
+
+inline QStringList refsFromEnvelope(const QJsonObject &envelope)
+{
+    static const QRegularExpression pattern(
+        QStringLiteral("^[0-9a-f]{40}$"));
+    QStringList refs;
+    const QJsonArray entries = envelope.value(QLatin1String("refs")).toArray();
+    for (const QJsonValue &entry : entries) {
+        const QString ref = entry.toString();
+        if (pattern.match(ref).hasMatch() && !refs.contains(ref))
+            refs.append(ref);
+        if (refs.size() == kRememberedRefs)
+            break;
+    }
+    return refs;
+}
+
+enum class Receipt { None, Delivered, Read };
+
+enum class ReceiptMark { None, Sending, Sent, Delivered, Read };
+
+inline ReceiptMark receiptMark(bool self, int recipientCount, Receipt receipt,
+                               bool settled)
+{
+    if (!self)
+        return ReceiptMark::None;
+    if (receipt == Receipt::Read)
+        return ReceiptMark::Read;
+    if (receipt == Receipt::Delivered)
+        return ReceiptMark::Delivered;
+    if (recipientCount >= 0 || settled)
+        return ReceiptMark::Sent;
+    return ReceiptMark::Sending;
+}
+
+inline QString receiptLabel(ReceiptMark mark)
+{
+    switch (mark) {
+    case ReceiptMark::Sending:
+        return QStringLiteral("Sending");
+    case ReceiptMark::Sent:
+        return QStringLiteral("Sent");
+    case ReceiptMark::Delivered:
+        return QStringLiteral("Delivered");
+    case ReceiptMark::Read:
+        return QStringLiteral("Read");
+    case ReceiptMark::None:
+        break;
+    }
+    return QString();
+}
+
+inline QString receiptName(Receipt receipt)
+{
+    if (receipt == Receipt::Read)
+        return QStringLiteral("read");
+    if (receipt == Receipt::Delivered)
+        return QStringLiteral("delivered");
+    return QString();
+}
+
+inline Receipt receiptFromName(const QString &name)
+{
+    if (name == QLatin1String("read"))
+        return Receipt::Read;
+    if (name == QLatin1String("delivered"))
+        return Receipt::Delivered;
+    return Receipt::None;
+}
+
+inline bool showsRecipientCount(const QString &conversation)
+{
+    return !conversation.startsWith(QLatin1String("#office/@"));
+}
+
 inline bool isHistoryEndFrame(const QJsonObject &envelope)
 {
     return envelope.value(QLatin1String("kind")).toString() ==
