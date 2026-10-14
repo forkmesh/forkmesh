@@ -4,8 +4,15 @@ import Observation
 
 @MainActor
 @Observable
+public final class AgentEagleText {
+    public fileprivate(set) var text: String = ""
+}
+
+@MainActor
+@Observable
 public final class AgentEagleFeed {
-    public private(set) var dialogs: [String: String] = [:]
+    @ObservationIgnored public private(set) var dialogs: [String: String] = [:]
+    @ObservationIgnored private var texts: [String: AgentEagleText] = [:]
     private var desktopRows: [String: String] = [:]
     @ObservationIgnored private var feeds: ControlWatchFeeds?
     @ObservationIgnored private var followed: Set<String> = []
@@ -35,17 +42,27 @@ public final class AgentEagleFeed {
         feeds = nil
         followed = []
         launched = [:]
-        if !dialogs.isEmpty { dialogs = [:] }
+        dialogs = [:]
+        for box in texts.values where !box.text.isEmpty { box.text = "" }
+        texts = [:]
         if !desktopRows.isEmpty { desktopRows = [:] }
+    }
+
+    private func text(for id: String) -> String {
+        if let box = texts[id] { return box.text }
+        let box = AgentEagleText()
+        box.text = dialogs[id] ?? ""
+        texts[id] = box
+        return box.text
     }
 
     public func dialog(_ line: AgentLine) -> String {
         guard line.isActive else { return "" }
         switch line.source {
         case .control(let row):
-            return dialogs[row.id] ?? ""
+            return text(for: row.id)
         case .entry(.desktop(let repo, let session)):
-            return desktopRows[Self.desktopKey(repo: repo.name, localId: session.id)].flatMap { dialogs[$0] } ?? ""
+            return desktopRows[Self.desktopKey(repo: repo.name, localId: session.id)].map { text(for: $0) } ?? ""
         case .entry(.launched(_, let session, _, _)):
             let said = AgentLines.dialog(session)
             if said.isEmpty { return launched[line.id] ?? "" }
@@ -67,6 +84,10 @@ public final class AgentEagleFeed {
             let said = AgentLines.dialog(feeds.text(id)?.text ?? "")
             if !said.isEmpty { next[id] = said }
         }
-        if next != dialogs { dialogs = next }
+        guard next != dialogs else { return }
+        dialogs = next
+        for (id, text) in next where texts[id]?.text != text {
+            texts[id]?.text = text
+        }
     }
 }

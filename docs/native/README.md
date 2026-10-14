@@ -229,6 +229,72 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 ## Recent changes
 
+- 2026-10-13 (iOS performance round, branch `1996-ios-performance`; asked:
+  "the iPhone app is feeling a bit laggy, let's optimize it").
+  - Evidence. No phone performance data reaches the server: performance
+    reports go into an agent prompt ("Send diagnostics"), and `bug_reports`
+    (read-only query through the operator rqlite helper) holds only prose
+    reports, the newest iOS one from 2026-09-18 (Flutter 1.2.0). The latest
+    real reports are the 2026-10-02 ones below (1.4.0 (19), Agents tab: 219
+    stalls over 200 ms in 2 h, frames to 497 ms, loop blocks to 371 ms).
+    Profiling on the office Mac: `xctrace` cannot record there (Developer
+    mode is off, so it waits for an admin prompt), so the round used
+    `sample` on the simulator app plus its CPU time per phase of a scripted
+    UI tour (guest mode: idle on Home, switching tabs, Market). A Debug
+    build idling on Home kept the main thread busy; most of that
+    is the Genie spider's 24 fps `TimelineView` (`GeniePainter`, its
+    accessibility block, the screen scan every 1.5 to 3 s).
+  - Relay roster: `RelayService.rememberPeer` wrote the observed `peers` on
+    every inbound frame (last-seen time), so `HomeShell` (via `onlineCount`)
+    and the chat transcript (via `liveStatus`) redrew once per relay frame.
+    Readers now observe `rosterRevision`, bumped only when a peer joins,
+    leaves, changes, returns from stale, or goes stale at the presence tick.
+  - Shell counts: `HomeShell.body` read the relay roster, the relay log
+    (the Activity count), chat unread, downloads, teammates and every hub
+    count, so any of them re-ran the whole shell body (both bar groups, the
+    bottom bar, the Home grid). `ShellLiveCounts` gathers them through
+    `ThrottledSnapshot` (FMBase): re-read at most 4 times a second, readers
+    notified only when a value changed.
+  - Hidden tabs: tabs stay mounted at opacity 0 (and all of them under the
+    Home page), so their frame-rate animations kept running. The tab sets
+    `shellTabHidden`; Agents dots and Eagle tickers, the sparkle
+    new-agent button (and its 30 Hz accelerometer), skeletons and spinners
+    pause on it. The Eagle ticker is capped at 60 fps, skeletons at 30.
+  - Eagle rows: each run's latest line is its own observed `AgentEagleText`
+    read by `AgentEagleLine`, so a streamed line redraws one row, not the
+    Agents list.
+  - Home grid: `ShellHomeLayout` is built once per body; each tile used to
+    re-run the arrangement, re-lay the bottom bar and rescan heat
+    (quadratic per redraw).
+  - Chat: a typing frame no longer bumps `ChatExtras.revision` (it rebuilt
+    every `ChatRow`); pictures, backgrounds and avatars go through
+    `FmImageCache` (decoded once, display-ready, 48 MB cap) instead of
+    `UIImage(data:)` in `body`; status times reuse their `DateFormatter`s.
+    Main's own avatar cache from the same day (`FmAvatarImages`, a
+    256-entry `NSCache` for first-frame avatars) now reads through
+    `FmImageCache`, so the app keeps one image cache.
+  - Market: `MarketModel.visible` groups nested packages in one pass
+    (160 packages, Linux release: 7.9 ms to 0.5 ms per evaluation).
+  - Measured: before-and-after numbers for the tour were not recorded; the
+    round stopped before the after run.
+  - Not changed: the spider's 24 fps painting and its screen scans (the
+    largest idle cost; slowing them changes how it moves), the always-on 60
+    Hz `TelemetryFrameProbe` (telemetry files are another branch's), JSON
+    parse and decrypt of relay and control frames on the main actor,
+    `PerformanceMonitor.track` symbolicating a stack per request,
+    `MessagesConversationView` still reading typing at its top, Repos'
+    offset ids, Android.
+  - Tests (Linux toolchain): `testRepeatFramesFromAKnownPeerDoNotRedrawTheOnlineCount`,
+    `ThrottledSnapshotTests`, `testEagleFeedRedrawsOnlyTheRowWhoseLineChanged`,
+    `testTypingDoesNotRebuildTheTranscript`; FMPackages and UserStatus
+    suites pass. The app compiles for the simulator on the office Mac.
+  - How to measure again: build for the simulator in a scratch folder on the
+    Mac (MAC_BUILD.md), launch with `simctl`, drive a tour with an XCUITest
+    that `activate()`s `com.forkmesh.forkmesh`, record `ps -o time` of the
+    app each second and `sample <pid> <s>` per phase. Without a signed-in
+    account the relay never connects, so the relay fixes are covered by the
+    unit tests, not the tour.
+
 - 2026-10-13 (branch 1974, secure chat, round 2): the iOS chat list shows a
   second, muted line per channel and direct message with the newest
   top-level message the phone holds ("You: ..." for your own, "<sender>: ..."

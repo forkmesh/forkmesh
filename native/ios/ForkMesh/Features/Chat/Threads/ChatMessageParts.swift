@@ -108,7 +108,7 @@ struct ChatAttachmentView: View {
 
     @ViewBuilder private func image(_ attachment: ChatAttachment) -> some View {
         #if canImport(UIKit)
-        if let picture = UIImage(data: attachment.data) {
+        if let picture = FmImageCache.image(attachment.data) {
             Button(action: { fullImage = true }) {
                 Image(uiImage: picture)
                     .resizable()
