@@ -27,6 +27,7 @@ public final class DiffViewSettings {
     public var findings = false { didSet { save("diff/findings", findings) } }
     public var scrollSound = true { didSet { save("diff/scrollSound", scrollSound) } }
     public var scrollHaptic = true { didSet { save("diff/scrollHaptic", scrollHaptic) } }
+    public var pageButtons = true { didSet { save("diff/pageButtons", pageButtons) } }
     public private(set) var fontSize: Double = DiffViewSettings.defaultFontSize
 
     @ObservationIgnored private var store: KeyValueStore?
@@ -43,6 +44,7 @@ public final class DiffViewSettings {
         findings = store.bool(forKey: "diff/findings") ?? findings
         scrollSound = store.bool(forKey: "diff/scrollSound") ?? scrollSound
         scrollHaptic = store.bool(forKey: "diff/scrollHaptic") ?? scrollHaptic
+        pageButtons = store.bool(forKey: "diff/pageButtons") ?? pageButtons
         if let size = store.double(forKey: "diff/fontSize") { fontSize = min(max(size, DiffViewSettings.minFontSize), DiffViewSettings.maxFontSize) }
         self.store = store
     }
@@ -71,6 +73,7 @@ public final class DiffViewSettings {
         findings = false
         scrollSound = true
         scrollHaptic = true
+        pageButtons = true
         fontSize = DiffViewSettings.defaultFontSize
     }
 
