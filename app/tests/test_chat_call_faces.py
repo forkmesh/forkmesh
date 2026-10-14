@@ -67,18 +67,42 @@ for (const face of faces.CALL_FACES) {
 out.missingRegions = geo.landmarksFromRegions({ faceContour: [[0, 0]] });
 out.unknown = faces.callFaceById("nobody");
 
-const mesh = faces.faceMesh();
-out.mesh = {
-  triangles: mesh.triangles.length,
-  mouth: mesh.triangles.filter((t) => t.mouth).length,
-  mouthOnlyInnerLips: mesh.triangles.filter((t) => t.mouth).every((t) => t.v.every((v) => v >= 60 && v < 68)),
-  vertices: mesh.alpha.length,
-  valid: mesh.triangles.every((t) => t.v.every((v) => v >= 0 && v < mesh.alpha.length)),
-  jawAlpha: mesh.alpha.slice(0, 17).every((a) => a === 0),
-  foreheadAlpha: mesh.alpha.slice(68, 78).every((a) => a === 0),
-  innerAlpha: mesh.alpha.slice(17, 68).every((a) => a === 1) && mesh.alpha.slice(78).every((a) => a === 1),
+const heads = faces.CALL_FACES.map((face) => faces.faceHead(face));
+out.mesh = heads.map((head, i) => ({
+  triangles: head.mesh.triangles.length,
+  mouth: head.mesh.triangles.filter((t) => t.mouth).length,
+  mouthOnlyInnerLips: head.mesh.triangles.filter((t) => t.mouth).every((t) => t.v.every((v) => v >= 60 && v < 68)),
+  vertices: head.layout.length,
+  valid: head.mesh.triangles.every((t) => t.v.every((v) => v >= 0 && v < head.layout.length)),
+  ring: faces.CALL_FACES[i].head.length / 2,
+  ringInside: head.layout.slice(78).every(([x, y]) => x >= 0 && y >= 0 && x <= 512 && y <= 512),
+  photoArea: head.mesh.triangles.reduce((sum, t) => {
+    const [a, b, c] = t.v.map((v) => head.layout[v]);
+    return sum + Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+  }, 0),
+  flipped: head.mesh.triangles.filter((t) => {
+    if (t.mouth) return false;
+    const [a, b, c] = t.v.map((v) => head.layout[v]);
+    const [p, q, r] = t.v.map((v) => head.model[v]);
+    const photo = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+    const model = (q[0] - p[0]) * (r[1] - p[1]) - (r[0] - p[0]) * (q[1] - p[1]);
+    return Math.sign(photo) !== Math.sign(model) && Math.abs(photo) > 1;
+  }).length,
+}));
+const theo = heads[1];
+const rotate = (yaw, pitch) => ([x, y, z]) => {
+  const X = x * Math.cos(yaw) + z * Math.sin(yaw);
+  let Z = -x * Math.sin(yaw) + z * Math.cos(yaw);
+  const Y = y * Math.cos(pitch) - Z * Math.sin(pitch);
+  return [320 + 60 * X, 200 + 60 * Y];
 };
-
+out.pose = [[0, 0], [0.4, 0], [0, 0.3], [-0.3, -0.2]].map(([yaw, pitch]) => {
+  const project = rotate(yaw, pitch);
+  const live = theo.model.slice(0, 68).map(project);
+  const result = geo.liveHead(theo.model, live);
+  const error = Math.max(...result.points.map((point, i) => Math.hypot(point[0] - project(theo.model[i])[0], point[1] - project(theo.model[i])[1])));
+  return { yaw: result.pose.yaw, pitch: result.pose.pitch, scale: result.pose.scale, error };
+});
 const template = faces.faceTemplate();
 const anchors = { eyeL: [300, 200], eyeR: [380, 210], mouth: [336, 300] };
 const fitted = geo.fitTemplate(template, anchors);
@@ -148,12 +172,18 @@ const track = (kind, id) => ({ kind, id, enabled: true, stopped: false,
 
 function element(id) {
   const listeners = {};
+  const attributes = {};
   return {
-    id, hidden: true, textContent: "", value: "", options: [], srcObject: null,
+    id, hidden: true, textContent: "", value: "", options: [], children: [], srcObject: null, style: {},
     classList: { toggle() {} },
+    setAttribute(name, value) { attributes[name] = String(value); },
+    getAttribute(name) { return attributes[name] ?? null; },
     addEventListener(type, fn) { listeners[type] = fn; },
-    append(option) { this.options.push(option); },
+    append(...items) { this.options.push(...items); this.children.push(...items); },
+    querySelector() { return null; },
+    querySelectorAll() { return this.children; },
     fire(type) { return listeners[type]?.(); },
+    click() { return listeners.click?.(); },
   };
 }
 const elements = {};
@@ -163,7 +193,7 @@ const documentRef = {
     elements[id] ||= element(id);
     return elements[id];
   },
-  createElement() { return { value: "", textContent: "" }; },
+  createElement(tag) { return element(tag); },
 };
 
 const camera = track("video", "camera");
@@ -329,7 +359,7 @@ def test_there_are_five_distinct_photo_faces_with_landmarks():
     for face in data["faces"]:
         assert face["count"] == 68
         assert face["inside"] is True
-        assert 150 < face["span"] < 230
+        assert 90 < face["span"] < 160
         photo = PUBLIC / "assets" / "call-faces" / f"{face['id']}.jpg"
         assert photo.read_bytes()[:3] == b"\xff\xd8\xff"
     assert data["unknown"] is None
@@ -345,16 +375,25 @@ def test_vision_regions_become_the_same_68_points_as_the_photos():
     assert data["missingRegions"] is None
 
 
-def test_face_mesh_feathers_the_edge_and_leaves_the_mouth_open():
-    mesh = _faces()["mesh"]
-    assert mesh["triangles"] > 120
-    assert mesh["valid"] is True
-    assert mesh["vertices"] == 68 + 10 + 17
-    assert mesh["mouth"] >= 4
-    assert mesh["mouthOnlyInnerLips"] is True
-    assert mesh["jawAlpha"] is True
-    assert mesh["foreheadAlpha"] is True
-    assert mesh["innerAlpha"] is True
+def test_head_mesh_covers_hair_and_leaves_the_mouth_open():
+    for mesh in _faces()["mesh"]:
+        assert mesh["triangles"] > 150
+        assert mesh["valid"] is True
+        assert mesh["vertices"] == 68 + 10 + 28
+        assert mesh["ring"] == 28
+        assert mesh["ringInside"] is True
+        assert mesh["photoArea"] > 0.45 * 512 * 512
+        assert mesh["mouth"] >= 4
+        assert mesh["mouthOnlyInnerLips"] is True
+        assert mesh["flipped"] == 0
+
+
+def test_pose_solver_recovers_turns_and_places_the_hair_ring():
+    for case, (yaw, pitch) in zip(_faces()["pose"], [(0, 0), (0.4, 0), (0, 0.3), (-0.3, -0.2)]):
+        assert abs(case["scale"] - 60) < 0.5
+        assert abs(abs(case["yaw"]) - abs(yaw)) < 0.03
+        assert abs(abs(case["pitch"]) - abs(pitch)) < 0.03
+        assert case["error"] < 0.05
 
 
 def test_template_fit_puts_the_face_on_the_tracked_eyes_and_mouth():
@@ -465,7 +504,15 @@ def test_native_call_page_exposes_face_operations():
     for face_id in ("maya", "theo", "kofi", "ingrid", "ren"):
         assert f'"{face_id}": "data:image/jpeg;base64,' in page
     assert "window.FmCallFaceHost = {" in page
-    assert 'post({ event: "landmarks", id, image, width, height });' in page
+    assert 'post({ event: "landmarks", id, image, width, height, landmarks: wanted.landmarks !== false, mask: Boolean(wanted.mask) });' in page
+    assert "async background(id, image) {" in page
+    assert "async backgroundList() {" in page
+    assert '<script id="fm-call-models">' in page
+    assert '<script id="fm-call-backgrounds">' in page
+    for name in ("landscape", "square", "detector", "mesh", "hair"):
+        assert f'  "{name}": "' in page
+    for face_id in ("maya", "theo", "kofi", "ingrid", "ren"):
+        assert f'"{face_id}-matte": "data:image/png;base64,' in page
     assert "window.fmCallLandmarks = (id, regions) => {" in page
 
 
@@ -487,13 +534,22 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     assert 'configuration.userContentController.add(proxy, name: "fmCall")' in peer
     assert 'run("face", [.string(id)])' in peer
     assert 'case "landmarks":' in peer
-    assert "await CallFaceLandmarks.detect(dataURL: image)" in peer
+    assert "await CallFaceLandmarks.detect(dataURL: image, landmarks: landmarks, mask: mask)" in peer
+    assert 'run("background", [.string(id), .string(image)])' in peer
+    assert "if let previewed = current, previewed.previewing, media == .video {" in peer
     assert "window.fmCallLandmarks && window.fmCallLandmarks(" in peer
     vision = (app / "Features" / "Chat" / "Calls" / "CallFaceLandmarks.swift").read_text(encoding="utf-8")
     assert "VNDetectFaceLandmarksRequest()" in vision
-    assert "request.constellation = .constellation76Points" in vision
+    assert "faceRequest.constellation = .constellation76Points" in vision
     assert "region.pointsInImage(imageSize: size)" in vision
     assert "size.height - point.y" in vision
+    assert "VNGeneratePersonSegmentationRequest()" in vision
+    assert "personRequest.qualityLevel = .balanced" in vision
+    preview = (app / "Features" / "Chat" / "Calls" / "DirectCallPreview.swift").read_text(encoding="utf-8")
+    assert "factory.preview(face: engine.face, background: engine.background, image: image)" in preview
+    assert "PhotosPicker(selection: $photo, matching: .images)" in preview
+    assert "DirectCallPreviewButton(hub: hub, engine: engine, dark: dark)" in views
+    assert "calls.onBackgroundChanged = {" in install
 
 
 def test_android_wires_the_call_engine_screen_and_buttons():

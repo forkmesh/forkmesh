@@ -44,6 +44,7 @@ struct DirectCallHeaderButtons: View {
     var body: some View {
         if let engine = hub.calls, engine.available, hub.inDirect {
             HStack(spacing: 6) {
+                DirectCallPreviewButton(hub: hub, engine: engine, dark: dark)
                 button("video.fill", label: "Video call", media: .video, engine: engine)
                 button("phone.fill", label: "Voice call", media: .audio, engine: engine)
             }
@@ -145,6 +146,7 @@ struct DirectCallIncomingBanner: View {
 struct DirectCallScreen: View {
     let engine: DirectCallEngine
     let factory: WebCallPeerFactory?
+    @State private var showingBackgrounds = false
 
     var body: some View {
         ZStack {
@@ -186,6 +188,10 @@ struct DirectCallScreen: View {
             }
         }
         .statusBarHidden(engine.media == .video)
+        .sheet(isPresented: $showingBackgrounds) {
+            DirectCallBackgroundSheet(engine: engine, peer: factory?.current)
+                .presentationDetents([.medium, .large])
+        }
     }
 
     private var controls: some View {
@@ -201,6 +207,13 @@ struct DirectCallScreen: View {
                     engine.toggleCamera()
                 }
                 faceMenu
+                control(
+                    "photo.on.rectangle", label: "Background", on: !engine.background.isEmpty
+                ) {
+                    showingBackgrounds = true
+                }
+                .accessibilityValue(DirectCallEngine.backgroundLabel(engine.background))
+                .accessibilityIdentifier("chat-call-background")
             }
             voiceMenu
             Button(action: { Task { await engine.hangUp() } }) {
