@@ -2117,6 +2117,25 @@ longer lifted above that footer, so it reaches the bottom edge of the screen.
 After a loaded core, runner or service check reports trouble, the top-right
 account-avatar dot is red while the relay itself remains connected.
 
+### The bar touches the bottom of the phone (2026-10-13, iPhone)
+
+The user asked for the bottom bar to move all the way down until it touches
+the bottom of the phone.
+
+- `HomeShell.barStack`'s `.ignoresSafeArea(.container, edges: .bottom)` did
+  nothing on its own: the bar has a fixed height, so the area it is placed in
+  grew into the home indicator inset but the capsule stayed on the safe-area
+  line, 34 pt plus its 4 pt bottom padding above the screen's edge. A
+  throwaway SwiftUI app on the office Mac's iPhone 17 simulator showed this.
+- `barStack` now fills the overlay (`.frame(maxHeight: .infinity, alignment:
+  .bottom)`) before ignoring the bottom safe area, so the bar is placed at the
+  bottom of the larger area. `ShellBottomBar` drops its bottom padding, so the
+  capsule's lower edge is the screen's bottom edge.
+- The bar's height and `barBottom` are still read on the bar itself, before
+  the frame, so `barClearance`, `ShellDock.bottom` and the docked prompt's
+  gap follow the capsule down.
+- Checked with that simulator app only. The full app was not built.
+
 ### Core icons over the status dots when the packed line is too wide (2026-10-08, iPhone)
 
 The same request as 2.0.73, from a parallel branch: the user asked for the

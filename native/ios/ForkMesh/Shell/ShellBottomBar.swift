@@ -444,7 +444,6 @@ struct ShellBottomBar: View {
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, FmSpace.x1)
-        .padding(.bottom, FmSpace.x1)
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("shell-bottom-bar")
