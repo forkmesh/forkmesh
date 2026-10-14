@@ -200,3 +200,26 @@ the same endpoints: installed apps (`GET /api/apps/installed`,
 replies rendered locally, block rendering for `app:` senders, mentions from
 public channels only, and consent opened in the system browser (native apps
 never hold a client secret).
+
+## The `/dashboard/apps` page
+
+The page is split into tabs (Plugins, Installed apps, Directory, and Review
+queue for reviewers only); `#installed`, `#directory` and `#review` open a tab
+directly. It used to stack everything on one scroll, with each account plugin
+drawn as a bordered card inside the bordered panel and dependents nested as
+cards inside cards. With 76 account plugins that read as a wall of boxes.
+
+Plugins now follow the store pattern of Raycast, VS Code's extension view and
+Linear's integrations: a category rail on the left (a select under 900px),
+search across name, summary and category, an All / Installed / Available
+filter, and one hairline-divided list with a row per plugin. A row holds a
+neutral letter tile, the name, a one-line summary, the Phone / Desktop / Web
+places as pill toggles, and a blue switch for install and remove. Removing
+still asks for confirmation, since it deletes the plugin's account data.
+Dependents are no longer nested: the row carries a "Needs <parent>" label, and
+the parent shows how many add-ons depend on it. Searching clears the category
+so it always looks through every plugin.
+
+App installs, organization policies, directory listings and review items use
+the same row list. The organization "Save policy" button is a neutral button:
+green is reserved for the page's one create button.
