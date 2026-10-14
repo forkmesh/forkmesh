@@ -154,7 +154,8 @@ Planned extractions are described in
 | [`forkmesh-ide`](packages/forkmesh-ide/manifest.json) | Source for the VS Code-compatible issue and agent extension (catalog content until the Market can install VSIX files). |
 | [`forkmesh-sky-office`](packages/forkmesh-sky-office/manifest.json) | A World district package installed through the generic `install(host)` contract and loaded lazily. |
 | [`x-banner-board`](packages/x-banner-board/manifest.json), [`reddit-banner-board`](packages/reddit-banner-board/manifest.json) | World `virtual.object` boards over a bounded rendering host. |
-| [`voice-changer`](packages/voice-changer/manifest.json) | Desktop live voice changer; audio never reaches the server. |
+| [`voice-changer`](packages/voice-changer/manifest.json) | Desktop live voice changer with a ForkMesh Voice microphone, plus a web page to try voices and record clips; audio never reaches the server. |
+| [`face-changer`](packages/face-changer/manifest.json) | Web page with the call face, background and voice changer: record, snapshot, pop out to share. Video never reaches the server. |
 | [`speech`](packages/speech/README.md) | On-device text to speech in the iPhone app. |
 | [`crm`](packages/crm/manifest.json), [`marketing`](packages/marketing/manifest.json) | Organization packages with web and desktop pages and a worker API. |
 | [`competitor`](packages/competitor/manifest.json), [`notes`](packages/notes/README.md), [`tasks`](packages/tasks/README.md), [`calendar`](packages/calendar/README.md) | Organization competitor list; dashboard pages for host notes, tasks and calendar services. |

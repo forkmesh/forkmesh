@@ -294,6 +294,16 @@ export function hostReply(reply) {
   return { regions: reply.regions || null, mask };
 }
 
+export function hostResult(raw, scale = 1, landmarks = true) {
+  const reply = hostReply(raw);
+  const points = landmarks ? landmarksFromRegions(reply.regions) : null;
+  return {
+    points: points ? points.map((point) => point.map((value) => value / scale)) : null,
+    mask: reply.mask,
+    pupils: points ? pupilsFromRegions(reply.regions, scale) : null,
+  };
+}
+
 export function createHostLocator(host, documentRef) {
   const canvas = documentRef.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -302,13 +312,7 @@ export function createHostLocator(host, documentRef) {
     canvas.width = Math.round(width * scale);
     canvas.height = Math.round(height * scale);
     ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-    const reply = hostReply(await host.landmarks(canvas.toDataURL("image/jpeg", 0.8), canvas.width, canvas.height, want));
-    const points = want.landmarks ? landmarksFromRegions(reply.regions) : null;
-    return {
-      points: points ? points.map(([x, y]) => [x / scale, y / scale]) : null,
-      mask: reply.mask,
-      pupils: points ? pupilsFromRegions(reply.regions, scale) : null,
-    };
+    return hostResult(await host.landmarks(canvas.toDataURL("image/jpeg", 0.8), canvas.width, canvas.height, want), scale, want.landmarks);
   };
 }
 
@@ -405,6 +409,12 @@ export function createFaceStage({
     }
   }
 
+  function presetResult(reply, scale, time) {
+    const found = hostResult(reply, scale, Boolean(face));
+    const points = found.points ? pointSmoother.smooth(found.points, time, faceFrame(found.points).span) : null;
+    return { points, mask: found.mask, pupils: found.pupils, lids: true };
+  }
+
   async function locate(frame, w, h, time) {
     const wantMask = hostMasks && wantsMatte();
     if (hostLocate && (face || wantMask)) {
@@ -416,7 +426,7 @@ export function createFaceStage({
           else if (++hostMaskMisses >= HOST_MASK_MISSES) hostMasks = false;
         }
         const points = reply.points ? pointSmoother.smooth(reply.points, time, faceFrame(reply.points).span) : null;
-        return { points, mask: reply.mask, pupils: reply.pupils || null };
+        return { points, mask: reply.mask, pupils: reply.pupils || null, lids: true };
       } catch (_) {
         hostFailures += 1;
         if (hostFailures >= HOST_FAILURES) {
@@ -430,7 +440,7 @@ export function createFaceStage({
     if (renderer.faceMesh) {
       const found = renderer.trackFace(frame, w, h);
       if (!found) return { points: null, mask: null, uploaded: true };
-      return { points: pointSmoother.smooth(found.points, time, faceFrame(found.points).span), mask: null, uploaded: true };
+      return { points: pointSmoother.smooth(found.points, time, faceFrame(found.points).span), mask: null, uploaded: true, lids: true };
     }
     const anchors = tracker.track(frame, w, h);
     if (!anchors) return { points: null, mask: null };
@@ -465,7 +475,7 @@ export function createFaceStage({
     }
     if (points && face) {
       try {
-        expression = probe.measure(frame.canvas, points, time, { pupils: result?.pupils || null }) || expression;
+        expression = probe.measure(frame.canvas, points, time, { pupils: result?.pupils || null, lids: Boolean(result?.lids) }) || expression;
       } catch (_) {
         expression = null;
       }
@@ -507,7 +517,7 @@ export function createFaceStage({
     stats.maxDrawMs = Math.max(stats.maxDrawMs, spent);
   }
 
-  function process(source, sourceWidth, sourceHeight, time) {
+  function process(source, sourceWidth, sourceHeight, time, preset = null) {
     const limit = hostLocate ? HOST_IN_FLIGHT : 1;
     if (inFlight >= limit) return null;
     const frame = frames.find((entry) => !entry.busy);
@@ -527,7 +537,8 @@ export function createFaceStage({
     inFlight += 1;
     const id = ++sequence;
     const startedAt = now();
-    return Promise.resolve(locate(frame.canvas, w, h, time)).catch(() => null).then((result) => {
+    const located = preset ? presetResult(preset, sourceWidth / w, time) : locate(frame.canvas, w, h, time);
+    return Promise.resolve(located).catch(() => null).then((result) => {
       inFlight -= 1;
       if (!stopped && id > shown) {
         shown = id;
@@ -663,6 +674,12 @@ export function createFaceStage({
       const w = source.videoWidth || source.naturalWidth || source.width;
       const h = source.videoHeight || source.naturalHeight || source.height;
       return process(source, w, h, time) || Promise.resolve(false);
+    },
+    pushFrame(source, reply, time = now()) {
+      const w = source.videoWidth || source.naturalWidth || source.width;
+      const h = source.videoHeight || source.naturalHeight || source.height;
+      if (!w || !h) return Promise.resolve(false);
+      return process(source, w, h, time, reply || {}) || Promise.resolve(false);
     },
     setFace(id, image) {
       loadFace(id, image);

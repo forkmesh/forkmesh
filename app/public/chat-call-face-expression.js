@@ -5,10 +5,19 @@ const EYE_HALF = [0.62, 0.3];
 const EYE_GRID = [18, 10];
 const DARK_RATIO = 0.62;
 const OPEN_MIN = 0.05;
-const CLOSE_START = 0.6;
-const CLOSE_FULL = 0.35;
-const BASE_RISE = 0.25;
+const CLOSE_START = 0.52;
+const CLOSE_FULL = 0.28;
+const BASE_RISE_S = 0.8;
 const BASE_FALL_S = 6;
+const LID_OPEN = 0.9;
+const LID_SHUT = 0.6;
+const LID_BASE_RISE_S = 1.5;
+const LID_BASE_FALL_S = 8;
+const LID_MIN = 0.12;
+const ENTER = 0.4;
+const LEAVE = 0.18;
+const PAIRED = 0.75;
+const STILL_SPANS_S = 2.2;
 const LOOK_LIMIT = 0.32;
 const REST_S = 3;
 const TONGUE_GRID = [14, 12];
@@ -146,9 +155,22 @@ export function measureTongue(image, box, skin) {
   return total ? red / total : 0;
 }
 
+export function eyeOpenness(points, side) {
+  const [a, b] = EYE_CORNERS[side];
+  const width = Math.hypot(points[b][0] - points[a][0], points[b][1] - points[a][1]) || 1;
+  const pairs = side ? [[43, 47], [44, 46]] : [[37, 41], [38, 40]];
+  const gap = pairs.reduce((sum, [u, l]) => sum + Math.hypot(points[u][0] - points[l][0], points[u][1] - points[l][1]), 0);
+  return gap / pairs.length / width;
+}
+
+export function pairClosure(close) {
+  const low = Math.min(close[0], close[1]);
+  return close.map((value) => low + (value - low) * (1 - PAIRED));
+}
+
 export function closeLids(points, close) {
   if (!close || !(close[0] > 0.01 || close[1] > 0.01)) return points;
-  const out = points.map((point) => [point[0], point[1]]);
+  const out = points.map((point) => point.slice());
   UPPER_LIDS.forEach(([upper, lower], k) => {
     const amount = clampValue(close[k < 2 ? 0 : 1], 0, 1);
     if (amount <= 0.01) return;
@@ -156,18 +178,68 @@ export function closeLids(points, close) {
       out[lower][0] + (out[upper][0] - out[lower][0]) * LOWER_LIFT,
       out[lower][1] + (out[upper][1] - out[lower][1]) * LOWER_LIFT,
     ];
-    out[upper] = [out[upper][0] + (meet[0] - out[upper][0]) * amount, out[upper][1] + (meet[1] - out[upper][1]) * amount];
-    out[lower] = [out[lower][0] + (meet[0] - out[lower][0]) * amount, out[lower][1] + (meet[1] - out[lower][1]) * amount];
+    out[upper] = [out[upper][0] + (meet[0] - out[upper][0]) * amount, out[upper][1] + (meet[1] - out[upper][1]) * amount, ...out[upper].slice(2)];
+    out[lower] = [out[lower][0] + (meet[0] - out[lower][0]) * amount, out[lower][1] + (meet[1] - out[lower][1]) * amount, ...out[lower].slice(2)];
   });
   return out;
+}
+
+export function createBlinkTracker() {
+  const eyes = [0, 1].map(() => ({ base: 0, lidBase: 0, closing: false, close: new OneEuroFilter(4, 2) }));
+
+  function reset() {
+    for (const eye of eyes) {
+      eye.base = 0;
+      eye.lidBase = 0;
+      eye.closing = false;
+      eye.close.reset();
+    }
+  }
+
+  function update({ edges, openness = null, elapsed, time, moving = false }) {
+    const raw = [0, 0];
+    for (const side of [0, 1]) {
+      const eye = eyes[side];
+      const edge = edges[side];
+      if (!Number.isFinite(edge)) continue;
+      let gate = 1;
+      const open = openness?.[side];
+      if (Number.isFinite(open)) {
+        if (!eye.lidBase) eye.lidBase = open;
+        else if (open >= eye.lidBase) eye.lidBase += (open - eye.lidBase) * clampValue(elapsed / LID_BASE_RISE_S, 0, 1);
+        else if (!eye.closing) eye.lidBase -= (eye.lidBase - open) * clampValue(elapsed / LID_BASE_FALL_S, 0, 1);
+        if (eye.lidBase >= LID_MIN) gate = clampValue((LID_OPEN - open / eye.lidBase) / (LID_OPEN - LID_SHUT), 0, 1);
+      }
+      if (!eye.base) eye.base = edge;
+      else if (edge >= eye.base) eye.base += (edge - eye.base) * clampValue(elapsed / BASE_RISE_S, 0, 1);
+      else if (!eye.closing) eye.base -= (eye.base - edge) * clampValue(elapsed / BASE_FALL_S, 0, 1);
+      let amount = 0;
+      if (eye.base >= OPEN_MIN) amount = clampValue((CLOSE_START - edge / eye.base) / (CLOSE_START - CLOSE_FULL), 0, 1);
+      raw[side] = moving ? 0 : amount * gate;
+    }
+    const paired = pairClosure(raw);
+    return paired.map((value, side) => {
+      const eye = eyes[side];
+      if (!Number.isFinite(edges[side])) return 0;
+      let amount = value;
+      if (eye.closing ? amount < LEAVE : amount < ENTER) {
+        eye.closing = false;
+        amount = 0;
+      } else {
+        eye.closing = true;
+      }
+      return clampValue(eye.close.filter(amount, time), 0, 1);
+    });
+  }
+
+  return { reset, update };
 }
 
 export function createExpressionProbe({ documentRef = globalThis.document } = {}) {
   const canvas = documentRef?.createElement?.("canvas") || null;
   const ctx = canvas?.getContext?.("2d", { willReadFrequently: true }) || null;
+  const blinks = createBlinkTracker();
   const eyes = [0, 1].map(() => ({
-    base: 0,
-    close: new OneEuroFilter(4, 2),
     lookX: new OneEuroFilter(1.2, 0.8),
     lookY: new OneEuroFilter(1.2, 0.8),
     look: [0, 0],
@@ -175,11 +247,12 @@ export function createExpressionProbe({ documentRef = globalThis.document } = {}
   }));
   const tongue = { base: -1, gate: new OneEuroFilter(3, 1) };
   let last = 0;
+  let lastMid = null;
 
   function reset() {
+    lastMid = null;
+    blinks.reset();
     for (const eye of eyes) {
-      eye.base = 0;
-      eye.close.reset();
       eye.lookX.reset();
       eye.lookY.reset();
       eye.look = [0, 0];
@@ -225,7 +298,7 @@ export function createExpressionProbe({ documentRef = globalThis.document } = {}
     return { image, local, scale, origin: [minX, minY] };
   }
 
-  function measure(source, points, time, { pupils = null } = {}) {
+  function measure(source, points, time, { pupils = null, lids = false } = {}) {
     if (!points) return null;
     let grabbed = null;
     try {
@@ -239,36 +312,38 @@ export function createExpressionProbe({ documentRef = globalThis.document } = {}
     if (!skin || skin.luma < 18) return null;
     const elapsed = last ? clampValue((time - last) / 1000, 0, 1) : 0;
     last = time;
-    const close = [0, 0];
+    const frame = faceFrame(points);
+    const speed = lastMid && elapsed > 0 ? Math.hypot(frame.mid[0] - lastMid[0], frame.mid[1] - lastMid[1]) / frame.span / elapsed : 0;
+    lastMid = frame.mid;
+    const boxes = [eyeBox(local, 0), eyeBox(local, 1)];
+    const found = boxes.map((box) => measureEye(image, box, skin));
+    const close = blinks.update({
+      edges: found.map((seen) => (seen ? seen.edge : NaN)),
+      openness: lids ? [eyeOpenness(points, 0), eyeOpenness(points, 1)] : null,
+      elapsed,
+      time,
+      moving: speed > STILL_SPANS_S,
+    });
     const look = [[0, 0], [0, 0]];
     for (const side of [0, 1]) {
       const eye = eyes[side];
-      const box = eyeBox(local, side);
-      const found = measureEye(image, box, skin);
-      if (!found) continue;
-      if (!eye.base) eye.base = found.edge;
-      else if (found.edge >= eye.base) eye.base += (found.edge - eye.base) * BASE_RISE;
-      else eye.base -= (eye.base - found.edge) * (elapsed / BASE_FALL_S);
-      let amount = 0;
-      if (eye.base >= OPEN_MIN) {
-        const ratio = found.edge / eye.base;
-        amount = clampValue((CLOSE_START - ratio) / (CLOSE_START - CLOSE_FULL), 0, 1);
-      }
-      close[side] = clampValue(eye.close.filter(amount, time), 0, 1);
-      let raw = found.look;
+      const seen = found[side];
+      if (!seen) continue;
+      const box = boxes[side];
+      let gazeAt = seen.look;
       const pupil = pupils?.[side];
       if (pupil) {
         const px = (pupil[0] - origin[0]) * scale - box.center[0];
         const py = (pupil[1] - origin[1]) * scale - box.center[1];
-        raw = [(px * box.ux[0] + py * box.ux[1]) / box.half[0], (px * box.uy[0] + py * box.uy[1]) / box.half[1]];
+        gazeAt = [(px * box.ux[0] + py * box.ux[1]) / box.half[0], (px * box.uy[0] + py * box.uy[1]) / box.half[1]];
       }
       if (close[side] < 0.4) {
-        if (!eye.rest) eye.rest = [raw[0], raw[1]];
+        if (!eye.rest) eye.rest = [gazeAt[0], gazeAt[1]];
         const pull = clampValue(elapsed / REST_S, 0, 1);
-        eye.rest = [eye.rest[0] + (raw[0] - eye.rest[0]) * pull, eye.rest[1] + (raw[1] - eye.rest[1]) * pull];
+        eye.rest = [eye.rest[0] + (gazeAt[0] - eye.rest[0]) * pull, eye.rest[1] + (gazeAt[1] - eye.rest[1]) * pull];
         eye.look = [
-          clampValue(eye.lookX.filter(raw[0] - eye.rest[0], time), -LOOK_LIMIT, LOOK_LIMIT),
-          clampValue(eye.lookY.filter(raw[1] - eye.rest[1], time), -LOOK_LIMIT, LOOK_LIMIT),
+          clampValue(eye.lookX.filter(gazeAt[0] - eye.rest[0], time), -LOOK_LIMIT, LOOK_LIMIT),
+          clampValue(eye.lookY.filter(gazeAt[1] - eye.rest[1], time), -LOOK_LIMIT, LOOK_LIMIT),
         ];
       }
       look[side] = eye.look;

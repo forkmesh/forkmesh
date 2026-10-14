@@ -240,3 +240,40 @@ def test_catalog_publication_does_not_activate_an_opt_in_package(tmp_path):
     assert namespace["HTTP_ROUTES"] == ()
     assert [path.as_posix() for path, *_ in
             build_app_plugins.worker_payloads(catalog)] == ["plugin_registry.py"]
+
+
+def test_a_page_asks_for_camera_and_microphone_through_its_manifest(tmp_path):
+    import pytest
+    from marketplace_lib import MarketplaceError
+
+    catalog = _fixture(tmp_path)
+    manifest_path = tmp_path / "packages/demo-plugin/manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    namespace = {}
+    exec(build_app_plugins.registry_source(catalog), namespace)
+    assert namespace["PLUGIN_DEVICE_PAGES"] == {}
+
+    manifest["contributions"][0]["config"]["devices"] = ["microphone", "camera"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    namespace = {}
+    exec(build_app_plugins.registry_source(catalog), namespace)
+    assert namespace["PLUGIN_DEVICE_PAGES"] == {
+        "/dashboard/demo": ("camera", "microphone"),
+    }
+
+    for devices in (["camera", "camera"], ["geolocation"], "camera"):
+        manifest["contributions"][0]["config"]["devices"] = devices
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with pytest.raises(MarketplaceError, match="devices are invalid"):
+            build_app_plugins.registry_source(catalog)
+
+
+def test_shipped_media_pages_are_the_only_device_pages():
+    pages = {
+        row["route"]: row["devices"]
+        for row in build_app_plugins._web_entries() if row["devices"]
+    }
+    assert pages == {
+        "/dashboard/face-changer": ("camera", "microphone"),
+        "/dashboard/voice-changer": ("microphone",),
+    }

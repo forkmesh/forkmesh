@@ -510,10 +510,19 @@ bool PackageRegistry::projectOwnsInstalls() const
     return !isLegacyProject();
 }
 
+bool PackageRegistry::hasStoredInstall(const QString &id) const
+{
+    const QString key = statePrefix(id) + QStringLiteral("/state");
+    return m_settings->value(key).toString() == QLatin1String("installed");
+}
+
 bool PackageRegistry::accountAnswerInstalls(const PackageManifest &manifest,
                                             bool accountInstalled,
-                                            bool legacyEntry) const
+                                            bool legacyEntry,
+                                            bool unchosen) const
 {
+    if (unchosen && hasStoredInstall(manifest.id))
+        return true;
     if (!projectOwnsInstalls())
         return legacyEntry ? legacyEntryInstalled(manifest) : accountInstalled;
     if (legacyEntry)

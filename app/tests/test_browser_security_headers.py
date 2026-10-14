@@ -131,6 +131,9 @@ def test_dynamic_app_html_receives_the_same_security_boundary():
         "_apply_browser_security_headers",
         "_TURNSTILE_CHALLENGE_ORIGIN",
         "_TURNSTILE_PAGE_PATHS",
+        "_DEVICE_PAGE_PERMISSIONS",
+        "_DEVICE_PAGE_MEDIA_SRC",
+        "_plugin_device_page",
     }
     nodes = []
     for node in ast.parse(ENTRY, filename=str(ENTRY_PATH)).body:
@@ -204,6 +207,28 @@ def test_dynamic_app_html_receives_the_same_security_boundary():
             DynamicResponse(), path
         ).headers["content-security-policy"]
         assert challenge not in other
+
+    assert "camera=()" in ordinary.headers["permissions-policy"]
+    assert "mediastream:" not in ordinary.headers["content-security-policy"]
+    devices = {"/dashboard/studio": ("camera", "microphone"),
+               "/dashboard/listen": ("microphone",)}
+    namespace["_plugin_device_page"] = lambda path: devices.get(path, ())
+    studio = namespace["_apply_browser_security_headers"](
+        DynamicResponse(), "/dashboard/studio")
+    assert "camera=(self)" in studio.headers["permissions-policy"]
+    assert "microphone=(self)" in studio.headers["permissions-policy"]
+    assert "media-src 'self' blob: https: mediastream:" in studio.headers[
+        "content-security-policy"]
+    assert studio.headers["x-frame-options"] == "DENY"
+    listen = namespace["_apply_browser_security_headers"](
+        DynamicResponse(), "/dashboard/listen")
+    assert "camera=()" in listen.headers["permissions-policy"]
+    assert "mediastream:" in listen.headers["content-security-policy"]
+    for path in ("/dashboard", "/dashboard/studio/x", "/studio"):
+        other = namespace["_apply_browser_security_headers"](
+            DynamicResponse(), path)
+        assert "camera=()" in other.headers["permissions-policy"]
+        assert "mediastream:" not in other.headers["content-security-policy"]
 
     strict = DynamicResponse()
     strict.headers["content-security-policy"] = (

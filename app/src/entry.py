@@ -19854,6 +19854,23 @@ _BROWSER_SECURITY_HEADERS = {
 }
 
 
+_DEVICE_PAGE_PERMISSIONS = (
+    "camera=(self), geolocation=(), payment=(), usb=(), serial=(), "
+    "browsing-topics=(), microphone=(self), clipboard-write=(self)"
+)
+_DEVICE_PAGE_MEDIA_SRC = "media-src 'self' blob: https: mediastream:"
+
+
+def _plugin_device_page(path):
+    if not path.startswith("/dashboard/"):
+        return ()
+    try:
+        from plugin_registry import PLUGIN_DEVICE_PAGES
+    except Exception:
+        return ()
+    return tuple(PLUGIN_DEVICE_PAGES.get(path) or ())
+
+
 _TURNSTILE_CHALLENGE_ORIGIN = "https://challenges.cloudflare.com"
 _TURNSTILE_PAGE_PATHS = frozenset({
     "/signup", "/forgot-password", "/forgot-password.html",
@@ -19886,11 +19903,17 @@ def _apply_browser_security_headers(response, pathname):
             "frame-src 'self'",
             "frame-src 'self' " + _TURNSTILE_CHALLENGE_ORIGIN, 1,
         )
+    devices = _plugin_device_page(path)
+    if devices:
+        csp = csp.replace(
+            "media-src 'self' blob: https:", _DEVICE_PAGE_MEDIA_SRC, 1)
     values = {
         **_BROWSER_SECURITY_HEADERS,
         "content-security-policy": csp,
         "x-frame-options": "SAMEORIGIN" if frameable else "DENY",
     }
+    if "camera" in devices:
+        values["permissions-policy"] = _DEVICE_PAGE_PERMISSIONS
     existing_csp = headers.get("content-security-policy")
     if existing_csp is not None and str(existing_csp).strip() and type(
             existing_csp).__name__ not in ("JsNull", "JsUndefined"):

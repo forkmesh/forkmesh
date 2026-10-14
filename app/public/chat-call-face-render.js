@@ -18,6 +18,9 @@ const HAIR_CENTER = [0, 0.5, -0.3];
 const DEPTH_SCALE = 0.5;
 const EYE_UV_HALF = [0.62, 0.36];
 const LOOK_GAIN = 0.55;
+const PHOTO_SOFTEN = 0.35;
+const GRAIN = 0.012;
+const LIP_SHADOW = 0.22;
 
 export const BACKGROUND_MODES = Object.freeze({ off: 0, blur: 1, image: 2 });
 
@@ -59,6 +62,7 @@ uniform vec2 uClose;
 varying vec2 vUv;
 varying float vHole;
 varying float vRegion;
+const float SOFTEN = ${PHOTO_SOFTEN.toFixed(2)};
 vec2 gaze(vec2 uv, vec4 eye, vec2 look) {
   vec2 q = (uv - eye.xy) / eye.zw;
   float m = 1.0 - smoothstep(0.45, 1.0, length(q));
@@ -74,13 +78,13 @@ vec3 lid(vec3 color, vec4 eye, float close) {
 }
 void main() {
   vec3 aux = texture2D(uAux, vUv).rgb;
-  float open = 1.0 - step(0.5, vHole);
+  float open = 1.0 - smoothstep(0.05, 0.95, vHole);
   if (uAuxPass > 0.5) {
     float skin = texture2D(uAux, vUv, 2.5).g;
     gl_FragColor = vec4(skin * aux.r * open, aux.b, 1.0 - open, vRegion);
   } else {
     vec2 uv = gaze(gaze(vUv, uEyeL, uLook.xy), uEyeR, uLook.zw);
-    vec3 color = lid(lid(texture2D(uPhoto, uv).rgb, uEyeL, uClose.x), uEyeR, uClose.y);
+    vec3 color = lid(lid(texture2D(uPhoto, uv, SOFTEN).rgb, uEyeL, uClose.x), uEyeR, uClose.y);
     gl_FragColor = vec4(color, aux.r * open);
   }
 }`;
@@ -243,10 +247,14 @@ uniform vec2 uTongueCenter;
 uniform vec2 uTongueX;
 uniform vec2 uTongueY;
 uniform float uSkinRed;
+uniform float uSeed;
 varying vec2 vUv;
 ${MATTE_SAMPLE}
 ${ZONE}
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+float grain(vec2 at) {
+  return fract(sin(dot(floor(at) + vec2(uSeed, uSeed * 0.61), vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+}
 float tongueAt(vec2 uv, vec3 cam) {
   vec2 d = uv * uPixels - uTongueCenter;
   vec2 q = vec2(dot(d, uTongueX), dot(d, uTongueY));
@@ -303,7 +311,9 @@ void main() {
     vec3 hair = clamp(pow(hue, vec3(0.5)) * pow(level, 0.5), 0.45, 1.8);
     float skin = clamp(aux.r / max(warp.a, 0.002), 0.0, 1.0);
     skin = smoothstep(0.15, 0.85, skin);
-    vec3 face = clamp(warp.rgb * mix(hair, local * shade, skin), 0.0, 1.0);
+    vec3 face = clamp(warp.rgb * mix(hair, local * shade, skin) + grain(vUv * uPixels) * ${GRAIN.toFixed(3)}, 0.0, 1.0);
+    float lip = aux.b * (1.0 - aux.b) * 4.0;
+    color *= 1.0 - ${LIP_SHADOW.toFixed(2)} * lip * uPresence;
     color = mix(color, face, warp.a * uPresence);
     if (uTongue > 0.001) color = mix(color, cam, tongueAt(vUv, cam) * uTongue * uPresence);
   }
@@ -394,24 +404,26 @@ export function backgroundCapable(gl) {
 
 export const VERTEX_FLOATS = 7;
 
-export function vertexRegion(v) {
+export function vertexRegion(v, extraStart = Infinity) {
+  if (v >= extraStart) return 1;
   if (v >= 68) return 0;
   return v <= 26 ? 0.25 : 1;
 }
 
 export function warpVertices(mesh, layout, livePoints, photoSize, depths = null) {
   const out = new Float32Array(mesh.triangles.length * 3 * VERTEX_FLOATS);
+  const extraStart = mesh.extraStart ?? Infinity;
   let at = 0;
   for (const triangle of mesh.triangles) {
-    for (const v of triangle.v) {
+    triangle.v.forEach((v, k) => {
       out[at++] = livePoints[v][0];
       out[at++] = livePoints[v][1];
       out[at++] = layout[v][0] / photoSize;
       out[at++] = layout[v][1] / photoSize;
-      out[at++] = triangle.mouth ? 1 : 0;
-      out[at++] = vertexRegion(v);
+      out[at++] = triangle.hole ? triangle.hole[k] : triangle.mouth ? 1 : 0;
+      out[at++] = vertexRegion(v, extraStart);
       out[at++] = depths ? depths[v] : 0;
-    }
+    });
   }
   return out;
 }
@@ -504,6 +516,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
   let lost = false;
   let background = { mode: "off", strength: 0.5, image: null, imageWidth: 0, imageHeight: 0 };
   let lastHead = null;
+  let frameCount = 0;
 
   function useModels(next) {
     if (!next || !format) return;
@@ -859,6 +872,8 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       gl.uniform2f(composite.uniforms.uTongueX, mouth.x[0], mouth.x[1]);
       gl.uniform2f(composite.uniforms.uTongueY, mouth.y[0], mouth.y[1]);
       gl.uniform1f(composite.uniforms.uSkinRed, expression?.skinRed ?? 0.12);
+      frameCount = (frameCount + 1) % 4096;
+      gl.uniform1f(composite.uniforms.uSeed, (frameCount * 7.31) % 97);
       setZone(composite, zone);
       drawQuad(composite, 1);
       return true;
