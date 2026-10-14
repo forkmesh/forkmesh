@@ -231,6 +231,7 @@ PLUGIN_ID = "crm"
 OUTREACH_FROM_EMAIL = "founders@forkmesh.com"
 OUTREACH_FROM_NAME = "ForkMesh Founders"
 OUTREACH_DAILY_LIMIT = 50
+MESSAGE_BRIEF_LIMIT = 8000
 OUTREACH_MAX_SUBJECT = 200
 OUTREACH_MAX_BODY = 10000
 OUTREACH_LOG_LIST_LIMIT = 50
@@ -999,6 +1000,8 @@ def _settings_data(data, existing=None):
     ):
         if key in data:
             result[key] = _clean(data.get(key), limit)
+    if "messageBrief" in data:
+        result["messageBrief"] = _text(data.get("messageBrief"), MESSAGE_BRIEF_LIMIT).strip()
     result["providerUrlTemplate"] = _https(result.get("providerUrlTemplate"))
     result["fromEmail"] = _email(result.get("fromEmail"))
     if "mailProvider" in data or "mailProvider" not in result:
@@ -1766,7 +1769,7 @@ async def _settings(runtime, org_bi):
     if not row:
         return {
             "providerName": "", "providerUrlTemplate": "", "fromName": "",
-            "fromEmail": "", "mailProvider": MAIL_PROVIDERS[0],
+            "fromEmail": "", "mailProvider": MAIL_PROVIDERS[0], "messageBrief": "",
             "updatedBy": "", "updatedAt": 0,
             "flows": _default_flows(), "mailBoxes": list(DEFAULT_MAIL_BOXES),
             "removedColumns": [], "tableViews": [],

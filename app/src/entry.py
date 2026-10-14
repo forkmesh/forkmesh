@@ -496,7 +496,7 @@ CHAT_CHANNEL_DO_RE = re.compile(
 CHAT_DIRECT_TICKET_TTL_MS = 60 * 1000
 CHAT_DIRECT_MESSAGE_DO_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/"
-    r"v([1-9][0-9]*)/(ws|revoke|read)$")
+    r"v([1-9][0-9]*)/(ws|revoke|read|media)$")
 OFFICE_MEETING_TICKET_TTL_MS = 60 * 1000
 OFFICE_ENTRY_TICKET_TTL_MS = 5 * 60 * 1000
 # Revalidate an Office socket's exact revocable account session at most once
@@ -1564,6 +1564,7 @@ async def agent_notes_handler(env, request):
 # Direct messages have a stricter participant-only authorization policy and
 # therefore use a separate pure API module instead of channel admin semantics.
 chat_direct_messages_api = _LazyModule("chat_direct_messages_api")
+chat_direct_media_api = _LazyModule("chat_direct_media_api")
 chat_reads_api = _LazyModule("chat_reads_api")
 # Pull-request badge generation is deferred until a federated PR needs it.
 _pull_badge = _LazyModule("pull_badge")
@@ -10529,6 +10530,25 @@ async def _announce_chat_direct_read(
     await room_object.fetch(request)
 
 
+async def _announce_chat_direct_media(
+        env, conversation_id, key_version, account_bi, media_id, state):
+    room_name = (
+        "chat-direct:" + str(conversation_id)
+        + ":v" + str(int(key_version))
+    )
+    room_id = env.FORKMESH_MAINNODE_ROOM.idFromName(room_name)
+    target_url = (
+        "https://forkmesh.internal/api/chat/direct-messages/"
+        + str(conversation_id) + "/v" + str(int(key_version))
+        + "/media?account=" + quote(str(account_bi), safe="")
+        + "&id=" + quote(str(media_id), safe="")
+        + "&state=" + quote(str(state), safe="")
+    )
+    room_object = env.FORKMESH_MAINNODE_ROOM.get(room_id)
+    request = JsRequest.new(target_url, to_js({"method": "POST"}))
+    await room_object.fetch(request)
+
+
 async def _revoke_office_channel_room(env, channel_id, key_version):
     room_name = (
         "office:chat-channel:" + str(channel_id)
@@ -11034,6 +11054,12 @@ class _ChatDirectMessagesRuntime(_WorldCommunityRuntime):
     async def announce_read(self, conversation_id, key_version, account_bi):
         await _announce_chat_direct_read(
             self.env, conversation_id, key_version, account_bi)
+
+    async def announce_media(
+            self, conversation_id, key_version, account_bi, media_id, state):
+        await _announce_chat_direct_media(
+            self.env, conversation_id, key_version, account_bi, media_id,
+            state)
 
 
 async def organization_tasks_handler(env, request, path):
@@ -13190,7 +13216,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "44afdc37ea7e2a6e51da34ebec1ae83071f63f35990738c4c0f71afa5253716d"
+    "edd807e544f8e1cc4df37b41937f3efbe7188d5cce746d50fb3b0a181dea2098"
 )
 
 
@@ -17973,6 +17999,8 @@ async def _delete_chat_direct_conversations(env, participant_bi):
             "DELETE FROM chat_history WHERE room_key=?",
             "chat-direct:" + conversation_id + ":v" + str(key_version),
         )
+        await chat_direct_media_api.delete_conversation(
+            _ChatDirectMessagesRuntime(env), conversation_id)
 
 
 async def _move_chat_channel_memberships(
@@ -50444,7 +50472,9 @@ async def _run_cron_phase(env, phase, minute_slot):
     if phase == "instance-health":
         return await _instance_directory_admin.health_cron(env)
     if phase == "chat-prune":
-        return await chat_history_prune_expired(env)
+        await chat_history_prune_expired(env)
+        return await chat_direct_media_api.sweep(
+            _ChatDirectMessagesRuntime(env))
     if phase == "account-device-prune":
         await ensure_schema(env)
         return await purge_stale_account_devices(env)
@@ -51633,6 +51663,20 @@ def chat_direct_delivered_frame(refs):
         "kind": "forkmesh-delivered",
         "v": 1,
         "refs": list(refs),
+    }, separators=(",", ":"))
+
+
+def chat_direct_media_frame(media_id, state):
+    media_id = str(media_id or "").strip().lower()
+    state = str(state or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}", media_id) or state not in (
+            "opened", "expired", "withdrawn"):
+        return ""
+    return json.dumps({
+        "kind": "forkmesh-media",
+        "v": 1,
+        "id": media_id,
+        "state": state,
     }, separators=(",", ":"))
 
 
@@ -52869,6 +52913,21 @@ class ForkMeshRoom(DurableObject):
             ).get("account") or [""]
             self._send_to_other_accounts(
                 reader[0], chat_direct_read_frame())
+            await durable_object_traffic_flush(self)
+            return json_response({"ok": True})
+        if (
+            private_path
+            and private_path.group(3) == "media"
+            and method_name(request) == "POST"
+        ):
+            query = parse_qs(parsed_url.query, keep_blank_values=False)
+            frame = chat_direct_media_frame(
+                (query.get("id") or [""])[0],
+                (query.get("state") or [""])[0])
+            if not frame:
+                return json_response({"error": "invalid_media"}, status=400)
+            self._send_to_other_accounts(
+                (query.get("account") or [""])[0], frame)
             await durable_object_traffic_flush(self)
             return json_response({"ok": True})
         if (

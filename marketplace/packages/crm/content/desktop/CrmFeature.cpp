@@ -19,6 +19,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontDatabase>
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QFrame>
@@ -655,6 +656,106 @@ const QSet<QString> kEndedStages{
 const QSet<QString> kUnsentStatuses{
     QStringLiteral("draft"), QStringLiteral("sending"), QStringLiteral("failed"),
     QStringLiteral("reject")};
+constexpr char kAiChatGptUrl[] = "https://chatgpt.com/";
+constexpr char kAiClaudeUrl[] = "https://claude.ai/new";
+constexpr int kAiUrlLimit = 14000;
+constexpr int kAiMessageLimit = 6;
+constexpr int kAiMessageChars = 900;
+constexpr int kAiNotesChars = 2500;
+constexpr int kAiFieldLimit = 40;
+constexpr int kAiBriefLimit = 8000;
+const QStringList kForkMeshBrief{
+    QStringLiteral("ForkMesh (https://forkmesh.com) lets developers collaborate on, mirror and preserve source-code repositories across independent hosts, without relying on any single hosting provider. It is open source."),
+    QStringLiteral("- Git stays the source of truth. Repository bytes live on developer-operated hosts and mirrors; clones are served from a live, signed, integrity-checked mirror, so a repository stays reachable when its source host goes offline."),
+    QStringLiteral("- Collaboration travels with the code: issues, discussions, pull requests, reviews, projects and releases are signed records stored in the repository, not only in a hosted database."),
+    QStringLiteral("- Stock Git works with no account: git clone https://forkmesh.com/<owner>/<repo>. ForkMesh's own source is https://forkmesh.com/forkmesh/forkmesh."),
+    QStringLiteral("- The desktop app (Linux, macOS, Windows) is a full node: it hosts and mirrors repositories and runs Codex or Claude Code agents in isolated worktrees whose work becomes pull requests. iPhone and Android apps are access clients."),
+    QStringLiteral("- The protocol, self-hosting, public read and clone, and portable Git data are free; only bounded hosted services are paid."),
+    QStringLiteral("- The public proof uses ordinary developer actions: collaborate, add a mirror, take the source host offline, and clone again."),
+    QStringLiteral("Links:"),
+    QStringLiteral("- Website: https://forkmesh.com"),
+    QStringLiteral("- Web app: https://app.forkmesh.com"),
+    QStringLiteral("- 3D ForkMesh World: https://world.forkmesh.com"),
+    QStringLiteral("- Docs: https://forkmesh.com/docs/"),
+    QStringLiteral("- Blog: https://forkmesh.com/blog"),
+    QStringLiteral("- Changelog: https://forkmesh.com/changelog"),
+    QStringLiteral("- Press kit: https://forkmesh.com/press"),
+    QStringLiteral("- Status: https://forkmesh.com/status"),
+    QStringLiteral("- Install the desktop node on Linux or macOS: curl -fsSL https://forkmesh.com/install.sh | bash"),
+    QStringLiteral("Recent updates: read the blog and the changelog above for what shipped lately."),
+};
+
+QString aiMessageText(const QString &raw)
+{
+    QStringList lines;
+    static const QRegularExpression wrote(QStringLiteral("^On .{4,200}wrote:$"));
+    static const QRegularExpression original(
+        QStringLiteral("^-{2,}\\s*Original Message\\s*-{2,}$"),
+        QRegularExpression::CaseInsensitiveOption);
+    QString normalized = raw;
+    normalized.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    normalized.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    for (const QString &line : normalized.split(QLatin1Char('\n'))) {
+        const QString trimmed = line.trimmed();
+        if (wrote.match(trimmed).hasMatch() || original.match(trimmed).hasMatch())
+            break;
+        if (!line.trimmed().startsWith(QLatin1Char('>')))
+            lines << line;
+    }
+    QString flat = lines.join(QLatin1Char('\n'));
+    flat.replace(QRegularExpression(QStringLiteral("\n{3,}")), QStringLiteral("\n\n"));
+    flat = flat.trimmed();
+    return flat.size() > kAiMessageChars
+        ? flat.left(kAiMessageChars - 1) + QString::fromUtf8("\xE2\x80\xA6") : flat;
+}
+
+QString aiProviderLabel(const QJsonObject &email)
+{
+    const QString provider = text(email, "provider");
+    if (provider == QLatin1String("gmail"))
+        return QStringLiteral("Gmail");
+    if (provider == QLatin1String("zoho"))
+        return QStringLiteral("Zoho Mail");
+    if (provider == QLatin1String("mastodon"))
+        return QStringLiteral("Mastodon");
+    return text(email, "transport") == QLatin1String("mailtrap") ? QStringLiteral("Mailtrap")
+                                                                 : QStringLiteral("Email");
+}
+
+QString aiAngle(const QString &group, const QString &flow)
+{
+    const QString name = group.isEmpty() ? flow : group;
+    if (name.isEmpty())
+        return {};
+    const QString audience = (group + QLatin1Char(' ') + flow).toLower();
+    const auto mentions = [&audience](std::initializer_list<const char *> words) {
+        for (const char *word : words) {
+            if (audience.contains(QLatin1String(word)))
+                return true;
+        }
+        return false;
+    };
+    if (mentions({"journalist", "press", "media", "reporter", "writer", "editor", "podcast",
+                  "newsletter", "blog"}))
+        return QStringLiteral("They are on our \"%1\" list as a journalist, so pitch a story: why "
+                              "it matters now and what is new, and offer an interview or a demo. "
+                              "No sales talk.").arg(name);
+    if (mentions({"investor", "angel", "vc", "fund", "capital"}))
+        return QStringLiteral("They are on our \"%1\" list as an investor, so lead with the "
+                              "opportunity and ask for a short call; never invent traction, "
+                              "numbers or names.").arg(name);
+    if (mentions({"partner", "integration", "alliance"}))
+        return QStringLiteral("They are on our \"%1\" list as a potential partner, so show how we "
+                              "fit what they build and suggest exploring working together.")
+            .arg(name);
+    if (mentions({"customer", "lead", "user", "developer", "maintainer", "community",
+                  "open source"}))
+        return QStringLiteral("They are on our \"%1\" list as a potential user, so give one "
+                              "concrete way we help their projects and invite them to try it.")
+            .arg(name);
+    return QStringLiteral("They are on our \"%1\" list, so pitch it the way that suits that group.")
+        .arg(name);
+}
 
 LeadMarks leadMarks(const QJsonObject &contact)
 {
@@ -3581,6 +3682,9 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
         email.isEmpty() ? QStringLiteral("Open their Mastodon profile")
                         : QStringLiteral("Open a message to %1").arg(email));
     write->setObjectName(QStringLiteral("primaryButton"));
+    QPushButton *ai = addButton(QStringLiteral("Write with AI"),
+                                QStringLiteral("Gather everything about them and us into a prompt "
+                                               "for ChatGPT or Claude to write the message"));
     QPushButton *open = addButton(QStringLiteral("Open contact"),
                                   QStringLiteral("Show everything about them in the side panel"));
     QPushButton *contacted = addButton(QStringLiteral("Mark contacted"),
@@ -3594,6 +3698,10 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
             openMailCompose(text(target, "email"));
         else
             QDesktopServices::openUrl(mastodonProfileUrl(text(target, "mastodon")));
+    });
+    const QString reason = next.reason;
+    connect(ai, &QPushButton::clicked, this, [this, contactId, reach, reason] {
+        showAiWriter(contactId, reach ? QStringLiteral("reach") : QStringLiteral("follow"), reason);
     });
     connect(open, &QPushButton::clicked, this,
             [this, contactId] { showContactDetail(contactId); });
@@ -8820,7 +8928,9 @@ void CrmFeature::showContactDetail(const QString &contactId, bool reread)
     draft->setObjectName(QStringLiteral("crmDraftEmailButton"));
     m_draftButton = draft;
     syncDraftButton();
-    auto *prompt = new QPushButton(QStringLiteral("Copy prompt"));
+    auto *prompt = new QPushButton(QStringLiteral("Write with AI"));
+    prompt->setToolTip(QStringLiteral("Gather everything about them and us into a prompt for "
+                                      "ChatGPT or Claude to write the message"));
     auto *again = new QPushButton(QStringLiteral("Read again"));
     again->setEnabled(!sources.isEmpty());
     for (QPushButton *button : {edit, write, draft, prompt, again})
@@ -8829,7 +8939,7 @@ void CrmFeature::showContactDetail(const QString &contactId, bool reread)
     layout->addLayout(actions);
     connect(again, &QPushButton::clicked, reads, [reads] { reads->readAccounts(true); });
     connect(prompt, &QPushButton::clicked, this,
-            [this, contactId] { copyOutreachPrompt(contactById(contactId)); });
+            [this, contactId] { showAiWriter(contactId); });
     connect(write, &QPushButton::clicked, this,
             [this, contactId] { composeEmail(contactById(contactId)); });
     connect(draft, &QPushButton::clicked, this,
@@ -9410,6 +9520,450 @@ void CrmFeature::copyOutreachPrompt(const QJsonObject &contact)
                                                           : text(contact, "name");
     setStatus(QStringLiteral("Copied a prompt about %1. Paste it into your assistant.")
                   .arg(name));
+}
+
+QString CrmFeature::aiBrief() const
+{
+    const QString saved = text(m_settings, "messageBrief");
+    if (!saved.isEmpty())
+        return saved;
+    return m_organization && m_organization->currentData().toString().toLower() ==
+                                 QLatin1String("forkmesh")
+        ? kForkMeshBrief.join(QLatin1Char('\n'))
+        : QString();
+}
+
+QString CrmFeature::aiPrompt(const AiDraft &draft) const
+{
+    const QJsonObject contact = contactById(draft.contactId);
+    const QString name = text(contact, "name").isEmpty()
+        ? (text(contact, "email").isEmpty() ? QStringLiteral("Unnamed contact")
+                                            : text(contact, "email"))
+        : text(contact, "name");
+    QString organization = m_organization ? m_organization->currentData().toString() : QString();
+    if (organization.isEmpty())
+        organization = QStringLiteral("our organization");
+    const QString viewer = m_viewerName.isEmpty() ? m_actor : m_viewerName;
+    const QString sender = viewer.isEmpty() ? QStringLiteral("the %1 team").arg(organization) : viewer;
+    const QString dot = QString::fromUtf8(" \xC2\xB7 ");
+    const auto day = [](qint64 at) {
+        return at > 0 ? QDateTime::fromMSecsSinceEpoch(at).toLocalTime().toString(
+                            QStringLiteral("yyyy-MM-dd"))
+                      : QStringLiteral("an unknown date");
+    };
+    const QString mastodon = mastodonHandleKey(text(contact, "mastodon"));
+    QString thread;
+    qint64 threadAt = -1;
+    for (const QJsonObject &toot : m_contactToots.value(draft.contactId)) {
+        const QUrl url(text(toot, "providerUrl"));
+        if (url.scheme() == QLatin1String("https") && emailSentAt(toot) > threadAt) {
+            threadAt = emailSentAt(toot);
+            thread = url.toString();
+        }
+    }
+
+    QString ask;
+    if (draft.format == QLatin1String("toot")) {
+        ask = QStringLiteral("a Mastodon post (toot) to %1%2, at most 500 characters including the "
+                             "mention and any link, with no more than two hashtags.%3")
+                  .arg(name,
+                       mastodon.isEmpty() ? QString()
+                                          : QStringLiteral(" that mentions @%1 at the start").arg(mastodon),
+                       thread.isEmpty() ? QString()
+                                        : QStringLiteral(" Write it as a reply in our existing thread: %1").arg(thread));
+    } else if (draft.format == QLatin1String("message")) {
+        ask = QStringLiteral("a short direct message to %1 for LinkedIn, X or Bluesky: under 80 "
+                             "words, no subject line, signed by %2.").arg(name, sender);
+    } else {
+        ask = QStringLiteral("an email to %1. Start with a \"Subject:\" line, then the body, signed "
+                             "by %2. Keep the body under 150 words.").arg(name, sender);
+    }
+    const QString goal = draft.mode == QLatin1String("reach")
+        ? QStringLiteral("This is our first contact with %1: introduce %2 in a sentence and give "
+                         "them one concrete reason it matters to them in particular.")
+              .arg(name, organization)
+        : QStringLiteral("We are already in touch with %1: pick up where the conversation below "
+                         "left off, answer anything they asked, and do not repeat the first pitch.")
+              .arg(name);
+    const QString flow = flowLabel(text(contact, "flow"));
+    QString group = text(activeSheet(), "name");
+    if (group == QLatin1String("No pipeline"))
+        group.clear();
+    const QString angle = aiAngle(group, flow);
+
+    QStringList facts;
+    const auto fact = [&facts](const QString &label, const QString &value) {
+        if (!value.trimmed().isEmpty())
+            facts << QStringLiteral("- %1: %2").arg(label, value.trimmed());
+    };
+    fact(QStringLiteral("Title"), text(contact, "title"));
+    fact(QStringLiteral("Company"), text(contact, "company"));
+    fact(QStringLiteral("Location"), text(contact, "location"));
+    QStringList pipeline;
+    if (!flow.isEmpty())
+        pipeline << flow;
+    if (!text(contact, "stage").isEmpty())
+        pipeline << CrmStageStrip::stageLabel(text(contact, "stage"));
+    fact(QStringLiteral("Pipeline"), pipeline.join(QStringLiteral(", stage ")));
+    const qint64 value = qint64(contact.value(QStringLiteral("value")).toDouble());
+    fact(QStringLiteral("Deal value"), value > 0 ? QLocale(QLocale::English).toString(value) : QString());
+    fact(QStringLiteral("Next step on our record"), text(contact, "nextStep"));
+    fact(QStringLiteral("Owner"), text(contact, "owner"));
+    fact(QStringLiteral("Source"), text(contact, "source"));
+    QStringList tags;
+    for (const QJsonValue &tag : contact.value(QStringLiteral("tags")).toArray())
+        tags << tag.toString();
+    fact(QStringLiteral("Tags"), tags.join(QStringLiteral(", ")));
+    const qint64 last = qint64(contact.value(QStringLiteral("lastContactedAt")).toDouble());
+    fact(QStringLiteral("Last contacted"), last > 0 ? day(last) : QStringLiteral("never"));
+    const qint64 created = qint64(contact.value(QStringLiteral("createdAt")).toDouble());
+    if (created > 0)
+        fact(QStringLiteral("Added to our CRM"),
+             day(created) + (text(contact, "createdBy").isEmpty()
+                                 ? QString() : QStringLiteral(" by ") + text(contact, "createdBy")));
+    fact(QStringLiteral("Email"), text(contact, "email"));
+    for (const char *field : {"twitter", "mastodon", "bluesky", "linkedin", "github", "website"}) {
+        const QString raw = text(contact, field);
+        const QUrl link = profileUrl(QString::fromLatin1(field), raw);
+        QString label;
+        for (const ContactColumn &column : contactColumns()) {
+            if (qstrcmp(column.field, field) == 0)
+                label = QString::fromLatin1(column.label);
+        }
+        fact(label, link.isValid() ? link.toString() : raw);
+    }
+    fact(QStringLiteral("Phone"), text(contact, "phone"));
+    fact(QStringLiteral("Their investor deck link"), text(deckLinkFor(draft.contactId), "url"));
+    const QJsonObject custom = contact.value(QStringLiteral("fields")).toObject();
+    int customCount = 0;
+    for (auto entry = custom.constBegin(); entry != custom.constEnd() && customCount < kAiFieldLimit;
+         ++entry, ++customCount) {
+        const QString shown = entry.value().isDouble() ? QString::number(entry.value().toDouble())
+                                                       : entry.value().toString().simplified();
+        fact(customColumnLabel(entry.key()),
+             shown.size() > 200 ? shown.left(199) + QString::fromUtf8("\xE2\x80\xA6") : shown);
+    }
+    if (facts.isEmpty())
+        facts << QStringLiteral("- Nothing beyond the name is on record.");
+
+    QStringList prompt{
+        QStringLiteral("You are helping %1 at %2 write %3").arg(sender, organization, ask),
+        QString(),
+        goal,
+    };
+    if (!angle.isEmpty())
+        prompt << angle;
+    prompt << QString()
+           << QStringLiteral("How to write it:")
+           << QStringLiteral("- Make it personal. Open with something specific to them, taken from "
+                             "their recent posts, work or links below, never a compliment that "
+                             "would fit anyone.")
+           << QStringLiteral("- Say plainly who we are, why we are writing to them in particular, "
+                             "and why now.")
+           << QStringLiteral("- End with one clear, low-effort ask (a reply, a short call, or "
+                             "trying one thing).")
+           << QStringLiteral("- Plain, warm words, short paragraphs, no hype, no emoji, no "
+                             "[placeholders]. Use only facts given here or found on the linked "
+                             "pages; leave out anything you cannot back up.")
+           << QStringLiteral("- If you can browse, open their profiles and posts and our site, blog "
+                             "and changelog below first, and use anything newer than what is "
+                             "written here.")
+           << QStringLiteral("- Reply with the finished message, ready to paste, then two "
+                             "alternative opening lines.")
+           << QString()
+           << QStringLiteral("## About us: %1").arg(organization)
+           << (draft.brief.trimmed().isEmpty()
+                   ? QStringLiteral("(No description saved yet. Look %1 up before writing.)")
+                         .arg(organization)
+                   : draft.brief.trimmed())
+           << QString()
+           << QStringLiteral("## About %1").arg(name);
+    prompt << facts;
+    const QString notes = text(contact, "notes");
+    if (!notes.isEmpty()) {
+        prompt << QString() << QStringLiteral("Our notes on them:")
+               << (notes.size() > kAiNotesChars
+                       ? QString::fromUtf8("\xE2\x80\xA6") + notes.right(kAiNotesChars)
+                       : notes);
+    }
+    prompt << QString() << QStringLiteral("## Their recent public posts");
+    if (!draft.updatesRead) {
+        prompt << QStringLiteral("Not read yet: open their profiles linked above.");
+    } else if (draft.updates.isEmpty()) {
+        prompt << QStringLiteral("No Mastodon, Bluesky or GitHub account on record; look at the "
+                                 "links above.");
+    } else {
+        for (const auto &[source, read] : draft.updates) {
+            const QString field = source.section(QLatin1Char(':'), 0, 0);
+            const QString account = source.section(QLatin1Char(':'), 1);
+            const QUrl link = profileUrl(field, text(contact, field));
+            const QString head = QStringLiteral("%1 %2%3").arg(
+                accountServiceLabel(source),
+                field == QLatin1String("bluesky") ? account : QStringLiteral("@") + account,
+                link.isValid() ? QStringLiteral(" (%1)").arg(link.toString()) : QString());
+            if (!read.error.isEmpty()) {
+                prompt << QStringLiteral("%1: could not be read (%2); open the profile yourself.")
+                              .arg(head, read.error);
+            } else if (read.updates.isEmpty()) {
+                prompt << QStringLiteral("%1: no public posts.").arg(head);
+            } else {
+                prompt << head + QLatin1Char(':');
+                for (const AccountUpdate &post : read.updates) {
+                    prompt << QStringLiteral("- %1: %2%3").arg(
+                        day(post.at), post.text,
+                        post.url.isValid() ? QStringLiteral(" (%1)").arg(post.url.toString())
+                                           : QString());
+                }
+            }
+        }
+    }
+    prompt << QString() << QStringLiteral("## Our conversation so far (oldest first)");
+    QList<QJsonObject> messages = draft.messages;
+    std::sort(messages.begin(), messages.end(), [](const QJsonObject &a, const QJsonObject &b) {
+        return emailSentAt(a) < emailSentAt(b);
+    });
+    if (messages.isEmpty())
+        prompt << QStringLiteral("Nothing on record yet: this is the first message.");
+    for (const QJsonObject &message : std::as_const(messages)) {
+        const bool inbound = text(message, "direction") == QLatin1String("inbound");
+        const QString status = text(message, "status").toLower();
+        QString head = QStringLiteral("- %1%2%3 via %4").arg(
+            day(emailSentAt(message)), dot,
+            inbound ? QStringLiteral("They wrote")
+                    : QStringLiteral("We wrote") + (text(message, "sender").isEmpty()
+                                                        ? QString()
+                                                        : QStringLiteral(" (%1)").arg(text(message, "sender"))),
+            aiProviderLabel(message));
+        if (!inbound && kUnsentStatuses.contains(status))
+            head += QStringLiteral(" [%1, not delivered]").arg(status);
+        if (!text(message, "subject").isEmpty())
+            head += dot + QStringLiteral("Subject: ") + text(message, "subject");
+        const QUrl url(text(message, "providerUrl"));
+        if (url.scheme() == QLatin1String("https"))
+            head += dot + url.toString();
+        prompt << head;
+        const QString body = aiMessageText(text(message, "text"));
+        for (const QString &line : body.isEmpty() ? QStringList() : body.split(QLatin1Char('\n')))
+            prompt << QStringLiteral("  > ") + line;
+    }
+    if (!draft.reason.isEmpty())
+        prompt << QString() << QStringLiteral("## Why now") << draft.reason;
+    return prompt.join(QLatin1Char('\n'));
+}
+
+void CrmFeature::showAiWriter(const QString &contactId, const QString &mode,
+                              const QString &reason)
+{
+    const QJsonObject contact = contactById(contactId);
+    if (contact.isEmpty())
+        return;
+    const QString name = text(contact, "name").isEmpty()
+        ? (text(contact, "email").isEmpty() ? QStringLiteral("Unnamed contact")
+                                            : text(contact, "email"))
+        : text(contact, "name");
+    auto draft = std::make_shared<AiDraft>();
+    draft->contactId = contactId;
+    draft->reason = reason;
+    draft->brief = aiBrief();
+    QList<QJsonObject> linked = m_contactEmails.value(contactId);
+    linked.append(m_contactToots.value(contactId));
+    std::sort(linked.begin(), linked.end(), [](const QJsonObject &a, const QJsonObject &b) {
+        return emailSentAt(a) > emailSentAt(b);
+    });
+    draft->messages = linked.mid(0, kAiMessageLimit);
+    bool talked = qint64(contact.value(QStringLiteral("lastContactedAt")).toDouble()) > 0;
+    for (const QJsonObject &message : std::as_const(draft->messages)) {
+        if (text(message, "direction") == QLatin1String("inbound") ||
+            !kUnsentStatuses.contains(text(message, "status").toLower()))
+            talked = true;
+    }
+    draft->mode = mode.isEmpty() ? (talked ? QStringLiteral("follow") : QStringLiteral("reach"))
+                                 : mode;
+    const QString email = text(contact, "email");
+    draft->format = email.contains(QLatin1Char('@')) ? QStringLiteral("email")
+        : !mastodonHandleKey(text(contact, "mastodon")).isEmpty() ? QStringLiteral("toot")
+                                                                  : QStringLiteral("message");
+    const QStringList sources = avatarSources(contact);
+    draft->updatesRead = sources.isEmpty();
+
+    auto *dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setObjectName(QStringLiteral("crmAiWriter"));
+    dialog->setWindowTitle(QStringLiteral("Write to %1 with AI").arg(name));
+    dialog->resize(760, 680);
+    auto *layout = new QVBoxLayout(dialog);
+    auto *intro = new QLabel(QStringLiteral(
+        "One prompt holds who we are, everything on their record, their recent public posts and "
+        "every message so far. ChatGPT or Claude opens in your browser with it filled in and "
+        "writes the message there; nothing is sent from here."));
+    intro->setWordWrap(true);
+    intro->setObjectName(QStringLiteral("mutedLabel"));
+    layout->addWidget(intro);
+    auto *formatRow = new QHBoxLayout;
+    auto *format = new QComboBox;
+    format->addItem(QStringLiteral("Email"), QStringLiteral("email"));
+    format->addItem(QStringLiteral("Direct message"), QStringLiteral("message"));
+    format->addItem(QStringLiteral("Toot"), QStringLiteral("toot"));
+    format->setCurrentIndex(format->findData(draft->format));
+    formatRow->addWidget(new QLabel(QStringLiteral("Write")));
+    formatRow->addWidget(format);
+    formatRow->addStretch(1);
+    layout->addLayout(formatRow);
+    layout->addWidget(new QLabel(QStringLiteral("About us: the brief every prompt starts from")));
+    auto *brief = new QPlainTextEdit(draft->brief);
+    brief->setMaximumHeight(130);
+    brief->setPlaceholderText(QStringLiteral("What %1 does, who it is for, links, recent news")
+                                  .arg(m_organization->currentData().toString()));
+    layout->addWidget(brief);
+    auto *saveBrief = new QPushButton(QStringLiteral("Save for the organization"));
+    saveBrief->setVisible(m_canManageSettings);
+    auto *briefRow = new QHBoxLayout;
+    briefRow->addStretch(1);
+    briefRow->addWidget(saveBrief);
+    layout->addLayout(briefRow);
+    layout->addWidget(new QLabel(QStringLiteral("Prompt (edit anything before opening)")));
+    auto *prompt = new QPlainTextEdit;
+    prompt->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    prompt->setAccessibleName(QStringLiteral("Prompt"));
+    layout->addWidget(prompt, 1);
+    auto *status = new QLabel;
+    status->setWordWrap(true);
+    status->setObjectName(QStringLiteral("mutedLabel"));
+    layout->addWidget(status);
+    auto *buttons = new QHBoxLayout;
+    auto *copy = new QPushButton(QStringLiteral("Copy prompt"));
+    auto *claude = new QPushButton(QStringLiteral("Open in Claude"));
+    auto *chatgpt = new QPushButton(QStringLiteral("Open in ChatGPT"));
+    chatgpt->setObjectName(QStringLiteral("primaryButton"));
+    buttons->addStretch(1);
+    for (QPushButton *button : {copy, claude, chatgpt})
+        buttons->addWidget(button);
+    layout->addLayout(buttons);
+
+    auto edited = std::make_shared<bool>(false);
+    const auto render = [this, draft, prompt, edited](bool force) {
+        if (*edited && !force)
+            return;
+        const QSignalBlocker blocker(prompt);
+        prompt->setPlainText(aiPrompt(*draft));
+        *edited = false;
+    };
+    render(true);
+    connect(prompt, &QPlainTextEdit::textChanged, dialog, [edited] { *edited = true; });
+    connect(format, &QComboBox::currentIndexChanged, dialog, [draft, format, render] {
+        draft->format = format->currentData().toString();
+        render(true);
+    });
+    connect(brief, &QPlainTextEdit::textChanged, dialog, [draft, brief, render] {
+        draft->brief = brief->toPlainText();
+        render(true);
+    });
+    connect(copy, &QPushButton::clicked, dialog, [prompt, status] {
+        if (QClipboard *clipboard = QGuiApplication::clipboard())
+            clipboard->setText(prompt->toPlainText());
+        status->setText(QStringLiteral("Prompt copied."));
+    });
+    const auto open = [prompt, status](const QString &label, const char *base) {
+        const QString text = prompt->toPlainText();
+        if (QClipboard *clipboard = QGuiApplication::clipboard())
+            clipboard->setText(text);
+        const QByteArray filled =
+            QByteArray(base) + "?q=" + QUrl::toPercentEncoding(text);
+        const bool fits = filled.size() <= kAiUrlLimit;
+        QDesktopServices::openUrl(fits ? QUrl::fromEncoded(filled)
+                                       : QUrl(QString::fromLatin1(base)));
+        status->setText(fits
+            ? QStringLiteral("Opened %1 with the prompt filled in. It is on your clipboard too.")
+                  .arg(label)
+            : QStringLiteral("The prompt is too long for a link, so it is on your clipboard: "
+                             "paste it into %1.").arg(label));
+    };
+    connect(claude, &QPushButton::clicked, dialog,
+            [open] { open(QStringLiteral("Claude"), kAiClaudeUrl); });
+    connect(chatgpt, &QPushButton::clicked, dialog,
+            [open] { open(QStringLiteral("ChatGPT"), kAiChatGptUrl); });
+    connect(saveBrief, &QPushButton::clicked, dialog, [this, brief, saveBrief, status] {
+        const QPointer<QPushButton> button(saveBrief);
+        const QPointer<QLabel> label(status);
+        saveBrief->setEnabled(false);
+        request(QByteArrayLiteral("PUT"), organizationPath(QStringLiteral("/settings")),
+                QJsonObject{{QStringLiteral("messageBrief"),
+                             brief->toPlainText().trimmed().left(kAiBriefLimit)}},
+                [this, button, label](bool ok, const QJsonObject &payload, const QString &error) {
+            if (button)
+                button->setEnabled(true);
+            if (ok)
+                m_settings = payload.value(QStringLiteral("settings")).toObject();
+            if (label)
+                label->setText(ok ? QStringLiteral("Saved as %1's brief for every member.")
+                                        .arg(m_organization->currentData().toString())
+                                  : QStringLiteral("Could not save the brief: %1").arg(error));
+        });
+    });
+
+    auto pending = std::make_shared<int>(0);
+    const auto settle = [draft, pending, status, render, edited] {
+        if (--*pending > 0)
+            return;
+        int posts = 0;
+        for (const auto &update : std::as_const(draft->updates))
+            posts += int(update.second.updates.size());
+        draft->updatesRead = true;
+        status->setText(QStringLiteral("%1: %2 past message%3 and %4 recent post%5 are in the prompt.")
+                            .arg(*edited ? QStringLiteral("Read, but your edits to the prompt were kept")
+                                         : QStringLiteral("Ready"))
+                            .arg(draft->messages.size())
+                            .arg(draft->messages.size() == 1 ? QString() : QStringLiteral("s"))
+                            .arg(posts)
+                            .arg(posts == 1 ? QString() : QStringLiteral("s")));
+        render(false);
+    };
+    *pending = int(draft->messages.size() + sources.size());
+    if (*pending == 0) {
+        status->setText(QStringLiteral("Nothing to read: the prompt holds the record, our notes "
+                                       "and the brief."));
+    } else {
+        status->setText(QString::fromUtf8("Reading %1 past message%2 and %3 public account%4\xE2\x80\xA6")
+                            .arg(draft->messages.size())
+                            .arg(draft->messages.size() == 1 ? QString() : QStringLiteral("s"))
+                            .arg(sources.size())
+                            .arg(sources.size() == 1 ? QString() : QStringLiteral("s")));
+    }
+    const QPointer<QDialog> guard(dialog);
+    for (int at = 0; at < draft->messages.size(); ++at) {
+        const QString id = text(draft->messages.at(at), "id");
+        request(QByteArrayLiteral("GET"), organizationPath(QStringLiteral("/emails/") + id), {},
+                [guard, draft, at, settle](bool ok, const QJsonObject &payload, const QString &) {
+            if (!guard)
+                return;
+            const QJsonObject full = payload.value(QStringLiteral("email")).toObject();
+            if (ok && at < draft->messages.size()) {
+                const QString plain = text(full, "text").isEmpty()
+                    ? QTextDocumentFragment::fromHtml(text(full, "html")).toPlainText()
+                    : full.value(QStringLiteral("text")).toString();
+                draft->messages[at].insert(QStringLiteral("text"), plain);
+            }
+            settle();
+        });
+    }
+    for (const QString &source : sources) {
+        draft->updates.append({source, AccountRead{}});
+        const int at = int(draft->updates.size()) - 1;
+        const auto cached = m_accountReads.constFind(source);
+        if (cached != m_accountReads.constEnd()) {
+            draft->updates[at].second = *cached;
+            QTimer::singleShot(0, dialog, settle);
+            continue;
+        }
+        readAccountUpdates(source, dialog,
+                           [this, draft, at, source, settle](const QString &error, const QUrl &picture,
+                                                             const QList<AccountUpdate> &updates) {
+            m_accountReads.insert(source, AccountRead{error, picture, updates});
+            draft->updates[at].second = AccountRead{error, picture, updates};
+            settle();
+        });
+    }
+    dialog->show();
 }
 
 QJsonObject CrmFeature::deckLinkFor(const QString &contactId) const

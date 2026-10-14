@@ -292,6 +292,64 @@ Code: `CrmFeature::nextContact(NextMode)` and `nextContactCard` (desktop),
 `tests/test_qt_plugin_contracts.py`, `tests/test_web_layout.py`,
 `tests/contact_detail_checks.js`, `CrmParityTests.swift`, `CrmParityTest.kt`.
 
+### Write with AI (1.30.0)
+
+The user asked for a button on the reach-out and follow-up cards that
+generates a message, email or toot with web ChatGPT or Claude, pasting in
+everything about ForkMesh and its links, everything about the person (their
+recent updates and links), and every past message and bit of context
+(2026-10-13). **Write with AI** sits on both cards and in the contact detail
+card, on the web and the desktop, and opens a dialog that builds one prompt:
+
+- **What to write**: Email (with a `Subject:` line, under 150 words), Direct
+  message (LinkedIn, X or Bluesky, under 80 words) or Toot (mentions their
+  Mastodon handle, 500 characters, and replies in our existing Mastodon
+  thread when the CRM has one). It starts on Email when there is an address,
+  else Toot when there is a Mastodon handle.
+- **The goal**: a first contact when nothing has gone out yet (or the
+  **Reach out** card opened it), else a follow-up that picks up the
+  conversation. The open list or the pipeline sets an angle, the same
+  keywords the desktop's older **Copy prompt** uses: a journalist is pitched a
+  story, an investor the opportunity, a partner a fit, a user one way it
+  helps.
+- **About us**: the organization's saved brief (setting `messageBrief`, up to
+  8,000 characters). Until one is saved, the `forkmesh` organization starts
+  from a built-in ForkMesh brief (what it is, its promises, and links to the
+  site, app, World, docs, blog, changelog, press kit, status page and
+  installer); other organizations start blank. The brief edits in the dialog,
+  and an owner or admin can **Save for the organization**. The web
+  (`CRM_FORKMESH_BRIEF`) and desktop (`kForkMeshBrief`) copies are held
+  identical by a test.
+- **About them**: every filled field (title, company, location, pipeline and
+  stage, deal value, next step, owner, source, tags, last contacted, when
+  added, the ForkMesh account check on the web, email, each profile as a
+  link, phone, their investor deck link, up to 40 custom fields) and our
+  notes (the newest 2,500 characters).
+- **Their recent public posts**: the same Mastodon, Bluesky and GitHub reads
+  the detail card makes, read when the dialog opens (the desktop reuses what
+  the detail card already read this session). An account that could not be
+  read says so, and until the reads finish the prompt says "Not read yet".
+- **Our conversation so far**: the six newest linked messages (email and
+  Mastodon), oldest first, each with who wrote it, how, the subject and its
+  link, and the body (fetched one by one from `GET /emails/<id>`; quoted
+  reply tails are cut, 900 characters each). An unsent draft is marked as
+  not delivered.
+- **Why now**: the card's **Why them** reason when a card opened it.
+
+The prompt stays editable. **Open in ChatGPT** and **Open in Claude** open
+`https://chatgpt.com/?q=…` or `https://claude.ai/new?q=…` in a new tab with
+the prompt filled in and also copy it to the clipboard; past 14,000 characters
+of link they open the bare site and the prompt is pasted from the clipboard.
+**Copy prompt** only copies. Nothing is sent from the CRM, and nothing is
+stored except a brief an admin saves. The desktop detail panel's **Copy
+prompt** became **Write with AI**; the row button and menu item keep the short
+toot prompt.
+
+Code: `crmAiPrompt`, `openCrmAi`, `sendCrmAi` and `[data-crm-ai-dialog]` (web),
+`CrmFeature::aiPrompt` and `showAiWriter` (desktop), `messageBrief` in
+`_settings_data` (worker). Tests: `tests/test_ai_writer.py`,
+`tests/contact_detail_checks.js`.
+
 ### Next best contact (1.26.0)
 
 The user asked for the desktop CRM to show the next best person to contact,

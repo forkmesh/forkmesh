@@ -514,6 +514,21 @@ private:
     void syncDraftButton();
     QString outreachPrompt(const QJsonObject &contact) const;
     void copyOutreachPrompt(const QJsonObject &contact);
+    struct AiDraft
+    {
+        QString contactId;
+        QString format;
+        QString mode;
+        QString reason;
+        QString brief;
+        QList<QJsonObject> messages;
+        QList<QPair<QString, AccountRead>> updates;
+        bool updatesRead = false;
+    };
+    QString aiBrief() const;
+    QString aiPrompt(const AiDraft &draft) const;
+    void showAiWriter(const QString &contactId, const QString &mode = QString(),
+                      const QString &reason = QString());
     void copyContactLink(const QJsonObject &contact);
     void copySheetLink(const QString &id);
     void noteSheetViewed();

@@ -238,6 +238,21 @@ reads; it changes nothing in App Store Connect. It prints:
   `REJECTED` and the other states that need a fix end in "<-- needs action".
   The App Store Connect API does not return the text of App Review's message.
   The report says to read it under App Review in App Store Connect.
+- **Downloads** (added 2026-10-13): first-time downloads, redownloads and
+  updates since the month of the first App Store version, and for the last 7
+  and 30 days. The App Store Connect API has no download counter; the numbers
+  come from the Sales and Trends summary reports (`GET /v1/salesReports`,
+  gzipped TSV), counting the rows whose Apple Identifier is the app and whose
+  product type is 1/1F/1T (download), 3/3F/3T (redownload) or 7/7F/7T
+  (update). A month that ended at least 7 days ago is read from its monthly
+  report, the days after it and the last 30 days from daily reports (eight at
+  a time). A report that answers 404 means no sales that day and counts as
+  zero, so the newest day reads 0 until Apple publishes it the next morning
+  (Pacific time). The reports need the account's vendor number:
+  `ASC_VENDOR_NUMBER` in the environment or this desktop's Actions variables,
+  shown in App Store Connect under Payments and Financial Reports. Without it
+  the section says how to set it; the key must have Sales access (ours is
+  Admin).
 - **TestFlight builds**: the three newest uploads, each with its processing
   state, internal and external testing state, Beta App Review state, and the
   groups it is in.

@@ -156,7 +156,10 @@ fun ChatMessageRow(
             if (message.blocks.isNotEmpty()) AppBlocksView(message)
             if (row.edited) Text("(edited)", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
             val attachment = row.attachment
-            if (attachment != null) {
+            val viewOnce = row.viewOnce
+            if (viewOnce != null) {
+                ViewOnceBubble(viewOnce)
+            } else if (attachment != null) {
                 ChatAttachmentView(attachment)
             } else if (message.fileName.isNotEmpty()) {
                 Row(Modifier.padding(top = FmSpace.x1), verticalAlignment = Alignment.CenterVertically) {
