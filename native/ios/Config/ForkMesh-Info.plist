@@ -58,7 +58,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save a photo from an agent's transcript to your library.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Turn what you say into the text of a prompt.</string>
+	<string>Turn what you say into the text of a prompt, and into captions on your video messages. Captions are made on your iPhone.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>ASCredentialExchangeActivityType</string>
