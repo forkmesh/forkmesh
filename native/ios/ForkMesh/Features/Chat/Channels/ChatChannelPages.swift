@@ -358,7 +358,7 @@ struct ChatChannelMembersScreen: View {
         .task { await ChatChannelMembersScreen.warm(members: hub.channelMembers(conversation)) }
     }
 
-    static func warm(members: [ChatChannelMember]) async {
+    @MainActor static func warm(members: [ChatChannelMember]) async {
         for member in members.prefix(40) where ChatAvatarCache.shared.png(for: member.name).isEmpty {
             await ChatAvatarCache.shared.refresh(member.name)
         }

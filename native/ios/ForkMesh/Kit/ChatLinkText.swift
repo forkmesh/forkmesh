@@ -5,13 +5,6 @@ import FMChat
 import FMCode
 import SwiftUI
 
-/// A chat message body whose links are tappable where they were written,
-/// instead of having to be sent as a message of their own.
-///
-/// The caller styles the view from outside
-/// (`ChatLinkText(text: body).fmText(.bodyLarge)`). Links draw in the accent,
-/// underlined. `onOpen` overrides how a tapped link is opened; without it the
-/// address goes to the system.
 struct ChatMentionNamesKey: EnvironmentKey {
     static let defaultValue: [String] = []
 }
@@ -35,6 +28,13 @@ struct ChatMentionColors {
     }
 }
 
+/// A chat message body whose links are tappable where they were written,
+/// instead of having to be sent as a message of their own.
+///
+/// The caller styles the view from outside
+/// (`ChatLinkText(text: body).fmText(.bodyLarge)`). Links draw in the accent,
+/// underlined. `onOpen` overrides how a tapped link is opened; without it the
+/// address goes to the system.
 struct ChatLinkText: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.chatMentionNames) private var mentionNames
