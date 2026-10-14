@@ -21,7 +21,7 @@ struct RelaySettingsSection: View {
         let http: HTTPClient = Services.get(HTTPClient.self) ?? URLSessionHTTPClient()
         return RelaySettingsModel(
             settings: settings, auth: auth, relay: relay, switcher: Services.get(RelaySwitchController.self),
-            probe: { RelayProbe(http: http) })
+            probe: { RelayProbe(http: http) }, http: http)
     }
 
     var body: some View {
