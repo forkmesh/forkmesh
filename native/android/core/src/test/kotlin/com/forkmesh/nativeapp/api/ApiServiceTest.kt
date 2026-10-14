@@ -997,6 +997,17 @@ class ApiServiceTest {
         assertEq(3, transport.requests.size)
     }
 
+    fun testKnownAccountAvatarIsReadWithoutARequest() {
+        val transport = FakeTransport { jsonResponse(mapOf("exists" to true, "kind" to "user", "avatarPng" to "iVBOR")) }
+        val api = api(transport)
+        assertEq("", api.knownAccountAvatarPng("alice"))
+        assertEq(0, transport.requests.size)
+        api.accountAvatarPng("alice")
+        assertEq("iVBOR", api.knownAccountAvatarPng(" Alice "))
+        assertEq("", api.knownAccountAvatarPng(" "))
+        assertEq(1, transport.requests.size)
+    }
+
     fun testAccountUserStatusIsCachedAndMissesArePermanent() {
         var now = 1_000L
         val transport = FakeTransport { request ->
