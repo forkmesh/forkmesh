@@ -1,3 +1,4 @@
+import FMAccount
 import FMAgents
 import FMApi
 import FMBase
@@ -105,6 +106,7 @@ enum NavigationRoutes {
             guard case let .file(ref, branch, path) = route else { return AnyView(RoutePlaceholderView(route: route)) }
             return AnyView(RepoFileScreen(repo: repository(ref), path: path, ref: branch))
         }
+        fallback(routes, .localRepos) { _ in AnyView(LocalReposRouteScreen()) }
         fallback(routes, .localRepo) { route in
             guard case let .localRepo(id) = route,
                   let record = LocalRepoServices.store?.records.first(where: { $0.name == id })
@@ -135,6 +137,20 @@ enum NavigationRoutes {
         }
         fallback(routes, .projects) { _ in AnyView(ProjectsRouteScreen()) }
         fallback(routes, .inbox) { _ in AnyView(NotificationsScreen()) }
+    }
+}
+
+struct LocalReposRouteScreen: View {
+    @Environment(\.fmPalette) private var fm
+    @State private var settings: SettingsService? = Services.get(SettingsService.self)
+
+    var body: some View {
+        ScrollView {
+            LocalReposSection(showsNetwork: settings?.project.hasInstance != false)
+        }
+        .background(fm.listSurface.ignoresSafeArea())
+        .navigationTitle("On this device")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

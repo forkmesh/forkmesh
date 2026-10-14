@@ -20,13 +20,20 @@ struct FmAvatar: View {
     private let avatarPng: String
     private let size: CGFloat
     private let fontSize: CGFloat
+    private let corner: CGFloat?
 
     /// `fontSize` defaults to CircleAvatar's titleMedium.
-    init(name: String, avatarPng: String = "", size: CGFloat = 40, fontSize: CGFloat = FmType.heading) {
+    init(name: String, avatarPng: String = "", size: CGFloat = 40, fontSize: CGFloat = FmType.heading, corner: CGFloat? = nil) {
         self.name = name
         self.avatarPng = avatarPng
         self.size = size
         self.fontSize = fontSize
+        self.corner = corner
+    }
+
+    private var shape: AnyShape {
+        if let corner { return AnyShape(RoundedRectangle(cornerRadius: corner, style: .continuous)) }
+        return AnyShape(Circle())
     }
 
     /// `label.characters.first.toUpperCase()`: the first grapheme, or "?" for
@@ -44,7 +51,7 @@ struct FmAvatar: View {
                 .resizable()
                 .scaledToFill()
                 .frame(width: size, height: size)
-                .clipShape(Circle())
+                .clipShape(shape)
         }
     }
 
@@ -54,7 +61,7 @@ struct FmAvatar: View {
             .foregroundStyle(Color.white)
             .frame(width: size, height: size)
             .background(FmColors.senderColor(name))
-            .clipShape(Circle())
+            .clipShape(shape)
             .overlay { photo }
     }
 }

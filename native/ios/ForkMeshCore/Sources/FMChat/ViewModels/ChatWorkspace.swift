@@ -29,9 +29,59 @@ public struct ChatSavedItem: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+public struct ChatBookmark: Codable, Equatable, Sendable, Identifiable {
+    public let id: String
+    public var title: String
+    public var url: String
+    public let addedAt: Date
+
+    public init(id: String = UUID().uuidString, title: String, url: String, addedAt: Date) {
+        self.id = id
+        self.title = title
+        self.url = url
+        self.addedAt = addedAt
+    }
+}
+
+public struct ChatCanvas: Codable, Equatable, Sendable {
+    public var title: String
+    public var text: String
+    public var updatedAt: Date
+
+    public init(title: String = "Canvas", text: String = "", updatedAt: Date) {
+        self.title = title
+        self.text = text
+        self.updatedAt = updatedAt
+    }
+}
+
+public enum ChatNotifyLevel: String, CaseIterable, Sendable, Identifiable {
+    case all, mentions, nothing
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .all: return "All"
+        case .mentions: return "Mentions"
+        case .nothing: return "Nothing"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .all: return "Every new message marks the channel unread."
+        case .mentions: return "Only messages that mention you, @here, @channel or @everyone."
+        case .nothing: return "Muted: no unread dot or badge."
+        }
+    }
+}
+
 @MainActor
 @Observable
 public final class ChatWorkspace {
+    public static let maxBookmarks = 50
+    public static let maxCanvasChars = 20_000
     public static let maxSaved = 200
     public static let maxRecents = 20
     public static let maxDraftChars = 4_000
@@ -44,6 +94,9 @@ public final class ChatWorkspace {
     public private(set) var drafts: [String: String] = [:]
     public private(set) var recentPeople: [String] = []
     public private(set) var lastConversation: String = ""
+    public private(set) var mentionsOnly: Set<String> = []
+    public private(set) var bookmarks: [String: [ChatBookmark]] = [:]
+    public private(set) var canvases: [String: ChatCanvas] = [:]
 
     public init(store: KeyValueStore? = nil, scope: String = "") {
         self.store = store
@@ -70,6 +123,17 @@ public final class ChatWorkspace {
             let decoded = try? JSONDecoder().decode([String: String].self, from: data)
         {
             drafts = decoded
+        }
+        mentionsOnly = Set(store.stringList(forKey: key("mentionsOnly")) ?? [])
+        if let json = store.string(forKey: key("bookmarks")), let data = json.data(using: .utf8),
+            let decoded = try? ChatWorkspace.decoder.decode([String: [ChatBookmark]].self, from: data)
+        {
+            bookmarks = decoded
+        }
+        if let json = store.string(forKey: key("canvases")), let data = json.data(using: .utf8),
+            let decoded = try? ChatWorkspace.decoder.decode([String: ChatCanvas].self, from: data)
+        {
+            canvases = decoded
         }
     }
 
@@ -175,6 +239,78 @@ public final class ChatWorkspace {
         setMuted(conversation, false)
         setStarred(conversation, false)
         setDraft("", for: conversation)
+        setNotifyLevel(.all, for: conversation)
+        if bookmarks.removeValue(forKey: conversation) != nil { persistBookmarks() }
+        removeCanvas(conversation)
+    }
+
+    public func notifyLevel(_ conversation: String) -> ChatNotifyLevel {
+        if muted.contains(conversation) { return .nothing }
+        if mentionsOnly.contains(conversation) { return .mentions }
+        return .all
+    }
+
+    public func setNotifyLevel(_ level: ChatNotifyLevel, for conversation: String) {
+        if conversation.isEmpty { return }
+        setMuted(conversation, level == .nothing)
+        let wanted = level == .mentions
+        if wanted == mentionsOnly.contains(conversation) { return }
+        if wanted { mentionsOnly.insert(conversation) } else { mentionsOnly.remove(conversation) }
+        store?.set(mentionsOnly.sorted(), forKey: key("mentionsOnly"))
+    }
+
+    public func bookmarks(for conversation: String) -> [ChatBookmark] { bookmarks[conversation] ?? [] }
+
+    @discardableResult
+    public func addBookmark(_ conversation: String, title: String, url: String, now: Date) -> ChatBookmark? {
+        let link = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !conversation.isEmpty, let parsed = URL(string: link), let scheme = parsed.scheme?.lowercased(),
+            scheme == "https" || scheme == "http", parsed.host?.isEmpty == false
+        else { return nil }
+        var list = bookmarks[conversation] ?? []
+        if list.count >= ChatWorkspace.maxBookmarks { return nil }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bookmark = ChatBookmark(title: String((name.isEmpty ? parsed.host ?? link : name).prefix(120)), url: link, addedAt: now)
+        list.append(bookmark)
+        bookmarks[conversation] = list
+        persistBookmarks()
+        return bookmark
+    }
+
+    public func removeBookmark(_ conversation: String, id: String) {
+        guard var list = bookmarks[conversation] else { return }
+        let before = list.count
+        list.removeAll { $0.id == id }
+        if list.count == before { return }
+        bookmarks[conversation] = list.isEmpty ? nil : list
+        persistBookmarks()
+    }
+
+    func persistBookmarks() {
+        guard let store, let data = try? ChatWorkspace.encoder.encode(bookmarks) else { return }
+        store.set(String(decoding: data, as: UTF8.self), forKey: key("bookmarks"))
+    }
+
+    public func canvas(for conversation: String) -> ChatCanvas? { canvases[conversation] }
+
+    public func setCanvas(_ conversation: String, title: String, text: String, now: Date) {
+        if conversation.isEmpty { return }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let canvas = ChatCanvas(
+            title: String((name.isEmpty ? "Canvas" : name).prefix(120)), text: String(text.prefix(ChatWorkspace.maxCanvasChars)),
+            updatedAt: now)
+        if canvases[conversation]?.title == canvas.title && canvases[conversation]?.text == canvas.text { return }
+        canvases[conversation] = canvas
+        persistCanvases()
+    }
+
+    public func removeCanvas(_ conversation: String) {
+        if canvases.removeValue(forKey: conversation) != nil { persistCanvases() }
+    }
+
+    func persistCanvases() {
+        guard let store, let data = try? ChatWorkspace.encoder.encode(canvases) else { return }
+        store.set(String(decoding: data, as: UTF8.self), forKey: key("canvases"))
     }
 }
 
