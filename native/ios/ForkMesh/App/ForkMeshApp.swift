@@ -51,6 +51,7 @@ struct AppRootView: View {
         }
         .animation(.easeOut(duration: FmMotion.normal), value: boot.services != nil)
         .fmTracksUserActivity()
+        .fmDismissesKeyboardOnTap()
         .task {
             await boot.start(pushBridge: pushBridge)
         }

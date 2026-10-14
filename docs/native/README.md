@@ -229,6 +229,33 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 ## Recent changes
 
+- 2026-10-14 (branch 1995, iOS): the keyboard closes on a tap outside the
+  field and has a grabber to drag it shut. Asked: "If we click anywhere on
+  mobile outside of the keyboard and we are not in an input then please close
+  the keyboard also add the little drag to close on it". Changes, all in
+  `Kit/FmKeyboard.swift`:
+  - `AppRootView.fmDismissesKeyboardOnTap()` puts one `FmKeyboardTapRecognizer`
+    on the window. It sees every tap, including taps in sheets, and never
+    blocks them (`cancelsTouchesInView = false`, it never recognizes). If a
+    text field or text view is editing, a tap that does not land on a text
+    input (`UITextInput`, so web views count too) resigns that field. A drag
+    or a scroll is not a tap and leaves the keyboard alone.
+  - `.fmKeepsKeyboard()` marks a composer. A tap inside it keeps the keyboard
+    up while its own field is editing, so Send, attach and the mention and
+    slash suggestions don't close it. It is on `PromptComposer`,
+    `ChatComposerBar`, `MessagesComposer` and `OnDeviceChatComposer`. The
+    check needs the marked area to contain the editing field, which is why
+    the hidden shell composer (always mounted) keeps nothing for other fields.
+  - `FmKeyboard` watches `textDidBeginEditing` for `UITextField` and
+    `UITextView`. Every field with no accessory of its own gets an
+    `FmKeyboardGrabber` as its `inputAccessoryView`: a 22 pt clear strip with
+    a pill in the middle. Dragging it down 16 pt (or flicking it) closes the
+    keyboard, and so does tapping the pill. The code editor keeps its
+    `CodeKeyBar`. A field with a SwiftUI keyboard toolbar (`SpeechScreen`)
+    should keep that toolbar. This has not been checked on a device.
+  - Parse-checked only (`swiftc -parse`); not run on a device. Android is
+    unchanged.
+
 - 2026-10-14 (branch 1992, iOS): a project with no instance works without
   one. Asked: "allow for creating new repositories on the device without
   having an instance connected, and we can remove the On this device only
