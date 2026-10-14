@@ -25156,9 +25156,7 @@
       const body = $("[data-repo-about-release-body]");
       if (!section || !body) return;
       const when = relativeTimeLabel(repoReleaseTimestampMs(latest));
-      body.innerHTML = `
-        <span class="inline-flex items-center gap-1.5 rounded-md bg-primary/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground"><i data-lucide="tag" class="h-3 w-3"></i>${escapeHtml(String(latest.tag))}</span>
-        ${when ? `<p class="mt-1.5">released ${escapeHtml(when)}</p>` : ""}`;
+      body.innerHTML = `<span class="font-mono font-semibold text-foreground">${escapeHtml(String(latest.tag))}</span>${when ? ` · ${escapeHtml(when)}` : ""}`;
       section.classList.remove("hidden");
       window.lucide?.createIcons();
     } catch (_) { /* no releases — section stays hidden */ }
@@ -25168,7 +25166,7 @@
     const section = $("[data-repo-about-files]");
     const label = $("[data-repo-about-files-count]");
     if (!section || !label || !count) return;
-    label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""} files`;
+    label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""}`;
     section.classList.remove("hidden");
   }
 
@@ -25184,34 +25182,25 @@
     bar.innerHTML = ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = (weight / total) * 100;
-      return `<span title="${escapeHtml(language)}" style="width:${pct.toFixed(1)}%;background-color:${color}"></span>`;
+      return `<span title="${escapeHtml(language)}" class="h-full shrink-0 first:rounded-l-full last:rounded-r-full" style="width:${pct.toFixed(1)}%;min-width:2px;background-color:${color}"></span>`;
     }).join("");
     legend.innerHTML = ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = ((weight / total) * 100).toFixed(1);
-      return `<span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background-color:${color}"></span><span class="font-medium text-foreground">${escapeHtml(language)}</span> ${pct}%</span>`;
+      return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
     }).join("");
     section.classList.remove("hidden");
   }
 
-  // The identicon shown for a contributor. Keyed on the git email (falling back
-  // to the name) so two distinct people never collapse to the same swatch the
-  // way a name-initial + single hue did — a two-tone gradient plus up-to-two
-  // initials keeps each user visually distinct and stable across loads.
   function repoContributorAvatar(contributor) {
     const name = String(contributor?.name || contributor?.email || "?").trim();
     const email = String(contributor?.email || "").trim().toLowerCase();
     const commits = Number(contributor?.commits) || 0;
-    const key = email || name.toLowerCase();
-    let hash = 0;
-    for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    const hue = hash % 360;
-    const hue2 = (hue + 40 + ((hash >> 8) % 90)) % 360;
     const words = name.split(/[\s._@-]+/).filter(Boolean);
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
-    return `<span title="${escapeHtml(title)}" class="flex h-8 w-8 items-center justify-center rounded-full border border-background font-mono text-[10px] font-semibold uppercase text-white shadow-sm" style="background-image:linear-gradient(135deg, hsl(${hue} 60% 46%), hsl(${hue2} 58% 38%))">${escapeHtml(initials)}</span>`;
+    return `<span title="${escapeHtml(title)}" class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(initials)}</span>`;
   }
 
   // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
@@ -25226,7 +25215,10 @@
     const list = $("[data-repo-about-contribs-list]");
     if (!section || !count || !list) return;
     count.textContent = String(Number(total) || rows.length);
-    list.innerHTML = rows.slice(0, 14).map(repoContributorAvatar).join("");
+    const shown = rows.slice(0, 8);
+    const more = (Number(total) || rows.length) - shown.length;
+    list.innerHTML = shown.map(repoContributorAvatar).join("") +
+      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
     section.classList.remove("hidden");
   }
 
@@ -25454,12 +25446,13 @@
     const colors = repoSizeMapColors(tree);
     chart.innerHTML = repoSizeMapSvg(tree, colors, {
       view: 260,
-      hole: 42,
-      rings: 3,
-      centerTitle: formatSize(tree.size),
-      centerSub: `${Number(tree.fileCount || 0).toLocaleString()} files`,
-      centerTitleSize: 14,
+      hole: 70,
+      rings: 2,
+      centerTitle: "",
+      centerSub: "",
     }).svg;
+    const meta = $("[data-repo-about-sizemap-meta]");
+    if (meta) meta.textContent = formatSize(tree.size);
     open.onclick = () => activateRepoTab("sizemap");
     section.classList.remove("hidden");
   }
@@ -31294,9 +31287,6 @@
   function renderMirrorRow(mirror, servedBy, refMirror) {
     const online = mirror.status === "online";
     const isServing = online && mirrorRowIsServing(mirror, servedBy);
-    const rowClass = isServing
-      ? "grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 border-t border-border px-4 py-3 text-sm ring-1 ring-inset ring-primary bg-primary/5"
-      : "grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 border-t border-border px-4 py-3 text-sm hover:bg-secondary/40 transition-colors";
     const speed = isServing ? formatServeSpeed(servedBy.tookMs) : "";
     const rawVersion = String(mirror.version || mirror.appVersion || mirror.clientVersion || "").trim();
     const version = rawVersion
@@ -31307,28 +31297,22 @@
     const directUrl = mirrorDirectDashboardUrl(mirror);
     const nodeName = escapeHtml(mirror.node || mirror.machineName || mirror.name || "mirror");
     const nodeLabel = directUrl
-      ? `<a data-repo-direct-mirror href="${escapeHtml(directUrl)}" rel="noopener noreferrer" title="${nodeName}" class="block min-w-0 truncate text-foreground font-mono font-medium underline decoration-border underline-offset-2 hover:text-primary">${nodeName}</a>`
-      : `<span title="${nodeName}" class="block min-w-0 truncate text-foreground font-mono font-medium">${nodeName}</span>`;
+      ? `<a data-repo-direct-mirror href="${escapeHtml(directUrl)}" rel="noopener noreferrer" title="${nodeName}" class="block min-w-0 truncate font-mono text-xs font-medium text-foreground hover:underline">${nodeName}</a>`
+      : `<span title="${nodeName}" class="block min-w-0 truncate font-mono text-xs font-medium text-foreground">${nodeName}</span>`;
     return `
-        <div class="${rowClass}">
-          <i data-lucide="${online ? "radio" : "circle"}" class="h-4 w-4 ${online ? "text-success" : "text-muted-foreground"}"></i>
-          <span class="min-w-0 space-y-1">
-            <span class="flex min-w-0 items-center justify-between gap-2">
-              <span class="min-w-0">${nodeLabel}</span>
-              <span class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${online ? "border-success/30 bg-success/10 text-success" : "border-border text-muted-foreground"}">${escapeHtml(mirror.status || "unknown")}</span>
-            </span>
-            <span class="flex min-w-0 flex-wrap items-center gap-1.5">
-              ${isSource ? '<span class="shrink-0 rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">source of truth</span>' : ""}
-              ${integrityRejected ? '<span class="shrink-0 rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">failing integrity pin</span>' : ""}
-            </span>
-            <span class="flex min-w-0 items-center justify-between gap-2 text-[10px] font-mono text-muted-foreground">
-              <span class="min-w-0 truncate">${version ? escapeHtml(version) : "version unknown"}</span>
-              <span class="flex shrink-0 items-center gap-1.5">
-                ${speed ? `<span class="rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-primary">${escapeHtml(speed)}</span>` : ""}
-                ${directUrl ? `<a data-repo-direct-mirror href="${escapeHtml(directUrl)}" rel="noopener noreferrer" class="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-foreground hover:border-primary/50 hover:text-primary"><i data-lucide="external-link" class="h-3 w-3"></i>Open direct</a>` : ""}
-              </span>
-            </span>
+        <div data-repo-live-mirror-row${isServing ? ' data-serving="true"' : ""} class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-secondary/60">
+          <span class="flex min-w-0 flex-1 items-center gap-1.5">
+            ${nodeLabel}
+            ${isSource ? '<span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">source of truth</span>' : ""}
+            ${integrityRejected ? '<span class="shrink-0 rounded-full border border-destructive/40 px-1.5 text-[10px] font-medium leading-4 text-destructive">failing integrity pin</span>' : ""}
           </span>
+          <span class="flex min-w-0 max-w-[45%] items-center gap-1 font-mono text-[11px] text-muted-foreground">
+            ${isServing && speed
+              ? `<span class="truncate text-foreground" title="Serving this page">${escapeHtml(speed)}</span>`
+              : `<span class="min-w-0 truncate">${version ? escapeHtml(version) : "version unknown"}</span>`}
+            ${online ? "" : `<span class="shrink-0">· ${escapeHtml(mirror.status || "unknown")}</span>`}
+          </span>
+          ${directUrl ? `<a data-repo-direct-mirror href="${escapeHtml(directUrl)}" rel="noopener noreferrer" title="Open direct" aria-label="Open direct on ${nodeName}" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a>` : ""}
         </div>`;
   }
 
@@ -31343,7 +31327,7 @@
     const refMirror = pickReferenceMirror(mirrors);
     container.innerHTML = online.length
       ? online.map((mirror) => renderMirrorRow(mirror, servedBy, refMirror)).join("")
-      : '<div class="border-t border-border px-3 py-2 text-xs text-muted-foreground">No nodes online right now.</div>';
+      : '<div class="px-2 py-1 text-xs text-muted-foreground">No nodes online right now.</div>';
   }
 
   // A repository that has been around collects far more retired desktops than
@@ -34137,91 +34121,19 @@
             ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></section>` : ""}
             ${settingsPanel}
           </div>
-          <aside data-repo-about data-repo-about-rail class="min-w-0 rounded-lg border border-border bg-background p-4">
-            ${repo.isPrivate ? "" : `
-            <div data-repo-social-badge class="-mx-4 -mt-4 mb-4 overflow-hidden rounded-t-lg border-b border-border">
-              <div data-repo-social-banner class="hidden h-20 w-full bg-secondary bg-cover bg-center"></div>
-              <div data-repo-social-identity class="flex items-end gap-3 px-4 pb-3 pt-3">
-                <img data-repo-social-logo alt="Repository logo" class="hidden h-14 w-14 shrink-0 rounded-xl border-2 border-background bg-background object-cover shadow" />
-                <div class="min-w-0 pb-0.5">
-                  <a data-repo-social-handle data-repo-mastodon-link href="${escapeHtml(mastodonUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(fediHandle)}" class="block min-w-0 truncate font-mono text-[11px] text-foreground hover:underline">${escapeHtml(fediHandle)}</a>
-                  <div class="text-[11px] text-muted-foreground"><span data-repo-social-followers class="font-mono text-foreground">–</span> fediverse watchers</div>
-                </div>
-              </div>
-              <div data-repo-social-follower-avatars class="hidden gap-1 px-4 pb-3" aria-label="Fediverse followers"></div>
-            </div>`}
+          <aside data-repo-about data-repo-about-rail class="min-w-0 self-start rounded-lg border border-border bg-background p-4">
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-sm font-semibold text-foreground">About</h3>
               ${canEditAbout
                 ? `<button type="button" data-repo-about-edit aria-label="Edit About" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>`
-                : `<i data-lucide="pencil" class="h-3.5 w-3.5 text-muted-foreground"></i>`}
+                : ""}
             </div>
-            <p data-repo-about-description class="mt-3 text-sm leading-6 text-foreground">${escapeHtml(repo.description || "No description published.")}</p>
-            <div data-repo-about-actions aria-label="Repository actions" class="mt-3 flex items-start justify-between gap-2 border-y border-border py-3">
-              <div data-repo-watch-wrap class="relative min-w-0 flex-1">
-                <button type="button" data-repo-action-watch aria-label="Watch repository" class="flex w-full flex-col items-center gap-1 rounded-md py-1 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-                  <span class="relative inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-foreground">
-                    <i data-lucide="eye" class="h-4 w-4"></i>
-                    <span data-repo-watch-count class="absolute -right-0.5 -top-0.5 inline-flex min-w-3 items-center justify-center rounded-full border border-border bg-background px-1 font-mono text-[10px] leading-4 text-muted-foreground">–</span>
-                  </span>
-                  <span>Watch</span>
-                </button>
-                <div data-repo-watch-menu class="fm-popover absolute left-0 top-full z-30 mt-1 hidden w-64 max-w-[calc(100vw-2rem)] p-3 text-left">
-                  <p class="text-xs font-semibold text-foreground">Watch on the fediverse</p>
-                  <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Follow this repository from Mastodon (or any ActivityPub app) to get new issues, pull requests, discussions and releases in your feed.</p>
-                  <div class="mt-2 flex items-center gap-2">
-                    <code data-repo-watch-handle class="min-w-0 flex-1 truncate rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground">${escapeHtml(fediHandle)}</code>
-                    <button type="button" data-dashboard-copy="${escapeHtml(fediHandle)}" aria-label="Copy fediverse handle" class="copy-button inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>
-                  </div>
-                  <p class="mt-2 text-[11px] text-muted-foreground"><span data-repo-watch-followers class="font-mono text-foreground">–</span> fediverse watchers</p>
-                  <p data-repo-watch-disabled class="mt-1 hidden text-[11px] text-attention">Federation is turned off for this repository.</p>
-                  <div data-repo-watch-list class="mt-2 hidden max-h-44 overflow-auto rounded-md border border-border bg-secondary/40 p-2"></div>
-                  <a data-repo-mastodon-link href="${escapeHtml(mastodonUrl)}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link mt-2 inline-flex items-center gap-1.5 text-[11px] hover:underline"><i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0"></i>View on Mastodon</a>
-                </div>
-              </div>
-              <div data-repo-fork-wrap class="relative min-w-0 flex-1">
-                <button type="button" data-repo-action-fork aria-haspopup="true" aria-expanded="false" aria-label="Show who forked this repository" class="flex w-full flex-col items-center gap-1 rounded-md py-1 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-                  <span class="relative inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-foreground">
-                    <i data-lucide="git-fork" class="h-4 w-4"></i>
-                    <span data-repo-fork-count class="absolute -right-0.5 -top-0.5 inline-flex min-w-3 items-center justify-center rounded-full border border-border bg-background px-1 font-mono text-[10px] leading-4 text-muted-foreground">–</span>
-                  </span>
-                  <span>Fork</span>
-                </button>
-                <div data-repo-fork-menu class="fm-popover absolute left-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] p-3 text-left">
-                  <p class="text-xs font-semibold text-foreground">Forks of this repository</p>
-                  <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Each fork is its own repository on the mesh, sharing this one's history instead of copying it.</p>
-                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Create fork on my mirror</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">The website queues this durably, so neither your mirror nor the original node has to be online right now.</p>` : ""}
-                  <div data-repo-fork-list class="mt-2 max-h-52 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
-                  <div data-repo-remote-forks class="mt-3 border-t border-border pt-2">
-                    <p class="text-xs font-semibold text-foreground">Forks on other instances</p>
-                    <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Copies of this repository on other ForkMesh instances. You can send pull requests to them.</p>
-                    <div data-repo-remote-fork-list class="mt-2 max-h-40 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
-                    <form data-repo-remote-fork-form hidden class="mt-2 grid gap-1.5">
-                      <div class="flex gap-1.5">
-                        <input data-repo-remote-fork-url type="url" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://forkmesh.com/owner/repository" aria-label="Address of the repository on another instance" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus:border-accent" />
-                        <button type="submit" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="plus"></i>Save</button>
-                      </div>
-                      <p data-repo-remote-fork-status aria-live="polite" class="text-[10px] leading-4 text-muted-foreground"></p>
-                    </form>
-                  </div>
-                </div>
-              </div>
-              <button type="button" data-repo-action-star data-repo-key="${escapeHtml(actionSeed)}" aria-pressed="false" aria-label="Star repository" class="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md py-1 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-                <span class="relative inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-foreground">
-                  <i data-lucide="star" data-repo-star-icon class="h-4 w-4 text-muted-foreground"></i>
-                  <span data-repo-star-count class="absolute -right-0.5 -top-0.5 inline-flex min-w-3 items-center justify-center rounded-full border border-border bg-background px-1 font-mono text-[10px] leading-4 text-muted-foreground">${formatCount(0)}</span>
-                </span>
-                <span data-repo-star-label>Star</span>
-              </button>
-              <a href="${escapeHtml(`${repoLinkUrl(repo)}/mirrors`)}" data-dashboard-repo-tab="mirrors" aria-label="Show repository mirror status" class="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md py-1 text-[10px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-                <span class="relative inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-foreground">
-                  <i data-lucide="radio" class="h-4 w-4"></i>
-                  <span data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors" class="absolute -right-0.5 -top-0.5 inline-flex min-w-3 items-center justify-center rounded-full border border-border bg-background px-1 font-mono text-[10px] leading-4 text-muted-foreground">${tabCountLabel(mirrorsCount)}</span>
-                </span>
-                <span>Mirrors</span>
-              </a>
+            <p data-repo-about-description class="mt-2 text-sm leading-6 text-foreground">${escapeHtml(repo.description || "No description published.")}</p>
+            <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+              <a href="${escapeHtml(cloneUrl(repo))}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="link" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Open clean URL</span></a>
+              <a href="${escapeHtml(readmeHref)}" data-repo-readme-link data-repo-readme-path="${escapeHtml(readmePath)}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5"></i><span>Readme</span></a>
+              <a href="${escapeHtml(`${repoLinkUrl(repo)}/insights`)}" data-repo-activity-link class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="activity" class="h-3.5 w-3.5"></i><span>Activity</span></a>
             </div>
-            <a data-repo-about-website href="#" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link mt-1 hidden min-w-0 items-center gap-1.5 text-xs hover:underline"><i data-lucide="globe" class="h-3.5 w-3.5 shrink-0"></i><span data-repo-about-website-label class="min-w-0 truncate"></span></a>
             <form data-repo-about-form class="mt-3 hidden grid gap-2">
               <textarea data-repo-about-input rows="4" maxlength="240" class="min-h-24 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent">${escapeHtml(repo.description || "")}</textarea>
               <label class="grid gap-1 text-[11px] text-muted-foreground">Website
@@ -34246,11 +34158,77 @@
                 </span>
               </div>
             </form>
+            <div data-repo-about-actions aria-label="Repository details" class="-mx-2 mt-3 grid">
+              <a data-repo-about-website href="#" target="_blank" rel="noopener noreferrer" class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Website</span><span data-repo-about-website-label class="dashboard-accent-link min-w-0 truncate text-right"></span></a>
+              <a href="${escapeHtml(`${repoLinkUrl(repo)}/releases`)}" data-repo-about-release data-dashboard-releases-button data-plugin-entry="releases" class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Release</span><span data-repo-about-release-body class="min-w-0 truncate text-right text-muted-foreground"></span></a>
+              <button type="button" data-repo-action-star data-repo-key="${escapeHtml(actionSeed)}" aria-pressed="false" aria-label="Star repository" title="Star this repository" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Stars</span><span class="inline-flex items-center gap-1.5 justify-self-end text-foreground"><span data-repo-star-label class="sr-only">Star</span><i data-lucide="star" data-repo-star-icon class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-star-count class="font-mono">${formatCount(0)}</span></span></button>
+              <div data-repo-watch-wrap class="relative min-w-0">
+                <button type="button" data-repo-action-watch aria-label="Watch repository" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Watchers</span><span class="inline-flex items-center gap-1 justify-self-end text-foreground"><span data-repo-watch-count class="font-mono">–</span><i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></span></button>
+                <div data-repo-watch-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-64 max-w-[calc(100vw-2rem)] p-3 text-left">
+                  <p class="text-xs font-semibold text-foreground">Watch on the fediverse</p>
+                  <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Follow this repository from Mastodon (or any ActivityPub app) to get new issues, pull requests, discussions and releases in your feed.</p>
+                  <div class="mt-2 flex items-center gap-2">
+                    <code data-repo-watch-handle class="min-w-0 flex-1 truncate rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground">${escapeHtml(fediHandle)}</code>
+                    <button type="button" data-dashboard-copy="${escapeHtml(fediHandle)}" aria-label="Copy fediverse handle" class="copy-button inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>
+                  </div>
+                  <p class="mt-2 text-[11px] text-muted-foreground"><span data-repo-watch-followers class="min-w-0 truncate text-right font-mono text-foreground">–</span> fediverse watchers</p>
+                  <p data-repo-watch-disabled class="mt-1 hidden text-[11px] text-attention">Federation is turned off for this repository.</p>
+                  <div data-repo-watch-list class="mt-2 hidden max-h-44 overflow-auto rounded-md border border-border bg-secondary/40 p-2"></div>
+                  <a data-repo-mastodon-link href="${escapeHtml(mastodonUrl)}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link mt-2 inline-flex items-center gap-1.5 text-[11px] hover:underline"><i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0"></i>View on Mastodon</a>
+                </div>
+              </div>
+              <div data-repo-fork-wrap class="relative min-w-0">
+                <button type="button" data-repo-action-fork aria-haspopup="true" aria-expanded="false" aria-label="Show who forked this repository" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Forks</span><span class="inline-flex items-center gap-1 justify-self-end text-foreground"><span data-repo-fork-count class="font-mono">–</span><i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></span></button>
+                <div data-repo-fork-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] p-3 text-left">
+                  <p class="text-xs font-semibold text-foreground">Forks of this repository</p>
+                  <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Each fork is its own repository on the mesh, sharing this one's history instead of copying it.</p>
+                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Create fork on my mirror</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">The website queues this durably, so neither your mirror nor the original node has to be online right now.</p>` : ""}
+                  <div data-repo-fork-list class="mt-2 max-h-52 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
+                  <div data-repo-remote-forks class="mt-3 border-t border-border pt-2">
+                    <p class="text-xs font-semibold text-foreground">Forks on other instances</p>
+                    <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Copies of this repository on other ForkMesh instances. You can send pull requests to them.</p>
+                    <div data-repo-remote-fork-list class="mt-2 max-h-40 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
+                    <form data-repo-remote-fork-form hidden class="mt-2 grid gap-1.5">
+                      <div class="flex gap-1.5">
+                        <input data-repo-remote-fork-url type="url" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://forkmesh.com/owner/repository" aria-label="Address of the repository on another instance" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus:border-accent" />
+                        <button type="submit" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="plus"></i>Save</button>
+                      </div>
+                      <p data-repo-remote-fork-status aria-live="polite" class="text-[10px] leading-4 text-muted-foreground"></p>
+                    </form>
+                  </div>
+                </div>
+              </div>
+              <a href="${escapeHtml(`${repoLinkUrl(repo)}/mirrors`)}" data-dashboard-repo-tab="mirrors" aria-label="Show repository mirror status" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Mirrors</span><span data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors" class="min-w-0 truncate text-right font-mono text-foreground">${tabCountLabel(mirrorsCount)}</span></a>
+              <div data-repo-about-files class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 text-muted-foreground">Files</span><span data-repo-about-files-count class="min-w-0 truncate text-right font-mono text-foreground"></span></div>
+              <div data-repo-about-sizemap class="hidden">
+                <button type="button" data-repo-about-sizemap-open title="Explore the repository size map" aria-label="Explore the repository size map" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Size</span><span class="inline-flex items-center gap-1.5 justify-self-end text-foreground"><span data-repo-about-sizemap-chart class="block h-4 w-4"></span><span data-repo-about-sizemap-meta class="font-mono"></span><i data-lucide="chevron-right" class="h-3 w-3 text-muted-foreground"></i></span></button>
+              </div>
+            </div>
+            <div data-repo-about-langs class="mt-3 hidden border-t border-border pt-3">
+              <h4 class="text-xs font-semibold text-foreground">Languages</h4>
+              <div data-repo-about-langs-bar class="mt-2.5 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"></div>
+              <div data-repo-about-langs-legend class="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground"></div>
+            </div>
+            <div data-repo-about-contribs class="mt-3 hidden border-t border-border pt-3">
+              <div class="flex items-center justify-between gap-3">
+                <h4 class="text-xs font-semibold text-foreground">Contributors</h4>
+                <span data-repo-about-contribs-count class="font-mono text-[11px] text-muted-foreground"></span>
+              </div>
+              <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5"></div>
+            </div>
+            <div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+              <div class="flex items-center justify-between gap-3">
+                <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
+                <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
+              </div>
+              <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
+              <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
+            </div>
             ${repo.isPrivate ? "" : `
             <details data-repo-logo-workflow class="mt-4 border-t border-border pt-4">
-              <summary class="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <span class="inline-flex items-center gap-1.5"><i data-lucide="image-plus" class="h-3.5 w-3.5"></i>Repository logo</span>
-                <i data-lucide="chevron-down" class="h-3.5 w-3.5"></i>
+              <summary class="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold text-foreground">
+                <span class="inline-flex items-center gap-1.5"><i data-lucide="image-plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
+                <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-muted-foreground"></i>
               </summary>
               <p class="mt-2 text-[11px] leading-4 text-muted-foreground">ForkMesh shows the logo committed at the root of the repository (logo.png), and never invents artwork for a project. Signed-in community members may suggest PNG, JPEG, or WebP artwork; the repository owner or a moderator must approve it before it becomes official.</p>
               <form data-repo-logo-suggestion-form class="mt-3 grid gap-2">
@@ -34265,55 +34243,12 @@
               </form>
               <div data-repo-logo-suggestions class="mt-3 grid gap-2"></div>
             </details>`}
-            <div class="mt-4 grid gap-2 text-xs text-muted-foreground">
-              <a href="${escapeHtml(cloneUrl(repo))}" class="dashboard-accent-link inline-flex min-w-0 items-center gap-2 hover:underline"><i data-lucide="link" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Open clean URL</span></a>
-              <a href="${escapeHtml(readmeHref)}" data-repo-readme-link data-repo-readme-path="${escapeHtml(readmePath)}" class="inline-flex min-w-0 items-center gap-2 hover:text-foreground hover:underline"><i data-lucide="book-open" class="h-3.5 w-3.5"></i><span>Readme</span></a>
-              <a href="${escapeHtml(`${repoLinkUrl(repo)}/insights`)}" data-repo-activity-link class="inline-flex min-w-0 items-center gap-2 hover:text-foreground hover:underline"><i data-lucide="activity" class="h-3.5 w-3.5"></i><span>Activity</span></a>
-            </div>
             ${canEditAbout && !repo.isPrivate ? `
-            <details data-repo-fedi-posts class="mt-5 border-t border-border pt-4">
-              <summary class="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><span class="inline-flex items-center gap-1.5"><i data-lucide="megaphone" class="h-3.5 w-3.5"></i>Fediverse posts</span><i data-lucide="chevron-down" class="h-3.5 w-3.5 shrink-0 transition-transform"></i></summary>
+            <details data-repo-fedi-posts class="mt-4 border-t border-border pt-4">
+              <summary class="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold text-foreground"><span class="inline-flex items-center gap-1.5"><i data-lucide="megaphone" class="h-3.5 w-3.5 text-muted-foreground"></i>Fediverse posts</span><i data-lucide="chevron-down" class="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform"></i></summary>
               <p class="mt-2 text-[11px] leading-4 text-muted-foreground">Posts this repository published to its Mastodon followers. Deleting one sends a removal to every follower's server so it disappears from their timelines.</p>
               <div data-repo-fedi-posts-list class="mt-2 grid gap-2"></div>
             </details>` : ""}
-            <div data-repo-about-release class="mt-5 hidden border-t border-border pt-4">
-              <div class="flex items-center justify-between gap-3">
-                <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest release</h4>
-                <a href="${escapeHtml(`${repoLinkUrl(repo)}/releases`)}" data-dashboard-releases-button data-plugin-entry="releases" class="inline-flex items-center gap-1 text-[11px] font-medium text-foreground hover:underline">Releases<i data-lucide="chevron-right" class="h-3 w-3"></i></a>
-              </div>
-              <div data-repo-about-release-body class="mt-2 text-xs text-muted-foreground"></div>
-            </div>
-            <div data-repo-about-langs class="mt-5 hidden border-t border-border pt-4">
-              <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Languages</h4>
-              <div data-repo-about-langs-bar class="mt-2 flex h-2 w-full overflow-hidden rounded-full bg-secondary"></div>
-              <div data-repo-about-langs-legend class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground"></div>
-            </div>
-            <div data-repo-about-files class="mt-5 hidden border-t border-border pt-4">
-              <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Files</h4>
-              <p data-repo-about-files-count class="mt-2 text-xs text-muted-foreground"></p>
-            </div>
-            <div data-repo-about-sizemap class="mt-5 hidden border-t border-border pt-4">
-              <button type="button" data-repo-about-sizemap-open class="block w-full rounded-md p-1 text-left transition-colors hover:bg-secondary/50" title="Explore the repository size map" aria-label="Explore the repository size map">
-                <span class="flex items-center justify-between gap-3">
-                  <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Size map</span>
-                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-foreground">Explore<i data-lucide="chevron-right" class="h-3 w-3"></i></span>
-                </span>
-                <span data-repo-about-sizemap-chart class="mt-2 block"></span>
-                <span class="mt-1.5 block text-[11px] text-muted-foreground">Directory sizes on the default branch — select to explore.</span>
-              </button>
-            </div>
-            <div data-repo-about-contribs class="mt-5 hidden border-t border-border pt-4">
-              <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contributors <span data-repo-about-contribs-count class="font-mono text-foreground"></span></h4>
-              <div data-repo-about-contribs-list class="mt-2 flex flex-wrap gap-1.5"></div>
-            </div>
-            <div data-repo-live-summary class="mt-5 border-t border-border pt-4">
-              <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
-              <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
-              <dl class="mt-3 grid gap-3 text-xs">
-                <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3"><dt class="text-muted-foreground">Mirrors</dt><dd data-dashboard-repo-count="mirrors" class="min-w-0 truncate text-right text-foreground font-mono">${tabCountLabel(mirrorsCount)}</dd></div>
-              </dl>
-              <div data-repo-live-mirror-list class="mt-3 overflow-hidden rounded-md border border-border"></div>
-            </div>
           </aside>
         </div>
       </div>`;
