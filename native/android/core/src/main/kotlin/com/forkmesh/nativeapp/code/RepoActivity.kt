@@ -9,6 +9,7 @@ import com.forkmesh.nativeapp.model.AgentSession
 import com.forkmesh.nativeapp.model.RepoActions
 import com.forkmesh.nativeapp.model.RepoMirror
 import com.forkmesh.nativeapp.model.RepoRelease
+import com.forkmesh.nativeapp.model.Repository
 import com.forkmesh.nativeapp.model.auth.AuthSession
 import com.forkmesh.nativeapp.security.DeviceIdentity
 
@@ -65,9 +66,6 @@ object OwnerProofs {
         if (session == null || identity == null || account.isEmpty()) {
             throw DartException("Sign in with the repo owner account to request desktop control.")
         }
-        if (account != owner.trim().lowercase()) {
-            throw DartException("Only the repo owner can request desktop control for this repo.")
-        }
         if (session.pubkey.trim() != identity.publicKeyB64url) {
             throw DartException("Pair this mobile device with the owner key before requesting desktop control.")
         }
@@ -75,6 +73,9 @@ object OwnerProofs {
         val sig = identity.sign(desktopCommandCanonical(owner, name, command, target, ts).toByteArray(Charsets.UTF_8))
         return OwnerProof(account, ts, sig)
     }
+
+    fun desktopCommandOwner(repo: Repository, account: String): String =
+        if (account.trim().lowercase() == repo.owner.trim().lowercase()) repo.owner else repo.displayOwner
 }
 
 object RepoActivity {

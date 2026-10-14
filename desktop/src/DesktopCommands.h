@@ -67,6 +67,7 @@ struct Command {
     QString sig;
     QString signer;
     QString ownerAccount;
+    QString repoOwner;
     QString relayCanonical;
     qint64 queuedAtMs = 0;
 };
@@ -90,6 +91,8 @@ bool isReleaseKind(Kind kind);
 bool isDestructive(Kind kind);
 bool runsUnattended(Kind kind);
 bool parseTarget(Kind kind, const QString &target, Command *command);
+QString signedOwner(const Command &command, const QString &owner);
+
 QByteArray canonical(const QString &owner, const QString &repo,
                      const QString &command, const QString &target,
                      const QString &ts);

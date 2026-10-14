@@ -54,7 +54,7 @@ final class ReposTabsTests: XCTestCase {
         XCTAssertEqual(message(repoTestSession(nodeName: " alice ", pubkey: identity.publicKeyB64url + " "), identity), "signed")
     }
 
-    func testDesktopCommandRefusesAnyoneButTheOwner() async throws {
+    func testDesktopCommandNeedsASignedInPairedDevice() async throws {
         let identity = try repoTestIdentity()
         let client = FakeRepoClient()
         func send(_ session: AuthSession?) async -> String {
@@ -64,14 +64,39 @@ final class ReposTabsTests: XCTestCase {
         }
         let signedOut = await send(nil)
         XCTAssertEqual(signedOut, "Exception: Sign in with the repo owner account to request desktop control.")
-        let stranger = await send(repoTestSession(nodeName: "bob", pubkey: identity.publicKeyB64url))
-        XCTAssertEqual(stranger, "Exception: Only the repo owner can request desktop control for this repo.")
         let unpaired = await send(repoTestSession(nodeName: "alice", pubkey: "x"))
         XCTAssertEqual(unpaired, "Exception: Pair this mobile device with the owner key before requesting desktop control.")
         XCTAssertTrue(client.desktopCommands.isEmpty)
+        let other = await send(repoTestSession(nodeName: "bob", pubkey: identity.publicKeyB64url))
+        XCTAssertEqual(other, "ok")
+        XCTAssertEqual(client.desktopCommands.map(\.owner), ["Alice"])
+        XCTAssertEqual(client.desktopCommands.map(\.ownerAccount), ["bob"])
         client.desktopResult = { throw ApiException("HTTP 403 for /api/repo/Alice/repo/desktop-commands") }
         let failed = await send(repoTestSession(nodeName: "alice", pubkey: identity.publicKeyB64url))
         XCTAssertEqual(failed, "Exception: HTTP 403 for /api/repo/Alice/repo/desktop-commands")
+    }
+
+    func testOrganizationRepoRequestsNameTheOrganizationUnlessThisAccountServesIt() async throws {
+        let identity = try repoTestIdentity()
+        let client = FakeRepoClient()
+        let orgRepo = Repository(owner: "alice", name: "repo", publicOwner: "acme")
+        func send(_ node: String) async -> String {
+            await RepoDesktopCommands.request(
+                client: client,
+                signer: signer(session: repoTestSession(nodeName: node, pubkey: identity.publicKeyB64url), identity: identity),
+                repo: orgRepo, command: "release.draft", target: "release:v1", payload: [:], successMessage: "ok")
+        }
+        let member = await send("bob")
+        let servingAccount = await send("alice")
+        XCTAssertEqual(member, "ok")
+        XCTAssertEqual(servingAccount, "ok")
+        XCTAssertEqual(client.desktopCommands.map(\.owner), ["acme", "alice"])
+        XCTAssertEqual(client.desktopCommands.map(\.ownerAccount), ["bob", "alice"])
+        let first = client.desktopCommands[0]
+        let canonical = "forkmesh-desktop-command-v1\nacme\nrepo\nrelease.draft\nrelease:v1\n\(first.ts)"
+        XCTAssertTrue(Ed25519.verify(
+            publicKey: identity.publicKeyBytes, message: Array(canonical.utf8),
+            signature: Array(try B64.decodeUnpadded(first.sig))))
     }
 
     // MARK: Actions

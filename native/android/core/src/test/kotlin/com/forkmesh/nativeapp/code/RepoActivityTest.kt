@@ -8,6 +8,7 @@ import com.forkmesh.nativeapp.model.AgentSession
 import com.forkmesh.nativeapp.model.RepoActions
 import com.forkmesh.nativeapp.model.RepoMirror
 import com.forkmesh.nativeapp.model.RepoRelease
+import com.forkmesh.nativeapp.model.Repository
 import com.forkmesh.nativeapp.model.auth.AuthSession
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.assertFails
@@ -65,12 +66,15 @@ class RepoActivityTest {
             "Exception: Sign in with the repo owner account to request desktop control.",
             assertFails<DartException> { OwnerProofs.desktopCommand(null, identity, "owner", "repo", "action.rerun", "run:1") }.toString(),
         )
-        assertEq(
-            "Exception: Only the repo owner can request desktop control for this repo.",
-            assertFails<DartException> {
-                OwnerProofs.desktopCommand(session("mona", identity.publicKeyB64url), identity, "owner", "repo", "action.rerun", "run:1")
-            }.toString(),
+        val member = OwnerProofs.desktopCommand(
+            session("mona", identity.publicKeyB64url), identity, "acme", "repo", "action.rerun", "run:1", nowMillis = 7,
         )
+        assertEq("mona", member.ownerAccount)
+        expect(TestIdentity.verify("forkmesh-desktop-command-v1\nacme\nrepo\naction.rerun\nrun:1\n7".toByteArray(), member.sig, identity.publicKeyB64url))
+        val orgRepo = Repository(owner = "owner", name = "repo", publicOwner = "acme")
+        assertEq("acme", OwnerProofs.desktopCommandOwner(orgRepo, "mona"))
+        assertEq("owner", OwnerProofs.desktopCommandOwner(orgRepo, " Owner "))
+        assertEq("owner", OwnerProofs.desktopCommandOwner(Repository(owner = "owner", name = "repo"), "mona"))
         assertEq(
             "Exception: Pair this mobile device with the owner key before requesting desktop control.",
             assertFails<DartException> {

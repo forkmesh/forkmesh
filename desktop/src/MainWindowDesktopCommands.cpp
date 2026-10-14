@@ -290,7 +290,8 @@ void MainWindow::handleDesktopCommandsDrain(const QString &owner, const QString 
             state->save();
             notifyIfInactive(QStringLiteral("ForkMesh — request from your phone"),
                              dc::actionLabel(command) +
-                                 QStringLiteral(" in %1/%2").arg(owner, name));
+                                 QStringLiteral(" in %1/%2")
+                                     .arg(dc::signedOwner(command, owner), name));
             runDesktopCommand(owner, name, command, verdict.signerLabel);
             continue;
         }
@@ -365,7 +366,8 @@ void MainWindow::showNextDesktopCommandPrompt()
     state->dialog = dialog;
     notifyIfInactive(QStringLiteral("ForkMesh — request from your phone"),
                      dc::actionLabel(prompt.command) +
-                         QStringLiteral(" in %1/%2").arg(prompt.owner, prompt.name));
+                         QStringLiteral(" in %1/%2")
+                             .arg(dc::signedOwner(prompt.command, prompt.owner), prompt.name));
     dialog->open();
     dialog->raise();
     dialog->activateWindow();
@@ -429,12 +431,13 @@ void MainWindow::runDesktopCommand(const QString &owner, const QString &name,
                                    const forkmesh::desktopcommands::Command &command,
                                    const QString &signerLabel)
 {
+    const QString repoOwner = dc::signedOwner(command, owner);
     logSystem(QStringLiteral("Running a request from %1: %2 in %3/%4.")
-                  .arg(signerLabel, dc::actionLabel(command), owner, name));
+                  .arg(signerLabel, dc::actionLabel(command), repoOwner, name));
     const auto settle = [&](dc::Outcome outcome, const QString &detail) {
         settleDesktopCommand(owner, name, command, signerLabel, int(outcome), detail);
     };
-    const QString localOwner = desktopCommandRepoOwner(owner, name);
+    const QString localOwner = desktopCommandRepoOwner(repoOwner, name);
     if (dc::runsUnattended(command.kind)) {
         const bool create = command.kind == dc::Kind::ReleaseCreate;
         forkmesh::agentintake::ReleaseRequest request;

@@ -214,6 +214,11 @@ bool parseTarget(Kind kind, const QString &target, Command *command)
     return false;
 }
 
+QString signedOwner(const Command &command, const QString &owner)
+{
+    return command.repoOwner.isEmpty() ? owner : command.repoOwner;
+}
+
 QByteArray canonical(const QString &owner, const QString &repo,
                      const QString &command, const QString &target,
                      const QString &ts)
@@ -279,6 +284,7 @@ Command parse(const QJsonObject &object)
     command.sig = boundedString(object, "sig", kMaxSignatureChars);
     command.signer = boundedString(object, "signer", 120);
     command.ownerAccount = boundedString(object, "ownerAccount", 120).toLower();
+    command.repoOwner = boundedString(object, "repoOwner", 120).trimmed();
     command.relayCanonical = boundedString(object, "canonical", 800);
     command.queuedAtMs = jsonInteger(object.value(QStringLiteral("queuedAt")));
     command.kind = kindFor(command.command);
@@ -432,8 +438,9 @@ Verdict verify(const Command &command, const QString &owner,
         verdict.status = Status::WrongOwner;
         return verdict;
     }
+    const QString repoOwner = signedOwner(command, owner.trimmed());
     if (!command.relayCanonical.isEmpty()) {
-        const QByteArray ours = canonical(owner, repo, command.command,
+        const QByteArray ours = canonical(repoOwner, repo, command.command,
                                           command.target, command.ts);
         if (QString::fromUtf8(ours).compare(command.relayCanonical,
                                             Qt::CaseInsensitive) != 0) {
@@ -450,7 +457,7 @@ Verdict verify(const Command &command, const QString &owner,
         return verdict;
     }
     QList<QByteArray> messages;
-    for (const auto &identity : identityVariants(owner.trimmed(), repo.trimmed()))
+    for (const auto &identity : identityVariants(repoOwner, repo.trimmed()))
         messages.append(canonical(identity.first, identity.second,
                                   command.command, command.target, command.ts));
     const auto signedBy = [&](const QString &key) {
@@ -573,7 +580,7 @@ QString promptText(const Command &command, const QString &owner,
                               : verdict.signerLabel));
     lines.append(QString());
     lines.append(QStringLiteral("%1 in %2/%3.")
-                     .arg(actionLabel(command), owner, repo));
+                     .arg(actionLabel(command), signedOwner(command, owner), repo));
     lines.append(QString());
     lines.append(QStringLiteral("Signed by %1 (key %2), requested %3.")
                      .arg(command.ownerAccount,

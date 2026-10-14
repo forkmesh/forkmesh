@@ -49,7 +49,7 @@ final class FakeRepoClient: RepoClient {
     var actionLogCalls: [Int] = []
     var actionLogResult: () throws -> ActionLog = { ActionLog(id: 0) }
 
-    var desktopCommands: [(command: String, target: String, ownerAccount: String, ts: String, sig: String, payload: JSONObject)] = []
+    var desktopCommands: [(owner: String, command: String, target: String, ownerAccount: String, ts: String, sig: String, payload: JSONObject)] = []
     var desktopResult: () throws -> DesktopCommandResult = { DesktopCommandResult(ok: true, queued: 1) }
 
     var agentSessionAccounts: [String] = []
@@ -143,7 +143,7 @@ final class FakeRepoClient: RepoClient {
         _ owner: String, _ name: String, ownerAccount: String, command: String, target: String, ts: String, sig: String,
         payload: JSONObject
     ) async throws -> DesktopCommandResult {
-        desktopCommands.append((command, target, ownerAccount, ts, sig, payload))
+        desktopCommands.append((owner, command, target, ownerAccount, ts, sig, payload))
         return try desktopResult()
     }
 
