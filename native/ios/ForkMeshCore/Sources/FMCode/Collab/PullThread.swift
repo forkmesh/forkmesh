@@ -262,17 +262,13 @@ public enum DesktopCommand {
         DesktopCommandContract.canonical(owner: owner, name: name, command: command, target: target, ts: ts)
     }
 
-    /// The owner account allowed to sign the request. Throws an exception
-    /// (shown as "Exception: ...") when there is no session or
-    /// identity, the account is not the repo owner, or this device is not the
-    /// owner's paired key.
-    public static func ownerAccount(_ account: CollabAccount, identityPublicKey: String?, repoOwner: String) throws -> String {
+    /// The account allowed to sign the request. Throws an exception
+    /// (shown as "Exception: ...") when there is no session or identity, or
+    /// this device is not the account's paired key.
+    public static func ownerAccount(_ account: CollabAccount, identityPublicKey: String?) throws -> String {
         let name = account.nodeName?.dartTrimmed.lowercased() ?? ""
         if account.nodeName == nil || identityPublicKey == nil || name.isEmpty {
             throw ApiException("Sign in with the repo owner account to request desktop control.")
-        }
-        if name != repoOwner.dartTrimmed.lowercased() {
-            throw ApiException("Only the repo owner can request desktop control for this repo.")
         }
         if (account.pubkey ?? "").dartTrimmed != identityPublicKey {
             throw ApiException("Pair this mobile device with the owner key before requesting desktop control.")

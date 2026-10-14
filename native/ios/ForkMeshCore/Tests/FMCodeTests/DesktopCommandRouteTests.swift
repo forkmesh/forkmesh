@@ -96,7 +96,7 @@ final class DesktopCommandRouteTests: XCTestCase {
             signature: Array(try B64.decodeUnpadded(sent.sig))))
     }
 
-    @MainActor func testUnsupportedRequestsAndStrangersNeverReachTheServer() async throws {
+    @MainActor func testUnsupportedRequestsNeverReachTheServerAndOtherAccountsAskTheRelay() async throws {
         let identity = try repoTestIdentity()
         let client = FakeRepoClient()
         let owner = signer(repoTestSession(nodeName: "alice", pubkey: identity.publicKeyB64url), identity)
@@ -111,8 +111,9 @@ final class DesktopCommandRouteTests: XCTestCase {
         let stranger = await DesktopCommandRequests.request(
             client: client, signer: signer(repoTestSession(nodeName: "bob", pubkey: identity.publicKeyB64url), identity),
             owner: "alice", name: "repo", command: "pull.merge", target: "pull:1", payload: [:], successMessage: "ok")
-        XCTAssertEqual(stranger, "Exception: Only the repo owner can request desktop control for this repo.")
-        XCTAssertTrue(client.desktopCommands.isEmpty)
+        XCTAssertEqual(stranger, "ok")
+        XCTAssertEqual(client.desktopCommands.map(\.ownerAccount), ["bob"])
+        client.desktopCommands.removeAll()
         let sent = await DesktopCommandRequests.request(
             client: client, signer: owner, owner: "alice", name: "repo", command: "release.publish",
             target: "release:v1", payload: ["tag": "v1"], successMessage: "queued")

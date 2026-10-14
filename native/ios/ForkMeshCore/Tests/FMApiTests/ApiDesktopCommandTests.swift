@@ -37,7 +37,7 @@ final class ApiDesktopCommandTests: XCTestCase {
             "Fifty requests are already waiting for the desktop. Approve or decline them there first.")
         XCTAssertEqual(
             DesktopCommandResult.errorMessage(status: 403, code: "not_authorized"),
-            "Only the repo owner can request desktop control for this repo.")
+            "Only the repo owner or an organization member with write access can request desktop control for this repo.")
         XCTAssertEqual(
             DesktopCommandResult.errorMessage(status: 404, code: ""), "This server does not take desktop requests yet.")
         XCTAssertEqual(DesktopCommandResult.errorMessage(status: 500, code: ""), "Desktop request was not queued (HTTP 500).")
