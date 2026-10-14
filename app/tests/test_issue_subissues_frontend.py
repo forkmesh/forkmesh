@@ -353,7 +353,8 @@ def test_closed_issue_is_read_without_a_404_probe():
     fallback = _run_issue_blob_probe("error")
     assert fallback["blob"] == {"text": "single"}
     assert fallback["single"] == [
-        ".forkmesh/issues/open/499/issue-499.json", closed]
+        ".forkmesh/issues/open/499/issue-499.json", closed,
+        ".forkmesh/issues/499/issue-499.json"]
 
     missing = _run_issue_blob_probe({})
-    assert missing["blob"] is None and missing["error"] == "not_found"
+    assert missing == {"blob": None, "error": "not_found", "single": []}

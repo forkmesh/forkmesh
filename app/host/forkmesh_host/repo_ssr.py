@@ -125,9 +125,10 @@ class ViewTicket:
     """A pull request, issue or discussion page being rendered
     (repo_views): the bundle build and the tab it opens on."""
 
-    def __init__(self, task, section):
+    def __init__(self, task, section, target=None):
         self.task = task
         self.section = section
+        self.target = target
 
 
 _prerendered = {}   # (owner, repo) -> (monotonic time, data)
@@ -188,7 +189,7 @@ def start(fastpath, scope):
         else:
             task = asyncio.ensure_future(repo_views.build(
                 fastpath, owner, repo, name, number))
-        return ViewTicket(task, section)
+        return ViewTicket(task, section, (owner, repo, name, number))
     target = page_target(scope)
     if target is None:
         return None
@@ -285,14 +286,24 @@ async def finish(task, response):
         content_type = str(response.headers.get("content-type") or "")
         if int(response.status) != 200 or "text/html" not in content_type:
             return response
+        from . import js as _js
         try:
             data = await asyncio.wait_for(asyncio.shield(task),
                                           SSR_BUDGET_SECONDS)
         except asyncio.TimeoutError:
-            return response
+            if view is None or view.target is None:
+                return response
+            body = await response._read()
+            rendered = inject_view_reads(body.decode("utf-8"), *view.target)
+            if rendered is None:
+                return _js.Response(body, response.status, "",
+                                    response.headers)
+            headers = response.headers
+            headers.set("cache-control", "no-cache")
+            return _js.Response(rendered.encode("utf-8"), response.status, "",
+                                headers)
         if not data:
             return response
-        from . import js as _js
         body = await response._read()
         page = body.decode("utf-8")
         rendered = inject_view(page, data, view.section) if view \
@@ -331,6 +342,27 @@ def inject(page, data):
     return page.replace(PLACEHOLDER, render_view(data), 1)
 
 
+def _view_reads_head(meta):
+    return (CHARSET + "\n    <script>window.__forkmeshView=" +
+            _json_for_script(meta) + ";window.__forkmeshView.pending=fetch("
+            "window.__forkmeshView.url,{headers:{accept:'application/json'}})"
+            ".then(function(r){return r.ok?r.json():null})"
+            ".catch(function(){return null});</script>")
+
+
+def inject_view_reads(page, owner, repo, view, number):
+    if 'data-page="repo"' not in page or CHARSET not in page:
+        return None
+    base = "/api/repo/%s/%s" % (urllib.parse.quote(owner, safe=""),
+                                urllib.parse.quote(repo, safe=""))
+    query = [("view", view)]
+    if number:
+        query.append(("number", str(number)))
+    meta = {"base": base.lower(), "view": view, "number": number,
+            "url": base + "/page-reads?" + urllib.parse.urlencode(query)}
+    return page.replace(CHARSET, _view_reads_head(meta), 1)
+
+
 def inject_view(page, bundle, section=""):
     """A pull request, issue or discussion page with its first view
     (repo_views.render) and the address of its read bundle, which a small
@@ -347,12 +379,8 @@ def inject_view(page, bundle, section=""):
         urllib.parse.quote(bundle.owner, safe=""),
         urllib.parse.quote(bundle.repo, safe=""))).lower(),
         "view": bundle.view, "number": bundle.number, "url": bundle.url()}
-    head = (CHARSET + "\n    <script>window.__forkmeshView=" +
-            _json_for_script(meta) + ";window.__forkmeshView.pending=fetch("
-            "window.__forkmeshView.url,{headers:{accept:'application/json'}})"
-            ".then(function(r){return r.ok?r.json():null})"
-            ".catch(function(){return null});</script>\n    "
-            + STYLE + repo_views.VIEW_STYLE)
+    head = (_view_reads_head(meta) + "\n    " + STYLE
+            + repo_views.VIEW_STYLE)
     page = page.replace(CHARSET, head, 1)
     return page.replace(PLACEHOLDER, view, 1)
 

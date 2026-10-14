@@ -1,3 +1,35 @@
+  function installIncrementalIcons() {
+    const lucide = window.lucide;
+    if (!lucide?.createIcons || !lucide.icons || !lucide.createElement || lucide.createIcons.incremental) return;
+    const svgNs = "http://www.w3.org/2000/svg";
+    const iconKey = (name) => name.replace(/(\w)(\w*)(_|-|\s*)/g,
+      (_, first, rest) => first.toUpperCase() + rest.toLowerCase());
+    const renderIcon = (element) => {
+      const name = element.getAttribute("data-lucide");
+      const icon = name && lucide.icons[iconKey(name)];
+      if (!icon || !element.parentNode) return;
+      const [tag, defaults, children] = icon;
+      const own = {};
+      for (const attribute of Array.from(element.attributes)) own[attribute.name] = attribute.value;
+      const classes = ["lucide", `lucide-${name}`, ...String(own.class || "").split(" ")]
+        .map((value) => value.trim()).filter(Boolean);
+      const attrs = { ...defaults, "data-lucide": name, ...own, class: [...new Set(classes)].join(" ") };
+      element.parentNode.replaceChild(lucide.createElement([tag, attrs, children]), element);
+    };
+    const createIcons = (options) => {
+      if (options && Object.keys(options).length) return lucide.createIcons.full(options);
+      for (const element of Array.from(document.querySelectorAll("[data-lucide]"))) {
+        if (element.namespaceURI === svgNs
+          && element.classList.contains(`lucide-${element.getAttribute("data-lucide")}`)) continue;
+        renderIcon(element);
+      }
+    };
+    createIcons.full = lucide.createIcons;
+    createIcons.incremental = true;
+    lucide.createIcons = createIcons;
+  }
+  installIncrementalIcons();
+
   function readSession() {
     try {
       return JSON.parse(localStorage.getItem("forkmesh.session") || "null");

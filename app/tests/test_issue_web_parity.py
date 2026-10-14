@@ -238,7 +238,8 @@ def test_subscription_can_be_set_and_reloaded_with_account_session():
     assert "session_authorized" in backend
     assert '"subscribed": bool(subscription' in backend
     assert "async function loadWebIssueSubscription" in ISSUE_IO
-    assert "parsed.issueSubscribed = await loadWebIssueSubscription" in REPO_UI
+    assert "loadWebIssueSubscription(repo, number)," in REPO_UI
+    assert "[parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;" in REPO_UI
 
 
 def test_worker_accepts_only_known_qt_issue_events_and_matches_agent_signing():

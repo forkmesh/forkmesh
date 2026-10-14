@@ -894,8 +894,11 @@
 
   function boot() {
     if (stop) return;
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", boot, { once: true });
+    if (document.readyState !== "complete") {
+      window.addEventListener("load", () => {
+        if (window.requestIdleCallback) window.requestIdleCallback(boot, { timeout: 2000 });
+        else setTimeout(boot, 200);
+      }, { once: true });
       return;
     }
     if (!allowed()) return;

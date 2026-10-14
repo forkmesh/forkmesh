@@ -853,15 +853,13 @@
     }
     const found = paths.find((path) => blobs[path]);
     if (found) return blobs[found];
-    let lastError = null;
-    for (const path of paths) {
-      try {
-        return await fetchRepoJson(repoLiveUrl(repo, "blob", { path }));
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError || new Error("not_found");
+    const unanswered = paths.filter((path) => !(path in blobs));
+    if (!unanswered.length) throw new Error("not_found");
+    const settled = await Promise.allSettled(
+      unanswered.map((path) => fetchRepoJson(repoLiveUrl(repo, "blob", { path }))));
+    const hit = settled.find((result) => result.status === "fulfilled");
+    if (hit) return hit.value;
+    throw settled[0].reason || new Error("not_found");
   }
 
   function parseIssueJson(text, fallbackNumber) {
@@ -3865,6 +3863,32 @@
     return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), [], viewed, mode, false)}</div>`;
   }
 
+  const repoPullFolderReads = new Map();
+
+  function readRepoPullFolder(repo, number, commit) {
+    const key = `${repoKey(repo)}|${number}|${commit}`;
+    if (!repoPullFolderReads.has(key)) {
+      const read = fetchRepoJson(repoLiveUrl(repo, "tree", {
+        path: `.forkmesh/pulls/${number}`,
+        ref: commit,
+      }));
+      read.catch(() => repoPullFolderReads.delete(key));
+      repoPullFolderReads.set(key, read);
+    }
+    return repoPullFolderReads.get(key);
+  }
+
+  async function repoPullFolderLacks(repo, number, commit, name) {
+    if (!immutableGitCommit(commit)) return false;
+    try {
+      const tree = await readRepoPullFolder(repo, number, commit);
+      if (tree?.truncated || !Array.isArray(tree?.entries)) return false;
+      return !tree.entries.some((entry) => String(entry?.name || "") === name);
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function loadRepoPullPatch(repo, number, metadataCommit = "", values = {}) {
     if (String(values?.status || "open").toLowerCase() !== "open") {
       return { patch: "", files: [], unavailable: true };
@@ -3873,6 +3897,7 @@
     try {
       const commit = immutableGitCommit(metadataCommit)
         || await resolveRepoPullMetadataCommit(repo);
+      if (await repoPullFolderLacks(repo, number, commit, "changes.patch")) throw new Error("not_found");
       const blob = await fetchRepoJson(repoLiveUrl(repo, "blob", {
         path: patchPath,
         ref: commit,
@@ -4149,6 +4174,7 @@
     const metadataRef = immutableGitCommit(metadataCommit)
       || await resolveRepoPullMetadataCommit(repo);
     try {
+      if (await repoPullFolderLacks(repo, number, metadataRef, "commits.mbox")) throw new Error("not_found");
       const blob = await fetchRepoJson(repoLiveUrl(repo, "blob", {
         path: `.forkmesh/pulls/${number}/commits.mbox`, ref: metadataRef,
       }));
@@ -4465,14 +4491,11 @@
       || await resolveRepoPullMetadataCommit(repo);
     let tree;
     try {
-      tree = await fetchRepoJson(repoLiveUrl(repo, "tree", {
-        path: `.forkmesh/pulls/${number}`,
-        ref: commit,
-      }));
+      tree = await readRepoPullFolder(repo, number, commit);
     } catch (_) {
       return [];
     }
-    const files = (Array.isArray(tree.entries) ? tree.entries : [])
+    const files = (Array.isArray(tree?.entries) ? tree.entries : [])
       .filter((entry) => entry.type !== "tree" && /^\d+-/.test(String(entry.name || "")))
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     if (!files.length) return [];
@@ -4900,11 +4923,23 @@
   // read resolveRepoPullMetadataCommit already makes, so this costs nothing
   // extra on the common path; the record tip is used only when the pull does
   // not name a base at all.
+  const repoPullBranchReads = new Map();
+
+  function readRepoPullBranches(repo) {
+    const key = repoKey(repo);
+    if (!repoPullBranchReads.has(key)) {
+      const read = fetchRepoJson(`${repoApiBase(repo)}/branches`);
+      repoPullBranchReads.set(key, read);
+      read.catch(() => {}).finally(() => repoPullBranchReads.delete(key));
+    }
+    return repoPullBranchReads.get(key);
+  }
+
   async function repoPullBaseTip(repo, values) {
     const branchName = String(values?.base || "").trim();
     if (branchName) {
       try {
-        const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`);
+        const data = await readRepoPullBranches(repo);
         const branch = (Array.isArray(data?.branches) ? data.branches : [])
           .map(normalizeRepoBranch)
           .filter(Boolean)
@@ -7048,6 +7083,20 @@
       const refParams = pullMetadataCommit
         ? { ref: pullMetadataCommit }
         : {};
+      if (kind === "pulls" && pullMetadataCommit) {
+        readRepoPullFolder(repo, number, pullMetadataCommit).catch(() => {});
+      }
+      const discussionConversation = kind === "discussions"
+        ? loadRepoDiscussionConversation(repo, number)
+        : null;
+      discussionConversation?.catch(() => {});
+      const issueAccess = kind === "issues"
+        ? Promise.all([
+          loadRepoIssueMutationAuthorization(repo),
+          loadWebIssueSubscription(repo, number),
+        ])
+        : null;
+      issueAccess?.catch(() => {});
       let blob;
       if (kind === "issues") {
         blob = await fetchRepoIssueBlob(repo, Number(number));
@@ -7081,47 +7130,35 @@
         parsed.issueSubIssues = subIssues;
         parsed.issueMentions = issueMentionsOf(relationIndex, number);
       }
-      const pullPatch = kind === "pulls"
-        ? await loadRepoPullPatch(repo, number, pullMetadataCommit, parsed.values || {})
-        : null;
-      if (pullPatch) parsed.pullPatch = pullPatch;
       if (kind === "pulls") {
         parsed.pullMetadataCommit = pullMetadataCommit;
-        const [conversation, commits, agents] = await Promise.all([
+        const values = parsed.values || {};
+        const readiness = loadRepoPullReadiness(repo, number, values);
+        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules] = await Promise.all([
+          loadRepoPullPatch(repo, number, pullMetadataCommit, values),
           loadRepoPullConversation(repo, number, pullMetadataCommit),
-          loadRepoPullCommits(repo, number, pullMetadataCommit, parsed.values || {}),
-          loadRepoPullAgentActivity(repo, number, parsed.values || {}),
+          loadRepoPullCommits(repo, number, pullMetadataCommit, values),
+          loadRepoPullAgentActivity(repo, number, values),
+          loadRepoPullMergeAuthorization(repo),
+          loadRepoPullMergeBase(repo, values),
+          readiness.then((result) => loadRepoPullChecks(repo, values, result)),
+          readiness.then((result) => loadRepoPullRules(repo, number, result)),
         ]);
+        if (pullPatch) parsed.pullPatch = pullPatch;
         parsed.pullConversation = conversation;
         parsed.pullCommits = commits;
         parsed.pullAgents = agents;
-        parsed.pullTimeline = buildRepoPullTimeline(
-          parsed.values || {}, conversation, commits, agents,
-        );
-        parsed.pullMergeAuthorized = await loadRepoPullMergeAuthorization(repo);
-        // Readiness is the merge trial the mirror would actually run, so it
-        // gates the update control below; checks are keyed to the head commit
-        // that trial resolved. Both degrade to "unavailable" rather than to a
-        // reassuring default, so neither blocks the detail from rendering.
-        parsed.pullReadiness = await loadRepoPullReadiness(
-          repo, number, parsed.values || {},
-        );
-        parsed.pullMergeBase = await loadRepoPullMergeBase(
-          repo, parsed.values || {},
-        );
-        parsed.pullChecks = await loadRepoPullChecks(
-          repo, parsed.values || {}, parsed.pullReadiness,
-        );
-        parsed.pullRules = await loadRepoPullRules(
-          repo, number, parsed.pullReadiness,
-        );
+        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
+        parsed.pullMergeAuthorized = mergeAuthorized;
+        parsed.pullReadiness = await readiness;
+        parsed.pullMergeBase = mergeBase;
+        parsed.pullChecks = checks;
+        parsed.pullRules = rules;
       }
       if (kind === "issues") {
-        parsed.issueMutationAuthorized =
-          await loadRepoIssueMutationAuthorization(repo);
-        parsed.issueSubscribed = await loadWebIssueSubscription(repo, number);
+        [parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;
       }
-      if (kind === "discussions") parsed.discussionConversation = await loadRepoDiscussionConversation(repo, number);
+      if (kind === "discussions") parsed.discussionConversation = await discussionConversation;
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
       if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
@@ -11195,10 +11232,7 @@
 
   async function loadRepoAboutSizeMap(repo) {
     try {
-      // The rail's chart draws three rings; a node that reads the repository
-      // locally sends only those levels (~95 KB instead of ~400 KB for
-      // forkmesh/forkmesh). Other origins ignore depth.
-      const data = await fetchRepoJson(repoLiveUrl(repo, "sizes", { depth: 3 }));
+      const data = await fetchRepoJson(repoLiveUrl(repo, "sizes", { depth: 2 }));
       if (!data || data.ok === false) return; // host offline, or a pre-sizes node
       if (!repoAboutStillCurrent(repo)) return;
       renderRepoAboutSizeMap(repo, data);
