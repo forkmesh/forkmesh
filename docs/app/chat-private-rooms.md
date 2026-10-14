@@ -1131,3 +1131,62 @@ nodes (`openDirectChat`, the phones' `@peer` conversations) still ride the
 shared room; the desktop only falls back to them when it has no account key
 for the relay. That shared room is a relay room, not the local `#mesh`
 room; direct messages over the local mesh are described above.
+
+## #general, #random and #welcome on web `/chat` (2026-10-14)
+
+The owner asked for every ForkMesh member to be in #general, #random and
+#welcome as real server channels, with each new member greeted in #welcome.
+The server side, and why the members come from the account directory, is in
+[chat-everyone-channels.md](chat-everyone-channels.md). This section covers
+`app/public/chat.js`.
+
+- **No new transport.** The three channels come back from
+  `GET /api/chat/channels` with `kind: "everyone"`, so `reconcilePrivateChannels`
+  keys them `private:<id>` like any other server channel and they connect
+  through room access as public channels. Their frames carry `channel:
+  "#general"`, `"#random"` or `"#welcome"`, the same labels the phones use.
+- **The relay room is "World".** The old shared room keeps its internal key
+  `#general` and its wire label `#general`, so old links, stored state and
+  frames from older clients still work. Only what people see changed:
+  `channelDisplayLabel` shows it as "World" with a globe icon, and the guest
+  and status lines say "World". `channelWireLabel` now handles the relay room
+  itself, and every frame (`makeForkbotPlain`, thread replies) is built from
+  the wire label, so the display name never reaches the wire. Without this
+  there would be two rows called #general.
+- **Order.** `channelListRank` puts general, random and welcome first, then
+  World, then other channels by name.
+- **Where a member lands.** `defaultChannelKey` is server #general for a
+  signed-in member and World for a guest, who cannot open server channels.
+  On the first channel list read, a member who is still on World is moved to
+  #general. Choosing World does not persist (the stored channel is cleared,
+  as before), so a reload lands on #general again. A saved server channel or
+  direct message still wins. `defaultChannelChosen` stops a later background
+  refresh from moving someone who has picked a channel. A removed channel or
+  direct message also falls back to `defaultChannelKey`.
+- **Fixed channels.** `canManage` is forced false for `kind: "everyone"`, so
+  no gear, settings, member, invite or webhook controls appear even if a
+  server says otherwise. The server refuses those calls anyway
+  (`everyone_channel_fixed`).
+- **Members pane.** Opening one of these channels reads
+  `GET /api/chat/channels/{id}/members` (`refreshEveryoneChannelMembers`, at
+  most every 5 minutes per channel). `activeRoomMembers` returns that list, so
+  the pane shows every member, online or offline, with presence merged from the
+  roster as for private channels. The heading shows the server's
+  `memberCount`. Until the list arrives the pane shows the usual roster.
+- **Welcome line.** The server's `senderId: "system:welcome"` message renders
+  as a normal line from "ForkMesh". No filter drops it: it is `accountKind:
+  "user"` and its channel matches the wire label. `noteRoster` skips
+  `system:` senders so the notice does not appear as a person.
+- **Fireworks.** The relay's live new-member frame still arrives in World. The
+  greeting under the confetti (`NEW_MEMBER_GREETING` in
+  `app/public/member-welcome.js`, and the World's own copy in `world.js`) now
+  says "Say hello in #welcome."
+- **Dashboard chat.** `/dashboard/chat` (`dashboard-chat.js`) is a separate
+  client that only speaks to the relay rooms. `syncDiscordChrome` now names
+  the relay room "World" in the rail and header. It does not list the server
+  channels yet.
+
+Tests: `app/tests/test_chat_everyone_channels_frontend.py` (labels, order,
+landing, members, welcome line) and
+`app/browser_tests/tests/chat-everyone-channels.spec.js` (sidebar, landing,
+members pane and guest view in Chromium).

@@ -10902,6 +10902,30 @@ async def _chat_channel_deliver(env, channel_id, key_version, plain):
 
 
 class _ChatChannelsRuntime(_WorldCommunityRuntime):
+    async def ensure_schema(self):
+        await super().ensure_schema()
+        await chat_channels_api.ensure_everyone_channels(self)
+
+    async def everyone_member_count(self):
+        return await _public_member_count(self.env)
+
+    async def everyone_members(self):
+        payload = await _users_directory_public_payload(self.env)
+        members = []
+        seen = set()
+        for user in (payload or {}).get("users") or []:
+            name = clean_string(
+                (user or {}).get("name") or "", MAX_NODE_NAME).strip().lower()
+            if not valid_node_name(name) or name in seen:
+                continue
+            seen.add(name)
+            members.append({
+                "username": name,
+                "joinedAt": int((user or {}).get("createdAt") or 0),
+            })
+        members.sort(key=lambda member: member["username"])
+        return members
+
     def new_webhook_token(self):
         return bytes(
             js_crypto.getRandomValues(Uint8Array.new(32)).to_py()).hex()
@@ -19318,6 +19342,8 @@ _users_directory_cache_get = _account_users.export(
 _MEMBER_COUNT_MEMO = {"count": None, "ts": 0, "refresh_ts": 0}
 MEMBER_COUNT_MEMO_TTL_MS = 60 * 1000
 _public_member_count = _account_users.export("_public_member_count")
+_users_directory_public_payload = _account_users.export(
+    "_users_directory_public_payload")
 _account_users_directory = _account_users.export("_account_users_directory")
 _account_users_world_directory = _account_users.export(
     "_account_users_world_directory")
@@ -21183,6 +21209,11 @@ async def _account_signup(env, request):
     if is_new_member:
         try:
             await _broadcast_new_member(env, name)
+        except Exception:
+            pass
+        try:
+            await chat_channels_api.post_welcome(
+                _ChatChannelsRuntime(env, request), name)
         except Exception:
             pass
     # "Founding Member" badge: this account's row is already saved above, so

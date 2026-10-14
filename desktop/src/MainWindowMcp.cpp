@@ -68,7 +68,7 @@ QWidget *MainWindow::buildMcpConnectorTab()
         "Connect any MCP-capable agent \xe2\x80\x94 Claude Code, Codex, an "
         "editor extension, your own script \xe2\x80\x94 to this node. The agent "
         "gets narrow tools for repository code, signed Markdown notes, "
-        "#general chat, issues, plans, and pull requests. Generate a connector "
+        "World chat, issues, plans, and pull requests. Generate a connector "
         "token below and paste the config into the agent; from then on it works "
         "your tasks with this node's identity, without a shell or general "
         "filesystem access.");
@@ -212,7 +212,7 @@ QWidget *MainWindow::buildMcpConnectorTab()
         "<code>search_notes</code>, and <code>update_note</code> keep signed "
         "Markdown context; <code>create_cloud_note</code> adds a note to "
         "the Notes page; <code>read_chat_messages</code> and "
-        "<code>post_chat_message</code> connect only to #general.<br>"
+        "<code>post_chat_message</code> connect only to the World chat.<br>"
         "<b>5. Report back.</b> <code>comment_on_issue</code> posts progress, "
         "<code>create_issue</code> files follow-ups, "
         "<code>create_milestone</code> / <code>create_project</code> / "

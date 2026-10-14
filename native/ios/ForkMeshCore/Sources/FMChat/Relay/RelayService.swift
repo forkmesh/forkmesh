@@ -82,7 +82,7 @@ public final class RelayService: OwnStatusAnnouncer {
     @ObservationIgnored private var draining = false
 
     public private(set) var state: RelayConnectionState = .offline
-    public private(set) var channels: [String] = ["#general", "#random"]
+    public private(set) var channels: [String] = ["#general"]
     public private(set) var currentConversation = "#general"
     public private(set) var log: [String] = []
     /// Bumped by every change, and by the presence tick (so staleness is re-evaluated even with

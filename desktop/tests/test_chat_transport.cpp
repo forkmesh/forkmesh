@@ -3442,6 +3442,190 @@ void testOfficeNoticesChannelShowsServerFrames()
     mirror.stop();
 }
 
+void testOfficeEveryoneChannels()
+{
+    using namespace forkmesh::office;
+
+    check(everyoneChannelId(QStringLiteral("general")) ==
+                  QString::fromLatin1(
+                      QCryptographicHash::hash(
+                          "forkmesh-everyone-channel-v1:general",
+                          QCryptographicHash::Sha256)
+                          .toHex()
+                          .left(32)) &&
+              everyoneChannelId(QStringLiteral("welcome")).size() == 32,
+          "everyone channel ids match the relay's fixed derivation");
+    check(everyoneConversations() ==
+                  QStringList{QStringLiteral("#office/general"),
+                              QStringLiteral("#office/random"),
+                              QStringLiteral("#office/welcome")} &&
+              everyoneGeneralConversation() == QStringLiteral("#office/general") &&
+              everyoneWelcomeConversation() == QStringLiteral("#office/welcome"),
+          "the everyone channels are ordinary office conversations, in order");
+    check(worldConversation() == QStringLiteral("#general") &&
+              worldLabel() == QStringLiteral("World") &&
+              isRetiredRelayChannel(QStringLiteral("#welcome")) &&
+              isRetiredRelayChannel(QStringLiteral("#random")) &&
+              !isRetiredRelayChannel(QStringLiteral("#general")),
+          "the relay keeps only its #general room, shown as World");
+
+    const QString generalId = everyoneChannelId(QStringLiteral("general"));
+    const QString randomId = everyoneChannelId(QStringLiteral("random"));
+    const QString welcomeId = everyoneChannelId(QStringLiteral("welcome"));
+    const QString designId(32, 'f');
+    RelayHarness relay;
+    check(relay.listen(), "the relay stand-in binds a loopback port");
+    auto everyoneChannel = [](const QString &id, const char *name) {
+        return QByteArrayLiteral("{\"id\":\"") + id.toUtf8() +
+               QByteArrayLiteral("\",\"name\":\"") + QByteArray(name) +
+               QByteArrayLiteral("\",\"kind\":\"everyone\",\"visibility\":"
+                                 "\"public\",\"canManage\":false,"
+                                 "\"memberCount\":3,\"topic\":\"\","
+                                 "\"keyVersion\":1}");
+    };
+    relay.responses.insert(
+        QStringLiteral("/api/chat/channels"),
+        QByteArrayLiteral("{\"channels\":[") +
+            everyoneChannel(generalId, "general") + ',' +
+            everyoneChannel(randomId, "random") + ',' +
+            everyoneChannel(welcomeId, "welcome") +
+            QByteArrayLiteral(",{\"id\":\"") + designId.toUtf8() +
+            QByteArrayLiteral("\",\"name\":\"design\",\"visibility\":"
+                              "\"public\",\"canManage\":true,\"topic\":\"\","
+                              "\"keyVersion\":1}]}"));
+    relay.responses.insert(
+        QStringLiteral("/api/chat/channels/") + generalId +
+            QStringLiteral("/members"),
+        QByteArrayLiteral("{\"everyone\":true,\"members\":["
+                          "{\"username\":\"ada\",\"joinedAt\":1},"
+                          "{\"username\":\"Bob\",\"joinedAt\":2},"
+                          "{\"username\":\"not a name\",\"joinedAt\":3},"
+                          "{\"username\":\"ada\",\"joinedAt\":4},"
+                          "{\"username\":\"newbie\",\"joinedAt\":5}]}"));
+    const QString welcomeRoom = QStringLiteral("chat-channel:") + welcomeId +
+                                QStringLiteral(":v1");
+    const RoomCrypto welcomeCrypto(welcomeRoom,
+                                   QStringLiteral("room-passphrase"));
+    const QJsonObject welcomeNote{
+        {"type", "chat"},
+        {"id", "welcome-1"},
+        {"senderId", "system:welcome"},
+        {"sender", "ForkMesh"},
+        {"accountKind", "user"},
+        {"channel", "#welcome"},
+        {"text", QString::fromUtf8("\xF0\x9F\x8E\x89 Welcome to ForkMesh, "
+                                   "@newbie! Everyone, come say hi "
+                                   "\xF0\x9F\x91\x8B")},
+        {"ts", 1790600000000.0},
+        {"webhook", true}};
+    const QJsonObject welcomeHistory{
+        {"room", welcomeRoom},
+        {"passphrase", "room-passphrase"},
+        {"messages",
+         QJsonArray{QJsonObject{
+             {"ts", 1790600000000.0},
+             {"body", QString::fromUtf8(
+                          QJsonDocument(welcomeCrypto.encryptObject(welcomeNote))
+                              .toJson(QJsonDocument::Compact))}}}}};
+    relay.responses.insert(
+        QStringLiteral("/api/chat/channels/") + welcomeId +
+            QStringLiteral("/history"),
+        QJsonDocument(welcomeHistory).toJson(QJsonDocument::Compact));
+
+    QNetworkAccessManager network;
+    OfficeChannelMirror mirror(&network);
+    mirror.setSigner([](const QByteArray &canonical) {
+        return QString::fromUtf8(canonical.toBase64(
+            QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
+    });
+    mirror.setConnectionAuthorizer([](const QUrl &) { return false; });
+    mirror.setApiBase(relay.apiBase());
+    mirror.setIdentity(QStringLiteral("ada"), QStringLiteral("self-key"),
+                       QStringLiteral("Ada"));
+    QList<ChatMessage> arrived;
+    QObject::connect(&mirror, &OfficeChannelMirror::messageArrived, &mirror,
+                     [&arrived](const ChatMessage &message) {
+                         arrived.append(message);
+                     });
+    QStringList membersSignalled;
+    QObject::connect(&mirror, &OfficeChannelMirror::roomMembersChanged, &mirror,
+                     [&membersSignalled](const QString &conversation,
+                                         const QStringList &members) {
+                         if (!members.isEmpty())
+                             membersSignalled.append(conversation);
+                     });
+    mirror.start();
+
+    const QString general = QStringLiteral("#office/general");
+    const QString welcome = QStringLiteral("#office/welcome");
+    const QString design = QStringLiteral("#office/design");
+    check(waitUntil([&] { return mirror.conversations().size() == 4; }, 4000) &&
+              mirror.conversations() ==
+                  QStringList{general, QStringLiteral("#office/random"),
+                              welcome, design},
+          "the everyone channels are listed first, in the relay's order");
+    check(mirror.isEveryoneConversation(general) &&
+              mirror.isEveryoneConversation(welcome) &&
+              !mirror.isEveryoneConversation(design) &&
+              !mirror.isPrivateConversation(general),
+          "only kind:\"everyone\" channels are flagged as everyone channels");
+    check(!mirror.canManageConversation(general) &&
+              mirror.canManageConversation(design) &&
+              !mirror.updateChannel(general, QStringLiteral("general"),
+                                    QStringLiteral("x"), false) &&
+              !mirror.deleteChannel(general) &&
+              !mirror.addMember(general, QStringLiteral("bob")),
+          "an everyone channel offers no manage, delete or invite action");
+    check(mirror.canSend(general), "every member can post in #general");
+
+    const QString membersPath = QStringLiteral("/api/chat/channels/") +
+                                generalId + QStringLiteral("/members");
+    check(waitUntil([&] { return mirror.membersForConversation(welcome).size() ==
+                                 3; },
+                    4000),
+          "the member list comes from the everyone members endpoint");
+    check(mirror.membersForConversation(general) ==
+                  QStringList{QStringLiteral("ada"), QStringLiteral("bob"),
+                              QStringLiteral("newbie")} &&
+              mirror.memberCountForConversation(general) == 3 &&
+              mirror.membersForConversation(design).isEmpty(),
+          "members are normalized, deduplicated and shared by all three");
+    const RelayHarness::Call *membersCall = relay.lastCall("GET", membersPath);
+    check(membersCall &&
+              QByteArray::fromBase64(
+                  queryValue(membersCall->query, "sig"),
+                  QByteArray::Base64UrlEncoding) ==
+                  channelMembersProof(
+                      QStringLiteral("ada"), generalId,
+                      QString::fromUtf8(queryValue(membersCall->query, "ts")),
+                      QStringLiteral("GET"), QString()),
+          "the members read is signed with the GET members proof");
+    int membersCalls = 0;
+    for (const RelayHarness::Call &call : std::as_const(relay.calls))
+        membersCalls += call.path.endsWith(QStringLiteral("/members")) ? 1 : 0;
+    check(membersCalls == 1 && membersSignalled.contains(general) &&
+              membersSignalled.contains(welcome),
+          "one members read fills all three everyone channels");
+
+    check(waitUntil([&] {
+              for (const ChatMessage &message : std::as_const(arrived))
+                  if (message.id == QStringLiteral("welcome-1"))
+                      return true;
+              return false;
+          }, 4000),
+          "the server's welcome note arrives");
+    bool shown = false;
+    for (const ChatMessage &message : std::as_const(arrived))
+        if (message.id == QStringLiteral("welcome-1"))
+            shown = message.conversation == welcome &&
+                    message.senderId == QStringLiteral("system:welcome") &&
+                    message.senderName == QStringLiteral("ForkMesh") &&
+                    message.text.contains(QStringLiteral("@newbie")) &&
+                    !message.self;
+    check(shown, "the welcome note shows as a normal message in #welcome");
+    mirror.stop();
+}
+
 void testDirectMessagesOverLocalMesh()
 {
     using namespace forkmesh::localmesh;
@@ -4009,6 +4193,7 @@ int main(int argc, char **argv)
         testOfficeChannelMirror();
         testOfficeChannelSettingsRequests();
         testOfficeNoticesChannelShowsServerFrames();
+        testOfficeEveryoneChannels();
         testOfficePrivateRoomsAndDirectMessages();
         testDirectMessagesOverLocalMesh();
         testOfficeRoomMutationFrames();

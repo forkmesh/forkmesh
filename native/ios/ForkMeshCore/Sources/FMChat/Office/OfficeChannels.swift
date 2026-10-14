@@ -23,6 +23,8 @@ public struct OfficeRoom: Equatable, Sendable, Identifiable {
     public let keyVersion: Int
     public var serverVisible = false
     public var readOnly = false
+    public var everyone = false
+    public var memberCount = 0
 
     public var conversation: String { OfficeFrames.conversation(for: name) }
 }
@@ -80,7 +82,8 @@ public enum OfficeFrames {
                     id: id, name: name, isPrivate: isPrivate, canManage: channel["canManage"]?.isTrue == true,
                     topic: String(topic.prefix(maxTopicChars)), members: members,
                     keyVersion: max(1, channel["keyVersion"]?.intValue ?? 1),
-                    serverVisible: channel["serverVisible"]?.isTrue == true, readOnly: channel["readOnly"]?.isTrue == true))
+                    serverVisible: channel["serverVisible"]?.isTrue == true, readOnly: channel["readOnly"]?.isTrue == true,
+                    everyone: (channel["kind"]?.text ?? "") == "everyone", memberCount: max(0, channel["memberCount"]?.intValue ?? 0)))
         }
         return out
     }

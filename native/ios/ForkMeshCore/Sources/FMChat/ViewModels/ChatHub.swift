@@ -118,6 +118,9 @@ public final class ChatHub: ShellChatBridge {
     public private(set) var retention: ChatRetention = .standard
     @ObservationIgnored private var pruneTask: Task<Void, Never>?
     @ObservationIgnored public var forkbot: ChatAccountCalling?
+    public internal(set) var directoryMembers: [String] = []
+    @ObservationIgnored var directoryLoadedAt: Date?
+    @ObservationIgnored var directoryLoading = false
     @ObservationIgnored public var apps: AppsClient?
     public private(set) var appCommands = AppCommandCatalog()
     public private(set) var unreadStart: [String: String] = [:]
@@ -305,7 +308,9 @@ public final class ChatHub: ShellChatBridge {
         let text = message.text.dartTrimmed
         let title: String
         var body = message.fileName.isEmpty ? text : "\u{1F4CE} \(message.fileName)" + (text.isEmpty ? "" : "\n\(text)")
-        if conversation == ChatHub.welcomeChannel {
+        if ChatEveryone.isWelcome(message) {
+            title = "New member joined"
+        } else if conversation == ChatHub.welcomeChannel || conversation == ChatEveryone.welcomeConversation {
             title = "New user joined"
             body = name.isEmpty ? "Someone new said hello in #welcome" : "\(name) said hello in #welcome"
         } else if conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation) {
@@ -987,10 +992,12 @@ public final class ChatHub: ShellChatBridge {
 
     public var channels: [String] {
         _ = extras.revision
-        return relay.channels.filter { !extras.hiddenChannels.contains($0) && !OfficeFrames.isOffice($0) }
+        return relay.channels.filter {
+            !extras.hiddenChannels.contains($0) && !OfficeFrames.isOffice($0) && !ChatEveryone.retiredRelayLabels.contains($0)
+        }
     }
 
-    public var officeChannels: [String] { office?.conversations ?? [] }
+    public var officeChannels: [String] { ChatEveryone.order(office?.conversations ?? [], office: office) }
 
     public func readMarkKey(_ conversation: String) -> String? {
         if DirectMessageFrames.isDirect(conversation) { return conversation }

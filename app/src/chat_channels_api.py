@@ -1,5 +1,6 @@
 """D1-backed encrypted chat channels, memberships, and incoming webhooks."""
 
+import hashlib
 import json
 import re
 
@@ -41,6 +42,83 @@ INVITE_TOKEN_RE = re.compile(
 HISTORY_MAX_MESSAGES = 200
 NOTICES_KIND = "notices"
 OFFICE_KIND = "office"
+EVERYONE_KIND = "everyone"
+EVERYONE_CHANNELS = (
+    ("general", "Everyone at ForkMesh"),
+    ("random", "Anything goes"),
+    ("welcome", "Say hi to new members"),
+)
+EVERYONE_NAMES = tuple(name for name, _topic in EVERYONE_CHANNELS)
+WELCOME_CHANNEL = "welcome"
+WELCOME_SENDER_ID = "system:welcome"
+WELCOME_SENDER = "ForkMesh"
+_EVERYONE_READY = {"done": False}
+
+
+def everyone_channel_id(name):
+    return hashlib.sha256(
+        ("forkmesh-everyone-channel-v1:" + str(name)).encode()
+    ).hexdigest()[:32]
+
+
+EVERYONE_IDS = tuple(everyone_channel_id(name) for name in EVERYONE_NAMES)
+
+
+def welcome_text(name):
+    return (
+        "\U0001F389 Welcome to ForkMesh, @" + str(name)
+        + "! Everyone, come say hi \U0001F44B")
+
+
+async def ensure_everyone_channels(runtime, ready=None):
+    ready = _EVERYONE_READY if ready is None else ready
+    if ready.get("done"):
+        return
+    rows = await runtime.d1_all(
+        "SELECT channel_id FROM chat_channels WHERE channel_id IN (?,?,?)",
+        *EVERYONE_IDS)
+    have = {str(row.get("channel_id") or "") for row in rows or []}
+    now = runtime.now()
+    for name, topic in EVERYONE_CHANNELS:
+        channel_id = everyone_channel_id(name)
+        if channel_id in have:
+            continue
+        record = {"name": name, "createdBy": "", "visibility": "public",
+                  "kind": EVERYONE_KIND, "topic": topic}
+        await runtime.d1_run(
+            "INSERT INTO chat_channels (channel_id,name_bi,data,"
+            "created_by_bi,created_at,updated_at,key_version) "
+            "VALUES (?,?,?,?,?,?,1) ON CONFLICT DO NOTHING",
+            channel_id,
+            await runtime.blind("chat-channel-name:everyone/" + name),
+            await runtime.seal(record), "", now, now)
+    ready["done"] = True
+
+
+async def post_welcome(runtime, name, ready=None):
+    name = str(name or "").strip().lower()
+    if not CHANNEL_NAME_RE.fullmatch(name):
+        return False
+    await ensure_everyone_channels(runtime, ready)
+    channel_id = everyone_channel_id(WELCOME_CHANNEL)
+    row = await runtime.d1_first(
+        "SELECT key_version FROM chat_channels WHERE channel_id=?",
+        channel_id)
+    if not row:
+        return False
+    await runtime.deliver_webhook(
+        channel_id, int(row.get("key_version") or 1), {
+            "type": "chat",
+            "id": runtime.new_id(),
+            "senderId": WELCOME_SENDER_ID,
+            "sender": WELCOME_SENDER,
+            "accountKind": "user",
+            "ts": runtime.now(),
+            "channel": "#" + WELCOME_CHANNEL,
+            "text": welcome_text(name),
+            "webhook": True,
+        })
+    return True
 
 
 def _response(runtime, data, status=200, allow=""):
@@ -84,11 +162,18 @@ def _channel_payload(row, record, can_manage):
         payload["kind"] = NOTICES_KIND
         payload["serverVisible"] = True
         payload["readOnly"] = True
+    if _is_everyone(record):
+        payload["kind"] = EVERYONE_KIND
+        payload["canManage"] = False
     return payload
 
 
 def _is_notices(record):
     return isinstance(record, dict) and record.get("kind") == NOTICES_KIND
+
+
+def _is_everyone(record):
+    return isinstance(record, dict) and record.get("kind") == EVERYONE_KIND
 
 
 def _is_office(record):
@@ -112,7 +197,7 @@ def _is_creator(row, account_bi):
 
 
 def _can_manage(row, record, account_bi, is_admin):
-    if _is_notices(record) or _is_office(record):
+    if _is_notices(record) or _is_office(record) or _is_everyone(record):
         return False
     if _is_creator(row, account_bi):
         return True
@@ -152,6 +237,9 @@ async def _create_channel(runtime, account_bi, actor, data):
     if not CHANNEL_NAME_RE.fullmatch(name):
         return _response(
             runtime, {"error": "invalid_channel_name"}, status=400)
+    if name in EVERYONE_NAMES:
+        return _response(
+            runtime, {"error": "channel_name_taken"}, status=409)
     visibility = str(
         (data or {}).get("visibility") or "private"
     ).strip().lower()
@@ -192,7 +280,8 @@ async def _create_channel(runtime, account_bi, actor, data):
             runtime, {"error": "channel_name_taken"}, status=409)
     count = await runtime.d1_first(
         "SELECT COUNT(*) AS n FROM chat_channels WHERE channel_id NOT IN "
-        "(SELECT channel_id FROM org_office_channels)")
+        "(SELECT channel_id FROM org_office_channels) "
+        "AND channel_id NOT IN (?,?,?)", *EVERYONE_IDS)
     if int((count or {}).get("n") or 0) >= MAX_CHAT_CHANNELS:
         return _response(
             runtime, {"error": "too_many_channels"}, status=429)
@@ -296,6 +385,9 @@ async def _update_channel(runtime, actor, channel_id, data, row=None,
             return _response(
                 runtime, {"error": "invalid_channel_name"}, status=400)
         if name != str(record.get("name") or ""):
+            if name in EVERYONE_NAMES:
+                return _response(
+                    runtime, {"error": "channel_name_taken"}, status=409)
             name_bi = await runtime.blind("chat-channel-name:" + name)
             taken = await runtime.d1_first(
                 "SELECT channel_id FROM chat_channels WHERE name_bi=?",
@@ -476,7 +568,12 @@ async def _list_channels(runtime, account_bi, actor, is_admin):
         if _visibility(record) == "private":
             payload["members"] = await _room_member_names(
                 runtime, str(row.get("channel_id") or ""), record)
+        if _is_everyone(record):
+            payload["memberCount"] = await runtime.everyone_member_count()
         channels.append(payload)
+    channels.sort(key=lambda item: (
+        EVERYONE_IDS.index(item["id"]) if item["id"] in EVERYONE_IDS
+        else len(EVERYONE_IDS)))
     return _response(runtime, {"channels": channels})
 
 
@@ -511,6 +608,9 @@ async def _require_manager(runtime, account_bi, actor, action, channel_id,
     if _is_office(record):
         return None, None, _response(
             runtime, {"error": "office_channel_managed_by_org"}, status=403)
+    if _is_everyone(record):
+        return None, None, _response(
+            runtime, {"error": "everyone_channel_fixed"}, status=403)
     if _can_manage(row, record, account_bi, is_admin):
         return row, record, None
     await runtime.audit(
@@ -1303,6 +1403,14 @@ async def handle(runtime, path):
             allow="PATCH, DELETE",
         )
     channel_id = matched_resource.group(1)
+    if members and method == "GET" and channel_id in EVERYONE_IDS:
+        row, record = await _readable_channel(
+            runtime, account_bi, channel_id, is_admin)
+        if row and _is_everyone(record):
+            return _response(runtime, {
+                "members": await runtime.everyone_members(),
+                "everyone": True,
+            })
     if members and method in {"GET", "POST", "DELETE"}:
         action = {
             "GET": "chat.channel.member.list",

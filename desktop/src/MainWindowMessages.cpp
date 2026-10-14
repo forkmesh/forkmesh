@@ -960,6 +960,7 @@ void MainWindow::onMessage(const ChatMessage &message)
 
     if (!message.historical && !ownMessage &&
         conversation == kWelcomeChannel &&
+        message.senderId != QLatin1String("system:welcome") &&
         message.timestampMs >
             QDateTime::currentMSecsSinceEpoch() - kWelcomePingFreshMs) {
         NotificationLink link;
@@ -984,10 +985,7 @@ void MainWindow::onMessage(const ChatMessage &message)
             isDirectConversation(conversation) ||
                     forkmesh::office::isDirectOfficeConversation(conversation)
                 ? QStringLiteral("sent you a message")
-                : QStringLiteral("in ") +
-                      (isDiscordConversation(conversation) && m_discordClient
-                           ? m_discordClient->displayName(conversation)
-                           : conversation);
+                : QStringLiteral("in ") + chatConversationLabel(conversation);
         const QString formatted =
             !message.blocks.isEmpty() &&
                     forkmesh::chatblocks::senderMayFormat(message.senderId)
@@ -1548,10 +1546,21 @@ void MainWindow::setChannels(const QStringList &channels)
     // m_channels back into this method. Snapshot the input before clearing the
     // destination so that self-aliasing cannot erase the mesh rooms.
     const QStringList incomingChannels = channels;
+    const QString everyoneGeneral =
+        forkmesh::office::everyoneGeneralConversation();
+    const bool everyoneGeneralArrived =
+        m_officeConversations.contains(everyoneGeneral) &&
+        !m_channels.contains(everyoneGeneral);
+    const QStringList everyone = forkmesh::office::everyoneConversations();
     m_channels.clear();
+    for (const QString &conversation : everyone)
+        if (m_officeConversations.contains(conversation))
+            m_channels.append(conversation);
     for (const QString &channel : incomingChannels)
         if (!forkmesh::office::isOfficeConversation(channel) &&
-            !forkmesh::discord::isDiscordConversation(channel))
+            !forkmesh::discord::isDiscordConversation(channel) &&
+            !forkmesh::office::isRetiredRelayChannel(channel) &&
+            !m_channels.contains(channel))
             m_channels.append(channel);
     for (const QString &conversation : std::as_const(m_officeConversations))
         if (!m_channels.contains(conversation))
@@ -1571,6 +1580,9 @@ void MainWindow::setChannels(const QStringList &channels)
     updateHomeStats();
     if (m_currentConversation.isEmpty() && !m_channels.isEmpty())
         selectFirstChannel(); // the first rendered row; triggers switchConversation
+    else if (everyoneGeneralArrived &&
+             m_currentConversation == forkmesh::office::worldConversation())
+        switchConversation(everyoneGeneral);
 }
 
 void MainWindow::setRoster(const QList<MemberInfo> &members)
@@ -1747,12 +1759,19 @@ void MainWindow::setRoster(const QList<MemberInfo> &members)
 
 QString MainWindow::welcomeChannelForIdentity() const
 {
-    return kWelcomeChannel;
+    if (m_officeConversations.contains(kWelcomeChannel))
+        return kWelcomeChannel;
+    const QString general = forkmesh::office::everyoneGeneralConversation();
+    return m_officeConversations.contains(general)
+               ? general
+               : forkmesh::office::worldConversation();
 }
 
 void MainWindow::maybeAnnounceWelcome()
 {
-    if (m_welcomeAnnounced || !m_backend)
+    if (m_welcomeAnnounced || !m_officeChannelMirror ||
+        !m_officeConversations.contains(kWelcomeChannel) ||
+        !m_officeChannelMirror->canSend(kWelcomeChannel))
         return;
     const QString id = m_profileIdentity.publicKey();
     if (id.isEmpty())
@@ -1770,11 +1789,13 @@ void MainWindow::maybeAnnounceWelcome()
         m_welcomeAnnounced = true;
         return;
     }
+    if (!m_officeChannelMirror->sendMessage(
+            kWelcomeChannel,
+            QString::fromUtf8(
+                "\xF0\x9F\x91\x8B Just joined ForkMesh \xE2\x80\x94 hello!")))
+        return;
     m_profileIdentity.markWelcomeAnnounced();
     m_welcomeAnnounced = true;
-    m_backend->sendChat(
-        kWelcomeChannel,
-        QString::fromUtf8("\xF0\x9F\x91\x8B Just joined ForkMesh \xE2\x80\x94 hello!"));
 }
 
 static QString chatUserDisplayName(const MemberInfo &member)
@@ -2332,6 +2353,17 @@ void MainWindow::refreshChatMembers()
     const bool privateOfficeRoom =
         m_officeChannelMirror &&
         m_officeChannelMirror->isPrivateConversation(m_currentConversation);
+    const bool everyoneRoom =
+        m_officeChannelMirror &&
+        m_officeChannelMirror->isEveryoneConversation(m_currentConversation);
+    const QStringList everyoneMembers =
+        everyoneRoom
+            ? m_officeChannelMirror->membersForConversation(m_currentConversation)
+            : QStringList();
+    const int everyoneCount =
+        everyoneRoom ? m_officeChannelMirror->memberCountForConversation(
+                           m_currentConversation)
+                     : 0;
     if (meshRoom) {
         // Nobody here comes from the account directory: this room's membership
         // is whoever this device can see on the network right now.
@@ -2386,6 +2418,14 @@ void MainWindow::refreshChatMembers()
             if (!key.isEmpty() && m_chatDirectoryUsers.contains(key))
                 roomUserKeys.insert(key);
         }
+    } else if (everyoneRoom && !everyoneMembers.isEmpty()) {
+        for (const QString &username : everyoneMembers) {
+            const QString key = username.trimmed().toLower();
+            if (!key.isEmpty() && m_chatDirectoryUsers.contains(key))
+                roomUserKeys.insert(key);
+        }
+        for (auto it = liveByUser.constBegin(); it != liveByUser.constEnd(); ++it)
+            roomUserKeys.insert(it.key());
     } else if (isDirectConversation(m_currentConversation)) {
         const QString selfKey = accountOwner().trimmed().toLower();
         if (m_chatDirectoryUsers.contains(selfKey))
@@ -2512,14 +2552,25 @@ void MainWindow::refreshChatMembers()
                 ? QString::fromUtf8(
                       "ONLY THESE PEOPLE CAN SEE THIS ROOM \xE2\x80\x94 %1")
                       .arg(groups.size())
+            : everyoneRoom
+                ? QString::fromUtf8(
+                      "EVERY FORKMESH MEMBER IS HERE \xE2\x80\x94 %1")
+                      .arg(qMax(everyoneCount, int(groups.size())))
                 : QString::fromUtf8(
                       "DATABASE USERS IN THIS ROOM \xE2\x80\x94 %1")
                       .arg(groups.size()));
     }
     if (m_chatMembersButton) {
-        m_chatMembersButton->setText(QString::number(groups.size()));
+        const int shownCount =
+            everyoneRoom ? qMax(everyoneCount, int(groups.size()))
+                         : int(groups.size());
+        m_chatMembersButton->setText(QString::number(shownCount));
         m_chatMembersButton->setToolTip(
-            teamRoom
+            everyoneRoom
+                ? QStringLiteral("Every ForkMesh member is in this channel: "
+                                 "show the %1 members")
+                      .arg(shownCount)
+            : teamRoom
                 ? QStringLiteral("Show %1 special agent%2 and invited participant%3")
                       .arg(groups.size())
                       .arg(groups.size() == 1 ? QString()
@@ -3307,6 +3358,12 @@ void MainWindow::refreshChannelList()
         if (forkmesh::office::isOfficeConversation(channel) &&
             !forkmesh::office::isDirectOfficeConversation(channel))
             label = officeChannelLabel(channel);
+        if (channel == forkmesh::office::worldConversation()) {
+            label = forkmesh::office::worldLabel();
+            tooltip = QStringLiteral(
+                "The World chat: everyone walking the 3D World, guests and "
+                "visitors included. ForkMesh members talk in #general.");
+        }
         if (isLocalMeshConversation(channel)) {
             tooltip = QStringLiteral(
                 "Everyone running ForkMesh on this network, found "
@@ -3811,15 +3868,7 @@ void MainWindow::switchConversation(const QString &conversation)
     scheduleChatSave();
     refreshMeshDebugBar();
 
-    QString title = conversation;
-    if (isDirectConversation(conversation))
-        title = kDmPrefix + m_dmNames.value(dmPeerId(conversation),
-                                            QStringLiteral("unknown"));
-    else if (forkmesh::office::isDirectOfficeConversation(conversation))
-        title = QStringLiteral("@") +
-                forkmesh::office::directPeerForConversation(conversation);
-    else if (isDiscordConversation(conversation) && m_discordClient)
-        title = m_discordClient->displayName(conversation);
+    const QString title = chatConversationLabel(conversation);
     updateChatConversationHeading();
     m_messageInput->setReadOnly(false);
     m_messageInput->setPlaceholderText(
@@ -4537,6 +4586,11 @@ void MainWindow::openChannelSettingsFor(const QString &target)
                       "answers. The server writes these notes and can read "
                       "them; only you can see this channel. It cannot be "
                       "renamed, shared, given webhooks or deleted.")
+            : m_officeChannelMirror->isEveryoneConversation(target)
+                ? QStringLiteral(
+                      "Every ForkMesh member is in this channel, and new "
+                      "members join it when they sign up. It cannot be "
+                      "renamed, left, made private or deleted.")
                 : QStringLiteral("Only the channel creator or an "
                                  "administrator can change this channel."));
         for (QWidget *widget :
@@ -4586,8 +4640,8 @@ void MainWindow::openChannelSettingsFor(const QString &target)
                 : 1);
         syncWebhookPolicy();
         dialog->setProperty("conversation", *conversation);
-        dialog->setWindowTitle(
-            QStringLiteral("Channel settings — %1").arg(*conversation));
+        dialog->setWindowTitle(QStringLiteral("Channel settings — %1")
+                                   .arg(chatConversationLabel(*conversation)));
     };
     loadFields();
 
@@ -4834,10 +4888,11 @@ void MainWindow::showMeshChannelSettings(const QString &channel)
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setProperty("conversation", channel);
     dialog->setProperty("manage", false);
-    dialog->setWindowTitle(QStringLiteral("Channel settings — %1").arg(channel));
+    dialog->setWindowTitle(QStringLiteral("Channel settings — %1")
+                               .arg(chatConversationLabel(channel)));
     dialog->setMinimumWidth(460);
 
-    auto *nameLabel = new QLabel(channel, dialog);
+    auto *nameLabel = new QLabel(chatConversationLabel(channel), dialog);
     nameLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     auto *encryptionLabel = new QLabel(
         localMesh ? QStringLiteral("Local network — end-to-end encrypted, "
