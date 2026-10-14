@@ -48,7 +48,7 @@ STEPS = (
     ("ids", "Log reader and IDS baseline", 20),
     ("health", "Health checks: readyz, units, IDS, public probes", 20),
     ("dns", "Add it to DNS after the health probes pass", 15),
-    ("register", "Node account; monitoring, backups, DNS health loop, autodeploy and roll", 5),
+    ("register", "Node account and owner; monitoring, backups, DNS health loop, autodeploy and roll", 8),
     ("commit", "Commit deploy/fleet.toml to a branch", 2),
 )
 STEP_IDS = tuple(step for step, _, _ in STEPS)
@@ -998,12 +998,14 @@ class FleetBackend:
         account = next_node_owner.NODE_PREFIX + job.name
         if not job.execute:
             job.say("[dry-run] %s: the node key signs a reserve and a finalize; "
-                    "%s creates the node account" % (account, next_node_owner.APP_URL))
+                    "%s creates the node account, then the node is linked to "
+                    "the other cores' owner with this desktop's key" % (
+                        account, next_node_owner.APP_URL))
             return
         node = dict(name=job.name, public_ipv4=self.ip(job))
         db = next_node_owner.Db(fleet, self.ssh, next_node_owner.keyset())
-        next_node_owner.register_core(db, self.ssh, job.runner, node, account,
-                                      next_node_owner.APP_URL)
+        next_node_owner.provision_core(db, self.ssh, job.runner, fleet, node,
+                                       next_node_owner.APP_URL)
 
     def step_commit(self, job):
         branch = BRANCH_PREFIX + job.name
@@ -1158,6 +1160,8 @@ class FleetBackend:
             return ["node account fmnext-%s: the node key signs a reserve and a "
                     "finalize, the app stores its public key (no account = HTTP 401 "
                     "on every catalog, replica and event call)" % name,
+                    "owner: linked to the other cores' owner, accepted with this "
+                    "desktop's identity key when it is that owner's key",
                     "DNS health loop: %s released (in_dns, not held)" % name,
                     "backups and status: read from the fleet file and "
                     "fleet-instances.json; nothing else to add",
