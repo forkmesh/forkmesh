@@ -123,7 +123,7 @@ def test_branch_backed_pull_diff_is_reconstructed_from_creation_oids():
     assert 'repoLiveUrl(repo, "compare"' in CONTENT
     assert "values.creationBaseOid" in CONTENT
     assert "values.creationHeadOid" in CONTENT
-    assert "loadRepoPullPatch(repo, number, pullMetadataCommit, parsed.values || {})" in CONTENT
+    assert "loadRepoPullPatch(repo, number, pullMetadataCommit, values)" in CONTENT
 
 
 def test_files_panel_uses_full_width_and_tracks_selected_file():

@@ -117,3 +117,33 @@ def test_about_micro_cache_serves_anonymous_reads_from_memory(monkeypatch):
         assert repo_ssr.start(fast, scope(method="POST")) is None
         assert key not in repo_ssr._micro
     asyncio.run(main())
+
+
+def test_a_view_that_misses_its_budget_still_starts_its_bundle():
+    import asyncio
+
+    from forkmesh_host import js
+
+    page = repo_page()
+
+    async def main():
+        never = asyncio.get_running_loop().create_future()
+        ticket = repo_ssr.ViewTicket(never, "", ("forkmesh", "forkmesh", "pull", 320))
+        response = js.Response(page.encode("utf-8"), 200, "",
+                               {"content-type": "text/html; charset=utf-8",
+                                "cache-control": "public, max-age=300"})
+        answer = await repo_ssr.finish(ticket, response)
+        never.cancel()
+        return answer
+
+    answer = asyncio.run(main())
+    text = (asyncio.run(answer._read())).decode("utf-8")
+    meta = re.search(r"window\.__forkmeshView=(\{.*?\});", text)
+    assert meta
+    assert json.loads(meta.group(1)) == {
+        "base": "/api/repo/forkmesh/forkmesh", "view": "pull", "number": 320,
+        "url": "/api/repo/forkmesh/forkmesh/page-reads?view=pull&number=320"}
+    assert text.index("window.__forkmeshView=") < text.index("Early repository reads")
+    assert answer.headers.get("cache-control") == "no-cache"
+    assert repo_ssr.PLACEHOLDER in text
+    assert repo_ssr.inject_view_reads("<html></html>", "a", "b", "issues", 0) is None

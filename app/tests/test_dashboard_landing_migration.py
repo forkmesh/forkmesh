@@ -1945,7 +1945,7 @@ def test_dashboard_pull_detail_reads_committed_patch_for_files_changed():
         "data-repo-pull-patch",
         ".forkmesh/pulls/${number}/changes.patch",
         "ref: commit,",
-        "? await loadRepoPullPatch(repo, number, pullMetadataCommit, parsed.values || {})",
+        "loadRepoPullPatch(repo, number, pullMetadataCommit, values),",
         "renderRepoPullFiles(files, viewed, { mode: layout.explorer })",
         "renderRepoPullPatch(pullPatch.patch, viewed, effectivePullDiffMode(layout.diff))",
     ):
@@ -2088,8 +2088,13 @@ def test_dashboard_pull_metadata_reads_pin_the_dedicated_branch_commit():
     assert "await resolveRepoPullMetadataCommit(repo)" in detail
     assert "? { ref: pullMetadataCommit }" in detail
     assert "ref: commit," in patch
-    assert "ref: commit," in conversation
+    assert "readRepoPullFolder(repo, number, commit)" in conversation
     assert "{ ref: commit }" in conversation
+    folder = dashboard_js[
+        dashboard_js.index("function readRepoPullFolder")
+        : dashboard_js.index("async function repoPullFolderLacks")
+    ]
+    assert "ref: commit," in folder
 
     # Pull readers must never ask the mirror to guess a mutable/default ref.
     # The single exception is a range query (compare/merge-preview), which

@@ -47,6 +47,9 @@ carries `script[data-instance-brand]`, `instanceAllows()` reads
   within 480 px.
 - **Throwing.** Stepped at 120 Hz with gravity and quadratic air resistance,
   capped at 4,200 px/s; bounces off walls and the floor and skids to rest.
+- **Start.** The spider is built in idle time after the page's `load` event
+  (at most 2 s later), never during the page's first render
+  ([../PERF_PAGES.md](../PERF_PAGES.md)).
 - **Frames.** `requestAnimationFrame` while it moves, reacts, plays or shows a
   bubble; 12 fps when idle; none while the tab is hidden. The frame step is
   clamped to 0–0.1 s. With `prefers-reduced-motion` it never wanders and

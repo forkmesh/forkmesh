@@ -2753,6 +2753,8 @@
       })).join(" ");
   }
 
+  let repoServedByFrame = 0;
+
   function renderRepoServedBy(node, tookMs) {
     const name = String(node || "").trim();
     state.repoServedBy = name ? { name, tookMs: Number(tookMs) || 0 } : null;
@@ -2763,7 +2765,11 @@
     // Re-render the repo's mirror lists so the node that just answered gets
     // its green "serving this request" highlight without waiting on a fresh
     // /mirrors fetch.
-    renderRepoMirrorLists(state.repoMirrors, state.repoServedBy);
+    if (repoServedByFrame) return;
+    repoServedByFrame = requestAnimationFrame(() => {
+      repoServedByFrame = 0;
+      repaintRepoMirrorLists();
+    });
   }
 
   function repoExplorerRowClass(active = false) {
