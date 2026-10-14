@@ -24,7 +24,7 @@ struct AccountProfileScreen: View {
                 FmEmptyState(icon: "person_outline", title: "Profile unavailable")
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("@\(model?.name ?? "")")
         .navigationBarTitleDisplayMode(.inline)
     }

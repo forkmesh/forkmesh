@@ -35,7 +35,7 @@ struct McpConnectorScreen: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("MCP connector")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -130,7 +130,7 @@ struct McpTokensScreen: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle(model.org)
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }

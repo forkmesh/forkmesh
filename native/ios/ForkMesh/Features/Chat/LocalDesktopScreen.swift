@@ -82,7 +82,7 @@ private struct LocalDesktopBody: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .fmRefreshable {
             if control.connected { await control.refreshAgents() }
         }
@@ -491,7 +491,7 @@ private struct LocalAgentBody: View {
             }
             promptBar
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle(model.title)
         .toolbar {
             if let row = model.row, let control = Services.get(LocalControlService.self) {

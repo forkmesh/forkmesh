@@ -24,7 +24,7 @@ struct NotesScreen: View {
         content
             .navigationTitle(NotesListModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationDestination(isPresented: $editorOpen) {
                 NoteEditorScreen(noteId: openedId)
                     .shellPageClearance()
@@ -143,7 +143,7 @@ struct NoteEditorScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(model.confirmsLeave)
             .toolbar { toolbar(model) }
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .fmDialog(isPresented: $confirmDelete) {
                 confirmation(NoteEditorModel.deleteConfirmation, isPresented: $confirmDelete) {
                     Task {

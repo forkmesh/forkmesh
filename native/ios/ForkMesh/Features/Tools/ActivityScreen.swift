@@ -68,7 +68,7 @@ private struct ActivityContent: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .fmRefreshable { await model.reload() }
     }
 

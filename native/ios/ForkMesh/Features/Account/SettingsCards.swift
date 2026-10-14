@@ -798,7 +798,7 @@ struct AppearanceCard: View {
     }
 
     private var swatches: some View {
-        HStack(spacing: FmSpace.x5) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: FmSpace.x2)], spacing: FmSpace.x3) {
             ForEach(FmAccent.allCases, id: \.self) { (accent: FmAccent) in
                 AccentSwatch(
                     accent: accent,
@@ -817,6 +817,10 @@ struct AppearanceCard: View {
             Text("Accent colour").fmText(.labelMedium, color: fm.textSecondary)
                 .padding(.top, FmSpace.x4)
             swatches
+                .padding(.top, FmSpace.x2)
+            Text("Background").fmText(.labelMedium, color: fm.textSecondary)
+                .padding(.top, FmSpace.x4)
+            AppearanceBackgroundRow(settings: settings)
                 .padding(.top, FmSpace.x2)
         }
     }
@@ -882,7 +886,7 @@ private struct AccentSwatch: View {
                 .fill(color)
                 .overlay {
                     if selected {
-                        FmIcon("check_rounded", size: 20, color: Color.white)
+                        FmIcon("check_rounded", size: 20, color: fm.onPrimary)
                     }
                 }
                 .padding(3)
@@ -895,7 +899,10 @@ private struct AccentSwatch: View {
                     .bodySmall,
                     color: selected ? fm.textPrimary : fm.textSecondary,
                     weight: selected ? FmType.emphasis : FmType.regular)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
             if selected {

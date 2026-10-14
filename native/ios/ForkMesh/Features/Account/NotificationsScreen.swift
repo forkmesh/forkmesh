@@ -36,7 +36,7 @@ struct NotificationsScreen: View {
                 FmEmptyState(icon: notificationLineIcon, title: NotificationsCopy.loadErrorTitle)
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
     }
 

@@ -20,7 +20,7 @@ struct WaterScreen: View {
         content
             .navigationTitle(WaterModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
     }
 
     @ViewBuilder private var content: some View {

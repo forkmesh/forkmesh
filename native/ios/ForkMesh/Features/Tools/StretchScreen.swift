@@ -22,7 +22,7 @@ struct StretchScreen: View {
         content
             .navigationTitle(StretchModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
     }
 
     @ViewBuilder private var content: some View {

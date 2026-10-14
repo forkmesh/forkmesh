@@ -105,7 +105,7 @@ private struct ChatScreenBody: View {
                     hub: hub, onSelected: nil, onRoute: { pushed = $0 }, onCompose: { composing = true },
                     onSearch: { searchRequest = ChatSearchRequest() })
                     .frame(width: 240)
-                fm.bgBase.frame(width: FmSpace.x2)
+                fm.canvas.frame(width: FmSpace.x2)
                 transcript
             }
         } else {
@@ -291,7 +291,7 @@ private struct ChatTranscript<Drawer: View>: View {
                 drawer
             }
         }
-        .background { MessagesBackdrop(look: hub.conversationLook, canvas: fm.bgBase).ignoresSafeArea() }
+        .background { MessagesBackdrop(look: hub.conversationLook, canvas: fm.canvas).ignoresSafeArea() }
     }
 
     private var roomColumn: some View {

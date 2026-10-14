@@ -392,7 +392,7 @@ struct RepoCommitDetailScreen: View {
 
     var body: some View {
         content
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationTitle(model.title)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $openedFile) { (route: DiffFileRoute) in
