@@ -574,6 +574,11 @@ voice filter would need an `AVAudioEngine` recorder first.
 Limits: the sender cannot withdraw from the UI yet (`withdrawViewOnce` exists in the core).
 Desktop and web clients that do not know `viewOnce` show only the fallback text.
 
+Verified: ForkMeshCore tests on Linux (`swift test`, the new suite and the whole package). The
+app target was compiled on the office Mac (Xcode 26.6, Debug, iOS Simulator x86_64, no signing,
+in a scratch folder) with no errors or warnings in the new files. Nothing was run on a device:
+capture, playback and the screen-capture notices are untested on hardware.
+
 ## Views (ForkMesh/Features/Chat)
 
 `ChatScreen(showComposer:)`, `RelaySettingsSection()`, `RelayNetworksScreen()`,
