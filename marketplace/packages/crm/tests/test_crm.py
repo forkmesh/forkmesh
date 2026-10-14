@@ -2800,3 +2800,172 @@ def test_every_tracked_email_rings_a_celebration_on_the_senders_devices():
 
 async def _refused():
     return {"accepted": False, "messageId": "", "error": "rejected"}
+
+
+class MastodonRuntime(Runtime):
+    def __init__(self, statuses=(), single=None, status=200):
+        super().__init__()
+        self.statuses = list(statuses)
+        self.single = single or {}
+        self.mastodon_status = status
+
+    async def outbound_json(self, url, method="GET", headers=None, body=""):
+        self.outbound_calls.append((url, method, dict(headers or {}), body))
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        if parsed.path == "/api/v1/accounts/lookup":
+            return {"ok": True, "status": 200, "data": {"id": "42"}}
+        if parsed.path == "/api/v1/accounts/42/statuses":
+            if self.mastodon_status != 200:
+                return {"ok": True, "status": self.mastodon_status, "data": {}}
+            items = sorted(self.statuses, key=lambda item: -int(item["id"]))
+            if "min_id" in query:
+                items = [item for item in items if int(item["id"]) > int(query["min_id"][0])]
+            if "max_id" in query:
+                items = [item for item in items if int(item["id"]) < int(query["max_id"][0])]
+            return {"ok": True, "status": 200, "data": items[:int(query["limit"][0])]}
+        if parsed.path.startswith("/api/v1/statuses/"):
+            found = self.single.get(parsed.path.rsplit("/", 1)[1])
+            return ({"ok": True, "status": 200, "data": found} if found
+                    else {"ok": True, "status": 404, "data": {"error": "Not Found"}})
+        return {"ok": False, "status": 404, "error": "unexpected_test_url"}
+
+
+def _toot(status_id, *mentions, visibility="direct"):
+    return {
+        "id": str(status_id), "created_at": "2026-10-14T21:57:27.736Z",
+        "visibility": visibility, "spoiler_text": "",
+        "url": f"https://mastodon.social/@forkmesh/{status_id}",
+        "content": "<p><span class=\"h-card\">@mmasnick</span> Hi &amp; hello</p><p>Second</p>",
+        "account": {"acct": "forkmesh"},
+        "mentions": [{"acct": acct, "url": ""} for acct in mentions],
+    }
+
+
+def _connect_mastodon(runtime):
+    saved = call(runtime.use("PUT", body={"mastodon": {
+        "account": "@forkmesh@mastodon.social", "token": "secret-token"}}),
+        "/api/crm/acme/settings")
+    assert saved["status"] == 200
+    return saved["data"]["settings"]["mastodon"]
+
+
+def test_mastodon_settings_keep_the_token_server_side_and_check_the_instance():
+    runtime = MastodonRuntime()
+    assert call(runtime.use("GET"), "/api/crm/acme/settings")["data"]["settings"][
+        "mastodon"] == {"account": "", "connected": False, "lastSyncAt": 0, "lastError": ""}
+    assert _connect_mastodon(runtime) == {
+        "account": "forkmesh@mastodon.social", "connected": True,
+        "lastSyncAt": 0, "lastError": ""}
+    assert "secret-token" not in json.dumps(
+        call(runtime.use("GET"), "/api/crm/acme")["data"])
+    bad = call(runtime.use("PUT", body={"mastodon": {"account": "@me@example.org"}}),
+               "/api/crm/acme/settings")
+    assert (bad["status"], bad["data"]["error"]) == (400, "invalid_mastodon_account")
+    member = call(runtime.use("PUT", actor="charlie", body={"mastodon": {
+        "account": "@x@mastodon.social", "token": "t"}}), "/api/crm/acme/settings")
+    assert member["status"] == 403
+    gone = call(runtime.use("PUT", body={"mastodonDisconnect": True}),
+                "/api/crm/acme/settings")
+    assert gone["data"]["settings"]["mastodon"]["connected"] is False
+
+
+def test_toot_sync_logs_sent_toots_that_mention_known_contacts():
+    runtime = MastodonRuntime([
+        _toot(117441498168443197, "mmasnick@mastodon.social"),
+        _toot(117441498168443100, "stranger@hachyderm.io"),
+        _toot(117441498168443300, "mmasnick@mastodon.social", "ada@hachyderm.io",
+              visibility="public"),
+    ])
+    assert call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")[
+        "data"]["error"] == "mastodon_not_connected"
+    _connect_mastodon(runtime)
+    mike = call(runtime.use("POST", body={
+        "name": "Mike Masnick", "mastodon": "@mmasnick@mastodon.social"}),
+        "/api/crm/acme/contacts")["data"]["contact"]
+    ada = call(runtime.use("POST", body={
+        "name": "Ada", "website": "https://hachyderm.io/@ada"}),
+        "/api/crm/acme/contacts")["data"]["contact"]
+
+    synced = call(runtime.use("POST", actor="charlie", body={"auto": True}),
+                  "/api/crm/acme/emails/toots")
+    assert synced["status"] == 200
+    assert (synced["data"]["checked"], synced["data"]["logged"]) == (3, 3)
+    assert synced["data"]["contacts"] == [mike["id"], ada["id"]]
+    statuses_call = next(item for item in runtime.outbound_calls
+                         if "/statuses?" in item[0])
+    assert statuses_call[2]["authorization"] == "Bearer secret-token"
+    rows = call(runtime.use("GET"), "/api/crm/acme/emails")["data"]["emails"]
+    toots = {row["externalId"]: row for row in rows}
+    assert set(toots) == {"117441498168443197", "117441498168443300",
+                          "117441498168443300/ada@hachyderm.io"}
+    first = toots["117441498168443197"]
+    assert (first["provider"], first["direction"], first["contactId"]) == (
+        "mastodon", "outbound", mike["id"])
+    assert first["providerUrl"] == "https://mastodon.social/@forkmesh/117441498168443197"
+    assert first["subject"] == "@mmasnick Hi & hello Second"
+    assert toots["117441498168443300/ada@hachyderm.io"]["contactId"] == ada["id"]
+    contact = call(runtime.use("GET"), f"/api/crm/acme/contacts/{mike['id']}")["data"]["contact"]
+    assert contact["lastContactedAt"] == 1792015047736
+    assert not runtime.pings
+
+    again = call(runtime.use("POST", body={"auto": True}), "/api/crm/acme/emails/toots")
+    assert again["data"]["skipped"] is True
+    runtime.statuses.append(_toot(117441498168443400, "mmasnick@mastodon.social"))
+    runtime.outbound_calls.clear()
+    now = call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")
+    assert (now["data"]["checked"], now["data"]["logged"]) == (1, 1)
+    assert "min_id=117441498168443300" in next(
+        item[0] for item in runtime.outbound_calls if "/statuses?" in item[0])
+
+
+def test_toot_sync_reports_a_rejected_token():
+    runtime = MastodonRuntime(status=401)
+    _connect_mastodon(runtime)
+    failed = call(runtime.use("POST", body={}), "/api/crm/acme/emails/toots")
+    assert (failed["status"], failed["data"]["error"]) == (502, "mastodon_token_rejected")
+    assert call(runtime.use("GET"), "/api/crm/acme/settings")["data"]["settings"][
+        "mastodon"]["lastError"] == "mastodon_token_rejected"
+
+
+def test_a_toot_is_logged_by_its_link():
+    runtime = MastodonRuntime(single={
+        "117441498168443300": _toot(117441498168443300, "mmasnick@mastodon.social")})
+    mike = call(runtime.use("POST", body={
+        "name": "Mike Masnick", "mastodon": "@mmasnick@mastodon.social"}),
+        "/api/crm/acme/contacts")["data"]["contact"]
+    url = "https://mastodon.social/@forkmesh/117441498168443197"
+    logged = call(runtime.use("POST", body={"url": url, "contactId": mike["id"]}),
+                  "/api/crm/acme/emails/toot")
+    assert logged["status"] == 201
+    email = logged["data"]["email"]
+    assert (email["provider"], email["direction"], email["externalId"]) == (
+        "mastodon", "outbound", "117441498168443197")
+    assert email["providerUrl"] == url
+    assert logged["data"]["fetched"] is False
+    assert logged["data"]["contact"]["lastContactedAt"] == 1792015047736
+    assert call(runtime.use("POST", body={"url": url, "contactId": mike["id"]}),
+                "/api/crm/acme/emails/toot")["status"] == 200
+
+    found = call(runtime.use("POST", body={
+        "url": "https://mastodon.social/@forkmesh/117441498168443300"}),
+        "/api/crm/acme/emails/toot")
+    assert found["status"] == 201 and found["data"]["fetched"] is True
+    assert found["data"]["contact"]["id"] == mike["id"]
+    assert found["data"]["email"]["subject"] == "@mmasnick Hi & hello Second"
+
+    reply = call(runtime.use("POST", body={
+        "url": "https://mastodon.social/@mmasnick/117441498168449999",
+        "contactId": mike["id"]}), "/api/crm/acme/emails/toot")
+    assert reply["data"]["email"]["direction"] == "inbound"
+    assert call(runtime.use("POST", body={"url": "https://example.com/x"}),
+                "/api/crm/acme/emails/toot")["data"]["error"] == "invalid_toot_url"
+    assert call(runtime.use("POST", body={
+        "url": "https://mastodon.social/@forkmesh/117441498168440000"}),
+        "/api/crm/acme/emails/toot")["data"]["error"] == "toot_contact_not_found"
+
+
+def test_crm_mastodon_hosts_match_the_manifest_origins():
+    manifest = json.loads((CRM_PACKAGE / "manifest.json").read_text())
+    origins = set(manifest["worker"]["outboundOrigins"])
+    assert {"https://" + host for host in crm.MASTODON_HOSTS} <= origins

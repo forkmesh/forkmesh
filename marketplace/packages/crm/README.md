@@ -192,6 +192,35 @@ center (`https://<data center>/zm/comp.do?ct=mailto:<address>`) or Gmail.
   contact's last-contacted date. A newly tracked email files a
   `plugin_activity` ping with `meta.celebrate = "crm-email-tracked"`; clients
   celebrate a fresh (under five minutes), unread ping once per device.
+- **Mastodon toots** are linked messages with `provider: "mastodon"` and show
+  in the **Linked toots** column. Three ways in:
+  - *Automatically*: an owner or admin saves the organization's Mastodon
+    account and an access token with `read:statuses` under Settings →
+    Mastodon toots (`PUT /settings {"mastodon": {"account", "token"}}`; the
+    token is sealed and never returned, `{"mastodonDisconnect": true}` drops
+    it). `POST /emails/toots` reads the account's own statuses, private
+    mentions included (the public API answers 404 for those, so a token is
+    the only way to see them), newer than the last one read (`sinceId`; the
+    first check reads the newest 200), and links every status that mentions a
+    known contact as an outbound toot. It matches handles the way linking does
+    (`_contact_handles`) and never creates contacts. A status naming several
+    contacts gets one row per contact (`<id>/<handle>` after the first), and a
+    status already linked is left alone. Web and desktop call it with
+    `{"auto": true}` after the CRM loads; the worker skips a check within ten
+    minutes of the last. There is no package cron, so toots are found the next
+    time someone opens the CRM. **Check toots now** skips the ten-minute wait.
+    The instance must be one of `MASTODON_HOSTS`, which match the manifest's
+    `outboundOrigins`.
+  - *By hand*: **Log toot** on a contact card asks for the toot's link and
+    calls `POST /emails/toot {"url", "contactId"}`. The worker reads the
+    status when it can (with the token on the organization's own instance)
+    for its text and mentions. If it can't, the link alone is enough: a
+    Mastodon status id carries its timestamp (`id >> 16` is Unix
+    milliseconds), so the date is still right. Without `contactId`, the
+    toot's mentions pick the contacts. A toot written by the contact is
+    logged as inbound.
+  - *From the browser extension*: on the toot's page, the CRM header's FM
+    panel links it (`POST /emails/link`), as for any Mastodon conversation.
 - **Unsent drafts**: a note paragraph starting `DRAFT, not sent.` (optional
   `Subject:` line). **Drafts (N)** lists them; sending or confirming a
   Mastodon reply rewrites the marker to `DRAFT, sent <date> by <name>.`.

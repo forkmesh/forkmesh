@@ -538,6 +538,9 @@ private:
     void syncZohoMail();
     void connectZohoMail();
     void exchangeZohoCode(const QJsonObject &body);
+    void logToot(const QString &contactId);
+    void syncToots(bool automatic,
+                   std::function<void(const QJsonObject &)> done = {});
     void showZohoGuide();
     QList<NoteDraft> noteDrafts() const;
     void syncNoteDrafts();
@@ -739,6 +742,7 @@ private:
     bool m_canManageSettings = false;
     bool m_installed = false;
     bool m_loading = false;
+    bool m_tootSyncRunning = false;
     bool m_rendering = false;
     // The summary revision last applied; a re-read sends it so an unchanged
     // organization comes back as a few bytes instead of every row.
