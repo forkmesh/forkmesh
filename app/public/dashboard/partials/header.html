@@ -20,13 +20,13 @@
             <span data-dashboard-header-context class="min-w-0 truncate"></span>
           </h1>
           <div data-repo-header-meta class="hidden shrink-0 items-center gap-1.5">
-            <span data-repo-header-visibility class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] font-normal text-muted-foreground"></span>
+            <span data-repo-header-visibility class="fm-label"></span>
             <span data-repo-header-terms></span>
-            <span data-repo-availability-status class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] font-normal text-muted-foreground"></span>
+            <span data-repo-availability-status class="inline-flex h-5 items-center rounded-full border border-border px-2 text-xs font-medium text-muted-foreground"></span>
           </div>
         </div>
 
-        <div data-global-search-shell class="relative ml-auto hidden h-9 w-full max-w-sm min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-ring focus-within:text-foreground lg:flex">
+        <div data-global-search-shell class="relative ml-auto hidden h-9 w-full max-w-sm min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-accent focus-within:text-foreground lg:flex">
           <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
           <input
             data-global-search
@@ -60,12 +60,12 @@
             data-global-search-panel
             id="globalSearchResults"
             role="listbox"
-            class="hidden absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl shadow-background/50"
+            class="fm-popover hidden absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden"
           >
-            <div data-global-search-results class="max-h-96 overflow-y-auto py-1"></div>
+            <div data-global-search-results class="max-h-96 overflow-y-auto p-1"></div>
             <div
               data-global-search-page-filter
-              class="hidden items-center gap-1.5 border-t border-border bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground"
+              class="hidden items-center gap-1.5 border-t border-border px-3 py-2 text-xs text-muted-foreground"
             ></div>
           </div>
         </div>
@@ -75,9 +75,9 @@
             data-runner-attention
             href="/dashboard/runners"
             data-state="expired"
-            class="hidden h-9 max-w-[16rem] items-center gap-1.5 rounded-md border border-border bg-red-500/10 px-2.5 text-xs font-semibold text-red-500 hover:opacity-90 transition-opacity"
+            class="fm-label fm-label-lg hidden max-w-[16rem]"
           >
-            <i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0"></i>
+            <i data-lucide="triangle-alert" aria-hidden="true"></i>
             <span data-runner-attention-text class="min-w-0 truncate"></span>
           </a>
           <button
@@ -123,41 +123,34 @@
             </button>
             <div
               id="notificationDropdown"
-              class="hidden fixed inset-x-3 top-16 z-50 overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80"
+              class="fm-popover hidden fixed inset-x-3 top-16 z-50 overflow-hidden sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80"
             >
-              <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-                <span class="text-xs font-medium text-foreground">Pings</span>
-                <span data-notification-count class="text-[10px] text-muted-foreground font-mono">0 new</span>
+              <div class="fm-popover-header">
+                <span class="fm-popover-title">Pings</span>
+                <span data-notification-count class="text-xs text-muted-foreground">0 new</span>
               </div>
-              <div data-notification-preview-list class="py-1"></div>
-              <div data-ping-pause-form class="border-t border-border p-2">
-                <div class="flex items-center justify-between gap-2 px-1 pb-1">
+              <div data-notification-preview-list class="p-1"></div>
+              <div data-ping-pause-form class="fm-popover-footer">
+                <div class="flex min-h-menu-row items-center justify-between gap-2 px-2">
                   <span data-ping-pause-state class="truncate text-xs text-muted-foreground">Notifications are on</span>
-                  <button data-ping-pause-resume type="button" hidden class="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-accent hover:bg-secondary transition-colors">
-                    Resume
-                  </button>
+                  <button data-ping-pause-resume type="button" hidden class="fm-btn fm-btn-sm fm-btn-invisible shrink-0">Resume</button>
                 </div>
-                <div data-ping-pause-menu hidden class="grid gap-1 pb-1">
-                  <button data-ping-pause-preset="3600000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">For 1 hour</button>
-                  <button data-ping-pause-preset="86400000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">For 1 day</button>
-                  <button data-ping-pause-preset="604800000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">Until next week</button>
-                  <div class="flex items-center gap-1 px-1 pt-1">
-                    <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
-                    <button data-ping-pause-custom-apply type="button" class="h-8 shrink-0 rounded-md border border-border bg-secondary px-2 text-xs font-semibold text-foreground hover:bg-muted transition-colors">Set</button>
+                <div data-ping-pause-menu hidden class="grid pb-1">
+                  <button data-ping-pause-preset="3600000" type="button" class="fm-menu-item">For 1 hour</button>
+                  <button data-ping-pause-preset="86400000" type="button" class="fm-menu-item">For 1 day</button>
+                  <button data-ping-pause-preset="604800000" type="button" class="fm-menu-item">Until next week</button>
+                  <div class="flex items-center gap-2 px-2 pt-1">
+                    <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-control-sm min-w-0 flex-1 rounded-control border border-border bg-background px-2 text-xs text-foreground outline-none" />
+                    <button data-ping-pause-custom-apply type="button" class="fm-btn fm-btn-sm shrink-0">Set</button>
                   </div>
                 </div>
-                <button data-ping-pause-toggle type="button" class="w-full rounded-md px-3 py-2 text-center text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-                  Pause notifications
-                </button>
-                <div class="flex items-center gap-1">
-                  <button data-show-all-notifications type="button" class="min-w-0 flex-1 rounded-md px-3 py-2 text-center text-xs font-medium text-accent hover:bg-secondary transition-colors">
-                    Show all pings
-                  </button>
-                  <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-                    <i data-lucide="settings" class="h-3.5 w-3.5"></i>
-                    Ping settings
-                  </a>
-                </div>
+                <button data-ping-pause-toggle type="button" class="fm-menu-item">Pause notifications</button>
+                <div class="fm-menu-divider"></div>
+                <button data-show-all-notifications type="button" class="fm-menu-item">Show all pings</button>
+                <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="fm-menu-item">
+                  <i data-lucide="settings" aria-hidden="true"></i>
+                  Ping settings
+                </a>
               </div>
             </div>
           </div>
@@ -174,60 +167,62 @@
             </button>
             <div
               id="agentModal"
-              class="hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain rounded-lg border border-border bg-card shadow-2xl shadow-background/40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]"
+              class="fm-popover hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]"
               role="dialog"
               aria-labelledby="agentModalTitle"
             >
-              <div class="flex items-center justify-between border-b border-border px-4 py-3">
-                <div class="min-w-0">
-                  <h2 id="agentModalTitle" class="flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="bot" class="h-4 w-4 text-muted-foreground"></i>Start an agent</h2>
-                  <p class="mt-0.5 text-xs text-muted-foreground">Run on an agent-capable node owned by your account.</p>
+              <div class="fm-popover-header">
+                <div class="min-w-0 py-1">
+                  <h2 id="agentModalTitle" class="fm-popover-title">Start an agent</h2>
+                  <p class="text-xs text-muted-foreground">Run on an agent-capable node owned by your account.</p>
                 </div>
-                <button data-agent-modal-close type="button" aria-label="Close agent composer" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-                  <i data-lucide="x" class="h-4 w-4"></i>
+                <button data-agent-modal-close type="button" aria-label="Close agent composer" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
+                  <i data-lucide="x" aria-hidden="true"></i>
                 </button>
               </div>
-              <form data-repo-agent-new-form class="grid gap-3 p-4 text-xs">
+              <form data-repo-agent-new-form class="grid gap-3 p-3 text-xs">
                 <label class="grid gap-1.5 font-medium text-foreground">Repository
-                  <select data-agent-modal-repo name="repository" required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select>
+                  <select data-agent-modal-repo name="repository" required class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground"></select>
                 </label>
                 <label class="grid gap-1.5 font-medium text-foreground">Run on
-                  <select data-agent-modal-target name="targetNode" required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"><option value="">Choose an owned node…</option></select>
+                  <select data-agent-modal-target name="targetNode" required class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground"><option value="">Choose an owned node…</option></select>
                 </label>
                 <label class="grid gap-1.5 font-medium text-foreground">Agent and model
-                  <select data-repo-agent-new-agent-model required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select>
+                  <select data-repo-agent-new-agent-model required class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground"></select>
                 </label>
                 <input data-repo-agent-new-provider name="provider" type="hidden" value="claude-code" />
                 <input data-repo-agent-new-model name="model" type="hidden" value="" />
                 <div data-agent-modal-login class="hidden flex-col gap-1.5">
-                  <button data-agent-modal-login-start type="button" class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border px-3 font-medium text-foreground hover:bg-secondary">
-                    <i data-lucide="key" class="h-4 w-4"></i>
+                  <button data-agent-modal-login-start type="button" class="fm-btn fm-btn-sm">
+                    <i data-lucide="key" aria-hidden="true"></i>
                     <span data-agent-modal-login-label>Sign in to agent</span>
                   </button>
-                  <a data-agent-modal-login-desktop href="#" class="text-[11px] leading-4 text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground">Or hand this off to the ForkMesh desktop app</a>
+                  <a data-agent-modal-login-desktop href="#" class="text-xs text-accent hover:underline">Or hand this off to the ForkMesh desktop app</a>
                 </div>
                 <label class="grid gap-1.5 font-medium text-foreground">Task
-                  <textarea data-repo-agent-new-input name="prompt" required maxlength="8000" rows="5" class="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs leading-5 text-foreground" placeholder="Describe the change you want the agent to make…"></textarea>
+                  <textarea data-repo-agent-new-input name="prompt" required maxlength="8000" rows="5" class="w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-5 text-foreground" placeholder="Describe the change you want the agent to make…"></textarea>
                 </label>
                 <input data-repo-agent-new-file-input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="hidden" />
                 <div class="flex flex-wrap items-center gap-2">
-                  <button data-repo-agent-new-attach type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 font-medium text-foreground hover:bg-secondary">
-                    <i data-lucide="image-plus" class="h-3.5 w-3.5"></i>
+                  <button data-repo-agent-new-attach type="button" class="fm-btn fm-btn-sm">
+                    <i data-lucide="image-plus" aria-hidden="true"></i>
                     Attach images
                   </button>
-                  <span class="text-[11px] text-muted-foreground">or paste a screenshot into the task</span>
+                  <span class="text-xs text-muted-foreground">or paste a screenshot into the task</span>
                 </div>
                 <div data-repo-agent-new-attachments class="hidden"></div>
                 <label class="flex items-center gap-2 text-foreground">
-                  <input name="createPr" type="checkbox" class="h-4 w-4 rounded border-input" />
+                  <input name="createPr" type="checkbox" class="h-4 w-4 rounded border-border" />
                   Create a pull request when the run finishes
                 </label>
-                <p class="text-[11px] leading-4 text-muted-foreground">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>
-                <p data-repo-agent-new-hint class="text-[11px] leading-4 text-muted-foreground">The request is saved durably and starts when the selected node claims it.</p>
-                <button type="submit" class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 font-semibold text-primary-foreground hover:bg-primary/90">
-                  <i data-lucide="play" class="h-4 w-4"></i>
-                  Start agent
-                </button>
+                <p class="text-xs leading-5 text-muted-foreground">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>
+                <p data-repo-agent-new-hint class="text-xs leading-5 text-muted-foreground">The request is saved durably and starts when the selected node claims it.</p>
+                <div class="flex justify-end border-t border-border pt-3">
+                  <button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">
+                    <i data-lucide="play" aria-hidden="true"></i>
+                    Start agent
+                  </button>
+                </div>
               </form>
             </div>
           </div>
@@ -235,13 +230,13 @@
           <a
             data-guest-auth-link
             href="/signup"
-            class="hidden ml-0.5 items-center whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+            class="fm-btn fm-btn-sm fm-btn-cta hidden ml-0.5"
           >Sign Up / Log In</a>
 
           <a
             data-admin-button
             href="#"
-            class="hidden ml-0.5 h-9 w-9 inline-flex items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors"
+            class="hidden ml-0.5 h-9 w-9 inline-flex items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
             title="Admin panel"
             aria-label="Admin panel"
           >
@@ -253,9 +248,9 @@
             href="/dashboard/settings/nodes?from=reconnect"
             aria-label="Reconnect a node to this account"
             title="No node is connected to drain this account — link one to sync issues, chats and more"
-            class="hidden ml-0.5 inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-600 hover:bg-amber-500/20 transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500/30 dark:text-amber-400"
+            class="fm-label fm-label-lg hidden ml-0.5"
           >
-            <i data-lucide="plug-zap" class="h-3.5 w-3.5"></i>
+            <i data-lucide="plug-zap" aria-hidden="true"></i>
             <span>Reconnect node</span>
           </a>
 
@@ -293,17 +288,19 @@
             </button>
             <div
               id="accountMenuDropdown"
-              class="hidden absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-2xl shadow-background/40"
+              class="fm-popover fm-menu hidden absolute right-0 top-full z-50 mt-2 w-56"
             >
-              <a href="/dashboard/profile" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Your profile</a>
-              <a data-account-menu-public-profile href="/dashboard/profile" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Public profile</a>
-              <a data-forkmesh-membership href="https://forkmesh.com/#membership" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Membership</a>
-              <a href="/dashboard/settings" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Settings</a>
-              <button data-account-menu-status type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Set a status…</button>
-              <button data-account-menu-away type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Set yourself away</button>
-              <button data-feedback-open type="button" class="block w-full border-t border-border px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Send feedback</button>
-              <button data-account-menu-logout type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-red-400 hover:bg-secondary transition-colors">Log out</button>
-              <button data-account-menu-logout-all type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-red-400 hover:bg-secondary transition-colors">Log out all devices</button>
+              <a href="/dashboard/profile" class="fm-menu-item">Your profile</a>
+              <a data-account-menu-public-profile href="/dashboard/profile" class="fm-menu-item">Public profile</a>
+              <a data-forkmesh-membership href="https://forkmesh.com/#membership" class="fm-menu-item">Membership</a>
+              <a href="/dashboard/settings" class="fm-menu-item">Settings</a>
+              <div class="fm-menu-divider" role="separator"></div>
+              <button data-account-menu-status type="button" class="fm-menu-item">Set a status…</button>
+              <button data-account-menu-away type="button" class="fm-menu-item">Set yourself away</button>
+              <button data-feedback-open type="button" class="fm-menu-item">Send feedback</button>
+              <div class="fm-menu-divider" role="separator"></div>
+              <button data-account-menu-logout type="button" class="fm-menu-item fm-menu-item-danger">Log out</button>
+              <button data-account-menu-logout-all type="button" class="fm-menu-item fm-menu-item-danger">Log out all devices</button>
             </div>
           </div>
         </div>
@@ -312,20 +309,14 @@
       <div
         data-email-verification-banner
         role="status"
-        class="hidden shrink-0 flex-col gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200 sm:flex-row sm:items-center sm:justify-between"
+        class="fm-flash fm-flash-warning fm-flash-full hidden"
       >
-        <div class="flex min-w-0 items-start gap-2 sm:items-center">
-          <i data-lucide="mail-warning" class="mt-0.5 h-4 w-4 shrink-0"></i>
-          <p class="min-w-0">
-            <span data-email-verification-message class="font-medium">Your email is not verified yet.</span>
-            <span data-email-verification-hint class="text-amber-300"></span>
-          </p>
+        <i data-lucide="mail-warning" aria-hidden="true"></i>
+        <div class="fm-flash-body">
+          <strong data-email-verification-message class="fm-flash-title">Your email is not verified yet.</strong>
+          <p data-email-verification-hint></p>
         </div>
-        <button
-          data-email-verification-resend
-          type="button"
-          class="shrink-0 self-start rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/20 transition-colors"
-        >
-          Resend verification email
-        </button>
+        <div class="fm-flash-actions">
+          <button data-email-verification-resend type="button" class="fm-btn fm-btn-sm">Resend verification email</button>
+        </div>
       </div>
