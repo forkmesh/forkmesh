@@ -144,6 +144,7 @@ public enum Route: Codable, Hashable, Sendable {
     // People and search (WS18, WS8)
     case profile(name: String)
     case people
+    case docs
     case search(query: String, scope: SearchScope)
     // Planning (WS15)
     case notes
@@ -249,6 +250,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .discord: return .discord
         case .profile: return .profile
         case .people: return .people
+        case .docs: return .docs
         case .search: return .search
         case .notes: return .notes
         case .note: return .note
@@ -310,7 +312,7 @@ public enum Route: Codable, Hashable, Sendable {
         case issue, newIssue, board, pull, review, discussion, run, release, project, milestones
         case repoSettings, localRepos, localRepo, quickEdit
         case chat, channel, thread, dm, discord
-        case profile, people, search
+        case profile, people, docs, search
         case notes, note, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, ads, ledger
@@ -335,7 +337,7 @@ public enum Route: Codable, Hashable, Sendable {
             case .project, .milestones, .notes, .note, .tasks, .task, .calendar, .event, .timers: return "WS15"
             case .localRepos, .localRepo, .quickEdit: return "WS5"
             case .chat, .channel, .thread, .dm, .discord: return "WS13"
-            case .profile, .people, .settings: return "WS18"
+            case .profile, .people, .docs, .settings: return "WS18"
             case .search, .tour, .updateRequired, .launchedAgent: return "WS8"
             case .desktops, .desktop, .provision, .node: return "WS16"
             case .network, .stats, .status, .admin, .activity: return "WS20"

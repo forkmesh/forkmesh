@@ -33,6 +33,10 @@ final class NavigationCatalogTests: XCTestCase {
             groups.last?.items.first { $0.action == .workflows }?.id, "workflows",
             "the App group opens Workflows on the web")
         XCTAssertEqual(HubItem.workflowsPath, "/dashboard/workflows")
+        let app = groups.last?.items.map(\.id) ?? []
+        XCTAssertEqual(app.firstIndex(of: "docs"), app.firstIndex(of: "people").map { $0 + 1 }, "Docs sits next to People")
+        XCTAssertEqual(RouteCatalog.title(.docs), "Docs")
+        XCTAssertEqual(PackageGate.packageId(for: Route.docs), "docs")
 
         XCTAssertFalse(
             HubCatalog.groups(guest: false) { _ in true }.flatMap(\.items).contains { $0.route == .admin(section: nil) },

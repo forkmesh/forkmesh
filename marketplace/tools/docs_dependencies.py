@@ -459,6 +459,9 @@ def main(argv: list[str] | None = None) -> int:
     snapshot, stopped = build(REPOSITORY_ROOT, previous, client, refresh=args.refresh, max_age=args.max_age,
                               checkpoint=lambda partial: write_snapshot(args.output, partial))
     write_snapshot(args.output, snapshot)
+    if args.output.resolve() == SNAPSHOT.resolve():
+        import docs_mobile_bundle
+        docs_mobile_bundle.write()
     total = len(snapshot["dependencies"])
     with_authors = sum(1 for entry in snapshot["dependencies"] if entry["authors"])
     print(f"{total} dependencies, {with_authors} with authors, {client.calls if client else 0} GitHub calls")

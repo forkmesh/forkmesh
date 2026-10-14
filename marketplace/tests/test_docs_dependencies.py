@@ -199,3 +199,27 @@ def test_snapshot_matches_the_repository_manifests():
         for author in entry["authors"]:
             assert author["projects"] == f"https://github.com/{author['login']}?tab=repositories"
             assert author["name"]
+
+
+import docs_mobile_bundle  # noqa: E402
+
+
+def test_mobile_bundle_matches_the_public_library_and_the_snapshot():
+    assert docs_mobile_bundle.BUNDLE.read_text(encoding="utf-8") == docs_mobile_bundle.render(
+        docs_mobile_bundle.bundle()
+    ), "run python3 marketplace/tools/docs_mobile_bundle.py to refresh the phones' Docs bundle"
+
+
+def test_mobile_bundle_holds_only_the_public_www_docs_library():
+    payload = json.loads(docs_mobile_bundle.BUNDLE.read_text(encoding="utf-8"))
+    assert payload["schema"] == docs_mobile_bundle.SCHEMA
+    docs = docs_mobile_bundle.DOCS_ROOT
+    expected = sorted(
+        path.relative_to(docs).as_posix() for path in docs.rglob("*") if path.suffix in {".md", ".json"}
+    )
+    assert sorted(page["path"] for page in payload["pages"]) == expected
+    assert all(page["url"].startswith("https://forkmesh.com/docs/") for page in payload["pages"])
+    assert payload["pages"][0]["path"] == "README.md"
+    assert [area["key"] for area in payload["areas"]][-1] == "dependencies"
+    snapshot = json.loads(docs_dependencies.SNAPSHOT.read_text(encoding="utf-8"))
+    assert payload["dependencies"] == snapshot["dependencies"]

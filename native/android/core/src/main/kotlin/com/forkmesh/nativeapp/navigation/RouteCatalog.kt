@@ -114,6 +114,7 @@ object RouteCatalog {
         Route.Kind.Discord -> "Discord"
         Route.Kind.Profile -> "Profile"
         Route.Kind.People -> "People"
+        Route.Kind.Docs -> "Docs"
         Route.Kind.Search -> "Search"
         Route.Kind.Notes -> "Notes"
         Route.Kind.Note -> "Note"
@@ -186,6 +187,7 @@ object RouteCatalog {
         Route.Kind.Discord -> "sports_esports"
         Route.Kind.Profile -> "account_circle"
         Route.Kind.People -> "groups"
+        Route.Kind.Docs -> "library_books"
         Route.Kind.Search -> "search"
         Route.Kind.Notes, Route.Kind.Note -> "sticky_note_2"
         Route.Kind.Tasks, Route.Kind.Task -> "task_alt"
@@ -316,6 +318,7 @@ object HubCatalog {
         add(HubItem.destination(Route.Settings(null)))
         add(HubItem.destination(Route.Orgs))
         add(HubItem.destination(Route.People))
+        add(HubItem.destination(Route.Docs))
         add(HubItem.destination(Route.Projects))
         add(HubItem("setStatus", "Set status", "emoji_emotions", HubItem.Action.SetStatus))
         add(HubItem("reportBug", "Report a bug", "bug_report", HubItem.Action.ReportBug))

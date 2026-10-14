@@ -137,6 +137,7 @@ final class RouteParserTests: XCTestCase {
         XCTAssertEqual(web("/dashboard/speech"), [.speech])
         XCTAssertEqual(web("/dashboard/glasses-alert"), [.glassesAlert])
         XCTAssertEqual(web("/dashboard/people"), [.people])
+        XCTAssertEqual(web("/dashboard/docs"), [.docs])
         XCTAssertEqual(web("/dashboard/calories"), [.calories])
         XCTAssertEqual(web("/dashboard/notes/n1"), [.notes, .note(id: "n1")])
         XCTAssertEqual(web("/dashboard/tasks"), [.tasks(filter: nil)])
