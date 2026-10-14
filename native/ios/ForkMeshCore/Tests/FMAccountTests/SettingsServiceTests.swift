@@ -285,6 +285,32 @@ final class SettingsServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testANewProjectChoosesItsStarterPackOnce() async {
+        let prefs = InMemoryKeyValueStore()
+        let settings = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
+        XCTAssertNil(settings.starterPack)
+        XCTAssertTrue(settings.needsStarterPack)
+        settings.setStarterPack("minimal")
+        XCTAssertEqual(prefs.string(forKey: settings.scope.key(SettingsService.starterPackKey)), "minimal")
+        XCTAssertEqual(settings.starterPack, "minimal")
+        XCTAssertFalse(settings.needsStarterPack)
+        let reopened = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
+        XCTAssertEqual(reopened.starterPack, "minimal")
+        XCTAssertFalse(reopened.needsStarterPack)
+        XCTAssertTrue(reopened.signInOn)
+    }
+
+    @MainActor
+    func testALegacyProjectIsNeverAskedForAStarterPack() async {
+        let prefs = InMemoryKeyValueStore()
+        prefs.set("{}", forKey: "shell/bar-uses")
+        let settings = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
+        XCTAssertTrue(settings.legacyProject)
+        XCTAssertNil(settings.starterPack)
+        XCTAssertFalse(settings.needsStarterPack)
+    }
+
+    @MainActor
     func testEarlierUseMarksTheProjectLegacyAndSignInStartsOn() async {
         let prefs = InMemoryKeyValueStore()
         prefs.set("{\"packages\":[]}", forKey: "packages/account/state")

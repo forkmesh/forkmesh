@@ -134,6 +134,11 @@ final class MarketTests: XCTestCase {
         XCTAssertEqual(PhonePackages.isOn(PhonePackages.signIn, settings: fresh), true)
         PhonePackages.set(PhonePackages.signIn, on: false, settings: fresh)
         XCTAssertEqual(PhonePackages.isOn("sign-in", settings: fresh), false)
+        for pack in StarterPack.allCases {
+            let picked = SettingsService.create(prefs: InMemoryKeyValueStore(), secureStore: InMemorySecureStore())
+            PhonePackages.chooseStarterPack(pack, settings: picked)
+            XCTAssertEqual(PhonePackages.isOn(PhonePackages.signIn, settings: picked), true, pack.rawValue)
+        }
         let used = InMemoryKeyValueStore()
         used.set("{}", forKey: "shell/bar-uses")
         let legacy = SettingsService.create(prefs: used, secureStore: InMemorySecureStore())

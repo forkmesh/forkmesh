@@ -22,11 +22,11 @@ final class PackageGateTests: XCTestCase {
 
     @MainActor func store(
         legacy: Bool, prefs: KeyValueStore = InMemoryKeyValueStore(), transport: FakePackagesTransport? = nil,
-        namespace: @escaping () -> String = { "" }
+        namespace: @escaping () -> String = { "" }, pack: StarterPack = .fallback
     ) -> AccountPackagesStore {
         let store = AccountPackagesStore(
             client: PackagesClient(transport: transport ?? FakePackagesTransport()), prefs: prefs, signedIn: { false },
-            legacyProject: { legacy }, projectNamespace: namespace)
+            legacyProject: { legacy }, projectNamespace: namespace, starterPack: { pack })
         store.adoptCatalog(Self.packages)
         return store
     }
@@ -57,6 +57,87 @@ final class PackageGateTests: XCTestCase {
         }
         XCTAssertTrue(store.isInstalled("some-unknown-plugin"))
         XCTAssertEqual(store.installedGatedPackages, PackageGate.starterPackages)
+    }
+
+    func testStarterPacksHoldTheirPackages() {
+        XCTAssertEqual(StarterPack.allCases, [.minimal, .standard, .everything])
+        XCTAssertEqual(StarterPack.fallback, .standard)
+        XCTAssertEqual(StarterPack.minimal.packages, ["code"])
+        XCTAssertEqual(StarterPack.standard.packages, ["agents", "chat", "inbox", "code", "tour"])
+        XCTAssertEqual(StarterPack.standard.packages, PackageGate.starterPackages)
+        XCTAssertEqual(StarterPack.everything.packages, PackageGate.packages.subtracting(PackageGate.organizationPackages))
+        XCTAssertTrue(StarterPack.everything.packages.isSuperset(of: ["agents", "notes", "vault", "pull-requests", "workflows"]))
+        XCTAssertTrue(StarterPack.everything.packages.isDisjoint(with: PackageGate.organizationPackages))
+        XCTAssertEqual(StarterPack.fromName(nil), .standard)
+        XCTAssertEqual(StarterPack.fromName("bogus"), .standard)
+        XCTAssertEqual(StarterPack.fromName("minimal"), .minimal)
+        XCTAssertEqual(StarterPack.fromName("everything"), .everything)
+        XCTAssertTrue(PackageGate.isStarter("agents"))
+        XCTAssertFalse(PackageGate.isStarter("agents", pack: .minimal))
+        XCTAssertTrue(PackageGate.isStarter("code", pack: .minimal))
+        for pack in StarterPack.allCases {
+            XCTAssertFalse(pack.label.isEmpty)
+            XCTAssertFalse(pack.summary.isEmpty)
+        }
+    }
+
+    @MainActor func testTheMinimalPackStartsANewProjectWithCodeOnly() async {
+        let prefs = InMemoryKeyValueStore()
+        let minimal = store(legacy: false, prefs: prefs, pack: .minimal)
+        XCTAssertEqual(minimal.chosenStarterPack, .minimal)
+        XCTAssertEqual(minimal.installedGatedPackages, ["code"])
+        for id in ["agents", "chat", "inbox", "tour", "notes", "special-agents"] {
+            XCTAssertFalse(minimal.isInstalled(id), id)
+        }
+        Self.choose(prefs, ["agents": true])
+        XCTAssertEqual(store(legacy: false, prefs: prefs, pack: .minimal).installedGatedPackages, ["code", "agents"])
+        Self.choose(prefs, ["agents": true, "code": false])
+        let picked = store(legacy: false, prefs: prefs, pack: .minimal)
+        picked.adoptCatalog(Self.packages + [MarketPackage(json: Self.row("code").objectValue!)!])
+        XCTAssertEqual(picked.installedGatedPackages, ["agents"])
+        XCTAssertTrue(store(legacy: true, pack: .minimal).isInstalled("agents"))
+    }
+
+    @MainActor func testTheEverythingPackStartsANewProjectWithEveryPackage() async {
+        let prefs = InMemoryKeyValueStore()
+        let everything = store(legacy: false, prefs: prefs, pack: .everything)
+        XCTAssertEqual(everything.installedGatedPackages, StarterPack.everything.packages)
+        for id in ["agents", "special-agents", "vault", "workflows", "notes", "pull-requests", "status-page"] {
+            XCTAssertTrue(everything.isInstalled(id), id)
+        }
+        Self.choose(prefs, ["notes": false, "agents": false])
+        let picked = store(legacy: false, prefs: prefs, pack: .everything)
+        XCTAssertFalse(picked.isInstalled("notes"))
+        XCTAssertFalse(picked.isInstalled("special-agents"))
+        XCTAssertTrue(picked.isInstalled("vault"))
+        XCTAssertFalse(store(legacy: true, pack: .everything).isInstalled("vault"))
+    }
+
+    @MainActor func testTheStandardPackIsTheDefault() async {
+        XCTAssertEqual(store(legacy: false).installedGatedPackages, PackageGate.starterPackages)
+        XCTAssertEqual(store(legacy: false, pack: .standard).installedGatedPackages, PackageGate.starterPackages)
+        let unset = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: InMemoryKeyValueStore(), signedIn: { false },
+            legacyProject: { false })
+        XCTAssertEqual(unset.chosenStarterPack, .standard)
+    }
+
+    @MainActor func testThePhoneGateFollowsTheChosenPack() async {
+        let settings = SettingsService.create(prefs: InMemoryKeyValueStore(), secureStore: InMemorySecureStore())
+        XCTAssertEqual(PhonePackages.starterPack(settings: settings), .standard)
+        XCTAssertEqual(
+            PhonePackages.installed(account: nil, settings: settings, organization: []),
+            PackageGate.starterPackages.union(["sign-in"]))
+        PhonePackages.chooseStarterPack(.minimal, settings: settings)
+        XCTAssertEqual(PhonePackages.starterPack(settings: settings), .minimal)
+        XCTAssertEqual(PhonePackages.installed(account: nil, settings: settings, organization: []), ["code", "sign-in"])
+        XCTAssertFalse(PhonePackages.isInstalled("agents", account: nil, settings: settings))
+        XCTAssertTrue(PhonePackages.isInstalled("code", account: nil, settings: settings))
+        XCTAssertTrue(PhonePackages.isInstalled("sign-in", account: nil, settings: settings))
+        PhonePackages.chooseStarterPack(.everything, settings: settings)
+        XCTAssertEqual(
+            PhonePackages.installed(account: nil, settings: settings, organization: []), StarterPack.everything.packages)
+        XCTAssertTrue(PhonePackages.isInstalled("vault", account: nil, settings: settings))
     }
 
     @MainActor func testANewProjectCanRemoveAStarterPackage() async {
