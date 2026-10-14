@@ -30,16 +30,9 @@ struct DesktopQueueMenu: View {
                     Label(queue.waiting == 0 ? "Open queue" : "\(queue.waiting) waiting", systemImage: "list.number")
                 }
             } label: {
-                HStack(spacing: 2) {
-                    Image(systemName: "list.number")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text("\(queue.running)/\(queue.limit)")
-                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                }
-                .foregroundStyle(fm.textSecondary)
-                .fixedSize()
-                .frame(minWidth: 26, minHeight: 30)
-                .contentShape(Rectangle())
+                DesktopQueueSlots(running: queue.running, limit: queue.limit, waiting: queue.waiting)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
             }
             .menuOrder(.fixed)
             .accessibilityLabel(Text("Desktop queue: \(queue.summary)"))
@@ -66,6 +59,65 @@ struct DesktopQueueMenu: View {
                 self.error = ControlErrorText.describe(error)
             }
         }
+    }
+}
+
+struct DesktopQueueSlots: View {
+    @Environment(\.fmPalette) private var fm
+    let running: Int
+    let limit: Int
+    let waiting: Int
+
+    private static let side: CGFloat = 18
+    private static let gap: CGFloat = 1.5
+
+    private var columns: Int { max(1, Int(Double(limit).squareRoot().rounded(.up))) }
+    private var rows: Int { max(1, (limit + columns - 1) / columns) }
+
+    private var cell: CGFloat {
+        let fit: CGFloat = (Self.side - CGFloat(columns - 1) * Self.gap) / CGFloat(columns)
+        return min(7, fit)
+    }
+
+    var body: some View {
+        Group {
+            if limit > 25 {
+                VStack(spacing: 0) {
+                    Text("\(running)")
+                        .foregroundStyle(running > 0 ? fm.accent : fm.textSecondary)
+                    Rectangle()
+                        .fill(fm.textTertiary)
+                        .frame(width: 12, height: 1)
+                    Text("\(limit)")
+                        .foregroundStyle(fm.textSecondary)
+                }
+                .font(.system(size: 9, weight: .bold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            } else {
+                VStack(alignment: .leading, spacing: Self.gap) {
+                    ForEach(0..<rows, id: \.self) { (row: Int) in
+                        HStack(spacing: Self.gap) {
+                            ForEach(0..<min(columns, limit - row * columns), id: \.self) { (column: Int) in
+                                RoundedRectangle(cornerRadius: cell * 0.3, style: .continuous)
+                                    .fill(row * columns + column < running ? fm.accent : fm.textTertiary.opacity(0.35))
+                                    .frame(width: cell, height: cell)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if waiting > 0 {
+                Circle()
+                    .fill(fm.warning)
+                    .frame(width: 5, height: 5)
+                    .offset(x: 5, y: -4)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: running)
+        .accessibilityHidden(true)
     }
 }
 

@@ -331,9 +331,9 @@ struct RepoCodePreviewView: View {
         }
         .background(alignment: .leading) {
             ZStack(alignment: .leading) {
-                Rectangle().fill(active ? fm.editorActiveLine : fm.editorSurface)
+                Rectangle().fill(active ? fm.editorActiveLine : fm.readingSurface)
                 Rectangle()
-                    .fill(active ? fm.editorActiveLine : fm.editorGutter)
+                    .fill(active ? fm.editorActiveLine : fm.readingGutter)
                     .frame(width: gutter)
             }
         }
@@ -373,6 +373,6 @@ struct RepoCodePreviewView: View {
             lines
             statusBar
         }
-        .background(fm.editorSurface)
+        .background(fm.readingSurface)
     }
 }

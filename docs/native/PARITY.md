@@ -159,6 +159,23 @@ Code, diff, editor and terminal surfaces, bars, cards, sheets and the chat
 channel drawer keep their solid fills. The clear container needs iOS 18; on
 iOS 17 pushed pages still show the system background.
 
+Reading pages let it through too (2026-10-14). The merge leaderboard stayed
+solid because `MergeLandedReport`, the page under it (and under the merged
+report after Merge & clean up), painted `bgBase` over the leaderboard's clear
+canvas; it paints `fm.canvas` now. The diff, file and editor pages now let the
+picture through as well, which reverses the earlier choice to keep them
+opaque. The palette has `readingSurface` (clear with a background image,
+`editorSurface` without one) and `readingGutter` (`editorGutter` at 40%), used
+by the diff stream (`DiffReviewStream`'s body, section and inline-thread rows
+and context-line gutters), the file viewer (`RepoCodePreviewView` and its
+lines), `QuickEditScreen`, `LocalFileEditorScreen` and `CodeEditorView`'s text
+view. The terminal pages (desktop, host, agent sign-in) paint `fm.canvas`,
+and their grid paints `terminalSurface`, the terminal black at 80%, so its
+colours stay legible. The Report a bug page and the tour paint the clear
+canvas before iOS 26 too. The pinned diff file header, the code editor's bars,
+cards, sheets and the full-screen covers keep their fills; a sheet or cover
+never shows the picture, since it is drawn only behind `AppHomeView`.
+
 Liquid Glass (the bottom bar, top bar and prompt card) refracts whatever is
 under it, so with a background image the glass picks up its colours. Android
 has the accents but not the background image yet.
