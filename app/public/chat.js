@@ -3829,6 +3829,8 @@ function portableMessageRecord(record) {
     deleted: Boolean(record.deleted),
     recipients: knownRecipientCount(record.recipients),
     recipientNames: knownRecipientNames(record.recipientNames),
+    receipt: typeof record.receipt === "string" ? record.receipt : "",
+    relayed: Boolean(record.relayed),
   };
 }
 
@@ -3885,7 +3887,7 @@ function applyRecipientCount(id, value, names = []) {
     rec.recipients = count;
     rec.recipientNames = recipientNames;
     paintRecipientLabel(rec.recipientsEl, count, recipientNames);
-    paintDirectReceipt(rec);
+    paintReceipt(rec);
     threads.updateTarget(id, { recipients: count, recipientNames });
     if (activeThreadRootId === id) renderThread();
     return;
@@ -3896,29 +3898,36 @@ function applyRecipientCount(id, value, names = []) {
   if (activeThreadRootId === reply.rootId) renderThread();
 }
 
-const DIRECT_RECEIPT_LABELS = {
+const RECEIPT_LABELS = {
   pending: "Sending",
   sent: "Sent",
   delivered: "Delivered",
   read: "Read",
 };
-const DIRECT_RECEIPT_CHECK = "M9.7 7.2l1.6 1.6 3.1-3.3";
-const DIRECT_RECEIPT_BACK_RING = "M7.56 2.25A5 5 0 1 0 7.56 11.75";
-const DIRECT_RECEIPT_BACK_DOT =
-  "M8.19 1.74A5.7 5.7 0 1 0 8.19 12.26A6.5 6.5 0 0 1 8.19 1.74Z";
+const RECEIPT_FRONT_TICK = "M11.7 7.2L13.4 8.9L16.4 5.6";
+const RECEIPT_BACK_TICK = "M6.2 7.2L7.9 8.9L8.87 7.86";
+const RECEIPT_BACK_TICK_READ = "M6.2 7.2L7.33 8.33";
+const RECEIPT_BACK_RING = "M11.25 2.59A5.2 5.2 0 1 0 11.25 11.41";
+const RECEIPT_BACK_DISC =
+  "M10.21 1.35A5.9 5.9 0 1 0 10.21 12.65A6.8 6.8 0 0 1 10.21 1.35Z";
 
-function directReceiptState(record) {
-  if (!record?.self || !isDirectMessageKey(record.channel)) return "";
-  if (record.receipt === "read" || record.receipt === "delivered") {
+function receiptState(record) {
+  if (!record?.self || record.deleted) return "";
+  if (isDirectMessageKey(record.channel) &&
+      (record.receipt === "read" || record.receipt === "delivered")) {
     return record.receipt;
   }
-  return knownRecipientCount(record.recipients) === null ? "pending" : "sent";
+  if (record.receipt === "sent" || record.relayed ||
+      knownRecipientCount(record.recipients) !== null) {
+    return "sent";
+  }
+  return "pending";
 }
 
-function directReceiptIcon(state) {
+function receiptIcon(state) {
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", "0 0 18 14");
+  svg.setAttribute("viewBox", "0 0 22 14");
   svg.setAttribute("fill", "none");
   svg.setAttribute("stroke", "currentColor");
   svg.setAttribute("stroke-width", "1.4");
@@ -3932,56 +3941,93 @@ function directReceiptIcon(state) {
     }
     svg.append(shape);
   };
+  const front = { cx: "14", cy: "7", r: "5.2" };
   if (state === "read") {
-    add("path", { d: DIRECT_RECEIPT_BACK_DOT, fill: "currentColor", stroke: "none" });
-    add("circle", { cx: "12", cy: "7", r: "5.7", fill: "currentColor", stroke: "none" });
-    add("path", { d: DIRECT_RECEIPT_CHECK, class: "chat-receipt-check" });
+    add("path", { d: RECEIPT_BACK_DISC, fill: "currentColor", stroke: "none" });
+    add("circle", { ...front, fill: "currentColor" });
+    add("path", { d: RECEIPT_BACK_TICK_READ, class: "chat-receipt-check" });
+    add("path", { d: RECEIPT_FRONT_TICK, class: "chat-receipt-check" });
     return svg;
   }
-  if (state === "delivered") add("path", { d: DIRECT_RECEIPT_BACK_RING });
-  const ring = { cx: "12", cy: "7", r: "5" };
-  if (state === "pending") ring["stroke-dasharray"] = "2.2 1.9";
-  add("circle", ring);
-  if (state !== "pending") add("path", { d: DIRECT_RECEIPT_CHECK });
+  if (state === "delivered") {
+    add("path", { d: RECEIPT_BACK_RING });
+    add("path", { d: RECEIPT_BACK_TICK });
+  }
+  if (state === "pending") front["stroke-dasharray"] = "1.6 1.7";
+  add("circle", front);
+  if (state !== "pending") add("path", { d: RECEIPT_FRONT_TICK });
   return svg;
 }
 
-function paintDirectReceipt(record) {
+function paintReceipt(record) {
   const mark = record?.receiptEl;
   if (!mark) return;
-  const state = directReceiptState(record);
+  const state = receiptState(record);
   if (!state || mark.dataset.state === state) return;
   mark.dataset.state = state;
   mark.className = "chat-receipt is-" + state;
-  mark.title = DIRECT_RECEIPT_LABELS[state];
-  mark.setAttribute("aria-label", DIRECT_RECEIPT_LABELS[state]);
-  mark.replaceChildren(directReceiptIcon(state));
+  mark.title = RECEIPT_LABELS[state];
+  mark.setAttribute("aria-label", RECEIPT_LABELS[state]);
+  mark.replaceChildren(receiptIcon(state));
 }
 
-function makeDirectReceipt(record) {
+function makeReceipt(record) {
   const mark = document.createElement("span");
   mark.setAttribute("role", "img");
   record.receiptEl = mark;
-  paintDirectReceipt(record);
+  paintReceipt(record);
   return mark;
+}
+
+function updateReceipt(id, receipt, allow) {
+  const rec = rows.get(id);
+  if (rec) {
+    if (!allow(receiptState(rec))) return false;
+    rec.receipt = receipt;
+    paintReceipt(rec);
+    threads.updateTarget(id, { receipt });
+    if (activeThreadRootId === id) renderThread();
+    return true;
+  }
+  const reply = threads.target(id);
+  if (!reply?.rootId || !allow(receiptState(reply))) return false;
+  threads.updateTarget(id, { receipt });
+  if (activeThreadRootId === reply.rootId) renderThread();
+  return true;
+}
+
+function applyReceiptSent(id) {
+  updateReceipt(String(id || ""), "sent", (state) => state === "pending");
 }
 
 function applyDirectDelivered(ids) {
   for (const id of ids) {
-    const rec = rows.get(id);
-    if (!directReceiptState(rec) || rec.receipt === "read") continue;
-    rec.receipt = "delivered";
-    paintDirectReceipt(rec);
+    const rec = rows.get(id) || threads.target(id);
+    if (!isDirectMessageKey(rec?.channel)) continue;
+    updateReceipt(id, "delivered",
+      (state) => state === "pending" || state === "sent");
   }
 }
 
 function applyDirectRead(scope) {
   if (!isDirectMessageKey(scope)) return;
+  const readable = (state) => state === "sent" || state === "delivered";
   for (const rec of channelMessages.get(scope) || []) {
-    const state = directReceiptState(rec);
-    if (state !== "sent" && state !== "delivered") continue;
-    rec.receipt = "read";
-    paintDirectReceipt(rec);
+    if (readable(receiptState(rec))) {
+      rec.receipt = "read";
+      paintReceipt(rec);
+      threads.updateTarget(rec.id, { receipt: "read" });
+    }
+    for (const reply of threads.replies(rec.id)) {
+      if (readable(receiptState(reply))) {
+        threads.updateTarget(reply.id, { receipt: "read" });
+      }
+    }
+  }
+  if (activeThreadRootId &&
+      (rows.get(activeThreadRootId) || threads.root(activeThreadRootId))
+        ?.channel === scope) {
+    renderThread();
   }
 }
 
@@ -4256,10 +4302,13 @@ function threadMessageHeader(record) {
   time.textContent = fmtTime(record.ts);
   time.title = new Date(Number(record.ts) || Date.now()).toLocaleString();
   meta.append(author, time);
-  if (knownRecipientCount(record.recipients) !== null) {
+  const receipt = receiptState(record);
+  if (knownRecipientCount(record.recipients) !== null &&
+      !(receipt && isDirectMessageKey(record.channel))) {
     meta.append(makeRecipientLabel(
       record.recipients, "chat-thread-recipients", record.recipientNames));
   }
+  if (receipt) meta.append(makeReceipt(record));
   header.append(avatar, meta);
   return header;
 }
@@ -4561,7 +4610,11 @@ function confirmMessageDelete() {
   pendingDeleteTrigger = null;
   seen.add(plain.id);
   removeMessage(record.id);
-  runWhenConnected(() => send(plain));
+  runWhenConnected(() => send(plain).then((sent) => {
+    if (sent && isDirectMessageKey(record.channel)) {
+      roomTransport?.supersede?.([record.id]);
+    }
+  }));
 }
 
 // ---- convert a message into a repository issue ------------------------------
@@ -4800,14 +4853,15 @@ function buildRow(record, prev) {
   reactionsEl.className = "chat-reactions";
   main.append(reactionsEl);
   row.append(main);
-  if (directReceiptState(record)) {
+  const receipt = receiptState(record);
+  if (receipt && isDirectMessageKey(record.channel)) {
     record.recipientsEl = null;
-    row.append(makeDirectReceipt(record));
   } else {
     record.recipientsEl = makeRecipientLabel(
       record.recipients, "chat-recipients", record.recipientNames);
     row.append(record.recipientsEl);
   }
+  if (receipt) row.append(makeReceipt(record));
   record.el = row;
   record.body = body;
   record.reactionsEl = reactionsEl;
@@ -4970,6 +5024,7 @@ function appendMessage(
   appMessage = null,
   recipients = null,
   recipientNames = [],
+  relayed = false,
 ) {
   const channelKey = normalizeChannelKey(channel) || activeChannel;
   const record = {
@@ -4985,6 +5040,7 @@ function appendMessage(
     appMessage,
     recipients: knownRecipientCount(recipients),
     recipientNames: knownRecipientNames(recipientNames),
+    relayed: Boolean(relayed),
   };
   insertMessage(record);
   rememberContext(record.channel, who, text);
@@ -5204,6 +5260,7 @@ function renderChatEntry(
       appMessageFromEntry(entry, channelKey),
       recipients,
       recipientNames,
+      true,
     );
   }
 }
@@ -5248,6 +5305,7 @@ function renderThreadEntry(
     self: entry.senderId === selfId,
     recipients,
     recipientNames,
+    relayed: true,
   });
   threads.addReply(record);
   renderThreadSummary(record.rootId);
@@ -5543,6 +5601,9 @@ function send(plain) {
   }
   return roomTransport.send(plain, { persist: envelope.persist }).then((sent) => {
     if (sent) recordOwnChatBadgeActivity(plain);
+    if (sent && envelope.persist && scope === "public-world-general") {
+      applyReceiptSent(plain.id);
+    }
     return sent;
   });
 }

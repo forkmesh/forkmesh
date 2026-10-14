@@ -9,6 +9,9 @@
 // `code-push` included, names its row (`alertId`) and is enriched with that
 // row's portrait and the unread badge.
 
+import FMBase
+import FMCrypto
+import FMPush
 import UserNotifications
 
 /// Adds the actor's portrait and the unread badge to a ForkMesh push.
@@ -43,6 +46,8 @@ final class NotificationService: UNNotificationServiceExtension {
     /// entitlement, which is why the dedupe lives here and not in the keychain.
     private static let renderedKey = "forkmesh.rendered-alert-ids"
     private static let renderedMemory = 20
+    static let roomKeys = PushRoomKeys(
+        store: KeychainSharedItemStore(service: PushCredentialStore.service, accessGroup: PushCredentialStore.accessGroup))
 
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var fallback: UNNotificationContent?
@@ -71,25 +76,56 @@ final class NotificationService: UNNotificationServiceExtension {
                 content.body = "End-to-end encrypted \u{2014} open Chat in ForkMesh to read it."
             }
             let pushedOrigin = (request.content.userInfo["origin"] as? String) ?? ""
-            let origin = PushCredentialStore.load(origin: pushedOrigin)?.origin ?? pushedOrigin
-            guard
-                let url = Self.senderURL(
-                    origin: origin, sender: request.content.userInfo["sender"] as? String)
-            else {
+            let credentials = PushCredentialStore.load(origin: pushedOrigin)
+            let origin = credentials?.origin ?? pushedOrigin
+            let sender = request.content.userInfo["sender"] as? String
+            let mode = PushPreviewMode.parse(credentials?.preview)
+            let chat = PushChatRequest.parse(Self.payload(request.content.userInfo))
+            if let chat, !chat.threadIdentifier.isEmpty { content.threadIdentifier = chat.threadIdentifier }
+            switch mode {
+            case .hidden:
+                content.title = PushPreviewText.hiddenTitle
+                content.subtitle = ""
+                content.body = PushPreviewText.genericBody
                 deliver(content)
-                return
-            }
-            var fetch = URLRequest(url: url)
-            fetch.httpMethod = "GET"
-            fetch.timeoutInterval = Self.fetchTimeout
-            fetch.setValue("application/json", forHTTPHeaderField: "Accept")
-            task = URLSession.shared.dataTask(with: fetch) { data, _, _ in
-                if let portrait = Self.attachment(base64Png: Self.avatarPng(in: data)) {
-                    content.attachments = [portrait]
+            case .nameOnly:
+                if let chat, let preview = PushPreviewText.preview(nil, request: chat, mode: .nameOnly) {
+                    content.title = preview.title
                 }
-                self.deliver(content)
+                content.body = PushPreviewText.genericBody
+                attachPortrait(to: content, origin: origin, sender: sender)
+            case .nameAndMessage:
+                guard let chat, let credentials,
+                    let url = Self.pendingURL(origin: credentials.origin, path: chat.pendingPath)
+                else {
+                    attachPortrait(to: content, origin: origin, sender: sender)
+                    return
+                }
+                var fetch = URLRequest(url: url)
+                fetch.httpMethod = "GET"
+                fetch.timeoutInterval = Self.fetchTimeout
+                fetch.setValue("Bearer " + credentials.session, forHTTPHeaderField: "Authorization")
+                fetch.setValue("application/json", forHTTPHeaderField: "Accept")
+                fetch.cachePolicy = .reloadIgnoringLocalCacheData
+                let deviceKeyName = credentials.deviceKeyName
+                task = URLSession.shared.dataTask(with: fetch) { data, response, _ in
+                    if let data, (response as? HTTPURLResponse)?.statusCode == 200,
+                        let message = PushChatOpener.open(
+                            JSON.parseObject(data), request: chat,
+                            privateKey: PushCredentialStore.deviceKey(named: deviceKeyName), keys: Self.roomKeys),
+                        let preview = PushPreviewText.preview(message, request: chat, mode: .nameAndMessage)
+                    {
+                        content.title = preview.title
+                        content.subtitle = ""
+                        content.body = preview.body
+                        var info = content.userInfo
+                        info["messageId"] = message.id
+                        content.userInfo = info
+                    }
+                    self.attachPortrait(to: content, origin: origin, sender: sender)
+                }
+                task?.resume()
             }
-            task?.resume()
             return
         }
 
@@ -135,6 +171,46 @@ final class NotificationService: UNNotificationServiceExtension {
             self.deliver(content)
         }
         task?.resume()
+    }
+
+    private func attachPortrait(to content: UNMutableNotificationContent, origin: String, sender: String?) {
+        guard let url = Self.senderURL(origin: origin, sender: sender) else {
+            deliver(content)
+            return
+        }
+        var fetch = URLRequest(url: url)
+        fetch.httpMethod = "GET"
+        fetch.timeoutInterval = Self.fetchTimeout
+        fetch.setValue("application/json", forHTTPHeaderField: "Accept")
+        task = URLSession.shared.dataTask(with: fetch) { data, _, _ in
+            if let portrait = Self.attachment(base64Png: Self.avatarPng(in: data)) {
+                content.attachments = [portrait]
+            }
+            self.deliver(content)
+        }
+        task?.resume()
+    }
+
+    static func payload(_ info: [AnyHashable: Any]) -> JSONObject {
+        var fields: [String: Any] = [:]
+        for (key, value) in info {
+            if let key = key as? String { fields[key] = value }
+        }
+        guard JSONSerialization.isValidJSONObject(fields), let data = try? JSONSerialization.data(withJSONObject: fields)
+        else { return [:] }
+        return JSON.parseObject(data)
+    }
+
+    static func pendingURL(origin: String, path: String) -> URL? {
+        guard var components = URLComponents(string: origin),
+            components.scheme == "https" || components.scheme == "http", components.host?.isEmpty == false
+        else { return nil }
+        let parts = path.split(separator: "?", maxSplits: 1)
+        guard let route = parts.first, route.hasPrefix("/api/chat/") else { return nil }
+        components.path = String(route)
+        components.percentEncodedQuery = parts.count > 1 ? String(parts[1]) : nil
+        components.fragment = nil
+        return components.url
     }
 
     /// iOS is about to take the extension away. Deliver whatever has been

@@ -76,6 +76,7 @@ let modules: [Module] = [
     Module(name: "FMInsights", deps: ["FMBase", "FMNet", "FMAccount", "FMApi", "FMControl"]),
     // Coves (encrypted file vaults) and secrets (WS21).
     Module(name: "FMCoves", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi"]),
+    Module(name: "FMPush", deps: ["FMBase", "FMCrypto"]),
     Module(name: "FMAssistant", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMControl", "FMPackages", "FMPlanning", "FMLocalAI"]),
 ]
 
@@ -126,6 +127,10 @@ for module in selected {
 var products: [Product] = [
     .library(name: "ForkMeshCore", targets: selected.map(\.name)),
 ]
+let pushModules = ["FMBase", "FMCrypto", "FMPush"]
+if pushModules.allSatisfy(wanted.contains) {
+    products.append(.library(name: "ForkMeshPushCore", targets: pushModules))
+}
 let watchSelected = watchModules.filter { wanted.contains($0) }
 if !watchSelected.isEmpty {
     products.append(.library(name: "ForkMeshWatchCore", targets: watchSelected))

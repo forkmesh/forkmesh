@@ -31,6 +31,7 @@ public struct ChatRow: Equatable, Identifiable, Sendable {
     public var thread: ChatThreadSummary?
     public var attachment: ChatAttachment?
     public var visitor = false
+    public var receipt: ChatReceipt?
 
     public init(message: ChatMessage, continuesGroup: Bool, queued: Bool, deletable: Bool) {
         self.message = message
@@ -69,6 +70,8 @@ public final class ChatHub: ShellChatBridge {
     public var office: OfficeChannelService? {
         didSet {
             office?.isExpired = expiry
+            office?.isRemoved = { [weak self] id in self?.extras.isRemoved(id) ?? false }
+            office?.onRemoved = { [weak self] conversation, id in self?.messageRemoved(conversation, id) }
             office?.onFrame = { [weak self] frame, conversation in
                 guard let self, let office = self.office else { return }
                 self.extras.applyRoomFrame(frame, conversation: conversation, selfId: office.currentSelfId)
@@ -87,6 +90,8 @@ public final class ChatHub: ShellChatBridge {
     public var direct: DirectMessageService? {
         didSet {
             direct?.isExpired = expiry
+            direct?.isRemoved = { [weak self] id in self?.extras.isRemoved(id) ?? false }
+            direct?.onRemoved = { [weak self] conversation, id in self?.messageRemoved(conversation, id) }
             direct?.onFrame = { [weak self] frame, conversation in
                 guard let self, let direct = self.direct else { return }
                 self.extras.applyRoomFrame(frame, conversation: conversation, selfId: direct.currentSelfId)
@@ -104,6 +109,7 @@ public final class ChatHub: ShellChatBridge {
         }
     }
     @ObservationIgnored public var readMarks: ChatReadMarks?
+    @ObservationIgnored public var onMessageRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var calls: DirectCallEngine?
     @ObservationIgnored public var live: DirectLiveEngine?
     @ObservationIgnored public var pings: LocalPingLog?
@@ -136,9 +142,11 @@ public final class ChatHub: ShellChatBridge {
         self.extras = extras
         self.workspace = ChatWorkspace()
         extras.sink = relay
-        extras.authorOf = { [weak relay] conversation, id in
-            relay?.messages(conversation).first { $0.id == id }?.senderId
+        extras.authorOf = { [weak self, weak relay] conversation, id in
+            if let self { return self.messages(in: conversation).first { $0.id == id }?.senderId }
+            return relay?.messages(conversation).first { $0.id == id }?.senderId
         }
+        extras.onRemoved = { [weak self] conversation, id in self?.forgetRemoved(conversation, id) }
         extras.onChannelJoined = { [weak relay] channel in relay?.addChannel(channel) }
         extras.onChannelRemoved = { [weak relay] channel in relay?.removeChannel(channel) }
         relay.frameObserver = { [weak extras] frame in extras?.apply(frame) }
@@ -229,6 +237,7 @@ public final class ChatHub: ShellChatBridge {
             replies: snapshot.replies, roots: snapshot.replyRoots, reactions: snapshot.reactions, order: snapshot.reactionOrder,
             edits: snapshot.edits)
         extras.restoreHiddenMessages(snapshot.hiddenMessages)
+        extras.restoreRemovedMessages(snapshot.removedMessages)
         extras.restoreLooks(snapshot.looks, events: snapshot.lookEvents)
     }
 
@@ -254,6 +263,7 @@ public final class ChatHub: ShellChatBridge {
         snapshot.privateChannels = extras.privateChannels.sorted()
         snapshot.hiddenChannels = extras.hiddenChannels.sorted()
         snapshot.hiddenMessages = extras.snapshotHiddenMessages()
+        snapshot.removedMessages = extras.snapshotRemovedMessages()
         snapshot.looks = extras.snapshotLooks()
         snapshot.lookEvents = extras.snapshotLookEvents().filter { !isExpired($0.conversation, $0.timestamp) }
         return snapshot
@@ -562,37 +572,82 @@ public final class ChatHub: ShellChatBridge {
     /// The transcript with grouping, queue and delete flags worked out.
     public var rows: [ChatRow] {
         _ = extras.revision
-        let list = transcript.filter { !extras.isHidden($0.id) }
+        let list = transcript.filter { !extras.isHidden($0.id) && !extras.isRemoved($0.id) }
         var out: [ChatRow] = []
         out.reserveCapacity(list.count)
-        let relayRoom = !inMesh && !inOffice && !inDirect
+        let mutableRoom = !inMesh && !isReadOnly(relay.currentConversation)
         for (index, message) in list.enumerated() {
             let previous = index == 0 ? nil : list[index - 1]
-            let relayMessage = relayRoom && message.app?.ephemeral != true
+            let mutable = mutableRoom && message.app?.ephemeral != true
+            let queued = inMesh && message.isSelf && mesh.isQueued(message.id)
             var row = ChatRow(
                 message: message,
                 continuesGroup: ChatHub.continuesGroup(message, previous),
-                queued: inMesh && message.isSelf && mesh.isQueued(message.id),
+                queued: queued,
                 // The mesh room has no server to tell other devices a message is gone, so
                 // deleting there would only remove this device's own copy.
-                deletable: relayMessage && message.isSelf)
-            row.text = relayMessage ? extras.text(for: message) : message.text
-            row.edited = relayMessage && extras.isEdited(message.id)
-            row.editable = relayMessage && message.isSelf && !message.text.isEmpty
-            if relayMessage {
-                row.reactions = extras.reactions(for: message.id)
-                row.thread = message.conversation.hasPrefix("#") ? extras.threadSummary(message.id) : nil
+                deletable: mutable && message.isSelf)
+            row.text = mutable ? extras.text(for: message) : message.text
+            row.edited = mutable && extras.isEdited(message.id)
+            row.editable = mutable && message.isSelf && !message.text.isEmpty
+            if mutable {
+                row.reactions = extras.reactions(for: message.id, selfId: roomSelfId(message.conversation))
+                row.thread = ChatHub.hasThreads(message.conversation) ? extras.threadSummary(message.id) : nil
             }
             if !message.fileName.isEmpty { row.attachment = extras.attachment(for: message.id) }
             row.visitor = !message.isSelf && ChatVisitorPresence.isTransientVisitor(name: message.senderName)
+            row.receipt = receipt(for: message, queued: queued)
             out.append(row)
         }
         return out
     }
 
+    public nonisolated static func hasThreads(_ conversation: String) -> Bool {
+        conversation.hasPrefix("#") || DirectMessageFrames.isDirect(conversation)
+    }
+
+    public nonisolated static func isRoomConversation(_ conversation: String) -> Bool {
+        DirectMessageFrames.isDirect(conversation) || OfficeFrames.isOffice(conversation)
+    }
+
+    public func receipt(for message: ChatMessage, queued: Bool = false) -> ChatReceipt? {
+        guard message.isSelf else { return nil }
+        if queued { return .sending }
+        let conversation = message.conversation
+        if DirectMessageFrames.isDirect(conversation) { return direct?.receipt(message.id) ?? .sent }
+        if OfficeFrames.isOffice(conversation) { return office?.receipt(message.id) ?? .sent }
+        return .sent
+    }
+
+    func roomSelfId(_ conversation: String) -> String {
+        if DirectMessageFrames.isDirect(conversation) { return direct?.currentSelfId ?? "" }
+        if OfficeFrames.isOffice(conversation) { return office?.currentSelfId ?? "" }
+        return relay.selfId
+    }
+
+    func postRoomFrame(_ conversation: String, type: String, fields: JSONObject) async -> Bool {
+        if DirectMessageFrames.isDirect(conversation) {
+            return await direct?.sendFrame(conversation, type: type, fields: fields) != nil
+        }
+        guard OfficeFrames.isOffice(conversation), let office, let room = office.room(for: conversation) else { return false }
+        var routed = fields
+        if type != "thread-reply" { routed["conversation"] = .string("#\(room.name)") }
+        return await office.postFrame(conversation, type: type, fields: routed) != nil
+    }
+
+    func messageRemoved(_ conversation: String, _ id: String) {
+        extras.recordRemoved(id)
+        forgetRemoved(conversation, id)
+    }
+
+    func forgetRemoved(_ conversation: String, _ id: String) {
+        pings?.remove("chat:\(id)")
+        onMessageRemoved?(conversation, id)
+    }
+
     public func threadRows(_ rootId: String) -> [ChatRow] {
         _ = extras.revision
-        let list = extras.replies(to: rootId).filter { !extras.isHidden($0.id) }
+        let list = extras.replies(to: rootId).filter { !extras.isHidden($0.id) && !extras.isRemoved($0.id) }
         var out: [ChatRow] = []
         for (index, message) in list.enumerated() {
             var row = ChatRow(
@@ -601,15 +656,16 @@ public final class ChatHub: ShellChatBridge {
             row.text = extras.text(for: message)
             row.edited = extras.isEdited(message.id)
             row.editable = message.isSelf && !message.text.isEmpty
-            row.reactions = extras.reactions(for: message.id)
+            row.reactions = extras.reactions(for: message.id, selfId: roomSelfId(message.conversation))
             row.attachment = extras.attachment(for: message.id)
+            row.receipt = receipt(for: message)
             out.append(row)
         }
         return out
     }
 
     public func rootMessage(_ rootId: String, in channel: String) -> ChatMessage? {
-        relay.messages(channel).first { $0.id == rootId }
+        messages(in: channel).first { $0.id == rootId }
     }
 
     @discardableResult
@@ -617,6 +673,14 @@ public final class ChatHub: ShellChatBridge {
         if let blocked = guestComposeBlocked(channel) {
             onGuestBlocked?(blocked)
             return false
+        }
+        if ChatHub.isRoomConversation(channel) {
+            let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxTextChars))
+            let root = String(rootId.trimmingCharacters(in: .whitespaces).prefix(ChatLimits.maxRootIdChars))
+            if body.isEmpty || root.isEmpty { return false }
+            let sent = await postRoomFrame(channel, type: "thread-reply", fields: ["rootId": .string(root), "text": .string(body)])
+            if !sent { notice = ChatNotice("The reply could not be sent.") }
+            return sent
         }
         if relay.state != .connected {
             notice = ChatNotice("Chat is offline. Reconnecting...")
@@ -629,6 +693,20 @@ public final class ChatHub: ShellChatBridge {
     }
 
     public func toggleReaction(_ message: ChatMessage, value: String) {
+        let conversation = message.conversation
+        if ChatHub.isRoomConversation(conversation) {
+            let me = roomSelfId(conversation)
+            guard !me.isEmpty, !message.id.isEmpty, !value.isEmpty else { return }
+            let fields = ChatExtras.reactionFields(
+                added: extras.reactionAdds(messageId: message.id, value: value, selfId: me), messageId: message.id,
+                value: value, selfId: me)
+            Task {
+                if !(await self.postRoomFrame(conversation, type: "reaction", fields: fields)) {
+                    self.notice = ChatNotice("The reaction could not be sent.")
+                }
+            }
+            return
+        }
         if !extras.toggleReaction(conversation: message.conversation, messageId: message.id, value: value) {
             notice = ChatNotice("Chat is offline. Reconnecting...")
         }
@@ -636,12 +714,32 @@ public final class ChatHub: ShellChatBridge {
 
     @discardableResult
     public func edit(_ message: ChatMessage, text: String) -> Bool {
+        let conversation = message.conversation
+        if ChatHub.isRoomConversation(conversation) {
+            let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxTextChars))
+            let me = roomSelfId(conversation)
+            guard !body.isEmpty, !me.isEmpty, message.senderId == me else {
+                notice = ChatNotice("The message could not be changed.")
+                return false
+            }
+            let fields: JSONObject = ["target": .string(message.id), "text": .string(body), "editedAt": .int(clock.nowMillis)]
+            Task {
+                if !(await self.postRoomFrame(conversation, type: "edit", fields: fields)) {
+                    self.notice = ChatNotice("The message could not be changed.")
+                }
+            }
+            return true
+        }
         let sent = extras.edit(conversation: message.conversation, messageId: message.id, text: text)
         if !sent { notice = ChatNotice("The message could not be changed.") }
         return sent
     }
 
     public func deleteReply(_ message: ChatMessage) {
+        if ChatHub.isRoomConversation(message.conversation) {
+            Task { await self.delete(message) }
+            return
+        }
         if !extras.deleteReply(message) { notice = ChatNotice("The reply could not be deleted.") }
     }
 
@@ -955,7 +1053,18 @@ public final class ChatHub: ShellChatBridge {
         if inMesh && mesh.hasUnread { mesh.markRead() }
     }
 
-    public func delete(_ message: ChatMessage) async { _ = await relay.deleteMessage(message) }
+    public func delete(_ message: ChatMessage) async {
+        let conversation = message.conversation
+        if DirectMessageFrames.isDirect(conversation) || OfficeFrames.isOffice(conversation) {
+            guard message.isSelf, message.senderId == roomSelfId(conversation) else { return }
+            let removed = DirectMessageFrames.isDirect(conversation)
+                ? await direct?.deleteForEveryone(conversation, messageId: message.id) ?? false
+                : await office?.deleteForEveryone(conversation, messageId: message.id) ?? false
+            if !removed { notice = ChatNotice("The message could not be deleted. Check the connection and try again.") }
+            return
+        }
+        _ = await relay.deleteMessage(message)
+    }
 
     public func hide(_ message: ChatMessage) { extras.hideMessage(message.id) }
 

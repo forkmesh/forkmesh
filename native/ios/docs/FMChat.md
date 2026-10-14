@@ -245,11 +245,9 @@ turns `rows` plus the look events into `ChatConversationItem`s: a centred time l
 from the previous entry is 15 minutes or more or the entry starts a new local day (`timeZone:`,
 default `.current`) ("Today 6:39 AM", "Yesterday", a weekday within a
 week, then "Sep 3 at" / "Sep 3, 2025 at"), runs of one sender (`ChatBubblePosition`; only the last
-bubble of a run has a tail), the sender's name above a run in groups, and a receipt under your own
-message only while it is the newest one. Receipts are only what the transport knows: office rooms
-report a recipient count ("Delivered" when it is above zero), relay rooms have no acknowledgement,
-so they say "Sent", and a queued mesh message says "Not delivered yet". One to three emoji with
-nothing else are drawn large without a bubble (`isJumboEmoji`).
+bubble of a run has a tail), the sender's name above a run in groups, and a receipt mark under
+every one of your own messages (`ChatBubble.receipt`, a `ChatReceipt`; see "Receipt marks" below).
+One to three emoji with nothing else are drawn large without a bubble (`isJumboEmoji`).
 
 **Shared look (`Threads/ChatLook.swift`).** A conversation's background (one of
 `ChatBackgroundCatalog.presets` or a JPEG), group name and group photo travel as `look` frames
@@ -296,10 +294,9 @@ summary. "Delete Conversation" hides its messages on this phone only (`clearConv
 "Leave this Conversation" leaves a relay private channel (`leaveGroupConversation`). Relay private
 channels have no server roster, so nobody can be removed from one.
 
-**Not done.** Inline replies, message effects, stickers, live location and read receipts need
-fields the other clients do not send or understand yet. FaceTime-style calls exist only for
-`direct:` rooms (see "Voice and video calls" below). Office rooms still
-have no reactions, edits or deletes. The Android app has not been changed.
+**Not done.** Inline quoted replies (replies open a thread instead), message effects, stickers and
+live location need fields the other clients do not send or understand yet. FaceTime-style calls
+exist only for `direct:` rooms (see "Voice and video calls" below).
 
 ## Slack-style workspace
 
@@ -442,6 +439,113 @@ nobody could ever open it. The rules every client follows are in `docs/app/chat-
 
 Not verified: no Swift toolchain was available when this was written, so the change and its tests
 (`DirectMessagesTests`) were checked by reading only, not compiled or run.
+
+## Receipt marks, deletes, reactions and replies in direct messages (branch 1974)
+
+Asked 2026-10-13: Signal-style marks on every message, "delete for everyone" for what you sent,
+and replies and reactions on anyone's message in a direct message. The shared design and wire
+rules are in the branch spec (`docs/app/chat-private-rooms.md` on the server side).
+
+**Receipt marks.** `ChatReceipt` (FMApi `Models/Chat.swift`) is `sending`, `sent`, `delivered` or
+`read`, with `label` ("Sending", ...) and a `rank` so a mark only moves forward. `ChatRow.receipt`
+is set by `ChatHub.receipt(for:queued:)` for your own messages only: direct messages ask
+`DirectMessageService.receipt(_)`, office rooms `OfficeChannelService.receipt(_)`, a queued
+`#mesh` message is `sending`, and everything else (relay rooms, history) is `sent`.
+`ChatConversationLayout.receipt(_)` gives every own bubble its mark, not only the newest one.
+The app draws it with `ChatReceiptMark` (`ForkMesh/Features/Chat/Messages/ChatReceiptMark.swift`),
+a `Canvas` in the shared 22 x 14 geometry scaled to 17 x 11: a dotted ring at 70 % for sending, a
+ring with a tick for sent, two overlapping rings with ticks for delivered (the back ring and tick
+are clipped outside the front ring), and two filled accent-blue discs with ticks cut out in the
+background colour for read. VoiceOver reads the label. Bubbles and the Slack-style rows both show
+it; office rooms keep their "to N" label beside it.
+
+- Direct messages: a chat or thread reply is shown at once as `sending` and its relay ref (first
+  40 hex of SHA-256 of the exact envelope) goes into a per-conversation `DirectRefBook` (256 refs,
+  id to ref and back). `forkmesh-recipients` for that ref makes it `sent`;
+  `{"kind":"forkmesh-delivered","refs":[...]}` makes those `delivered`; `{"kind":"forkmesh-read"}`
+  turns every own message already `sent` or `delivered` into `read` (a message still `sending`
+  stays). Own frames replayed from history or sent from another device of the same account are
+  `sent` and their relay `ref` is tracked too. A send that cannot reach the relay takes the
+  message back out (unless the mesh delivered it, which counts as `sent`). Marks live in
+  `receipts` (512 ids) for the session; after a restart own messages show `sent` until the relay
+  says more.
+- Office rooms: `post` and `postFrame` show the message as `sending` before the socket write and
+  `forkmesh-recipients` makes it `sent`. Channels never reach `delivered` or `read`: the relay
+  sends those only for direct rooms.
+
+**Delete for everyone.** `DirectMessageService.deleteForEveryone(_:messageId:)` sends a sealed
+`delete` frame (`conversation`, `target`, `persist`, no `notify`), removes the message, drops it
+from the outbox so a later reseal never sends it again, and then sends
+`{"kind":"forkmesh-superseded","refs":[<original ref>]}` when the ref is known, so the relay drops
+a copy the other person has not received yet. The delete frame itself stays on the relay for an
+offline recipient. `OfficeChannelService.deleteForEveryone` does the same through `postFrame`.
+Receiving: a `delete` is honoured only when its `senderId` is the target's `senderId`; a delete
+whose target has not arrived yet is held (64 per room) and swallows the target when it comes, so a
+history replay in any order ends with the message gone. Every removal calls `onRemoved`, and
+`ChatHub.messageRemoved` records the id in `ChatExtras.recordRemoved` (2,000 ids, saved in the
+chat history file as `removed`), drops its reactions, edit and attachment, removes the local ping
+(`chat:<id>`) and calls `ChatHub.onMessageRemoved`; the app uses that to remove any delivered
+notification whose `userInfo["messageId"]` is that id (`Platform/ChatNotificationCleanup.swift`).
+`isRemoved` keeps a removed id from coming back from a replay after a restart.
+
+**Reactions, edits and replies.** `ChatHub.toggleReaction`, `edit`, `delete`, `deleteReply` and
+`replyInThread` send `reaction`, `edit`, `delete` and `thread-reply` frames through
+`DirectMessageService.sendFrame(_:type:fields:)` (sealed like chat; `thread-reply` keeps
+`channel` and notifies, the others carry `conversation` and do not) or
+`OfficeChannelService.postFrame` for office rooms. Incoming room frames reach
+`ChatExtras.applyRoomFrame`, which now applies replies (under the room's conversation, so threads
+work for `direct:` and `#office/` rooms), reactions, edits (author-checked; an edit for a message
+not seen yet is held until it arrives) and reply deletes. `ChatHub.rows` gives DM and office rows
+reactions, edited text, thread summaries and edit/delete for your own messages; read-only office
+rooms get none. The context menus offer Reply, the reactions, Copy, Edit and Delete (Delete for
+everyone or Delete for me); a bubble with replies shows "N replies", which opens the thread.
+`ChatThreadScreen` takes a `direct:` channel (the route no longer prefixes `#` to it).
+
+Tests: `DirectMessageReceiptsTests` (sending to read, replayed own frames, failed sends, delete for
+everyone with superseded, author check and delete-before-target, and a hub test covering reactions,
+edits held for a late message, replies, deletes and the saved tombstones), the office test in
+`OfficeChannelsTests`, and `ChatConversationTests` for the marks.
+
+## Message text in push notifications (branch 1974)
+
+Asked 2026-10-13: "make it so that chat text shows in the push notifications - signal has a way
+of doing it securely so lets do it like they do". The push carries no text. A direct-message push
+now carries `ref` (the relay ref of the frame that rang), `keyVersion` and `conversation`; a
+channel push carries `channelId` and `ref`. `NotificationService` asks the relay for the
+still-encrypted frame with the account's session (`GET /api/chat/direct-messages/<id>/pending?ref=`
+or `/api/chat/channels/<id>/pending?ref=`; side-effect free on the server: no read mark, no
+acknowledgement), opens it on the phone and shows the sender as the title and the text (or
+"📎 <file>") as the body; a channel reads "<sender> in #<channel>". It sets `threadIdentifier` to
+the conversation and `userInfo["messageId"]` to the message id. Anything that fails (row already
+received, frame not sealed for this device, timeout) leaves the server's generic alert. The
+extension never acknowledges, marks read or sends anything to the relay.
+
+The logic is in a new module, **FMPush** (`ForkMeshCore/Sources/FMPush/PushChat.swift`, deps FMBase
+and FMCrypto), tested on Linux by `FMPushTests/PushChatTests`:
+
+- `PushChatRequest.parse(_)` reads `ref` (40 lowercase hex), `conversation` (`direct:<32 hex>`) or
+  `channelId` (32 hex), `keyVersion` and `sender`; `pendingPath` and `threadIdentifier` follow.
+- `PushChatOpener.open(_:request:privateKey:keys:)` checks the pending answer names the same
+  conversation or channel, decrypts the outer `RoomCrypto` envelope, unseals it with the device's
+  X25519 key (`RoomSeal.fromPrivateKey`, no store) and accepts only `chat` and `thread-reply` for
+  that conversation. A direct message must be sealed; a public channel frame is plain inside the
+  room cipher.
+- `PushRoomKeys` caches derived room keys (one keychain item, `room-keys`, 32 entries, keyed by a
+  hash of room and passphrase) so only the first push of a room pays the 210,000 PBKDF2 rounds.
+  `RoomCrypto.derivedKey(_:passphrase:)` and `RoomCrypto.withKey(_)` were added for it.
+- `PushPreviewMode` is the "Notification content" setting (Settings, Notifications): Name and
+  message (default), Name only ("New message" under the name, no fetch), No name or message
+  (title "ForkMesh", body "New message", no portrait). `PushPreviewText.preview` builds the text.
+
+What the extension needs comes through the shared keychain (`Shared/PushCredentialStore.swift`):
+the credential JSON written at registration now also holds `deviceKeyName` (the full keychain
+account of `chat/e2ee/x25519PrivateV2` in the active project's namespace,
+`ProjectKeyPolicy.secureKey`) and `preview`. `PushCredentialStore.deviceKey(named:)` reads that
+key from the app's `com.forkmesh.forkmesh.secure` items (no access group given, so every group the
+extension holds is searched; the app writes without one, which lands in its first
+`keychain-access-groups` entry, the group the two targets share). `setPreview` rewrites the
+preference into every stored credential when the setting changes. The extension links the new
+`ForkMeshPushCore` product (FMBase, FMCrypto, FMPush), not the whole core.
 
 ## Voice and video calls
 

@@ -42,6 +42,7 @@ struct ChatInstaller: AppServicesInstaller {
                 selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
             hub.office = office
             hub.direct = direct
+            hub.onMessageRemoved = { (_: String, messageId: String) in ChatNotificationCleanup.remove(messageId: messageId) }
             installCalls(hub: hub, direct: direct, relay: relay, auth: auth)
             let live: DirectLiveEngine = installLive(hub: hub, direct: direct)
             let readMarks: ChatReadMarks = ChatReadMarks(api: api)
@@ -194,7 +195,8 @@ struct ChatInstaller: AppServicesInstaller {
         }
         services.routes.register(.thread, by: "WS13") { route in
             guard case let .thread(channel, id) = route, !id.isEmpty else { return AnyView(RoutePlaceholderView(route: route)) }
-            return AnyView(ChatThreadScreen(channel: channel.hasPrefix("#") ? channel : "#\(channel)", rootId: id))
+            let room: String = channel.hasPrefix("#") || DirectMessageFrames.isDirect(channel) ? channel : "#\(channel)"
+            return AnyView(ChatThreadScreen(channel: room, rootId: id))
         }
         services.routes.register(.discord, by: "WS13") { route in
             guard case let .discord(guild, channel) = route else { return AnyView(RoutePlaceholderView(route: route)) }

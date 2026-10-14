@@ -219,7 +219,10 @@ builds that install beside it.
   `GET /api/accounts/event-ticket`): payload-free frames naming a topic
   (`pings`, `issues`, `direct-messages`); the app answers with the read it
   would otherwise poll for. Keepalive 4 min. Direct-message frames carry no
-  sender or text, so on one the app reads `GET /api/chat/direct-messages`
+  sender or text; since 2026-10-13 they name the conversation, the relay
+  `ref` and `keyVersion`, and the background link decrypts the message on
+  the phone (section 15). When that is not possible (no `ref`, row already
+  received, key missing) the app reads `GET /api/chat/direct-messages`
   and takes the newest conversation with unread messages as the sender: the
   notification then says "Direct message from <name>" and carries that
   account's avatar (`accountAvatarPng`) as its large icon. When that read
@@ -998,6 +1001,106 @@ model in `C/market/MarketModels.kt` (`MarketModel`, `MarketOptions`,
   on. Installed packages with a native route show Open. Errors stay on the row.
 - Items read `version` so a sort, filter or install recomposes the chip row
   and rows; LazyColumn item lambdas that only capture the model are skipped.
+
+## 15. Secure chat: receipts, DM replies and deletes, message previews (2026-10-13)
+
+Shared design for all clients: branch 1974 spec, `docs/app/chat-private-rooms.md`
+and `docs/app/chat-push-previews.md`.
+
+- **Receipt marks** (`ChatReceipt` in `C/model/Chat.kt`, `ChatRow.receipt`,
+  drawn by `A/feature/chat/ChatReceiptMark.kt` on a Compose `Canvas` in the
+  shared 22 x 14 geometry, 17 x 11 dp, accessible name "Sending", "Sent",
+  "Delivered", "Read"). Every own message and own thread reply shows one,
+  next to the time on a header row and at the trailing edge of a grouped
+  row; ephemeral app rows and #mesh do not (#mesh keeps its "Queued" line).
+  `ChatHub.receipt` asks the service that owns the room and falls back to
+  Sent:
+  - DMs (`DirectMessageService`): a send is Sending until the relay's
+    `forkmesh-recipients` for its ref, then Sent; `forkmesh-delivered` naming
+    the ref makes it Delivered; `forkmesh-read` turns every own message
+    already Sent or Delivered in that DM into Read. An own frame that arrives
+    from another of my devices or in the history replay is Sent. The service
+    keeps bounded maps (256 each) of message id -> state, ref -> id and
+    id -> latest ref; the ref is recorded before the frame is written, so an
+    ack that beats `sendText` back is not lost, and a re-seal updates it.
+  - Office rooms: Sending from `sendFrame` until the recipients ack
+    (`OfficeChannelService.receipt`), then Sent; history rows are Sent.
+    Channels never reach Delivered or Read (the relay only reports those for
+    direct rooms) and keep the "to N" label after the mark.
+  - Relay rooms (`#channel`, legacy `@` DMs): the shared room relay sends no
+    ack, and `sendMessage` returns only after the socket accepted the frame,
+    so own messages show Sent.
+- **DM replies, reactions, edits, delete for everyone.** The frames are the
+  relay-room ones (`thread-reply`, `reaction`, `edit`, `delete`, with
+  `conversation`/`channel` = `direct:<id>`), sealed like `chat` through
+  `sendSealed`; replies notify, the others persist without `notify`.
+  `ChatExtras` stores DM thread replies (it took only `#` channels),
+  reactions and edits as for channels, and its author lookup now goes through
+  `ChatHub.messages`, so DM and Office messages are found. `ChatHub` routes
+  `toggleReaction` (the emoji character goes on the wire, as on the web),
+  `edit`, `deleteMessage` and `replyInThread` for `direct:` to the service.
+  This fixes "Delete for everyone" in a DM, which used to call the relay
+  room's delete and send it into the wrong room.
+  - Receiving: an `edit` or `delete` is honoured only when its `senderId` is
+    the target's author (DM history or a DM thread reply). One whose target is
+    not here yet is held (128 targets, 8 frames each) and applied when the
+    target arrives, so a replayed delete that overtakes its message still
+    removes it and no notification is raised for it.
+  - A delete removes the message from the transcript, its reactions, edits
+    and attachment, and its own outbox entry (and edits or reactions on it),
+    so a re-seal cannot send it again. Android keeps no DM transcript on disk
+    (DMs come back from the relay's replay), so the id also goes into the
+    persisted hidden-message list (`extras.hideMessage`, saved with the chat
+    history) and a later replay cannot show it.
+  - After sending the delete, the sender sends `forkmesh-superseded` with the
+    original's ref when it knows it (own sends, own replayed frames), so the
+    relay drops the stored ciphertext the other person has not received. The
+    delete frame stays on the relay until their device receives it.
+  - UI: long-press offers reactions, Reply in thread (`ChatHub.canReplyInThread`),
+    Edit and Delete (for everyone or for me) on DM rows; the thread screen
+    works for `direct:` (`ChatHub.rootMessage` reads `messages`, title
+    "Thread with <name>", the composer stays enabled because a DM send opens
+    its socket on demand).
+  - Not done: the same frames in Office rooms. `OfficeChannelService` still
+    accepts only `chat`, and the long-press sheet keeps reactions and edits
+    off there.
+- **Message text in DM notifications, the Signal way** (`C/push/DirectMessagePreview.kt`,
+  `A/feature/push/PingAlerts.kt`, `PingNotifier.postDirectMessagePreview`).
+  Android has no push transport; the background link's account event socket
+  (`AccountEventLoop.onEvent`, which now passes the whole frame) gets a
+  `direct-messages` frame naming `conversation` and `ref`. The service then
+  `GET`s `/api/chat/direct-messages/<id>/pending?ref=<ref>` (side-effect free:
+  it does not mark read, acknowledge or delete), decrypts the stored envelope
+  with the room passphrase (`RoomCrypto`, PBKDF2 cached per process) and
+  unseals it with this device's X25519 key (`RoomSeal.existing`: it reads the
+  project's key and never creates one, and it does not persist peers, so it
+  cannot race the chat screen's own seal). Only sealed `chat` or
+  `thread-reply` frames for that conversation are shown. The server never
+  sees the text.
+  - One notification per conversation (tag project, id from
+    `direct-messages/<id>`), with `Notification.MessagingStyle` listing each
+    message (up to 8, deduplicated by message id) and the sender as a
+    `Person` with their avatar. The platform style is used (API 28+, minSdk
+    26 gets `BigTextStyle`), so no new dependency. A tap opens the
+    conversation as before. The lock screen gets a public version that says
+    only "New message".
+  - The "Notification content" setting (Pings settings, "This phone" card;
+    `NotificationContent`, stored in the app's `Prefs` under
+    `notifications/content` for the whole phone): Name and message (default),
+    Name only (title is the sender, body "New message"), No name or message
+    (nothing is fetched; the fallback notification is posted without the
+    sender's name).
+  - Falls back to the old notification when the frame has no `ref`, the row
+    is gone (already received on another device), the frame is not sealed
+    for this device or anything fails. Quiet hours and pause hold both.
+  - Channel messages: the account event socket carries no channel event
+    (channel pushes are APNs only, `push_chat_room_apns`), so Android shows
+    no channel notifications; this needs a socket topic first.
+- Tests: `DirectMessagesTest` (receipt states, replies and reactions, own
+  edits, delete for everyone with superseded, author checks and held
+  mutations), `DirectMessagePreviewTest` (event parse, on-device decrypt,
+  refusals, content setting, line merge), `OfficeAndDiscordTest` (Office
+  Sending until the ack).
 
 ## Appendix: port map
 

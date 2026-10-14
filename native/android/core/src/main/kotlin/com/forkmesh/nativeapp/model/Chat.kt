@@ -46,3 +46,10 @@ data class ChatMessage(
     val appMessageId: String = "",
     val ephemeral: Boolean = false,
 )
+
+enum class ChatReceipt(val label: String) {
+    SENDING("Sending"),
+    SENT("Sent"),
+    DELIVERED("Delivered"),
+    READ("Read"),
+}

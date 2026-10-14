@@ -660,6 +660,9 @@ struct SettingsScreen: View {
                     SettingsCardBox {
                         PushNotificationsCard(push: push)
                     }
+                    SettingsCardBox {
+                        NotificationContentCard()
+                    }
                 }
             }
         }

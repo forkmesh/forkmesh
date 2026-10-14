@@ -427,6 +427,7 @@ MessageRow *MainWindow::createMessageRow(const ChatMessage &message,
     }
     if (m_reactions.contains(message.id))
         row->setReactions(m_reactions.value(message.id));
+    row->setReceiptMark(chatReceiptMark(message));
     if (message.self && isLocalMeshConversation(message.conversation))
         applyLocalMeshQueuedMark(row);
     connect(row, &MessageRow::reactionToggled, this,
@@ -574,8 +575,7 @@ MessageRow *MainWindow::addMessageRow(
 void MainWindow::openChatThread(const QString &rootMessageId)
 {
     if (rootMessageId.trimmed().isEmpty() ||
-        isDirectConversation(m_currentConversation) ||
-        isOfficeConversation(m_currentConversation))
+        isDirectConversation(m_currentConversation))
         return;
     const auto &history = m_history.value(m_currentConversation);
     const bool discord = isDiscordConversation(m_currentConversation);
@@ -678,6 +678,23 @@ void MainWindow::sendChatThreadReply()
                     .arg(m_currentConversation, text), -1,
                 m_currentConversation, m_activeChatThreadRootId);
         }
+        return;
+    }
+    if (isOfficeConversation(m_currentConversation)) {
+        if (!m_officeChannelMirror ||
+            !m_officeChannelMirror->sendThreadReply(
+                m_currentConversation, m_activeChatThreadRootId, text)) {
+            logSystem(QStringLiteral("Office chat: %1 is not currently writable.")
+                          .arg(m_currentConversation));
+            return;
+        }
+        m_chatThreadInput->clear();
+        maybeAskForkbot(m_currentConversation, text, m_activeChatThreadRootId);
+        triggerTeammatesForEvent(
+            QStringLiteral("mentions"),
+            QStringLiteral("Chat thread in %1\n%2")
+                .arg(m_currentConversation, text), -1,
+            m_currentConversation, m_activeChatThreadRootId);
         return;
     }
     if (!m_backend)
@@ -890,6 +907,7 @@ void MainWindow::onMessage(const ChatMessage &message)
         if (message.threadRootId == m_activeChatThreadRootId)
             rebuildChatThreadPane();
     }
+    replayPendingOfficeMutations(message.id);
     const QString ownChatName = chatDisplayName().trimmed();
     const bool ownMessage =
         message.self ||
@@ -1020,7 +1038,10 @@ bool MainWindow::canReactInConversation(const QString &conversation) const
         return false;
     if (isDiscordConversation(conversation))
         return m_discordClient != nullptr;
-    return m_backend && !isOfficeConversation(conversation);
+    if (isOfficeConversation(conversation))
+        return m_officeChannelMirror &&
+               m_officeChannelMirror->canSend(conversation);
+    return m_backend != nullptr;
 }
 
 void MainWindow::toggleChatReaction(const QString &conversation,
@@ -1032,6 +1053,10 @@ void MainWindow::toggleChatReaction(const QString &conversation,
         return;
     if (isDiscordConversation(conversation))
         m_discordClient->toggleReaction(conversation, messageId, reaction);
+    else if (isOfficeConversation(conversation))
+        m_officeChannelMirror->sendReaction(
+            conversation, messageId, reaction,
+            !hasOwnChatReaction(conversation, messageId, reaction));
     else
         m_backend->sendReaction(conversation, messageId, reaction);
 }
@@ -1118,8 +1143,10 @@ void MainWindow::applyMessageRecipients(const QString &conversation,
     if (!names.isEmpty())
         existing->recipientNames = names;
     if (conversation == m_currentConversation) {
-        if (auto *row = m_visibleRows.value(messageId))
+        if (auto *row = m_visibleRows.value(messageId)) {
             row->setRecipientCount(recipients, existing->recipientNames);
+            row->setReceiptMark(chatReceiptMark(*existing));
+        }
         if (m_chatThreadPane && m_chatThreadPane->isVisible() &&
             !m_activeChatThreadRootId.isEmpty() &&
             (existing->id == m_activeChatThreadRootId ||
@@ -1127,6 +1154,194 @@ void MainWindow::applyMessageRecipients(const QString &conversation,
             rebuildChatThreadPane();
     }
     scheduleChatSave();
+}
+
+forkmesh::recipients::ReceiptMark MainWindow::chatReceiptMark(
+    const ChatMessage &message) const
+{
+    const QString &conversation = message.conversation;
+    if (!message.self || message.deleted || conversation.isEmpty() ||
+        isDiscordConversation(conversation) ||
+        isLocalMeshConversation(conversation) ||
+        isDirectConversation(conversation) ||
+        conversation == QLatin1String("#team") ||
+        message.senderId.startsWith(QLatin1String("teammate:")))
+        return forkmesh::recipients::ReceiptMark::None;
+    return forkmesh::recipients::receiptMark(true, message.recipientCount,
+                                             message.receipt,
+                                             message.historical);
+}
+
+void MainWindow::refreshReceiptRow(const ChatMessage &message)
+{
+    if (message.conversation != m_currentConversation)
+        return;
+    if (auto *row = m_visibleRows.value(message.id))
+        row->setReceiptMark(chatReceiptMark(message));
+    if (m_chatThreadPane && m_chatThreadPane->isVisible() &&
+        !m_activeChatThreadRootId.isEmpty() &&
+        (message.id == m_activeChatThreadRootId ||
+         message.threadRootId == m_activeChatThreadRootId))
+        rebuildChatThreadPane();
+}
+
+void MainWindow::applyMessagesDelivered(const QString &conversation,
+                                        const QStringList &messageIds)
+{
+    if (messageIds.isEmpty() || !m_history.contains(conversation))
+        return;
+    bool changed = false;
+    for (ChatMessage &message : m_history[conversation]) {
+        if (!message.self || message.deleted ||
+            message.receipt != forkmesh::recipients::Receipt::None ||
+            !messageIds.contains(message.id))
+            continue;
+        message.receipt = forkmesh::recipients::Receipt::Delivered;
+        changed = true;
+        refreshReceiptRow(message);
+    }
+    if (changed)
+        scheduleChatSave();
+}
+
+void MainWindow::applyConversationRead(const QString &conversation)
+{
+    if (!m_history.contains(conversation))
+        return;
+    bool changed = false;
+    for (ChatMessage &message : m_history[conversation]) {
+        if (!message.self || message.deleted ||
+            message.receipt == forkmesh::recipients::Receipt::Read ||
+            (message.recipientCount < 0 && !message.historical &&
+             message.receipt == forkmesh::recipients::Receipt::None))
+            continue;
+        message.receipt = forkmesh::recipients::Receipt::Read;
+        changed = true;
+        refreshReceiptRow(message);
+    }
+    if (changed)
+        scheduleChatSave();
+}
+
+bool MainWindow::officeMutationTargetReady(const QString &conversation,
+                                           const QString &messageId,
+                                           const QJsonObject &mutation)
+{
+    if (messageId.isEmpty())
+        return false;
+    const QList<ChatMessage> &messages = m_history.value(conversation);
+    const bool present = std::any_of(
+        messages.cbegin(), messages.cend(),
+        [&messageId](const ChatMessage &message) {
+            return message.id == messageId;
+        });
+    if (present)
+        return true;
+    if (m_historyIds.contains(messageId))
+        return false;
+    QList<QJsonObject> &pending = m_pendingOfficeMutations[messageId];
+    if (pending.size() < 32)
+        pending.append(mutation);
+    m_pendingOfficeMutationOrder.removeAll(messageId);
+    m_pendingOfficeMutationOrder.append(messageId);
+    while (m_pendingOfficeMutationOrder.size() > 200)
+        m_pendingOfficeMutations.remove(
+            m_pendingOfficeMutationOrder.takeFirst());
+    return false;
+}
+
+void MainWindow::replayPendingOfficeMutations(const QString &messageId)
+{
+    const auto it = m_pendingOfficeMutations.find(messageId);
+    if (it == m_pendingOfficeMutations.end())
+        return;
+    const QList<QJsonObject> pending = it.value();
+    m_pendingOfficeMutations.erase(it);
+    m_pendingOfficeMutationOrder.removeAll(messageId);
+    for (const QJsonObject &mutation : pending) {
+        const QString type = mutation.value(QStringLiteral("type")).toString();
+        const QString conversation =
+            mutation.value(QStringLiteral("conversation")).toString();
+        if (type == QLatin1String("reaction"))
+            applyOfficeReaction(
+                conversation, messageId,
+                mutation.value(QStringLiteral("emoji")).toString(),
+                mutation.value(QStringLiteral("reactorName")).toString(),
+                mutation.value(QStringLiteral("added")).toBool());
+        else if (type == QLatin1String("edit"))
+            applyOfficeEdit(conversation, messageId,
+                            mutation.value(QStringLiteral("senderId")).toString(),
+                            mutation.value(QStringLiteral("text")).toString());
+        else if (type == QLatin1String("delete"))
+            applyOfficeDelete(
+                conversation, messageId,
+                mutation.value(QStringLiteral("senderId")).toString());
+    }
+}
+
+void MainWindow::applyOfficeReaction(const QString &conversation,
+                                     const QString &messageId,
+                                     const QString &emoji,
+                                     const QString &reactorName, bool added)
+{
+    if (emoji.isEmpty() || reactorName.isEmpty() ||
+        !officeMutationTargetReady(
+            conversation, messageId,
+            QJsonObject{{"type", "reaction"},
+                        {"conversation", conversation},
+                        {"emoji", emoji},
+                        {"reactorName", reactorName},
+                        {"added", added}}))
+        return;
+    onReaction(conversation, messageId, emoji, reactorName, added);
+}
+
+void MainWindow::applyOfficeEdit(const QString &conversation,
+                                 const QString &messageId,
+                                 const QString &senderId,
+                                 const QString &newText)
+{
+    if (senderId.isEmpty() || newText.trimmed().isEmpty() ||
+        !officeMutationTargetReady(
+            conversation, messageId,
+            QJsonObject{{"type", "edit"},
+                        {"conversation", conversation},
+                        {"senderId", senderId},
+                        {"text", newText}}))
+        return;
+    const QList<ChatMessage> &messages = m_history.value(conversation);
+    const auto target = std::find_if(
+        messages.cbegin(), messages.cend(),
+        [&messageId](const ChatMessage &message) {
+            return message.id == messageId;
+        });
+    if (target == messages.cend() || target->deleted ||
+        target->senderId != senderId)
+        return;
+    onMessageEdited(conversation, messageId, newText);
+}
+
+void MainWindow::applyOfficeDelete(const QString &conversation,
+                                   const QString &messageId,
+                                   const QString &senderId)
+{
+    if (senderId.isEmpty() ||
+        !officeMutationTargetReady(
+            conversation, messageId,
+            QJsonObject{{"type", "delete"},
+                        {"conversation", conversation},
+                        {"senderId", senderId}}))
+        return;
+    const QList<ChatMessage> &messages = m_history.value(conversation);
+    const auto target = std::find_if(
+        messages.cbegin(), messages.cend(),
+        [&messageId](const ChatMessage &message) {
+            return message.id == messageId;
+        });
+    if (target == messages.cend() || target->deleted ||
+        target->senderId != senderId)
+        return;
+    onMessageDeleted(conversation, messageId);
 }
 
 void MainWindow::onMessageDeleted(const QString &conversation, const QString &messageId)
@@ -1153,7 +1368,7 @@ void MainWindow::onMessageDeleted(const QString &conversation, const QString &me
 
 void MainWindow::promptEditMessage(const QString &messageId, const QString &currentText)
 {
-    if (messageId.isEmpty() || isOfficeConversation(m_currentConversation))
+    if (messageId.isEmpty())
         return;
     bool ok = false;
     const QString text = QInputDialog::getMultiLineText(
@@ -1165,6 +1380,13 @@ void MainWindow::promptEditMessage(const QString &messageId, const QString &curr
         if (m_discordClient)
             m_discordClient->editMessage(m_currentConversation, messageId,
                                          trimmed);
+    } else if (isOfficeConversation(m_currentConversation)) {
+        if (!m_officeChannelMirror ||
+            !m_officeChannelMirror->editMessage(m_currentConversation,
+                                                messageId, trimmed))
+            logSystem(QStringLiteral("Office chat: the edit could not be sent "
+                                     "to %1.")
+                          .arg(m_currentConversation));
     } else if (m_backend) {
         m_backend->editMessage(m_currentConversation, messageId, trimmed);
     }
@@ -1172,7 +1394,7 @@ void MainWindow::promptEditMessage(const QString &messageId, const QString &curr
 
 void MainWindow::confirmDeleteMessage(const QString &messageId)
 {
-    if (messageId.isEmpty() || isOfficeConversation(m_currentConversation))
+    if (messageId.isEmpty())
         return;
     const int result = QMessageBox::question(
         this, "Delete message", "Delete this message for everyone?");
@@ -1181,6 +1403,13 @@ void MainWindow::confirmDeleteMessage(const QString &messageId)
     if (isDiscordConversation(m_currentConversation)) {
         if (m_discordClient)
             m_discordClient->deleteMessage(m_currentConversation, messageId);
+    } else if (isOfficeConversation(m_currentConversation)) {
+        if (!m_officeChannelMirror ||
+            !m_officeChannelMirror->deleteMessage(m_currentConversation,
+                                                  messageId))
+            logSystem(QStringLiteral("Office chat: the delete could not be "
+                                     "sent to %1.")
+                          .arg(m_currentConversation));
     } else if (m_backend) {
         m_backend->deleteMessage(m_currentConversation, messageId);
     }

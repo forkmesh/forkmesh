@@ -183,6 +183,8 @@ void MainWindow::saveChatHistory()
             if (m.recipientCount >= 0 && !m.recipientNames.isEmpty())
                 obj.insert("recipientNames",
                            QJsonArray::fromStringList(m.recipientNames));
+            if (m.receipt != forkmesh::recipients::Receipt::None)
+                obj.insert("receipt", forkmesh::recipients::receiptName(m.receipt));
             if (!m.blocks.isEmpty())
                 obj.insert("blocks", m.blocks);
             if (m.hasFile()) {
@@ -265,6 +267,9 @@ void MainWindow::loadChatHistory()
                 obj.value("recipients"));
             m.recipientNames = forkmesh::recipients::namesFromValue(
                 obj.value("recipientNames"));
+            m.receipt = forkmesh::recipients::receiptFromName(
+                obj.value("receipt").toString());
+            m.historical = true;
             if (forkmesh::chatblocks::senderMayFormat(m.senderId))
                 m.blocks = forkmesh::chatblocks::sanitized(obj.value("blocks"));
             m.fileName = obj.value("fileName").toString();
@@ -3101,6 +3106,16 @@ void MainWindow::startOfficeChannelMirror()
         connect(m_officeChannelMirror,
                 &OfficeChannelMirror::messageRecipientsKnown, this,
                 &MainWindow::applyMessageRecipients);
+        connect(m_officeChannelMirror, &OfficeChannelMirror::messagesDelivered,
+                this, &MainWindow::applyMessagesDelivered);
+        connect(m_officeChannelMirror, &OfficeChannelMirror::conversationRead,
+                this, &MainWindow::applyConversationRead);
+        connect(m_officeChannelMirror, &OfficeChannelMirror::reactionChanged,
+                this, &MainWindow::applyOfficeReaction);
+        connect(m_officeChannelMirror, &OfficeChannelMirror::messageEdited, this,
+                &MainWindow::applyOfficeEdit);
+        connect(m_officeChannelMirror, &OfficeChannelMirror::messageDeleted,
+                this, &MainWindow::applyOfficeDelete);
         connect(m_officeChannelMirror,
                 &OfficeChannelMirror::directServerCopiesKnown, this,
                 [this](const QString &conversation, int stored) {

@@ -5,6 +5,7 @@ import com.forkmesh.nativeapp.apps.ChatApps
 import com.forkmesh.nativeapp.inbox.LocalPingLog
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
+import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.model.ChatRetention
 import com.forkmesh.nativeapp.model.Member
 import com.forkmesh.nativeapp.model.MemberGroup
@@ -155,6 +156,7 @@ data class ChatRow(
     val thread: ChatThreadSummary? = null,
     val attachment: ChatAttachment? = null,
     val visitor: Boolean = false,
+    val receipt: ChatReceipt? = null,
 )
 
 sealed class ChatHubSend {
@@ -205,6 +207,8 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         set(value) {
             field = value
             value?.onFrame = { frame, _ -> extras.apply(frame) }
+            value?.replyAuthorOf = { extras.replyAuthorOf(it) }
+            value?.onRemoved = { _, id -> extras.hideMessage(id) }
             value?.onMessage = { message ->
                 filePing(message)
                 if (relay.currentConversation == message.conversation) {
@@ -248,7 +252,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
 
     init {
         extras.sink = relay
-        extras.authorOf = { conversation, id -> relay.messages(conversation).firstOrNull { it.id == id }?.senderId }
+        extras.authorOf = { conversation, id -> messages(conversation).firstOrNull { it.id == id }?.senderId }
         extras.onChannelJoined = { relay.addChannel(it) }
         extras.onChannelRemoved = { relay.removeChannel(it) }
         relay.observeMessages {
@@ -373,28 +377,39 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         else -> relay.messages(conversation)
     }
 
+    fun receipt(message: ChatMessage): ChatReceipt? {
+        if (!message.self || message.ephemeral || message.conversation == MESH_CONVERSATION) return null
+        return when {
+            DirectMessageFrames.isDirect(message.conversation) -> direct?.receipt(message.id)
+            OfficeFrames.isOffice(message.conversation) -> office?.receipt(message.id)
+            else -> null
+        } ?: ChatReceipt.SENT
+    }
+
     fun rows(conversation: String): List<ChatRow> {
         val stored = messages(conversation).filter { !extras.isHidden(it.id) }
         val list = apps?.merge(stored, conversation) ?: stored
-        val relayRoom = !OfficeFrames.isOffice(conversation) && !DirectMessageFrames.isDirect(conversation) &&
-            conversation != MESH_CONVERSATION
+        val inDirect = DirectMessageFrames.isDirect(conversation)
+        val relayRoom = !OfficeFrames.isOffice(conversation) && !inDirect && conversation != MESH_CONVERSATION
+        val rich = relayRoom || inDirect
         return list.mapIndexed { index, message ->
             val previous = list.getOrNull(index - 1)
             val base = ChatRow(
                 message = message,
                 continuesGroup = !message.ephemeral && previous?.ephemeral != true && continuesGroup(previous, message),
-                deletable = relayRoom && message.self && !message.ephemeral,
+                deletable = rich && message.self && !message.ephemeral,
                 visitor = !message.self && ChatVisitorPresence.isTransientVisitor(name = message.senderName),
+                receipt = receipt(message),
             )
-            if (!relayRoom || message.ephemeral) {
-                if (DirectMessageFrames.isDirect(conversation)) base.copy(attachment = extras.attachment(message.id)) else base
+            if (!rich || message.ephemeral) {
+                base
             } else {
                 base.copy(
                     text = extras.text(message),
                     edited = extras.isEdited(message.id),
                     editable = message.self && message.text.isNotEmpty(),
                     reactions = extras.reactions(message.id),
-                    thread = if (message.conversation.startsWith("#")) extras.threadSummary(message.id) else null,
+                    thread = if (message.conversation.startsWith("#") || inDirect) extras.threadSummary(message.id) else null,
                     attachment = extras.attachment(message.id),
                 )
             }
@@ -413,11 +428,21 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
                 editable = message.self && message.text.isNotEmpty(),
                 reactions = extras.reactions(message.id),
                 attachment = extras.attachment(message.id),
+                receipt = receipt(message),
             )
         }
     }
 
-    fun rootMessage(rootId: String, channel: String): ChatMessage? = relay.messages(channel).firstOrNull { it.id == rootId }
+    fun rootMessage(rootId: String, channel: String): ChatMessage? = messages(channel).firstOrNull { it.id == rootId }
+
+    fun canReplyInThread(conversation: String): Boolean =
+        (conversation.startsWith("#") && conversation != MESH_CONVERSATION) || DirectMessageFrames.isDirect(conversation)
+
+    fun threadTitle(conversation: String): String {
+        if (!DirectMessageFrames.isDirect(conversation)) return "Thread in $conversation"
+        val other = direct?.record(conversation)?.otherUser.orEmpty()
+        return if (other.isEmpty()) "Thread" else "Thread with $other"
+    }
 
     val canSetTopic: Boolean get() = office?.room(relay.currentConversation)?.canManage == true
 
@@ -488,6 +513,11 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     }
 
     fun replyInThread(channel: String, rootId: String, text: String): Boolean {
+        if (DirectMessageFrames.isDirect(channel)) {
+            val sent = direct?.sendThreadReply(channel, rootId, text) == true
+            if (!sent) notice("The reply could not be sent. Reconnecting...")
+            return sent
+        }
         if (!relay.connected) {
             notice(OFFLINE_NOTICE)
             relay.connect()
@@ -499,16 +529,30 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     }
 
     fun toggleReaction(message: ChatMessage, value: String) {
+        if (DirectMessageFrames.isDirect(message.conversation)) {
+            val added = !extras.hasReacted(message.id, value)
+            if (direct?.react(message.conversation, message.id, ReactionCatalog.emoji(value), added) != true) notice("The reaction could not be sent.")
+            return
+        }
         if (!extras.toggleReaction(message.conversation, message.id, value)) notice(OFFLINE_NOTICE)
     }
 
     fun edit(message: ChatMessage, text: String): Boolean {
-        val sent = extras.edit(message.conversation, message.id, text)
+        val sent = if (DirectMessageFrames.isDirect(message.conversation)) {
+            message.self && direct?.edit(message.conversation, message.id, text) == true
+        } else {
+            extras.edit(message.conversation, message.id, text)
+        }
         if (!sent) notice("The message could not be changed.")
         return sent
     }
 
     fun deleteMessage(message: ChatMessage): Boolean {
+        if (DirectMessageFrames.isDirect(message.conversation)) {
+            val ok = message.self && direct?.deleteMessage(message) == true
+            if (!ok) notice("The message could not be deleted.")
+            return ok
+        }
         if (extras.isThreadReply(message.id)) {
             val ok = extras.deleteReply(message)
             if (!ok) notice("The reply could not be deleted.")

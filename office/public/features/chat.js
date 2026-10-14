@@ -1,5 +1,5 @@
 import { html, setHtml, trusted, join } from '../html.js';
-import { ROOMS, MAX_TEXT, chanForZone, roomLabel, mentionQuery } from './chat/core.js';
+import { ROOMS, MAX_TEXT, chanForZone, roomLabel, mentionQuery, receiptState, receiptShapes, RECEIPT_LABELS } from './chat/core.js';
 import { createChatRoomTransport } from '../../../app/public/chat-room-transport.js';
 import { createRoomSealStore } from '../../../app/public/chat-seal.js';
 import { moderateChatText } from '../../../app/public/chat-moderation.js';
@@ -132,22 +132,40 @@ export default function setup(api) {
     renderBadge();
   }
 
-  function keep(c, plain) {
+  function keep(c, plain, receipt) {
     if (!plain || plain.type !== 'chat' || plain.accountKind !== 'user') return false;
     if (plain.channel !== c.wire || !plain.id || c.ids.has(plain.id)) return false;
     if (retention.isExpired(plain.ts, c.key)) return false;
     c.ids.add(plain.id);
-    c.msgs.push({ id: plain.id, senderId: plain.senderId, sender: String(plain.sender || 'someone').slice(0, 63), text: String(plain.text || ''), richText: plain.richText, ts: Number(plain.ts) || Date.now() });
+    const m = { id: plain.id, senderId: plain.senderId, sender: String(plain.sender || 'someone').slice(0, 63), text: String(plain.text || ''), richText: plain.richText, ts: Number(plain.ts) || Date.now() };
+    if (Number.isSafeInteger(plain.relayRecipients) && plain.relayRecipients >= 0) m.recipients = plain.relayRecipients;
+    if (receipt) m.receipt = receipt;
+    c.msgs.push(m);
     return true;
   }
 
-  function mutate(c, plain) {
-    if (!plain || (plain.conversation !== c.wire && plain.channel !== c.wire)) return false;
-    const m = c.msgs.find((x) => x.id === plain.target);
-    if (!m || m.senderId !== plain.senderId) return false;
-    if (plain.type === 'delete') { c.msgs.splice(c.msgs.indexOf(m), 1); return true; }
-    if (plain.type === 'edit') { Object.assign(m, { text: String(plain.text || ''), richText: plain.richText, edited: true }); return true; }
-    return false;
+  function forget(c, id) {
+    const i = c.msgs.findIndex((x) => x.id === id);
+    if (i >= 0) c.msgs.splice(i, 1);
+    c.ids.delete(id);
+  }
+
+  function onRecipients(id, count, room) {
+    const c = S.convs.get(room?.scope);
+    const m = c?.msgs.find((x) => x.id === id);
+    if (!m || !Number.isSafeInteger(count)) return;
+    m.recipients = count;
+    if (S.cur === c.key) renderMsgs();
+  }
+
+  function advance(room, to, ids) {
+    const c = S.convs.get(room?.scope);
+    if (c?.kind !== 'dm') return;
+    for (const m of c.msgs) {
+      const state = receiptState(m, m.senderId === me, true);
+      if (state && (!ids || ids.includes(m.id)) && state !== 'read' && (ids || state !== 'pending')) m.receipt = to;
+    }
+    if (S.cur === c.key) renderMsgs();
   }
 
   function trim(c) {
@@ -194,9 +212,13 @@ export default function setup(api) {
         return { scope: room.scope, passphrase: access.passphrase, roomName: access.room, webSocketUrl: access.webSocketUrl };
       },
       allowsControllerAccess: () => false,
+      isDirectRoom: (room) => String(room?.scope || '').startsWith('direct:'),
       resolveSeal: (room, roomName) => seals.resolve(room.scope, roomName, location.host),
       onPlain,
       onHistory,
+      onRecipients,
+      onDelivered: (ids, room) => advance(room, 'delivered', ids),
+      onRead: (room) => advance(room, 'read'),
       onSealed: () => { status.textContent = 'Some earlier messages were sealed for other devices.'; },
       onState: (state, detail) => {
         if (detail.room?.scope !== c.key) return;
@@ -211,7 +233,12 @@ export default function setup(api) {
     t.connect({ scope: c.key }).catch(() => { status.textContent = 'Could not open this conversation.'; });
   }
 
-  function msgNode(m, prev) {
+  function receiptNode(m, mine, direct) {
+    const state = receiptState(m, mine, direct);
+    return state ? html`<span class="rc is-${state}" role="img" aria-label="${RECEIPT_LABELS[state]}" title="${RECEIPT_LABELS[state]}">${trusted(`<svg viewBox="0 0 22 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${receiptShapes(state)}</svg>`)}</span>` : '';
+  }
+
+  function msgNode(m, prev, direct = false) {
     const head = !prev || prev.senderId !== m.senderId || m.ts - prev.ts > 5 * 60e3;
     const mine = m.senderId === me;
     const el = document.createElement('div');
@@ -220,7 +247,7 @@ export default function setup(api) {
     const time = new Date(m.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     const other = [...api.others.values()].find((o) => o.name === m.sender);
     setHtml(el, html`<span class="av" style="background:${tint(other?.av ?? (api.me?.name === m.sender ? api.me.av : [...m.sender].reduce((a, ch) => a + ch.charCodeAt(0), 0) * 97))}">${(m.sender[0] || '?').toUpperCase()}</span>
-      <div class="meta">${m.sender}<time title="${new Date(m.ts).toLocaleString()}">${time}</time></div><p></p>
+      <div class="meta">${m.sender}<time title="${new Date(m.ts).toLocaleString()}">${time}</time>${receiptNode(m, mine, direct)}</div><p></p>
       ${mine ? html`<span class="msg-acts"><button type="button" class="icon-btn" data-act="edit" data-tip="Edit">${IC.edit(13)}</button><button type="button" class="icon-btn" data-act="del" data-tip="Delete">${IC.trash(13)}</button></span>` : ''}`);
     const p = el.querySelector('p');
     renderRichText(p, m);
@@ -240,7 +267,7 @@ export default function setup(api) {
     if (!c.ready) setHtml(box, html`<p class="chat-empty">Loading…</p>`);
     else if (!c.msgs.length) setHtml(box, html`<p class="chat-empty">${c.kind === 'dm' ? `This is the start of your conversation with ${c.peer}.` : `No messages in ${title(c)} yet.`}</p>`);
     else {
-      box.replaceChildren(...c.msgs.map((m, i) => msgNode(m, c.msgs[i - 1])));
+      box.replaceChildren(...c.msgs.map((m, i) => msgNode(m, c.msgs[i - 1], c.kind === 'dm')));
     }
     if (mode === 'bottom') box.scrollTop = box.scrollHeight;
     else box.scrollTop = prevTop;
@@ -345,12 +372,18 @@ export default function setup(api) {
     if (!c || !S.transport) return;
     const clean = (await moderateChatText(text)).text;
     const plain = presenceFrame('chat', { channel: c.wire, text: clean, richText: { v: 1, source: clean } });
-    const sent = await S.transport.send(plain, { persist: true });
-    if (!sent) { api.setNote(note, { title: 'Not sent', body: 'The conversation is reconnecting. Try again in a moment.', tone: 'error', dismiss: true }); return; }
-    api.setNote(note, null);
-    keep(c, plain);
+    keep(c, plain, 'pending');
     trim(c);
     renderMsgs('bottom');
+    const sent = await S.transport.send(plain, { persist: true });
+    if (!sent) {
+      forget(c, plain.id);
+      renderMsgs();
+      if (!input.value) input.value = text;
+      api.setNote(note, { title: 'Not sent', body: 'The conversation is reconnecting. Try again in a moment.', tone: 'error', dismiss: true });
+      return;
+    }
+    api.setNote(note, null);
   }
 
   async function sendMutation(type, target, text) {
@@ -362,7 +395,11 @@ export default function setup(api) {
       Object.assign(extra, { text: clean, richText: { v: 1, source: clean }, editedAt: Date.now() });
     }
     const plain = presenceFrame(type, extra);
-    if (await S.transport.send(plain, { persist: true })) { mutate(c, plain); renderMsgs(); }
+    if (await S.transport.send(plain, { persist: true })) {
+      mutate(c, plain);
+      renderMsgs();
+      if (type === 'delete' && c.kind === 'dm') S.transport.supersede?.([target]);
+    }
   }
 
   function startEdit(id) {

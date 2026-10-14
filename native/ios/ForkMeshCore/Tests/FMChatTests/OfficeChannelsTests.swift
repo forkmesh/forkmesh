@@ -112,10 +112,13 @@ final class OfficeChannelsTests: XCTestCase {
         XCTAssertEqual(chatEnvelope["persist"], .bool(true))
         let chatText = try XCTUnwrap(connection.sentTexts.first { crypto.decrypt(JSON.parseObject($0))?["type"]?.text == "chat" })
         XCTAssertNil(service.messages("#office/lobby").first { $0.isSelf }?.recipients)
+        let ownId = try XCTUnwrap(service.messages("#office/lobby").first { $0.isSelf }?.id)
+        XCTAssertEqual(service.receipt(ownId), .sending)
         let ack: JSONObject = ["kind": "forkmesh-recipients", "v": 1, "ref": .string(OfficeFrames.sentRef(chatText)), "recipients": 4]
         connection.receive(text: JSON.encode(ack))
         let ackApplied = await waitUntil { service.messages("#office/lobby").first { $0.isSelf }?.recipients == 4 }
         XCTAssertTrue(ackApplied)
+        XCTAssertEqual(service.receipt(ownId), .sent)
         var live = try crypto.encrypt(["type": "chat", "id": "live-1", "senderId": "peer", "sender": "Pat", "text": "welcome", "ts": 9_999_999_999_999])
         live["recipients"] = 3
         connection.receive(text: JSON.encode(live))
@@ -123,6 +126,23 @@ final class OfficeChannelsTests: XCTestCase {
         XCTAssertTrue(ok89)
         XCTAssertEqual(service.messages("#office/lobby").map(\.text), ["earlier", "hi office", "welcome"])
         XCTAssertEqual(service.messages("#office/lobby").map(\.recipients), [2, 4, 3])
+        var removed: [String] = []
+        service.onRemoved = { removed.append($1) }
+        let deleted = await service.deleteForEveryone("#office/lobby", messageId: ownId)
+        XCTAssertTrue(deleted)
+        XCTAssertEqual(service.messages("#office/lobby").map(\.text), ["earlier", "welcome"])
+        let delete = try XCTUnwrap(connection.sentTexts.compactMap { crypto.decrypt(JSON.parseObject($0)) }.first { $0["type"]?.text == "delete" })
+        XCTAssertEqual(delete["target"]?.text, ownId)
+        XCTAssertEqual(delete["conversation"]?.text, "#lobby")
+        let forged: JSONObject = ["type": "delete", "id": "d-1", "senderId": "mallory", "sender": "M", "target": "live-1", "ts": 1]
+        connection.receive(text: JSON.encode(try crypto.encrypt(forged)))
+        var real = forged
+        real["id"] = "d-2"
+        real["senderId"] = "peer"
+        connection.receive(text: JSON.encode(try crypto.encrypt(real)))
+        let gone = await waitUntil { service.messages("#office/lobby").map(\.text) == ["earlier"] }
+        XCTAssertTrue(gone)
+        XCTAssertEqual(removed, [ownId, "live-1"])
         await service.closeAll()
     }
 

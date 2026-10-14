@@ -23,6 +23,7 @@
 		F00000000000000000000077 /* ForkMeshShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0000000000000000000006E /* ForkMeshShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F00000000000000000000084 /* ForkMeshCore in Frameworks */ = {isa = PBXBuildFile; productRef = F00000000000000000000083 /* ForkMeshCore */; };
 		F00000000000000000000087 /* ForkMeshAutoFill.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0000000000000000000007E /* ForkMeshAutoFill.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F00000000000000000000089 /* ForkMeshPushCore in Frameworks */ = {isa = PBXBuildFile; productRef = F00000000000000000000088 /* ForkMeshPushCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -219,6 +220,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F00000000000000000000089 /* ForkMeshPushCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -385,6 +387,9 @@
 				F00000000000000000000010 /* Shared */,
 			);
 			name = NotificationService;
+			packageProductDependencies = (
+				F00000000000000000000088 /* ForkMeshPushCore */,
+			);
 			productName = NotificationService;
 			productReference = F00000000000000000000021 /* NotificationService.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -1278,6 +1283,10 @@
 		F00000000000000000000083 /* ForkMeshCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ForkMeshCore;
+		};
+		F00000000000000000000088 /* ForkMeshPushCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ForkMeshPushCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

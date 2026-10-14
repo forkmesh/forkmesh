@@ -14,6 +14,12 @@ import com.forkmesh.nativeapp.model.PingSettings
 import com.forkmesh.nativeapp.platform.Prefs
 import com.forkmesh.nativeapp.push.BackgroundLinkKeys
 import com.forkmesh.nativeapp.push.PingAlertLedger
+import com.forkmesh.nativeapp.chat.ChatAccountCalling
+import com.forkmesh.nativeapp.push.DirectMessageEvent
+import com.forkmesh.nativeapp.push.DirectMessagePreviews
+import com.forkmesh.nativeapp.push.NotificationContent
+import com.forkmesh.nativeapp.push.pingAlertsHeld
+import com.forkmesh.nativeapp.security.SecretStore
 
 object PingAlerts {
     private const val SETTINGS_TTL_MS = 15 * 60_000L
@@ -84,13 +90,44 @@ object PingAlerts {
         return decision.post.size
     }
 
-    fun deliverDirectMessage(context: Context, projectId: String, projectLabel: String, multipleProjects: Boolean, api: ApiService, node: String) {
+    fun notificationContent(context: Context): NotificationContent =
+        NotificationContent.of(Prefs(context).getString(NotificationContent.PREFS_KEY))
+
+    fun setNotificationContent(context: Context, content: NotificationContent) {
+        Prefs(context).putString(NotificationContent.PREFS_KEY, content.wire)
+    }
+
+    fun deliverDirectMessage(
+        context: Context,
+        projectId: String,
+        projectLabel: String,
+        multipleProjects: Boolean,
+        api: ApiService,
+        node: String,
+        event: DirectMessageEvent? = null,
+        secrets: SecretStore? = null,
+    ) {
         if (AppLifecycle.foreground.value) return
         val settings = if (node.isEmpty()) null else settingsFor(projectId, api, node)
+        val now = System.currentTimeMillis()
+        if (pingAlertsHeld(settings, now)) return
+        val content = notificationContent(context)
+        if (event != null && secrets != null && content != NotificationContent.NOTHING) {
+            val calling = ChatAccountCalling { method, path, body -> api.accountApiCall(method, path, body) }
+            val preview = DirectMessagePreviews.fetch(calling, event, secrets)
+            if (preview != null) {
+                val notice = DirectMessagePreviews.notice(preview, content)
+                val avatarPng = if (notice.sender.isEmpty()) "" else runCatching { api.accountAvatarPng(notice.sender) }.getOrDefault("")
+                PingNotifier.postDirectMessagePreview(context, projectId, projectLabel, multipleProjects, preview, notice, content, avatarPng)
+                return
+            }
+        }
         val unread = runCatching { api.unreadDirectMessage() }.getOrDefault(UnreadDirectMessage())
+        val matches = event == null || unread.conversationId == event.conversationId
+        val sender = if (content == NotificationContent.NOTHING || !matches) "" else unread.sender
         val alert = directMessageAlert(
-            DIRECT_MESSAGES_TOPIC, settings, System.currentTimeMillis(), projectId, projectLabel, multipleProjects,
-            unread.sender, unread.conversationId,
+            DIRECT_MESSAGES_TOPIC, settings, now, projectId, projectLabel, multipleProjects,
+            sender, event?.conversationId ?: unread.conversationId,
         ) ?: return
         val avatarPng = if (alert.sender.isEmpty()) "" else runCatching { api.accountAvatarPng(alert.sender) }.getOrDefault("")
         PingNotifier.postDirectMessage(context, alert, avatarPng)

@@ -61,3 +61,8 @@
   .ch-item { height: 40px; }
   .chat-ac li { padding: 9px 8px; }
 }
+#panel-chat .msg .meta .rc { display: inline-flex; vertical-align: -1px; margin-left: 5px; color: var(--muted); }
+#panel-chat .msg .meta .rc svg { width: 17px; height: 11px; }
+#panel-chat .msg .meta .rc.is-pending { opacity: .7; }
+#panel-chat .msg .meta .rc.is-read { color: var(--brand); }
+#panel-chat .msg .meta .rc .rc-cut { stroke: var(--panel); }

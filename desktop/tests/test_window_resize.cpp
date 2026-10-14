@@ -4407,6 +4407,91 @@ void checkChatVideoAttachmentPlays()
           QStringLiteral("a non-video attachment still renders the file chip"));
 }
 
+void checkChatReceiptMark()
+{
+    using forkmesh::recipients::ReceiptMark;
+    ChatMessage message;
+    message.id = QStringLiteral("receipt-mark");
+    message.conversation = QStringLiteral("#office/@bob");
+    message.senderId = QStringLiteral("self-key");
+    message.senderName = QStringLiteral("ada");
+    message.text = QStringLiteral("see you soon");
+    message.timestampMs = QDateTime::currentMSecsSinceEpoch();
+    message.self = true;
+    message.recipientCount = 1;
+
+    MessageRow direct(message, QStringLiteral("#58a6ff"),
+                      QHash<QString, MemberInfo>());
+    check(direct.findChild<QLabel *>(QStringLiteral("messageRecipients")) ==
+                  nullptr &&
+              direct.findChild<QLabel *>(QStringLiteral("messageReceipt")) ==
+                  nullptr,
+          QStringLiteral("a direct message shows no to-1 label and no mark "
+                         "until the window sets one"));
+    const struct {
+        ReceiptMark mark;
+        const char *name;
+    } states[] = {{ReceiptMark::Sending, "Sending"},
+                  {ReceiptMark::Sent, "Sent"},
+                  {ReceiptMark::Delivered, "Delivered"},
+                  {ReceiptMark::Read, "Read"}};
+    for (const auto &state : states) {
+        direct.setReceiptMark(state.mark);
+        QLabel *mark = direct.findChild<QLabel *>(QStringLiteral("messageReceipt"));
+        const QPixmap pixmap = mark ? mark->pixmap() : QPixmap();
+        check(mark && !mark->isHidden() &&
+                  mark->toolTip() == QLatin1String(state.name) &&
+                  mark->accessibleName() == QLatin1String(state.name) &&
+                  !pixmap.isNull() &&
+                  pixmap.deviceIndependentSize().toSize() == QSize(17, 11),
+              QStringLiteral("the %1 mark is a 17 x 11 picture named for "
+                             "screen readers")
+                  .arg(QLatin1String(state.name)));
+    }
+    const QColor muted(QStringLiteral("#6b7280"));
+    const QColor accent(QStringLiteral("#58a6ff"));
+    const QImage sent = MessageRow::receiptMarkPixmap(ReceiptMark::Sent, muted,
+                                                      accent, 2.0)
+                            .toImage();
+    const QImage delivered = MessageRow::receiptMarkPixmap(
+                                 ReceiptMark::Delivered, muted, accent, 2.0)
+                                 .toImage();
+    const QImage read = MessageRow::receiptMarkPixmap(ReceiptMark::Read, muted,
+                                                      accent, 2.0)
+                            .toImage();
+    const auto inked = [](const QImage &image, int fromX, int toX) {
+        int count = 0;
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = fromX; x < qMin(toX, image.width()); ++x)
+                count += qAlpha(image.pixel(x, y)) > 64 ? 1 : 0;
+        return count;
+    };
+    check(sent.width() == 34 && sent.height() == 22,
+          QStringLiteral("the mark is drawn at the screen's pixel ratio"));
+    check(inked(sent, 0, 8) == 0 && inked(delivered, 0, 8) > 0,
+          QStringLiteral("delivered adds the back ring that sent leaves out"));
+    check(inked(read, 0, 34) > inked(delivered, 0, 34) &&
+              qBlue(read.pixel(28, 6)) > qRed(read.pixel(28, 6)),
+          QStringLiteral("read fills both rings with the accent blue"));
+
+    message.recipientCount = 3;
+    message.conversation = QStringLiteral("#office/design");
+    MessageRow channel(message, QStringLiteral("#58a6ff"),
+                       QHash<QString, MemberInfo>());
+    channel.setReceiptMark(ReceiptMark::Sent);
+    channel.resize(600, 80);
+    if (channel.layout())
+        channel.layout()->activate();
+    QLabel *count = channel.findChild<QLabel *>(QStringLiteral("messageRecipients"));
+    QLabel *mark = channel.findChild<QLabel *>(QStringLiteral("messageReceipt"));
+    check(count && mark && count->text().contains(QStringLiteral(">to 3<")) &&
+              count->x() < mark->x(),
+          QStringLiteral("a channel keeps its to-N label next to the mark"));
+    channel.setReceiptMark(ReceiptMark::None);
+    check(mark && mark->isHidden(),
+          QStringLiteral("clearing the mark hides it"));
+}
+
 void checkChatRecipientLabel()
 {
     ChatMessage message;
@@ -13555,6 +13640,7 @@ else:
         app.arguments().contains(QStringLiteral("--error-alert-only"));
     if (app.arguments().contains(QStringLiteral("--recipient-label-only"))) {
         checkChatRecipientLabel();
+        checkChatReceiptMark();
         return failures == 0 ? 0 : 1;
     }
     const bool notificationSettingsOnly =
@@ -17528,6 +17614,7 @@ else:
     checkChatUsernameProfile(window);
     checkChatVideoAttachmentPlays();
     checkChatRecipientLabel();
+    checkChatReceiptMark();
     checkCalendarActivityRendering(window);
     checkLedgerSection(window);
     checkContributorRewardHistory(window);

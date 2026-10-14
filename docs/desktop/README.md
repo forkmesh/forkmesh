@@ -1260,6 +1260,104 @@ Details, manual CMake, test targets and known failures:
 
 ## Recent changes
 
+- 2026-10-13: Receipt marks, delete for everyone, edits, reactions and
+  replies in Office conversations (branch 1974). The user asked for
+  Signal-style ticks on every chat message, "delete for everyone" for what
+  you sent, and replies and reactions in direct messages. The shared design
+  is in [../app/chat-private-rooms.md](../app/chat-private-rooms.md).
+
+  **Receipt marks.** Every own message row in a mesh `#channel`, an Office
+  channel or an Office DM (`#office/@user`) shows a mark next to the time and
+  the "to N" label (`MessageRow::setReceiptMark`, object name
+  `messageReceipt`). `MessageRow::receiptMarkPixmap` paints it with QPainter
+  at the screen's pixel ratio, 17 x 11 px, from the shared 22 x 14 geometry:
+  a dotted ring at 70% (Sending), one ring with a tick (Sent), a second ring
+  behind it (Delivered), and both rings filled in the accent blue with the
+  ticks cut out (Read). The cut-out uses `CompositionMode_Clear`, so it shows
+  whatever is behind the row, not a guessed background colour. Tooltip and
+  accessible name are "Sending", "Sent", "Delivered", "Read".
+  `MainWindow::chatReceiptMark` decides which rows get a mark: none for
+  Discord, the local mesh, mesh `@peer` DMs (their `dm` frames get no relay
+  ack, so they would never leave Sending), the device-local `#team` room and
+  teammate rows. The state is `forkmesh::recipients::receiptMark`
+  (`ChatRecipients.h`): Read and Delivered come from `ChatMessage::receipt`,
+  Sent from a known recipient count, and everything else is Sending. A row
+  loaded from the chat cache counts as Sent even without a count
+  (`historical` is set on load): a send that failed is removed from the
+  history (`messageSendFailed`), so a saved own row is one that was handed to
+  the relay. The cost is that a message cut off by a crash mid-send also reads
+  Sent after the restart. The cache saves `receipt` as `delivered` or `read`.
+  DMs drop the "to 1" label (`showsRecipientCount`), because a DM's count is
+  always 1 and says nothing; channels keep it.
+
+  Where the states come from:
+  - `ServerNode` keeps a bounded message-id/ref map (`m_sentRefs`,
+    `m_sentRefIds`, 256 entries) for its own sends, re-seal resends and own
+    frames the relay replays (sent from another device of mine, or retained
+    history). `m_recipientRefs` could not be reused: an entry leaves it as
+    soon as the recipients ack arrives, and a delivered frame comes later.
+  - `forkmesh-delivered` (direct rooms only) maps its refs to ids
+    (`messagesDelivered`); `forkmesh-read` emits `conversationRead`.
+    `OfficeChannelMirror` re-emits both with the conversation, the same way
+    as `messageRecipientsKnown`. A DM the local mesh handed to one of the other
+    person's devices (`room.meshDelivered`) is Delivered at once.
+  - `MainWindow::applyMessagesDelivered` raises named own messages to
+    Delivered; `applyConversationRead` marks every own message of the DM
+    that is already Sent or Delivered as Read, and leaves Sending ones alone.
+  - Channels stop at Sent: the relay sends delivered and read frames only in
+    direct rooms.
+
+  **Edit, delete for everyone, reactions and replies in Office rooms.**
+  `chatMessageFromPlain` used to accept only `chat`, and the window refused
+  edit, delete, reactions and "Reply in thread" for every `#office/`
+  conversation. Now:
+  - `OfficeChannelMirror::sendThreadReply`, `sendReaction`, `editMessage` and
+    `deleteMessage` queue the frame with the room's pending sends (`kind` on
+    `PendingText`) and flush it through the room's `ServerNode`
+    (`sendThreadReplyWithId`, `sendRoomReaction`, `sendRoomEdit`,
+    `sendRoomDelete`), sealed like any DM frame, with the frame shapes the
+    web uses. A reply shows at once as an echo, like a message. A reaction,
+    edit or delete is applied locally at once. An edit or delete of a message
+    still waiting in the queue rewrites or drops the queued copy instead.
+    Queued mutations survive a failed connection (they are not reported as
+    failed sends, which would restore their text into the composer).
+  - `ServerNode::sendRoomDelete` also sends
+    `{"kind":"forkmesh-superseded","v":1,"refs":[ref]}` for the original
+    frame when it knows the ref, so the relay drops the stored ciphertext if
+    the other person has not received it yet. It drops the message from the
+    re-seal outbox, so a later key change cannot resend it. The delete frame
+    itself stays on the relay until the other device receives it.
+  - Incoming `reaction`, `edit` and `delete` frames reach the mirror through
+    `ServerNode::roomMutationArrived` (live socket) or the channel history
+    (`applyHistory`, which applies mutations after every message in the batch,
+    the same way the web's `handleHistory` does). `roomMutationFromPlain`
+    checks the fields and refuses a reaction whose `reactorId` is not its
+    sender. The mirror passes on each mutation once (by frame id), with its
+    author.
+  - The author check is in the window (`applyOfficeEdit`,
+    `applyOfficeDelete`): the frame's `senderId` must equal the stored
+    message's. It cannot stay in `ServerNode`: its author index only knows
+    messages from the current session, and a DM row the other person sent
+    before a restart is gone from the relay once it was received. A mutation
+    whose target is not there yet waits in `m_pendingOfficeMutations` (200
+    targets) and is applied when the message arrives
+    (`replayPendingOfficeMutations` in `onMessage`).
+  - A delete tombstones the row (`deleted`, text and file cleared) in
+    `m_history`. The tombstone is saved in the chat cache, so its id stays in
+    `m_historyIds` and a replay cannot bring the message back.
+  - Own mutations sent from another of my devices are not applied yet:
+    `ServerNode::processFrame` still stops at own frames, except to remember
+    their refs.
+
+  Tests: `testReceiptMarkStates`, `testDirectReceiptsAndRoomMutations`,
+  `testOfficeRoomMutationFrames` and `testOfficeDirectMessageRoundTrip` in
+  `test_chat_transport.cpp` (the last runs a mirror against a loopback relay
+  and room socket: echo, sent, delivered, read, reply, reaction, edit,
+  delete and superseded out, and the other person's reply, reaction, edit
+  and delete in). `WebSocketHarness::blackholeFirst` lets a test accept the
+  first connection. Window test `checkChatReceiptMark` (also under
+  `--recipient-label-only`) checks the four marks, their names, the pixel
+  size and the to-N label beside the mark.
 - 2026-10-09: Every shortcut shows how long its last run took, and a running
   one shows a progress bar estimated from that time. The user asked for both
   on all shortcuts. The table view has a **Took** column (the last measured

@@ -1358,12 +1358,18 @@
       .chat-receipt svg {
         display: block;
         width: 17px;
-        height: 13px;
+        height: 11px;
       }
 
       .chat-receipt.is-pending { opacity: 0.7; }
-      .chat-receipt.is-read { color: var(--muted); }
+      .chat-receipt.is-read { color: var(--accent); }
       .chat-receipt-check { stroke: var(--bg); }
+
+      .chat-thread-message-meta .chat-receipt {
+        align-self: center;
+        height: auto;
+        margin-top: 0;
+      }
 
       .chat-text {
         color: color-mix(in srgb, var(--fg) 92%, var(--muted));

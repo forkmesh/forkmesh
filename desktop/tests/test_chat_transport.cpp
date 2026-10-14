@@ -84,7 +84,7 @@ public:
                                  &QObject::deleteLater);
                 // The first connection deliberately blackholes the HTTP
                 // upgrade. Every retry is accepted immediately.
-                if (connectionCount == 1)
+                if (connectionCount == 1 && blackholeFirst)
                     continue;
                 QObject::connect(socket, &QTcpSocket::readyRead, socket,
                                  [this, socket] { acceptHandshake(socket); });
@@ -160,6 +160,7 @@ public:
     }
 
     QTcpServer server;
+    bool blackholeFirst = true;
     int connectionCount = 0;
     QList<QTcpSocket *> sockets;
     QTcpSocket *upgraded = nullptr;
@@ -1916,6 +1917,241 @@ void testDirectRoomResealsUndeliveredMessages()
     node.shutdown();
 }
 
+void testReceiptMarkStates()
+{
+    using namespace forkmesh::recipients;
+    check(receiptMark(false, 3, Receipt::Read, true) == ReceiptMark::None,
+          "someone else's message carries no receipt mark");
+    check(receiptMark(true, -1, Receipt::None, false) == ReceiptMark::Sending,
+          "an own message the relay has not acknowledged is sending");
+    check(receiptMark(true, 0, Receipt::None, false) == ReceiptMark::Sent &&
+              receiptMark(true, -1, Receipt::None, true) == ReceiptMark::Sent,
+          "an acknowledged or already settled own message is sent");
+    check(receiptMark(true, -1, Receipt::Delivered, false) ==
+                  ReceiptMark::Delivered &&
+              receiptMark(true, 1, Receipt::Read, false) == ReceiptMark::Read,
+          "delivered and read outrank the relay acknowledgement");
+    check(receiptLabel(ReceiptMark::Sending) == QStringLiteral("Sending") &&
+              receiptLabel(ReceiptMark::Sent) == QStringLiteral("Sent") &&
+              receiptLabel(ReceiptMark::Delivered) == QStringLiteral("Delivered") &&
+              receiptLabel(ReceiptMark::Read) == QStringLiteral("Read") &&
+              receiptLabel(ReceiptMark::None).isEmpty(),
+          "every mark has the accessible name the other clients use");
+    check(receiptFromName(receiptName(Receipt::Delivered)) == Receipt::Delivered &&
+              receiptFromName(receiptName(Receipt::Read)) == Receipt::Read &&
+              receiptFromName(QStringLiteral("bogus")) == Receipt::None &&
+              receiptName(Receipt::None).isEmpty(),
+          "the saved receipt state round-trips through the chat cache");
+    check(!showsRecipientCount(QStringLiteral("#office/@bob")) &&
+              showsRecipientCount(QStringLiteral("#office/design")) &&
+              showsRecipientCount(QStringLiteral("#general")),
+          "a direct message drops the to-N label, channels keep it");
+    const QString ref(40, QLatin1Char('a'));
+    const QJsonObject delivered{
+        {"kind", "forkmesh-delivered"},
+        {"v", 1},
+        {"refs", QJsonArray{ref, ref, QStringLiteral("not-a-ref"), 7,
+                            QString(40, QLatin1Char('b'))}}};
+    check(isDeliveredFrame(delivered) &&
+              !isReadFrame(delivered) &&
+              isReadFrame(QJsonObject{{"kind", "forkmesh-read"}, {"v", 1}}) &&
+              refsFromEnvelope(delivered) ==
+                  QStringList({ref, QString(40, QLatin1Char('b'))}),
+          "a delivered frame yields its distinct well-formed refs");
+}
+
+void testDirectReceiptsAndRoomMutations()
+{
+    WebSocketHarness harness;
+    check(harness.listen(), "direct receipts harness listens");
+    if (!harness.server.isListening())
+        return;
+    const QString conversationId(32, QLatin1Char('c'));
+    const QString room = QStringLiteral("chat-direct:%1:v1").arg(conversationId);
+    const QString passphrase = QStringLiteral("direct-receipts-passphrase");
+    const QString direct = QStringLiteral("direct:") + conversationId;
+    ServerNode node(QStringLiteral("Alice"), QStringLiteral("alice"),
+                    QStringLiteral("alice"), QStringLiteral("receipts-node"),
+                    harness.url(), room, QString(), passphrase);
+    node.setDirectRoom(true);
+    node.setTransportLimitsForTests(60, 20, 1 << 20);
+    QList<QStringList> delivered;
+    int reads = 0;
+    QList<QJsonObject> mutations;
+    QObject::connect(&node, &ServerNode::messagesDelivered, &node,
+                     [&delivered](const QStringList &ids) { delivered.append(ids); });
+    QObject::connect(&node, &ServerNode::conversationRead, &node,
+                     [&reads] { ++reads; });
+    QObject::connect(&node, &ServerNode::roomMutationArrived, &node,
+                     [&mutations](const QJsonObject &plain) { mutations.append(plain); });
+    check(node.start(), "a direct receipts node starts");
+    check(waitUntil([&] { return connected(node); }, 3000),
+          "the direct receipts node reaches the relay");
+    RoomCrypto relayKey(room, passphrase);
+    const auto inner = [&](const QByteArray &raw) {
+        return relayKey.decryptObject(QJsonDocument::fromJson(raw).object());
+    };
+    QJsonObject nodeKey;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(harness.textFrames))
+                  if (RoomSeal::isKeyFrame(inner(raw)))
+                      nodeKey = inner(raw);
+              return !nodeKey.isEmpty();
+          }, 2000),
+          "the direct receipts node announces its key");
+    RoomSeal bob(room, QByteArray(32, '\x0b'));
+    bob.acceptKeyFrame(nodeKey);
+    harness.sendText(QJsonDocument(relayKey.encryptObject(bob.keyFrame()))
+                         .toJson(QJsonDocument::Compact));
+    check(waitUntil([&] { return node.roomSealPeerKeyIds().size() >= 1; }, 2000),
+          "the node learns the other person's device key");
+    const auto opened = [&](const QByteArray &raw) {
+        const QJsonObject plain = inner(raw);
+        return RoomSeal::isSealedFrame(plain) ? bob.unsealObject(plain)
+                                              : QJsonObject();
+    };
+    const auto findFrame = [&](const QString &type, QByteArray *raw) {
+        for (const QByteArray &frame : std::as_const(harness.textFrames)) {
+            const QJsonObject plain = opened(frame);
+            if (plain.value("type").toString() == type) {
+                if (raw)
+                    *raw = frame;
+                return plain;
+            }
+        }
+        return QJsonObject();
+    };
+    const auto relayFrame = [&](const QJsonObject &object) {
+        harness.sendText(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    };
+
+    harness.textFrames.clear();
+    const QString sentId = node.sendChat(direct, QStringLiteral("see you soon"));
+    QByteArray sentFrame;
+    check(waitUntil([&] { return !findFrame("chat", &sentFrame).isEmpty(); },
+                    2000),
+          "an own direct message reaches the relay");
+    const QString sentRef = forkmesh::recipients::frameRef(sentFrame);
+    check(!sentId.isEmpty() && node.relayRefForMessage(sentId) == sentRef,
+          "the node remembers the relay ref of its own message");
+
+    relayFrame(QJsonObject{{"kind", "forkmesh-delivered"},
+                           {"v", 1},
+                           {"refs", QJsonArray{QString(40, QLatin1Char('0')),
+                                               sentRef}}});
+    check(waitUntil([&] { return !delivered.isEmpty(); }, 2000) &&
+              delivered.first() == QStringList{sentId},
+          "a delivered frame naming the ref marks that message delivered");
+    relayFrame(QJsonObject{{"kind", "forkmesh-delivered"},
+                           {"v", 1},
+                           {"refs", QJsonArray{QString(40, QLatin1Char('9'))}}});
+    relayFrame(QJsonObject{{"kind", "forkmesh-read"}, {"v", 1}});
+    check(waitUntil([&] { return reads == 1; }, 2000) && delivered.size() == 1,
+          "a read frame reaches the window and unknown refs are ignored");
+
+    const QJsonObject ownReplay{
+        {"type", "chat"},
+        {"id", "own-from-phone"},
+        {"senderId", "receipts-node"},
+        {"sender", "Alice"},
+        {"channel", direct},
+        {"text", "sent from my other device"},
+        {"ts", double(QDateTime::currentMSecsSinceEpoch())}};
+    QJsonObject ownEnvelope = relayKey.encryptObject(bob.sealObject(ownReplay));
+    const QString ownRef(40, QLatin1Char('e'));
+    ownEnvelope.insert("ref", ownRef);
+    ownEnvelope.insert("persist", true);
+    relayFrame(ownEnvelope);
+    check(waitUntil([&] {
+              return node.relayRefForMessage(QStringLiteral("own-from-phone")) ==
+                     ownRef;
+          }, 2000),
+          "an own relayed frame remembers its ref");
+    relayFrame(QJsonObject{{"kind", "forkmesh-delivered"},
+                           {"v", 1},
+                           {"refs", QJsonArray{ownRef}}});
+    check(waitUntil([&] { return delivered.size() == 2; }, 2000) &&
+              delivered.last() == QStringList{QStringLiteral("own-from-phone")},
+          "a delivered frame for a replayed own frame maps to its message");
+
+    harness.textFrames.clear();
+    const QString replyId = node.sendThreadReplyWithId(
+        direct, sentId, QStringLiteral("a reply"), QStringLiteral("reply-1"));
+    node.sendRoomReaction(direct, sentId, QStringLiteral("👍"), true);
+    node.sendRoomEdit(direct, sentId, QStringLiteral("see you later"));
+    node.sendRoomDelete(direct, sentId);
+    QJsonObject superseded;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(harness.textFrames)) {
+                  const QJsonObject envelope =
+                      QJsonDocument::fromJson(raw).object();
+                  if (envelope.value("kind").toString() == "forkmesh-superseded")
+                      superseded = envelope;
+              }
+              return !superseded.isEmpty() &&
+                     !findFrame("delete", nullptr).isEmpty();
+          }, 2000),
+          "deleting an own direct message sends the delete and withdraws the original");
+    const QJsonObject reply = findFrame("thread-reply", nullptr);
+    const QJsonObject reaction = findFrame("reaction", nullptr);
+    const QJsonObject edit = findFrame("edit", nullptr);
+    const QJsonObject deletion = findFrame("delete", nullptr);
+    check(replyId == QStringLiteral("reply-1") &&
+              reply.value("id").toString() == replyId &&
+              reply.value("rootId").toString() == sentId &&
+              reply.value("channel").toString() == direct &&
+              reply.value("text").toString() == QStringLiteral("a reply"),
+          "a reply is a sealed thread-reply frame under the root message");
+    check(reaction.value("conversation").toString() == direct &&
+              reaction.value("target").toString() == sentId &&
+              reaction.value("emoji").toString() == QStringLiteral("👍") &&
+              reaction.value("added").toBool() &&
+              reaction.value("reactorId").toString() == QStringLiteral("receipts-node"),
+          "a reaction is a sealed reaction frame naming its target");
+    check(edit.value("conversation").toString() == direct &&
+              edit.value("target").toString() == sentId &&
+              edit.value("text").toString() == QStringLiteral("see you later") &&
+              edit.value("editedAt").toDouble() > 0,
+          "an edit is a sealed edit frame with its new text");
+    check(deletion.value("conversation").toString() == direct &&
+              deletion.value("target").toString() == sentId &&
+              superseded.value("refs").toArray() == QJsonArray{sentRef},
+          "the superseded frame names the deleted message's relay ref");
+
+    for (const QString &type : {QStringLiteral("reaction"), QStringLiteral("edit"),
+                                QStringLiteral("delete")}) {
+        QJsonObject frame{{"type", type},
+                          {"id", QStringLiteral("bob-") + type},
+                          {"senderId", "bob-node"},
+                          {"sender", "bob"},
+                          {"conversation", direct},
+                          {"target", sentId},
+                          {"ts", double(QDateTime::currentMSecsSinceEpoch())}};
+        if (type == QLatin1String("reaction")) {
+            frame.insert("emoji", QStringLiteral("🎉"));
+            frame.insert("reactorId", "bob-node");
+            frame.insert("reactorName", "bob");
+            frame.insert("added", true);
+        }
+        if (type == QLatin1String("edit"))
+            frame.insert("text", QStringLiteral("forged"));
+        QJsonObject envelope = relayKey.encryptObject(bob.sealObject(frame));
+        envelope.insert("persist", true);
+        relayFrame(envelope);
+        relayFrame(envelope);
+    }
+    check(waitUntil([&] { return mutations.size() >= 3; }, 2000),
+          "the other person's reaction, edit and delete frames reach the mirror");
+    waitUntil([] { return false; }, 150);
+    check(mutations.size() == 3 &&
+              mutations.at(0).value("type").toString() == QStringLiteral("reaction") &&
+              mutations.at(1).value("type").toString() == QStringLiteral("edit") &&
+              mutations.at(2).value("type").toString() == QStringLiteral("delete") &&
+              mutations.at(1).value("senderId").toString() == QStringLiteral("bob-node"),
+          "each mutation is handed on once, with the author it claims");
+    node.shutdown();
+}
+
 void testUserStatusOnPresenceFrames()
 {
     WebSocketHarness harness;
@@ -3311,6 +3547,334 @@ void testDirectMessagesOverLocalMesh()
     eveMesh.stop();
 }
 
+void testOfficeRoomMutationFrames()
+{
+    using namespace forkmesh::office;
+    const QJsonObject reply{{"type", "thread-reply"},
+                            {"id", "reply-1"},
+                            {"senderId", "bob-node"},
+                            {"sender", "bob"},
+                            {"rootId", "root-1"},
+                            {"channel", "direct:abc"},
+                            {"text", "replying"},
+                            {"ts", 1000.0}};
+    ChatMessage message;
+    check(chatMessageFromPlain(reply, QStringLiteral("#office/@bob"),
+                               QStringLiteral("self"), &message) &&
+              message.threadRootId == QStringLiteral("root-1") &&
+              message.text == QStringLiteral("replying"),
+          "an office thread reply becomes a reply under its root");
+    QJsonObject rootless = reply;
+    rootless.remove("rootId");
+    check(!chatMessageFromPlain(rootless, QStringLiteral("#office/@bob"),
+                                QStringLiteral("self"), &message),
+          "a thread reply without a root is dropped");
+
+    RoomMutation mutation;
+    const QJsonObject reaction{{"type", "reaction"},
+                               {"id", "r-1"},
+                               {"senderId", "bob-node"},
+                               {"sender", "bob"},
+                               {"target", "m-1"},
+                               {"emoji", "👍"},
+                               {"reactorId", "bob-node"},
+                               {"reactorName", "bob"},
+                               {"added", false}};
+    check(roomMutationFromPlain(reaction, &mutation) &&
+              mutation.type == QStringLiteral("reaction") &&
+              mutation.target == QStringLiteral("m-1") &&
+              mutation.emoji == QStringLiteral("👍") &&
+              mutation.reactorName == QStringLiteral("bob") && !mutation.added,
+          "a reaction frame is read with its emoji, reactor and direction");
+    QJsonObject spoofed = reaction;
+    spoofed.insert("reactorId", "carol-node");
+    check(!roomMutationFromPlain(spoofed, &mutation),
+          "a reaction cannot claim another member as the reactor");
+    QJsonObject noDirection = reaction;
+    noDirection.remove("added");
+    check(!roomMutationFromPlain(noDirection, &mutation),
+          "a reaction must say whether it adds or removes");
+    const QJsonObject edit{{"type", "edit"},
+                           {"id", "e-1"},
+                           {"senderId", "bob-node"},
+                           {"target", "m-1"},
+                           {"text", "fixed"},
+                           {"editedAt", 2000.0}};
+    check(roomMutationFromPlain(edit, &mutation) &&
+              mutation.type == QStringLiteral("edit") &&
+              mutation.senderId == QStringLiteral("bob-node") &&
+              mutation.text == QStringLiteral("fixed"),
+          "an edit frame keeps its author so the window can check it");
+    QJsonObject emptyEdit = edit;
+    emptyEdit.insert("text", QStringLiteral("  "));
+    check(!roomMutationFromPlain(emptyEdit, &mutation),
+          "an edit to nothing is refused");
+    const QJsonObject deletion{{"type", "delete"},
+                               {"id", "d-1"},
+                               {"senderId", "bob-node"},
+                               {"target", "m-1"}};
+    check(roomMutationFromPlain(deletion, &mutation) &&
+              mutation.type == QStringLiteral("delete"),
+          "a delete frame is read");
+    QJsonObject anonymous = deletion;
+    anonymous.remove("senderId");
+    check(!roomMutationFromPlain(anonymous, &mutation) &&
+              !roomMutationFromPlain(QJsonObject{{"type", "chat"}}, &mutation),
+          "a mutation needs an author, and a chat is not a mutation");
+}
+
+void testOfficeDirectMessageRoundTrip()
+{
+    const QString conversationId(32, QLatin1Char('a'));
+    const QString room = QStringLiteral("chat-direct:%1:v1").arg(conversationId);
+    const QString passphrase = QStringLiteral("office-dm-passphrase");
+    const QString wire = QStringLiteral("direct:") + conversationId;
+    const QString conversation = QStringLiteral("#office/@bob");
+    WebSocketHarness socket;
+    socket.blackholeFirst = false;
+    RelayHarness relay;
+    check(socket.listen() && relay.listen(),
+          "the office DM round trip binds its relay stand-ins");
+    if (!socket.server.isListening() || !relay.server.isListening())
+        return;
+    QSettings().remove(QStringLiteral("chat/direct/meshDirectory"));
+    relay.responses.insert(
+        QStringLiteral("/api/chat/direct-messages"),
+        QByteArrayLiteral("{\"conversations\":[{\"id\":\"") +
+            conversationId.toUtf8() +
+            QByteArrayLiteral("\",\"otherUser\":\"bob\"}]}"));
+    relay.responses.insert(
+        QStringLiteral("/api/chat/direct-messages/%1/room-access")
+            .arg(conversationId),
+        QJsonDocument(QJsonObject{{"room", room},
+                                  {"passphrase", passphrase},
+                                  {"webSocketUrl", socket.url().toString()}})
+            .toJson(QJsonDocument::Compact));
+
+    QNetworkAccessManager network;
+    OfficeChannelMirror mirror(&network);
+    mirror.setSigner([](const QByteArray &canonical) {
+        return QString::fromUtf8(canonical.toBase64(
+            QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
+    });
+    mirror.setConnectionAuthorizer([](const QUrl &) { return true; });
+    mirror.setApiBase(relay.apiBase());
+    mirror.setIdentity(QStringLiteral("ada"), QStringLiteral("ada-key"),
+                       QStringLiteral("Ada"));
+    QList<ChatMessage> arrived;
+    QList<QPair<QString, int>> acks;
+    QList<QPair<QString, QStringList>> delivered;
+    QStringList reads;
+    QList<QStringList> reactions;
+    QList<QStringList> edits;
+    QList<QStringList> deletes;
+    QObject::connect(&mirror, &OfficeChannelMirror::messageArrived, &mirror,
+                     [&arrived](const ChatMessage &m) { arrived.append(m); });
+    QObject::connect(&mirror, &OfficeChannelMirror::messageRecipientsKnown,
+                     &mirror,
+                     [&acks](const QString &, const QString &id, int count,
+                             const QStringList &) { acks.append({id, count}); });
+    QObject::connect(&mirror, &OfficeChannelMirror::messagesDelivered, &mirror,
+                     [&delivered](const QString &c, const QStringList &ids) {
+                         delivered.append({c, ids});
+                     });
+    QObject::connect(&mirror, &OfficeChannelMirror::conversationRead, &mirror,
+                     [&reads](const QString &c) { reads.append(c); });
+    QObject::connect(&mirror, &OfficeChannelMirror::reactionChanged, &mirror,
+                     [&reactions](const QString &c, const QString &id,
+                                  const QString &emoji, const QString &who,
+                                  bool added) {
+                         reactions.append({c, id, emoji, who,
+                                           added ? QStringLiteral("+")
+                                                 : QStringLiteral("-")});
+                     });
+    QObject::connect(&mirror, &OfficeChannelMirror::messageEdited, &mirror,
+                     [&edits](const QString &c, const QString &id,
+                              const QString &sender, const QString &text) {
+                         edits.append({c, id, sender, text});
+                     });
+    QObject::connect(&mirror, &OfficeChannelMirror::messageDeleted, &mirror,
+                     [&deletes](const QString &c, const QString &id,
+                                const QString &sender) {
+                         deletes.append({c, id, sender});
+                     });
+    mirror.start();
+
+    RoomCrypto relayKey(room, passphrase);
+    const auto inner = [&](const QByteArray &raw) {
+        return relayKey.decryptObject(QJsonDocument::fromJson(raw).object());
+    };
+    QJsonObject adaKey;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(socket.textFrames))
+                  if (RoomSeal::isKeyFrame(inner(raw)))
+                      adaKey = inner(raw);
+              return !adaKey.isEmpty();
+          }, 8000),
+          "the office DM opens its encrypted room socket");
+    if (adaKey.isEmpty()) {
+        mirror.stop();
+        return;
+    }
+    RoomSeal bob(room, QByteArray(32, '\x0d'));
+    bob.acceptKeyFrame(adaKey);
+    socket.sendText(QJsonDocument(relayKey.encryptObject(bob.keyFrame()))
+                        .toJson(QJsonDocument::Compact));
+    check(waitUntil([&] { return mirror.directDeviceKeys(conversation).size() == 1; },
+                    2000),
+          "the mirror learns bob's device key");
+    const auto findFrame = [&](const QString &type, QByteArray *raw) {
+        for (const QByteArray &frame : std::as_const(socket.textFrames)) {
+            const QJsonObject plain = inner(frame);
+            const QJsonObject opened = RoomSeal::isSealedFrame(plain)
+                                           ? bob.unsealObject(plain)
+                                           : QJsonObject();
+            if (opened.value("type").toString() == type) {
+                if (raw)
+                    *raw = frame;
+                return opened;
+            }
+        }
+        return QJsonObject();
+    };
+    const auto relayFrame = [&](const QJsonObject &object) {
+        socket.sendText(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    };
+    const auto fromBob = [&](QJsonObject frame) {
+        frame.insert("senderId", "bob-node");
+        frame.insert("sender", "bob");
+        frame.insert("ts", double(QDateTime::currentMSecsSinceEpoch()));
+        QJsonObject envelope = relayKey.encryptObject(bob.sealObject(frame));
+        envelope.insert("persist", true);
+        relayFrame(envelope);
+    };
+
+    socket.textFrames.clear();
+    check(mirror.sendMessage(conversation, QStringLiteral("hello bob")) &&
+              !arrived.isEmpty() && arrived.last().self,
+          "an office DM shows at once as the sending echo");
+    const QString sentId = arrived.isEmpty() ? QString() : arrived.last().id;
+    QByteArray sentFrame;
+    check(waitUntil([&] { return !findFrame("chat", &sentFrame).isEmpty(); },
+                    2000) &&
+              findFrame("chat", nullptr).value("id").toString() == sentId,
+          "the office DM is sealed to bob under the echoed id");
+    const QString sentRef = forkmesh::recipients::frameRef(sentFrame);
+    relayFrame(QJsonObject{{"kind", "forkmesh-recipients"},
+                           {"v", 1},
+                           {"ref", sentRef},
+                           {"recipients", 1}});
+    relayFrame(QJsonObject{{"kind", "forkmesh-delivered"},
+                           {"v", 1},
+                           {"refs", QJsonArray{sentRef}}});
+    relayFrame(QJsonObject{{"kind", "forkmesh-read"}, {"v", 1}});
+    check(waitUntil([&] { return !reads.isEmpty(); }, 2000) &&
+              acks.size() == 1 && acks.first().first == sentId &&
+              delivered.size() == 1 && delivered.first().first == conversation &&
+              delivered.first().second == QStringList{sentId} &&
+              reads == QStringList{conversation},
+          "the relay's sent, delivered and read frames reach the conversation");
+
+    const int arrivedBefore = int(arrived.size());
+    check(mirror.sendThreadReply(conversation, sentId, QStringLiteral("p.s.")) &&
+              arrived.size() == arrivedBefore + 1 &&
+              arrived.last().threadRootId == sentId && arrived.last().self,
+          "a reply in an office DM shows at once under its root");
+    check(mirror.sendReaction(conversation, sentId, QStringLiteral("👍"), true) &&
+              reactions.size() == 1 &&
+              reactions.first() == QStringList({conversation, sentId,
+                                                QStringLiteral("👍"),
+                                                QStringLiteral("Ada"),
+                                                QStringLiteral("+")}),
+          "an own reaction applies locally at once");
+    check(mirror.editMessage(conversation, sentId, QStringLiteral("hello again")) &&
+              edits.size() == 1 &&
+              edits.first() == QStringList({conversation, sentId,
+                                            QStringLiteral("ada-key"),
+                                            QStringLiteral("hello again")}),
+          "an own edit applies locally with this account as its author");
+    check(mirror.deleteMessage(conversation, sentId) && deletes.size() == 1 &&
+              deletes.first() == QStringList({conversation, sentId,
+                                              QStringLiteral("ada-key")}),
+          "an own delete for everyone applies locally at once");
+    QJsonObject superseded;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(socket.textFrames)) {
+                  const QJsonObject envelope =
+                      QJsonDocument::fromJson(raw).object();
+                  if (envelope.value("kind").toString() == "forkmesh-superseded")
+                      superseded = envelope;
+              }
+              return !superseded.isEmpty();
+          }, 2000),
+          "deleting the office DM withdraws the relay's copy");
+    check(findFrame("thread-reply", nullptr).value("rootId").toString() == sentId &&
+              findFrame("thread-reply", nullptr).value("channel").toString() == wire &&
+              findFrame("reaction", nullptr).value("target").toString() == sentId &&
+              findFrame("reaction", nullptr).value("conversation").toString() == wire &&
+              findFrame("edit", nullptr).value("text").toString() ==
+                  QStringLiteral("hello again") &&
+              findFrame("delete", nullptr).value("target").toString() == sentId &&
+              superseded.value("refs").toArray() == QJsonArray{sentRef},
+          "reply, reaction, edit, delete and superseded all reach the relay sealed");
+
+    fromBob(QJsonObject{{"type", "chat"},
+                        {"id", "bob-1"},
+                        {"channel", wire},
+                        {"text", "hi ada"}});
+    fromBob(QJsonObject{{"type", "thread-reply"},
+                        {"id", "bob-2"},
+                        {"channel", wire},
+                        {"rootId", "bob-1"},
+                        {"text", "and another thing"}});
+    const QJsonObject bobReaction{{"type", "reaction"},
+                                  {"id", "bob-3"},
+                                  {"conversation", wire},
+                                  {"target", "bob-1"},
+                                  {"emoji", "🎉"},
+                                  {"reactorId", "bob-node"},
+                                  {"reactorName", "bob"},
+                                  {"added", true}};
+    fromBob(bobReaction);
+    fromBob(bobReaction);
+    fromBob(QJsonObject{{"type", "edit"},
+                        {"id", "bob-4"},
+                        {"conversation", wire},
+                        {"target", "bob-1"},
+                        {"text", "hi there ada"}});
+    fromBob(QJsonObject{{"type", "delete"},
+                        {"id", "bob-5"},
+                        {"conversation", wire},
+                        {"target", "bob-1"}});
+    check(waitUntil([&] { return deletes.size() == 2; }, 3000),
+          "bob's reply, reaction, edit and delete reach the office DM");
+    waitUntil([] { return false; }, 150);
+    const auto shown = [&](const QString &id) {
+        for (const ChatMessage &m : std::as_const(arrived))
+            if (m.id == id)
+                return m;
+        return ChatMessage();
+    };
+    check(shown("bob-1").conversation == conversation &&
+              shown("bob-2").threadRootId == QStringLiteral("bob-1") &&
+              !shown("bob-2").self,
+          "bob's message and his threaded reply land in the conversation");
+    check(reactions.size() == 2 &&
+              reactions.last() == QStringList({conversation, QStringLiteral("bob-1"),
+                                               QStringLiteral("🎉"),
+                                               QStringLiteral("bob"),
+                                               QStringLiteral("+")}),
+          "bob's reaction is applied once even when the relay repeats it");
+    check(edits.size() == 2 &&
+              edits.last() == QStringList({conversation, QStringLiteral("bob-1"),
+                                           QStringLiteral("bob-node"),
+                                           QStringLiteral("hi there ada")}) &&
+              deletes.last() == QStringList({conversation, QStringLiteral("bob-1"),
+                                             QStringLiteral("bob-node")}),
+          "bob's edit and delete carry his id for the author check");
+    mirror.stop();
+}
+
 int main(int argc, char **argv)
 {
     QStandardPaths::setTestModeEnabled(true);
@@ -3350,11 +3914,15 @@ int main(int argc, char **argv)
         testUserStatusOnPresenceFrames();
         testRecipientCounts();
         testDirectRoomResealsUndeliveredMessages();
+        testReceiptMarkStates();
+        testDirectReceiptsAndRoomMutations();
         testOfficeChannelMirror();
         testOfficeChannelSettingsRequests();
         testOfficeNoticesChannelShowsServerFrames();
         testOfficePrivateRoomsAndDirectMessages();
         testDirectMessagesOverLocalMesh();
+        testOfficeRoomMutationFrames();
+        testOfficeDirectMessageRoundTrip();
         testLocalMeshAddressPolicy();
         testLocalMeshCrossClientConstants();
         testLocalMeshFraming();

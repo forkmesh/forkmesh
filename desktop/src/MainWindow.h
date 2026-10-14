@@ -9781,6 +9781,23 @@ private:
     void applyMessageRecipients(const QString &conversation,
                                 const QString &messageId, int recipients,
                                 const QStringList &names = {});
+    forkmesh::recipients::ReceiptMark chatReceiptMark(
+        const ChatMessage &message) const;
+    void applyMessagesDelivered(const QString &conversation,
+                                const QStringList &messageIds);
+    void applyConversationRead(const QString &conversation);
+    void refreshReceiptRow(const ChatMessage &message);
+    void applyOfficeReaction(const QString &conversation,
+                             const QString &messageId, const QString &emoji,
+                             const QString &reactorName, bool added);
+    void applyOfficeEdit(const QString &conversation, const QString &messageId,
+                         const QString &senderId, const QString &newText);
+    void applyOfficeDelete(const QString &conversation,
+                           const QString &messageId, const QString &senderId);
+    bool officeMutationTargetReady(const QString &conversation,
+                                   const QString &messageId,
+                                   const QJsonObject &mutation);
+    void replayPendingOfficeMutations(const QString &messageId);
     void promptEditMessage(const QString &messageId, const QString &currentText);
     void confirmDeleteMessage(const QString &messageId);
     void openChatThread(const QString &rootMessageId);
@@ -15102,6 +15119,8 @@ private:
     QPlainTextEdit *m_chatThreadInput = nullptr;
     QLabel *m_chatThreadCountLabel = nullptr;
     QHash<QString, QMap<QString, QStringList>> m_reactions;
+    QHash<QString, QList<QJsonObject>> m_pendingOfficeMutations;
+    QStringList m_pendingOfficeMutationOrder;
     QHash<QString, QPixmap> m_avatars;          // senderId -> avatar
     QHash<QString, QString> m_dmNames;          // peerId -> display name
     QHash<QString, QHash<QString, QString>> m_typing; // conversation -> peerId -> name

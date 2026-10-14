@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mentionQuery, chanForZone, roomLabel, ROOMS } from '../public/features/chat/core.js';
+import { mentionQuery, chanForZone, roomLabel, ROOMS, receiptState, receiptShapes, RECEIPT_LABELS } from '../public/features/chat/core.js';
 
 const CHAT = readFileSync(new URL('../public/features/chat.js', import.meta.url), 'utf8');
 
@@ -44,4 +44,41 @@ test('read marks and new direct messages arrive live over the account event chan
   assert.ok(CHAT.includes("if (topic === 'direct-messages' || topic === 'chat-read') loadDms();"));
   assert.ok(CHAT.includes('onConnected: () => { if (connectedOnce) loadDms(); connectedOnce = true; }'));
   assert.ok(!/setInterval\([^)]*loadDms/.test(CHAT));
+});
+
+test('own messages step through sending, sent, delivered and read; channels stop at sent', () => {
+  assert.equal(receiptState({ receipt: 'pending' }, false, true), '');
+  assert.equal(receiptState({ receipt: 'pending' }, true, true), 'pending');
+  assert.equal(receiptState({ receipt: 'pending', recipients: 1 }, true, true), 'sent');
+  assert.equal(receiptState({}, true, true), 'sent');
+  assert.equal(receiptState({ receipt: 'delivered' }, true, true), 'delivered');
+  assert.equal(receiptState({ receipt: 'read' }, true, true), 'read');
+  assert.equal(receiptState({ receipt: 'delivered' }, true, false), 'sent');
+  assert.equal(receiptState({ receipt: 'read' }, true, false), 'sent');
+  assert.deepEqual(RECEIPT_LABELS, { pending: 'Sending', sent: 'Sent', delivered: 'Delivered', read: 'Read' });
+});
+
+test('the receipt mark uses the shared 22 x 14 geometry', () => {
+  const count = (svg, tag) => (svg.match(new RegExp(`<${tag}\\b`, 'g')) || []).length;
+  assert.ok(CHAT.includes('<svg viewBox="0 0 22 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${receiptShapes(state)}</svg>'));
+  assert.ok(receiptShapes('pending').includes('stroke-dasharray'));
+  assert.equal(count(receiptShapes('pending'), 'path'), 0);
+  assert.equal(count(receiptShapes('sent'), 'circle'), 1);
+  assert.equal(count(receiptShapes('sent'), 'path'), 1);
+  assert.equal(count(receiptShapes('delivered'), 'path'), 3);
+  assert.ok(receiptShapes('delivered').includes('cx="14" cy="7" r="5.2"'));
+  assert.ok(receiptShapes('read').includes('fill="currentColor"'));
+  assert.equal((receiptShapes('read').match(/class="rc-cut"/g) || []).length, 2);
+});
+
+test('the office chat shows receipts on own messages and withdraws a deleted direct message', () => {
+  assert.ok(CHAT.includes("isDirectRoom: (room) => String(room?.scope || '').startsWith('direct:'),"));
+  assert.ok(CHAT.includes("onDelivered: (ids, room) => advance(room, 'delivered', ids),"));
+  assert.ok(CHAT.includes("onRead: (room) => advance(room, 'read'),"));
+  assert.ok(/onRecipients,\s+onDelivered/.test(CHAT));
+  assert.ok(CHAT.includes("keep(c, plain, 'pending');"));
+  assert.ok(CHAT.indexOf("keep(c, plain, 'pending');") < CHAT.indexOf('const sent = await S.transport.send(plain, { persist: true });'));
+  assert.ok(CHAT.includes("if (type === 'delete' && c.kind === 'dm') S.transport.supersede?.([target]);"));
+  assert.ok(CHAT.includes('m.recipients = plain.relayRecipients;'));
+  assert.ok(CHAT.includes('${receiptNode(m, mine, direct)}'));
 });

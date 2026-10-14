@@ -499,7 +499,7 @@ private struct ChatTranscript<Drawer: View>: View {
 
     private func actions(for row: ChatRow) -> ChatRowActions {
         let message: ChatMessage = row.message
-        let relayRoom: Bool = !hub.inMesh && !hub.inOffice
+        let relayRoom: Bool = !hub.inMesh && !hub.isReadOnly(message.conversation)
         let channel: String = message.conversation
         var react: ((String) -> Void)? = nil
         var thread: (() -> Void)? = nil
@@ -509,7 +509,7 @@ private struct ChatTranscript<Drawer: View>: View {
         let ephemeral: Bool = message.app?.ephemeral == true
         if relayRoom && !ephemeral {
             react = { (value: String) in hub.toggleReaction(message, value: value) }
-            if channel.hasPrefix("#") {
+            if ChatHub.hasThreads(channel) {
                 thread = { onRoute(.thread(channel: channel, id: message.id)) }
             }
         }
@@ -867,6 +867,12 @@ struct ChatMessageRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .topTrailing) {
+                if row.continuesGroup, let receipt = row.receipt {
+                    ChatReceiptMark(receipt: receipt, muted: fm.textTertiary, background: fm.bgBase)
+                        .padding(.top, 3)
+                }
+            }
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, row.continuesGroup ? 1 : FmSpace.x3)
@@ -903,7 +909,7 @@ struct ChatMessageRow: View {
             ChatReactionMenu(onPick: onReact)
         }
         if let onThread = actions.onThread {
-            Button(action: onThread) { Label("Reply in thread", systemImage: "bubble.left.and.bubble.right") }
+            Button(action: onThread) { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         }
         ChatMessageLaterMenu(actions: actions)
         if !copyText.isEmpty {
@@ -951,6 +957,10 @@ struct ChatMessageRow: View {
             Text(ChatHub.timeLabel(message.timestamp))
                 .fmText(.bodySmall, color: fm.textTertiary, tabular: true)
                 .padding(.leading, FmSpace.x2)
+            if let receipt = row.receipt {
+                ChatReceiptMark(receipt: receipt, muted: fm.textTertiary, background: fm.bgBase)
+                    .padding(.leading, FmSpace.x1)
+            }
             if let label = OfficeFrames.recipientsLabel(message.recipients),
                 let description = OfficeFrames.recipientsDescription(message.recipients)
             {

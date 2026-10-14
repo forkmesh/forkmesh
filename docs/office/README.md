@@ -1114,6 +1114,13 @@ host), `realm` (`forkmesh.com`), `port` (3478), `tls_port` (5349),
 
 ## Recent changes
 
+- 2026-10-13: own chat messages show a sending, sent, delivered or read mark,
+  and deleting a direct message also withdraws the relay's stored copy
+  ([chat-private-rooms.md](../app/chat-private-rooms.md#delivery-ticks-on-every-own-message-all-clients-2026-10-13)).
+  The script budget in `office/perf-budget.json` rose from 128 KB to 129 KB
+  gzip: the marks, the receipt handlers and the transport's `supersede` added
+  about 0.9 KB, and the build was already at 127.4 KB (now 128.2 KB).
+
 - 2026-10-09: no toasts. Every toast became an inline status line in the
   panel, card or dialog it belongs to, or a keyed line above the dock; the
   toast stack and its styles are gone (see "Status lines, not toasts"). The
