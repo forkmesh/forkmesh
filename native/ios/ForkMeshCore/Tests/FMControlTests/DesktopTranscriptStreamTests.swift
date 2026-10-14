@@ -69,6 +69,60 @@ final class DesktopTranscriptStreamTests: XCTestCase {
         XCTAssertTrue(unfollowed)
     }
 
+    @MainActor func testRefollowPicksUpWhatAQuietFollowMissed() async throws {
+        let desktop = try FakeRelayDesktop()
+        var follows: [JSONObject] = []
+        desktop.handler = { method, params in
+            guard method == "agents.follow" else { return nil }
+            follows.append(params)
+            var answer = follows.count == 1 ? self.output(7, "abc", from: 0) : self.output(7, "reply", from: 3)
+            answer["streaming"] = true
+            return answer
+        }
+        let hub = try hub(desktop)
+        var deltas: [AgentTranscriptDelta] = []
+        let stream = DesktopTranscriptStream(hub: hub, sessionId: 7) { deltas.append($0) }
+        let streaming = await stream.start()
+        XCTAssertTrue(streaming)
+        XCTAssertEqual(stream.next, 3)
+
+        let again = await stream.refollow()
+        XCTAssertTrue(again)
+        XCTAssertEqual(follows.map { $0.int("since") }, [0, 3])
+        XCTAssertEqual(deltas.map(\.text), ["abc", "reply"])
+        XCTAssertEqual(stream.next, 8)
+        XCTAssertFalse(desktop.requests.contains { $0.str("method") == "agents.unfollow" })
+
+        desktop.event("agents.output", output(7, "!", from: 8))
+        let got = await waitFor { deltas.count == 3 }
+        XCTAssertTrue(got)
+        XCTAssertEqual(stream.next, 9)
+        stream.stop()
+    }
+
+    @MainActor func testRefollowReopensAnEndedFollow() async throws {
+        let desktop = try FakeRelayDesktop()
+        desktop.handler = { method, _ in
+            guard method == "agents.follow" else { return nil }
+            var answer = self.output(7, "", from: 0, status: "completed")
+            answer["streaming"] = true
+            return answer
+        }
+        let hub = try hub(desktop)
+        var ended = ""
+        let stream = DesktopTranscriptStream(hub: hub, sessionId: 7, onEnded: { ended = $0 }) { _ in }
+        _ = await stream.start()
+        desktop.event("agents.output", ["id": 7, "error": "gone"])
+        let over = await waitFor { ended == "gone" }
+        XCTAssertTrue(over)
+        XCTAssertFalse(stream.isStreaming)
+
+        let again = await stream.refollow()
+        XCTAssertTrue(again)
+        XCTAssertTrue(stream.isStreaming)
+        stream.stop()
+    }
+
     @MainActor func testAnOlderDesktopLeavesTheCallerReading() async throws {
         let desktop = try FakeRelayDesktop()
         desktop.refuse = { method, _ in method == "agents.follow" ? "unsupported" : nil }
