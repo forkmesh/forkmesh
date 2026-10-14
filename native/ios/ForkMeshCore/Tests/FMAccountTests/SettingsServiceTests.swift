@@ -271,17 +271,17 @@ final class SettingsServiceTests: XCTestCase {
     }
 
     @MainActor
-    func testANewProjectIsMarkedNewOnceAndSignInStartsOff() async {
+    func testANewProjectIsMarkedNewOnceAndSignInStartsOn() async {
         let prefs = InMemoryKeyValueStore()
         let settings = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
         XCTAssertFalse(settings.legacyProject)
         XCTAssertEqual(prefs.string(forKey: ProjectLegacyMarker.key), ProjectLegacyMarker.fresh)
-        XCTAssertFalse(settings.signInOn)
+        XCTAssertTrue(settings.signInOn)
         prefs.set("{}", forKey: "shell/bar-layout")
         XCTAssertFalse(SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore()).legacyProject)
-        settings.setSignInOn(true)
-        XCTAssertEqual(prefs.bool(forKey: SettingsService.signInOnKey), true)
-        XCTAssertTrue(settings.signInOn)
+        settings.setSignInOn(false)
+        XCTAssertEqual(prefs.bool(forKey: SettingsService.signInOnKey), false)
+        XCTAssertFalse(settings.signInOn)
     }
 
     @MainActor

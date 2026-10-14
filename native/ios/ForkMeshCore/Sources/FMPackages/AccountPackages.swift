@@ -324,14 +324,14 @@ public final class AccountPackagesStore {
         let own: Bool
         let entry = state?.entry(id)
         if entry == nil && info(id) == nil {
-            return PackageGate.isGated(id) ? legacyProject() : true
+            return PackageGate.isGated(id) ? legacyProject() || PackageGate.isStarter(id) : true
         }
         if ownsInstalls {
             let accountKeeps = entry?.installed ?? true
             switch projectChoices[id] {
             case .some(true): own = accountKeeps
             case .some(false): own = false
-            case .none: own = (info(id)?.defaultOn ?? false) && accountKeeps
+            case .none: own = PackageGate.isStarter(id) || ((info(id)?.defaultOn ?? false) && accountKeeps)
             }
         } else if let entry {
             own = entry.installed

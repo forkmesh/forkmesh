@@ -47,14 +47,28 @@ final class PackageGateTests: XCTestCase {
         XCTAssertEqual(AccountPackageInfo(json: info.json)?.installedBefore, "2026-10-11")
     }
 
-    @MainActor func testANewProjectHidesEveryGatedPackage() async {
+    @MainActor func testANewProjectStartsWithOnlyTheStarterPackages() async {
         let store = store(legacy: false)
-        for id in ["agents", "special-agents", "branches", "pull-requests", "notes", "tour", "vault", "status-page"] {
+        for id in ["special-agents", "branches", "pull-requests", "notes", "vault", "status-page", "workflows"] {
             XCTAssertFalse(store.isInstalled(id), id)
         }
-        XCTAssertFalse(store.isInstalled("chat"))
+        for id in ["agents", "chat", "inbox", "code", "tour"] {
+            XCTAssertTrue(store.isInstalled(id), id)
+        }
         XCTAssertTrue(store.isInstalled("some-unknown-plugin"))
-        XCTAssertTrue(store.installedGatedPackages.isEmpty)
+        XCTAssertEqual(store.installedGatedPackages, PackageGate.starterPackages)
+    }
+
+    @MainActor func testANewProjectCanRemoveAStarterPackage() async {
+        let prefs = InMemoryKeyValueStore()
+        let state = AccountPackagesState(packages: [AccountPackageEntry(id: "agents", installed: false)])
+        prefs.set(JSON.encode(state.json), forKey: AccountPackagesStore.stateKey)
+        XCTAssertTrue(store(legacy: false, prefs: prefs).isInstalled("agents"))
+        Self.choose(prefs, ["agents": false, "tour": false])
+        let fresh = store(legacy: false, prefs: prefs)
+        XCTAssertFalse(fresh.isInstalled("agents"))
+        XCTAssertFalse(fresh.isInstalled("tour"))
+        XCTAssertEqual(fresh.installedGatedPackages, ["chat", "inbox", "code"])
     }
 
     @MainActor func testALegacyProjectKeepsWhatWasInstalledBefore() async {
@@ -79,7 +93,7 @@ final class PackageGateTests: XCTestCase {
         XCTAssertTrue(legacy.isInstalled("vault"))
         let fresh = store(legacy: false, prefs: prefs)
         XCTAssertFalse(fresh.isInstalled("vault"))
-        XCTAssertFalse(fresh.isInstalled("agents"))
+        XCTAssertTrue(fresh.isInstalled("agents"))
         Self.choose(prefs, ["vault": true, "notes": true])
         let picked = store(legacy: false, prefs: prefs)
         XCTAssertTrue(picked.isInstalled("vault"))
@@ -97,9 +111,9 @@ final class PackageGateTests: XCTestCase {
         XCTAssertEqual(AccountPackagesState(json: state.json), state)
         prefs.set(JSON.encode(state.json), forKey: AccountPackagesStore.stateKey)
         let fresh = store(legacy: false, prefs: prefs)
-        XCTAssertFalse(fresh.isInstalled("agents"))
+        XCTAssertTrue(fresh.isInstalled("agents"))
         XCTAssertFalse(fresh.isInstalled("notes"))
-        XCTAssertEqual(fresh.installedGatedPackages, [])
+        XCTAssertEqual(fresh.installedGatedPackages, PackageGate.starterPackages)
         let legacy = store(legacy: true, prefs: prefs)
         XCTAssertTrue(legacy.isInstalled("agents"))
         XCTAssertTrue(legacy.isInstalled("notes"))
@@ -136,11 +150,11 @@ final class PackageGateTests: XCTestCase {
             ],
         ])
         prefs.set(JSON.encode(state.json), forKey: AccountPackagesStore.stateKey)
-        XCTAssertTrue(store(legacy: false, prefs: prefs).installedGatedPackages.isEmpty)
+        XCTAssertEqual(store(legacy: false, prefs: prefs).installedGatedPackages, PackageGate.starterPackages)
         Self.choose(prefs, ["vault": true, "notes": true, "tour": true, "workflows": false])
         let fresh = store(legacy: false, prefs: prefs)
         XCTAssertTrue(fresh.ownsInstalls)
-        XCTAssertEqual(fresh.installedGatedPackages, ["vault", "notes"])
+        XCTAssertEqual(fresh.installedGatedPackages, ["vault", "notes", "agents", "chat", "inbox", "code"])
         XCTAssertFalse(fresh.isInstalled("tour"))
         let legacy = store(legacy: true, prefs: prefs)
         XCTAssertFalse(legacy.ownsInstalls)
@@ -157,13 +171,13 @@ final class PackageGateTests: XCTestCase {
         let fresh = store(legacy: false, prefs: prefs, transport: transport)
         let installed = await fresh.install("special-agents")
         XCTAssertEqual(installed, ["special-agents", "agents"])
-        XCTAssertEqual(fresh.projectChoices, ["special-agents": true, "agents": true])
-        XCTAssertEqual(fresh.installedGatedPackages, ["agents", "special-agents"])
+        XCTAssertEqual(fresh.projectChoices, ["special-agents": true])
+        XCTAssertEqual(fresh.installedGatedPackages, PackageGate.starterPackages.union(["special-agents"]))
         let removed = await fresh.uninstall("agents")
         XCTAssertEqual(removed, ["agents", "special-agents"])
         XCTAssertNil(transport.last("POST", "/api/plugins/@account/agents/uninstall"))
         XCTAssertEqual(fresh.state?.entry("agents")?.installed, true)
-        XCTAssertTrue(fresh.installedGatedPackages.isEmpty)
+        XCTAssertEqual(fresh.installedGatedPackages, ["chat", "inbox", "code", "tour"])
         XCTAssertTrue(store(legacy: true, prefs: prefs).isInstalled("special-agents"))
         transport.on("POST", "/api/plugins/@account/notes/uninstall", [
             "ok": true, "changed": ["notes"], "packages": [["id": "notes", "installed": false]],
@@ -230,7 +244,7 @@ final class PackageGateTests: XCTestCase {
         XCTAssertTrue(fresh.isShownHere("special-agents"))
         XCTAssertTrue(fresh.isShownHere("tour"))
         XCTAssertTrue(fresh.isShownHere("workflows"))
-        XCTAssertEqual(fresh.installedGatedPackages, ["special-agents", "tour", "workflows"])
+        XCTAssertEqual(fresh.installedGatedPackages, ["special-agents", "tour", "workflows", "chat", "inbox", "code"])
         XCTAssertEqual(fresh.places("notes"), [.desktop, .web])
         XCTAssertEqual(fresh.places("branches"), PackagePlace.allCases)
         let legacy = store(legacy: true, prefs: prefs)
@@ -280,7 +294,8 @@ final class PackageGateTests: XCTestCase {
         let empty = AccountPackagesStore(
             client: PackagesClient(transport: FakePackagesTransport()), prefs: InMemoryKeyValueStore(), signedIn: { false },
             legacyProject: { false })
-        XCTAssertFalse(empty.isInstalled("agents"))
+        XCTAssertFalse(empty.isInstalled("notes"))
+        XCTAssertTrue(empty.isInstalled("agents"))
         XCTAssertFalse(empty.statusPageOn)
         XCTAssertTrue(empty.isInstalled("status-check-api"))
         let old = AccountPackagesStore(
@@ -294,11 +309,16 @@ final class PackageGateTests: XCTestCase {
         let settings = SettingsService.create(prefs: InMemoryKeyValueStore(), secureStore: InMemorySecureStore())
         let fresh = store(legacy: false)
         var installed = PhonePackages.installed(account: fresh, settings: settings, organization: ["crm", "ledger"])
-        XCTAssertEqual(installed, ["crm"])
-        settings.setSignInOn(true)
-        installed = PhonePackages.installed(account: fresh, settings: settings, organization: [])
-        XCTAssertEqual(installed, ["sign-in"])
+        XCTAssertEqual(installed, PackageGate.starterPackages.union(["crm", "sign-in"]))
         XCTAssertTrue(PhonePackages.isInstalled("sign-in", account: fresh, settings: settings))
+        settings.setSignInOn(false)
+        installed = PhonePackages.installed(account: fresh, settings: settings, organization: [])
+        XCTAssertEqual(installed, PackageGate.starterPackages)
+        XCTAssertFalse(PhonePackages.isInstalled("sign-in", account: fresh, settings: settings))
+        settings.setSignInOn(true)
+        XCTAssertEqual(
+            PhonePackages.installed(account: nil, settings: settings, organization: []),
+            PackageGate.starterPackages.union(["sign-in"]))
         XCTAssertFalse(PhonePackages.isInstalled("notes", account: fresh, settings: settings))
         let legacy = PhonePackages.installed(account: store(legacy: true), settings: settings, organization: [])
         XCTAssertTrue(legacy.isSuperset(of: ["agents", "notes", "special-agents", "pull-requests", "sign-in"]))

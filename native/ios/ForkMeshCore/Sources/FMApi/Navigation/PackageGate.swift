@@ -7,6 +7,10 @@ public enum PackageGate {
 
     public static let devicePackages: Set<String> = ["sign-in"]
 
+    public static let starterPackages: Set<String> = ["agents", "chat", "inbox", "code", "tour"]
+
+    public static func isStarter(_ packageId: String) -> Bool { starterPackages.contains(packageId) }
+
     public static let items: [String: String] = [
         "Agents": "agents", "Inbox": "inbox", "Chat": "chat", "currentRepo": "code", "reportBug": "bug-reports",
         "repo-issues": "issues", "repo-commits": "commits", "repo-branches": "branches", "repo-pulls": "pull-requests",

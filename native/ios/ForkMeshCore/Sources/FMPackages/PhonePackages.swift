@@ -44,6 +44,8 @@ public enum PhonePackages {
         var out: Set<String> = account?.installedGatedPackages ?? []
         if account == nil, settings?.legacyProject ?? true {
             out = PackageGate.packages.subtracting(PackageGate.organizationPackages)
+        } else if account == nil {
+            out = PackageGate.starterPackages
         }
         for id in PackageGate.devicePackages {
             if isOn(id, settings: settings) ?? true { out.insert(id) } else { out.remove(id) }
@@ -56,6 +58,6 @@ public enum PhonePackages {
     public static func isInstalled(_ id: String, account: AccountPackagesStore?, settings: SettingsService?) -> Bool {
         if let on = isOn(id, settings: settings) { return on }
         if isRemoved(id, settings: settings) { return false }
-        return account?.isInstalled(id) ?? (settings?.legacyProject ?? true)
+        return account?.isInstalled(id) ?? ((settings?.legacyProject ?? true) || PackageGate.isStarter(id))
     }
 }

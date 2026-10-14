@@ -571,7 +571,7 @@ public final class SettingsService {
 
     public var signInOn: Bool {
         track()
-        return prefs.bool(forKey: SettingsService.signInOnKey) ?? legacyProject
+        return prefs.bool(forKey: SettingsService.signInOnKey) ?? true
     }
 
     public func setSignInOn(_ v: Bool) {
