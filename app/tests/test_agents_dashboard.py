@@ -58,7 +58,8 @@ def test_agents_page_is_a_composed_dashboard_page():
     assert "/dashboard-page-agents.js?v=" in built
     for marker in ('data-agents-filter="status"', 'data-agents-filter="repo"',
                    'data-agents-filter="node"', "data-agents-list",
-                   "data-agents-refresh", "data-agents-count"):
+                   "data-agents-refresh", "data-agents-count", "data-agents-new",
+                   "data-agents-setup", 'href="/dashboard/runners?setup=1"', 'href="/desktop"'):
         assert marker in built, marker
 
 
@@ -346,15 +347,20 @@ def test_rows_filters_and_links_in_the_page_module():
     assert result["both"] == ["cloud:a1", "cloud:a3"]
     live, attention, done, desktop = result["html"]
     assert live.startswith("<a ") and 'href="/jett/engine/agents?session=a1"' in live
-    assert "animate-pulse" in live and "Working" in live and "mirror9" in live
+    assert 'data-lucide="loader-circle"' in live and "animate-spin" in live
+    assert "Working" in live and "mirror9" in live and "group-hover:text-accent" in live
     assert "Needs attention" in attention and "text-amber-500" in attention
+    assert 'data-lucide="triangle-alert"' in attention
     assert "Completed" in done and "Organization run" in done
+    assert 'data-lucide="circle-check"' in done and "text-success" in done
+    assert 'data-lucide="monitor"' in desktop
+    assert "emerald" not in "".join(result["html"])
     assert desktop.startswith("<a ") and "End-to-end encrypted" in desktop
     assert 'href="/jett-laptop/notes/agents"' in desktop and "jett-laptop/notes" in desktop
 
 
 def test_tailwind_sheet_carries_the_page_classes():
     sheet = (DASHBOARD / "tailwind.css").read_text(encoding="utf-8")
-    for cls in ("bg-amber-500", "bg-emerald-500", "animate-pulse", "text-amber-500",
-                "text-emerald-500", "bg-muted-foreground", "gap-x-3", "max-w-52"):
+    for cls in ("animate-spin", "text-amber-500", "text-primary", "text-destructive",
+                "text-accent", "text-muted-foreground", "gap-x-3", "max-w-52", "max-w-6xl"):
         assert re.search(r"\.%s[{:,]" % re.escape(cls), sheet), cls
