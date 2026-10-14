@@ -135,8 +135,8 @@ window.ForkMeshDashboard.registerPage("calories", ({
     return `<svg viewBox="0 0 140 140" role="img" aria-label="${escapeHtml(`${n(value)} of ${n(goal)} kcal`)}">
       <circle class="cal-ring-track" cx="70" cy="70" r="${radius}" fill="none" stroke-width="12"/>
       <circle cx="70" cy="70" r="${radius}" fill="none" stroke="${color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${(circumference * ratio).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 70 70)"/>
-      <text x="70" y="66" text-anchor="middle" font-size="24" font-weight="600" fill="var(--cal-ink)">${n(value)}</text>
-      <text x="70" y="86" text-anchor="middle" font-size="11" fill="var(--cal-ink-muted)">of ${n(goal)} kcal</text>
+      <text x="70" y="68" text-anchor="middle" font-size="28" font-weight="600" fill="var(--cal-ink)">${n(value)}</text>
+      <text x="70" y="90" text-anchor="middle" font-size="13" fill="var(--cal-ink-muted)">of ${n(goal)} kcal</text>
     </svg>`;
   }
   function macroBar(label, value, goal, color) {
@@ -144,12 +144,35 @@ window.ForkMeshDashboard.registerPage("calories", ({
     return `<div><div class="flex items-baseline justify-between text-xs"><span class="text-muted-foreground"><span class="cal-legend-swatch" style="background:${color}"></span>${label}</span><span class="text-foreground">${g(value)} g <span class="text-muted-foreground">/ ${n(goal)} g</span></span></div>
       <div class="mt-1 h-2 rounded-full" style="background:var(--cal-grid)"><div class="h-2 rounded-full" style="width:${(ratio * 100).toFixed(1)}%;background:${color}"></div></div></div>`;
   }
+  function weekSvg(days, goal) {
+    const W = 168, H = 52, gap = 4, bar = (W - gap * 6) / 7, today = state.overview?.today;
+    const max = Math.max(goal || 0, ...days.map((day) => day.calories || 0), 1) * 1.1;
+    const y = (value) => H - (value / max) * H;
+    let out = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Calories per day for the last 7 days">`;
+    days.forEach((day, i) => {
+      const value = day.calories || 0, x = i * (bar + gap), over = goal > 0 && value > goal;
+      const tip = `${dayLabel(day.day)}: ${n(value)} kcal${goal ? ` of ${n(goal)}` : ""}`;
+      out += `<g data-tip="${escapeHtml(tip)}"><rect class="cal-hit" x="${x}" y="0" width="${bar}" height="${H}"/>`
+        + `<rect class="cal-bar" x="${x}" y="${value ? y(value).toFixed(1) : H - 1}" width="${bar}" height="${value ? (H - y(value)).toFixed(1) : 1}" rx="2" fill="${value ? (over ? "var(--cal-series-2)" : "var(--cal-series-1)") : "var(--cal-grid)"}"${day.day === today ? "" : ` opacity=".7"`}/></g>`;
+    });
+    if (goal) out += `<line x1="0" x2="${W}" y1="${y(goal).toFixed(1)}" y2="${y(goal).toFixed(1)}" stroke="var(--cal-series-4)" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>`;
+    return `${out}</svg>`;
+  }
   function renderDiary() {
     const o = state.overview; if (!o) return;
     const goal = o.profile.dailyCalories || 0, totals = o.todayTotals || {};
     $(`[data-calories-ring]`).innerHTML = ringSvg(totals.calories || 0, goal);
     const remaining = goal - (totals.calories || 0);
-    $(`[data-calories-ring-caption]`).textContent = goal ? (remaining >= 0 ? `${n(remaining)} kcal left today` : `${n(-remaining)} kcal over goal`) : "Set a daily calorie goal to track progress.";
+    $(`[data-calories-ring-caption]`).textContent = goal ? (remaining >= 0 ? `${n(remaining)} kcal left` : `${n(-remaining)} kcal over goal`) : "Set a daily calorie goal to track progress.";
+    const todays = (o.entries || []).filter((item) => item.day === o.today);
+    $(`[data-calories-meals]`).innerHTML = MEALS.map((meal) => {
+      const kcal = todays.filter((item) => item.meal === meal).reduce((total, item) => total + (Number(item.calories) || 0), 0);
+      return `<p class="cal-kv"><span class="capitalize">${meal}</span><span>${n(kcal)} kcal</span></p>`;
+    }).join("");
+    const week = (o.days || []).slice(-7);
+    const host = $(`[data-calories-week]`);
+    host.innerHTML = weekSvg(week, goal); tooltip(host);
+    $(`[data-calories-week-average]`).textContent = o.weekAverage ? `avg ${n(o.weekAverage)} kcal` : "";
     $(`[data-calories-macros]`).innerHTML = [
       macroBar("Protein", totals.proteinG, o.profile.proteinG, "var(--cal-series-1)"),
       macroBar("Carbs", totals.carbsG, o.profile.carbsG, "var(--cal-series-2)"),
@@ -179,21 +202,21 @@ window.ForkMeshDashboard.registerPage("calories", ({
     $(`[data-calories-entries-more]`).classList.toggle("hidden", !o.entriesTruncated);
     const dayHeader = (group) => {
       const sum = (key) => group.items.reduce((total, item) => total + (Number(item[key]) || 0), 0);
-      return `<tr class="bg-secondary/60"><th colspan="2" class="px-4 py-2 text-left text-xs font-semibold text-foreground">${escapeHtml(dayLabel(group.day))}${group.day === o.today ? " · today" : ""}</th>
-        <td class="px-4 py-2 text-right text-xs font-semibold text-foreground">${n(sum("calories"))}</td>
-        <td class="px-4 py-2 text-right text-xs text-muted-foreground">${g(sum("proteinG"))}</td>
-        <td class="px-4 py-2 text-right text-xs text-muted-foreground">${g(sum("carbsG"))}</td>
-        <td class="px-4 py-2 text-right text-xs text-muted-foreground">${g(sum("fatG"))}</td>
-        <td class="px-4 py-2"></td></tr>`;
+      return `<tr class="bg-secondary/60"><th colspan="2" class="text-left text-xs font-semibold text-foreground">${escapeHtml(dayLabel(group.day))}${group.day === o.today ? " · today" : ""}</th>
+        <td class="text-right text-xs font-semibold text-foreground">${n(sum("calories"))}</td>
+        <td class="text-right text-xs text-muted-foreground">${g(sum("proteinG"))}</td>
+        <td class="text-right text-xs text-muted-foreground">${g(sum("carbsG"))}</td>
+        <td class="text-right text-xs text-muted-foreground">${g(sum("fatG"))}</td>
+        <td></td></tr>`;
     };
     $(`[data-calories-entries]`).innerHTML = groups.map((group) => dayHeader(group) + group.items.map((item) => `<tr class="hover:bg-secondary">
-      <td class="px-4 py-2"><button data-calories-entry-edit="${escapeHtml(item.id)}" class="block text-left font-semibold text-foreground">${escapeHtml(item.name)}</button><span class="text-xs text-muted-foreground">${escapeHtml([item.portion, item.brand, item.source !== "manual" ? `via ${item.source}` : ""].filter(Boolean).join(" · "))}</span></td>
-      <td class="px-4 py-2 capitalize text-muted-foreground">${escapeHtml(item.meal)}</td>
-      <td class="px-4 py-2 text-right text-foreground">${n(item.calories)}</td>
-      <td class="px-4 py-2 text-right text-muted-foreground">${g(item.proteinG)}</td>
-      <td class="px-4 py-2 text-right text-muted-foreground">${g(item.carbsG)}</td>
-      <td class="px-4 py-2 text-right text-muted-foreground">${g(item.fatG)}</td>
-      <td class="px-4 py-2 text-right"><button data-calories-entry-edit="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm">Edit</button></td></tr>`).join("")).join("");
+      <td><button data-calories-entry-edit="${escapeHtml(item.id)}" class="block text-left font-semibold text-foreground">${escapeHtml(item.name)}</button><span class="text-xs text-muted-foreground">${escapeHtml([item.portion, item.brand, item.source !== "manual" ? `via ${item.source}` : ""].filter(Boolean).join(" · "))}</span></td>
+      <td class="capitalize text-muted-foreground">${escapeHtml(item.meal)}</td>
+      <td class="text-right text-foreground">${n(item.calories)}</td>
+      <td class="text-right text-muted-foreground">${g(item.proteinG)}</td>
+      <td class="text-right text-muted-foreground">${g(item.carbsG)}</td>
+      <td class="text-right text-muted-foreground">${g(item.fatG)}</td>
+      <td class="text-right"><button data-calories-entry-edit="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm">Edit</button></td></tr>`).join("")).join("");
     $(`[data-calories-entries-empty]`).classList.toggle("hidden", rows.length > 0);
   }
 
