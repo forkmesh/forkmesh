@@ -127,9 +127,13 @@ is [OPERATIONS.md](../OPERATIONS.md).
   paths, so application data never lands where `git add -A` reaches it.
 - `forkmesh_layout.py apply` refuses to run while the desktop, its services,
   Actions runs or git operations are live.
-- `test_ci_failure_quarantine_is_explicit_and_bounded` pins the exact number
-  of quarantined test ids in `app/tests/conftest.py` and
-  `world/tests/conftest.py`; update the count in the same commit.
+- There is no CI quarantine. `KNOWN_MAIN_FAILURES` in `app/tests/conftest.py`
+  and `world/tests/conftest.py` marked listed tests `xfail` only when
+  `FORKMESH_CI_KNOWN_FAILURES=1`, which nothing set. On 15 Oct 2026 its 53
+  ids were 8 tests that no longer existed, 43 that passed and 2 that were
+  fixed instead, so the lists and the hook were removed.
+  `test_ci_has_no_failure_quarantine` keeps them out: a failing test is fixed
+  or deleted, not listed.
 - `deploy/`, `app/host/`, `tools/next_*` and `tools/cutover_*` keep the
   fleet's own zone names for the core nodes, so `rehost.py --check` reports
   hosts to rewrite.

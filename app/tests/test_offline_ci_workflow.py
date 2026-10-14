@@ -257,15 +257,17 @@ def test_critical_suites_enforce_sub_minute_deadlines():
     assert server.index("exit $?") < server.index("python3 -m http.server")
 
 
-def test_ci_failure_quarantine_is_explicit_and_bounded():
+def test_ci_has_no_failure_quarantine():
     conftests = [
         (ROOT / unit / "tests" / "conftest.py").read_text(encoding="utf-8")
         for unit in ("app", "world")
     ]
 
-    assert all("FORKMESH_CI_KNOWN_FAILURES" in source for source in conftests)
-    assert all("strict=False" in source for source in conftests)
-    assert sum(source.count('    "test_') for source in conftests) == 53
+    for source in conftests:
+        assert "KNOWN_MAIN_FAILURES" not in source
+        assert "FORKMESH_CI_KNOWN_FAILURES" not in source
+        assert "pytest_collection_modifyitems" not in source
+        assert "xfail" not in source
 
 
 def test_every_pinned_critical_node_id_still_resolves():
