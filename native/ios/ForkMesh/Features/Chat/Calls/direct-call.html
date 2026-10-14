@@ -56,7 +56,7 @@ window.FmCallSegmentModels = {
 <script id="fm-call-faces">
 "use strict";
 window.FmCallFaces = (() => {
-const { LANDMARK_COUNT, JAW, LEFT_EYE, RIGHT_EYE, OUTER_LIPS, INNER_LIPS, FOREHEAD_LIFT, pointsFromFlat, centroid, faceFrame, normalizeShape, mouthGap, buildTemplate, fitTemplate, delaunay, headLayout, headModel, buildHeadMesh, solvePose, projectPose, liveHead, landmarksFromRegions, shapeRegions, canonicalShape, resamplePolyline, clampValue, OneEuroFilter, createPointSmoother } = (() => {
+const { LANDMARK_COUNT, JAW, LEFT_EYE, RIGHT_EYE, OUTER_LIPS, INNER_LIPS, FOREHEAD_LIFT, pointsFromFlat, centroid, faceFrame, normalizeShape, mouthGap, buildTemplate, fitTemplate, delaunay, headLayout, headModel, buildHeadMesh, solvePose, noseTurn, projectPose, liveHead, vertexDepths, landmarksFromRegions, shapeRegions, canonicalShape, resamplePolyline, clampValue, OneEuroFilter, createPointSmoother } = (() => {
 const LANDMARK_COUNT = 68;
 const JAW = range(0, 17);
 const LEFT_EYE = range(36, 42);
@@ -91,6 +91,8 @@ const RING_DEPTH = -0.75;
 const CHIN_DROP = [[5, 0.3], [6, 0.6], [7, 0.85], [8, 1], [9, 0.85], [10, 0.6], [11, 0.3]];
 const FOREHEAD_LIFT = 0.5;
 const MAX_OPEN = 0.42;
+const NOSE_TRUST = 0.06;
+const RING_GAP = 0.05;
 
 function range(start, end) {
   return Array.from({ length: end - start }, (_, i) => start + i);
@@ -367,6 +369,10 @@ function solvePose(model, live) {
   const r1 = c.map((v, i) => (v + d[i]) / Math.SQRT2);
   const r2 = c.map((v, i) => (v - d[i]) / Math.SQRT2);
   const scale = (s1 + s2) / 2;
+  if (noseDisagrees(model, live, r1, r2, scale)) {
+    r1[2] = -r1[2];
+    r2[2] = -r2[2];
+  }
   const r3 = [r1[1] * r2[2] - r1[2] * r2[1], r1[2] * r2[0] - r1[0] * r2[2], r1[0] * r2[1] - r1[1] * r2[0]];
   const t = [lm[0] - scale * dot3(r1, mm), lm[1] - scale * dot3(r2, mm)];
   return {
@@ -377,6 +383,20 @@ function solvePose(model, live) {
     yaw: Math.asin(clampValue(-r3[0], -1, 1)),
     pitch: Math.asin(clampValue(r3[1], -1, 1)),
   };
+}
+
+function noseTurn(points) {
+  const frame = faceFrame(points);
+  const tip = toFrame(frame, points[30]);
+  const bridge = toFrame(frame, points[27]);
+  return (tip[0] - bridge[0]) / frame.span;
+}
+
+function noseDisagrees(model, live, r1, r2, scale) {
+  const seen = noseTurn(live) - (model[30][0] - model[27][0]);
+  if (Math.abs(seen) < NOSE_TRUST) return false;
+  const turn = (r1[2] * (model[30][2] - model[27][2]));
+  return Math.sign(turn) !== Math.sign(seen) && Math.abs(turn) > NOSE_TRUST * 0.5;
 }
 
 function projectPose(pose, point) {
@@ -407,6 +427,15 @@ function liveHead(model, live) {
     out.push([projected[0] + wx / weight, projected[1] + wy / weight]);
   }
   return { points: out, pose };
+}
+
+function vertexDepths(model, pose) {
+  const r3 = pose.rows[2];
+  const depths = model.map((point) => dot3(r3, point));
+  let jaw = Infinity;
+  for (const i of JAW) jaw = Math.min(jaw, depths[i]);
+  for (let v = LANDMARK_COUNT + 10; v < depths.length; v += 1) depths[v] = Math.min(depths[v], jaw - RING_GAP);
+  return depths;
 }
 
 function dot3(a, b) {
@@ -611,7 +640,628 @@ function createPointSmoother(count, minCutoff = 1.2, beta = 0.6) {
     },
   };
 }
-return { LANDMARK_COUNT, JAW, LEFT_EYE, RIGHT_EYE, OUTER_LIPS, INNER_LIPS, FOREHEAD_LIFT, pointsFromFlat, centroid, faceFrame, normalizeShape, mouthGap, buildTemplate, fitTemplate, delaunay, headLayout, headModel, buildHeadMesh, solvePose, projectPose, liveHead, landmarksFromRegions, shapeRegions, canonicalShape, resamplePolyline, clampValue, OneEuroFilter, createPointSmoother };
+return { LANDMARK_COUNT, JAW, LEFT_EYE, RIGHT_EYE, OUTER_LIPS, INNER_LIPS, FOREHEAD_LIFT, pointsFromFlat, centroid, faceFrame, normalizeShape, mouthGap, buildTemplate, fitTemplate, delaunay, headLayout, headModel, buildHeadMesh, solvePose, noseTurn, projectPose, liveHead, vertexDepths, landmarksFromRegions, shapeRegions, canonicalShape, resamplePolyline, clampValue, OneEuroFilter, createPointSmoother };
+})();
+
+const { EYE_CORNERS, lumaOf, rednessOf, eyeBox, tongueWindow, sampleBox, skinReference, measureEye, measureTongue, closeLids, createExpressionProbe } = (() => {
+const PROBE_SPAN = 120;
+const EYE_HALF = [0.62, 0.3];
+const EYE_GRID = [18, 10];
+const DARK_RATIO = 0.62;
+const OPEN_MIN = 0.05;
+const CLOSE_START = 0.6;
+const CLOSE_FULL = 0.35;
+const BASE_RISE = 0.25;
+const BASE_FALL_S = 6;
+const LOOK_LIMIT = 0.32;
+const REST_S = 3;
+const TONGUE_GRID = [14, 12];
+const TONGUE_GATE = [0.1, 0.24];
+const TONGUE_BASE_RISE_S = 10;
+const UPPER_LIDS = [[37, 41], [38, 40], [43, 47], [44, 46]];
+const LOWER_LIFT = 0.15;
+
+const EYE_CORNERS = Object.freeze([[36, 39], [42, 45]]);
+
+function lumaOf(r, g, b) {
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function rednessOf(r, g, b) {
+  return (r - g) / (r + g + b + 12);
+}
+
+function eyeBox(points, side) {
+  const [a, b] = EYE_CORNERS[side];
+  const p = points[a];
+  const q = points[b];
+  const dx = q[0] - p[0];
+  const dy = q[1] - p[1];
+  const width = Math.hypot(dx, dy) || 1;
+  const ux = [dx / width, dy / width];
+  const uy = [-ux[1], ux[0]];
+  const lids = centroid(points, side ? [43, 44, 46, 47] : [37, 38, 40, 41]);
+  const mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+  const lift = (lids[0] - mid[0]) * uy[0] + (lids[1] - mid[1]) * uy[1];
+  return {
+    center: [mid[0] + uy[0] * lift * 0.5, mid[1] + uy[1] * lift * 0.5],
+    ux,
+    uy,
+    half: [EYE_HALF[0] * width, EYE_HALF[1] * width],
+  };
+}
+
+function tongueWindow(points) {
+  const frame = faceFrame(points);
+  const lip = [(points[66][0] + points[57][0]) / 2, (points[66][1] + points[57][1]) / 2];
+  const chin = points[8];
+  const down = [chin[0] - lip[0], chin[1] - lip[1]];
+  const reach = Math.hypot(down[0], down[1]) || frame.span * 0.6;
+  const mouth = Math.hypot(points[54][0] - points[48][0], points[54][1] - points[48][1]) || frame.span * 0.8;
+  const uy = [down[0] / reach, down[1] / reach];
+  return {
+    center: [lip[0] + down[0] * 0.38, lip[1] + down[1] * 0.38],
+    ux: [-uy[1], uy[0]],
+    uy,
+    half: [mouth * 0.42, reach * 0.55],
+  };
+}
+
+function sampleBox(image, box, grid, visit) {
+  const { data, width, height } = image;
+  for (let j = 0; j < grid[1]; j += 1) {
+    const v = ((j + 0.5) / grid[1]) * 2 - 1;
+    for (let i = 0; i < grid[0]; i += 1) {
+      const u = ((i + 0.5) / grid[0]) * 2 - 1;
+      const x = Math.round(box.center[0] + box.ux[0] * u * box.half[0] + box.uy[0] * v * box.half[1]);
+      const y = Math.round(box.center[1] + box.ux[1] * u * box.half[0] + box.uy[1] * v * box.half[1]);
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const at = (y * width + x) * 4;
+      visit(data[at], data[at + 1], data[at + 2], u, v);
+    }
+  }
+}
+
+function skinReference(image, points) {
+  const frame = faceFrame(points);
+  let luma = 0;
+  let red = 0;
+  let count = 0;
+  for (const [a, b] of [[2, 31], [14, 35], [3, 48], [13, 54]]) {
+    const center = [(points[a][0] + points[b][0]) / 2, (points[a][1] + points[b][1]) / 2];
+    const box = { center, ux: frame.ux, uy: frame.uy, half: [frame.span * 0.1, frame.span * 0.1] };
+    sampleBox(image, box, [5, 5], (r, g, bl) => {
+      luma += lumaOf(r, g, bl);
+      red += rednessOf(r, g, bl);
+      count += 1;
+    });
+  }
+  return count ? { luma: luma / count, red: red / count } : null;
+}
+
+function measureEye(image, box, skin) {
+  const threshold = skin.luma * DARK_RATIO;
+  const grid = new Float32Array(EYE_GRID[0] * EYE_GRID[1]).fill(-1);
+  let total = 0;
+  let dark = 0;
+  let wx = 0;
+  let wy = 0;
+  let weight = 0;
+  sampleBox(image, box, EYE_GRID, (r, g, b, u, v) => {
+    total += 1;
+    const luma = lumaOf(r, g, b);
+    const i = Math.round(((v + 1) / 2) * EYE_GRID[1] - 0.5) * EYE_GRID[0] + Math.round(((u + 1) / 2) * EYE_GRID[0] - 0.5);
+    grid[i] = luma;
+    if (luma >= threshold) return;
+    dark += 1;
+    const w = (threshold - luma) ** 2;
+    wx += w * u;
+    wy += w * v;
+    weight += w;
+  });
+  if (!total) return null;
+  let edge = 0;
+  let edges = 0;
+  for (let j = 1; j < EYE_GRID[1] - 1; j += 1) {
+    for (let i = 1; i < EYE_GRID[0] - 1; i += 1) {
+      const left = grid[j * EYE_GRID[0] + i - 1];
+      const right = grid[j * EYE_GRID[0] + i + 1];
+      if (left < 0 || right < 0) continue;
+      edge += Math.abs(right - left);
+      edges += 1;
+    }
+  }
+  return {
+    dark: dark / total,
+    edge: edges ? edge / edges / Math.max(skin.luma, 1) : 0,
+    look: weight > 0 ? [wx / weight, wy / weight] : [0, 0],
+  };
+}
+
+function measureTongue(image, box, skin) {
+  let total = 0;
+  let red = 0;
+  sampleBox(image, box, TONGUE_GRID, (r, g, b) => {
+    total += 1;
+    const luma = lumaOf(r, g, b);
+    if (luma < skin.luma * 0.22 || luma > Math.max(skin.luma * 2.4, 60)) return;
+    red += clampValue((rednessOf(r, g, b) - skin.red - 0.05) / 0.08, 0, 1);
+  });
+  return total ? red / total : 0;
+}
+
+function closeLids(points, close) {
+  if (!close || !(close[0] > 0.01 || close[1] > 0.01)) return points;
+  const out = points.map((point) => [point[0], point[1]]);
+  UPPER_LIDS.forEach(([upper, lower], k) => {
+    const amount = clampValue(close[k < 2 ? 0 : 1], 0, 1);
+    if (amount <= 0.01) return;
+    const meet = [
+      out[lower][0] + (out[upper][0] - out[lower][0]) * LOWER_LIFT,
+      out[lower][1] + (out[upper][1] - out[lower][1]) * LOWER_LIFT,
+    ];
+    out[upper] = [out[upper][0] + (meet[0] - out[upper][0]) * amount, out[upper][1] + (meet[1] - out[upper][1]) * amount];
+    out[lower] = [out[lower][0] + (meet[0] - out[lower][0]) * amount, out[lower][1] + (meet[1] - out[lower][1]) * amount];
+  });
+  return out;
+}
+
+function createExpressionProbe({ documentRef = globalThis.document } = {}) {
+  const canvas = documentRef?.createElement?.("canvas") || null;
+  const ctx = canvas?.getContext?.("2d", { willReadFrequently: true }) || null;
+  const eyes = [0, 1].map(() => ({
+    base: 0,
+    close: new OneEuroFilter(4, 2),
+    lookX: new OneEuroFilter(1.2, 0.8),
+    lookY: new OneEuroFilter(1.2, 0.8),
+    look: [0, 0],
+    rest: null,
+  }));
+  const tongue = { base: -1, gate: new OneEuroFilter(3, 1) };
+  let last = 0;
+
+  function reset() {
+    for (const eye of eyes) {
+      eye.base = 0;
+      eye.close.reset();
+      eye.lookX.reset();
+      eye.lookY.reset();
+      eye.look = [0, 0];
+      eye.rest = null;
+    }
+    tongue.base = -1;
+    tongue.gate.reset();
+    last = 0;
+  }
+
+  function grab(source, points) {
+    if (!ctx) return null;
+    const frame = faceFrame(points);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const [x, y] of points) {
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+    const pad = frame.span * 0.3;
+    minX = Math.floor(minX - pad);
+    minY = Math.floor(minY - pad);
+    maxX = Math.ceil(maxX + pad);
+    maxY = Math.ceil(maxY + pad);
+    const scale = Math.min(1, PROBE_SPAN / frame.span);
+    const w = Math.max(4, Math.round((maxX - minX) * scale));
+    const h = Math.max(4, Math.round((maxY - minY) * scale));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+    ctx.setTransform(scale, 0, 0, scale, -minX * scale, -minY * scale);
+    ctx.drawImage(source, 0, 0);
+    const image = ctx.getImageData(0, 0, w, h);
+    const local = points.map(([x, y]) => [(x - minX) * scale, (y - minY) * scale]);
+    return { image, local, scale, origin: [minX, minY] };
+  }
+
+  function measure(source, points, time, { pupils = null } = {}) {
+    if (!points) return null;
+    let grabbed = null;
+    try {
+      grabbed = grab(source, points);
+    } catch (_) {
+      grabbed = null;
+    }
+    if (!grabbed) return null;
+    const { image, local, scale, origin } = grabbed;
+    const skin = skinReference(image, local);
+    if (!skin || skin.luma < 18) return null;
+    const elapsed = last ? clampValue((time - last) / 1000, 0, 1) : 0;
+    last = time;
+    const close = [0, 0];
+    const look = [[0, 0], [0, 0]];
+    for (const side of [0, 1]) {
+      const eye = eyes[side];
+      const box = eyeBox(local, side);
+      const found = measureEye(image, box, skin);
+      if (!found) continue;
+      if (!eye.base) eye.base = found.edge;
+      else if (found.edge >= eye.base) eye.base += (found.edge - eye.base) * BASE_RISE;
+      else eye.base -= (eye.base - found.edge) * (elapsed / BASE_FALL_S);
+      let amount = 0;
+      if (eye.base >= OPEN_MIN) {
+        const ratio = found.edge / eye.base;
+        amount = clampValue((CLOSE_START - ratio) / (CLOSE_START - CLOSE_FULL), 0, 1);
+      }
+      close[side] = clampValue(eye.close.filter(amount, time), 0, 1);
+      let raw = found.look;
+      const pupil = pupils?.[side];
+      if (pupil) {
+        const px = (pupil[0] - origin[0]) * scale - box.center[0];
+        const py = (pupil[1] - origin[1]) * scale - box.center[1];
+        raw = [(px * box.ux[0] + py * box.ux[1]) / box.half[0], (px * box.uy[0] + py * box.uy[1]) / box.half[1]];
+      }
+      if (close[side] < 0.4) {
+        if (!eye.rest) eye.rest = [raw[0], raw[1]];
+        const pull = clampValue(elapsed / REST_S, 0, 1);
+        eye.rest = [eye.rest[0] + (raw[0] - eye.rest[0]) * pull, eye.rest[1] + (raw[1] - eye.rest[1]) * pull];
+        eye.look = [
+          clampValue(eye.lookX.filter(raw[0] - eye.rest[0], time), -LOOK_LIMIT, LOOK_LIMIT),
+          clampValue(eye.lookY.filter(raw[1] - eye.rest[1], time), -LOOK_LIMIT, LOOK_LIMIT),
+        ];
+      }
+      look[side] = eye.look;
+    }
+    const mouthBox = tongueWindow(local);
+    const red = measureTongue(image, mouthBox, skin);
+    if (tongue.base < 0) tongue.base = red;
+    else if (red < tongue.base) tongue.base += (red - tongue.base) * 0.5;
+    else tongue.base += (red - tongue.base) * (elapsed / TONGUE_BASE_RISE_S);
+    const raised = red - tongue.base;
+    const gate = clampValue((raised - TONGUE_GATE[0]) / (TONGUE_GATE[1] - TONGUE_GATE[0]), 0, 1);
+    return {
+      close,
+      look,
+      tongue: clampValue(tongue.gate.filter(gate, time), 0, 1),
+      skinRed: skin.red,
+      skinLuma: skin.luma / 255,
+    };
+  }
+
+  return { measure, reset };
+}
+return { EYE_CORNERS, lumaOf, rednessOf, eyeBox, tongueWindow, sampleBox, skinReference, measureEye, measureTongue, closeLids, createExpressionProbe };
+})();
+
+const { CUSTOM_FACE_ID, CUSTOM_FACE_LABEL, CUSTOM_FACE_STORAGE_KEY, CUSTOM_FACE_SIDE, customFaceTransform, applyTransform, smoothstep, boxBlur, headRing, polygonMask, skinModel, skinLikeness, buildCustomMatte, resizeMask, buildCustomFace, savedCustomFaceImage, rememberCustomFaceImage, customFaceFromFile } = (() => {
+const CUSTOM_FACE_ID = "custom";
+const CUSTOM_FACE_LABEL = "Your photo";
+const CUSTOM_FACE_STORAGE_KEY = "forkmesh.chat.callFaceImage";
+const CUSTOM_FACE_SIDE = 1024;
+
+const SIZE = 512;
+const EYE_SPAN = 118;
+const EYE_MID = [256, 285];
+const RING = 28;
+
+function customFaceTransform(points) {
+  const frame = faceFrame(points);
+  const scale = EYE_SPAN / frame.span;
+  const cos = Math.cos(-frame.roll) * scale;
+  const sin = Math.sin(-frame.roll) * scale;
+  return {
+    scale,
+    matrix: [cos, sin, -sin, cos, EYE_MID[0] - (cos * frame.mid[0] - sin * frame.mid[1]), EYE_MID[1] - (sin * frame.mid[0] + cos * frame.mid[1])],
+  };
+}
+
+function applyTransform(matrix, [x, y]) {
+  const [a, b, c, d, e, f] = matrix;
+  return [a * x + c * y + e, b * x + d * y + f];
+}
+
+function smoothstep(edge0, edge1, x) {
+  const t = clampValue((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function boxBlur(values, size, radius, passes = 1) {
+  let source = values;
+  let out = new Float32Array(values.length);
+  for (let pass = 0; pass < passes; pass += 1) {
+    const temp = new Float32Array(values.length);
+    for (let y = 0; y < size; y += 1) {
+      let sum = 0;
+      const row = y * size;
+      for (let x = -radius; x <= radius; x += 1) sum += source[row + clampValue(x, 0, size - 1)];
+      for (let x = 0; x < size; x += 1) {
+        temp[row + x] = sum / (2 * radius + 1);
+        sum += source[row + Math.min(size - 1, x + radius + 1)] - source[row + Math.max(0, x - radius)];
+      }
+    }
+    for (let x = 0; x < size; x += 1) {
+      let sum = 0;
+      for (let y = -radius; y <= radius; y += 1) sum += temp[clampValue(y, 0, size - 1) * size + x];
+      for (let y = 0; y < size; y += 1) {
+        out[y * size + x] = sum / (2 * radius + 1);
+        sum += temp[Math.min(size - 1, y + radius + 1) * size + x] - temp[Math.max(0, y - radius) * size + x];
+      }
+    }
+    source = out;
+    out = new Float32Array(values.length);
+  }
+  return source;
+}
+
+function headRing(matte, size, mid, span) {
+  const center = [mid[0], mid[1] - 0.35 * span];
+  const reaches = [];
+  const directions = [];
+  for (let k = 0; k < RING; k += 1) {
+    const angle = (2 * Math.PI * k) / RING - Math.PI / 2;
+    const direction = [Math.cos(angle), Math.sin(angle)];
+    let reach = 0;
+    for (let r = 0; ; r += 1) {
+      const x = center[0] + direction[0] * r;
+      const y = center[1] + direction[1] * r;
+      if (!(x >= 0 && x < size - 1 && y >= 0 && y < size - 1)) break;
+      if (matte[Math.floor(y) * size + Math.floor(x)] > 0.03) reach = r;
+    }
+    reaches.push(reach);
+    directions.push(direction);
+  }
+  const at = (i) => reaches[(i + RING) % RING];
+  const widened = reaches.map((_, i) => Math.max(at(i - 1), at(i), at(i + 1)));
+  const wide = (i) => widened[(i + RING) % RING];
+  const out = [];
+  reaches.forEach((reach, i) => {
+    const smooth = (wide(i - 2) + wide(i - 1) + wide(i) + wide(i + 1) + wide(i + 2)) / 5;
+    const radius = Math.max(smooth, reach, 0.9 * span) + 0.18 * span;
+    const x = clampValue(center[0] + directions[i][0] * radius, 0, size);
+    const y = clampValue(center[1] + directions[i][1] * radius, 0, size);
+    out.push(Math.round(x * 10) / 10, Math.round(y * 10) / 10);
+  });
+  return out;
+}
+
+function polygonMask(documentRef, polygon, size) {
+  const canvas = documentRef.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  polygon.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.fill();
+  const data = ctx.getImageData(0, 0, size, size).data;
+  const out = new Float32Array(size * size);
+  for (let i = 0; i < out.length; i += 1) out[i] = data[i * 4] / 255;
+  return out;
+}
+
+function chroma(r, g, b) {
+  const total = r + g + b + 7.65;
+  return [r / total, g / total];
+}
+
+function skinModel(pixels, size, points, span) {
+  const samples = [];
+  const radius = Math.max(2, Math.round(span * 0.12));
+  for (const [a, b] of [[2, 31], [14, 35], [3, 48], [13, 54]]) {
+    const cx = Math.round((points[a][0] + points[b][0]) / 2);
+    const cy = Math.round((points[a][1] + points[b][1]) / 2);
+    for (let y = cy - radius; y < cy + radius; y += 1) {
+      for (let x = cx - radius; x < cx + radius; x += 1) {
+        if (x < 0 || y < 0 || x >= size || y >= size) continue;
+        const at = (y * size + x) * 4;
+        samples.push(chroma(pixels[at], pixels[at + 1], pixels[at + 2]));
+      }
+    }
+  }
+  if (samples.length < 8) return null;
+  const mean = [0, 0];
+  for (const [u, v] of samples) {
+    mean[0] += u / samples.length;
+    mean[1] += v / samples.length;
+  }
+  let a = 2e-5;
+  let b = 0;
+  let d = 2e-5;
+  for (const [u, v] of samples) {
+    a += ((u - mean[0]) ** 2) / samples.length;
+    b += ((u - mean[0]) * (v - mean[1])) / samples.length;
+    d += ((v - mean[1]) ** 2) / samples.length;
+  }
+  const det = a * d - b * b || 1e-12;
+  return { mean, inverse: [d / det, -b / det, a / det] };
+}
+
+function skinLikeness(pixels, size, model) {
+  const out = new Float32Array(size * size);
+  if (!model) return out;
+  const [ia, ib, id] = model.inverse;
+  for (let i = 0; i < out.length; i += 1) {
+    const r = pixels[i * 4];
+    const g = pixels[i * 4 + 1];
+    const bl = pixels[i * 4 + 2];
+    const [u, v] = chroma(r, g, bl);
+    const du = u - model.mean[0];
+    const dv = v - model.mean[1];
+    const distance = du * du * ia + 2 * du * dv * ib + dv * dv * id;
+    out[i] = Math.exp(-0.5 * distance / 9) * smoothstep(0.03, 0.12, (r + g + bl) / 765);
+  }
+  return out;
+}
+
+function buildCustomMatte({ pixels, size = SIZE, points, person = null, documentRef }) {
+  const p = points;
+  const left = centroid(p, [36, 37, 38, 39, 40, 41]);
+  const right = centroid(p, [42, 43, 44, 45, 46, 47]);
+  const span = Math.hypot(right[0] - left[0], right[1] - left[1]) || EYE_SPAN;
+  const center = [(left[0] + right[0]) / 2, (left[1] + right[1]) / 2];
+  const forehead = [];
+  for (let i = 26; i >= 17; i -= 1) forehead.push([p[i][0], p[i][1] - span * 1.2]);
+  const facePoly = p.slice(0, 17).concat(forehead);
+  const innerPoly = p.slice(0, 17).concat(p.slice(17, 27).reverse().map(([x, y]) => [x, y - span * 0.15]));
+  const chin = p[8];
+  const neckHalf = Math.hypot(p[4][0] - p[12][0], p[4][1] - p[12][1]) * 0.5;
+  const neckPoly = [p[4], p[12], [p[12][0] + neckHalf * 0.08, chin[1] + span * 1.1], [p[4][0] - neckHalf * 0.08, chin[1] + span * 1.1]];
+  const face = boxBlur(polygonMask(documentRef, facePoly, size), size, 3, 2);
+  const inner = boxBlur(polygonMask(documentRef, innerPoly, size), size, 2, 2);
+  const neckRaw = boxBlur(polygonMask(documentRef, neckPoly, size), size, 5, 2);
+  const faceWide = boxBlur(face, size, 6, 2);
+  const likeness = boxBlur(skinLikeness(pixels, size, skinModel(pixels, size, p, span)), size, 2, 1);
+  const matte = new Float32Array(size * size);
+  const neck = new Float32Array(size * size);
+  for (let y = 0; y < size; y += 1) {
+    const below = smoothstep(chin[1] - span * 0.1, chin[1] + span * 0.2, y);
+    const fadeNeck = 1 - smoothstep(chin[1] + span * 0.1, chin[1] + span * 0.7, y);
+    const above = 1 - smoothstep(p[4][1], p[5][1] + span * 0.25, y);
+    const bottom = 1 - smoothstep(size - span * 0.55, size - span * 0.05, y);
+    for (let x = 0; x < size; x += 1) {
+      const i = y * size + x;
+      neck[i] = neckRaw[i] * fadeNeck;
+      const reach = Math.hypot((x - center[0]) / (span * 1.75), (y - center[1] + span * 0.4) / (span * 2.3));
+      const near = 1 - smoothstep(0.85, 1.05, reach);
+      const hairReach = Math.hypot((x - center[0]) / (span * 1.9), (y - center[1] - span * 0.2) / (span * 2.9));
+      const hairZone = (1 - smoothstep(0.85, 1.05, hairReach)) * (1 - smoothstep(chin[1], chin[1] + span * 0.4, y));
+      const oval = 1 - smoothstep(0.8, 1, Math.hypot((x - center[0]) / (span * 1.3), (y - center[1] + span * 0.45) / (span * 1.95)));
+      const region = person ? Math.max(above * near, face[i], neck[i], hairZone) : Math.max(face[i], neck[i], oval);
+      const who = person ? person[i] : 1;
+      let value = clampValue(who * region, 0, 1);
+      const keepNeck = Math.max(smoothstep(0.08, 0.35, likeness[i]), face[i]);
+      value *= 1 - below + below * keepNeck;
+      matte[i] = value * bottom;
+    }
+  }
+  const soft = boxBlur(matte, size, 1, 1);
+  const skin = new Float32Array(size * size);
+  const hair = new Float32Array(size * size);
+  for (let i = 0; i < soft.length; i += 1) {
+    const m = Math.max(soft[i], matte[i] > 0.97 ? 1 : 0) * (matte[i] > 0.001 || soft[i] > 0.05 ? 1 : 0);
+    soft[i] = m;
+    const skinLike = smoothstep(0.2, 0.55, likeness[i]);
+    skin[i] = clampValue(m * Math.max(skinLike * Math.max(faceWide[i], neck[i]), inner[i] * 0.85), 0, 1);
+    hair[i] = clampValue(m * (1 - skinLike) * (1 - inner[i]), 0, 1);
+  }
+  return { matte: soft, skin: boxBlur(skin, size, 2, 1), hair: boxBlur(hair, size, 1, 1), head: headRing(soft, size, center, span) };
+}
+
+function resizeMask(mask, documentRef) {
+  if (!mask) return null;
+  const canvas = documentRef.createElement("canvas");
+  canvas.width = mask.width;
+  canvas.height = mask.height;
+  const ctx = canvas.getContext("2d");
+  const image = ctx.createImageData(mask.width, mask.height);
+  for (let i = 0; i < mask.bytes.length; i += 1) {
+    image.data[i * 4] = mask.bytes[i];
+    image.data[i * 4 + 1] = mask.bytes[i];
+    image.data[i * 4 + 2] = mask.bytes[i];
+    image.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+function buildCustomFace({ image, width, height, points, mask = null, documentRef = globalThis.document }) {
+  if (!points || points.length < LANDMARK_COUNT) throw new Error("face_not_found");
+  const frame = faceFrame(points);
+  if (!(frame.span >= 12)) throw new Error("face_too_small");
+  const { matrix } = customFaceTransform(points);
+  const photo = documentRef.createElement("canvas");
+  photo.width = SIZE;
+  photo.height = SIZE;
+  const ctx = photo.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  ctx.setTransform(...matrix);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(image, 0, 0, width, height);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const pixels = ctx.getImageData(0, 0, SIZE, SIZE).data;
+  let person = null;
+  const maskCanvas = resizeMask(mask, documentRef);
+  if (maskCanvas) {
+    const layer = documentRef.createElement("canvas");
+    layer.width = SIZE;
+    layer.height = SIZE;
+    const lctx = layer.getContext("2d", { willReadFrequently: true });
+    lctx.fillStyle = "#000";
+    lctx.fillRect(0, 0, SIZE, SIZE);
+    lctx.setTransform(...matrix);
+    lctx.drawImage(maskCanvas, 0, 0, width, height);
+    const data = lctx.getImageData(0, 0, SIZE, SIZE).data;
+    person = new Float32Array(SIZE * SIZE);
+    for (let i = 0; i < person.length; i += 1) person[i] = smoothstep(0.2, 0.8, data[i * 4] / 255);
+  }
+  const placed = points.map((point) => applyTransform(matrix, point));
+  const built = buildCustomMatte({ pixels, size: SIZE, points: placed, person, documentRef });
+  const matte = documentRef.createElement("canvas");
+  matte.width = SIZE;
+  matte.height = SIZE;
+  const mctx = matte.getContext("2d");
+  const out = mctx.createImageData(SIZE, SIZE);
+  for (let i = 0; i < built.matte.length; i += 1) {
+    out.data[i * 4] = Math.round(built.matte[i] * 255);
+    out.data[i * 4 + 1] = Math.round(built.skin[i] * 255);
+    out.data[i * 4 + 2] = Math.round(built.hair[i] * 255);
+    out.data[i * 4 + 3] = 255;
+  }
+  mctx.putImageData(out, 0, 0);
+  return {
+    id: CUSTOM_FACE_ID,
+    label: CUSTOM_FACE_LABEL,
+    custom: true,
+    points: placed.flatMap(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]),
+    head: built.head,
+    photo,
+    matte,
+  };
+}
+
+function savedCustomFaceImage(storage = globalThis.localStorage) {
+  try {
+    const value = storage?.getItem(CUSTOM_FACE_STORAGE_KEY) || "";
+    return value.startsWith("data:image/") ? value : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function rememberCustomFaceImage(image, storage = globalThis.localStorage) {
+  try {
+    if (image) storage?.setItem(CUSTOM_FACE_STORAGE_KEY, image);
+    else storage?.removeItem(CUSTOM_FACE_STORAGE_KEY);
+  } catch (_) {}
+}
+
+async function customFaceFromFile(file, documentRef = globalThis.document, ImageImpl = globalThis.Image) {
+  if (!file || !/^image\//.test(file.type || "")) throw new Error("not an image");
+  const url = globalThis.URL.createObjectURL(file);
+  try {
+    const image = new ImageImpl();
+    image.src = url;
+    await image.decode();
+    const w = image.naturalWidth || 1;
+    const h = image.naturalHeight || 1;
+    const scale = Math.min(1, CUSTOM_FACE_SIDE / Math.max(w, h));
+    const canvas = documentRef.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(w * scale));
+    canvas.height = Math.max(1, Math.round(h * scale));
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.9);
+  } finally {
+    globalThis.URL.revokeObjectURL(url);
+  }
+}
+return { CUSTOM_FACE_ID, CUSTOM_FACE_LABEL, CUSTOM_FACE_STORAGE_KEY, CUSTOM_FACE_SIDE, customFaceTransform, applyTransform, smoothstep, boxBlur, headRing, polygonMask, skinModel, skinLikeness, buildCustomMatte, resizeMask, buildCustomFace, savedCustomFaceImage, rememberCustomFaceImage, customFaceFromFile };
 })();
 
 const { SEGMENT_MODEL_BASE, SEGMENT_MODELS, MODEL_GROUPS, parseSegmentModel, decodeBase64, loadSegmentModels, sharedSegmentModels, halfToFloat, floatToHalf, layerShader, packAlpha, packWeights, expandLayers, floatTargets, createNetwork, MATTE_SAMPLE, chooseModel, createMatte, createHairMatte } = (() => {
@@ -2908,7 +3558,7 @@ function createFaceTracker({ grab, budget = 2 }) {
 return { PROBE_SIZE, ROI_SIZE, flattenPatch, toYCbCr, createSkinModel, isSkin, learnSkin, skinMask, faceBlob, eyeMap, faceLikenessParts, refineEyeCenter, findEyes, findMouth, estimateYaw, acquisitionPlans, createFaceTracker };
 })();
 
-const { BACKGROUND_MODES, faceWebGL, backgroundCapable, VERTEX_FLOATS, vertexRegion, warpVertices, coverRect, hairRegion, zoneFrame, createFaceRenderer } = (() => {
+const { BACKGROUND_MODES, faceWebGL, backgroundCapable, VERTEX_FLOATS, vertexRegion, warpVertices, coverRect, hairRegion, photoEyes, lookUniform, axisFrame, zoneFrame, createFaceRenderer } = (() => {
 const LOW_WIDTH = 160;
 const FILL_WIDTH = 192;
 const FILL_LEVELS = 5;
@@ -2922,6 +3572,9 @@ const MIN_UNITS = 14;
 const HALO_STRENGTH = 0.25;
 const HAIR_SIDE = 6.4;
 const HAIR_CENTER = [0, 0.5, -0.3];
+const DEPTH_SCALE = 0.5;
+const EYE_UV_HALF = [0.62, 0.36];
+const LOOK_GAIN = 0.55;
 
 const BACKGROUND_MODES = Object.freeze({ off: 0, blur: 1, image: 2 });
 
@@ -2939,6 +3592,7 @@ attribute vec2 aPos;
 attribute vec2 aUv;
 attribute float aHole;
 attribute float aRegion;
+attribute float aDepth;
 uniform vec2 uSize;
 varying vec2 vUv;
 varying float vHole;
@@ -2947,7 +3601,7 @@ void main() {
   vUv = aUv;
   vHole = aHole;
   vRegion = aRegion;
-  gl_Position = vec4(aPos / uSize * 2.0 - 1.0, 0.0, 1.0);
+  gl_Position = vec4(aPos / uSize * 2.0 - 1.0, clamp(-aDepth * ${DEPTH_SCALE.toFixed(2)}, -0.99, 0.99), 1.0);
 }`;
 
 const WARP_FRAGMENT = `
@@ -2955,9 +3609,26 @@ precision mediump float;
 uniform sampler2D uPhoto;
 uniform sampler2D uAux;
 uniform float uAuxPass;
+uniform vec4 uEyeL;
+uniform vec4 uEyeR;
+uniform vec4 uLook;
+uniform vec2 uClose;
 varying vec2 vUv;
 varying float vHole;
 varying float vRegion;
+vec2 gaze(vec2 uv, vec4 eye, vec2 look) {
+  vec2 q = (uv - eye.xy) / eye.zw;
+  float m = 1.0 - smoothstep(0.45, 1.0, length(q));
+  return uv - look * eye.zw * m;
+}
+vec3 lid(vec3 color, vec4 eye, float close) {
+  if (close < 0.01) return color;
+  vec2 q = (vUv - eye.xy) / eye.zw;
+  float m = 1.0 - smoothstep(0.6, 1.05, length(q * vec2(1.0, 0.8)));
+  vec3 skin = 0.5 * (texture2D(uPhoto, vec2(vUv.x, eye.y - eye.w * 1.25), 1.5).rgb + texture2D(uPhoto, vec2(vUv.x, eye.y + eye.w * 1.6), 1.5).rgb);
+  float lash = (1.0 - smoothstep(0.0, 0.22, abs(q.y - 0.3))) * (1.0 - smoothstep(0.5, 0.95, abs(q.x))) * 0.45;
+  return mix(color, skin * (1.0 - lash), m * smoothstep(0.15, 0.85, close));
+}
 void main() {
   vec3 aux = texture2D(uAux, vUv).rgb;
   float open = 1.0 - step(0.5, vHole);
@@ -2965,7 +3636,9 @@ void main() {
     float skin = texture2D(uAux, vUv, 2.5).g;
     gl_FragColor = vec4(skin * aux.r * open, aux.b, 1.0 - open, vRegion);
   } else {
-    gl_FragColor = vec4(texture2D(uPhoto, vUv).rgb, aux.r * open);
+    vec2 uv = gaze(gaze(vUv, uEyeL, uLook.xy), uEyeR, uLook.zw);
+    vec3 color = lid(lid(texture2D(uPhoto, uv).rgb, uEyeL, uClose.x), uEyeR, uClose.y);
+    gl_FragColor = vec4(color, aux.r * open);
   }
 }`;
 
@@ -3122,10 +3795,22 @@ uniform float uPresence;
 uniform float uHide;
 uniform vec2 uFaceUv;
 uniform vec4 uImageRect;
+uniform float uTongue;
+uniform vec2 uTongueCenter;
+uniform vec2 uTongueX;
+uniform vec2 uTongueY;
+uniform float uSkinRed;
 varying vec2 vUv;
 ${MATTE_SAMPLE}
 ${ZONE}
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+float tongueAt(vec2 uv, vec3 cam) {
+  vec2 d = uv * uPixels - uTongueCenter;
+  vec2 q = vec2(dot(d, uTongueX), dot(d, uTongueY));
+  float inside = 1.0 - smoothstep(0.75, 1.0, length(q));
+  float red = (cam.r - cam.g) / (cam.r + cam.g + cam.b + 0.047);
+  return inside * smoothstep(uSkinRed + 0.04, uSkinRed + 0.1, red);
+}
 vec3 ratio(vec4 cam, vec4 face) {
   return (cam.rgb + 0.004 * cam.a) / (face.rgb + 0.004 * face.a);
 }
@@ -3177,6 +3862,7 @@ void main() {
     skin = smoothstep(0.15, 0.85, skin);
     vec3 face = clamp(warp.rgb * mix(hair, local * shade, skin), 0.0, 1.0);
     color = mix(color, face, warp.a * uPresence);
+    if (uTongue > 0.001) color = mix(color, cam, tongueAt(vUv, cam) * uTongue * uPresence);
   }
   if (uHide > 0.001) {
     vec3 plain = texture2D(uLowPlain, vUv).rgb;
@@ -3220,15 +3906,29 @@ function texture(gl, filter = gl.LINEAR) {
   return handle;
 }
 
-function target(gl, width, height, type) {
+function target(gl, width, height, type, depth = false) {
   const handle = texture(gl);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, type, null);
   const framebuffer = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, handle, 0);
-  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  let renderbuffer = null;
+  if (depth) {
+    renderbuffer = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbuffer);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+  }
+  let ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  if (!ok && renderbuffer) {
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, null);
+    gl.deleteRenderbuffer(renderbuffer);
+    renderbuffer = null;
+    ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return ok ? { texture: handle, framebuffer, width, height } : null;
+  return ok ? { texture: handle, framebuffer, width, height, depth: Boolean(renderbuffer) } : null;
 }
 
 function faceWebGL(canvas) {
@@ -3249,14 +3949,14 @@ function backgroundCapable(gl) {
   return Boolean(gl && gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) >= MIN_UNITS && floatTargets(gl));
 }
 
-const VERTEX_FLOATS = 6;
+const VERTEX_FLOATS = 7;
 
 function vertexRegion(v) {
   if (v >= 68) return 0;
   return v <= 26 ? 0.25 : 1;
 }
 
-function warpVertices(mesh, layout, livePoints, photoSize) {
+function warpVertices(mesh, layout, livePoints, photoSize, depths = null) {
   const out = new Float32Array(mesh.triangles.length * 3 * VERTEX_FLOATS);
   let at = 0;
   for (const triangle of mesh.triangles) {
@@ -3267,6 +3967,7 @@ function warpVertices(mesh, layout, livePoints, photoSize) {
       out[at++] = layout[v][1] / photoSize;
       out[at++] = triangle.mouth ? 1 : 0;
       out[at++] = vertexRegion(v);
+      out[at++] = depths ? depths[v] : 0;
     }
   }
   return out;
@@ -3289,6 +3990,28 @@ function hairRegion(pose, width, height) {
   const size = [Math.min(side, width), Math.min(side, height)];
   const fit = (value, extent, limit) => Math.min(Math.max(value, extent / 2), limit - extent / 2);
   return { center: [fit(center[0], size[0], width), fit(center[1], size[1], height)], size };
+}
+
+function photoEyes(layout, photoSize) {
+  return [[36, 39, [36, 37, 38, 39, 40, 41]], [42, 45, [42, 43, 44, 45, 46, 47]]].map(([a, b, ring]) => {
+    const width = Math.hypot(layout[b][0] - layout[a][0], layout[b][1] - layout[a][1]) / photoSize;
+    const center = centroid(layout, ring);
+    return [center[0] / photoSize, center[1] / photoSize, EYE_UV_HALF[0] * width, EYE_UV_HALF[1] * width];
+  });
+}
+
+function lookUniform(look) {
+  if (!look) return [0, 0, 0, 0];
+  const pick = (side, k) => (Number.isFinite(look[side]?.[k]) ? look[side][k] * LOOK_GAIN : 0);
+  return [pick(0, 0), pick(0, 1), pick(1, 0), pick(1, 1)];
+}
+
+function axisFrame(box) {
+  return {
+    center: box.center,
+    x: [box.ux[0] / box.half[0], box.ux[1] / box.half[0]],
+    y: [box.uy[0] / box.half[1], box.uy[1] / box.half[1]],
+  };
 }
 
 function zoneFrame(head, pose) {
@@ -3397,8 +4120,8 @@ function createFaceRenderer(canvas, { models = null } = {}) {
     const blurWidth = Math.max(1, Math.ceil(fillWidth / 2));
     const blurHeight = Math.max(1, Math.ceil(fillHeight / 2));
     targets = {
-      warp: target(gl, w, h, gl.UNSIGNED_BYTE),
-      aux: target(gl, w, h, gl.UNSIGNED_BYTE),
+      warp: target(gl, w, h, gl.UNSIGNED_BYTE, true),
+      aux: target(gl, w, h, gl.UNSIGNED_BYTE, true),
       cam: make(lowWidth, lowHeight),
       face: make(lowWidth, lowHeight),
       plain: make(lowWidth, lowHeight),
@@ -3544,7 +4267,7 @@ function createFaceRenderer(canvas, { models = null } = {}) {
       gl.bindTexture(gl.TEXTURE_2D, auxPhoto);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, auxImage);
       gl.generateMipmap(gl.TEXTURE_2D);
-      face = { mesh, layout, model, size };
+      face = { mesh, layout, model, size, eyes: photoEyes(layout, size) };
     },
     clearPhoto() {
       face = null;
@@ -3566,7 +4289,7 @@ function createFaceRenderer(canvas, { models = null } = {}) {
     get lastHead() {
       return lastHead;
     },
-    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, runHair = true, needMatte = false, uploaded = false } = {}) {
+    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, runHair = true, needMatte = false, uploaded = false, expression = null, tongueBox = null } = {}) {
       if (gl.isContextLost()) {
         lost = true;
         return false;
@@ -3594,11 +4317,11 @@ function createFaceRenderer(canvas, { models = null } = {}) {
         zone = zoneFrame(live, head.pose);
         const center = faceFrame(live).mid;
         faceUv = [center[0] / w, center[1] / h];
-        const vertices = warpVertices(face.mesh, face.layout, head.points, face.size);
+        const vertices = warpVertices(face.mesh, face.layout, head.points, face.size, vertexDepths(face.model, head.pose));
         gl.useProgram(warp.program);
         gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-        const attrs = [["aPos", 2, 0], ["aUv", 2, 8], ["aHole", 1, 16], ["aRegion", 1, 20]].map(([name, size, offset]) => {
+        const attrs = [["aPos", 2, 0], ["aUv", 2, 8], ["aHole", 1, 16], ["aRegion", 1, 20], ["aDepth", 1, 24]].map(([name, size, offset]) => {
           const at = gl.getAttribLocation(warp.program, name);
           gl.enableVertexAttribArray(at);
           gl.vertexAttribPointer(at, size, gl.FLOAT, false, VERTEX_FLOATS * 4, offset);
@@ -3606,14 +4329,27 @@ function createFaceRenderer(canvas, { models = null } = {}) {
         }).filter((at) => at >= 0);
         bindTextures(warp, [["uPhoto", photo], ["uAux", auxPhoto]]);
         gl.uniform2f(warp.uniforms.uSize, w, h);
+        gl.uniform4f(warp.uniforms.uEyeL, ...face.eyes[0]);
+        gl.uniform4f(warp.uniforms.uEyeR, ...face.eyes[1]);
+        gl.uniform4f(warp.uniforms.uLook, ...lookUniform(expression?.look));
+        gl.uniform2f(warp.uniforms.uClose, expression?.close?.[0] || 0, expression?.close?.[1] || 0);
         for (const [out, pass] of [[targets.warp, 0], [targets.aux, 1]]) {
           into(out);
           gl.clearColor(0, 0, 0, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
+          if (out.depth) {
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthFunc(gl.LESS);
+            gl.depthMask(true);
+            gl.clearDepth(1);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          } else {
+            gl.clear(gl.COLOR_BUFFER_BIT);
+          }
           gl.uniform1f(warp.uniforms.uAuxPass, pass);
           gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffer);
           for (const at of attrs) gl.enableVertexAttribArray(at);
           gl.drawArrays(gl.TRIANGLES, 0, vertices.length / VERTEX_FLOATS);
+          gl.disable(gl.DEPTH_TEST);
         }
         for (const at of attrs) gl.disableVertexAttribArray(at);
         const span = faceFrame(live).span;
@@ -3673,6 +4409,13 @@ function createFaceRenderer(canvas, { models = null } = {}) {
       gl.uniform1f(composite.uniforms.uHide, hide);
       gl.uniform2f(composite.uniforms.uFaceUv, faceUv[0], faceUv[1]);
       gl.uniform4f(composite.uniforms.uImageRect, imageRect[0], imageRect[1], imageRect[2], imageRect[3]);
+      const tongue = showFace && tongueBox && expression ? Math.max(0, Math.min(1, expression.tongue || 0)) : 0;
+      const mouth = tongue > 0 ? axisFrame(tongueBox) : { center: [-1e5, -1e5], x: [0, 0], y: [0, 0] };
+      gl.uniform1f(composite.uniforms.uTongue, tongue);
+      gl.uniform2f(composite.uniforms.uTongueCenter, mouth.center[0], mouth.center[1]);
+      gl.uniform2f(composite.uniforms.uTongueX, mouth.x[0], mouth.x[1]);
+      gl.uniform2f(composite.uniforms.uTongueY, mouth.y[0], mouth.y[1]);
+      gl.uniform1f(composite.uniforms.uSkinRed, expression?.skinRed ?? 0.12);
       setZone(composite, zone);
       drawQuad(composite, 1);
       return true;
@@ -3688,7 +4431,7 @@ function createFaceRenderer(canvas, { models = null } = {}) {
     },
   };
 }
-return { BACKGROUND_MODES, faceWebGL, backgroundCapable, VERTEX_FLOATS, vertexRegion, warpVertices, coverRect, hairRegion, zoneFrame, createFaceRenderer };
+return { BACKGROUND_MODES, faceWebGL, backgroundCapable, VERTEX_FLOATS, vertexRegion, warpVertices, coverRect, hairRegion, photoEyes, lookUniform, axisFrame, zoneFrame, createFaceRenderer };
 })();
 
 const { CALL_BACKGROUND_STORAGE_KEY, CALL_BACKGROUND_IMAGE_KEY, CALL_BACKGROUND_BASE, CUSTOM_BACKGROUND_ID, CUSTOM_BACKGROUND_SIDE, CALL_BACKGROUNDS, callBackgroundById, callBackgroundImageUrl, callBackgroundThumbUrl, savedCallBackground, rememberCallBackground, fitSide, customBackgroundFromFile } = (() => {
@@ -3782,7 +4525,7 @@ async function customBackgroundFromFile(file, documentRef = globalThis.document,
 return { CALL_BACKGROUND_STORAGE_KEY, CALL_BACKGROUND_IMAGE_KEY, CALL_BACKGROUND_BASE, CUSTOM_BACKGROUND_ID, CUSTOM_BACKGROUND_SIDE, CALL_BACKGROUNDS, callBackgroundById, callBackgroundImageUrl, callBackgroundThumbUrl, savedCallBackground, rememberCallBackground, fitSide, customBackgroundFromFile };
 })();
 
-const { CALL_FACE_STORAGE_KEY, CALL_FACE_PHOTO_BASE, CALL_FACES, faceTemplate, facePoints, faceHead, callFaceById, callFacePhotoUrl, callFaceMatteUrl, callFacesSupported, callBackgroundsSupported, outputSize, createAnchorSmoother, canvasGrabber, hostReply, createHostLocator, createFaceStage } = (() => {
+const { CALL_FACE_STORAGE_KEY, CALL_FACE_PHOTO_BASE, CALL_FACES, faceTemplate, facePoints, faceHead, callFaceById, isCustomFace, callFaceChoices, pupilsFromRegions, callFacePhotoUrl, callFaceMatteUrl, callFacesSupported, callBackgroundsSupported, outputSize, createAnchorSmoother, canvasGrabber, hostReply, createHostLocator, createFaceStage } = (() => {
 const FRAME_RATE = 24;
 const FRAME_MS = Math.round(1000 / FRAME_RATE);
 const MAX_SIDE = 960;
@@ -3800,6 +4543,8 @@ const QUALITY = Object.freeze([
   Object.freeze({ network: 2, hair: 3, guide: 256 }),
   Object.freeze({ network: 3, hair: 4, guide: 192 }),
 ]);
+const CUSTOM_MESH_WAIT_MS = 15000;
+const CUSTOM_TRACK_TRIES = 4;
 const SLOW_MS = 34;
 const FAST_MS = 20;
 const QUALITY_HOLD = 24;
@@ -3900,7 +4645,7 @@ const CALL_FACES = Object.freeze([
   }),
 ]);
 
-const meshes = new Map();
+const meshes = new WeakMap();
 let template = null;
 
 function faceTemplate() {
@@ -3913,7 +4658,7 @@ function facePoints(face) {
 }
 
 function faceHead(face) {
-  if (meshes.has(face.id)) return meshes.get(face.id);
+  if (meshes.has(face)) return meshes.get(face);
   const points = facePoints(face);
   const ring = pointsFromFlat(face.head);
   const model = headModel(points, ring);
@@ -3922,12 +4667,27 @@ function faceHead(face) {
     model,
     mesh: buildHeadMesh(model, faceTemplate()),
   };
-  meshes.set(face.id, entry);
+  meshes.set(face, entry);
   return entry;
 }
 
 function callFaceById(id) {
   return CALL_FACES.find((face) => face.id === id) || null;
+}
+
+function isCustomFace(id) {
+  return id === CUSTOM_FACE_ID;
+}
+
+function callFaceChoices() {
+  return [...CALL_FACES.map((face) => ({ id: face.id, label: face.label, custom: false })), { id: CUSTOM_FACE_ID, label: CUSTOM_FACE_LABEL, custom: true }];
+}
+
+function pupilsFromRegions(regions, scale = 1) {
+  const pick = (region) => (Array.isArray(region) && region.length && Array.isArray(region[0]) ? [region[0][0] / scale, region[0][1] / scale] : null);
+  const pupils = [pick(regions?.leftPupil), pick(regions?.rightPupil)];
+  if (!pupils[0] || !pupils[1]) return null;
+  return pupils.sort((a, b) => a[0] - b[0]);
 }
 
 function callFacePhotoUrl(face) {
@@ -4051,7 +4811,11 @@ function createHostLocator(host, documentRef) {
     ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
     const reply = hostReply(await host.landmarks(canvas.toDataURL("image/jpeg", 0.8), canvas.width, canvas.height, want));
     const points = want.landmarks ? landmarksFromRegions(reply.regions) : null;
-    return { points: points ? points.map(([x, y]) => [x / scale, y / scale]) : null, mask: reply.mask };
+    return {
+      points: points ? points.map(([x, y]) => [x / scale, y / scale]) : null,
+      mask: reply.mask,
+      pupils: points ? pupilsFromRegions(reply.regions, scale) : null,
+    };
   };
 }
 
@@ -4068,6 +4832,7 @@ function createFaceStage({
   cameraStream = null,
   manual = false,
   faceId = "",
+  faceImage = "",
   backgroundId = "",
   backgroundImage = "",
   documentRef = globalThis.document,
@@ -4101,6 +4866,9 @@ function createFaceStage({
   }
 
   const tracker = createFaceTracker({ grab: canvasGrabber(documentRef) });
+  const probe = createExpressionProbe({ documentRef });
+  let expression = null;
+  let customImage = String(faceImage || "");
   const anchorSmoother = createAnchorSmoother();
   const pointSmoother = createPointSmoother(68, 1.5, 1.5);
   let hostLocate = landmarkHost?.landmarks ? createHostLocator(landmarkHost, documentRef) : null;
@@ -4155,7 +4923,7 @@ function createFaceStage({
           else if (++hostMaskMisses >= HOST_MASK_MISSES) hostMasks = false;
         }
         const points = reply.points ? pointSmoother.smooth(reply.points, time, faceFrame(reply.points).span) : null;
-        return { points, mask: reply.mask };
+        return { points, mask: reply.mask, pupils: reply.pupils || null };
       } catch (_) {
         hostFailures += 1;
         if (hostFailures >= HOST_FAILURES) {
@@ -4197,9 +4965,19 @@ function createFaceStage({
     const held = live && time - seenAt < HOLD_MS;
     if (!held) {
       live = null;
+      expression = null;
       anchorSmoother.reset();
       pointSmoother.reset();
+      probe.reset();
     }
+    if (points && face) {
+      try {
+        expression = probe.measure(frame.canvas, points, time, { pupils: result?.pupils || null }) || expression;
+      } catch (_) {
+        expression = null;
+      }
+    }
+    const drawn = live && expression ? closeLids(live, expression.close) : live;
     const ready = Boolean(face?.ready);
     const seen = Boolean(points) && ready;
     presence += ((held && ready ? 1 : 0) - presence) * (held ? FADE_IN : FADE_OUT);
@@ -4215,12 +4993,14 @@ function createFaceStage({
     const runHair = count % quality.hair === 0;
     const started = now();
     const hairBefore = renderer.hairMatte?.ran || 0;
-    renderer.draw(frame.canvas, width, height, face ? live : null, {
+    renderer.draw(frame.canvas, width, height, face ? drawn : null, {
       presence,
       hide: face ? hide : 0,
       runNetwork,
       runHair,
       uploaded: Boolean(result?.uploaded),
+      expression,
+      tongueBox: drawn ? tongueWindow(drawn) : null,
     });
     const spent = now() - started;
     const whole = now() - (startedAt ?? started);
@@ -4270,7 +5050,67 @@ function createFaceStage({
     process(video, video.videoWidth, video.videoHeight, now());
   }
 
-  function loadFace(id) {
+  function wait(ms) {
+    return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+  }
+
+  async function customPoints(image, w, h) {
+    const scale = Math.min(1, CUSTOM_FACE_SIDE / Math.max(w, h));
+    const sized = documentRef.createElement("canvas");
+    sized.width = Math.max(1, Math.round(w * scale));
+    sized.height = Math.max(1, Math.round(h * scale));
+    sized.getContext("2d").drawImage(image, 0, 0, sized.width, sized.height);
+    if (landmarkHost?.landmarks) {
+      const reply = hostReply(await landmarkHost.landmarks(sized.toDataURL("image/jpeg", 0.9), sized.width, sized.height, { landmarks: true, mask: true, accurate: true }));
+      const points = landmarksFromRegions(reply.regions);
+      if (!points) return { points: null, mask: null };
+      return { points: points.map(([x, y]) => [x / scale, y / scale]), mask: reply.mask };
+    }
+    const deadline = now() + CUSTOM_MESH_WAIT_MS;
+    while (!renderer.faceMesh && !stopped && now() < deadline) await wait(100);
+    if (!renderer.faceMesh) return { points: null, mask: null };
+    for (let tries = 0; tries < CUSTOM_TRACK_TRIES; tries += 1) {
+      const found = renderer.trackFace(sized, sized.width, sized.height);
+      if (found?.points) return { points: found.points.map(([x, y]) => [x / scale, y / scale]), mask: null };
+    }
+    return { points: null, mask: null };
+  }
+
+  async function buildCustom(url) {
+    const image = await loadImage(ImageImpl, url);
+    const w = image.naturalWidth || image.width;
+    const h = image.naturalHeight || image.height;
+    const { points, mask } = await customPoints(image, w, h);
+    return buildCustomFace({ image, width: w, height: h, points, mask, documentRef });
+  }
+
+  function loadCustomFace(token) {
+    face = { id: CUSTOM_FACE_ID, ready: false, failed: false };
+    presence = 0;
+    requestModels();
+    const current = face;
+    if (!customImage) {
+      current.failed = true;
+      return;
+    }
+    buildCustom(customImage)
+      .then((built) => {
+        if (token !== loading || stopped) return;
+        const head = faceHead(built);
+        renderer.setPhoto(built.photo, built.matte, head.mesh, head.layout, head.model, PHOTO_SIZE);
+        current.ready = true;
+      })
+      .catch(() => {
+        if (token === loading) current.failed = true;
+      });
+  }
+
+  function loadFace(id, image) {
+    if (image !== undefined && image !== null) customImage = String(image);
+    if (id === CUSTOM_FACE_ID) {
+      loadCustomFace(++loading);
+      return;
+    }
     const next = callFaceById(id);
     const token = ++loading;
     if (!next) {
@@ -4312,7 +5152,7 @@ function createFaceStage({
     }).catch(() => {});
   }
 
-  loadFace(faceId);
+  loadFace(faceId, faceImage);
   loadBackground(backgroundId, backgroundImage);
   const timer = manual ? null : setIntervalImpl(tick, FRAME_MS);
 
@@ -4321,6 +5161,8 @@ function createFaceStage({
     canvas,
     stats,
     face: () => face?.id || "",
+    faceState: () => (!face ? "" : face.ready ? "ready" : face.failed ? "failed" : "loading"),
+    expression: () => expression,
     background: () => background.id,
     landmarks: () => ({ live, head: renderer.lastHead, presence, hide }),
     ready: () => Boolean((!face || face.ready) && (background.mode !== "image" || renderer.hasBackgroundImage) && (!wantsMatte() || renderer.segmentation) && (!face || hostLocate || renderer.faceMesh)),
@@ -4329,8 +5171,8 @@ function createFaceStage({
       const h = source.videoHeight || source.naturalHeight || source.height;
       return process(source, w, h, time) || Promise.resolve(false);
     },
-    setFace(id) {
-      loadFace(id);
+    setFace(id, image) {
+      loadFace(id, image);
     },
     setBackground(id, image = "") {
       loadBackground(id, image);
@@ -4347,9 +5189,9 @@ function createFaceStage({
     },
   };
 }
-return { CALL_FACE_STORAGE_KEY, CALL_FACE_PHOTO_BASE, CALL_FACES, faceTemplate, facePoints, faceHead, callFaceById, callFacePhotoUrl, callFaceMatteUrl, callFacesSupported, callBackgroundsSupported, outputSize, createAnchorSmoother, canvasGrabber, hostReply, createHostLocator, createFaceStage };
+return { CALL_FACE_STORAGE_KEY, CALL_FACE_PHOTO_BASE, CALL_FACES, faceTemplate, facePoints, faceHead, callFaceById, isCustomFace, callFaceChoices, pupilsFromRegions, callFacePhotoUrl, callFaceMatteUrl, callFacesSupported, callBackgroundsSupported, outputSize, createAnchorSmoother, canvasGrabber, hostReply, createHostLocator, createFaceStage };
 })();
-return { CALL_FACES, callFaceById, callFacesSupported, createFaceStage, CALL_BACKGROUNDS, callBackgroundById, callBackgroundsSupported };
+return { CALL_FACES, callFaceById, callFaceChoices, isCustomFace, callFacesSupported, createFaceStage, CALL_BACKGROUNDS, callBackgroundById, callBackgroundsSupported };
 })();
 </script>
 <script type="text/plain" id="fm-call-voice-worklet">
@@ -4365,12 +5207,26 @@ const HIST_STEPS_PER_SEMITONE = 4;
 const HIST_BINS = 160;
 const HIST_HALF_LIFE = 3000;
 const SEED_WEIGHT = 60;
+const VOICING_ENTER = 0.55;
+const VOICING_STAY = 0.45;
+const ANCHOR_BIAS = 0.3;
+const LOCAL_VOICING = 0.6;
+const PITCH_WINDOW = 512;
+const PITCH_EVERY = 2;
+const PITCH_LOW_HZ = 50;
+const PITCH_HIGH_HZ = 420;
+const LIFTER_PERIODS = 0.55;
+const TREMOR_HZ = 5.5;
+const VOICED_HOLD = 10;
 
 export const VOICE_LIMITS = Object.freeze({
   ratio: [0.45, 2.6],
   formant: [0.72, 1.42],
   callerHz: [70, 330],
   tract: [0.94, 1.26],
+  range: [0, 1.5],
+  jitter: [0, 0.04],
+  tremor: [0, 0.05],
 });
 
 const clamp = (value, low, high) => (value < low ? low : value > high ? high : value);
@@ -4387,6 +5243,9 @@ export function voicePlanInto(out, preset, callerHz) {
     out.formant = 1;
     out.brightness = 0;
     out.breath = 0;
+    out.range = 1;
+    out.jitter = 0;
+    out.tremor = 0;
     out.mix = 0;
     return out;
   }
@@ -4395,6 +5254,9 @@ export function voicePlanInto(out, preset, callerHz) {
   out.formant = clamp((preset.tract || 1) / tractFromPitch(caller), VOICE_LIMITS.formant[0], VOICE_LIMITS.formant[1]);
   out.brightness = clamp(Number(preset.brightness) || 0, -1, 1);
   out.breath = clamp(Number(preset.breath) || 0, 0, 1);
+  out.range = clamp(Number.isFinite(preset.range) ? preset.range : 1, VOICE_LIMITS.range[0], VOICE_LIMITS.range[1]);
+  out.jitter = clamp(Number(preset.jitter) || 0, VOICE_LIMITS.jitter[0], VOICE_LIMITS.jitter[1]);
+  out.tremor = clamp(Number(preset.tremor) || 0, VOICE_LIMITS.tremor[0], VOICE_LIMITS.tremor[1]);
   out.mix = 1;
   return out;
 }
@@ -4539,20 +5401,20 @@ export class RealFft {
 }
 
 export class PitchDetector {
-  constructor(sampleRate, size = 1024) {
+  constructor(sampleRate, size = PITCH_WINDOW) {
     this.sampleRate = sampleRate;
     this.size = size;
     this.fft = new RealFft(size * 2);
     this.buffer = new Float64Array(size * 2);
     this.re = new Float64Array(size + 1);
     this.im = new Float64Array(size + 1);
-    this.minLag = Math.max(2, Math.floor(sampleRate / 420));
-    this.maxLag = Math.min(size - 2, Math.ceil(sampleRate / 60));
+    this.minLag = Math.max(2, Math.floor(sampleRate / PITCH_HIGH_HZ));
+    this.maxLag = Math.min(size - 2, Math.ceil(sampleRate / PITCH_LOW_HZ));
     this.nsdf = new Float64Array(this.maxLag + 2);
     this.peaks = new Int32Array(64);
   }
 
-  detect(samples) {
+  detect(samples, previousHz = 0) {
     const n = this.size;
     const buffer = this.buffer;
     const re = this.re;
@@ -4601,12 +5463,23 @@ export class PitchDetector {
     if (!count) return 0;
     let highest = 0;
     for (let i = 0; i < count; i += 1) highest = Math.max(highest, nsdf[peaks[i]]);
-    if (highest < 0.6) return 0;
+    const tracking = previousHz > 0;
+    if (highest < (tracking ? VOICING_STAY : VOICING_ENTER)) return 0;
     let lag = peaks[0];
     for (let i = 0; i < count; i += 1) {
       if (nsdf[peaks[i]] >= 0.9 * highest) {
         lag = peaks[i];
         break;
+      }
+    }
+    if (tracking) {
+      const expected = this.sampleRate / previousHz;
+      if (Math.abs(Math.log2(lag / expected)) > 0.4) {
+        let near = -1;
+        for (let i = 0; i < count; i += 1) {
+          if (Math.abs(Math.log2(peaks[i] / expected)) < 0.2 && (near < 0 || nsdf[peaks[i]] > nsdf[near])) near = peaks[i];
+        }
+        if (near > 0 && nsdf[near] >= 0.8 * highest) lag = near;
       }
     }
     const a = nsdf[lag - 1];
@@ -4627,6 +5500,10 @@ export class PitchShifter {
     this.delay = this.lookahead + this.maxHalf + 1;
     this.input = new Float64Array(this.mask + 1);
     this.output = new Float64Array(this.mask + 1);
+    this.smooth = new Float64Array(this.mask + 1);
+    this.lpCoef = 1 - Math.exp((-TWO_PI * 900) / sampleRate);
+    this.lp1 = 0;
+    this.lp2 = 0;
     this.markCount = 32;
     this.markAt = new Float64Array(this.markCount);
     this.markPeriod = new Int32Array(this.markCount);
@@ -4638,56 +5515,107 @@ export class PitchShifter {
     this.lastVoiced = false;
     this.next = 0;
     this.shifting = 0;
+    this.range = 1;
+    this.centrePeriod = sampleRate / MALE_HZ;
+    this.jitter = 0;
+    this.tremor = 0;
+    this.tremorStep = (TWO_PI * TREMOR_HZ) / sampleRate;
+    this.seed = 0x6d2b79f5;
   }
 
   latency() {
     return this.delay;
   }
 
+  shape(range, centrePeriod, jitter, tremor) {
+    this.range = range;
+    this.centrePeriod = centrePeriod;
+    this.jitter = jitter;
+    this.tremor = tremor;
+  }
+
+  random() {
+    let x = this.seed;
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    this.seed = x >>> 0;
+    return this.seed / 4294967296 - 0.5;
+  }
+
   at(index) {
     return this.input[index & this.mask];
+  }
+
+  similarity(a, b, reach) {
+    const input = this.input;
+    const mask = this.mask;
+    let dot = 0;
+    let ea = 0;
+    let eb = 0;
+    for (let j = -reach; j <= reach; j += 2) {
+      const x = input[(a + j) & mask];
+      const y = input[(b + j) & mask];
+      dot += x * y;
+      ea += x * x;
+      eb += y * y;
+    }
+    return dot / Math.sqrt(ea * eb + 1e-18);
   }
 
   addMarks(period) {
     const voiced = period >= 16;
     const step = voiced ? Math.floor(period + 0.5) : this.unvoiced;
     const half = voiced ? Math.min(step, this.maxHalf) : this.unvoiced;
-    const search = voiced ? Math.floor(step / 8) : 0;
-    const input = this.input;
+    const reach = Math.max(8, Math.floor(half / 2));
+    const smooth = this.smooth;
     const mask = this.mask;
     for (;;) {
+      const onset = voiced && !this.lastVoiced;
+      const search = voiced ? Math.floor(onset ? step / 2 : step / 8) : 0;
       const guess = this.lastAt + step;
       if (guess + search + half >= this.written) return;
       let best = guess;
-      let measured = step;
-      if (voiced && this.lastVoiced) {
-        const reach = Math.max(8, Math.floor(half / 2));
-        const last = this.lastAt;
-        let bestScore = -Infinity;
+      let likeness = 1;
+      if (voiced) {
+        let peak = 1e-12;
         for (let c = guess - search; c <= guess + search; c += 1) {
-          let dot = 0;
-          let energy = 0;
-          for (let j = -reach; j <= reach; j += 2) {
-            const v = input[(c + j) & mask];
-            dot += input[(last + j) & mask] * v;
-            energy += v * v;
-          }
-          const score = dot / Math.sqrt(energy + 1e-12);
-          if (score > bestScore) {
-            bestScore = score;
-            best = c;
+          const v = Math.abs(smooth[c & mask]);
+          if (v > peak) {
+            peak = v;
+            if (onset) best = c;
           }
         }
-        measured = best - last;
+        if (onset) {
+          likeness = -1;
+          const wobble = Math.max(1, Math.floor(step / 8));
+          for (let lag = step - wobble; lag <= step + wobble; lag += 1) {
+            likeness = Math.max(likeness, this.similarity(best, best - lag, reach));
+          }
+        } else {
+          let bestScore = -Infinity;
+          const last = this.lastAt;
+          for (let c = guess - search; c <= guess + search; c += 1) {
+            const like = this.similarity(last, c, reach);
+            const score = like + (ANCHOR_BIAS * Math.abs(smooth[c & mask])) / peak;
+            if (score > bestScore) {
+              bestScore = score;
+              best = c;
+              likeness = like;
+            }
+          }
+        }
       }
-      this.lastAt = best;
-      this.lastVoiced = voiced;
+      const periodic = voiced && likeness >= LOCAL_VOICING;
+      if (voiced && !periodic) best = this.lastAt + this.unvoiced;
       const slot = this.markWrite;
       this.markAt[slot] = best;
-      this.markPeriod[slot] = measured;
-      this.markHalf[slot] = half;
-      this.markVoiced[slot] = voiced ? 1 : 0;
+      this.markPeriod[slot] = periodic ? (onset ? step : best - this.lastAt) : this.unvoiced;
+      this.markHalf[slot] = periodic ? half : this.unvoiced;
+      this.markVoiced[slot] = periodic ? 1 : 0;
       this.markWrite = (slot + 1) % this.markCount;
+      this.lastAt = best;
+      this.lastVoiced = periodic;
     }
   }
 
@@ -4713,7 +5641,15 @@ export class PitchShifter {
       }
       const voiced = this.markVoiced[mark] === 1;
       const period = this.markPeriod[mark];
-      const hop = voiced ? Math.max(8, period / ratio) : period;
+      let hop = period;
+      if (voiced) {
+        let r = ratio;
+        if (this.range !== 1) r *= Math.pow(period / this.centrePeriod, 1 - this.range);
+        if (this.tremor > 0) r *= 1 + this.tremor * Math.sin(this.tremorStep * s);
+        hop = period / clamp(r, VOICE_LIMITS.ratio[0] * 0.9, VOICE_LIMITS.ratio[1] * 1.1);
+        if (this.jitter > 0) hop *= 1 + 2 * this.jitter * this.random();
+        hop = Math.max(8, hop);
+      }
       const centre = this.markAt[mark];
       let half = this.markHalf[mark];
       if (voiced && hop > 2 * half) {
@@ -4731,6 +5667,9 @@ export class PitchShifter {
 
   process(sample, period, ratio) {
     this.input[this.written & this.mask] = sample;
+    this.lp1 += this.lpCoef * (sample - this.lp1);
+    this.lp2 += this.lpCoef * (this.lp1 - this.lp2);
+    this.smooth[this.written & this.mask] = this.lp2;
     this.written += 1;
     this.addMarks(period);
     this.placeGrains(ratio);
@@ -4739,7 +5678,7 @@ export class PitchShifter {
     const slot = t & this.mask;
     const shifted = this.output[slot];
     this.output[slot] = 0;
-    const wanted = Math.abs(ratio - 1) > 2e-3 ? 1 : 0;
+    const wanted = Math.abs(ratio - 1) > 2e-3 || Math.abs(this.range - 1) > 2e-3 || this.jitter > 0 || this.tremor > 0 ? 1 : 0;
     const step = 1 / (2 * this.unvoiced);
     this.shifting = wanted > this.shifting
       ? Math.min(wanted, this.shifting + step)
@@ -4830,9 +5769,9 @@ export class VoiceEngine {
     this.tilt = new Float64Array(bins).fill(1);
     this.lifter = Math.max(12, Math.round(sampleRate / 650));
     this.decimate = Math.max(1, Math.round(sampleRate / 12000));
-    this.pitch = new PitchDetector(sampleRate / this.decimate, 1024);
-    this.pitchRing = new Float64Array(1024);
-    this.pitchScratch = new Float64Array(1024);
+    this.pitch = new PitchDetector(sampleRate / this.decimate, PITCH_WINDOW);
+    this.pitchRing = new Float64Array(PITCH_WINDOW);
+    this.pitchScratch = new Float64Array(PITCH_WINDOW);
     this.pitchWrite = 0;
     this.decAcc = 0;
     this.decCount = 0;
@@ -4841,7 +5780,7 @@ export class VoiceEngine {
     this.pitchHist = new Float64Array(HIST_BINS);
     this.histWeight = 1;
     this.histTotal = 0;
-    this.histGrowth = Math.pow(2, 1 / HIST_HALF_LIFE);
+    this.histGrowth = Math.pow(2, PITCH_EVERY / (4 * HIST_HALF_LIFE));
     this.setUserPitch(userPitchHz);
     this.voiced = false;
     this.lastPitchHz = 0;
@@ -4857,6 +5796,10 @@ export class VoiceEngine {
     this.brightness = 0;
     this.tiltBrightness = 0;
     this.breath = 0;
+    this.breathGate = 0;
+    this.range = 1;
+    this.jitter = 0;
+    this.tremor = 0;
     this.mix = 0;
     this.mixTarget = 0;
     this.mixStep = 1 / (0.03 * sampleRate);
@@ -5010,8 +5953,8 @@ export class VoiceEngine {
       const j = write + i;
       this.pitchScratch[i] = this.pitchRing[j < n ? j : j - n];
     }
-    const hz = this.pitch.detect(this.pitchScratch);
-    this.voiced = hz >= 60 && hz <= 420;
+    const hz = this.pitch.detect(this.pitchScratch, this.voicedHold > 0 ? this.shiftPitchHz : 0);
+    this.voiced = hz >= PITCH_LOW_HZ && hz <= PITCH_HIGH_HZ;
     if (!this.voiced) {
       if (this.voicedHold > 0) {
         this.voicedHold -= 1;
@@ -5028,9 +5971,9 @@ export class VoiceEngine {
     const b = recent[1];
     const c = recent[2];
     this.shiftPitchHz = Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
-    this.voicedHold = 5;
+    this.voicedHold = VOICED_HOLD;
     this.lastPitchHz = hz;
-    this.addPitchReading(this.shiftPitchHz, 1);
+    this.addPitchReading(this.shiftPitchHz, PITCH_EVERY / 4);
   }
 
   steer() {
@@ -5039,6 +5982,13 @@ export class VoiceEngine {
     this.formant += 0.15 * (plan.formant - this.formant);
     this.brightness += 0.15 * (plan.brightness - this.brightness);
     this.breath += 0.15 * (plan.breath - this.breath);
+    this.range += 0.15 * (plan.range - this.range);
+    this.jitter += 0.15 * (plan.jitter - this.jitter);
+    this.tremor += 0.15 * (plan.tremor - this.tremor);
+    if (Math.abs(this.range - 1) < 1e-4) this.range = 1;
+    if (this.jitter < 1e-5) this.jitter = 0;
+    if (this.tremor < 1e-5) this.tremor = 0;
+    this.shifter.shape(this.range, this.sampleRate / this.userPitchHz(), this.jitter, this.tremor);
     if (Math.abs(this.brightness - this.tiltBrightness) > 2e-3) this.updateTilt();
   }
 
@@ -5161,7 +6111,7 @@ export class VoiceEngine {
     const im = this.im;
     const buffer = this.frameBuffer;
     this.framesSincePitch += 1;
-    if (this.framesSincePitch >= 4) {
+    if (this.framesSincePitch >= PITCH_EVERY) {
       this.framesSincePitch = 0;
       this.analysePitch();
     }
@@ -5194,12 +6144,14 @@ export class VoiceEngine {
     }
     const cepstrum = this.cepstrum;
     this.fft.inverse(cre, cim, cepstrum);
-    cepstrum.fill(0, this.lifter, n - this.lifter + 1);
+    const lifter = Math.round(clamp((LIFTER_PERIODS * this.sampleRate) / this.userHz, this.lifter, n / 4));
+    cepstrum.fill(0, lifter, n - lifter + 1);
     this.fft.forward(cepstrum, cre, cim);
     const envelope = this.envelope;
     for (let k = 0; k <= half; k += 1) envelope[k] = Math.exp(cre[k]);
     const formant = this.formant;
-    const breath = this.breath;
+    this.breathGate += 0.2 * ((this.voicedHold > 0 ? 1 : 0.3) - this.breathGate);
+    const breath = this.breath * this.breathGate;
     const breathing = breath > 1e-3;
     let meanSource = 0;
     if (breathing) {
@@ -5304,6 +6256,15 @@ const CALL_VOICES = Object.freeze([
   Object.freeze({ id: "kofi", label: "Kofi", pitchHz: 96, tract: 0.93, brightness: -0.15, breath: 0 }),
   Object.freeze({ id: "ingrid", label: "Ingrid", pitchHz: 228, tract: 1.21, brightness: 0.12, breath: 0.08 }),
   Object.freeze({ id: "ren", label: "Ren", pitchHz: 210, tract: 1.17, brightness: 0.05, breath: 0.02 }),
+  Object.freeze({ id: "deep", label: "Deep man", pitchHz: 84, tract: 0.9, brightness: -0.25, breath: 0, range: 0.85 }),
+  Object.freeze({ id: "older-man", label: "Older man", pitchHz: 128, tract: 0.97, brightness: -0.1, breath: 0.1, range: 0.8, jitter: 0.012, tremor: 0.012 }),
+  Object.freeze({ id: "young-man", label: "Young man", pitchHz: 138, tract: 1.06, brightness: 0.12, breath: 0.02, range: 1.15 }),
+  Object.freeze({ id: "warm", label: "Warm woman", pitchHz: 188, tract: 1.12, brightness: -0.1, breath: 0.06 }),
+  Object.freeze({ id: "low", label: "Low woman", pitchHz: 165, tract: 1.1, brightness: -0.05, breath: 0.03, range: 0.9 }),
+  Object.freeze({ id: "older-woman", label: "Older woman", pitchHz: 176, tract: 1.12, brightness: -0.08, breath: 0.1, range: 0.85, jitter: 0.012, tremor: 0.015 }),
+  Object.freeze({ id: "teen", label: "Teen", pitchHz: 252, tract: 1.25, brightness: 0.15, breath: 0.04, range: 1.2 }),
+  Object.freeze({ id: "neutral", label: "Neutral", pitchHz: 158, tract: 1.08, brightness: 0, breath: 0.03, range: 0.9 }),
+  Object.freeze({ id: "robot", label: "Robot", pitchHz: 118, tract: 1, brightness: 0.1, breath: 0, range: 0 }),
 ]);
 
 function callVoiceById(id) {
@@ -5643,6 +6604,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
   let videoSender = null;
   let cameraOff = false;
   let faceWanted = "";
+  let faceImageWanted = "";
   let backgroundWanted = "";
   let backgroundImage = "";
   const faces = window.FmCallFaces;
@@ -5670,7 +6632,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
         const wanted = want || { landmarks: true, mask: false };
         return new Promise((resolve, reject) => {
           landmarkWaiters.set(id, { resolve, reject });
-          post({ event: "landmarks", id, image, width, height, landmarks: wanted.landmarks !== false, mask: Boolean(wanted.mask) });
+          post({ event: "landmarks", id, image, width, height, landmarks: wanted.landmarks !== false, mask: Boolean(wanted.mask), accurate: Boolean(wanted.accurate) });
           setTimeout(() => {
             const waiter = landmarkWaiters.get(id);
             if (!waiter) return;
@@ -5752,11 +6714,15 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     if (!stream || !tracks("video").length || !faces) return;
     const wanted = Boolean(faceWanted || backgroundWanted);
     if (wanted && stage) {
-      if (stage.face() !== faceWanted) stage.setFace(faceWanted);
+      if (stage.face() !== faceWanted || (faceWanted && stage.faceImage !== faceImageWanted && customFace(faceWanted))) {
+        stage.setFace(faceWanted, faceImageWanted);
+        stage.faceImage = faceImageWanted;
+      }
       if (stage.background() !== backgroundWanted || backgroundWanted === "custom") stage.setBackground(backgroundWanted, backgroundImage);
     } else if (wanted) {
       try {
-        stage = faces.createFaceStage({ cameraStream: stream, faceId: faceWanted, backgroundId: backgroundWanted, backgroundImage });
+        stage = faces.createFaceStage({ cameraStream: stream, faceId: faceWanted, faceImage: faceImageWanted, backgroundId: backgroundWanted, backgroundImage });
+        stage.faceImage = faceImageWanted;
       } catch (_) {
         stage = null;
       }
@@ -5771,10 +6737,14 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     }
     showLocal();
   };
-  const useFace = (id) => {
-    const face = faces && id ? faces.callFaceById(id) : null;
+  const customFace = (id) => Boolean(faces && faces.isCustomFace && faces.isCustomFace(id));
+  const useFace = (id, image) => {
+    if (image !== undefined && image !== null) faceImageWanted = String(image);
+    const custom = customFace(id);
+    const face = faces && id ? (custom ? { id } : faces.callFaceById(id)) : null;
     if (!stream || !tracks("video").length) return "";
     if (face && !faces.callFacesSupported()) return stage ? stage.face() : "";
+    if (custom && !faceImageWanted) return stage ? stage.face() : "";
     faceWanted = face ? face.id : "";
     refreshStage();
     return stage ? stage.face() : "";
@@ -5812,6 +6782,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     const deadline = Date.now() + RECORD_READY_MS;
     if (face || background) {
       while (!(stage && stage.ready())) {
+        if (stage && stage.faceState && stage.faceState() === "failed") throw new Error("face_not_found");
         if (Date.now() > deadline) throw new Error("face_not_ready");
         await wait(100);
       }
@@ -5829,6 +6800,8 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
       const voice = arguments[3];
       const background = arguments[4];
       const image = arguments[5];
+      const faceImage = arguments[6];
+      if (faceImage !== undefined && faceImage !== null) faceImageWanted = String(faceImage);
       dropRecording();
       document.body.className = media === "video" ? "video" : "audio";
       const previewed = stream && (media !== "video" || tracks("video").length) ? stream : null;
@@ -5897,10 +6870,19 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
       for (const track of tracks("audio")) track.enabled = !on;
       return true;
     },
-    async face(id) {
-      return useFace(String(id || ""));
+    async face(id, image) {
+      return useFace(String(id || ""), image);
     },
-    async preview(media, voice, face, background, image) {
+    async faceImage(image) {
+      faceImageWanted = String(image || "");
+      if (stage && customFace(faceWanted)) refreshStage();
+      return true;
+    },
+    async faceState() {
+      return stage && stage.faceState ? stage.faceState() : "";
+    },
+    async preview(media, voice, face, background, image, faceImage) {
+      if (faceImage !== undefined && faceImage !== null) faceImageWanted = String(faceImage);
       if (pc) return false;
       if (!stream) stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: media === "video" });
       if (media === "video") {
@@ -5938,9 +6920,10 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
         : [];
     },
     async faceList() {
-      return faces && faces.callFacesSupported()
-        ? faces.CALL_FACES.map((face) => ({ id: face.id, label: face.label }))
-        : [];
+      if (!(faces && faces.callFacesSupported())) return [];
+      return faces.callFaceChoices
+        ? faces.callFaceChoices().map((face) => ({ id: face.id, label: face.label, custom: Boolean(face.custom) }))
+        : faces.CALL_FACES.map((face) => ({ id: face.id, label: face.label }));
     },
     async camera(off) {
       cameraOff = Boolean(off);

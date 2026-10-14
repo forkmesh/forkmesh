@@ -15,27 +15,29 @@ object CallBackgroundStore {
     private const val PREFIX = "data:image/jpeg;base64,"
     const val SIDE = 1920
 
-    private fun file(context: Context): File = File(context.filesDir, FILE)
+    fun load(context: Context): String = loadFile(context, FILE)
 
-    fun load(context: Context): String {
-        val bytes = runCatching { file(context).readBytes() }.getOrNull() ?: return ""
+    fun save(context: Context, image: String) = saveFile(context, FILE, image)
+
+    fun loadFile(context: Context, name: String): String {
+        val bytes = runCatching { File(context.filesDir, name).readBytes() }.getOrNull() ?: return ""
         return if (bytes.isEmpty()) "" else PREFIX + Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 
-    fun save(context: Context, image: String) {
+    fun saveFile(context: Context, name: String, image: String) {
         if (!image.startsWith(PREFIX)) return
         val bytes = runCatching { Base64.decode(image.removePrefix(PREFIX), Base64.DEFAULT) }.getOrNull() ?: return
-        runCatching { file(context).writeBytes(bytes) }
+        runCatching { File(context.filesDir, name).writeBytes(bytes) }
     }
 
-    fun fromUri(context: Context, uri: Uri): String? = runCatching {
+    fun fromUri(context: Context, uri: Uri, side: Int = SIDE): String? = runCatching {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
         val longest = maxOf(bounds.outWidth, bounds.outHeight)
         if (longest <= 0) return null
         var sample = 1
-        while (longest / (sample * 2) >= SIDE) sample *= 2
+        while (longest / (sample * 2) >= side) sample *= 2
         val decoded = resolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
         } ?: return null
@@ -48,7 +50,7 @@ object CallBackgroundStore {
             ExifInterface.ORIENTATION_ROTATE_270 -> 270
             else -> 0
         }
-        val scale = minOf(1f, SIDE.toFloat() / maxOf(decoded.width, decoded.height))
+        val scale = minOf(1f, side.toFloat() / maxOf(decoded.width, decoded.height))
         val matrix = Matrix().apply {
             postScale(scale, scale)
             postRotate(rotation.toFloat())
@@ -65,4 +67,15 @@ object CallBackgroundStore {
         val bytes = runCatching { Base64.decode(text.substring(comma + 1), Base64.DEFAULT) }.getOrNull() ?: return null
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }
+}
+
+object CallFaceStore {
+    private const val FILE = "call-face.jpg"
+    const val SIDE = 1024
+
+    fun load(context: Context): String = CallBackgroundStore.loadFile(context, FILE)
+
+    fun save(context: Context, image: String) = CallBackgroundStore.saveFile(context, FILE, image)
+
+    fun fromUri(context: Context, uri: Uri): String? = CallBackgroundStore.fromUri(context, uri, SIDE)
 }

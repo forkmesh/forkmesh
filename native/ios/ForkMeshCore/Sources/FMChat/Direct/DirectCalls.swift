@@ -51,6 +51,7 @@ public protocol DirectCallPeer: AnyObject {
     func setMuted(_ muted: Bool)
     func setCameraOff(_ off: Bool)
     func setFace(_ id: String)
+    func setFace(_ id: String, image: String)
     func setBackground(_ id: String, image: String)
     func setVoice(_ id: String)
     func observeVoice(_ handler: @escaping @MainActor (String) -> Void)
@@ -59,6 +60,7 @@ public protocol DirectCallPeer: AnyObject {
 
 extension DirectCallPeer {
     public func setFace(_ id: String) {}
+    public func setFace(_ id: String, image: String) { setFace(id) }
     public func setBackground(_ id: String, image: String) {}
     public func setVoice(_ id: String) {}
     public func observeVoice(_ handler: @escaping @MainActor (String) -> Void) {}
@@ -84,6 +86,8 @@ public final class DirectCallEngine {
         DirectCallFace(id: "ingrid", label: "Ingrid"),
         DirectCallFace(id: "ren", label: "Ren"),
     ]
+    public static let customFace = "custom"
+    public static let faceChoices: [DirectCallFace] = faces + [DirectCallFace(id: customFace, label: "Your photo")]
     public static let backgroundKey = "chat.callBackground"
     public static let customBackground = "custom"
     public static let backgrounds: [DirectCallFace] = [
@@ -100,7 +104,22 @@ public final class DirectCallEngine {
     public static let voiceKey = "chat.callVoice"
     public static let voiceMatchFace = "face"
     public static let voiceOff = "off"
-    public static var voices: [DirectCallFace] { faces }
+    public static let voices: [DirectCallFace] = [
+        DirectCallFace(id: "maya", label: "Maya"),
+        DirectCallFace(id: "theo", label: "Theo"),
+        DirectCallFace(id: "kofi", label: "Kofi"),
+        DirectCallFace(id: "ingrid", label: "Ingrid"),
+        DirectCallFace(id: "ren", label: "Ren"),
+        DirectCallFace(id: "deep", label: "Deep man"),
+        DirectCallFace(id: "older-man", label: "Older man"),
+        DirectCallFace(id: "young-man", label: "Young man"),
+        DirectCallFace(id: "warm", label: "Warm woman"),
+        DirectCallFace(id: "low", label: "Low woman"),
+        DirectCallFace(id: "older-woman", label: "Older woman"),
+        DirectCallFace(id: "teen", label: "Teen"),
+        DirectCallFace(id: "neutral", label: "Neutral"),
+        DirectCallFace(id: "robot", label: "Robot"),
+    ]
     public static let frameTypes: Set<String> = [
         "call-invite", "call-accept", "call-decline", "call-offer", "call-answer", "call-ice", "call-bye",
     ]
@@ -113,6 +132,7 @@ public final class DirectCallEngine {
     @ObservationIgnored public var peerFactory: DirectCallPeerMaking?
     @ObservationIgnored public var onMissed: (@MainActor (String, DirectCallKind) -> Void)?
     @ObservationIgnored public var onFaceChanged: (@MainActor (String) -> Void)?
+    @ObservationIgnored public var onFaceImageChanged: (@MainActor (String) -> Void)?
     @ObservationIgnored public var onBackgroundChanged: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var onVoiceChanged: (@MainActor (String) -> Void)?
 
@@ -125,6 +145,7 @@ public final class DirectCallEngine {
     public private(set) var muted = false
     public private(set) var cameraOff = false
     public private(set) var face = ""
+    public private(set) var faceImage = ""
     public private(set) var background = ""
     public private(set) var backgroundImage = ""
     public private(set) var voiceChoice = DirectCallEngine.voiceMatchFace
@@ -244,13 +265,26 @@ public final class DirectCallEngine {
         peer?.setCameraOff(cameraOff)
     }
 
-    public func setFace(_ id: String) {
-        let next = DirectCallEngine.faces.contains { $0.id == id } ? id : ""
-        guard next == id, next != face else { return }
-        face = next
-        onFaceChanged?(next)
-        if media == .video { peer?.setFace(next) }
+    public func setFace(_ id: String, image: String = "") {
+        let custom = id == DirectCallEngine.customFace
+        let picture = custom && !image.isEmpty ? image : faceImage
+        let known = id.isEmpty || DirectCallEngine.faces.contains { $0.id == id } || (custom && !picture.isEmpty)
+        guard known, id != face || picture != faceImage else { return }
+        let changedFace = id != face
+        face = id
+        if picture != faceImage {
+            faceImage = picture
+            onFaceImageChanged?(picture)
+        }
+        if changedFace { onFaceChanged?(id) }
+        if media == .video {
+            if custom { peer?.setFace(id, image: picture) } else { peer?.setFace(id) }
+        }
         if voiceChoice == DirectCallEngine.voiceMatchFace { pushVoice() }
+    }
+
+    public static func faceLabel(_ id: String) -> String {
+        faceChoices.first { $0.id == id }?.label ?? "Your own face"
     }
 
     public func setBackground(_ id: String, image: String = "") {
@@ -272,7 +306,7 @@ public final class DirectCallEngine {
     public var effectiveVoice: String {
         switch voiceChoice {
         case DirectCallEngine.voiceOff: return ""
-        case DirectCallEngine.voiceMatchFace: return face
+        case DirectCallEngine.voiceMatchFace: return face == DirectCallEngine.customFace ? "" : face
         default: return voiceChoice
         }
     }
@@ -411,7 +445,11 @@ public final class DirectCallEngine {
 
     private func attach(_ made: DirectCallPeer) {
         peer = made
-        if media == .video && !face.isEmpty { made.setFace(face) }
+        if media == .video && face == DirectCallEngine.customFace {
+            made.setFace(face, image: faceImage)
+        } else if media == .video && !face.isEmpty {
+            made.setFace(face)
+        }
         if media == .video && !background.isEmpty {
             made.setBackground(background, image: background == DirectCallEngine.customBackground ? backgroundImage : "")
         }
