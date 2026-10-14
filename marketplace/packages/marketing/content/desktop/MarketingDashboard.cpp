@@ -888,6 +888,59 @@ void ProgressLine::paintEvent(QPaintEvent *)
     }
 }
 
+Sparkline::Sparkline(QWidget *parent) : QWidget(parent)
+{
+    setObjectName(QStringLiteral("marketingClear"));
+    setFixedHeight(22);
+    setMinimumWidth(48);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+}
+
+void Sparkline::setValues(const QVector<double> &values, const QColor &color)
+{
+    m_values = values;
+    m_color = color;
+    update();
+}
+
+void Sparkline::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const DashboardColors c = DashboardColors::from(this);
+    const QColor ink = m_color.isValid() ? m_color : c.primary;
+    const QRectF box = QRectF(rect()).adjusted(2, 3, -3, -3);
+    if (m_values.size() < 2) {
+        painter.setPen(QPen(c.lineSoft, 1, Qt::DashLine));
+        painter.drawLine(QPointF(box.left(), box.bottom()), box.bottomRight());
+        return;
+    }
+    const auto [lo, hi] = std::minmax_element(m_values.cbegin(), m_values.cend());
+    const double span = *hi - *lo;
+    QPainterPath line;
+    for (int point = 0; point < m_values.size(); ++point) {
+        const double level = span > 0 ? (m_values.at(point) - *lo) / span : 0.5;
+        const QPointF at(box.left() + box.width() * point / (m_values.size() - 1),
+                         box.bottom() - level * box.height());
+        point ? line.lineTo(at) : line.moveTo(at);
+    }
+    QPainterPath area = line;
+    area.lineTo(box.right(), rect().bottom());
+    area.lineTo(box.left(), rect().bottom());
+    area.closeSubpath();
+    QLinearGradient fill(box.topLeft(), QPointF(box.left(), rect().bottom()));
+    fill.setColorAt(0, alpha(ink, 0.24));
+    fill.setColorAt(1, alpha(ink, 0));
+    painter.fillPath(area, fill);
+    painter.setPen(QPen(ink, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawPath(line);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(ink);
+    painter.drawEllipse(line.currentPosition(), 2, 2);
+}
+
 LineChart::LineChart(QWidget *parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("marketingClear"));
