@@ -58,6 +58,13 @@ int main(int argc, char **argv)
           "a python entry point named aider is Aider");
     check(agentKind(QStringLiteral("node"), args({"node", "server.js"})).isEmpty(),
           "an ordinary node script is not an agent");
+    check(scriptStub(QStringLiteral("/usr/bin/dash")),
+          "a #!/bin/sh script named claude (a test fake) is not an agent");
+    check(scriptStub(QStringLiteral("/bin/bash")), "bash scripts are stubs too");
+    check(!scriptStub(QStringLiteral("/home/f/.local/share/claude/versions/2.1.300")),
+          "the native Claude Code binary is an agent");
+    check(!scriptStub(QStringLiteral("/usr/bin/node")), "a node-run agent is not a stub");
+    check(!scriptStub(QString()), "an unreadable exe is not treated as a stub");
     check(agentKind(QStringLiteral("bash"), args({"bash", "-c", "claude"})).isEmpty(),
           "a shell that mentions claude is not an agent");
 
