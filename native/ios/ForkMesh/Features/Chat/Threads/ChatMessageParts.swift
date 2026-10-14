@@ -19,25 +19,58 @@ struct ChatReactionBar: View {
     var body: some View {
         if !chips.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FmSpace.x1) {
+                HStack(spacing: FmSpace.x2) {
                     ForEach(chips) { (chip: ReactionChip) in
                         Button(action: { onToggle(chip.value) }) {
-                            HStack(spacing: 4) {
-                                Text(chip.emoji).font(.system(size: 14))
-                                Text("\(chip.count)").fmText(.labelSmall, color: chip.mine ? fm.accent : fm.textSecondary, tabular: true)
+                            HStack(spacing: 6) {
+                                Text(chip.emoji).font(.system(size: 17))
+                                Text("\(chip.count)")
+                                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                                    .foregroundStyle(chip.mine ? fm.accent : fm.textPrimary)
                             }
-                            .padding(.horizontal, FmSpace.x2)
-                            .frame(minHeight: 28)
-                            .background(chip.mine ? fm.accentSubtle : fm.bgOverlay)
-                            .clipShape(Capsule())
+                            .padding(.horizontal, 11)
+                            .frame(minHeight: 34)
+                            .background(Capsule().fill(chip.mine ? fm.accentSubtle : fm.bgOverlay))
+                            .overlay(Capsule().stroke(chip.mine ? fm.accent.opacity(0.7) : fm.border, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("\(chip.label), \(chip.count). \(chip.names.joined(separator: ", "))")
                     }
+                    ChatAddReactionButton(onPick: onToggle)
                 }
+                .padding(.vertical, 1)
             }
-            .padding(.top, FmSpace.x1)
+            .padding(.top, FmSpace.x2)
         }
+    }
+}
+
+struct ChatAddReactionButton: View {
+    @Environment(\.fmPalette) private var fm
+    let onPick: (String) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(ReactionCatalog.entries, id: \.value) { (entry: ReactionEntry) in
+                Button("\(entry.emoji)  \(entry.label)") { onPick(entry.value) }
+            }
+        } label: {
+            Image(systemName: "face.smiling")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(fm.textSecondary)
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 8, weight: .black))
+                        .foregroundStyle(fm.textSecondary)
+                        .padding(1.5)
+                        .background(Circle().fill(fm.bgOverlay))
+                        .offset(x: 4, y: -3)
+                }
+                .frame(width: 44, height: 34)
+                .background(Capsule().fill(fm.bgOverlay))
+                .overlay(Capsule().stroke(fm.border, lineWidth: 1))
+        }
+        .accessibilityLabel("Add reaction")
     }
 }
 
@@ -281,13 +314,27 @@ struct ChatComposerBar: View {
     @State private var photo: PhotosPickerItem?
     @State private var choosingPhoto: Bool = false
     @State private var importing: Bool = false
+    @State private var recorder: MessagesVoiceRecorder = MessagesVoiceRecorder()
 
     private var mention: ChatMentionToken? { ChatComposerTools.mentionToken(draft) }
 
     private var suggestions: [String] {
         guard let token = mention else { return [] }
         let own: String = Services.get(AuthService.self)?.session?.nodeName ?? ""
+        let tags: Set<String> = Set(ChatBroadcast.allCases.map(\.rawValue))
         return ChatComposerTools.mentionCandidates(hub.mentionNames + ["forkbot"], excluding: own, query: token.query, limit: 6)
+            .filter { !tags.contains($0.lowercased()) }
+    }
+
+    private var broadcasts: [ChatBroadcast] {
+        guard let token = mention else { return [] }
+        return hub.broadcastSuggestions(token.query, in: hub.currentConversation)
+    }
+
+    private func broadcastLabel(_ broadcast: ChatBroadcast) -> String {
+        let people: Int = hub.broadcastAudience(broadcast, in: hub.currentConversation)
+        let who: String = broadcast == .here ? "online" : (people == 1 ? "person" : "people")
+        return "\(broadcast.tag)  \u{2014}  \(broadcast.summary.replacingOccurrences(of: "Notify ", with: "notify ")) (\(people) \(who))"
     }
 
     private var commands: [ChatSlashCommand] { hub.slashCommands(draft) }
@@ -309,9 +356,14 @@ struct ChatComposerBar: View {
                     let command: String = String(picked.prefix { $0 != " " })
                     draft = command + " "
                 }
-            } else if !suggestions.isEmpty {
-                suggestionRow(suggestions.map { "@\($0)" }) { picked in
-                    draft = ChatComposerTools.insertMention(draft, name: String(picked.dropFirst()))
+            } else if !suggestions.isEmpty || !broadcasts.isEmpty {
+                let tags: [ChatBroadcast] = broadcasts
+                suggestionRow(suggestions.map { "@\($0)" } + tags.map(broadcastLabel)) { picked in
+                    if let tag = tags.first(where: { picked.hasPrefix($0.tag + " ") }) {
+                        draft = ChatComposerTools.insertMention(draft, name: tag.rawValue)
+                    } else {
+                        draft = ChatComposerTools.insertMention(draft, name: String(picked.dropFirst()))
+                    }
                 }
             } else if !channelSuggestions.isEmpty {
                 suggestionRow(channelSuggestions.map { "#\($0)" }) { picked in
@@ -347,6 +399,50 @@ struct ChatComposerBar: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
             if case .success(let url) = result { sendFile(url) }
         }
+        .onAppear {
+            recorder.onFinished = { (data: Data) in
+                if !hub.sendAttachment(fileName: "Audio Message.m4a", mime: "audio/mp4", data: data) {
+                    hub.post("That voice message could not be sent.")
+                }
+            }
+            recorder.onRefused = { hub.post("Allow the microphone in Settings to record voice messages.") }
+        }
+        .onDisappear { recorder.finish(send: false) }
+    }
+
+    private var canRecord: Bool { allowAttachments && draft.dartTrimmed.isEmpty }
+
+    private var recordingField: some View {
+        HStack(spacing: FmSpace.x2) {
+            Button(action: { recorder.finish(send: false) }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(fm.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel voice message")
+            Circle().fill(fm.danger).frame(width: 9, height: 9)
+            TimelineView(.periodic(from: Date(), by: 0.5)) { (context: TimelineViewDefaultContext) in
+                Text(MessagesAudioBubble.clock(context.date.timeIntervalSince(recorder.startedAt ?? context.date)))
+                    .font(.system(size: 15).monospacedDigit())
+                    .foregroundStyle(fm.textPrimary)
+            }
+            Text("Recording\u{2026}").fmText(.bodySmall, color: fm.textTertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, FmSpace.x3)
+        .frame(minHeight: 48)
+    }
+
+    private var micButton: some View {
+        Button(action: { recorder.start() }) {
+            Image(systemName: "mic")
+                .font(.system(size: 19, weight: .regular))
+                .foregroundStyle(fm.textSecondary)
+                .frame(width: 36, height: 36)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Record a voice message")
     }
 
     private var field: some View {
@@ -360,12 +456,28 @@ struct ChatComposerBar: View {
 
     private var glassRow: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            toolsMenu
-            field
-                .padding(.vertical, FmSpace.x3)
-                .frame(minHeight: 48)
-            glassSendButton
+            if recorder.recording {
+                recordingField
+                Button(action: { recorder.finish(send: true) }) {
+                    FmIcon("send", size: 16, color: Color.white)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(fm.accent))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Send voice message")
                 .padding(6)
+            } else {
+                toolsMenu
+                field
+                    .padding(.vertical, FmSpace.x3)
+                    .frame(minHeight: 48)
+                if canRecord && hub.composerConnected {
+                    micButton.padding(6)
+                } else {
+                    glassSendButton
+                        .padding(6)
+                }
+            }
         }
         .chatGlass(RoundedRectangle(cornerRadius: 24, style: .continuous), border: fm.border)
     }
@@ -411,14 +523,37 @@ struct ChatComposerBar: View {
             Button(action: { draft = (draft.isEmpty || draft.hasSuffix(" ") ? draft : draft + " ") + "@" }) {
                 Label("Mention someone", systemImage: "at")
             }
+            if !hub.broadcastSuggestions("", in: hub.currentConversation).isEmpty {
+                Menu {
+                    ForEach(hub.broadcastSuggestions("", in: hub.currentConversation)) { (tag: ChatBroadcast) in
+                        Button(action: { draft = (draft.isEmpty || draft.hasSuffix(" ") ? draft : draft + " ") + tag.tag + " " }) {
+                            Label("\(tag.tag) \u{2014} \(tag.summary)", systemImage: tag == .here ? "dot.radiowaves.left.and.right" : "megaphone")
+                        }
+                    }
+                } label: {
+                    Label("Notify the channel", systemImage: "megaphone")
+                }
+            }
             Button(action: { draft = "@forkbot " + draft }) { Label("Ask ForkBot", systemImage: "sparkles") }
             if allowAttachments {
                 Button(action: { choosingPhoto = true }) { Label("Photo or video", systemImage: "photo") }
                 Button(action: { importing = true }) { Label("File", systemImage: "paperclip") }
             }
         } label: {
-            FmIcon("add", size: 22, color: fm.textSecondary, label: "More")
-                .frame(width: 44, height: 48)
+            Group {
+                if glass {
+                    Image(systemName: "plus")
+                        .font(.system(size: 19, weight: .regular))
+                        .foregroundStyle(fm.textSecondary)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(fm.bgOverlay.opacity(fm.dark ? 0.9 : 1)))
+                        .frame(width: 48, height: 48)
+                } else {
+                    FmIcon("add", size: 22, color: fm.textSecondary)
+                        .frame(width: 44, height: 48)
+                }
+            }
+            .accessibilityLabel("More")
         }
     }
 
