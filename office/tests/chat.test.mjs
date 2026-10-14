@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { mentionQuery, chanForZone, roomLabel, ROOMS, receiptState, receiptShapes, RECEIPT_LABELS } from '../public/features/chat/core.js';
+import { mentionQuery, chanForZone, roomLabel, ROOMS, receiptState, receiptShapes, RECEIPT_LABELS, lastLine, listTime } from '../public/features/chat/core.js';
+import { plainTextFromRichSource } from '../../app/public/chat-rich-text.js';
 
 const CHAT = readFileSync(new URL('../public/features/chat.js', import.meta.url), 'utf8');
 
@@ -81,4 +82,38 @@ test('the office chat shows receipts on own messages and withdraws a deleted dir
   assert.ok(CHAT.includes("if (type === 'delete' && c.kind === 'dm') S.transport.supersede?.([target]);"));
   assert.ok(CHAT.includes('m.recipients = plain.relayRecipients;'));
   assert.ok(CHAT.includes('${receiptNode(m, mine, direct)}'));
+});
+
+test('edits and deletes from the author still reach the transcript', () => {
+  assert.ok(CHAT.includes('function mutate(c, plain) {'));
+  assert.ok(CHAT.includes('if (!m || m.senderId !== plain.senderId) return false;'));
+  assert.ok(CHAT.includes('const changed = keep(c, plain) || mutate(c, plain);'));
+});
+
+test('the conversation list shows the newest line of each conversation', () => {
+  const m = (fields) => ({ sender: 'ana', text: '', ...fields });
+  assert.equal(lastLine(undefined, false, true), '');
+  assert.equal(lastLine(m({ text: 'see you\n  soon' }), false, true), 'see you soon');
+  assert.equal(lastLine(m({ text: 'on my way' }), true, true), 'You: on my way');
+  assert.equal(lastLine(m({ text: 'standup?' }), false, false), 'ana: standup?');
+  assert.equal(lastLine(m({ text: 'mine' }), true, false), 'You: mine');
+  assert.equal(lastLine(m({ fileName: 'plan.pdf' }), false, false), 'ana: 📎 plan.pdf');
+  assert.equal(lastLine(m({ text: '**bold** and _it_', richText: { v: 1, source: '**bold** and _it_' } }), false, false, plainTextFromRichSource), 'ana: bold and it');
+  const now = new Date(2026, 9, 13, 18, 0).getTime();
+  const at = (d) => d.getTime();
+  assert.equal(listTime(at(new Date(2026, 9, 13, 14, 2)), now), new Date(2026, 9, 13, 14, 2).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+  assert.equal(listTime(at(new Date(2026, 9, 10, 9)), now), new Date(2026, 9, 10, 9).toLocaleDateString([], { weekday: 'short' }));
+  assert.equal(listTime(at(new Date(2026, 9, 3, 9)), now), new Date(2026, 9, 3, 9).toLocaleDateString([], { day: 'numeric', month: 'short' }));
+  assert.equal(listTime(0, now), '');
+});
+
+test('the list repaints when a line arrives, and direct rows show the peer picture', () => {
+  assert.ok(CHAT.includes("const lastMsg = (c) => c.msgs.findLast((m) => m.text || m.fileName);"));
+  assert.ok(/trim\(c\);\s+renderList\(\);\s+if \(S\.cur === c\.key\) \{/.test(CHAT));
+  assert.ok(/c\.ready = true;\s+renderList\(\);/.test(CHAT));
+  assert.ok(/renderMsgs\('bottom'\);\s+renderList\(\);/.test(CHAT));
+  assert.ok(CHAT.includes('/avatar?size=128'));
+  assert.ok(CHAT.includes("img.onerror = () => { S.noPic.add(img.dataset.peer); img.remove(); };"));
+  assert.ok(CHAT.includes("${o ? html`<b class=\"dot${o.away ? ' away' : ''}\"></b>` : ''}"));
+  assert.ok(CHAT.includes("Math.max(b.updatedAt || 0, newestTs(b))"));
 });

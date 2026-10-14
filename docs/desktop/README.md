@@ -1260,6 +1260,91 @@ Details, manual CMake, test targets and known failures:
 
 ## Recent changes
 
+- 2026-10-13: The chat sidebar shows each conversation's last line, and
+  direct-message rows show the other person's picture (branch 1974, round 2).
+  The user asked for "the last line per channel and per message with users"
+  and "their user icon in the chat list", and for threads to keep working
+  after round 1.
+
+  **Last line.** `forkmesh::chatlist::preview` (`ChatListPreview.h`, header
+  only) picks the newest top-level message the window holds in `m_history`
+  for the conversation. Thread replies (except Discord replies, which sit in
+  the transcript), deleted rows and frames with no text or file are skipped.
+  Formatting goes through `chatformat::toPlainText` (or the blocks summary
+  for senders allowed to format), newlines collapse to spaces, and the line
+  is cut at 200 characters before it reaches the item. Channels read
+  "<sender>: <text>", DMs just "<text>", own messages "You: <text>" (the
+  `self` flag, or the sender name equal to `chatDisplayName()`), and a file
+  with no text "📎 <file name>". The text and the message time live in item
+  roles (`ChannelGroupTree::kPreviewRole`, `kPreviewTimeRole`), not in
+  more DisplayRole prefixes. Only text the device already decrypted is used;
+  nothing new is stored or sent.
+
+  `MainWindow::refreshChatListPreview(conversation)` updates the one row in
+  place (and only when the value changed) from `onMessage` (after the insert),
+  `onMessageEdited`, `onMessageDeleted`, the Discord in-place refresh and a
+  failed Office send that removes its echo. A history replay therefore costs
+  one backward scan from the end of the list and one row lookup per message,
+  not a sidebar rebuild. `refreshChannelList` and `refreshDmList` fill the
+  roles when they rebuild, and `loadChatHistory` calls
+  `refreshChatListPreviews()` once after the cache is read.
+
+  **Row layout.** `ChatRoomRowDelegate` (MainWindowIssues.cpp) now draws
+  conversation rows 44 px tall in the Next design (group headers stay
+  32 px; `ChannelGroupTree` no longer sets uniform row heights, and the
+  sidebar's `fitToRows` adds up each row's own height). The name sits on the
+  first line and the last line, 13 px and muted (stronger when unread), on
+  the second; the time ("2:02 PM" today, the weekday this week, then "Oct 3"
+  and "12/24/25", same 12-hour clock as the transcript) sits at the right of
+  the name line, and the unread badge moves to the right of the second line.
+  A row with no message yet keeps the same height with its name centred, so
+  rows stay aligned. The lead slot is 28 px for every room row (the `#`, the
+  lock, or the avatar), so channel and DM names start at the same x. DM rows
+  without unread now reserve the same right margin as channel rows (the gear
+  column), so times and badges line up across both sections. In the Classic
+  design the base style paints the row with its text at the top, the
+  delegate adds the second line inside the item's text rect, and the avatar
+  goes in as the item's decoration (with `decorationSize` set explicitly,
+  because the view's default caps decorations at 16 px).
+
+  **DM avatars.** `MainWindow::chatListAvatar` builds a 28 px round picture
+  from `chatSenderAvatarSource` (the peer id for mesh DMs, `user:<name>` for
+  Office DMs), falling back to `MessageRow::initialsAvatar`. The presence dot
+  is baked into its bottom-right corner: green online, amber away, a hollow
+  ring offline. The ring around the dot is punched out with
+  `CompositionMode_Source` and a transparent brush, so it shows whatever row
+  colour is behind it (hover, selected or rail) instead of a guessed one.
+  The pictures are cached in `m_chatMemberAvatarCache` under a `dm|` key that
+  includes the source pixmap's cache key, the pixel ratio and the presence,
+  so a status or picture change makes a new entry and the cache is not
+  invalidated by hand. `refreshVisibleRowAvatars` (called when a picture
+  arrives) now also rebuilds the DM list.
+
+  **Threads after round 1.** Checked that replies still work in channels and
+  in Office DMs: the root's reply summary, opening the thread pane, a reply
+  arriving while the pane is open, and a reply deleted for everyone leaving
+  the pane and the count. Mesh `@peer` DMs still have no threads (their `dm`
+  frames have no `thread-reply` form).
+
+  Tests: `testChatListPreview` in `test_chat_transport.cpp` (sender prefix,
+  You:, formatting and newlines, skipped replies/deleted/empty frames, the
+  paperclip line, Discord replies, the length cap and the time label), and
+  an added check in `testOfficeDirectMessageRoundTrip` that the relay's echo
+  of an own Office DM reply does not show it twice. Window test
+  `checkChatListPreviewsAndDmThreads` (run with `--chat-unread-only`) checks
+  the preview through send, thread reply, edit and delete, row heights, the
+  DM avatar (initials, then a profile picture cut round), and an Office DM
+  thread (summary count, pane, delete, a live reply).
+  `FORKMESH_CHAT_LIST_SHOT=<prefix>` saves the sidebar in both designs and
+  both themes.
+  `--chat-unread-only` now also runs `checkReplayedBacklogRepaintsOnce`
+  (the channel thread check) after the new check. Run straight after
+  `checkChatUnreadSurface` it fails its splitter-geometry assertion, on
+  round 1 as well as here: the thread pane's geometry is read before the
+  splitter has applied its sizes (split 740 px wide, sizes 200/269/269, pane
+  still at its old 360 px). After the new check, which resizes and shows the
+  window first, it passes. The failure message now prints the splitter's
+  width, sizes and minimums.
 - 2026-10-13: Receipt marks, delete for everyone, edits, reactions and
   replies in Office conversations (branch 1974). The user asked for
   Signal-style ticks on every chat message, "delete for everyone" for what

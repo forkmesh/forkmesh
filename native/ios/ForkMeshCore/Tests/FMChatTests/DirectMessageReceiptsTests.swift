@@ -326,4 +326,76 @@ final class DirectMessageReceiptsTests: XCTestCase {
         await service.closeAll()
         await h.close()
     }
+
+    @MainActor func testThreadRepliesFromEitherSideBuildTheDirectMessageThread() async throws {
+        let ws = FakeWebSocketConnector()
+        let service = base.makeService(api: base.preparedApi(), ws: ws)
+        let (hub, h) = try await hub(service)
+        let room = try await openRoom(service, ws: ws)
+        hub.select(room.conversation)
+        let now = Date().epochMillis
+        try peerSends(room, chat("pat-1", "lunch?", conversation: room.conversation, ts: now - 60_000))
+        let shown = await waitUntil { hub.rows.map(\.id) == ["pat-1"] }
+        XCTAssertTrue(shown)
+        XCTAssertEqual(hub.listPreview(room.conversation)?.text, "lunch?")
+
+        try peerSends(room, [
+            "type": "thread-reply", "id": "pat-r1", "senderId": "pat-node", "sender": "pat", "ts": .int(now - 50_000),
+            "rootId": "pat-1", "channel": .string(room.conversation), "text": "or dinner",
+        ])
+        let threaded = await waitUntil { hub.threadRows("pat-1").map(\.id) == ["pat-r1"] }
+        XCTAssertTrue(threaded)
+        let theirs = try XCTUnwrap(hub.threadRows("pat-1").first)
+        XCTAssertFalse(theirs.message.isSelf)
+        XCTAssertFalse(theirs.deletable)
+        XCTAssertNil(theirs.receipt)
+        XCTAssertEqual(hub.rows.map(\.id), ["pat-1"], "a reply stays out of the conversation")
+        XCTAssertEqual(hub.rows.first?.thread?.replyCount, 1)
+        XCTAssertEqual(hub.listPreview(room.conversation)?.text, "lunch?")
+
+        let own: JSONObject = [
+            "type": "thread-reply", "id": "me-node-r0", "senderId": "me-node", "sender": "Me", "ts": .int(now - 40_000),
+            "rootId": "pat-1", "channel": .string(room.conversation), "text": "from my laptop",
+        ]
+        var envelope = try room.crypto.encrypt(try room.peer.seal(own))
+        envelope["historyReplay"] = true
+        envelope["ref"] = .string(String(repeating: "c", count: 40))
+        room.connection.receive(text: JSON.encode(envelope))
+        let replayed = await waitUntil { hub.threadRows("pat-1").count == 2 }
+        XCTAssertTrue(replayed)
+        let laptop = try XCTUnwrap(hub.threadRows("pat-1").last)
+        XCTAssertTrue(laptop.message.isSelf)
+        XCTAssertTrue(laptop.deletable)
+        XCTAssertEqual(laptop.receipt, .sent)
+
+        let replied = await hub.replyInThread(channel: room.conversation, rootId: "pat-1", text: "noon then")
+        XCTAssertTrue(replied)
+        let mine = try XCTUnwrap(hub.threadRows("pat-1").last)
+        XCTAssertEqual(mine.text, "noon then")
+        XCTAssertEqual(mine.receipt, .sending)
+        let ref = try XCTUnwrap(sealedRef(room, type: "thread-reply", id: mine.id))
+        room.connection.receive(text: relayFrame(["kind": "forkmesh-recipients", "ref": .string(ref), "recipients": 1]))
+        let acked = await waitUntil { hub.threadRows("pat-1").last?.receipt == .sent }
+        XCTAssertTrue(acked)
+        let notified = try XCTUnwrap(
+            room.connection.sentTexts.map { JSON.parseObject($0) }.first {
+                guard let framed = room.crypto.decrypt($0), let plain = room.peer.unseal(framed) else { return false }
+                return plain["type"]?.text == "thread-reply" && plain["id"]?.text == mine.id
+            })
+        XCTAssertEqual(notified["notify"], .bool(true))
+        XCTAssertEqual(hub.rows.first?.thread?.replyCount, 3)
+        XCTAssertEqual(hub.listPreview(room.conversation)?.text, "lunch?")
+
+        _ = await hub.deliver("see you", to: room.conversation)
+        XCTAssertEqual(hub.listPreview(room.conversation)?.text, "You: see you")
+        let sent = try XCTUnwrap(hub.rows.last)
+        await hub.delete(sent.message)
+        XCTAssertEqual(hub.listPreview(room.conversation)?.text, "lunch?")
+
+        let restored = try XCTUnwrap(ChatHistoryCodec.decode(ChatHistoryCodec.encode(hub.historySnapshot())))
+        XCTAssertEqual(Set(restored.replies.map(\.id)), ["pat-r1", "me-node-r0", mine.id])
+        XCTAssertTrue(restored.replies.allSatisfy { $0.conversation == room.conversation })
+        await service.closeAll()
+        await h.close()
+    }
 }

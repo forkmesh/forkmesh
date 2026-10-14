@@ -3783,6 +3783,7 @@ void MainWindow::testSetAccountAvatar(const QString &account,
     else
         m_avatars.insert(key, picture);
     refreshOrganizationTaskPeopleFaces();
+    refreshDmList();
 }
 
 QPixmap MainWindow::testOrganizationTaskCreatorPicture(

@@ -363,6 +363,23 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
 
     val directConversations: List<DirectConversation> get() = direct?.records.orEmpty()
 
+    fun listPreview(conversation: String): ChatListPreview? {
+        val inDirect = DirectMessageFrames.isDirect(conversation)
+        val rich = inDirect || (!OfficeFrames.isOffice(conversation) && conversation != MESH_CONVERSATION)
+        return ChatListPreviews.newest(
+            messages(conversation),
+            direct = inDirect,
+            skip = { extras.isHidden(it.id) || extras.isThreadReply(it.id) },
+            text = { if (rich) extras.text(it) else it.text },
+            fileName = { it.fileName.ifEmpty { extras.attachment(it.id)?.fileName.orEmpty() } },
+        )
+    }
+
+    fun directListRows(): List<Pair<DirectConversation, ChatListPreview?>> =
+        directConversations
+            .map { it to listPreview(it.conversation) }
+            .sortedByDescending { (record, preview) -> maxOf(ChatListPreviews.recencyMs(record.updatedAt), preview?.timestamp ?: 0L) }
+
     val channels: List<String>
         get() {
             val hidden = extras.hiddenChannels

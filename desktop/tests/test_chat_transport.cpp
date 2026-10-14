@@ -2,6 +2,7 @@
 #include "BleMeshLink.h"
 #include "ChatBlocks.h"
 #include "ChatFormat.h"
+#include "ChatListPreview.h"
 #include "ChatRecipients.h"
 #include "DiscordClient.h"
 #include "ReactionCatalog.h"
@@ -2502,6 +2503,87 @@ void testOfficeChannelMirror()
           "a member's frame cannot borrow the notice layout");
 }
 
+void testChatListPreview()
+{
+    using forkmesh::chatlist::preview;
+    using forkmesh::chatlist::timeLabel;
+    const auto message = [](const QString &id, const QString &sender,
+                            const QString &text, qint64 ts) {
+        ChatMessage m;
+        m.id = id;
+        m.conversation = QStringLiteral("#general");
+        m.senderId = sender + QStringLiteral("-key");
+        m.senderName = sender;
+        m.text = text;
+        m.timestampMs = ts;
+        return m;
+    };
+    QList<ChatMessage> history;
+    check(preview(history, false, QStringLiteral("ada")).isEmpty(),
+          "a conversation with no messages has no last line");
+    history << message("1", "bob", "*Release* is at\nnoon `today`", 1000);
+    check(preview(history, false, QStringLiteral("ada")).text ==
+                  QStringLiteral("bob: Release is at noon today") &&
+              preview(history, false, QStringLiteral("ada")).timestampMs == 1000,
+          "a channel line names the sender, drops formatting and newlines");
+    check(preview(history, true, QStringLiteral("ada")).text ==
+              QStringLiteral("Release is at noon today"),
+          "a direct message line is just the text");
+    ChatMessage own = message("2", "Ada", "on my way", 2000);
+    history << own;
+    check(preview(history, false, QStringLiteral("ada")).text ==
+                  QStringLiteral("You: on my way") &&
+              preview(history, true, QString()).text ==
+                  QStringLiteral("on my way"),
+          "an own message reads You: by name, and needs a name or the self flag");
+    own.senderName = QStringLiteral("Ada's laptop");
+    own.self = true;
+    history.last() = own;
+    check(preview(history, true, QString()).text == QStringLiteral("You: on my way"),
+          "the self flag marks an own message");
+    ChatMessage reply = message("3", "cat", "a thread reply", 3000);
+    reply.threadRootId = QStringLiteral("1");
+    ChatMessage gone = message("4", "dee", "", 4000);
+    gone.deleted = true;
+    ChatMessage empty = message("5", "eve", "   ", 5000);
+    history << reply << gone << empty;
+    check(preview(history, false, QStringLiteral("ada")).text ==
+              QStringLiteral("You: on my way"),
+          "thread replies, deleted and empty frames never become the last line");
+    ChatMessage file = message("6", "finn", "", 6000);
+    file.fileName = QStringLiteral("plan.pdf");
+    history << file;
+    check(preview(history, false, QStringLiteral("ada")).text ==
+              QString::fromUtf8("finn: \xF0\x9F\x93\x8E plan.pdf"),
+          "a file with no text shows the paperclip and the file name");
+    ChatMessage discordReply = message("7", "gus", "on discord", 7000);
+    discordReply.conversation = QStringLiteral("#discord/1/2");
+    discordReply.threadRootId = QStringLiteral("6");
+    history << discordReply;
+    check(preview(history, false, QStringLiteral("ada")).text ==
+              QStringLiteral("gus: on discord"),
+          "a Discord reply sits in the transcript, so it counts");
+    history << message("8", "hal", QString(400, QLatin1Char('x')), 8000);
+    check(preview(history, false, QString()).text.size() ==
+              forkmesh::chatlist::kMaxPreviewChars + 5,
+          "a long message is cut before it reaches the row");
+
+    const QDateTime now(QDate(2026, 10, 13), QTime(15, 30));
+    const auto at = [](const QDate &day, const QTime &time) {
+        return QDateTime(day, time).toMSecsSinceEpoch();
+    };
+    check(timeLabel(at(QDate(2026, 10, 13), QTime(14, 2)), now) ==
+                  QStringLiteral("2:02 PM") &&
+              timeLabel(at(QDate(2026, 10, 11), QTime(9, 0)), now) ==
+                  QStringLiteral("Sun") &&
+              timeLabel(at(QDate(2026, 10, 3), QTime(9, 0)), now) ==
+                  QStringLiteral("Oct 3") &&
+              timeLabel(at(QDate(2025, 12, 24), QTime(9, 0)), now) ==
+                  QStringLiteral("12/24/25") &&
+              timeLabel(0, now).isEmpty(),
+          "the row time is the clock today, the weekday this week, then the date");
+}
+
 void testChatFormat()
 {
     using namespace forkmesh::chatformat;
@@ -3780,6 +3862,7 @@ void testOfficeDirectMessageRoundTrip()
               arrived.size() == arrivedBefore + 1 &&
               arrived.last().threadRootId == sentId && arrived.last().self,
           "a reply in an office DM shows at once under its root");
+    const QString ownReplyId = arrived.isEmpty() ? QString() : arrived.last().id;
     check(mirror.sendReaction(conversation, sentId, QStringLiteral("👍"), true) &&
               reactions.size() == 1 &&
               reactions.first() == QStringList({conversation, sentId,
@@ -3817,6 +3900,13 @@ void testOfficeDirectMessageRoundTrip()
               findFrame("delete", nullptr).value("target").toString() == sentId &&
               superseded.value("refs").toArray() == QJsonArray{sentRef},
           "reply, reaction, edit, delete and superseded all reach the relay sealed");
+    waitUntil([] { return false; }, 150);
+    check(!ownReplyId.isEmpty() &&
+              std::count_if(arrived.cbegin(), arrived.cend(),
+                            [&ownReplyId](const ChatMessage &m) {
+                                return m.id == ownReplyId;
+                            }) == 1,
+          "the relay's echo of an own office DM reply does not show it twice");
 
     fromBob(QJsonObject{{"type", "chat"},
                         {"id", "bob-1"},
@@ -3937,6 +4027,7 @@ int main(int argc, char **argv)
     }
     testDiscordClientContract();
     testChatFormat();
+    testChatListPreview();
     if (failures == 0)
         std::puts("All chat transport tests passed.");
     return failures == 0 ? 0 : 1;

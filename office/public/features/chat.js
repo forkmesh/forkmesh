@@ -1,10 +1,11 @@
 import { html, setHtml, trusted, join } from '../html.js';
-import { ROOMS, MAX_TEXT, chanForZone, roomLabel, mentionQuery, receiptState, receiptShapes, RECEIPT_LABELS } from './chat/core.js';
+import { ROOMS, MAX_TEXT, chanForZone, roomLabel, mentionQuery, receiptState, receiptShapes, RECEIPT_LABELS, lastLine, listTime } from './chat/core.js';
+import { handleOf } from './profile/logic.js';
 import { createChatRoomTransport } from '../../../app/public/chat-room-transport.js';
 import { createRoomSealStore } from '../../../app/public/chat-seal.js';
 import { moderateChatText } from '../../../app/public/chat-moderation.js';
 import { createChatRetention, CHAT_RETENTION_ENDPOINT } from '../../../app/public/chat-retention.js';
-import { renderRichText } from '../../../app/public/chat-rich-text.js';
+import { renderRichText, plainTextFromRichSource } from '../../../app/public/chat-rich-text.js';
 import { createAccountEventChannel } from '../../../app/public/account-events.js';
 
 const svg = (p, s = 14) => trusted(`<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`);
@@ -49,7 +50,7 @@ export default function setup(api) {
   const me = selfId(api.store);
   const seals = createRoomSealStore();
   const retention = createChatRetention({ request: (body) => request(CHAT_RETENTION_ENDPOINT, { method: 'POST', body: JSON.stringify(body) }), storage: globalThis.localStorage });
-  const S = { cur: null, view: 'chat', convs: new Map(), rooms: {}, here: null, transport: null, editing: null, ac: null, acSel: 0, presence: null, readMarks: new Map() };
+  const S = { cur: null, view: 'chat', convs: new Map(), rooms: {}, here: null, transport: null, editing: null, ac: null, acSel: 0, presence: null, readMarks: new Map(), noPic: new Set() };
 
   const panel = $('#panel-chat');
   setHtml(panel, html`
@@ -140,8 +141,18 @@ export default function setup(api) {
     const m = { id: plain.id, senderId: plain.senderId, sender: String(plain.sender || 'someone').slice(0, 63), text: String(plain.text || ''), richText: plain.richText, ts: Number(plain.ts) || Date.now() };
     if (Number.isSafeInteger(plain.relayRecipients) && plain.relayRecipients >= 0) m.recipients = plain.relayRecipients;
     if (receipt) m.receipt = receipt;
+    if (plain.fileName) m.fileName = String(plain.fileName).slice(0, 120);
     c.msgs.push(m);
     return true;
+  }
+
+  function mutate(c, plain) {
+    if (!plain || (plain.conversation !== c.wire && plain.channel !== c.wire)) return false;
+    const m = c.msgs.find((x) => x.id === plain.target);
+    if (!m || m.senderId !== plain.senderId) return false;
+    if (plain.type === 'delete') { c.msgs.splice(c.msgs.indexOf(m), 1); return true; }
+    if (plain.type === 'edit') { Object.assign(m, { text: String(plain.text || ''), richText: plain.richText, edited: true }); return true; }
+    return false;
   }
 
   function forget(c, id) {
@@ -179,6 +190,7 @@ export default function setup(api) {
     const changed = keep(c, plain) || mutate(c, plain);
     if (!changed) return;
     trim(c);
+    renderList();
     if (S.cur === c.key) {
       renderMsgs(atBottom() ? 'bottom' : null);
       if (!viewing()) { if (!readElsewhere(c, plain.ts)) c.unread++; renderBadge(); }
@@ -193,6 +205,7 @@ export default function setup(api) {
     for (const p of plains) if (p.type === 'edit' || p.type === 'delete') mutate(c, p);
     trim(c);
     c.ready = true;
+    renderList();
     if (S.cur === c.key) renderMsgs('bottom');
   }
 
@@ -294,15 +307,30 @@ export default function setup(api) {
     $('#ch-sub').hidden = true;
   }
 
+  const nameTint = (n) => [...n].reduce((a, ch) => a + ch.charCodeAt(0), 0) * 97;
+  const mineMsg = (m) => m.senderId === me || m.sender.toLowerCase() === account().toLowerCase();
+  const lastMsg = (c) => c.msgs.findLast((m) => m.text || m.fileName);
+
+  function dmFace(c) {
+    const peer = c.peer.toLowerCase();
+    const o = [...api.others.values()].find((x) => handleOf(x).toLowerCase() === peer || x.name.toLowerCase() === peer);
+    const pic = !S.noPic.has(peer) && `/api/accounts/${encodeURIComponent(peer)}/avatar?size=128`;
+    return html`<span class="av dm" style="background:${tint(o?.av ?? nameTint(peer))}">${(peer[0] || '?').toUpperCase()}${pic ? html`<img class="pf-img" src="${pic}" alt="" data-peer="${peer}">` : ''}${o ? html`<b class="dot${o.away ? ' away' : ''}"></b>` : ''}</span>`;
+  }
+
   function renderList() {
     if (S.view !== 'list') return;
-    const item = (c) => html`<button type="button" class="ch-item${c.key === S.cur ? ' on' : ''}${c.unread ? ' unread' : ''}" data-ch="${c.key}"><span class="ch-ic">${c.kind === 'dm' ? IC.msg(14) : IC.hash(14)}</span><span class="ch-lbl">${title(c)}</span>${c.unread ? html`<span class="ch-n">${c.unread > 999 ? '999+' : c.unread}</span>` : ''}</button>`;
+    const item = (c) => {
+      const m = lastMsg(c);
+      return html`<button type="button" class="ch-item${c.key === S.cur ? ' on' : ''}${c.unread ? ' unread' : ''}" data-ch="${c.key}">${c.kind === 'dm' ? dmFace(c) : html`<span class="ch-ic">${IC.hash(14)}</span>`}<span class="ch-txt"><span class="ch-top"><span class="ch-lbl">${title(c)}</span>${m ? html`<time>${listTime(m.ts)}</time>` : ''}</span><span class="ch-last">${lastLine(m, m && mineMsg(m), c.kind === 'dm', plainTextFromRichSource)}</span></span>${c.unread ? html`<span class="ch-n">${c.unread > 999 ? '999+' : c.unread}</span>` : ''}</button>`;
+    };
     const rooms = ROOMS.map((r) => S.rooms[r.ch] && S.convs.get('private:' + S.rooms[r.ch])).filter(Boolean);
-    const dms = [...S.convs.values()].filter((c) => c.kind === 'dm').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const dms = [...S.convs.values()].filter((c) => c.kind === 'dm').sort((a, b) => Math.max(b.updatedAt || 0, newestTs(b)) - Math.max(a.updatedAt || 0, newestTs(a)));
     const people = [...api.others.values()].sort((a, b) => a.name.localeCompare(b.name));
     setHtml(list, html`<div class="ch-sec">Channels</div>${rooms.length ? rooms.map(item) : html`<p class="ch-none">Office channels are not available.</p>`}
       <div class="ch-sec">Direct messages</div>${dms.length ? dms.map(item) : html`<p class="ch-none">No conversations yet.</p>`}
       <div class="ch-sec">Message someone in the office</div>${people.length ? people.map((o) => html`<button type="button" class="ch-item" data-dm="${o.name}"><span class="ch-ic"><span class="av sm" style="background:${tint(o.av)}">${api.initial(o)}</span></span><span class="ch-lbl">${o.name}</span>${IC.plus(13)}</button>`) : html`<p class="ch-none">No one else is here right now.</p>`}`);
+    for (const img of list.querySelectorAll('img[data-peer]')) img.onerror = () => { S.noPic.add(img.dataset.peer); img.remove(); };
   }
 
   function renderBadge() {
@@ -375,6 +403,7 @@ export default function setup(api) {
     keep(c, plain, 'pending');
     trim(c);
     renderMsgs('bottom');
+    renderList();
     const sent = await S.transport.send(plain, { persist: true });
     if (!sent) {
       forget(c, plain.id);

@@ -228,6 +228,17 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 ## Recent changes
 
+- 2026-10-13 (branch 1974, secure chat, round 2): the iOS chat list shows a
+  second, muted line per channel and direct message with the newest
+  top-level message the phone holds ("You: ..." for your own, "<sender>: ..."
+  in channels, "📎 <file>" for a file), a short time on the name line, and
+  the other person's profile picture with the presence dot on direct-message
+  rows. Asked: "Make sure threads still work too also in the chat list show
+  the last line per channel and per message with users also show their user
+  icon in the chat list". Thread replies in direct messages and office
+  channels were checked with new tests; no regression found. Details:
+  [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md), "Chat list
+  last line, avatars and threads". The SwiftUI row is parse-checked only.
 - 2026-10-13 (branch 1974, secure chat): iOS draws Signal-style receipt marks
   on every own message (sending, sent, delivered, read; channels stop at
   sent), lets you delete for everyone what you sent, and react to, edit and

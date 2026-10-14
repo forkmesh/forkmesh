@@ -1102,6 +1102,47 @@ and `docs/app/chat-push-previews.md`.
   refusals, content setting, line merge), `OfficeAndDiscordTest` (Office
   Sending until the ack).
 
+### Round 2: threads, last line in the chat list, DM avatars
+
+- **Threads after round 1.** Channel and DM threads were checked end to end
+  (open thread, send, receive, reply count, thread pane); no regression was
+  found. `DirectMessagesTest.testDirectThreadRepliesStayInTheThreadAndCarryTheirOwnMarks`
+  covers what was missing for DMs: a replayed reply is shown once and stays
+  out of the transcript, an own reply walks Sending -> Sent -> Delivered on
+  its own ref, own replies can be edited (a peer cannot edit them) and
+  deleted for everyone, the peer's delete of their reply clears the thread
+  and the reply count.
+- **Direct messages section.** `ChatChannelPanel` (`A/feature/chat/ChatChannelList.kt`)
+  now lists the server DMs (`ChatHub.directListRows`, from
+  `DirectMessageService.records`) under "Direct messages", after Office and
+  before Discord. Order: newest first, by the later of the record's
+  `updatedAt` (seconds or ms, `ChatListPreviews.recencyMs`) and the newest
+  message held on the phone. A row shows the unread count as a red pill, and
+  a tap selects the conversation through `ChatHub.select`, the path a DM
+  notification takes. Before this, a server DM was reachable only from its
+  notification.
+- **Last line per row** (`C/chat/ChatListPreview.kt`, `ChatHub.listPreview`).
+  Channel, Office and DM rows get a second, muted, single-line, ellipsised
+  line built only from messages the phone already holds (nothing is added to
+  any server API or stored): the newest top-level message, skipping thread
+  replies, ephemeral rows, deleted messages and messages hidden with Delete
+  for me; an edit of the newest message updates it (`ChatExtras.text`).
+  DMs show the text, channels "<sender>: <text>", own messages "You: <text>".
+  A file with no text is "📎 <name>". Markdown is reduced to plain text
+  (link labels, emphasis and code markers, headings, quotes and list marks
+  dropped; newlines collapsed; 160 chars). A row with no known message stays
+  one line, as before. A short time ("14:02" today, weekday within a week,
+  "3 Oct" otherwise, `ChatListPreviews.timeLabel`) sits on the name line.
+  #mesh and Discord rows keep one line (their messages live in other stores).
+- **DM avatars.** DM rows lead with a 28 dp round avatar (`DirectAvatar`:
+  `ApiService.accountAvatarPng`, which caches per name, then the initials
+  `FmAvatar`). The presence dot (online, away, offline) sits on its corner
+  when the other user is in the relay roster; otherwise no dot is drawn.
+- Tests: `ChatListPreviewTest` (plain text, prefixes, file fallback, skip
+  rules, time labels, channel preview through edits, deletes and Delete for
+  me), `DirectMessagesTest.testDirectListPreviewShowsTheNewestTopLevelLine`,
+  `testDirectListRowsAreNewestFirst`.
+
 ## Appendix: port map
 
 The Flutter (or Flutter Android) source each Kotlin file was ported from, as

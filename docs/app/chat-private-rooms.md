@@ -496,6 +496,82 @@ Tests: `app/tests/test_chat_direct_receipts_frontend.py`
 (`test_sender_can_supersede_only_its_own_stored_copies`),
 `office/tests/chat.test.mjs`.
 
+## Last line and pictures in the conversation list (2026-10-13)
+
+Asked: "Make sure threads still work too also in the chat list show the last
+line per channel and per message with users also show their user icon in the
+chat list".
+
+### What a row shows
+
+- A second, muted, single line under the name with the newest top-level
+  message this device has decrypted for that conversation: the text in a
+  direct message, "You: text" for your own (also when sent from another of
+  your devices), "Name: text" in channels. A file with no text shows
+  "📎 name". Markdown is reduced to plain text (`plainTextFromRichSource`)
+  and newlines collapse to spaces.
+- Thread replies, reactions and key frames never count. A delete takes the
+  message out, so the line falls back to the one before; an edit of the
+  newest message replaces the line.
+- A short time on the right of the name: the clock time today, the weekday
+  within six days, otherwise day and month.
+- A direct-message row shows the other person's picture (30 px on web, 28 px
+  in Office) with the presence dot over its lower right corner.
+
+### Plaintext stays on the device
+
+The line is built from messages the client already holds in memory. No server
+API gained plaintext and the web stores nothing new. Web `/chat` and Office
+keep one room socket open at a time, so a conversation not opened in this
+session has no line yet: its row keeps the empty second line, so every row has
+the same height.
+
+### Web `/chat`
+
+`renderRooms` and `renderDirectMessages` build each row with
+`roomTextColumn` (name line, time, preview) and tag it with `data-channel`.
+`conversationPreviewRecord` walks `channelMessages` from the end for the
+newest record with text or a file that is not a deleted thread root;
+`conversationPreviewText` formats it. Any change to a conversation
+(`insertMessage`, `removeMessage`, an edit in `handlePlain` or
+`saveMessageEdit`, `pruneExpiredMessages`) calls `queueRoomPreview`, which
+collects channels and repaints only their preview nodes once after 50 ms
+(`flushRoomPreviews`), so a replayed backlog costs one repaint, not one per
+frame. The direct-message list is now sorted by recency (the server's
+`updatedAt`, or the newest message seen here, whichever is later; the server
+already pages it that way), and the flush rebuilds that list only when the
+order actually changed. Under 680 px the rooms become a chip strip and the
+preview and time are hidden there. The picture is `makeAvatar`, the same
+loader and cache as the transcript.
+
+### Office
+
+`renderList` in `office/public/features/chat.js` shows the same line
+(`lastLine` and `listTime` in `features/chat/core.js`) and repaints when a
+line arrives, a backlog replays or you send (the list is a handful of rows).
+A direct row asks `/api/accounts/<peer>/avatar?size=128`; a 404 falls back to
+the letter avatar and is remembered (`S.noPic`) so the list does not ask
+again. The presence dot shows when the peer is in the office (matched by the
+account handle or name). The DM list sorts by the later of `updatedAt` and
+the newest message seen here.
+
+### Threads after the 2026-10-13 changes
+
+Web `/chat` threads were checked in channels and direct messages: a reply is
+sent with `channel: channelWireLabel(...)` (`direct:<id>` in a DM), the
+receiver's `frameMatchesScope` accepts it only in that room, and
+`renderThreadEntry` adds it once to the thread store and repaints the summary
+and the open thread. Office has no threads.
+
+Round 1 (`de27d1cc03`) dropped Office's `mutate` while adding receipts but
+left its three callers, so the first non-chat frame in a room (presence,
+edit or delete) threw and edits and deletes from others never applied. It is
+back, with the author check; `office/tests/chat.test.mjs` now checks it is
+defined.
+
+Tests: `app/tests/test_chat_list_previews_frontend.py`,
+`office/tests/chat.test.mjs`.
+
 ## Direct messages over the local mesh (2026-10-09)
 
 Asked: "make direct messages work over the mesh as well." A direct message now

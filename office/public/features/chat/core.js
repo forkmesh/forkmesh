@@ -49,3 +49,17 @@ export function receiptShapes(state) {
   }
   return body;
 }
+
+export function lastLine(m, mine, direct, plain = (s) => s) {
+  if (!m) return '';
+  const text = String(plain(m.richText?.source || m.text) || '').replace(/\s+/g, ' ').trim().slice(0, 200) || (m.fileName ? `📎 ${m.fileName}` : '');
+  if (!text) return '';
+  return mine ? `You: ${text}` : direct ? text : `${m.sender}: ${text}`;
+}
+
+export function listTime(ts, now = Date.now()) {
+  const d = new Date(ts), n = new Date(now);
+  if (!ts) return '';
+  if (d.toDateString() === n.toDateString()) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleDateString([], now - ts > 0 && now - ts < 6 * 864e5 ? { weekday: 'short' } : { day: 'numeric', month: 'short' });
+}

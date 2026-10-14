@@ -191,6 +191,81 @@ class DirectMessagesTest {
         assertEq("love", r.hub.rows(r.conversation).last().reactions.single().value)
     }
 
+    fun testDirectThreadRepliesStayInTheThreadAndCarryTheirOwnMarks() {
+        val r = rig()
+        r.fromPeer(peerChat("pat-1", "root"), "a".repeat(40))
+        r.fromPeer(r.peerFrame("thread-reply", "pat-2", "rootId" to "pat-1", "text" to "peer reply"), "b".repeat(40))
+        r.fromPeer(r.peerFrame("thread-reply", "pat-2", "rootId" to "pat-1", "text" to "peer reply"), "b".repeat(40))
+        assertEq(listOf("root"), r.dm.messages(r.conversation).map { it.text })
+        assertEq(listOf("peer reply"), r.hub.threadRows("pat-1").map { it.text })
+        assertEq(null, r.hub.threadRows("pat-1").single().receipt)
+        expect(r.hub.replyInThread(r.conversation, "pat-1", "mine"))
+        val ref = OfficeFrames.sentRef(r.socket.sent.last())
+        val mine = r.hub.threadRows("pat-1").last()
+        assertEq(ChatReceipt.SENDING, mine.receipt)
+        expect(mine.deletable)
+        expect(mine.editable)
+        r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1, "ref" to ref, "recipients" to 2)))
+        assertEq(ChatReceipt.SENT, r.hub.threadRows("pat-1").last().receipt)
+        r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf(ref))))
+        assertEq(ChatReceipt.DELIVERED, r.hub.threadRows("pat-1").last().receipt)
+        assertEq(2, r.hub.rows(r.conversation).single().thread?.replyCount)
+        expect(r.hub.edit(mine.message, "mine, edited"))
+        assertEq("mine, edited", r.hub.threadRows("pat-1").last().text)
+        expect(r.hub.threadRows("pat-1").last().edited)
+        r.fromPeer(r.peerFrame("edit", "x-1", "target" to mine.message.id, "text" to "forged"))
+        assertEq("mine, edited", r.hub.threadRows("pat-1").last().text)
+        val before = r.socket.sent.size
+        expect(r.hub.deleteMessage(mine.message))
+        val (_, delete) = r.sealedSent(before).single()
+        assertEq("delete", delete["type"])
+        assertEq(mine.message.id, delete["target"])
+        assertEq(listOf("peer reply"), r.hub.threadRows("pat-1").map { it.text })
+        assertEq(1, r.hub.rows(r.conversation).single().thread?.replyCount)
+        r.fromPeer(r.peerFrame("delete", "pat-3", "target" to "pat-2"))
+        expect(r.hub.threadRows("pat-1").isEmpty())
+        assertEq(null, r.hub.rows(r.conversation).single().thread)
+        assertEq("root", r.hub.listPreview(r.conversation)?.line)
+    }
+
+    fun testDirectListPreviewShowsTheNewestTopLevelLine() {
+        val r = rig()
+        assertEq(null, r.hub.listPreview(r.conversation))
+        r.fromPeer(peerChat("pat-1", "hello\n**there**"), "a".repeat(40))
+        assertEq("hello there", r.hub.listPreview(r.conversation)?.line)
+        r.fromPeer(r.peerFrame("thread-reply", "pat-2", "rootId" to "pat-1", "text" to "aside"))
+        r.fromPeer(r.peerFrame("reaction", "pat-3", "target" to "pat-1", "emoji" to "👍", "reactorId" to "pat-node", "added" to true))
+        assertEq("hello there", r.hub.listPreview(r.conversation)?.line)
+        r.fromPeer(r.peerFrame("edit", "pat-4", "target" to "pat-1", "text" to "hello again"))
+        assertEq("hello again", r.hub.listPreview(r.conversation)?.line)
+        expect(r.dm.send(r.conversation, "my turn"))
+        assertEq("You: my turn", r.hub.listPreview(r.conversation)?.line)
+        val (record, preview) = r.hub.directListRows().single()
+        assertEq("pat", record.otherUser)
+        assertEq("You: my turn", preview?.line)
+        expect(r.hub.deleteMessage(r.dm.messages(r.conversation).last()))
+        assertEq("hello again", r.hub.listPreview(r.conversation)?.line)
+        expect(r.hub.sendAttachment(r.conversation, "plan.pdf", "application/pdf", byteArrayOf(1, 2, 3)))
+        assertEq("You: 📎 plan.pdf", r.hub.listPreview(r.conversation)?.line)
+    }
+
+    fun testDirectListRowsAreNewestFirst() {
+        val api = preparedApi()
+        val other = "e".repeat(32)
+        api.replies["GET /api/chat/direct-messages"] = mapOf(
+            "conversations" to listOf(
+                mapOf("id" to conversationId, "otherUser" to "pat", "updatedAt" to 5L),
+                mapOf("id" to other, "otherUser" to "sam", "updatedAt" to 9L),
+            ),
+            "nextCursor" to "",
+        )
+        val dm = service(api, FakeOfficeConnector())
+        dm.refresh()
+        val hub = ChatHub(FakeChatRelay())
+        hub.direct = dm
+        assertEq(listOf("sam", "pat"), hub.directListRows().map { it.first.otherUser })
+    }
+
     fun testDeleteForEveryoneRemovesTheMessageAndWithdrawsTheServerCopy() {
         val r = rig()
         expect(r.dm.send(r.conversation, "oops"))

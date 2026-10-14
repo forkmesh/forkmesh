@@ -319,6 +319,7 @@ void MainWindow::loadChatHistory()
         refreshChannelList();
         refreshDmList();
     }
+    refreshChatListPreviews();
     updateChatButton();
 
     const QString current = root.value("current").toString();
@@ -3138,6 +3139,7 @@ void MainWindow::startOfficeChannelMirror()
                                 return message.id == messageId;
                             }) > 0) {
                         m_historyIds.remove(messageId);
+                        refreshChatListPreview(conversation);
                         if (conversation == m_currentConversation)
                             scheduleConversationRebuild(m_stickToBottom);
                         scheduleChatSave();

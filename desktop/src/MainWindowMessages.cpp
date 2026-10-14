@@ -25,6 +25,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSet>
+#include <QTreeWidgetItemIterator>
 #include <QSlider>
 #include <QUrl>
 #include <QUrlQuery>
@@ -201,6 +202,7 @@ void MainWindow::refreshVisibleRowAvatars()
         if (!avatar.isNull())
             it.value()->setAvatar(avatar);
     }
+    refreshDmList();
 }
 
 void MainWindow::refreshVisibleRowStatuses()
@@ -732,6 +734,11 @@ QStringList MainWindow::testTranscriptRowOrder() const
     return texts;
 }
 
+QString MainWindow::testChatThreadCountText() const
+{
+    return m_chatThreadCountLabel ? m_chatThreadCountLabel->text() : QString();
+}
+
 QStringList MainWindow::testChatMentionCandidates()
 {
     refreshMentionCandidates();
@@ -853,6 +860,7 @@ void MainWindow::onMessage(const ChatMessage &message)
                     if (!changed)
                         return;
                     *existing = message;
+                    refreshChatListPreview(conversation);
                     if (conversation == m_currentConversation &&
                         !m_discordTranscriptRefreshPending) {
                         m_discordTranscriptRefreshPending = true;
@@ -890,6 +898,7 @@ void MainWindow::onMessage(const ChatMessage &message)
         --insertAt;
     conversationHistory.insert(insertAt, message);
     const bool appendedAtEnd = insertAt == conversationHistory.size() - 1;
+    refreshChatListPreview(conversation);
 
     if (conversation == m_currentConversation) {
         const bool wasAtBottom = m_stickToBottom;
@@ -1115,6 +1124,7 @@ void MainWindow::onMessageEdited(const QString &conversation, const QString &mes
             break;
         }
     }
+    refreshChatListPreview(conversation);
     if (conversation == m_currentConversation)
         rebuildConversationView();
     if (conversation == m_currentConversation && m_chatThreadPane &&
@@ -1358,6 +1368,7 @@ void MainWindow::onMessageDeleted(const QString &conversation, const QString &me
         }
     }
     m_reactions.remove(messageId);
+    refreshChatListPreview(conversation);
     if (conversation == m_currentConversation)
         rebuildConversationView();
     if (conversation == m_currentConversation && m_chatThreadPane &&
@@ -3317,6 +3328,12 @@ void MainWindow::refreshChannelList()
         item->setData(0, Qt::UserRole, channel);
         item->setData(0, ChannelGroupTree::kUnreadCountRole,
                       m_unreadCounts.value(channel));
+        const forkmesh::chatlist::Preview preview = chatListPreview(channel);
+        if (!preview.isEmpty()) {
+            item->setData(0, ChannelGroupTree::kPreviewRole, preview.text);
+            item->setData(0, ChannelGroupTree::kPreviewTimeRole,
+                          preview.timestampMs);
+        }
         if (!tooltip.isEmpty())
             item->setToolTip(0, tooltip);
         item->setIcon(ChannelGroupTree::kSettingsColumn, settingsIcon);
@@ -3511,20 +3528,31 @@ void MainWindow::refreshDmList()
         return;
     QSignalBlocker blocker(m_dmList);
     m_dmList->clear();
+    m_dmList->setIconSize(QSize(kChatListAvatarSide, kChatListAvatarSide));
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    const auto addRow = [this](const QString &key, const QString &name,
-                               const QString &statusEmoji,
+    const auto addRow = [this](const QString &key, const QString &peerId,
+                               const QString &name,
+                               const forkmesh::userstatus::UserStatus &status,
                                const QString &tooltip, bool online) {
         auto *item = new QListWidgetItem(
             (m_unread.contains(key) ? "\xE2\x97\x8F " : "") + kDmPrefix + name +
-            (statusEmoji.isEmpty() ? QString()
-                                   : QStringLiteral(" ") + statusEmoji));
+            (status.emoji.isEmpty() ? QString()
+                                    : QStringLiteral(" ") + status.emoji));
         if (!tooltip.isEmpty())
             item->setToolTip(tooltip);
         item->setData(Qt::UserRole, key);
         item->setData(ChannelGroupTree::kUnreadCountRole,
                       m_unreadCounts.value(key));
         item->setData(ChannelGroupTree::kPresenceRole, online);
+        item->setData(ChannelGroupTree::kAvatarRole,
+                      chatListAvatar(peerId, name, online,
+                                     online && status.away));
+        const forkmesh::chatlist::Preview preview = chatListPreview(key);
+        if (!preview.isEmpty()) {
+            item->setData(ChannelGroupTree::kPreviewRole, preview.text);
+            item->setData(ChannelGroupTree::kPreviewTimeRole,
+                          preview.timestampMs);
+        }
         m_dmList->addItem(item);
         if (key == m_currentConversation)
             m_dmList->setCurrentItem(item);
@@ -3533,7 +3561,7 @@ void MainWindow::refreshDmList()
         const QString name = m_dmNames.value(peerId, QStringLiteral("unknown"));
         const forkmesh::userstatus::UserStatus status =
             userStatusFor(name, peerId);
-        addRow(dmKey(peerId), name, status.emoji,
+        addRow(dmKey(peerId), peerId, name, status,
                forkmesh::userstatus::tooltip(status, now),
                chatPeerOnline(peerId, name));
     }
@@ -3543,7 +3571,7 @@ void MainWindow::refreshDmList()
             continue;
         const forkmesh::userstatus::UserStatus status =
             userStatusFor(peer, QString());
-        addRow(key, peer, status.emoji,
+        addRow(key, QString(), peer, status,
                QStringLiteral("Private conversation: only you and @%1 can read it")
                    .arg(peer),
                chatPeerOnline(QString(), peer));
@@ -3553,17 +3581,132 @@ void MainWindow::refreshDmList()
             const QString peerId = dmPeerId(key);
             const QString name =
                 m_dmNames.value(peerId, QStringLiteral("unknown"));
-            addRow(key, name, QString(), QString(),
+            addRow(key, peerId, name, {}, QString(),
                    chatPeerOnline(peerId, name));
         } else if (forkmesh::office::isDirectOfficeConversation(key)) {
             const QString peer = forkmesh::office::directPeerForConversation(key);
             if (!peer.isEmpty())
-                addRow(key, peer, QString(), QString(),
+                addRow(key, QString(), peer, {}, QString(),
                        chatPeerOnline(QString(), peer));
         }
     }
     updateHomeStats();
     updateChatButton();
+}
+
+forkmesh::chatlist::Preview MainWindow::chatListPreview(
+    const QString &conversation) const
+{
+    const auto it = m_history.constFind(conversation);
+    if (it == m_history.constEnd())
+        return {};
+    return forkmesh::chatlist::preview(
+        *it,
+        isDirectConversation(conversation) ||
+            forkmesh::office::isDirectOfficeConversation(conversation),
+        chatDisplayName());
+}
+
+void MainWindow::refreshChatListPreview(const QString &conversation)
+{
+    if (conversation.isEmpty())
+        return;
+    const forkmesh::chatlist::Preview preview = chatListPreview(conversation);
+    const auto apply = [&preview](auto &&read, auto &&write) {
+        if (read(ChannelGroupTree::kPreviewRole).toString() != preview.text)
+            write(ChannelGroupTree::kPreviewRole, preview.text);
+        if (read(ChannelGroupTree::kPreviewTimeRole).toLongLong() !=
+            preview.timestampMs)
+            write(ChannelGroupTree::kPreviewTimeRole, preview.timestampMs);
+    };
+    for (int row = 0; m_dmList && row < m_dmList->count(); ++row) {
+        QListWidgetItem *item = m_dmList->item(row);
+        if (item->data(Qt::UserRole).toString() != conversation)
+            continue;
+        apply([item](int role) { return item->data(role); },
+              [item](int role, const QVariant &value) {
+                  item->setData(role, value);
+              });
+        return;
+    }
+    if (!m_channelList)
+        return;
+    for (QTreeWidgetItemIterator it(m_channelList); *it; ++it) {
+        QTreeWidgetItem *item = *it;
+        if (ChannelGroupTree::isGroupItem(item) ||
+            item->data(0, Qt::UserRole).toString() != conversation)
+            continue;
+        apply([item](int role) { return item->data(0, role); },
+              [item](int role, const QVariant &value) {
+                  item->setData(0, role, value);
+              });
+        return;
+    }
+}
+
+void MainWindow::refreshChatListPreviews()
+{
+    for (int row = 0; m_dmList && row < m_dmList->count(); ++row)
+        refreshChatListPreview(
+            m_dmList->item(row)->data(Qt::UserRole).toString());
+    if (!m_channelList)
+        return;
+    QStringList channels;
+    for (QTreeWidgetItemIterator it(m_channelList); *it; ++it)
+        if (!ChannelGroupTree::isGroupItem(*it))
+            channels.append((*it)->data(0, Qt::UserRole).toString());
+    for (const QString &channel : std::as_const(channels))
+        refreshChatListPreview(channel);
+}
+
+QPixmap MainWindow::chatListAvatar(const QString &peerId, const QString &name,
+                                   bool online, bool away)
+{
+    const QPixmap source = chatSenderAvatarSource(peerId, name);
+    const QColor faint = Theme::chatColor(QStringLiteral("chatFaint"));
+    const QString key =
+        QStringLiteral("dm|") + peerId + QLatin1Char('|') + name +
+        QLatin1Char('|') +
+        QString::number(source.isNull() ? 0 : source.cacheKey()) +
+        QLatin1Char('|') + QString::number(iconDevicePixelRatio()) +
+        QLatin1Char('|') +
+        (away ? QLatin1Char('a') : online ? QLatin1Char('o') : QLatin1Char('-')) +
+        faint.name();
+    const QPixmap cached = m_chatMemberAvatarCache.value(key);
+    if (!cached.isNull())
+        return cached;
+    QPixmap face = source.isNull()
+                       ? MessageRow::initialsAvatar(name, senderColor(name),
+                                                    kChatListAvatarSide)
+                       : roundedAvatar(source, kChatListAvatarSide, 0.5);
+    if (face.isNull())
+        return face;
+    {
+        const qreal side = kChatListAvatarSide;
+        const qreal diameter = 10.0;
+        const qreal ring = 2.0;
+        const QRectF dot(side - diameter, side - diameter, diameter, diameter);
+        QPainter painter(&face);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Qt::transparent);
+        painter.drawEllipse(dot.adjusted(-ring, -ring, ring, ring));
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        if (online) {
+            painter.setBrush(Theme::chatColor(away ? QStringLiteral("chatAway")
+                                                   : QStringLiteral("chatOnline")));
+            painter.drawEllipse(dot);
+        } else {
+            painter.setPen(QPen(faint, 1.6));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawEllipse(dot.adjusted(0.8, 0.8, -0.8, -0.8));
+        }
+    }
+    if (m_chatMemberAvatarCache.size() > 512)
+        m_chatMemberAvatarCache.clear();
+    m_chatMemberAvatarCache.insert(key, face);
+    return face;
 }
 
 void MainWindow::updateChatConversationHeading()

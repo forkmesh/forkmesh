@@ -383,6 +383,8 @@ const channelMeta = new Map();
 const readMarks = new Map();
 const pendingReadMarks = new Map();
 let readMarkTimer = 0;
+const roomPreviewChannels = new Set();
+let roomPreviewTimer = 0;
 // messageId -> Map(emoji -> Map(reactorId -> reactorName)); same shape as the
 // desktop's m_reactions so toggles converge across clients.
 const reactions = new Map();
@@ -1503,6 +1505,7 @@ function renderRooms() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "chat-room" + (name === activeChannel ? " is-active" : "");
+    btn.dataset.channel = name;
     const channel = privateChannelForKey(name);
     const isPrivate = Boolean(channel) && channel.visibility !== "public";
     const icon = document.createElement("span");
@@ -1526,7 +1529,7 @@ function renderRooms() {
       );
       btn.title = visibilityLabel;
     }
-    btn.append(label);
+    btn.append(roomTextColumn(label, name));
     if (meta.unread > 0 && name !== activeChannel) {
       const badge = document.createElement("span");
       badge.className = "chat-room-unread";
@@ -1557,15 +1560,14 @@ function renderRooms() {
 function renderDirectMessages() {
   if (!directListEl) return;
   directListEl.textContent = "";
-  const conversations = [...directMessages.values()]
-    .sort((a, b) => a.otherUser.localeCompare(b.otherUser));
-  for (const direct of conversations) {
+  for (const direct of sortedDirectMessages()) {
     const key = directMessageKey(direct.id);
     const meta = channelMeta.get(key) || { unread: 0 };
     const button = document.createElement("button");
     button.type = "button";
     button.className =
       "chat-room chat-direct-row" + (key === activeChannel ? " is-active" : "");
+    button.dataset.channel = key;
     button.setAttribute("aria-label", `Direct message with ${direct.otherUser}`);
     button.title = `Direct message with ${direct.otherUser}`;
     button.dataset.filter = "@" + direct.otherUser.toLowerCase();
@@ -1579,9 +1581,10 @@ function renderDirectMessages() {
     const label = document.createElement("span");
     label.className = "chat-room-name";
     label.textContent = direct.otherUser;
-    button.append(label);
+    const column = roomTextColumn(label, key);
     const directBadge = userStatusBadge(direct.otherUser);
-    if (directBadge) button.append(directBadge);
+    if (directBadge) label.after(directBadge);
+    button.append(column);
     if (meta.unread > 0 && key !== activeChannel) {
       const badge = document.createElement("span");
       badge.className = "chat-room-unread";
@@ -1592,6 +1595,116 @@ function renderDirectMessages() {
     directListEl.append(button);
   }
   applyRoomFilter();
+}
+
+function directRecency(direct) {
+  const updated = Number(direct.updatedAt) || 0;
+  const updatedMs = updated && updated < 1e12 ? updated * 1000 : updated;
+  return Math.max(updatedMs, Number(conversationPreviewRecord(
+    directMessageKey(direct.id))?.ts) || 0);
+}
+
+function sortedDirectMessages() {
+  return [...directMessages.values()]
+    .map((direct) => ({ direct, recency: directRecency(direct) }))
+    .sort((a, b) => b.recency - a.recency ||
+      a.direct.otherUser.localeCompare(b.direct.otherUser))
+    .map((entry) => entry.direct);
+}
+
+function conversationPreviewRecord(channel) {
+  const list = channelMessages.get(channel) || [];
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const record = list[index];
+    if (!record.deleted && !record.rootId &&
+        (record.text || record.attachment)) return record;
+  }
+  return null;
+}
+
+function conversationPreviewText(record) {
+  if (!record) return "";
+  const source = record.richText?.source
+    ? plainTextFromRichSource(record.richText.source)
+    : record.text;
+  const body = String(source || "").replace(/\s+/g, " ").trim().slice(0, 200) ||
+    (record.attachment?.fileName ? `📎 ${record.attachment.fileName}` : "");
+  if (!body) return "";
+  if (isOwnChatMessage(record)) return `You: ${body}`;
+  if (isDirectMessageKey(record.channel)) return body;
+  return `${record.sender || "peer"}: ${body}`;
+}
+
+function roomPreviewTime(ts, nowValue = Date.now()) {
+  const value = Number(ts) || 0;
+  if (!value) return "";
+  if (sameLocalDate(value, nowValue)) return fmtTime(value);
+  const date = new Date(value);
+  const age = nowValue - value;
+  if (age > 0 && age < 6 * 86400000) {
+    return date.toLocaleDateString("en-US", { weekday: "short" });
+  }
+  const options = { day: "numeric", month: "short" };
+  if (date.getFullYear() !== new Date(nowValue).getFullYear()) {
+    options.year = "numeric";
+  }
+  return date.toLocaleDateString("en-GB", options);
+}
+
+function roomTextColumn(label, channel) {
+  const column = document.createElement("span");
+  column.className = "chat-room-text";
+  const line = document.createElement("span");
+  line.className = "chat-room-line";
+  const time = document.createElement("span");
+  time.className = "chat-room-time";
+  line.append(label, time);
+  const preview = document.createElement("span");
+  preview.className = "chat-room-preview";
+  column.append(line, preview);
+  paintRoomPreview(column, channel);
+  return column;
+}
+
+function paintRoomPreview(column, channel) {
+  const record = conversationPreviewRecord(channel);
+  const text = conversationPreviewText(record);
+  const preview = column.querySelector(".chat-room-preview");
+  const time = column.querySelector(".chat-room-time");
+  if (preview) preview.textContent = text;
+  if (time) time.textContent = text ? roomPreviewTime(record.ts) : "";
+}
+
+function queueRoomPreview(channel) {
+  if (!channel) return;
+  roomPreviewChannels.add(channel);
+  if (!roomPreviewTimer) roomPreviewTimer = setTimeout(flushRoomPreviews, 50);
+}
+
+function directOrderChanged() {
+  const shown = [...(directListEl?.querySelectorAll(".chat-direct-row") || [])]
+    .map((row) => row.dataset.channel);
+  const wanted = sortedDirectMessages()
+    .map((direct) => directMessageKey(direct.id));
+  return shown.join() !== wanted.join();
+}
+
+function flushRoomPreviews() {
+  roomPreviewTimer = 0;
+  const channels = new Set(roomPreviewChannels);
+  roomPreviewChannels.clear();
+  if (directListEl && [...channels].some(isDirectMessageKey) &&
+      directOrderChanged()) {
+    renderDirectMessages();
+  }
+  for (const row of [
+    ...(roomsEl?.querySelectorAll(".chat-room") || []),
+    ...(directListEl?.querySelectorAll(".chat-room") || []),
+  ]) {
+    if (!channels.has(row.dataset.channel)) continue;
+    const column = row.querySelector(".chat-room-text");
+    if (column) paintRoomPreview(column, row.dataset.channel);
+  }
 }
 
 function directPartnerOnline(name) {
@@ -1877,6 +1990,7 @@ function pruneExpiredMessages() {
       threads.deleteTarget(record.id);
       if (activeThreadRootId === record.id) closeThread({ restoreFocus: false });
     }
+    queueRoomPreview(channel);
     if (channel === activeChannel) activeChanged = true;
   }
   if (activeChanged) repaintChannel(activeChannel);
@@ -4539,6 +4653,7 @@ async function saveMessageEdit(record, source) {
     renderThreadSummary(record.rootId);
   } else {
     renderRecordBody(record);
+    queueRoomPreview(record.channel);
     if (activeThreadRootId === record.id) renderThread();
   }
   seen.add(plain.id);
@@ -4981,6 +5096,7 @@ function insertMessage(record) {
   list.splice(index, 0, record);
   rows.set(record.id, record);
   threads.registerRoot(portableMessageRecord(record));
+  queueRoomPreview(channel);
   if (historyBatchChannels) {
     historyBatchChannels.add(channel);
     if (channel !== activeChannel && !isOwnChatMessage(record)) {
@@ -5068,6 +5184,7 @@ function removeMessage(id) {
     reactions.delete(id);
     threads.deleteTarget(id);
     repaintChannel(rec.channel);
+    queueRoomPreview(rec.channel);
     if (activeThreadRootId === id) renderThread();
     return;
   }
@@ -5080,6 +5197,7 @@ function removeMessage(id) {
   if (activeThreadRootId === id) closeThread({ restoreFocus: false });
   // Re-render so grouping headers stay correct around the gap.
   repaintChannel(rec.channel);
+  queueRoomPreview(rec.channel);
 }
 
 // Re-render a channel, or — inside a replayed backlog — leave it to the single
@@ -5475,6 +5593,7 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
       rec.editedAt = Number(plain.editedAt) || Number(plain.ts) || Date.now();
       threads.updateTarget(rec.id, patch);
       renderRecordBody(rec);
+      queueRoomPreview(rec.channel);
       if (activeThreadRootId === rec.id) renderThread();
     }
   } else if (type === "delete") {

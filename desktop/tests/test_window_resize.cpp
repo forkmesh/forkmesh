@@ -3119,7 +3119,31 @@ void checkReplayedBacklogRepaintsOnce(MainWindow &window)
               chatThreadPane->geometry().left() > chatMainPane->geometry().right() &&
               chatThreadPane->height() >= chatSplit->height() - 2,
           QStringLiteral("opening a chat thread fills a splitter pane to the "
-                         "right of the chat transcript"));
+                         "right of the chat transcript (visible %1, index %2, "
+                         "pane %3, main %4, split height %5)")
+              .arg(window.testChatThreadPaneVisible())
+              .arg(chatSplit && chatThreadPane ? chatSplit->indexOf(chatThreadPane)
+                                               : -1)
+              .arg(chatThreadPane ? QStringLiteral("%1,%2 %3x%4")
+                                        .arg(chatThreadPane->x())
+                                        .arg(chatThreadPane->y())
+                                        .arg(chatThreadPane->width())
+                                        .arg(chatThreadPane->height())
+                                  : QStringLiteral("none"))
+              .arg(chatMainPane ? chatMainPane->geometry().right() : -1)
+              .arg(chatSplit ? QStringLiteral("%1 w%2 sizes %3 mins %4/%5/%6")
+                                   .arg(chatSplit->height())
+                                   .arg(chatSplit->width())
+                                   .arg([&] {
+                                       QStringList parts;
+                                       for (int size : chatSplit->sizes())
+                                           parts << QString::number(size);
+                                       return parts.join(QLatin1Char(','));
+                                   }())
+                                   .arg(chatSplit->widget(0)->minimumSizeHint().width())
+                                   .arg(chatSplit->widget(1)->minimumSizeHint().width())
+                                   .arg(chatThreadPane ? chatThreadPane->minimumSizeHint().width() : -1)
+                             : QStringLiteral("none")));
 
     // A conversation switch renders synchronously, so it must also cancel the
     // queued repaint rather than let it fire against the room just left.
@@ -12718,6 +12742,182 @@ void checkChatUnreadSurface(MainWindow &window)
     }
 }
 
+void checkChatListPreviewsAndDmThreads(MainWindow &window)
+{
+    window.resize(1440, 900);
+    window.show();
+    QApplication::processEvents();
+    const QString general = QStringLiteral("#general");
+    const QString design = QStringLiteral("#design");
+    const QString bobDm = QStringLiteral("#office/@bob");
+    const QString zedDm = QStringLiteral("@peer-yan");
+    window.testSetChannels({general, design});
+    window.testShowChatSection();
+    window.testSwitchConversation(general);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    window.testDeliverChatMessageAt(general, QStringLiteral("peer-amy"),
+                                    QStringLiteral("amy"),
+                                    QStringLiteral("Morning *all*\nready?"),
+                                    now - 9000);
+    QApplication::processEvents();
+    check(window.testChatListPreview(general) ==
+                  QStringLiteral("amy: Morning all ready?") &&
+              window.testChatListPreviewTime(general) == now - 9000,
+          QStringLiteral("a channel row's second line is the newest message "
+                         "with its sender (preview = %1)")
+              .arg(window.testChatListPreview(general)));
+    check(window.testChatListPreview(design).isEmpty(),
+          QStringLiteral("a channel with no messages has no second line"));
+    const int channelHeight = window.testChatListRowHeight(general);
+    check(channelHeight > 32 && channelHeight == window.testChatListRowHeight(design),
+          QStringLiteral("channel rows are two lines tall and stay aligned "
+                         "with or without a last line (%1 vs %2)")
+              .arg(channelHeight)
+              .arg(window.testChatListRowHeight(design)));
+
+    const QString own = window.testDeliverChatMessageAt(
+        general, QStringLiteral("self-key"), QStringLiteral("ada"),
+        QStringLiteral("On it"), now - 8000, QString(), true);
+    check(window.testChatListPreview(general) == QStringLiteral("You: On it"),
+          QStringLiteral("an own message reads You: (preview = %1)")
+              .arg(window.testChatListPreview(general)));
+    window.testDeliverChatMessageAt(general, QStringLiteral("peer-cat"),
+                                    QStringLiteral("cat"),
+                                    QStringLiteral("threaded aside"), now - 7000,
+                                    own);
+    check(window.testChatListPreview(general) == QStringLiteral("You: On it"),
+          QStringLiteral("a thread reply leaves the last line alone"));
+    window.testEditChatMessage(general, own, QStringLiteral("On it now"));
+    check(window.testChatListPreview(general) == QStringLiteral("You: On it now"),
+          QStringLiteral("editing the newest message updates the last line"));
+    window.testDeleteChatMessage(general, own);
+    check(window.testChatListPreview(general) ==
+              QStringLiteral("amy: Morning all ready?"),
+          QStringLiteral("deleting the newest message falls back to the one "
+                         "before (preview = %1)")
+              .arg(window.testChatListPreview(general)));
+
+    const QString root = window.testDeliverChatMessageAt(
+        bobDm, QStringLiteral("bob-node"), QStringLiteral("bob"),
+        QStringLiteral("Can you look at the deck?"), now - 6000);
+    QApplication::processEvents();
+    check(window.testChatDmRows().contains(bobDm) &&
+              window.testChatListPreview(bobDm) ==
+                  QStringLiteral("Can you look at the deck?"),
+          QStringLiteral("a direct message row shows the other person's text "
+                         "without a name (preview = %1)")
+              .arg(window.testChatListPreview(bobDm)));
+    const QPixmap initials = window.testChatListAvatar(bobDm);
+    check(!initials.isNull() &&
+              initials.deviceIndependentSize().toSize() == QSize(28, 28),
+          QStringLiteral("a direct message row carries a 28 px avatar"));
+    QPixmap face(64, 64);
+    face.fill(QColor(220, 30, 30));
+    window.testSetAccountAvatar(QStringLiteral("bob"), face);
+    QApplication::processEvents();
+    const QImage picture = window.testChatListAvatar(bobDm).toImage();
+    const QPoint middle(picture.width() / 2, picture.height() / 2);
+    const QPoint corner(int(picture.width() * 0.08), int(picture.height() * 0.08));
+    check(!picture.isNull() && qRed(picture.pixel(middle)) > 180 &&
+              qGreen(picture.pixel(middle)) < 80 &&
+              qAlpha(picture.pixel(corner)) < 40,
+          QStringLiteral("the row uses the user's profile picture, cut round"));
+    const int dmHeight = window.testChatListRowHeight(bobDm);
+    check(dmHeight == channelHeight,
+          QStringLiteral("direct message rows match the channel row height "
+                         "(%1 vs %2)")
+              .arg(dmHeight)
+              .arg(channelHeight));
+
+    window.testSwitchConversation(bobDm);
+    QApplication::processEvents();
+    const QString firstReply = window.testDeliverChatMessageAt(
+        bobDm, QStringLiteral("self-key"), QStringLiteral("ada"),
+        QStringLiteral("Looking now"), now - 5000, root, true);
+    window.testDeliverChatMessageAt(bobDm, QStringLiteral("bob-node"),
+                                    QStringLiteral("bob"),
+                                    QStringLiteral("Thanks!"), now - 4000, root);
+    QApplication::processEvents();
+    check(window.testChatListPreview(bobDm) ==
+              QStringLiteral("Can you look at the deck?"),
+          QStringLiteral("replies in a direct-message thread do not change "
+                         "its last line"));
+    check(window.testChatThreadTexts(bobDm, root) ==
+              QStringList({QStringLiteral("Looking now"), QStringLiteral("Thanks!")}),
+          QStringLiteral("both replies sit under the direct message's root"));
+    QPushButton *summary = nullptr;
+    for (QPushButton *button :
+         window.findChildren<QPushButton *>(QStringLiteral("threadSummary")))
+        if (button->isVisible())
+            summary = button;
+    check(summary && summary->text().contains(QStringLiteral("2 replies")),
+          QStringLiteral("the root in a direct message counts its replies "
+                         "(summary = %1)")
+              .arg(summary ? summary->text() : QStringLiteral("none")));
+    window.testOpenChatThread(root);
+    QApplication::processEvents();
+    check(window.testChatThreadPaneVisible() &&
+              window.testChatThreadCountText() == QStringLiteral("2 replies"),
+          QStringLiteral("a direct-message thread opens in the side pane with "
+                         "its reply count (count = %1)")
+              .arg(window.testChatThreadCountText()));
+    window.testDeleteChatMessage(bobDm, firstReply);
+    QApplication::processEvents();
+    check(window.testChatThreadPaneVisible() &&
+              window.testChatThreadCountText() == QStringLiteral("1 reply"),
+          QStringLiteral("deleting a reply for everyone drops it from the open "
+                         "thread (count = %1)")
+              .arg(window.testChatThreadCountText()));
+    window.testDeliverChatMessageAt(bobDm, QStringLiteral("bob-node"),
+                                    QStringLiteral("bob"),
+                                    QStringLiteral("One more"), now - 3000, root);
+    QApplication::processEvents();
+    check(window.testChatThreadCountText() == QStringLiteral("2 replies"),
+          QStringLiteral("a reply that arrives while the thread is open joins "
+                         "it (count = %1)")
+              .arg(window.testChatThreadCountText()));
+
+    window.testDeliverChatMessageAt(zedDm, QStringLiteral("peer-yan"),
+                                    QStringLiteral("yan"), QString(), now - 2000,
+                                    QString(), false, QStringLiteral("notes.pdf"));
+    QApplication::processEvents();
+    check(window.testChatListPreview(zedDm) ==
+                  QString::fromUtf8("\xF0\x9F\x93\x8E notes.pdf") &&
+              !window.testChatListAvatar(zedDm).isNull(),
+          QStringLiteral("a peer direct message with only a file shows the "
+                         "paperclip line and an initials avatar (preview = %1)")
+              .arg(window.testChatListPreview(zedDm)));
+
+    const QString shotPrefix = qEnvironmentVariable("FORKMESH_CHAT_LIST_SHOT");
+    if (!shotPrefix.isEmpty()) {
+        QSettings settings;
+        for (const char *design : {"next", "classic"}) {
+            for (const char *theme : {"light", "dark"}) {
+                settings.setValue(QStringLiteral("app/design"),
+                                  QLatin1String(design));
+                settings.setValue(QStringLiteral("app/theme"),
+                                  QLatin1String(theme));
+                MainWindow::applyTheme();
+                for (int i = 0; i < 10; ++i)
+                    QApplication::processEvents();
+                QWidget *chat = window.findChild<QWidget *>(
+                    QStringLiteral("chatSidebarSplit"));
+                (chat ? chat : static_cast<QWidget *>(&window))
+                    ->grab()
+                    .save(shotPrefix + QLatin1Char('-') + QLatin1String(design) +
+                          QLatin1Char('-') + QLatin1String(theme) +
+                          QStringLiteral(".png"));
+            }
+        }
+    }
+    window.testCloseChatThread();
+    window.testSwitchConversation(general);
+    window.testForgetConversation(bobDm);
+    window.testForgetConversation(zedDm);
+    window.testClearPageNotices();
+}
+
 void checkUiSnapshots(MainWindow &window)
 {
     using forkmesh::ui::NextAccess;
@@ -14299,6 +14499,8 @@ else:
 
     if (app.arguments().contains(QStringLiteral("--chat-unread-only"))) {
         checkChatUnreadSurface(window);
+        checkChatListPreviewsAndDmThreads(window);
+        checkReplayedBacklogRepaintsOnce(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }

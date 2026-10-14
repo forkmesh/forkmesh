@@ -506,6 +506,45 @@ everyone with superseded, author check and delete-before-target, and a hub test 
 edits held for a late message, replies, deletes and the saved tombstones), the office test in
 `OfficeChannelsTests`, and `ChatConversationTests` for the marks.
 
+## Chat list last line, avatars and threads (branch 1974, round 2)
+
+Asked 2026-10-13: "Make sure threads still work too also in the chat list show the last line per
+channel and per message with users also show their user icon in the chat list".
+
+**Last line.** `ChatHub.listPreview(_:)` (`ViewModels/ChatListPreview.swift`) walks
+`messages(in:)` from the newest message back and returns the first one that is not hidden
+(Delete for me), removed (Delete for everyone), a thread reply or an ephemeral app message, with
+its timestamp. The text is `ChatExtras.text(for:)`, so an edit of the newest message updates the
+line (the `#mesh` room has no edits and uses the plain text). `ChatListPreviews` makes the line:
+`plain(_:)` drops quote markers, code fences and the bold, italic, strike and code markers
+(through `ChatRichText.spans`), collapses newlines and runs of spaces, and cuts at 160 characters
+with an ellipsis; `line(_:text:direct:)` gives "You: <text>" for your own message, "<text>" for
+the other person's in a direct message (`direct:` or `@peer`) and "<sender>: <text>" in a channel;
+a file with no text reads "📎 <file name>". A message whose line would be empty is skipped. The line
+is built from what the phone already holds and decrypted; nothing new is stored or sent.
+`timeLabel(_:now:timeZone:)` gives the short time on the name line: the clock time today, the
+weekday ("Tue") within six days, "Oct 3" this year, "Mar 14, 2025" before. A conversation with no
+message yet keeps an empty second line so every row has the same height.
+
+**Rows.** `ChatChannelTile` takes `preview`, `time` and `avatar`. Channel, office, `#mesh`,
+starred and direct-message tiles all pass a preview. Direct-message tiles (also when starred) show
+`MessagesPersonAvatar` at 28 pt, the same loader and `ChatAvatarCache` the conversation header
+uses, falling back to the initials avatar, with the presence dot (ringed in the row background)
+over its bottom-right corner; channel icons sit in a 28 pt column so titles line up.
+
+**Threads after round 1.** Checked and covered by tests: a peer's thread reply in a direct message
+builds the thread, stays out of the conversation and the list line, and is not deletable; an own
+reply replayed from another device is own, deletable and `sent`; a reply sent here goes `sending`
+to `sent` on `forkmesh-recipients` and carries `notify`; DM replies are saved in the chat history
+file under their `direct:` conversation. The same checks run for a public office channel (peer
+reply, own reply with `rootId` and `#name` channel, ack, reply count). No regression was found.
+
+Tests: `ChatListPreviewTests` (plain text, sender prefixes, file fallback, skipped messages and
+edits, short times, and a relay channel where a thread reply, an edit, an own message and Delete
+for me move the line), `DirectMessageReceiptsTests.testThreadRepliesFromEitherSideBuildTheDirectMessageThread`
+(also the DM list line before and after Delete for everyone) and
+`OfficeChannelsTests.testThreadRepliesInAnOfficeChannelGoBothWays`.
+
 ## Message text in push notifications (branch 1974)
 
 Asked 2026-10-13: "make it so that chat text shows in the push notifications - signal has a way

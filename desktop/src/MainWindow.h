@@ -3,6 +3,7 @@
 
 #include "BackoffNetworkAccessManager.h" // FirewallVerdict, in a signature below
 #include "ChatBackend.h"
+#include "ChatListPreview.h"
 #include "ChannelGroups.h"
 #include "RailFolders.h"
 #include "RailGroups.h"
@@ -1198,11 +1199,13 @@ public:
     bool testHasChatBackend() const { return m_backend != nullptr; }
     // Deliver a message with a chosen timestamp (and optionally as a thread
     // reply), so a test can reproduce a replayed backlog arriving out of order.
-    void testDeliverChatMessageAt(const QString &conversation,
-                                  const QString &senderId,
-                                  const QString &senderName,
-                                  const QString &text, qint64 timestampMs,
-                                  const QString &threadRootId = QString())
+    QString testDeliverChatMessageAt(const QString &conversation,
+                                     const QString &senderId,
+                                     const QString &senderName,
+                                     const QString &text, qint64 timestampMs,
+                                     const QString &threadRootId = QString(),
+                                     bool self = false,
+                                     const QString &fileName = QString())
     {
         static int seq = 0;
         ChatMessage message;
@@ -1213,13 +1216,30 @@ public:
         message.text = text;
         message.timestampMs = timestampMs;
         message.threadRootId = threadRootId;
+        message.self = self;
+        message.fileName = fileName;
         onMessage(message);
+        return message.id;
     }
     QString testCurrentConversation() const { return m_currentConversation; }
     QString testChatUnreadBannerText() const;
     bool testChatUnreadJumpShown() const;
     QString testChatAllUnreadBadge() const;
     QStringList testChatDmRows() const;
+    QString testChatListPreview(const QString &conversation) const;
+    qint64 testChatListPreviewTime(const QString &conversation) const;
+    QPixmap testChatListAvatar(const QString &conversation) const;
+    int testChatListRowHeight(const QString &conversation) const;
+    void testEditChatMessage(const QString &conversation,
+                             const QString &messageId, const QString &text)
+    {
+        onMessageEdited(conversation, messageId, text);
+    }
+    void testDeleteChatMessage(const QString &conversation,
+                               const QString &messageId)
+    {
+        onMessageDeleted(conversation, messageId);
+    }
     QString testChatTopicText() const;
     void testOpenNextUnreadConversation() { openNextUnreadConversation(); }
     bool testChatChannelIsPrivate(const QString &conversation) const
@@ -1273,6 +1293,8 @@ public:
     {
         return m_chatThreadPane && m_chatThreadPane->isVisible();
     }
+    QString testChatThreadCountText() const;
+    void testCloseChatThread() { closeChatThread(); }
     void testForgetConversation(const QString &conversation)
     {
         m_history.remove(conversation);
@@ -10126,6 +10148,11 @@ private:
     void openDirectChat(const QString &peerId, const QString &peerName);
     void refreshChannelList();
     void refreshDmList();
+    forkmesh::chatlist::Preview chatListPreview(const QString &conversation) const;
+    void refreshChatListPreview(const QString &conversation);
+    void refreshChatListPreviews();
+    QPixmap chatListAvatar(const QString &peerId, const QString &name,
+                           bool online, bool away);
     void refreshChatMembers();
     void refreshChatUserDirectory();
     void mergeChatUserDirectory(const QJsonArray &users);
