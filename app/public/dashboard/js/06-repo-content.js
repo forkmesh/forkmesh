@@ -10285,9 +10285,7 @@
       const body = $("[data-repo-about-release-body]");
       if (!section || !body) return;
       const when = relativeTimeLabel(repoReleaseTimestampMs(latest));
-      body.innerHTML = `
-        <span class="inline-flex items-center gap-1.5 rounded-md bg-primary/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground"><i data-lucide="tag" class="h-3 w-3"></i>${escapeHtml(String(latest.tag))}</span>
-        ${when ? `<p class="mt-1.5">released ${escapeHtml(when)}</p>` : ""}`;
+      body.innerHTML = `<span class="font-mono font-semibold text-foreground">${escapeHtml(String(latest.tag))}</span>${when ? ` · ${escapeHtml(when)}` : ""}`;
       section.classList.remove("hidden");
       window.lucide?.createIcons();
     } catch (_) { /* no releases — section stays hidden */ }
@@ -10297,7 +10295,7 @@
     const section = $("[data-repo-about-files]");
     const label = $("[data-repo-about-files-count]");
     if (!section || !label || !count) return;
-    label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""} files`;
+    label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""}`;
     section.classList.remove("hidden");
   }
 
@@ -10313,34 +10311,25 @@
     bar.innerHTML = ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = (weight / total) * 100;
-      return `<span title="${escapeHtml(language)}" style="width:${pct.toFixed(1)}%;background-color:${color}"></span>`;
+      return `<span title="${escapeHtml(language)}" class="h-full shrink-0 first:rounded-l-full last:rounded-r-full" style="width:${pct.toFixed(1)}%;min-width:2px;background-color:${color}"></span>`;
     }).join("");
     legend.innerHTML = ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = ((weight / total) * 100).toFixed(1);
-      return `<span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background-color:${color}"></span><span class="font-medium text-foreground">${escapeHtml(language)}</span> ${pct}%</span>`;
+      return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
     }).join("");
     section.classList.remove("hidden");
   }
 
-  // The identicon shown for a contributor. Keyed on the git email (falling back
-  // to the name) so two distinct people never collapse to the same swatch the
-  // way a name-initial + single hue did — a two-tone gradient plus up-to-two
-  // initials keeps each user visually distinct and stable across loads.
   function repoContributorAvatar(contributor) {
     const name = String(contributor?.name || contributor?.email || "?").trim();
     const email = String(contributor?.email || "").trim().toLowerCase();
     const commits = Number(contributor?.commits) || 0;
-    const key = email || name.toLowerCase();
-    let hash = 0;
-    for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    const hue = hash % 360;
-    const hue2 = (hue + 40 + ((hash >> 8) % 90)) % 360;
     const words = name.split(/[\s._@-]+/).filter(Boolean);
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
-    return `<span title="${escapeHtml(title)}" class="flex h-8 w-8 items-center justify-center rounded-full border border-background font-mono text-[10px] font-semibold uppercase text-white shadow-sm" style="background-image:linear-gradient(135deg, hsl(${hue} 60% 46%), hsl(${hue2} 58% 38%))">${escapeHtml(initials)}</span>`;
+    return `<span title="${escapeHtml(title)}" class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(initials)}</span>`;
   }
 
   // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
@@ -10355,7 +10344,10 @@
     const list = $("[data-repo-about-contribs-list]");
     if (!section || !count || !list) return;
     count.textContent = String(Number(total) || rows.length);
-    list.innerHTML = rows.slice(0, 14).map(repoContributorAvatar).join("");
+    const shown = rows.slice(0, 8);
+    const more = (Number(total) || rows.length) - shown.length;
+    list.innerHTML = shown.map(repoContributorAvatar).join("") +
+      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
     section.classList.remove("hidden");
   }
 
@@ -10583,12 +10575,13 @@
     const colors = repoSizeMapColors(tree);
     chart.innerHTML = repoSizeMapSvg(tree, colors, {
       view: 260,
-      hole: 42,
-      rings: 3,
-      centerTitle: formatSize(tree.size),
-      centerSub: `${Number(tree.fileCount || 0).toLocaleString()} files`,
-      centerTitleSize: 14,
+      hole: 70,
+      rings: 2,
+      centerTitle: "",
+      centerSub: "",
     }).svg;
+    const meta = $("[data-repo-about-sizemap-meta]");
+    if (meta) meta.textContent = formatSize(tree.size);
     open.onclick = () => activateRepoTab("sizemap");
     section.classList.remove("hidden");
   }

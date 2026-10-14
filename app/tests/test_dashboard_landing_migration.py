@@ -1326,16 +1326,19 @@ def test_repository_header_is_compact_and_actions_live_in_about():
     assert render.index("data-repo-about-description") < render.index("data-repo-about-actions")
     about_actions = render[
         render.index("data-repo-about-actions")
-        : render.index("data-repo-about-website")
+        : render.index("data-repo-about-langs")
     ]
     for marker in (
         "data-repo-action-watch",
         "data-repo-action-fork",
         "data-repo-action-star",
         'data-dashboard-repo-tab="mirrors"',
-        'data-repo-watch-count class="absolute -right-0.5 -top-0.5',
-        'data-repo-fork-count class="absolute -right-0.5 -top-0.5',
-        'data-repo-star-count class="absolute -right-0.5 -top-0.5',
+        'data-repo-about-actions aria-label="Repository details"',
+        'data-repo-about-website',
+        'data-repo-about-release',
+        'data-repo-watch-count class="font-mono"',
+        'data-repo-fork-count class="font-mono"',
+        'data-repo-star-count class="font-mono"',
         'data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors"',
     ):
         assert marker in about_actions
@@ -1367,7 +1370,7 @@ def test_repository_context_links_and_fediverse_avatars_replace_redundant_ui():
     assert 'open.onclick = () => activateRepoTab("sizemap");' in dashboard_js
     assert "data-repo-product-promise" not in render
 
-    assert "data-repo-social-follower-avatars" in render
+    assert "data-repo-social-badge" not in render
     assert "followersList" in follower_loader
     assert "follower?.avatarUrl" in follower_loader
     assert 'referrerpolicy="no-referrer"' in follower_loader

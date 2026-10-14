@@ -1607,9 +1607,6 @@
   function renderMirrorRow(mirror, servedBy, refMirror) {
     const online = mirror.status === "online";
     const isServing = online && mirrorRowIsServing(mirror, servedBy);
-    const rowClass = isServing
-      ? "grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 border-t border-border px-4 py-3 text-sm ring-1 ring-inset ring-primary bg-primary/5"
-      : "grid grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 border-t border-border px-4 py-3 text-sm hover:bg-secondary/40 transition-colors";
     const speed = isServing ? formatServeSpeed(servedBy.tookMs) : "";
     const rawVersion = String(mirror.version || mirror.appVersion || mirror.clientVersion || "").trim();
     const version = rawVersion
@@ -1620,28 +1617,22 @@
     const directUrl = mirrorDirectDashboardUrl(mirror);
     const nodeName = escapeHtml(mirror.node || mirror.machineName || mirror.name || "mirror");
     const nodeLabel = directUrl
-      ? `<a data-repo-direct-mirror href="${escapeHtml(directUrl)}" rel="noopener noreferrer" title="${nodeName}" class="block min-w-0 truncate text-foreground font-mono font-medium underline decoration-border underline-offset-2 hover:text-primary">${nodeName}</a>`
-      : `<span title="${nodeName}" class="block min-w-0 truncate text-foreground font-mono font-medium">${nodeName}</span>`;
+      ? `<a data-repo-direct-mirror href="${escapeHtml(directUrl)}" rel="noopener noreferrer" title="${nodeName}" class="block min-w-0 truncate font-mono text-xs font-medium text-foreground hover:underline">${nodeName}</a>`
+      : `<span title="${nodeName}" class="block min-w-0 truncate font-mono text-xs font-medium text-foreground">${nodeName}</span>`;
     return `
-        <div class="${rowClass}">
-          <i data-lucide="${online ? "radio" : "circle"}" class="h-4 w-4 ${online ? "text-success" : "text-muted-foreground"}"></i>
-          <span class="min-w-0 space-y-1">
-            <span class="flex min-w-0 items-center justify-between gap-2">
-              <span class="min-w-0">${nodeLabel}</span>
-              <span class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${online ? "border-success/30 bg-success/10 text-success" : "border-border text-muted-foreground"}">${escapeHtml(mirror.status || "unknown")}</span>
-            </span>
-            <span class="flex min-w-0 flex-wrap items-center gap-1.5">
-              ${isSource ? '<span class="shrink-0 rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">source of truth</span>' : ""}
-              ${integrityRejected ? '<span class="shrink-0 rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">failing integrity pin</span>' : ""}
-            </span>
-            <span class="flex min-w-0 items-center justify-between gap-2 text-[10px] font-mono text-muted-foreground">
-              <span class="min-w-0 truncate">${version ? escapeHtml(version) : "version unknown"}</span>
-              <span class="flex shrink-0 items-center gap-1.5">
-                ${speed ? `<span class="rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-primary">${escapeHtml(speed)}</span>` : ""}
-                ${directUrl ? `<a data-repo-direct-mirror href="${escapeHtml(directUrl)}" rel="noopener noreferrer" class="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-foreground hover:border-primary/50 hover:text-primary"><i data-lucide="external-link" class="h-3 w-3"></i>Open direct</a>` : ""}
-              </span>
-            </span>
+        <div data-repo-live-mirror-row${isServing ? ' data-serving="true"' : ""} class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-secondary/60">
+          <span class="flex min-w-0 flex-1 items-center gap-1.5">
+            ${nodeLabel}
+            ${isSource ? '<span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">source of truth</span>' : ""}
+            ${integrityRejected ? '<span class="shrink-0 rounded-full border border-destructive/40 px-1.5 text-[10px] font-medium leading-4 text-destructive">failing integrity pin</span>' : ""}
           </span>
+          <span class="flex min-w-0 max-w-[45%] items-center gap-1 font-mono text-[11px] text-muted-foreground">
+            ${isServing && speed
+              ? `<span class="truncate text-foreground" title="Serving this page">${escapeHtml(speed)}</span>`
+              : `<span class="min-w-0 truncate">${version ? escapeHtml(version) : "version unknown"}</span>`}
+            ${online ? "" : `<span class="shrink-0">· ${escapeHtml(mirror.status || "unknown")}</span>`}
+          </span>
+          ${directUrl ? `<a data-repo-direct-mirror href="${escapeHtml(directUrl)}" rel="noopener noreferrer" title="Open direct" aria-label="Open direct on ${nodeName}" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a>` : ""}
         </div>`;
   }
 
@@ -1656,7 +1647,7 @@
     const refMirror = pickReferenceMirror(mirrors);
     container.innerHTML = online.length
       ? online.map((mirror) => renderMirrorRow(mirror, servedBy, refMirror)).join("")
-      : '<div class="border-t border-border px-3 py-2 text-xs text-muted-foreground">No nodes online right now.</div>';
+      : '<div class="px-2 py-1 text-xs text-muted-foreground">No nodes online right now.</div>';
   }
 
   // A repository that has been around collects far more retired desktops than
