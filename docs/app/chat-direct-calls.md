@@ -378,23 +378,28 @@ from Wikimedia Commons (White House weekly addresses of 8 Oct 2016 and of
 the First Lady, May 2014), cropped to 640×360 and 360×640 at 24 fps, plus
 a version with synthetic roll (±12°), pan and zoom.
 
-**Measured** (2026-10-13; the AMD RX 580 in this box through ANGLE/GL; a
-mid-range phone GPU is several times slower, and the adaptive levels exist
-for that):
+**Measured** (2026-10-13, final code; the AMD RX 580 in this box through
+ANGLE/GL, with other builds running on the machine; a mid-range phone GPU
+is several times slower, and the adaptive levels exist for that):
 
-- Network times (run + read back): selfie 3.3 ms, face mesh 2.6 ms,
-  BlazeFace 2.2 ms, hair 5.1 ms. They are bound by per-draw overhead (60
-  to 160 draws each), not arithmetic.
-- Whole frame, grab to composite, 640×360: background blur 3–5 ms; face
-  with or without a background 14–21 ms median, 24–26 ms p90.
+- Network times (run + read back): selfie 4.3 ms, face mesh 2.7 ms,
+  BlazeFace 2.3 ms, hair 5.1 ms. They are bound by per-draw overhead (67
+  to 162 draws each), not arithmetic.
+- Whole frame through `processFrame` with a forced GPU sync, 640×360,
+  median / p90: camera only 12 / 14 ms (upload, composite and the sync
+  itself), blur 15.5 / 18 ms, face + background 22–24 / 25–27 ms (portrait
+  360×640: 24 / 27 ms). With SwiftShader (CPU rendering, far slower than
+  any phone) a face frame took 260 ms and the stage stepped down to level
+  3 as designed.
 - Jitter on a still frame with camera noise (σ 2.5 grey levels): landmarks
-  0.15 % of the eye distance per frame, head contour 0.28 %; the output
-  changed 0.59 grey levels per frame against 1.87 in the camera. On the
-  talking-head clip: landmarks 1.0 %, contour 0.9 % (this includes real
-  speech motion).
+  0.15 % of the eye distance per frame (p95 0.24 %), head contour 0.28 %;
+  the output changed 0.53 grey levels per frame against 1.87 in the
+  camera. On the clip with synthetic roll, pan and zoom (mean motion 4.3 %
+  of the eye distance per frame): landmarks 1.4 %, contour 1.7 %, output
+  change 2.5 against 5.9 grey levels in the camera.
 - iOS path, simulated in Chromium with Vision-format replies (regions and
-  an 8-bit mask): composited correctly; 72 KB per frame through the
-  bridge (JPEG and mask).
+  an 8-bit mask): composited correctly, no in-page selfie model ran;
+  72 KB per frame through the bridge (JPEG and mask).
 
 Limits and what is not verified: the apps' new screens and Vision person
 segmentation were not run on a device (the iOS app target was only
