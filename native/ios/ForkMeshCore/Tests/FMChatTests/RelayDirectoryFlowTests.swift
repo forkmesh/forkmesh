@@ -544,6 +544,49 @@ final class RelaySettingsModelTests: XCTestCase {
         XCTAssertTrue(model.hasMultiple, "the cross-relay browser appears once there is more than one")
     }
 
+    func testEachSignedInProjectShowsItsAccountAvatarAndStatus() async throws {
+        let device = ChatDevice()
+        device.settings.relays.add(try XCTUnwrap(RelayProfile.tryParse("staging.forkmesh.com")))
+        device.settings.relays.add(try XCTUnwrap(RelayProfile.tryParse("signed-out.example.com")))
+        let next = NextAnswer(accountPayload("alice"))
+        let auth = AuthService.create(
+            settings: device.settings, identity: device.identity,
+            http: FakeHTTPClient { _ in HTTPResponse(status: 200, json: .object(next.body)) })
+        _ = try await auth.login(identifier: "alice", password: "pw")
+        var bob = accountPayload("bob")
+        bob["avatarPng"] = "Ym9i"
+        next.body = bob
+        device.settings.relays.setActive("staging.forkmesh.com")
+        auth.adoptActiveRelay()
+        _ = try await auth.login(identifier: "bob", password: "pw")
+        device.settings.relays.setActive(AppEnv.prodHost)
+        auth.adoptActiveRelay()
+        let relay = RelayService(
+            settings: device.settings, identity: device.identity, secureStore: device.secure,
+            connector: FakeWebSocketConnector())
+        relay.setOwnStatus(UserStatus(emoji: "📅", text: "In a meeting"))
+        let http = FakeHTTPClient { _ in
+            HTTPResponse(status: 200, json: ["userStatus": ["away": true, "emoji": "🌴", "text": "Vacationing"]])
+        }
+        let model = RelaySettingsModel(
+            settings: device.settings, auth: auth, relay: relay, switcher: nil,
+            probe: { RelayProbe(http: http) }, http: http)
+
+        await model.refreshStatuses()
+
+        XCTAssertEqual(http.requests.map { $0.url.absoluteString }, ["https://staging.forkmesh.com/api/accounts/user-status"])
+        XCTAssertEqual(http.requests.first?.method, "POST")
+        XCTAssertEqual(http.requests.first?.headers["Authorization"], "Bearer token-bob")
+        let rows = model.rows
+        XCTAssertEqual(rows[0].account, "alice")
+        XCTAssertEqual(rows[0].userStatus, UserStatus(emoji: "📅", text: "In a meeting"))
+        XCTAssertEqual(rows[1].account, "bob")
+        XCTAssertEqual(rows[1].avatarPng, "Ym9i")
+        XCTAssertEqual(rows[1].userStatus, UserStatus(away: true, emoji: "🌴", text: "Vacationing"))
+        XCTAssertEqual(rows[2].account, "")
+        XCTAssertEqual(rows[2].userStatus, .empty)
+    }
+
     func testTappingAnotherRelaySwitchesTheAppToIt() async throws {
         let (model, h) = try await model { _ in versionResponse() }
         await model.switchTo(try XCTUnwrap(h.device.settings.relays.byId("staging.forkmesh.com")))
