@@ -74,7 +74,7 @@ desktop keep the off-by-default rule.
 - Before the catalog loads, a gated package with no entry is installed when
   the project is legacy or the package is in the chosen pack.
 
-Why: the 15 Oct 2026 audit found new installs opened on Repos, Search, Market
+Why: an October 2026 audit found new installs opened on Repos, Search, Market
 and Settings only, with nothing to do, so Kaif's fixed starter set (Standard)
 turned the three bar tabs, the Code tab and the tour on. A single fixed set
 forced agents on people who want a quiet start, so the owner asked for a
