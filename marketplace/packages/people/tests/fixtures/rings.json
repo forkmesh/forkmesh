@@ -1,0 +1,356 @@
+{
+  "now": 1791936000000,
+  "rings": [
+    "blazing",
+    "glowing",
+    "kindling",
+    "warm",
+    "embers"
+  ],
+  "cases": [
+    {
+      "user": {
+        "name": "ada",
+        "activityBucket": "hour",
+        "totalActiveMs": 180000000,
+        "totalSteps": 120000,
+        "officeVisits": 25,
+        "issues": 10,
+        "pulls": 20,
+        "commits": 100,
+        "discussions": 3,
+        "emailVerified": true,
+        "solana": "So1anaAddr",
+        "nodes": [
+          "n1",
+          "n2",
+          "n3"
+        ],
+        "createdAt": 1757376000000,
+        "avatarThumb": "data:image/webp;base64,UklGRg=="
+      },
+      "member": {
+        "name": "ada",
+        "contributions": 133,
+        "nodeCount": 3,
+        "hasPayoutAddress": true,
+        "avatar": "UklGRg=="
+      },
+      "score": 100,
+      "ring": "blazing"
+    },
+    {
+      "user": {
+        "name": "Brook",
+        "activityBucket": "24h",
+        "totalActiveMs": 7200000,
+        "totalSteps": 600,
+        "emailVerified": true,
+        "createdAt": 1784160000000
+      },
+      "member": {
+        "name": "Brook",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 57,
+      "ring": "glowing"
+    },
+    {
+      "user": {
+        "name": "cy",
+        "activityBucket": "5h",
+        "totalActiveMs": 46800000,
+        "totalSteps": 26000,
+        "officeVisits": 6,
+        "commits": 7,
+        "emailVerified": true,
+        "nodes": [
+          "n1"
+        ],
+        "createdAt": 1774656000000
+      },
+      "member": {
+        "name": "cy",
+        "contributions": 7,
+        "nodeCount": 1,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 94,
+      "ring": "blazing"
+    },
+    {
+      "user": {
+        "name": "dee",
+        "activityBucket": "5d",
+        "emailVerified": true,
+        "createdAt": 1786752000000
+      },
+      "member": {
+        "name": "dee",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 36,
+      "ring": "glowing"
+    },
+    {
+      "user": {
+        "name": "eli",
+        "activityBucket": "",
+        "createdAt": 1791676800000
+      },
+      "member": {
+        "name": "eli",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 0,
+      "ring": "kindling"
+    },
+    {
+      "user": {
+        "name": "fay",
+        "activityBucket": "stale",
+        "createdAt": 1790730000000
+      },
+      "member": {
+        "name": "fay",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 0,
+      "ring": "kindling"
+    },
+    {
+      "user": {
+        "name": "gus",
+        "activityBucket": "30d",
+        "createdAt": 1783296000000
+      },
+      "member": {
+        "name": "gus",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 18,
+      "ring": "warm"
+    },
+    {
+      "user": {
+        "name": "hal",
+        "activityBucket": "stale",
+        "issues": 1,
+        "createdAt": 1766016000000
+      },
+      "member": {
+        "name": "hal",
+        "contributions": 1,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 3,
+      "ring": "warm"
+    },
+    {
+      "user": {
+        "name": "ivy",
+        "activityBucket": "120d",
+        "createdAt": 1766016000000,
+        "emailVerified": true
+      },
+      "member": {
+        "name": "ivy",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 9,
+      "ring": "embers"
+    },
+    {
+      "user": {
+        "name": "jo",
+        "activityBucket": "",
+        "createdAt": 0
+      },
+      "member": {
+        "name": "jo",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 0,
+      "ring": "embers"
+    },
+    {
+      "user": {
+        "name": "kit",
+        "activityBucket": "60d",
+        "totalSteps": 1,
+        "createdAt": 1789344000000
+      },
+      "member": {
+        "name": "kit",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 12,
+      "ring": "warm"
+    },
+    {
+      "user": {
+        "name": "lux",
+        "activityBucket": "3d",
+        "createdAt": 1791763200000
+      },
+      "member": {
+        "name": "lux",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 36,
+      "ring": "glowing"
+    },
+    {
+      "user": {
+        "name": "node-1",
+        "kind": "node",
+        "activityBucket": "hour"
+      },
+      "member": null,
+      "score": null,
+      "ring": null
+    },
+    {
+      "user": {
+        "name": "",
+        "activityBucket": "hour"
+      },
+      "member": null,
+      "score": null,
+      "ring": null
+    },
+    {
+      "user": {
+        "name": "max",
+        "activityBucket": "hour",
+        "totalActiveMs": 18000000,
+        "createdAt": 1790208000000,
+        "emailVerified": true,
+        "solana": " ",
+        "userStatus": {
+          "emoji": "🔥",
+          "text": "shipping"
+        }
+      },
+      "member": {
+        "name": "max",
+        "contributions": 0,
+        "nodeCount": 0,
+        "hasPayoutAddress": false,
+        "avatar": ""
+      },
+      "score": 64,
+      "ring": "glowing"
+    }
+  ],
+  "order": [
+    {
+      "ring": "blazing",
+      "names": [
+        "ada",
+        "cy"
+      ]
+    },
+    {
+      "ring": "glowing",
+      "names": [
+        "max",
+        "Brook",
+        "dee",
+        "lux"
+      ]
+    },
+    {
+      "ring": "kindling",
+      "names": [
+        "eli",
+        "fay"
+      ]
+    },
+    {
+      "ring": "warm",
+      "names": [
+        "gus",
+        "kit",
+        "hal"
+      ]
+    },
+    {
+      "ring": "embers",
+      "names": [
+        "ivy",
+        "jo"
+      ]
+    }
+  ],
+  "layout": [
+    {
+      "size": 360,
+      "seat": 30,
+      "label": 72,
+      "radii": [
+        46.8,
+        75.6,
+        104.4,
+        133.2,
+        162
+      ],
+      "capacities": [
+        4,
+        10,
+        15,
+        21,
+        26
+      ]
+    },
+    {
+      "size": 560,
+      "seat": 40,
+      "label": 104,
+      "radii": [
+        72.8,
+        117.6,
+        162.4,
+        207.2,
+        252
+      ],
+      "capacities": [
+        4,
+        12,
+        18,
+        25,
+        31
+      ]
+    }
+  ]
+}

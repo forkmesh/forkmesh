@@ -118,6 +118,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "vault" -> Route.Vault(null)
     "calories" -> Route.Calories
     "glassesAlert" -> Route.GlassesAlert
+    "people" -> Route.People
     "notes" -> Route.Notes
     "tasks" -> Route.Tasks(null)
     "calendar" -> Route.Calendar(null, CalendarMode.Month)

@@ -113,6 +113,7 @@ object RouteCatalog {
         Route.Kind.Dm -> "Direct message"
         Route.Kind.Discord -> "Discord"
         Route.Kind.Profile -> "Profile"
+        Route.Kind.People -> "People"
         Route.Kind.Search -> "Search"
         Route.Kind.Notes -> "Notes"
         Route.Kind.Note -> "Note"
@@ -184,6 +185,7 @@ object RouteCatalog {
         Route.Kind.Dm -> "mail"
         Route.Kind.Discord -> "sports_esports"
         Route.Kind.Profile -> "account_circle"
+        Route.Kind.People -> "groups"
         Route.Kind.Search -> "search"
         Route.Kind.Notes, Route.Kind.Note -> "sticky_note_2"
         Route.Kind.Tasks, Route.Kind.Task -> "task_alt"
@@ -313,6 +315,7 @@ object HubCatalog {
     fun app(guest: Boolean): List<HubItem> = buildList {
         add(HubItem.destination(Route.Settings(null)))
         add(HubItem.destination(Route.Orgs))
+        add(HubItem.destination(Route.People))
         add(HubItem.destination(Route.Projects))
         add(HubItem("setStatus", "Set status", "emoji_emotions", HubItem.Action.SetStatus))
         add(HubItem("reportBug", "Report a bug", "bug_report", HubItem.Action.ReportBug))

@@ -54,6 +54,9 @@ struct NativePackageHost {
     std::function<void(const QString &, const QString &, const QString &,
                        NativePackageSpecialAgentActionHandler)>
         specialAgentAction;
+    std::function<QString()> accountName;
+    std::function<void(const QString &)> openDirectMessage;
+    std::function<void(const QString &)> openUserProfile;
 };
 
 struct NativePackagePromptTarget {
