@@ -17,6 +17,7 @@ MODULES = (
     PUBLIC / "chat-call-segment.js",
     PUBLIC / "chat-call-face-mesh.js",
     PUBLIC / "chat-call-face-tracker.js",
+    PUBLIC / "chat-call-outfits.js",
     PUBLIC / "chat-call-face-render.js",
     PUBLIC / "chat-call-backgrounds.js",
     PUBLIC / "chat-call-faces.js",

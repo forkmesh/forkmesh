@@ -46,7 +46,7 @@ function options(argv) {
 const OFFLINE_PAGE = `<!doctype html><meta charset=utf-8><body style="margin:0"><script type=module>
 const faces = await import('/chat-call-faces.js');
 window.makeStage = async (o) => {
-  window.stage = faces.createFaceStage({ manual: true, faceId: o.face || '', backgroundId: o.background || '', backgroundImage: o.image || '' });
+  window.stage = faces.createFaceStage({ manual: true, faceId: o.face || '', backgroundId: o.background || '', backgroundImage: o.image || '', outfitId: o.outfit || '' });
   const t0 = performance.now();
   while (!window.stage.ready() && performance.now() - t0 < 60000) await new Promise((r) => setTimeout(r, 100));
   return window.stage.ready();
@@ -107,7 +107,7 @@ async function render(opts) {
   page.on("pageerror", (error) => console.error("page error:", error.message));
   await page.goto(base + "/__harness/offline.html");
   await page.waitForFunction(() => window.ready);
-  const ready = await page.evaluate((o) => window.makeStage(o), { face: opts.face || "", background: opts.background || "" });
+  const ready = await page.evaluate((o) => window.makeStage(o), { face: opts.face || "", background: opts.background || "", outfit: opts.outfit || "" });
   if (!ready) console.error("the stage did not become ready (missing model or image?)");
   const files = fs.readdirSync(frames).filter((name) => /\.(png|jpg)$/.test(name)).sort().slice(0, Number(opts.count || 1e9));
   const every = Number(opts.every || 1);
@@ -200,7 +200,7 @@ const COMMANDS = { render, native, models };
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   if (!COMMANDS[command]) {
-    console.log("usage: call_video_harness.cjs render --frames DIR [--face ID] [--background ID] --out DIR [--every N] [--count N] [--gpu]");
+    console.log("usage: call_video_harness.cjs render --frames DIR [--face ID] [--background ID] [--outfit ID] --out DIR [--every N] [--count N] [--gpu]");
     console.log("       call_video_harness.cjs native --clip FILE.y4m [--face ID] [--background ID] --out FILE.png [--gpu]");
     console.log("       call_video_harness.cjs models [--gpu]");
     process.exit(2);

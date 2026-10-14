@@ -920,12 +920,21 @@ def test_blog_refresh_discovers_rss_imports_posts_and_deduplicates():
     assert runtime.outbound_calls[0][0] == source
     assert runtime.outbound_calls[1][0] == feed_url
 
+    assert refreshed["data"]["refresh"]["metrics"]["posts"] == 2
+
     repeated = call(runtime.use("POST"), "/api/marketing/acme/refresh")
     assert repeated["data"]["refresh"] == {
         "channel": "blog", "imported": 0, "items": 2,
         "feed": repeated["data"]["refresh"]["feed"],
+        "metrics": repeated["data"]["refresh"]["metrics"],
     }
+    assert repeated["data"]["refresh"]["metrics"]["posts"] == 2
     assert len(repeated["data"]["content"]) == 2
+    health = next(item for item in repeated["data"]["summary"]["channels"]
+                  if item["channel"] == "blog")["health"]
+    assert {check["id"]: check["ok"] for check in health["checks"]}["fresh"] is True
+    assert [metric["source"] for metric in repeated["data"]["metrics"]
+            if metric["channel"] == "blog"][:1] == ["refresh"]
 
 
 def test_ads_manager_plans_an_ad_on_any_catalog_channel():
@@ -2250,6 +2259,32 @@ def test_performance_joins_analytics_campaigns_with_ads_reddit_and_the_report():
     assert "| launch (reddit / paid) | 25 |" in markdown
     assert "- Launch promo: 25 visits at USD 2 per visit, 5 conversions" in markdown
     assert "Where to improve:" in markdown and "links without campaign tags" in markdown
+
+
+def test_performance_counts_views_for_each_blog_post_and_per_day():
+    runtime, analytics = _analytics_runtime()
+    runtime.db.execute(
+        "INSERT INTO analytics_projects VALUES(?,?,?,?,?,?,?,?,?)",
+        ("a" * 32, "org:acme", "acme", "fma_" + "0" * 40, 1, "alice", 1, 1,
+         'sealed:{"name": "Site"}'))
+    call(runtime.use("PUT", body={"channels": [
+        {"id": "blog", "enabled": True, "profileUrl": "https://forkmesh.com/blog/"},
+        {"id": "github", "enabled": True, "profileUrl": "https://github.com/forkmesh"}]}),
+        "/api/marketing/acme/settings")
+    site = {"$host": "www.forkmesh.com"}
+    _seed_visits(runtime, analytics,
+                 [(site, ["/blog/new", "/blog/old"])] * 3 + [(site, ["/blog/new/"])] * 2
+                 + [(site, ["/", "/docs"])] * 4 + [({"$host": "elsewhere.test"}, ["/blog/new"])])
+    perf = call(runtime.use("GET", params={"from": runtime.clock - 7 * marketing.DAY_MS}),
+                "/api/marketing/acme/performance")["data"]["performance"]
+    blog = perf["channelViews"]["blog"]
+    assert (blog["host"], blog["path"], blog["views"], blog["visitors"]) == (
+        "forkmesh.com", "/blog", 8, 5)
+    assert sum(count for _, count in blog["days"]) == 8
+    assert all(day % marketing.DAY_MS == 0 for day, _ in blog["days"])
+    assert set(perf["channelViews"]) == {"blog"}
+    pages = {(row["host"], row["path"]): (row["views"], row["visitors"]) for row in perf["pages"]}
+    assert pages == {("forkmesh.com", "/blog/new"): (5, 5), ("forkmesh.com", "/blog/old"): (3, 3)}
 
 
 def test_performance_explains_missing_analytics_and_the_report_still_renders():

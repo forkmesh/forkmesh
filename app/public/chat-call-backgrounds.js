@@ -3,6 +3,8 @@ export const CALL_BACKGROUND_IMAGE_KEY = "forkmesh.chat.callBackgroundImage";
 export const CALL_BACKGROUND_BASE = "/assets/call-backgrounds/";
 export const CUSTOM_BACKGROUND_ID = "custom";
 export const CUSTOM_BACKGROUND_SIDE = 1920;
+export const PORTRAIT_SUFFIX = "-portrait";
+export const PORTRAIT_RATIO = 1.05;
 
 export const CALL_BACKGROUNDS = Object.freeze([
   Object.freeze({ id: "", label: "No background", mode: "off" }),
@@ -20,9 +22,14 @@ export function callBackgroundById(id) {
   return CALL_BACKGROUNDS.find((background) => background.id === id) || null;
 }
 
-export function callBackgroundImageUrl(background) {
+export function isPortraitFrame(width, height) {
+  return Boolean(width && height && height > width * PORTRAIT_RATIO);
+}
+
+export function callBackgroundImageUrl(background, portrait = false) {
   if (!background?.file) return "";
-  return globalThis.FmCallBackgroundImages?.[background.file] || `${CALL_BACKGROUND_BASE}${background.file}.jpg`;
+  const stem = portrait ? `${background.file}${PORTRAIT_SUFFIX}` : background.file;
+  return globalThis.FmCallBackgroundImages?.[stem] || `${CALL_BACKGROUND_BASE}${stem}.jpg`;
 }
 
 export function callBackgroundThumbUrl(background) {

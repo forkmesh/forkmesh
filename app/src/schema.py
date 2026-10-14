@@ -848,7 +848,8 @@ SCHEMA_STATEMENTS = [
         recipient_bi TEXT NOT NULL,
         ts INTEGER NOT NULL,
         read_at INTEGER NOT NULL DEFAULT 0,
-        data TEXT NOT NULL)""",
+        data TEXT NOT NULL,
+        content_bi TEXT NOT NULL DEFAULT '')""",
     "CREATE INDEX IF NOT EXISTS idx_notifications_recipient_ts ON notifications(recipient_bi, ts)",
     "CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(recipient_bi, read_at, ts)",
     # Thread subscriptions (issue #361): who follows a given issue/PR. thread_bi is
@@ -4638,6 +4639,10 @@ SCHEMA_STATEMENTS = [
         account_bi TEXT NOT NULL,
         sent_at INTEGER NOT NULL,
         PRIMARY KEY (campaign_id, account_bi))""",
+    "CREATE TABLE IF NOT EXISTS notification_email_sends (send_bi TEXT "
+    "PRIMARY KEY, created_at INTEGER NOT NULL CHECK (created_at >= 0))",
+    "CREATE INDEX IF NOT EXISTS idx_notification_email_sends_created ON "
+    "notification_email_sends(created_at)",
     """CREATE TABLE IF NOT EXISTS email_sends (
         send_id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,

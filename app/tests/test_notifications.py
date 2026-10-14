@@ -802,7 +802,9 @@ def _load_digest_sender(sent, saved):
                   "_send_notification_emails_singly",
                   "_deliver_immediate_notifications",
                   "_notification_pull_key", "_notification_pull_settled",
-                  "_notification_email_stale"}
+                  "_notification_email_stale", "_notification_email_send_key",
+                  "_claim_notification_email", "_release_notification_emails",
+                  "prune_notification_email_sends"}
     want_assigns = {
         "NOTIFICATION_EMAIL_KINDS", "NOTIFICATION_EMAIL_DEFAULTS",
         "NOTIFICATION_DELIVERY_MODES", "NOTIFICATION_DELIVERY_DEFAULT",
@@ -815,6 +817,7 @@ def _load_digest_sender(sent, saved):
         "NOTIFICATION_IMMEDIATE_KINDS", "NOTIFICATION_IMMEDIATE_SOURCES",
         "NOTIFICATION_IMMEDIATE_CONTEXTS", "NOTIFICATION_IMMEDIATE_SCAN", "NOTIFICATION_IMMEDIATE_FRESH_MS",
         "NOTIFICATION_PULL_STATE_KINDS", "NOTIFICATION_PULL_STATE_MAX_READS",
+        "NOTIFICATION_EMAIL_SEND_RETAIN_MS",
     }
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
     body = []
@@ -852,7 +855,31 @@ def _load_digest_sender(sent, saved):
                 if row["recipient_bi"] == recipient_bi and not row["read_at"]
                 and last < row["ts"] <= cutoff]
         hits.sort(key=lambda row: row["ts"], reverse="DESC" in sql)
-        return [{"ts": row["ts"], "data": row["data"]} for row in hits[:limit]]
+        return [{"dedupe_bi": row.get("dedupe_bi", ""), "ts": row["ts"],
+                 "data": row["data"]} for row in hits[:limit]]
+
+    email_sends = {}
+
+    class _RunResult:
+        def __init__(self, changes):
+            self.meta = type("Meta", (), {"changes": changes})()
+
+    async def d1_run(_env, sql, *params):
+        if sql.startswith("INSERT OR IGNORE INTO notification_email_sends"):
+            key, created_at = params
+            if key in email_sends:
+                return _RunResult(0)
+            email_sends[key] = created_at
+            return _RunResult(1)
+        if sql.startswith("DELETE FROM notification_email_sends WHERE send_bi"):
+            email_sends.pop(params[0], None)
+            return _RunResult(1)
+        if sql.startswith("DELETE FROM notification_email_sends WHERE created_at"):
+            for key in [key for key, at in email_sends.items()
+                        if at < params[0]]:
+                email_sends.pop(key)
+            return _RunResult(1)
+        raise AssertionError(sql)
 
     queries = []
 
@@ -911,6 +938,8 @@ def _load_digest_sender(sent, saved):
         "queries": queries,
         "d1_all": d1_all,
         "d1_first": d1_first,
+        "d1_run": d1_run,
+        "email_sends": email_sends,
         "decrypt_row": decrypt_row,
         "_send_email": _send_email,
         "_save_account": _save_account,
@@ -972,6 +1001,7 @@ def _row(recipient_bi, ts, title, kind="mention", source="", meta=None):
     if meta:
         payload["meta"] = meta
     return {"recipient_bi": recipient_bi, "ts": ts, "read_at": 0,
+            "dedupe_bi": recipient_bi + ":" + title,
             "data": "payload:" + title, "payload": payload}
 
 
