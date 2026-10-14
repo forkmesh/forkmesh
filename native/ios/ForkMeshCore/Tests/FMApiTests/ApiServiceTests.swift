@@ -310,6 +310,26 @@ final class ApiServiceTests: XCTestCase {
         XCTAssertEqual(http.requests.count, 3)
     }
 
+    func testAccountAvatarTellsAnUnreachableServerFromNoPicture() async throws {
+        let http = FakeHTTPClient { request in
+            switch request.apiPath {
+            case "/api/accounts/alice": return apiJSON(["exists": true, "kind": "user", "avatarPng": "iVBOR"])
+            case "/api/accounts/bob": throw HTTPError.transport("offline")
+            default: return apiText("", status: 404)
+            }
+        }
+        let api = makeTestApi(http)
+
+        let alice = await api.accountAvatarPngIfReached("alice")
+        XCTAssertEqual(alice, "iVBOR")
+        let missing = await api.accountAvatarPngIfReached("mainnode-a")
+        XCTAssertEqual(missing, "")
+        let offline = await api.accountAvatarPngIfReached("bob")
+        XCTAssertNil(offline)
+        let offlinePlain = await api.accountAvatarPng("bob")
+        XCTAssertEqual(offlinePlain, "")
+    }
+
     func testListDevicesAcceptsAWrappedOrBareList() async throws {
         let http = FakeHTTPClient { _ in apiJSON([["id": "d1", "kind": "mobile_node", "enabled": 0]]) }
         let devices = try await makeTestApi(http, token: "tok").listDevices()
