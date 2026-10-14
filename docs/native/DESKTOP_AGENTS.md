@@ -179,6 +179,39 @@ works.
   beats come from the same transcript, so its body moves, plays and speaks
   like a ForkMesh run.
 
+### A prompt sent to a terminal session froze the run screen
+
+Fixed 2026-10-14. A prompt typed from the phone into a terminal Claude Code
+reached it, but the run screen stopped moving until the user went back to the
+list and opened the row again. The row changed id under the open screen. An
+idle terminal Claude Code is a machine agent (id from `pid:<pid>`). The prompt
+made it write its `.jsonl`, the desktop's external scan of the open repository
+(sessions written within 90 s) surfaced it under a new id from its uuid, and
+`findSessionPids` fell back to the folder and hid every Claude Code in that
+folder. The follow on the old id answered `unknown_session` and the phone
+ended it. Ninety seconds after the last write the surfaced row stopped
+counting as live and the machine agents came back, under new ids again.
+
+- **One id per session.** `registerExternalSession` gives a newly surfaced
+  session the id of the machine agent already showing it (Claude's
+  `sessions/<pid>.json` names its uuid, or the agent's transcript is the
+  same file). `applyMachineAgents` keeps that pid's id while the session is
+  surfaced, so the machine agent gets the same id back if it reappears, and
+  `agents.list` lists no machine agent whose id is a live surfaced session.
+- **Live while its process runs.** `externalIsLive` also counts a session
+  whose Claude record (`m_claudePeerSessions`) names its uuid, so a surfaced
+  terminal session stays one running row while it waits for the next prompt.
+- **Exact processes and files.** A surfaced session's processes are the ones
+  whose Claude record names it; the folder fallback only runs for a session
+  with no record and skips processes whose record names another session.
+  `MachineAgentScan` reads a Claude Code's transcript from its record
+  (`recordedClaudeSession`) before falling back to `--resume` or the newest
+  unclaimed `.jsonl` in the folder. That guess gave several Claude Codes in
+  the same folder each other's transcripts, and they swapped whenever another
+  one wrote.
+- **Phone.** iOS `AgentRunScreen` follows the run again after a prompt it
+  sent when its follow has ended, so the reply streams in without reopening.
+
 ## Agents of other users on the machine
 
 Fixed 2026-09-30. The phone showed "Claude Code started outside ForkMesh on
