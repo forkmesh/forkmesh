@@ -5,7 +5,7 @@ A completed signup rings two rooms the outer Worker can reach: the World
 presence Durable Object and the shared public #general chat room. Everyone
 already holding a socket — the 3D World, the website chat pages, the World's
 embedded chat panel, and desktop nodes — gets fireworks and confetti, and the
-web clients write "<name> just joined ForkMesh. Say hello in #general." into
+web clients write "<name> just joined ForkMesh. Say hello in #welcome." into
 their chat feed. There is no announcement card: no toasts, the text is shown
 inline in the feed.
 
@@ -276,7 +276,7 @@ def test_world_visitors_get_fireworks_confetti_and_a_chat_feed_greeting():
     assert "world-instance-announcement" not in handler
     assert (
         "this.notifyChatArea(`🎉 ${name} just joined ForkMesh. "
-        'Say hello in #general.`, "status");'
+        'Say hello in #welcome.`, "status");'
     ) in handler
     # One party per newcomer even inside the World, where the presence socket
     # and the embedded chat panel's room socket both carry the same news: the
@@ -306,7 +306,7 @@ def test_chat_clients_share_one_celebration_and_cannot_render_a_name_as_markup()
     assert "HANDLE_RE.test(name)" in WELCOME_JS
     assert "innerHTML" not in WELCOME_JS
     assert "fm-member-welcome-card" not in WELCOME_JS
-    assert "just joined ForkMesh. Say hello in #general." in WELCOME_JS
+    assert "just joined ForkMesh. Say hello in #welcome." in WELCOME_JS
     assert "if (celebrateNewMember(envelope.name)) {" in CHAT_JS
     assert "if (!module?.celebrateNewMember?.(name)) return;" in DASHBOARD_CHAT
     assert "module.NEW_MEMBER_GREETING(" in DASHBOARD_CHAT
@@ -346,14 +346,15 @@ def test_desktop_nodes_celebrate_from_the_same_relayed_frame():
     handler = handler[:handler.index("\n}\n")]
     assert "forkmesh::ui::CelebrationOverlay(this)" in handler
     assert "Welcome %1" in handler
-    assert 'QStringLiteral("fm:chat:general")' in handler
+    assert "welcomeChannelForIdentity()" in handler
+    assert "item.link.ref = room;" in handler
     # ...and that toast link actually lands in #general.
     link = MAIN_WINDOW_SETTINGS[
         MAIN_WINDOW_SETTINGS.index(
             '    if (href == QLatin1String("fm:chat:general")) {'):]
     link = link[:link.index("return true;")]
     assert "showChatView();" in link
-    assert 'switchConversation(QStringLiteral("#general"));' in link
+    assert "forkmesh::office::everyoneGeneralConversation()" in link
     overlay = MAIN_WINDOW_INTERNAL[
         MAIN_WINDOW_INTERNAL.index("class CelebrationOverlay final"):]
     overlay = overlay[:overlay.index("\nclass RingSpinner")]

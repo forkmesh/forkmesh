@@ -44,6 +44,7 @@ constexpr int kMaxLiveDirectRooms = 8;
 constexpr int kMaxDirectDeviceKeys = 64;
 constexpr int kMaxDeviceKeyChars = 64;
 constexpr int kMaxInvitees = 500;
+constexpr int kMaxEveryoneMembers = 20000;
 
 const QRegularExpression &usernamePattern()
 {
@@ -144,6 +145,51 @@ QString organizationForConversation(const QString &conversation)
     if (!name.contains(QLatin1Char('/')))
         return QString();
     return name.section(QLatin1Char('/'), -2, -2);
+}
+
+QString everyoneChannelId(const QString &name)
+{
+    return sha256Hex(QStringLiteral("forkmesh-everyone-channel-v1:") + name)
+        .left(32);
+}
+
+bool isEveryoneChannelName(const QString &name)
+{
+    return name == QLatin1String("general") ||
+           name == QLatin1String("random") || name == QLatin1String("welcome");
+}
+
+QStringList everyoneConversations()
+{
+    return {conversationForChannel(QStringLiteral("general")),
+            conversationForChannel(QStringLiteral("random")),
+            conversationForChannel(QStringLiteral("welcome"))};
+}
+
+QString everyoneGeneralConversation()
+{
+    return conversationForChannel(QStringLiteral("general"));
+}
+
+QString everyoneWelcomeConversation()
+{
+    return conversationForChannel(QStringLiteral("welcome"));
+}
+
+QString worldConversation()
+{
+    return QStringLiteral("#general");
+}
+
+QString worldLabel()
+{
+    return QStringLiteral("World");
+}
+
+bool isRetiredRelayChannel(const QString &channel)
+{
+    return channel == QLatin1String("#welcome") ||
+           channel == QLatin1String("#random");
 }
 
 QByteArray channelCreateProof(const QString &account, const QString &ts,
@@ -1073,6 +1119,28 @@ bool OfficeChannelMirror::isPrivateConversation(
     return false;
 }
 
+bool OfficeChannelMirror::isEveryoneConversation(
+    const QString &conversation) const
+{
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it) {
+        if (it->conversation == conversation)
+            return it->everyone;
+    }
+    return false;
+}
+
+int OfficeChannelMirror::memberCountForConversation(
+    const QString &conversation) const
+{
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it) {
+        if (it->conversation == conversation)
+            return it->everyone ? qMax(int(it->memberCount),
+                                       int(it->members.size()))
+                                : int(it->members.size());
+    }
+    return 0;
+}
+
 bool OfficeChannelMirror::isServerVisibleConversation(
     const QString &conversation) const
 {
@@ -1957,6 +2025,7 @@ void OfficeChannelMirror::fetchChannels()
                 .value(QStringLiteral("channels")).toArray();
         QStringList conversations;
         QSet<QString> live;
+        bool fetchEveryone = false;
         for (const QJsonValue &value : channels) {
             if (conversations.size() >= kMaxChannels)
                 break;
@@ -1998,17 +2067,36 @@ void OfficeChannelMirror::fetchChannels()
                     }
                 }
             }
+            const bool everyone =
+                !privateRoom &&
+                channel.value(QStringLiteral("kind")).toString() ==
+                    QLatin1String("everyone") &&
+                forkmesh::office::isEveryoneChannelName(room.name);
+            const int memberCount =
+                everyone ? qBound(0,
+                                  channel.value(QStringLiteral("memberCount"))
+                                      .toInt(),
+                                  kMaxEveryoneMembers)
+                         : 0;
+            if (everyone)
+                members = room.members;
             const bool serverVisible =
                 channel.value(QStringLiteral("serverVisible")).toBool();
             const bool privacyChanged = room.privateRoom != privateRoom ||
                                         room.serverVisible != serverVisible;
             const bool membersChanged =
-                privacyChanged || room.members != members;
+                privacyChanged || room.members != members ||
+                room.everyone != everyone || room.memberCount != memberCount;
             const bool topicChangedNow = room.topic != topic;
             room.privateRoom = privateRoom;
             room.serverVisible = serverVisible;
             room.readOnly = channel.value(QStringLiteral("readOnly")).toBool();
-            room.canManage = canManage;
+            room.canManage = canManage && !everyone;
+            room.everyone = everyone;
+            room.memberCount = memberCount;
+            if (everyone && (room.members.isEmpty() ||
+                             memberCount != m_everyoneMembersFetchedCount))
+                fetchEveryone = true;
             room.topic = topic;
             room.members = members;
             room.order = int(conversations.size());
@@ -2057,6 +2145,70 @@ void OfficeChannelMirror::fetchChannels()
             fetchHistory(id);
             ensureReceiver(id);
         }
+        if (fetchEveryone)
+            fetchEveryoneMembers();
+    });
+}
+
+void OfficeChannelMirror::fetchEveryoneMembers()
+{
+    if (m_everyoneMembersFetching || !ready())
+        return;
+    QString channelId;
+    int firstOrder = 0;
+    int expected = 0;
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it) {
+        if (!it->everyone)
+            continue;
+        if (channelId.isEmpty() || it->order < firstOrder) {
+            channelId = it.key();
+            firstOrder = it->order;
+        }
+        expected = qMax(expected, int(it->memberCount));
+    }
+    if (channelId.isEmpty())
+        return;
+    const QString ts = QString::number(QDateTime::currentMSecsSinceEpoch());
+    const QUrl url = signedUrl(
+        QStringLiteral("/api/chat/channels/%1/members").arg(channelId), ts,
+        forkmesh::office::channelMembersProof(m_account, channelId, ts,
+                                              QStringLiteral("GET"),
+                                              QString()));
+    m_everyoneMembersFetching = true;
+    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, expected]() {
+        m_everyoneMembersFetching = false;
+        const QByteArray body = reply->readAll();
+        const bool failed = reply->error() != QNetworkReply::NoError;
+        reply->deleteLater();
+        if (failed)
+            return;
+        const QJsonObject payload = QJsonDocument::fromJson(body).object();
+        if (!payload.value(QStringLiteral("everyone")).toBool())
+            return;
+        QStringList members;
+        QSet<QString> seen;
+        for (const QJsonValue &value :
+             payload.value(QStringLiteral("members")).toArray()) {
+            if (members.size() >= kMaxEveryoneMembers)
+                break;
+            const QString name = normalizedUsername(
+                value.toObject().value(QStringLiteral("username")).toString());
+            if (name.isEmpty() || seen.contains(name))
+                continue;
+            seen.insert(name);
+            members.append(name);
+        }
+        m_everyoneMembersFetchedCount = expected;
+        QStringList changed;
+        for (auto it = m_rooms.begin(); it != m_rooms.end(); ++it) {
+            if (!it->everyone || it->members == members)
+                continue;
+            it->members = members;
+            changed.append(it->conversation);
+        }
+        for (const QString &conversation : std::as_const(changed))
+            emit roomMembersChanged(conversation, members);
     });
 }
 

@@ -14,9 +14,9 @@ enum ChatChannelPage: Hashable {
 enum ChatChannelGrouping {
     static func rows(_ hub: ChatHub, _ groups: ChannelGroupsStore?) -> [ChannelGroups.Row] {
         let state: ChannelGroups.State = groups?.state ?? ChannelGroups.State()
-        let listed: [String] = (hub.channels + hub.officeChannels).filter { !hub.workspace.isStarred($0) }
+        let listed: [String] = hub.listedChannels.filter { !hub.workspace.isStarred($0) }
         return ChannelGroups.layout(state, channels: listed) { (channel: String) in
-            OfficeFrames.isOffice(channel) ? "Office" : ""
+            OfficeFrames.isOffice(channel) && !hub.isEveryoneChannel(channel) ? "Office" : ""
         }
     }
 
@@ -103,7 +103,7 @@ struct ChatChannelSheet: View {
     private func leave() {
         hub.workspace.forget(conversation: conversation)
         hub.extras.removeChannel(conversation)
-        if hub.currentConversation == conversation { hub.select("#general") }
+        if hub.currentConversation == conversation { hub.select(hub.generalConversation) }
         dismiss()
     }
 

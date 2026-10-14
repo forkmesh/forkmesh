@@ -47,7 +47,8 @@ def test_removed_or_rotated_channel_closes_stale_room_and_falls_back():
     source = _function_source("reconcilePrivateChannels")
     assert "keyVersion" in source
     assert "switchChatRoom" in source
-    assert 'setActiveChannel("#general")' in source
+    assert 'setActiveChannel(defaultChannelKey())' in source
+    assert 'setActiveChannel("#general")' not in source
     assert "privateChannels.delete" in source or "privateChannels.clear" in source
 
 

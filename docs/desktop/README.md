@@ -867,6 +867,62 @@ Details, manual CMake, test targets and known failures:
     it loses focus empty. Ctrl+F still belongs to MainWindow's find-in-page.
   - Tests: `forkmesh-home-board-tests` (layout model, menu actions, drag,
     swipe, pull, typing, dots) and `checkHomeGridPage` in the window suite.
+- 2026-10-14: `#general`, `#random` and `#welcome` are real server
+  channels with every ForkMesh member in them. The product owner wanted
+  them, with new members welcomed in `#welcome`. The server lists them
+  first with `kind: "everyone"` (`app/src/chat_channels_api.py`), and
+  `OfficeChannelMirror` mirrors them like any public office channel. Their
+  conversation keys are `#office/general`, `#office/random` and
+  `#office/welcome`.
+  - *Sidebar.* `setChannels` puts the three first, in that order, ahead of
+    the relay room and the other channels. When signed in, server `#general`
+    is the default conversation. If the relay connected first and its room
+    was picked automatically, the window moves to server `#general` the
+    first time the mirror lists it. A later relist does not move the user.
+  - *World.* The relay's shared room keeps its `#general` key, so stored
+    history, unread counts and read marks still work, but it is labelled
+    **World** (`chatConversationLabel`, `officeChannelLabel`, the sidebar
+    row, the heading and the composer placeholder). It is the 3D World and
+    visitor chat. This avoids two `#general`s. Signed out, World is the only
+    channel. The relay's `#welcome` and `#random` are retired
+    (`forkmesh::office::isRetiredRelayChannel`). `ServerNode` starts with
+    `#general` only, ignores those two names in `hello` and `channel`
+    adverts, and drops their chat and history frames from older clients.
+    `startSession` no longer creates them.
+  - *No management.* The relay returns `canManage: false` and answers
+    `403 everyone_channel_fixed`. The mirror also forces `canManage` off for
+    these channels, so the settings dialog is read-only and says they cannot
+    be renamed, left, made private or deleted. No invite button or `/topic`
+    is offered.
+  - *Members.* The mirror reads `GET /api/chat/channels/{id}/members` once
+    for all three channels, using the first channel's id and the GET
+    members proof with an empty username. It reads again only when
+    `memberCount` changes. Usernames are normalized and deduplicated, with a
+    limit of 20,000. The members popover lists those people (falling back
+    to the whole directory until the read lands) under "EVERY FORKMESH
+    MEMBER IS HERE". The count button shows the larger of `memberCount` and
+    the list size.
+  - *Welcome.* The server's signup note (`senderId: "system:welcome"`,
+    `webhook: true`) is an ordinary unsealed public-channel frame and shows
+    as a normal message in `#welcome`. `kWelcomeChannel` is now
+    `#office/welcome`. The "New user joined" ping fires for other people's
+    messages there but not for the system note, because the relay's
+    new-member frame already files a ping (`onNewMemberJoined`). That ping
+    now opens `#welcome`, or World when signed out (`welcomeChannelForIdentity`).
+    The one-time "Just joined ForkMesh — hello!" post goes to server
+    `#welcome` once the mirror can send there. `fm:chat:general` opens
+    server `#general` when it is listed.
+  - *Unchanged on purpose.* Repository announcements (`repositoryChannel`),
+    the MCP `read_chat_messages` and `post_chat_message` tools, and the
+    "Email me a daily #general count" digest still use the relay room. The
+    MCP help text now calls it the World chat. Special-agent relay rooms
+    list relay rooms only, and the relay `#general` now reads World there.
+  - Tests: `testOfficeEveryoneChannels` (`forkmesh-chat-transport-tests`)
+    covers the fixed ids, listing order, the no-manage gates, the signed
+    members read and the welcome note. `checkEveryoneChannels`
+    (`forkmesh-window-tests --chat-unread-only`) covers the retired relay
+    rows, the World label, sidebar order and default selection.
+    `app/tests/test_desktop_chat_channel_merge.py` pins the relay set.
 - 2026-10-10: Reading a chat on another device clears its unread badge here,
   and reading it here clears it there (issue 1876). The desktop posts a signed
   read mark (`forkmesh-chat-reads-mark-v1`) when you view a conversation.

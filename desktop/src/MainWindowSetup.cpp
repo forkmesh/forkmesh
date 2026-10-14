@@ -2352,8 +2352,6 @@ void MainWindow::startSession()
             QDateTime::currentMSecsSinceEpoch() + 12000;
         updateChatIdentity();
         m_backend->addChannel(QStringLiteral("general"));
-        m_backend->addChannel(kWelcomeChannel);
-        m_backend->addChannel(QStringLiteral("random"));
         restorePrivateChannels();
         // Team coordination is private by construction. Configured local
         // teammates are admitted by the desktop relay, while other people
@@ -3155,6 +3153,7 @@ void MainWindow::startOfficeChannelMirror()
                     refreshChannelSettingsButton();
                     refreshChatComposerAccess();
                     refreshRoomSealButton();
+                    maybeAnnounceWelcome();
                     if (!m_pendingOfficeConversation.isEmpty() &&
                         conversations.contains(m_pendingOfficeConversation)) {
                         const QString created = m_pendingOfficeConversation;

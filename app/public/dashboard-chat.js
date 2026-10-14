@@ -5982,9 +5982,14 @@ function mountForkMeshDashboardChat(options = {}) {
 
   function syncDiscordChrome() {
     if (!chatView || !discordChatLayout()) return;
-    const channelName = String(CHANNEL || "#general").replace(/^#/, "");
+    const channelName = PUBLIC_WORLD_GENERAL
+      ? "World"
+      : String(CHANNEL || "#general").replace(/^#/, "");
     const nameEl = chatView.querySelector("[data-dashboard-chat-channel-name]");
     if (nameEl) nameEl.textContent = channelName;
+    const worldLabel = chatRail?.querySelector(
+      '[data-dashboard-chat-channel-link=""] [data-dashboard-chat-channel-label]');
+    if (worldLabel) worldLabel.textContent = "World";
     const topic = chatView.querySelector("[data-dashboard-chat-topic]");
     if (topic) {
       topic.textContent = PUBLIC_WORLD_GENERAL
