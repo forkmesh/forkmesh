@@ -1352,6 +1352,7 @@ def test_cron_phase_schedule_is_exact_and_staggered():
         "notification-digest": lambda minute: minute % 5 == 3,
         "chat-digest": lambda minute: minute % 5 == 3,
         "channel-unread-email": lambda minute: minute % 5 == 3,
+        "direct-unread-email": lambda minute: minute % 5 == 1,
         "ap-digest": lambda minute: minute % 10 == 8,
         "ap-profiles": lambda minute: minute % 20 == 12,
         "world-satellites": lambda minute: minute % 180 == 11,

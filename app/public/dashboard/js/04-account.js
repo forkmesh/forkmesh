@@ -93,12 +93,62 @@
     wrong_campaign: ["That Patreon membership is not for the ForkMesh campaign.", "bad"],
   };
 
+  function accountBlankslate(icon, title, desc = "") {
+    return `<div class="fm-blankslate"><i data-lucide="${escapeHtml(icon)}" aria-hidden="true"></i><p class="fm-blankslate-title">${escapeHtml(title)}</p>${desc ? `<p class="fm-blankslate-desc">${escapeHtml(desc)}</p>` : ""}</div>`;
+  }
+
+  function accountListError(message) {
+    return `<p class="flex items-center gap-2 p-4 text-sm text-destructive"><i data-lucide="circle-alert" class="h-4 w-4 shrink-0" aria-hidden="true"></i>${escapeHtml(message)}</p>`;
+  }
+
+  function confirmAccountAction({ title, body = "", confirmLabel = "Confirm", danger = true } = {}) {
+    return new Promise((resolve) => {
+      const previous = document.activeElement;
+      const overlay = document.createElement("div");
+      overlay.dataset.accountConfirm = "";
+      overlay.className = "fixed inset-0 z-[90] flex items-start justify-center bg-background/70 p-4 pt-[15vh]";
+      overlay.innerHTML = `
+        <div role="alertdialog" aria-modal="true" aria-labelledby="accountConfirmTitle"${body ? ' aria-describedby="accountConfirmBody"' : ""} class="fm-dialog w-full max-w-md">
+          <div class="fm-dialog-header">
+            <h2 id="accountConfirmTitle" class="fm-dialog-title">${escapeHtml(title)}</h2>
+            <button type="button" data-account-confirm-cancel aria-label="Close" class="fm-btn fm-btn-sm fm-btn-icon fm-btn-invisible"><i data-lucide="x"></i></button>
+          </div>
+          ${body ? `<div id="accountConfirmBody" class="fm-dialog-body text-muted-foreground">${escapeHtml(body)}</div>` : ""}
+          <div class="fm-dialog-footer">
+            <button type="button" data-account-confirm-cancel class="fm-btn fm-btn-sm">Cancel</button>
+            <button type="button" data-account-confirm-ok class="fm-btn fm-btn-sm ${danger ? "fm-btn-danger" : "fm-btn-cta"}">${escapeHtml(confirmLabel)}</button>
+          </div>
+        </div>`;
+      const onKey = (event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        finish(false);
+      };
+      const finish = (value) => {
+        document.removeEventListener("keydown", onKey, true);
+        overlay.remove();
+        if (previous?.isConnected && typeof previous.focus === "function") previous.focus();
+        resolve(value);
+      };
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay || event.target.closest("[data-account-confirm-cancel]")) finish(false);
+        else if (event.target.closest("[data-account-confirm-ok]")) finish(true);
+      });
+      document.addEventListener("keydown", onKey, true);
+      document.body.appendChild(overlay);
+      window.lucide?.createIcons();
+      overlay.querySelector(".fm-dialog-footer [data-account-confirm-cancel]")?.focus();
+    });
+  }
+
   function setPatreonStatus(message, kind = "") {
     const target = $("[data-patreon-connection-status]");
     if (!target) return;
     target.textContent = message || "";
     target.className = "min-h-4 text-xs " + (
-      kind === "bad" ? "text-red-400"
+      kind === "bad" ? "text-destructive"
+        : kind === "good" ? "text-success"
         : "text-muted-foreground"
     );
   }
@@ -309,7 +359,8 @@
     if (!target) return;
     target.textContent = message || "";
     target.className = "mt-2 min-h-4 text-xs " + (
-      kind === "bad" ? "text-red-400"
+      kind === "bad" ? "text-destructive"
+        : kind === "good" ? "text-success"
         : "text-muted-foreground"
     );
   }
@@ -415,7 +466,8 @@
     if (!target) return;
     target.textContent = message || "";
     target.className = "min-h-4 text-xs " + (
-      kind === "bad" ? "text-red-400"
+      kind === "bad" ? "text-destructive"
+        : kind === "good" ? "text-success"
         : "text-muted-foreground"
     );
   }
@@ -442,7 +494,8 @@
     if (!list) return;
     const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
     if (!sessions.length) {
-      list.innerHTML = '<p class="p-4 text-sm text-muted-foreground">No active sessions were returned.</p>';
+      list.innerHTML = accountBlankslate("monitor", "No active sessions were returned.");
+      window.lucide?.createIcons();
       return;
     }
     list.innerHTML = sessions.map((session, index) => `
@@ -450,11 +503,11 @@
         <div class="min-w-0">
           <p class="text-sm font-semibold text-foreground">
             ${escapeHtml(session.deviceLabel || "Unknown device")}
-            ${session.current ? '<span class="ml-2 rounded-full border border-emerald-500/50 px-2 py-0.5 text-[11px] text-emerald-300">This device</span>' : ""}
+            ${session.current ? '<span class="fm-label fm-label-accent ml-2">This device</span>' : ""}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(String(session.ipAddress || "address unavailable"))} · last active ${escapeHtml(formatTimeAgo(Number(session.lastSeenAt || 0)))} · signed in ${escapeHtml(formatDate(Number(session.createdAt || 0)))} · expires ${escapeHtml(formatDate(Number(session.expiresAt || 0)))}</p>
         </div>
-        <button type="button" data-account-session-revoke="${escapeHtml(session.id || "")}" data-account-session-current="${session.current ? "true" : "false"}" class="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-red-500/50 px-3 text-xs font-semibold text-red-300 hover:bg-red-500/10">
+        <button type="button" data-account-session-revoke="${escapeHtml(session.id || "")}" data-account-session-current="${session.current ? "true" : "false"}" class="fm-btn fm-btn-sm fm-btn-danger shrink-0">
           ${session.current ? "Sign out here" : "Sign out"}
         </button>
       </article>`).join("");
@@ -498,7 +551,7 @@
         sent > 0 ? ` · ${sent} email${sent === 1 ? "" : "s"} sent to this account` : "");
       detail.className = "mt-1 text-xs " + (
         status === "delivered" && emailedAt ? "text-muted-foreground"
-          : status === "failed" && emailedAt ? "text-red-400"
+          : status === "failed" && emailedAt ? "text-destructive"
             : "text-muted-foreground");
     }
   }
@@ -542,7 +595,8 @@
       } catch (error) {
         const list = $("[data-account-session-list]");
         if (list) {
-          list.innerHTML = `<p class="p-4 text-sm text-red-400">${error.message === "invalid_session" ? "Sign in to manage active sessions." : "Could not load active sessions."}</p>`;
+          list.innerHTML = accountListError(error.message === "invalid_session" ? "Sign in to manage active sessions." : "Could not load active sessions.");
+          window.lucide?.createIcons();
         }
       } finally {
         accountSessionsLoading = null;
@@ -552,9 +606,10 @@
   }
 
   async function revokeAccountSession(sessionId, current) {
-    if (!sessionId || !window.confirm(current
-      ? "Sign out this device now?"
-      : "Sign out that device?")) return;
+    if (!sessionId || !await confirmAccountAction({
+      title: current ? "Sign out this device now?" : "Sign out that device?",
+      confirmLabel: "Sign out",
+    })) return;
     try {
       const result = await accountSessionApi(
         "DELETE", "/" + encodeURIComponent(sessionId));
@@ -571,7 +626,11 @@
   }
 
   async function revokeOtherAccountSessions() {
-    if (!window.confirm("Sign out every other active device?")) return;
+    if (!await confirmAccountAction({
+      title: "Sign out every other active device?",
+      body: "This browser stays signed in.",
+      confirmLabel: "Sign out others",
+    })) return;
     const button = $("[data-account-sessions-revoke-others]");
     if (button) button.disabled = true;
     try {
@@ -590,8 +649,10 @@
   // action that ends every session, this browser included. The Worker revokes
   // them all; logout() then clears this browser and tells its other tabs.
   async function revokeAllAccountSessions() {
-    if (!window.confirm(
-      "Sign out of ForkMesh on every device, including this one?")) return;
+    if (!await confirmAccountAction({
+      title: "Sign out of ForkMesh on every device, including this one?",
+      confirmLabel: "Sign out everywhere",
+    })) return;
     const button = $("[data-account-sessions-revoke-all]");
     if (button) button.disabled = true;
     try {
@@ -613,7 +674,7 @@
     const target = $("[data-email-footer-status]");
     if (!target) return;
     target.textContent = message || "";
-    target.className = "min-h-4 text-xs " + (kind === "bad" ? "text-red-400" : "text-muted-foreground");
+    target.className = "min-h-4 text-xs " + (kind === "bad" ? "text-destructive" : kind === "good" ? "text-success" : "text-muted-foreground");
   }
 
   function renderEmailFooter(data) {
@@ -701,7 +762,8 @@
     if (!target) return;
     target.textContent = message || "";
     target.className = "min-h-4 text-xs " + (
-      kind === "bad" ? "text-red-400"
+      kind === "bad" ? "text-destructive"
+        : kind === "good" ? "text-success"
         : "text-muted-foreground"
     );
   }
@@ -844,7 +906,8 @@
     if (!target) return;
     target.textContent = message || "";
     target.className = "min-h-4 text-xs " + (
-      kind === "bad" ? "text-red-400"
+      kind === "bad" ? "text-destructive"
+        : kind === "good" ? "text-success"
         : "text-muted-foreground"
     );
   }
@@ -875,7 +938,8 @@
     if (!list) return;
     const devices = Array.isArray(data?.devices) ? data.devices : [];
     if (!devices.length) {
-      list.innerHTML = '<p class="p-4 text-sm text-muted-foreground">No nodes or devices are bound to this account yet.</p>';
+      list.innerHTML = accountBlankslate("laptop", "No nodes or devices are bound to this account yet.");
+      window.lucide?.createIcons();
       return;
     }
     list.innerHTML = devices.map((device, index) => {
@@ -891,17 +955,17 @@
         hint,
       ].filter(Boolean).join(" · ");
       const control = !enabled
-        ? '<span class="inline-flex h-8 shrink-0 items-center rounded-md border border-border px-3 text-xs font-semibold text-muted-foreground">Revoked</span>'
+        ? '<span class="fm-label shrink-0">Revoked</span>'
         : device.current
-          ? '<span class="inline-flex h-8 shrink-0 items-center rounded-md border border-emerald-500/50 px-3 text-xs font-semibold text-emerald-300">This device</span>'
-          : `<button type="button" data-account-device-revoke="${escapeHtml(device.id || "")}" class="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-red-500/50 px-3 text-xs font-semibold text-red-300 hover:bg-red-500/10">Revoke</button>`;
+          ? '<span class="fm-label fm-label-accent shrink-0">This device</span>'
+          : `<button type="button" data-account-device-revoke="${escapeHtml(device.id || "")}" class="fm-btn fm-btn-sm fm-btn-danger shrink-0">Revoke</button>`;
       return `
       <article data-account-device-row="${escapeHtml(device.id || "")}" class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between ${index ? "border-t border-border" : ""} ${enabled ? "" : "opacity-60"}">
         <div class="min-w-0">
           <p class="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
-            <span class="rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">${escapeHtml(accountDeviceKindLabel(device.kind))}</span>
+            <span class="fm-label">${escapeHtml(accountDeviceKindLabel(device.kind))}</span>
             <span class="truncate">${escapeHtml(device.label || "Unnamed device")}</span>
-            ${device.current ? '<span class="rounded-full border border-emerald-500/50 px-2 py-0.5 text-[11px] text-emerald-300">This device</span>' : ""}
+            ${device.current ? '<span class="fm-label fm-label-accent">This device</span>' : ""}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(meta)}</p>
           ${device.id ? `<p class="mt-1 text-[11px] text-muted-foreground">Device ID <span data-account-device-id class="break-all font-mono text-foreground select-all">${escapeHtml(device.id)}</span></p>` : ""}
@@ -1068,7 +1132,8 @@
       } catch (error) {
         const list = $("[data-account-devices-list]");
         if (list) {
-          list.innerHTML = `<p class="p-4 text-sm text-red-400">${error.message === "invalid_session" ? "Sign in to manage nodes and devices." : "Could not load nodes and devices."}</p>`;
+          list.innerHTML = accountListError(error.message === "invalid_session" ? "Sign in to manage nodes and devices." : "Could not load nodes and devices.");
+          window.lucide?.createIcons();
         }
       } finally {
         accountDevicesLoading = null;
@@ -1089,7 +1154,8 @@
     if (!target) return;
     target.textContent = message || "";
     target.className = "min-h-4 text-xs " + (
-      kind === "bad" ? "text-red-400"
+      kind === "bad" ? "text-destructive"
+        : kind === "good" ? "text-success"
         : "text-muted-foreground"
     );
   }
@@ -1125,7 +1191,8 @@
         : "SSH gateway is not configured";
     }
     if (!keys.length) {
-      list.innerHTML = '<p class="p-4 text-sm text-muted-foreground">No SSH keys registered.</p>';
+      list.innerHTML = accountBlankslate("key-round", "No SSH keys registered.", "Add a public key above to clone and push over SSH.");
+      window.lucide?.createIcons();
       return;
     }
     list.innerHTML = keys.map((key, index) => {
@@ -1137,7 +1204,7 @@
             <p class="mt-1 break-all font-mono text-xs text-muted-foreground">${escapeHtml(key.fingerprint || "")}</p>
             <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(key.keyType || "SSH")} · added ${escapeHtml(formatDate(key.createdAt))}${used ? ` · last used ${escapeHtml(formatTimeAgo(used))}` : " · never used"}</p>
           </div>
-          <button type="button" data-ssh-key-revoke="${escapeHtml(key.id || "")}" class="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-red-500/50 px-3 text-xs font-semibold text-red-300 hover:bg-red-500/10">
+          <button type="button" data-ssh-key-revoke="${escapeHtml(key.id || "")}" class="fm-btn fm-btn-sm fm-btn-danger shrink-0">
             Revoke
           </button>
         </article>`;
@@ -1156,7 +1223,8 @@
       } catch (error) {
         const list = $("[data-ssh-key-list]");
         if (list) {
-          list.innerHTML = `<p class="p-4 text-sm text-red-400">${error.message === "invalid_session" ? "Sign in to manage SSH keys." : "Could not load SSH keys."}</p>`;
+          list.innerHTML = accountListError(error.message === "invalid_session" ? "Sign in to manage SSH keys." : "Could not load SSH keys.");
+          window.lucide?.createIcons();
         }
       } finally {
         sshKeysLoading = null;
@@ -1203,7 +1271,11 @@
   }
 
   async function revokeSshKey(keyId) {
-    if (!keyId || !window.confirm("Revoke this SSH key? It will stop authenticating immediately.")) return;
+    if (!keyId || !await confirmAccountAction({
+      title: "Revoke this SSH key?",
+      body: "It will stop authenticating immediately.",
+      confirmLabel: "Revoke key",
+    })) return;
     try {
       await sshKeyApi("DELETE", "/" + encodeURIComponent(keyId));
       setSshKeyStatus("SSH key revoked.", "good");
@@ -1312,18 +1384,13 @@
   function orgRoleBadge(role) {
     const clean = String(role || "member").toLowerCase();
     const tone = clean === "owner"
-      ? "border-[#2f81f7]/40 bg-[#2f81f7]/10 text-[#2f81f7]"
+      ? " fm-label-accent"
       : clean === "admin"
-        ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
-        : clean === "maintainer"
-          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500"
-          : clean === "auditor"
-            ? "border-violet-500/40 bg-violet-500/10 text-violet-500"
-            : clean === "guest"
-              ? "border-dashed border-border bg-transparent text-muted-foreground"
-              : "border-border bg-secondary text-muted-foreground";
-    return '<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ' +
-      tone + '">' + escapeHtml(clean) + "</span>";
+        ? " fm-label-attention"
+        : clean === "guest"
+          ? " border-dashed"
+          : "";
+    return '<span class="fm-label' + tone + '">' + escapeHtml(clean) + "</span>";
   }
 
   function orgMemberFloorGroups(member, canManage) {
@@ -1351,7 +1418,7 @@
           ? "border-border bg-secondary text-foreground"
           : "border-border bg-background text-muted-foreground") +
         (canManage
-          ? " cursor-pointer hover:border-[#2f81f7]/70 hover:bg-[#2f81f7]/10 hover:text-[#2f81f7] disabled:cursor-wait disabled:opacity-60"
+          ? " cursor-pointer hover:border-primary/70 hover:bg-primary/10 hover:text-primary disabled:cursor-wait disabled:opacity-60"
           : "") + '">' +
         '<span aria-hidden="true" class="h-1.5 w-1.5 rounded-full ' +
         (active ? "bg-foreground" : "bg-muted-foreground/40") + '"></span>' +
@@ -1377,15 +1444,13 @@
     const status = root.querySelector("[data-org-status]");
     if (!status) return;
     status.textContent = message || "";
-    status.className = "min-h-4 text-xs " + (ok ? "text-muted-foreground" : "text-red-500");
+    status.className = "min-h-4 text-xs " + (ok ? "text-muted-foreground" : "text-destructive");
   }
 
   const ORG_INPUT_CLASS = "h-10 rounded-md border border-border bg-card px-3 text-sm font-normal " +
-    "text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]";
-  const ORG_BTN_PRIMARY = "inline-flex h-9 items-center justify-center rounded-md bg-[#238636] px-4 " +
-    "text-sm font-semibold text-white hover:bg-[#2ea043] transition-colors";
-  const ORG_BTN_SECONDARY = "inline-flex h-9 items-center justify-center rounded-md border border-border " +
-    "bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-muted transition-colors";
+    "text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary";
+  const ORG_BTN_PRIMARY = "fm-btn fm-btn-cta";
+  const ORG_BTN_SECONDARY = "fm-btn";
 
   async function showOrgsList() {
     const root = orgsRoot();
@@ -1400,23 +1465,23 @@
       const data = await orgApiRequest("GET", "/api/orgs");
       orgs = Array.isArray(data.orgs) ? data.orgs : [];
     } catch (error) {
-      root.innerHTML = '<p class="text-sm text-red-500">' + escapeHtml(error.message) + "</p>";
+      root.innerHTML = '<p class="text-sm text-destructive">' + escapeHtml(error.message) + "</p>";
       return;
     }
     const rows = orgs.length
       ? orgs.map((org) => {
           const name = escapeHtml(org.name || "");
           return '<button type="button" data-org-open="' + name + '" ' +
-            'class="flex w-full items-center gap-3 rounded-md border border-border bg-card px-4 py-3 text-left hover:bg-secondary transition-colors">' +
-            '<i data-lucide="building-2" class="h-5 w-5 text-muted-foreground"></i>' +
+            'class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-secondary transition-colors">' +
+            '<i data-lucide="building-2" class="h-4 w-4 text-muted-foreground"></i>' +
             '<span class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">' + name + "</span>" +
             orgRoleBadge(org.role) +
             '<i data-lucide="chevron-right" class="h-4 w-4 text-muted-foreground"></i>' +
             "</button>";
         }).join("")
-      : '<p class="text-sm text-muted-foreground">No organizations yet. Create one below.</p>';
+      : accountBlankslate("building-2", "No organizations yet.", "Create one below.");
     root.innerHTML =
-      '<div class="grid gap-2">' + rows + "</div>" +
+      '<div class="divide-y divide-border overflow-hidden rounded-md border border-border bg-card">' + rows + "</div>" +
       '<form data-org-create class="mt-6 grid max-w-md gap-3 border-t border-border pt-6">' +
         '<h3 class="text-sm font-semibold text-foreground">New organization</h3>' +
         '<input data-org-name required placeholder="name (lowercase, dashes)" autocomplete="off" class="' + ORG_INPUT_CLASS + '" />' +
@@ -1488,7 +1553,7 @@
       root.innerHTML =
         '<button type="button" data-org-back class="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">' +
         '<i data-lucide="arrow-left" class="h-4 w-4"></i> Back</button>' +
-        '<p class="text-sm text-red-500">' + escapeHtml(error.message) + "</p>";
+        '<p class="text-sm text-destructive">' + escapeHtml(error.message) + "</p>";
       window.lucide?.createIcons();
       root.querySelector("[data-org-back]")?.addEventListener("click", showOrgsList);
       return;
@@ -1593,8 +1658,8 @@
         description: "Creates isolated work, synchronizes it safely, deploys, verifies production, and then sends the task to QA.",
       },
     ];
-    return '<section class="mt-6 rounded-md border border-[#2f81f7]/30 bg-[#2f81f7]/5 p-4" data-org-remote-mcp>' +
-      '<div class="flex items-center gap-2"><i data-lucide="plug-zap" class="h-4 w-4 text-[#58a6ff]"></i>' +
+    return '<section class="mt-6 rounded-md border border-border bg-card p-4" data-org-remote-mcp>' +
+      '<div class="flex items-center gap-2"><i data-lucide="plug-zap" class="h-4 w-4 text-muted-foreground"></i>' +
         '<h4 class="text-sm font-semibold text-foreground">Remote ForkMesh MCP</h4></div>' +
       '<p class="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">Generate a revocable task-only credential and one complete paste block. It connects the agent directly to <span class="font-mono text-foreground">' +
         escapeHtml(publicSiteOrigin() + "/mcp") +
@@ -1605,12 +1670,12 @@
             '<div class="flex items-start gap-2"><i data-lucide="' + workflow.icon + '" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>' +
               '<div class="min-w-0 flex-1"><h5 class="text-sm font-semibold text-foreground">' + workflow.title + '</h5>' +
               '<p class="mt-1 text-[11px] leading-4 text-muted-foreground">' + workflow.description + "</p></div></div>" +
-            '<button type="button" data-org-remote-mcp-generate="' + workflow.id + '" class="' + ORG_BTN_PRIMARY + ' mt-3 gap-1">' +
-              '<i data-lucide="key-round" class="h-3.5 w-3.5"></i> Generate complete setup</button>' +
+            '<button type="button" data-org-remote-mcp-generate="' + workflow.id + '" class="' + ORG_BTN_SECONDARY + ' fm-btn-sm mt-3">' +
+              '<i data-lucide="key-round"></i> Generate complete setup</button>' +
             '<div data-org-remote-mcp-output="' + workflow.id + '" hidden class="mt-3">' +
-              '<p class="text-[11px] font-semibold text-amber-500">Shown once. This block contains a live credential.</p>' +
+              '<p class="flex items-center gap-1.5 text-xs font-semibold text-attention"><i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0"></i>Shown once. This block contains a live credential.</p>' +
               '<textarea readonly rows="20" spellcheck="false" class="mt-1 w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-[10px] leading-4 text-foreground"></textarea>' +
-              '<button type="button" data-org-remote-mcp-copy="' + workflow.id + '" class="' + ORG_BTN_SECONDARY + ' mt-2 gap-1"><i data-lucide="copy" class="h-3.5 w-3.5"></i> Copy complete prompt</button>' +
+              '<button type="button" data-org-remote-mcp-copy="' + workflow.id + '" class="' + ORG_BTN_SECONDARY + ' fm-btn-sm mt-2"><i data-lucide="copy"></i> Copy complete prompt</button>' +
             "</div>" +
           "</article>"
         ).join("") +
@@ -1650,7 +1715,7 @@
             '<label class="grid gap-1 text-xs font-semibold text-foreground">Personal offices<select data-org-world-offices class="' + ORG_INPUT_CLASS + '">' +
               orgOptionTags(ORG_WORLD_ACCESS_OPTIONS, worldAccess.offices) + "</select></label>" +
           "</div>" +
-          '<button type="submit" class="' + ORG_BTN_PRIMARY + ' w-fit">Save world settings</button>' +
+          '<button type="submit" class="' + ORG_BTN_SECONDARY + ' w-fit">Save world settings</button>' +
         "</form>"
       : '<section class="mt-5 rounded-md border border-border bg-card p-4">' +
           '<h4 class="text-sm font-semibold text-foreground">World building access</h4>' +
@@ -1664,7 +1729,7 @@
         ? '<select data-org-member-role="' + memberName + '" class="' + ORG_INPUT_CLASS + ' h-8 py-0">' +
             orgOptionTags(ORG_ROLE_OPTIONS, member.role) + "</select>" +
           '<button type="button" data-org-member-remove="' + memberName + '" title="Remove from org" ' +
-            'class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-red-500 hover:border-red-500/50">' +
+            'class="fm-btn fm-btn-sm fm-btn-icon fm-btn-danger">' +
             '<i data-lucide="user-minus" class="h-4 w-4"></i></button>'
         : orgRoleBadge(member.role);
       return '<div class="rounded-md border border-border bg-card px-3 py-2">' +
@@ -1682,7 +1747,7 @@
         ? '<select data-org-team-perm="' + teamName + '" class="' + ORG_INPUT_CLASS + ' h-8 py-0">' +
             orgOptionTags(ORG_TEAM_PERMISSIONS, team.permission) + "</select>" +
           '<button type="button" data-org-team-delete="' + teamName + '" title="Delete team" ' +
-            'class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-red-500 hover:border-red-500/50">' +
+            'class="fm-btn fm-btn-sm fm-btn-icon fm-btn-danger">' +
             '<i data-lucide="trash-2" class="h-4 w-4"></i></button>'
         : '<span class="inline-flex items-center rounded-full border border-border bg-secondary px-2 py-0.5 text-xs font-semibold text-muted-foreground">' +
             escapeHtml(team.permission || "") + "</span>";
@@ -1697,7 +1762,7 @@
       const serves = repo.node ? '<span class="text-xs text-muted-foreground">serves ' + escapeHtml(repo.node) + "/" + repoName + "</span>" : "";
       const control = canManage
         ? '<button type="button" data-org-repo-unlink="' + repoName + '" title="Unlink repo" ' +
-            'class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-red-500 hover:border-red-500/50">' +
+            'class="fm-btn fm-btn-sm fm-btn-icon fm-btn-danger">' +
             '<i data-lucide="unlink" class="h-4 w-4"></i></button>'
         : "";
       return '<div class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">' +
@@ -1784,7 +1849,7 @@
                 (!revoked
                   ? '<button type="button" data-org-bot-revoke="' +
                       escapeHtml(token.id || "") + '" class="' +
-                      ORG_BTN_SECONDARY + ' text-red-500">Revoke</button>'
+                      ORG_BTN_SECONDARY + ' fm-btn-sm fm-btn-danger">Revoke</button>'
                   : "") +
               "</div>" +
               '<p class="mt-2 break-all font-mono text-[10px] text-muted-foreground">' +
@@ -1803,7 +1868,7 @@
               "</time></li>"
           ).join("") || '<li class="text-xs text-muted-foreground">No token use recorded yet.</li>';
           return '<section class="mt-6 rounded-md border border-border bg-card p-4" data-org-bot-tokens>' +
-            '<div class="flex items-center gap-2"><i data-lucide="bot" class="h-4 w-4 text-[#58a6ff]"></i>' +
+            '<div class="flex items-center gap-2"><i data-lucide="bot" class="h-4 w-4 text-muted-foreground"></i>' +
               '<h4 class="text-sm font-semibold text-foreground">Bot tokens</h4></div>' +
             '<p class="mt-1 text-xs leading-5 text-muted-foreground">Create a revocable Codex or Claude credential for an attended local computer. The secret is shown once. Destructive node, membership, organization-administration, and merge permissions are intentionally unavailable.</p>' +
             '<form data-org-bot-create class="mt-4 grid gap-3">' +
@@ -1819,7 +1884,7 @@
                 '<div class="mt-2 grid gap-2 md:grid-cols-2">' + permissionRows + "</div></div>" +
               '<button type="submit" class="' + ORG_BTN_PRIMARY + ' w-fit">Create bot token</button>' +
             "</form>" +
-            '<div data-org-bot-secret hidden class="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3"></div>' +
+            '<div data-org-bot-secret hidden class="mt-4 rounded-md border border-attention/40 bg-attention/10 p-3"></div>' +
             '<div class="mt-4 grid gap-2">' + tokenRows + "</div>" +
             '<div class="mt-5 border-t border-border pt-4" data-org-bot-usage-preview>' +
               '<h5 class="text-xs font-semibold text-foreground">Recent token use</h5>' +
@@ -1830,8 +1895,8 @@
         })()
       : "";
     const accessSummary =
-      '<aside class="rounded-md border border-[#2f81f7]/30 bg-[#2f81f7]/5 p-4 lg:sticky lg:top-4 lg:self-start" data-org-access-summary>' +
-        '<div class="flex items-center gap-2"><i data-lucide="shield-check" class="h-4 w-4 text-[#2f81f7]"></i>' +
+      '<aside class="rounded-md border border-border bg-subtle p-4 lg:sticky lg:top-4 lg:self-start" data-org-access-summary>' +
+        '<div class="flex items-center gap-2"><i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>' +
           '<h4 class="text-sm font-semibold text-foreground">What organization access means</h4></div>' +
         '<div class="mt-3 grid gap-3 text-xs leading-5 text-muted-foreground">' +
           '<section><strong class="block text-foreground">Every organization member can</strong>' +
@@ -1867,7 +1932,7 @@
         '<button type="button" data-org-back class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">' +
           '<i data-lucide="arrow-left" class="h-4 w-4"></i> Organizations</button>' +
         '<span class="flex-1"></span>' +
-        (isOwner ? '<button type="button" data-org-delete class="inline-flex h-8 items-center gap-1 rounded-md border border-red-500/40 px-3 text-xs font-semibold text-red-500 hover:bg-red-500/10"><i data-lucide="trash-2" class="h-4 w-4"></i> Delete org</button>' : "") +
+        (isOwner ? '<button type="button" data-org-delete class="fm-btn fm-btn-sm fm-btn-danger"><i data-lucide="trash-2"></i> Delete org</button>' : "") +
       "</div>" +
       '<div class="mt-4 flex items-center gap-3">' +
         '<h3 class="text-xl font-semibold text-foreground">' + title + "</h3>" +
@@ -1905,8 +1970,12 @@
 
     root.querySelector("[data-org-back]")?.addEventListener("click", showOrgsList);
 
-    root.querySelector("[data-org-delete]")?.addEventListener("click", () => {
-      if (!window.confirm("Delete " + name + "? This dissolves the org, its members, teams, and repo links. Linked repos are not deleted.")) return;
+    root.querySelector("[data-org-delete]")?.addEventListener("click", async () => {
+      if (!await confirmAccountAction({
+        title: "Delete " + name + "?",
+        body: "This dissolves the org, its members, teams, and repo links. Linked repos are not deleted.",
+        confirmLabel: "Delete organization",
+      })) return;
       guard(() => orgApiRequest("DELETE", "/api/orgs/" + encodeURIComponent(name), {}).then(showOrgsList));
     });
 
@@ -1940,9 +2009,9 @@
       });
     });
     root.querySelectorAll("[data-org-member-remove]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const member = button.dataset.orgMemberRemove;
-        if (!window.confirm("Remove " + member + " from " + name + "?")) return;
+        if (!await confirmAccountAction({ title: "Remove " + member + " from " + name + "?", confirmLabel: "Remove" })) return;
         guard(() => orgApiRequest("DELETE", "/api/orgs/" + encodeURIComponent(name) + "/members", { member }));
       });
     });
@@ -2011,9 +2080,9 @@
       });
     });
     root.querySelectorAll("[data-org-team-delete]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const team = button.dataset.orgTeamDelete;
-        if (!window.confirm("Delete team " + team + "?")) return;
+        if (!await confirmAccountAction({ title: "Delete team " + team + "?", confirmLabel: "Delete team" })) return;
         guard(() => orgApiRequest("DELETE", "/api/orgs/" + encodeURIComponent(name) + "/teams", { team }));
       });
     });
@@ -2031,9 +2100,9 @@
       guard(() => orgApiRequest("POST", "/api/orgs/" + encodeURIComponent(name) + "/repos", body));
     });
     root.querySelectorAll("[data-org-repo-unlink]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
         const repo = button.dataset.orgRepoUnlink;
-        if (!window.confirm("Unlink " + name + "/" + repo + "?")) return;
+        if (!await confirmAccountAction({ title: "Unlink " + name + "/" + repo + "?", confirmLabel: "Unlink" })) return;
         guard(() => orgApiRequest("DELETE", "/api/orgs/" + encodeURIComponent(name) + "/repos", { repo }));
       });
     });
@@ -2086,11 +2155,12 @@
             "On the attended local computer, store it in FORKMESH_BOT_TOKEN, then POST /api/bot/session with a deviceName to bind and verify the connection. Revoking this row stops the credential immediately.";
           const copy = document.createElement("button");
           copy.type = "button";
-          copy.className = ORG_BTN_SECONDARY + " mt-2";
+          copy.className = ORG_BTN_SECONDARY + " fm-btn-sm mt-2";
           copy.textContent = "Copy token";
           copy.addEventListener("click", async () => {
-            await navigator.clipboard.writeText(created.token || "");
-            copy.textContent = "Copied";
+            const copied = await copyTextToClipboard(created.token || "");
+            copy.textContent = copied ? "Copied" : "Copy failed";
+            window.setTimeout(() => { copy.textContent = "Copy token"; }, 1500);
           });
           secretPanel.append(heading, token, instructions, copy);
           orgStatus(root, "Bot token created. Copy it before leaving this page.", true);
@@ -2100,8 +2170,12 @@
       },
     );
     root.querySelectorAll("[data-org-bot-revoke]").forEach((button) => {
-      button.addEventListener("click", () => {
-        if (!window.confirm("Revoke this bot token? Its local connection and API access will stop immediately.")) return;
+      button.addEventListener("click", async () => {
+        if (!await confirmAccountAction({
+          title: "Revoke this bot token?",
+          body: "Its local connection and API access will stop immediately.",
+          confirmLabel: "Revoke token",
+        })) return;
         guard(() => orgApiRequest(
           "DELETE",
           "/api/orgs/" + encodeURIComponent(name) + "/bot-tokens",
@@ -2146,7 +2220,7 @@
         } catch (error) {
           if (status) {
             status.textContent = error.message;
-            status.className = "mt-3 min-h-4 text-xs text-red-500";
+            status.className = "mt-3 min-h-4 text-xs text-destructive";
           }
         } finally {
           button.disabled = false;
@@ -2162,7 +2236,9 @@
         if (!textarea) return;
         try {
           await navigator.clipboard.writeText(textarea.value || "");
+          const label = button.innerHTML;
           button.textContent = "Copied";
+          window.setTimeout(() => { button.innerHTML = label; }, 1500);
         } catch (_) {
           textarea.focus();
           textarea.select();
@@ -2239,7 +2315,7 @@
       root.innerHTML =
         '<button type="button" data-org-team-back class="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">' +
         '<i data-lucide="arrow-left" class="h-4 w-4"></i> Back</button>' +
-        '<p class="text-sm text-red-500">' + escapeHtml(error.message) + "</p>";
+        '<p class="text-sm text-destructive">' + escapeHtml(error.message) + "</p>";
       window.lucide?.createIcons();
       root.querySelector("[data-org-team-back]")?.addEventListener("click", () => showOrgDetail(name));
       return;
@@ -2255,7 +2331,7 @@
             ? ' <small class="ml-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">outside collaborator</small>'
             : "") + "</span>" +
         '<button type="button" data-org-team-member-remove="' + memberName + '" title="Remove from team" ' +
-          'class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-red-500 hover:border-red-500/50">' +
+          'class="fm-btn fm-btn-sm fm-btn-icon fm-btn-danger">' +
           '<i data-lucide="x" class="h-4 w-4"></i></button></div>';
     }).join("") || '<p class="text-sm text-muted-foreground">No members on this team yet.</p>';
     const addForm =
@@ -2358,7 +2434,7 @@
           : live
             ? "mirror online"
             : "mirror offline";
-        repoAvailability.classList.toggle("text-primary", live);
+        repoAvailability.classList.toggle("text-success", live);
         repoAvailability.classList.toggle("text-muted-foreground", !live);
       }
       return;
@@ -2549,26 +2625,54 @@
     return [...groups].sort((a, b) => score(b) - score(a)).slice(0, 6);
   }
 
+  const organizationPopularStarCounts = new Map();
+
+  function organizationPopularStarCount(repo) {
+    const key = repoKey(repo).toLowerCase();
+    if (!organizationPopularStarCounts.has(key)) {
+      organizationPopularStarCounts.set(key, fetch(`${repoApiBase(repo)}/star`, {
+        headers: { accept: "application/json" },
+      })
+        .then((response) => response.ok ? response.json() : null)
+        .then((data) => (data && data.ok !== false ? Number(data.count) || 0 : 0))
+        .catch(() => {
+          organizationPopularStarCounts.delete(key);
+          return 0;
+        }));
+    }
+    return organizationPopularStarCounts.get(key);
+  }
+
+  function hydrateOrganizationPopularStars(root) {
+    root.querySelectorAll("[data-org-popular-star][data-repo-key]").forEach(async (holder) => {
+      const repo = findRepository(holder.dataset.repoKey || "");
+      if (!repo) return;
+      const count = await organizationPopularStarCount(repo);
+      if (!holder.isConnected || count <= 0) return;
+      const value = holder.querySelector("[data-org-popular-star-count]");
+      if (value) value.textContent = formatCount(count);
+      holder.classList.remove("hidden");
+    });
+  }
+
   function organizationPopularCard(group) {
     const repo = sourceOfTruth(group);
     const languages = organizationRepositoryLanguages(group);
-    const language = languages[0]?.[0] || "";
-    const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
-    const mirrors = (group.members || []).length;
+    const language = languages[0]?.[0] || String(repo.language || repo.primaryLanguage || "").trim();
+    const color = REPO_LANGUAGE_COLORS[language] || "#8b949e";
     const description = repo.description ||
       (group.members || []).map((member) => member.description).find(Boolean) || "";
     return `<article data-org-popular-repo class="flex min-w-0 flex-col rounded-md border border-border bg-card p-4">
       <div class="flex min-w-0 items-center gap-2">
         <i data-lucide="book-marked" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
         <a href="${escapeHtml(groupLinkUrl(group))}" class="min-w-0 truncate text-sm font-semibold text-accent hover:underline">${escapeHtml(repo.name || "repository")}</a>
-        <span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">${repo.isPrivate ? "Private" : "Public"}</span>
+        <span class="inline-flex shrink-0 items-center rounded-full border border-border px-[7px] text-xs font-medium leading-[18px] text-muted-foreground">${repo.isPrivate ? "Private" : "Public"}</span>
       </div>
-      <p class="mt-2 flex-1 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</p>
-      <div class="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-        ${language ? `<span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background-color:${color}"></span>${escapeHtml(language)}</span>` : ""}
-        <span class="inline-flex items-center gap-1"><i data-lucide="copy" class="h-3.5 w-3.5"></i>${formatCount(mirrors)} ${mirrors === 1 ? "mirror" : "mirrors"}</span>
-        <span>Updated ${escapeHtml(formatDate(repo.updatedAt || repo.lastSync))}</span>
-      </div>
+      <p class="mb-4 mt-2 flex-1 break-words text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</p>
+      <p class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+        ${language ? `<span class="inline-flex items-center gap-1"><span data-repo-language-dot class="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style="background-color:${escapeHtml(color)}"></span><span>${escapeHtml(language)}</span></span>` : ""}
+        <span data-org-popular-star data-repo-key="${escapeHtml(repoKey(repo))}" class="hidden inline-flex items-center gap-1"><i data-lucide="star" class="h-4 w-4"></i><span data-org-popular-star-count>0</span></span>
+      </p>
     </article>`;
   }
 
@@ -2581,6 +2685,7 @@
       popular.innerHTML = groups.length
         ? organizationPopularGroups(groups).map(organizationPopularCard).join("")
         : `<p class="text-sm text-muted-foreground">This organization has no public repositories yet.</p>`;
+      hydrateOrganizationPopularStars(popular);
     }
     $$("[data-org-profile-all-repos]").forEach((link) => {
       link.href = publicProfileUrl(profileSubject().nodeName, "/repositories");
@@ -2682,9 +2787,9 @@
     if (!hint) return;
     hint.textContent = message ? " " + message : "";
     // Only utilities already present in the built dashboard/tailwind.css.
-    hint.className = kind === "bad" ? "text-red-300"
+    hint.className = kind === "bad" ? "text-destructive"
       : kind === "good" ? "text-muted-foreground"
-        : "text-amber-300";
+        : "text-attention";
   }
 
   // An unverified address blocks node renames and every account email, and the
@@ -2951,14 +3056,14 @@
     const hint = $("[data-profile-hint]");
     if (!hint) return;
     hint.textContent = text || "";
-    hint.className = "min-h-4 text-xs " + (cls === "bad" ? "text-destructive" : "text-muted-foreground");
+    hint.className = "min-h-4 text-xs " + (cls === "bad" ? "text-destructive" : cls === "good" ? "text-success" : "text-muted-foreground");
   }
 
   function setProfilePageHint(selector, text, cls) {
     const hint = $(selector);
     if (!hint) return;
     hint.textContent = text || "";
-    hint.className = "min-h-4 text-xs " + (cls === "bad" ? "text-destructive" : "text-muted-foreground");
+    hint.className = "min-h-4 text-xs " + (cls === "bad" ? "text-destructive" : cls === "good" ? "text-success" : "text-muted-foreground");
   }
 
   function profilePassword(selector) {
@@ -3187,7 +3292,7 @@
       `<a class="font-medium text-accent hover:underline" href="${escapeHtml(publicProfileUrl(name))}">${escapeHtml(name)}</a>`
     ).join('<span class="text-muted-foreground">, </span>');
     if (!total) {
-      list.innerHTML = '<p class="text-sm text-muted-foreground">No credited referrals yet.</p>';
+      list.innerHTML = '<p class="text-center text-sm text-muted-foreground">No credited referrals yet.</p>';
       return;
     }
     list.innerHTML = links
@@ -3629,13 +3734,13 @@
         ? "No supported language bytes are available."
         : "Language coverage is not fully verified for this profile.";
       svg.innerHTML = `<title id="profile-contribution-languages-title">Contribution language donut</title><desc id="profile-contribution-languages-desc">${description}</desc><circle cx="120" cy="82" r="48" fill="none" stroke="var(--contribution-empty)" stroke-width="18"></circle><text x="120" y="86" text-anchor="middle" fill="currentColor" font-size="11">${message}</text>`;
-      legend.innerHTML = complete ? "" : '<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Partial language data</p>';
+      legend.innerHTML = complete ? "" : '<p class="text-xs text-muted-foreground">Partial language data</p>';
       return;
     }
     const circles = segments.map((segment) => `<circle cx="120" cy="82" r="48" pathLength="100" fill="none" stroke="${segment.color}" stroke-width="18" stroke-dasharray="${segment.percentage.toFixed(4)} ${(100 - segment.percentage).toFixed(4)}" stroke-dashoffset="${(-segment.offset).toFixed(4)}" transform="rotate(-90 120 82)"><title>${escapeHtml(segment.name)}: ${segment.percentage.toFixed(1)}%, ${formatCount(segment.bytes)} bytes</title></circle>`).join("");
     const description = `${complete ? "" : "Partial language coverage. "}${segments.map((segment) => `${segment.name}: ${segment.percentage.toFixed(1)} percent`).join(", ")}`;
     svg.innerHTML = `<title id="profile-contribution-languages-title">Contribution language donut</title><desc id="profile-contribution-languages-desc">${escapeHtml(description)}</desc>${circles}<text x="120" y="78" text-anchor="middle" fill="currentColor" font-size="11">Public code</text><text x="120" y="94" text-anchor="middle" fill="rgb(var(--dashboard-muted-foreground-rgb))" font-size="9">by bytes</text>`;
-    legend.innerHTML = `${complete ? "" : '<p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Partial language data</p>'}${segments.map((segment) => `<div class="flex min-w-0 items-center justify-between gap-2"><span class="flex min-w-0 items-center gap-2"><span aria-hidden="true" class="h-2.5 w-2.5 shrink-0 rounded-full" style="background:${segment.color}"></span><span class="truncate">${escapeHtml(segment.name)}</span></span><span class="shrink-0 tabular-nums">${segment.percentage.toFixed(1)}%</span></div>`).join("")}`;
+    legend.innerHTML = `${complete ? "" : '<p class="mb-1 text-xs text-muted-foreground">Partial language data</p>'}${segments.map((segment) => `<div class="flex min-w-0 items-center justify-between gap-2"><span class="flex min-w-0 items-center gap-2"><span aria-hidden="true" class="h-2.5 w-2.5 shrink-0 rounded-full" style="background:${segment.color}"></span><span class="truncate">${escapeHtml(segment.name)}</span></span><span class="shrink-0 tabular-nums">${segment.percentage.toFixed(1)}%</span></div>`).join("")}`;
   }
 
   function renderProfileContributionMetrics(data) {
@@ -3644,7 +3749,7 @@
     metrics.innerHTML = PROFILE_CONTRIBUTION_CATEGORIES.map((category) => {
       const known = profileContributionCategoryKnown(data?.coverage, category.key);
       const count = formatCount(profileContributionCount(data?.typeTotals?.[category.key]));
-      return `<div><dt class="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">${escapeHtml(category.label)}</dt><dd class="mt-1 text-lg font-semibold tabular-nums text-foreground">${count}${known ? "" : "+"}</dd>${known ? "" : '<span class="text-[10px] text-muted-foreground">partial</span>'}</div>`;
+      return `<div><dt class="truncate text-xs text-muted-foreground">${escapeHtml(category.label)}</dt><dd class="mt-1 text-lg font-semibold tabular-nums text-foreground">${count}${known ? "" : "+"}</dd>${known ? "" : '<span class="text-[10px] text-muted-foreground">partial</span>'}</div>`;
     }).join("");
   }
 
@@ -3856,6 +3961,7 @@
     calendar_reminder: true,
     calendar_rsvp: true,
     channel_unread: true,
+    direct_unread: true,
   };
 
   function normalizedNotificationPreferences(session = state.session) {
@@ -3907,6 +4013,7 @@
       { kind: "subscribed", label: "Activity on things you follow", email: true },
       { kind: "chat_webhook", label: "Chat webhook posts", email: false },
       { kind: "channel_unread", label: "Unread channel messages", email: true },
+      { kind: "direct_unread", label: "Unread direct messages", email: true },
       { kind: "calendar_invitation", label: "Calendar invitations", email: true },
       { kind: "calendar_reminder", label: "Calendar reminders", email: true },
       { kind: "calendar_rsvp", label: "Calendar replies", email: true },
@@ -4624,7 +4731,7 @@
   // An unconfirmed address leaves the control disabled: ForkMesh only ever
   // offers to publish an address the account has proven it controls.
   const PROFILE_PUBLIC_EMAIL_READY_CLASS =
-    "h-10 w-fit max-w-full cursor-pointer rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]";
+    "h-10 w-fit max-w-full cursor-pointer rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground focus:outline-none focus:ring-1 focus:ring-primary";
   const PROFILE_PUBLIC_EMAIL_LOCKED_CLASS =
     "h-10 w-fit max-w-full cursor-not-allowed rounded-md border border-border bg-secondary px-3 text-sm font-normal text-muted-foreground";
 
@@ -4841,6 +4948,54 @@
   const profileBadgesCache = new Map();
   const profileBadgesLoading = new Set();
 
+  const PROFILE_BADGE_SLUG_RE = /^[a-z][a-z0-9_]{1,39}$/;
+
+  function profileBadgeMedalSources(slug) {
+    const path = "/assets/badges/" + slug + ".svg";
+    const sources = [];
+    try {
+      const routed = window.ForkMeshAPI?.url?.(path);
+      if (routed) sources.push(routed);
+    } catch (_) {}
+    const local = new URL(path, location.href).href;
+    if (!sources.includes(local)) sources.push(local);
+    return sources;
+  }
+
+  function profileBadgeMedalFallback(badge) {
+    const fallback = document.createElement("span");
+    fallback.className = "flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-border bg-secondary text-base font-semibold text-muted-foreground";
+    fallback.setAttribute("aria-hidden", "true");
+    fallback.dataset.profileBadgeMedal = "";
+    fallback.textContent = String(badge.name || badge.slug || "?").trim().charAt(0).toUpperCase();
+    return fallback;
+  }
+
+  function profileBadgeMedal(badge) {
+    const slug = String(badge.slug || "").trim().toLowerCase();
+    if (!PROFILE_BADGE_SLUG_RE.test(slug)) return profileBadgeMedalFallback(badge);
+    const sources = profileBadgeMedalSources(slug);
+    const medal = document.createElement("img");
+    medal.className = "h-12 w-12 shrink-0 select-none";
+    medal.width = 48;
+    medal.height = 48;
+    medal.alt = "";
+    medal.decoding = "async";
+    medal.draggable = false;
+    medal.dataset.profileBadgeMedal = slug;
+    let attempt = 0;
+    medal.addEventListener("error", () => {
+      attempt += 1;
+      if (attempt < sources.length) {
+        medal.src = sources[attempt];
+        return;
+      }
+      medal.replaceWith(profileBadgeMedalFallback(badge));
+    });
+    medal.src = sources[0];
+    return medal;
+  }
+
   function renderProfileBadgesData(name, badges) {
     $$("[data-profile-badges]").forEach((card) => {
       if (card.dataset.profileBadgesFor !== name) return;
@@ -4854,13 +5009,10 @@
       list.textContent = "";
       badges.forEach((badge) => {
         const item = document.createElement("li");
-        item.className = "flex items-start gap-2";
+        item.className = "flex items-center gap-3";
         item.dataset.profileBadge = String(badge.slug || "");
         item.title = String(badge.description || "");
-        const icon = document.createElement("span");
-        icon.className = "w-6 shrink-0 text-center text-lg leading-5";
-        icon.setAttribute("aria-hidden", "true");
-        icon.textContent = String(badge.icon || "");
+        const icon = profileBadgeMedal(badge);
         const text = document.createElement("div");
         text.className = "min-w-0";
         const title = document.createElement("p");
@@ -5366,7 +5518,7 @@
     const hint = $("[data-profile-avatar-hint]");
     if (!hint) return;
     hint.textContent = message;
-    hint.className = `mt-3 min-h-4 text-xs ${tone === "bad" ? "text-destructive" : "text-muted-foreground"}`;
+    hint.className = `mt-3 min-h-4 text-xs ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
   }
 
   async function saveProfileAvatar(file, trigger) {

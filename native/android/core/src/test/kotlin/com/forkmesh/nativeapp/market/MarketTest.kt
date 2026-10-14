@@ -185,8 +185,14 @@ class MarketTest {
 
         expect(model.isInstalled(pkg("agents")), "an account package the store does not know yet follows the legacy fallback")
         legacy = false
-        expect(!model.isInstalled(pkg("agents")))
+        expect(model.isInstalled(pkg("agents")), "a starter package is on in a new project")
+        assertEq(MarketCardAction.OPEN, model.cardAction(pkg("agents"), opens = true))
+        model.starterPack = { StarterPack.MINIMAL }
+        expect(!model.isInstalled(pkg("agents")), "the Minimal pack leaves Agents out of a new project")
         assertEq(MarketCardAction.INSTALL, model.cardAction(pkg("agents"), opens = true))
+        model.starterPack = { StarterPack.EVERYTHING }
+        expect(model.isInstalled(pkg("agents")))
+        model.starterPack = { StarterPack.STANDARD }
 
         expect(model.isInstalled(pkg("crm")))
         assertEq(MarketCardAction.OPEN, model.cardAction(pkg("crm"), opens = true))
@@ -254,10 +260,10 @@ class MarketTest {
         assertEq(listOf("status-page"), model.visible.map { it.id })
     }
 
-    fun testSignInIsSwitchedPerPhoneAndDefaultsFromTheLegacyMarker() {
+    fun testSignInIsSwitchedPerPhoneAndStartsOn() {
         val prefs = com.forkmesh.nativeapp.api.MemoryPrefStore()
         assertEq(true, PhonePackages.isOn(PhonePackages.SIGN_IN, prefs, legacy = true))
-        assertEq(false, PhonePackages.isOn(PhonePackages.SIGN_IN, prefs, legacy = false))
+        assertEq(true, PhonePackages.isOn(PhonePackages.SIGN_IN, prefs, legacy = false))
         assertEq(true, PhonePackages.isOn("crm", prefs, legacy = true))
         assertEq(null, PhonePackages.isOn("workflows", prefs, legacy = true))
         PhonePackages.set(PhonePackages.SIGN_IN, false, prefs)

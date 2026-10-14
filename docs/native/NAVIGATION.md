@@ -184,9 +184,9 @@ otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
 ### 2.0.2 Plugins on the phone
 
 Every Home tile except Repos, Search, Market and Settings is a Market package,
-off by default in new projects
-([core-plugins.md](../marketplace/core-plugins.md); Android:
-[ANDROID.md](ANDROID.md), section 13).
+off by default in new projects except the chosen starter pack
+([core-plugins.md](../marketplace/core-plugins.md#phone-starter-packs);
+Android: [ANDROID.md](ANDROID.md), section 13).
 
 - `PackageGate` (iOS `FMApi/Navigation/PackageGate.swift`) maps Home, bar,
   repository, hub, route-kind, tab and search-bucket ids to package ids. The
@@ -197,17 +197,39 @@ off by default in new projects
   project); otherwise `default`, or `installedBefore` in a legacy project;
   dependencies must be installed; `places` must include `mobile`. In projects
   created on the phone, installs belong to the project
-  (`<namespace>packages/project-installs`).
+  (`<namespace>packages/project-installs`), and the packages of the chosen
+  `StarterPack` count as installed until the project removes them.
 - `ProjectLegacyMarker` is written once per project from existing per-project
   data; projects created on the phone are marked new.
+- **Starter pack.** A new project shows `StarterPackView` ("Choose how to
+  start": Minimal, Standard, Everything; Standard preselected; Continue) once,
+  from `AppHomeView` while `SettingsService.needsStarterPack` (new project, no
+  `<namespace>packages/starter-pack` yet). Continue stores the pack id
+  (`PhonePackages.chooseStarterPack`) and republishes the gate. Unset reads as
+  `standard`; legacy projects never see it.
 - Gated surfaces: Home, the bar, the iPad sidebar, the You hub, global search,
   the command palette, Genie routes, Home Screen quick actions, the new agent
   and bug buttons, the tour, status dots and the Glasses radar. Routes stay
   registered, so links and notifications still open hidden features. Business
   packages (CRM, Marketing, Analytics, Competitors) show only when one of the
   user's organizations installed them.
-- **Sign in** is the one per-device package (`packages/sign-in/on`); Settings
-  always keeps Sign in and Sign out.
+- **Sign in** is the one per-device package (`packages/sign-in/on`, on until
+  removed, whatever the pack); Settings always keeps Sign in and Sign out.
+
+### 2.0.2.1 First run
+
+- **Login** has "Forgot password?", which opens the relay's
+  `/forgot-password` (`AuthService.forgotPasswordUrl`) in an in-app Safari
+  sheet.
+- **Sign up** opens `/signup` in the same sheet and moves the flow to the
+  login form with "When your email is confirmed, log in here with your new
+  account." (`AuthFlowModel.signupOpened`), so closing the sheet lands on
+  login instead of leaving the app.
+- **FmNeedsDesktopNote** ends with "Get the desktop app", which opens the
+  project homepage's `/desktop` (`LegalLinks.desktop`).
+- **Placeholders** (`RoutePlaceholderView`, unbuilt repository sections) say
+  the screen "is not in this version of the app yet" and never name the
+  internal owner.
 
 ### 2.0.3 Other pages
 

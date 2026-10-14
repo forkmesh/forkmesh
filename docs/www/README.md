@@ -129,6 +129,16 @@ tools/render_logo.py` (pycairo, Pillow) rewrites every other logo file, then
 `/assets/logo.svg` and list `/favicon/favicon.svg` after `favicon.ico`
 (`app/tests/test_favicon_metadata.py`); rasters stay where SVG is not accepted.
 
+That test holds every page under `app/public` and `www/public` to the same
+head: all four favicons, the manifest, `application-name`,
+`apple-mobile-web-app-title`, `theme-color` `#090909`, `color-scheme`
+`light dark` and a description. Only the www landing page and the investor
+deck (`app/public/pitch-deck/deck.html`) may stay `color-scheme: dark`. The
+deck's CSP (`PAGE_CSP` in `app/src/pitch_deck_runtime.py`) allows
+`manifest-src 'self'` so its manifest link loads. On 15 Oct 2026 the login
+page's `#0f0f0f` theme colour and the missing tags on the OAuth consent page,
+the deck and `ios-install.html` were the last failures.
+
 ## Operations
 
 The node auto-deploy agent keeps forkmesh.com current: after each deploy
@@ -228,6 +238,11 @@ Crawlers and scrapers:
 - `styles.css` carries the shared page kit (`--display`, `--kit-*`, `.kit-*`
   classes; `<body class="kit-page">`). A `.kit-hero` in a grid cell needs
   `margin: 0`.
+- Checkboxes and radios on landing-style pages use the ink colour (white in
+  dark mode, near-black in light), never green or blue: green is for status
+  and blue belongs to the dashboard. `styles.css` sets
+  `accent-color: var(--foreground)` on both through a `:where()` rule, so a
+  new page gets it without its own rule and a page rule still overrides it.
 - A rule that sets `display` beats `[hidden] { display: none }`; elements
   hidden by script need an explicit `[hidden]` rule.
 - `homepage-downloads.js` keeps `knownAssets` as `["asset", [label, arch]]`

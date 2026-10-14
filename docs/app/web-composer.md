@@ -53,6 +53,42 @@ on send:
   with the setup links instead of "The requested organization or repository
   was not found".
 
+## Look
+
+The composer follows the Claude app's prompt box at a compact density (13px
+controls, 14px prompt text), because the earlier card with a full-width repo
+select, tall stacked buttons and illustrated model and mode avatars read as
+heavy next to the rest of the dashboard.
+
+- **Container** (`.fmc-box`): one rounded box (12px radius, 1px border, card
+  background) holding the context and target chips, attachments, the prompt
+  and the toolbar. Focus turns the border and a 1px inset line `accent`; no
+  glow. In the floating dock the panel itself is the bordered box, so the
+  inner box has no border of its own (never a bordered box inside a bordered
+  box). The prompt has no resize grip and grows with its text from 72px up to
+  a cap (`fitInput()`).
+- **Header** (`.fmc-title`): a slim row above the box with clear, the
+  pull-request dot, cloud, the drag grip, the character count, refresh,
+  expand and collapse at 24px with 14px icons.
+- **Toolbar**: left, 28px ghost icon buttons (attach, dictate, `/`) and chip
+  triggers for repository (a native select, so `selectOption` and the OS
+  picker keep working) and permission mode; right, the context gauge (hidden
+  until a session reports usage), the model and effort pair ("Opus 5.5 High",
+  two buttons sharing one hover), Task, Add, a page handler's button, and a
+  32px send button filled with the foreground colour (muted when disabled).
+  The avatar button is kept for wiring but hidden.
+- **Menus** (model, mode, effort, `/`): 8px radius popovers with 4px padding,
+  30px rows, 13px text, 12px muted hints on the right, 11px muted
+  normal-case group headers and hairline separators. The selected row shows
+  an `accent` check on the right; there are no left bars and no green. Model
+  rows have no icons; mode rows keep a 16px line icon. The model menu ends
+  with an "Effort" row that opens the effort menu (Enter, click or
+  ArrowRight; ArrowLeft returns to the model menu).
+- **Colours**: muted text and hover fills are the foreground token at reduced
+  alpha, because the light theme's `muted-foreground` and `secondary` tokens
+  are black and white. The pull-request dot, cloud toggle and draft dot use
+  `accent` instead of green.
+
 ## Page handlers
 
 `registerPageHandler({ id, label, title, placeholder, busyMessage,

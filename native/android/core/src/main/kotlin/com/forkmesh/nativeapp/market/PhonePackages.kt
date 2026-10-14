@@ -8,7 +8,7 @@ object PhonePackages {
     const val REMOVED_KEY = "packages/removed"
 
     fun isOn(id: String, prefs: PrefStore?, legacy: Boolean): Boolean? = when (id) {
-        SIGN_IN -> prefs?.getBool(SIGN_IN_KEY) ?: legacy
+        SIGN_IN -> prefs?.getBool(SIGN_IN_KEY) ?: true
         in PackageGate.ORGANIZATION_PACKAGES -> id !in removed(prefs)
         else -> null
     }

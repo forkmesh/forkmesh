@@ -120,6 +120,27 @@ the web shows green when the address answered at all.
   `forkmesh.statusPage.v1`). Signed-out visitors and the public `/status`
   incident page are unaffected.
 
+### Web layout
+
+Every grid in `content/web/view.html` (the page body, the two-column row, its
+right column, and the Checks, Settings and Your monitors lists) sets
+`grid-cols-1`, so each track is `minmax(0, 1fr)`. A bare `grid` sizes its
+implicit column to the widest row's min-content, and the one-line truncated
+check summaries and monitor addresses then pushed every check row past its
+card: the switches drew over the Settings column and the view scrolled
+sideways. `.sp-switch` sets `min-height: 0` because the dashboard gives every
+button `min-height: 44px` on touch screens, which stretched the switches into
+tall pills on phones. Inputs and the select take the accent focus border.
+
+### Event-only states
+
+The error and notice boxes are shell `fm-flash` alerts (danger and blue info)
+with one icon; `message()` writes into their `[data-status-message-text]` child
+so the icon survives. The install panel is an `fm-blankslate`, Add monitor and
+Install are the small green `fm-btn-cta`, and Remove Status Page and each
+monitor's Remove are `fm-btn-danger` (red text, red fill on hover), matching
+the dashboard rule that green is only for creating something.
+
 ## Tests
 
 `python3 -m pytest marketplace/packages/status-page/tests app/tests/test_status_page_web.py` covers the

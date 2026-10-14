@@ -18,6 +18,8 @@ object AuthCopy {
     const val NETWORK_ERROR = "Network error - please try again."
     const val REVOKED_DETAIL =
         "Your local repositories were kept. Sign in again to register this phone as a new node."
+    const val SIGNUP_RETURN_HINT = "When your email is confirmed, log in here with your new account."
+    const val FORGOT_PASSWORD = "Forgot password?"
 }
 
 sealed class LoginSubmit {
@@ -52,6 +54,8 @@ data class LoginFormState(
     fun invalid(message: String): LoginFormState = copy(hint = message, bad = true)
 
     fun sending(): LoginFormState = copy(hint = "", bad = false)
+
+    fun afterSignup(): LoginFormState = copy(hint = AuthCopy.SIGNUP_RETURN_HINT, bad = false)
 
     fun failed(error: Throwable): LoginFormState = if (error is AuthException) {
         copy(hint = error.message, bad = error.code != "bad_totp", showTotp = error.code == "bad_totp" || showTotp)

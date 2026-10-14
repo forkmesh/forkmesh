@@ -316,7 +316,12 @@ def test_private_profiles_and_repo_pages_revoke_cached_public_metadata():
         'return json_response({"error": "not_found"}', lookup_start)
     lookup = worker[lookup_start:lookup_end]
     assert lookup.index("profile_private = bool(rec.get") < lookup.index(
-        "cached = await edge_cache_match(lookup_cache_key)")
+        "cached = await _account_lookup_cached(")
+    lookup_cached = account_users[
+        account_users.index("async def _account_lookup_cached")
+        :account_users.index("async def _account_lookup_refresh")
+    ]
+    assert "await edge_cache_match(key)" in lookup_cached
     assert "await _account_session_record(env, request)" in lookup
     assert '"profilePrivate": True' in lookup
     assert '"nodes": _owned_nodes(rec)' in lookup

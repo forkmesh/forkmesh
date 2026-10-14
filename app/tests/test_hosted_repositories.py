@@ -865,7 +865,7 @@ def test_private_visibility_is_not_offered_for_a_hosted_repository():
     assert "const privateBlocked = hostedHere && !hostedSettings?.privateSupported;" \
         in REPO_LIST_JS
     assert "privateOption.disabled = privateBlocked;" in REPO_LIST_JS
-    assert 'visibility.value === "private") visibility.value = "public"' \
+    assert 'newRepoVisibility() === "private") setNewRepoVisibility("public")' \
         in REPO_LIST_JS
     assert "private_hosted_unsupported" in REPO_LIST_JS
 

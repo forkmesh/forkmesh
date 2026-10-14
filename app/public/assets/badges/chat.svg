@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Chat">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb3dc"/><stop offset="1" stop-color="#b42f7d"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6e1a4f"/><stop offset="1" stop-color="#3e0d2b"/></linearGradient>
+<clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#b42f7d" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<path d="M44 34 H84 A14 14 0 0 1 98 48 V68 A14 14 0 0 1 84 82 H62 L44 96 V82 A14 14 0 0 1 30 68 V48 A14 14 0 0 1 44 34 Z" fill="#ffffff"/>
+<circle cx="47" cy="58" r="5.5" fill="#bf3989"/>
+<circle cx="64" cy="58" r="5.5" fill="#bf3989"/>
+<circle cx="81" cy="58" r="5.5" fill="#bf3989"/>
+</svg>

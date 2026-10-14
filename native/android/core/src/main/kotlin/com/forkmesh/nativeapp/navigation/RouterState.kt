@@ -239,7 +239,7 @@ data class UpdateRequirement(val running: String, val minimum: String, val store
 
 object ClientVersionGate {
     const val PLATFORM_KEY = "android"
-    const val DEFAULT_STORE_URL = "https://forkmesh.com/download"
+    const val DEFAULT_STORE_URL = "https://forkmesh.com/mobile"
 
     fun versionNumbers(version: String): List<Int>? {
         var text = version.trim()

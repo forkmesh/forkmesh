@@ -7,11 +7,11 @@
                     <p data-ads-summary class="mt-1 text-sm text-muted-foreground">Short text ads written by members, read by a person before they run, and shown by product surface only. They are never aimed at anyone and never follow anyone.</p>
                   </div>
                   <div class="shrink-0 flex items-center gap-3 self-start">
-                    <span data-ads-level class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <span data-ads-level class="fm-label">Loading</span>
                     <button
                       data-ads-refresh
                       type="button"
-                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                      class="fm-btn fm-btn-sm"
                     >
                       <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
                       Refresh
@@ -23,7 +23,7 @@
                   <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Checking your session...</p>
                 </div>
 
-                <div data-ads-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
+                <div data-ads-notice hidden class="px-4 sm:px-5 py-3 border-b border-border" role="status" aria-live="polite"></div>
 
                 <div class="px-4 sm:px-5 py-4 border-b border-border">
                   <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">How it works</h2>
@@ -52,7 +52,7 @@
                       <button
                         data-forkmesh-membership
                         type="button"
-                        class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors"
+                        class="inline-flex items-center gap-1.5 rounded-md bg-cta px-3 py-2 text-xs font-semibold text-cta-foreground hover:opacity-90 transition-colors"
                       >
                         <i data-lucide="heart" class="w-3.5 h-3.5"></i>
                         See membership levels
@@ -92,11 +92,11 @@
                 <div data-ads-owner hidden>
                   <div class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
                     <h2 data-ads-form-title class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Write an ad</h2>
-                    <button data-ads-form-reset type="button" hidden class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel editing</button>
+                    <button data-ads-form-reset type="button" hidden class="fm-btn fm-btn-sm">Cancel editing</button>
                   </div>
 
                   <form data-ads-form novalidate class="px-4 sm:px-5 py-4 border-b border-border grid gap-4">
-                    <div data-ads-edit-warning hidden class="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-foreground"></div>
+                    <div data-ads-edit-warning hidden class="fm-flash fm-flash-warning" role="status"></div>
                     <div class="grid gap-4 sm:grid-cols-2">
                       <label class="grid gap-2 text-sm font-semibold text-foreground">
                         <span class="flex items-center justify-between gap-2">Headline <span data-ads-count="headline" class="font-mono text-[11px] font-normal text-muted-foreground"></span></span>
@@ -157,10 +157,10 @@
                       <span>I confirm this ad follows the ForkMesh Ads policy and is honest about what it promotes. <span class="text-xs">Required to submit for review; not needed to save a draft.</span></span>
                     </label>
 
-                    <p data-ads-form-error hidden class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-foreground" role="alert"></p>
+                    <div data-ads-form-error hidden class="fm-flash fm-flash-danger" role="alert"></div>
 
                     <div class="flex flex-wrap items-center gap-2">
-                      <button data-ads-submit type="submit" class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors">
+                      <button data-ads-submit type="submit" class="inline-flex items-center gap-1.5 rounded-md bg-cta px-3 py-2 text-xs font-semibold text-cta-foreground hover:opacity-90 transition-colors">
                         <i data-lucide="send" class="w-3.5 h-3.5"></i>
                         Submit for review
                       </button>
@@ -186,7 +186,7 @@
                     <span class="text-xs text-muted-foreground">Visible to platform reviewers only. Every decision is recorded.</span>
                   </div>
                   <div data-ads-review-tabs class="px-4 sm:px-5 py-3 border-b border-border flex flex-wrap items-center gap-2" role="tablist" aria-label="Review queue status"></div>
-                  <div data-ads-review-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm text-foreground" role="status" aria-live="polite"></div>
+                  <div data-ads-review-notice hidden class="px-4 sm:px-5 py-3 border-b border-border" role="status" aria-live="polite"></div>
                   <div data-ads-review-list class="divide-y divide-border" aria-live="polite"></div>
                 </div>
 

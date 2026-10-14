@@ -124,6 +124,8 @@ object ProjectActions {
     fun privacyUrl(): String = LegalLinks.privacyFor(homepage())
 
     fun membershipUrl(): String = LegalLinks.membershipFor(homepage())
+
+    fun desktopUrl(): String = LegalLinks.desktopFor(homepage())
 }
 
 @Composable

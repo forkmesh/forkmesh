@@ -7,6 +7,12 @@ public enum PackageGate {
 
     public static let devicePackages: Set<String> = ["sign-in"]
 
+    public static let starterPackages: Set<String> = ["agents", "chat", "inbox", "code", "tour"]
+
+    public static func isStarter(_ packageId: String, pack: StarterPack = .fallback) -> Bool {
+        pack.packages.contains(packageId)
+    }
+
     public static let items: [String: String] = [
         "Agents": "agents", "Inbox": "inbox", "Chat": "chat", "currentRepo": "code", "reportBug": "bug-reports",
         "repo-issues": "issues", "repo-commits": "commits", "repo-branches": "branches", "repo-pulls": "pull-requests",
@@ -137,6 +143,42 @@ final class PackageGateBox: @unchecked Sendable {
             lock.lock()
             stored = newValue
             lock.unlock()
+        }
+    }
+}
+
+public enum StarterPack: String, CaseIterable, Sendable {
+    case minimal
+    case standard
+    case everything
+
+    public static let fallback: StarterPack = .standard
+
+    public static func fromName(_ name: String?) -> StarterPack {
+        name.flatMap(StarterPack.init(rawValue:)) ?? fallback
+    }
+
+    public var packages: Set<String> {
+        switch self {
+        case .minimal: return ["code"]
+        case .standard: return PackageGate.starterPackages
+        case .everything: return PackageGate.packages.subtracting(PackageGate.organizationPackages)
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .minimal: return "Minimal"
+        case .standard: return "Standard"
+        case .everything: return "Everything"
+        }
+    }
+
+    public var summary: String {
+        switch self {
+        case .minimal: return "Just your code. No agents, chat or inbox; add more from the Market later."
+        case .standard: return "Agents, Chat, Inbox, Code and the tour. A good place to start."
+        case .everything: return "Every package on the phone, for people who want it all at once."
         }
     }
 }

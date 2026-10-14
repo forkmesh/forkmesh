@@ -15,10 +15,10 @@ clicking it again returns to Everyone.
 
 ## Where it lives
 
-The toolbar markup exists in three files that must change together:
-`app/public/dashboard/partials/views/tasks.html`,
-`app/public/dashboard/tasks/index.html` and
-`marketplace/packages/tasks/content/web/view.html`. Behaviour is in
+The toolbar markup exists in two files that must change together:
+`app/public/dashboard/partials/views/tasks.html` and
+`marketplace/packages/tasks/content/web/view.html`;
+`app/public/dashboard/tasks/index.html` is composed from the first. Behaviour is in
 `app/public/dashboard/js/09-tasks.js`; rebuild with
 `python3 app/tools/build_dashboard_assets.py`. Tests:
 `app/tests/test_dashboard_tasks_management.py`,

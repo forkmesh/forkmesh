@@ -303,12 +303,13 @@ internal suspend fun CollabEnv.requestDesktopCommand(
     try {
         val session = auth?.session?.value
         val signer = identity
-        val account = DesktopCommand.ownerAccount(session?.nodeName, session?.pubkey, signer?.publicKeyB64url, repo.owner)
+        val account = DesktopCommand.ownerAccount(session?.nodeName, session?.pubkey, signer?.publicKeyB64url)
+        val repoOwner = com.forkmesh.nativeapp.code.OwnerProofs.desktopCommandOwner(repo, account)
         val ts = System.currentTimeMillis().toString()
         val result = withContext(Dispatchers.IO) {
-            val canonical = DesktopCommand.canonical(repo.owner, repo.name, command, target, ts)
+            val canonical = DesktopCommand.canonical(repoOwner, repo.name, command, target, ts)
             val sig = signer!!.sign(canonical.toByteArray(Charsets.UTF_8))
-            api.desktopCommand(repo.owner, repo.name, account, command, target, ts, sig, payload)
+            api.desktopCommand(repoOwner, repo.name, account, command, target, ts, sig, payload)
         }
         if (result.ok) status.show(successMessage) else status.error(failureMessage)
     } catch (error: CancellationException) {

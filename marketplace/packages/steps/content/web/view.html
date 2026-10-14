@@ -13,17 +13,18 @@
                   <p class="mt-1 text-sm text-muted-foreground">Steps your phone counts, synced through Apple Health to your account on the web, desktop, and mobile.</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  <button data-steps-refresh data-steps-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="refresh-cw" class="mr-1 inline h-3.5 w-3.5"></i>Refresh</button>
-                  <button data-steps-manage data-steps-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="settings" class="mr-1 inline h-3.5 w-3.5"></i>Plugin data</button>
+                  <button data-steps-refresh data-steps-requires-install type="button" class="fm-btn hidden"><i data-lucide="refresh-cw"></i>Refresh</button>
+                  <button data-steps-manage data-steps-requires-install type="button" class="fm-btn hidden"><i data-lucide="settings"></i>Plugin data</button>
                 </div>
               </div>
-              <div data-steps-error class="mb-3 hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
-              <div data-steps-notice class="mb-3 hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+              <div data-steps-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-steps-message-text class="fm-flash-body"></p></div>
+              <div data-steps-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-steps-message-text class="fm-flash-body"></p></div>
 
-              <section data-steps-install-panel class="hidden rounded-lg border border-border bg-card p-8 text-center">
-                <h2 class="text-base font-semibold text-foreground">Install Pedometer</h2>
-                <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Install it here, then open Steps in the ForkMesh iPhone app and turn on step counting. The app reads your steps from Apple Health and the motion sensor and sends each day's total to your account, so you can watch them from any computer. Every day is encrypted at rest with a key minted for your account alone.</p>
-                <button data-steps-install type="button" class="mt-4 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Install Pedometer</button>
+              <section data-steps-install-panel class="fm-blankslate hidden rounded-lg border border-border bg-card">
+                <i data-lucide="footprints"></i>
+                <h2 class="fm-blankslate-title">Install Pedometer</h2>
+                <p class="fm-blankslate-desc">Install it here, then open Steps in the ForkMesh iPhone app and turn on step counting. The app reads your steps from Apple Health and the motion sensor and sends each day's total to your account, so you can watch them from any computer. Every day is encrypted at rest with a key minted for your account alone.</p>
+                <button data-steps-install type="button" class="fm-btn fm-btn-sm fm-btn-cta mt-3">Install Pedometer</button>
               </section>
 
               <div data-steps-app class="hidden grid gap-4">
@@ -48,8 +49,8 @@
                       <label class="text-xs text-muted-foreground">Distance (<span data-steps-distance-unit>km</span>)<input data-steps-manual-distance type="number" min="0" max="300" step="0.01" class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"></label>
                     </div>
                     <div class="mt-3 flex flex-wrap gap-2">
-                      <button type="submit" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save steps</button>
-                      <button data-steps-manual-clear type="button" class="rounded-md border border-border px-3 py-2 text-xs">Remove added steps</button>
+                      <button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save steps</button>
+                      <button data-steps-manual-clear type="button" class="fm-btn fm-btn-sm">Remove added steps</button>
                     </div>
                   </form>
                   <form data-steps-goal-form class="rounded-lg border border-border bg-card p-4">
@@ -58,15 +59,17 @@
                       <label class="text-xs text-muted-foreground">Daily steps<input data-steps-goal type="number" min="0" max="200000" step="500" class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"></label>
                       <label class="text-xs text-muted-foreground">Distance in<select data-steps-units class="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"><option value="auto">Automatic</option><option value="metric">Kilometres</option><option value="imperial">Miles</option></select></label>
                     </div>
-                    <button type="submit" class="mt-3 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Save goal</button>
+                    <button type="submit" class="fm-btn fm-btn-sm mt-3">Save goal</button>
                   </form>
                 </div>
               </div>
             </div>
 
-            <dialog data-steps-manage-dialog class="w-full max-w-lg rounded-lg border border-border bg-card p-5 text-foreground shadow-2xl backdrop:bg-background/80">
-              <h2 class="text-base font-semibold">Pedometer data</h2>
-              <p class="mt-2 text-sm text-muted-foreground">Export your step history as JSON, or uninstall Pedometer from your account. Uninstalling downloads your export first, then deletes your steps on web, desktop, and mobile. Apple Health keeps its own copy.</p>
-              <div class="mt-4 flex flex-wrap justify-end gap-2"><button data-steps-export type="button" class="rounded-md border border-border px-3 py-2 text-xs">Export my data</button><button data-steps-uninstall type="button" class="rounded-md border border-destructive px-3 py-2 text-xs text-destructive">Uninstall…</button><button data-steps-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs">Close</button></div>
+            <dialog data-steps-manage-dialog class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Pedometer data</h2></div>
+                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export your step history as JSON, or uninstall Pedometer from your account. Uninstalling downloads your export first, then deletes your steps on web, desktop, and mobile. Apple Health keeps its own copy.</p></div>
+                <div class="fm-dialog-footer"><button data-steps-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-steps-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-steps-export type="button" class="fm-btn fm-btn-sm">Export my data</button></div>
+              </div>
             </dialog>
           </section>

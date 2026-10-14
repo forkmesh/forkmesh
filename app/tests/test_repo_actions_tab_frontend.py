@@ -100,7 +100,7 @@ def test_executor_text_is_escaped_and_bounded():
         line for line in FRAGMENT.splitlines() if "class=" in line)
     raw = re.findall(r"\$\{(run|step|workflow|view)\.(\w+)\}", markup)
     assert set(raw) <= {("run", "id"), ("run", "pullNumber")}, raw
-    assert "<span>${escapeHtml(view.notice.text)}</span>" in FRAGMENT
+    assert "<span class=\"fm-flash-body\">${escapeHtml(view.notice.text)}</span>" in FRAGMENT
     assert "escapeHtml(view.pending.map((entry) => entry.label).join(\", \"))" in FRAGMENT
     assert "REPO_ACTIONS_WORKFLOW_PATH.test(path)" in FRAGMENT
 

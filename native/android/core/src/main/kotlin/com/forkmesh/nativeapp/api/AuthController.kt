@@ -46,6 +46,8 @@ class AuthController(
 
     val signupUrl: String get() = base("/signup")
 
+    val forgotPasswordUrl: String get() = base("/forgot-password")
+
     fun addListener(listener: () -> Unit) {
         listeners.add(listener)
     }

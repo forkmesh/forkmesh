@@ -44,6 +44,7 @@ PING_KIND_CATALOG = (
     ("subscribed", "conversations", "Activity on things you follow"),
     ("chat_webhook", "conversations", "Chat webhook posts"),
     ("channel_unread", "conversations", "Unread channel messages"),
+    ("direct_unread", "conversations", "Unread direct messages"),
     ("calendar_invitation", "conversations", "Calendar invitations"),
     ("calendar_reminder", "conversations", "Calendar reminders"),
     ("calendar_rsvp", "conversations", "Calendar replies"),

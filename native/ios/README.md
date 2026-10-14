@@ -111,6 +111,12 @@ hand, `working_directory: native/ios`, `mac_mini_m2`):
 | `ios-native-release` | Registers the bundle ids (`tools/asc_bundle_ids.py ensure`), picks the next App Store Connect build number, cloud-signs at export, uploads and submits to TestFlight (`app_store_connect` variable group). Stops before the archive if the app record does not exist. |
 | `ios-native-adhoc` | Ad hoc IPA for the devices registered in the developer account. |
 
+From 2026-09-24 to 2026-10-15 `ios-native-build` ran a merged diagnostic
+script ("Cancel probes") that compiled nothing and always exited 0, so the job
+was green whatever the app's state. `app/tests/test_codemagic_native_build.py`,
+in the critical worker suite, now fails if the job stops building the app or
+ends in an unconditional `exit 0`.
+
 The version is `Config/Version.xcconfig` (`MARKETING_VERSION`); release
 overrides `CURRENT_PROJECT_VERSION` with the next free build number. The same
 file carries `FORKMESH_ENV`, `FORKMESH_API_HOST` and `FORKMESH_WORLD_URL` into

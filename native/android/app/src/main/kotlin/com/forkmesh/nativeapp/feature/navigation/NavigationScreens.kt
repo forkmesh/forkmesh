@@ -205,7 +205,7 @@ class RoutePlaceholderScreen(private val route: Route) : Screen() {
             FmEmptyState(
                 RouteCatalog.icon(route.kind),
                 "Coming soon",
-                message = "${RouteCatalog.title(route.kind)} is not on Android yet (${route.kind.owner}).",
+                message = "${RouteCatalog.title(route.kind)} is not in this version of the app yet.",
             )
         }
     }

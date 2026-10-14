@@ -771,8 +771,8 @@ def test_signup_verification_email_is_a_professional_welcome_email():
         ENTRY_TEXT.index("def _format_email_ts")
     ]
     for marker in (
-        "background:#f4f4f5",
-        "background:#ffffff",
+        "background:#fafafa",
+        "background:#171717",
         'content=\\"light\\"',
         "data-forkmesh-site-action",
     ):

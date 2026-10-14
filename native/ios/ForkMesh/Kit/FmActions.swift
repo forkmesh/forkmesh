@@ -1,6 +1,7 @@
 // FmChangeKind, FmChangeBadge, FmTone, FmToneButton, FmBottomBar,
 // FmBranchLabel, FmDialogActions, FmNeedsDesktopNote and FmInboxPendingNote.
 
+import FMAccount
 import SwiftUI
 
 /// Git change status for FmChangeBadge.
@@ -346,8 +347,10 @@ struct FmDialogActions: View {
 /// has no desktop device.
 struct FmNeedsDesktopNote: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.openURL) private var openURL
 
     static let headline: String = "Needs a desktop or server node on this account"
+    static let action: String = "Get the desktop app"
 
     private let detail: String
     private let icon: String
@@ -371,6 +374,9 @@ struct FmNeedsDesktopNote: View {
                 .fmText(.bodyMedium, weight: FmType.emphasis)
             Text(explanation)
                 .fmText(.bodySmall, height: FmType.leadingRelaxed)
+            FmTextButton(FmNeedsDesktopNote.action, icon: "open_in_new", minHeight: 36) {
+                openURL(LegalLinks.desktop)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

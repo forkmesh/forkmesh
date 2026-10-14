@@ -82,6 +82,20 @@ final class NotificationService: UNNotificationServiceExtension {
             let mode = PushPreviewMode.parse(credentials?.preview)
             let chat = PushChatRequest.parse(Self.payload(request.content.userInfo))
             if let chat, !chat.threadIdentifier.isEmpty { content.threadIdentifier = chat.threadIdentifier }
+            if mode == .nameAndMessage, PushMeshWake.isWake(request.content.userInfo) {
+                content.threadIdentifier = PushMeshWake.identifier
+                UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
+                    if let local = delivered.first(where: {
+                        PushMeshWake.isLocalAlert(identifier: $0.request.identifier, info: $0.request.content.userInfo)
+                    }) {
+                        content.title = local.request.content.title
+                        content.subtitle = ""
+                        content.body = local.request.content.body
+                    }
+                    self.deliver(content)
+                }
+                return
+            }
             switch mode {
             case .hidden:
                 content.title = PushPreviewText.hiddenTitle

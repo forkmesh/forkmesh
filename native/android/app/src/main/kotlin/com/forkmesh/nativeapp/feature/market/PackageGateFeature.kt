@@ -12,6 +12,7 @@ import com.forkmesh.nativeapp.market.PackageGate
 import com.forkmesh.nativeapp.market.PackageSurfaces
 import com.forkmesh.nativeapp.market.PackagesText
 import com.forkmesh.nativeapp.market.PhonePackages
+import com.forkmesh.nativeapp.market.StarterPack
 import com.forkmesh.nativeapp.platform.AppLifecycle
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,10 @@ object PackageGateFeature {
     private val surfacesState = MutableStateFlow(PackageSurfaces.ALL)
 
     val surfaces: StateFlow<PackageSurfaces> = surfacesState.asStateFlow()
+
+    private val starterPackState = MutableStateFlow(false)
+
+    val starterPackPending: StateFlow<Boolean> = starterPackState.asStateFlow()
 
     @Volatile
     var legacy: Boolean = true
@@ -57,6 +62,7 @@ object PackageGateFeature {
         legacy = PackageGate.legacyProject(store) { auth?.hasAppAccess?.value == true }
         organizationInstalled = store?.getString(ORGANIZATION_KEY).orEmpty().split(',').filter(PackagesText::isPackageId).toSet()
         organizationsAt = 0L
+        starterPackState.value = needsStarterPack()
         publish()
         val scope = ProjectLifecycle.scope
         scope.launch {
@@ -69,15 +75,26 @@ object PackageGateFeature {
         }
         ProjectLifecycle.onClose {
             prefs = null
+            starterPackState.value = false
             organizationInstalled = emptySet()
             surfacesState.value = PackageSurfaces.ALL
         }
     }
 
     fun isInstalled(id: String): Boolean = when (id) {
-        PackageGate.SIGN_IN -> PhonePackages.isOn(id, prefs, legacy) ?: legacy
+        PackageGate.SIGN_IN -> PhonePackages.isOn(id, prefs, legacy) ?: true
         in PackageGate.ORGANIZATION_PACKAGES -> id in organizationInstalled && PhonePackages.isOn(id, prefs, legacy) != false
-        else -> StatusPageFeature.store?.shows(id) ?: PackageGate.fallback(null, legacy)
+        else -> StatusPageFeature.store?.shows(id) ?: PackageGate.fallback(id, null, legacy, starterPack())
+    }
+
+    fun starterPack(): StarterPack = PackageGate.starterPack(prefs)
+
+    fun needsStarterPack(): Boolean = PackageGate.needsStarterPack(prefs, legacy)
+
+    fun chooseStarterPack(pack: StarterPack) {
+        PackageGate.chooseStarterPack(pack, prefs)
+        starterPackState.value = needsStarterPack()
+        publish()
     }
 
     fun deviceSwitch(id: String): Boolean? = PhonePackages.isOn(id, prefs, legacy)

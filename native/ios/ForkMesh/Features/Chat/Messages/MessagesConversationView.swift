@@ -115,7 +115,10 @@ struct MessagesConversationView<Drawer: View>: View {
                             .id(item.id)
                     }
                     if !typing.isEmpty {
-                        MessagesTypingBubble(colors: palette, names: typing)
+                        TimelineView(.periodic(from: Date(), by: 1)) { (_: TimelineViewDefaultContext) in
+                            let names: [String] = hub.conversationTyping
+                            if !names.isEmpty { MessagesTypingBubble(colors: palette, names: names) }
+                        }
                     }
                     Color.clear.frame(height: 6).id(MessagesConversationView.endId)
                 }

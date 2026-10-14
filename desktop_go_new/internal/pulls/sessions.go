@@ -75,6 +75,8 @@ func (s *Store) session() *Session {
 
 func amBranchBackupRef(branch string) string { return "refs/forkmesh/am-backup/" + branch }
 
+func amBranchTrashRef(branch string) string { return "refs/forkmesh/trash/am-abort/" + branch }
+
 func (s *Store) unmergedFiles(dir string) []string {
 	r := s.runGit(dir, "diff", "--name-only", "--diff-filter=U")
 	files := []string{}
@@ -756,7 +758,8 @@ func (s *Store) AbortConflictMerge() {
 			if s.runGit(s.WorkTree, "branch", "-f", sess.AmBranch, previousTip).ok {
 				s.runGit(s.WorkTree, "update-ref", "-d", backupRef)
 			}
-		} else {
+		} else if tip := s.resolvedCommitOid(s.WorkTree, "refs/heads/"+sess.AmBranch); tip != "" &&
+			s.runGit(s.WorkTree, "update-ref", amBranchTrashRef(sess.AmBranch), tip).ok {
 			s.runGit(s.WorkTree, "branch", "-D", sess.AmBranch)
 		}
 	}

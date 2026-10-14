@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["agents"] = (core) => {
-  const { $, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, orgAgentStatusDotClass, parseFlexibleDate, repoAgentStatusTone, state } = core;
+  const { $, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, state } = core;
   const AGENTS_ACTIVE_STATUSES = new Set(["queued", "running", "security_pending"]);
   const AGENTS_FAILED_STATUSES = new Set(["failed", "rejected", "stopped"]);
   const AGENTS_FILTER_KEYS = Object.freeze(["status", "repo", "node"]);
@@ -23,6 +23,7 @@
     codex: "Codex",
     "local-llama": "Local model",
   });
+  const AGENTS_AMBER_TEXT = "text-amber-500 [[data-dashboard-theme=light]_&]:text-amber-700";
   const agentsPageView = {
     cloud: [],
     desktop: [],
@@ -134,18 +135,24 @@
     return `<span>${escapeHtml(label)} <time datetime="${escapeHtml(date.toISOString())}" title="${escapeHtml(date.toLocaleString())}">${escapeHtml(formatTimeAgo(value))}</time></span>`;
   }
 
-  function agentsDotClass(row) {
-    if (row.kind === "desktop") return "bg-muted-foreground";
-    if (row.attention) return "bg-amber-500";
-    if (row.live) return "bg-emerald-500 animate-pulse";
-    return orgAgentStatusDotClass(row.status);
+  function agentsStatusIcon(row) {
+    if (row.kind === "desktop") return { icon: "monitor", tone: "text-muted-foreground" };
+    if (row.attention) return { icon: "triangle-alert", tone: "text-amber-500" };
+    if (row.badge === "stopping") return { icon: "circle-stop", tone: "text-muted-foreground" };
+    if (row.live) return { icon: "loader-circle", tone: "text-amber-500 animate-spin" };
+    if (row.status === "completed") return { icon: "circle-check", tone: "text-success" };
+    if (row.status === "stopped") return { icon: "circle-slash", tone: "text-muted-foreground" };
+    if (AGENTS_FAILED_STATUSES.has(row.status)) return { icon: "circle-x", tone: "text-destructive" };
+    if (row.active) return { icon: "circle-dashed", tone: "text-amber-500" };
+    return { icon: "circle", tone: "text-muted-foreground" };
   }
 
   function agentsBadgeTone(row) {
-    if (row.kind === "desktop") return "text-muted-foreground";
-    if (row.attention) return "text-amber-500";
-    if (row.live) return "text-emerald-500";
-    return repoAgentStatusTone(row.status);
+    if (row.kind === "desktop" || row.badge === "stopping" || row.status === "stopped") return "text-muted-foreground";
+    if (row.attention || row.active) return AGENTS_AMBER_TEXT;
+    if (row.status === "completed") return "text-success";
+    if (AGENTS_FAILED_STATUSES.has(row.status)) return "text-destructive";
+    return "text-muted-foreground";
   }
 
   function agentsKindLabel(row) {
@@ -158,28 +165,42 @@
     const repoLabel = agentsRepoLabel(row);
     const runtime = [row.provider, row.model].filter(Boolean).join(" · ");
     const badge = AGENTS_STATUS_LABELS[row.badge] || row.badge || "Unknown";
-    const head = `
-        <div class="flex min-w-0 items-center gap-2">
-          <span class="h-2 w-2 shrink-0 rounded-full ${agentsDotClass(row)}" aria-hidden="true"></span>
-          <span class="min-w-0 flex-1 truncate font-medium text-foreground">${escapeHtml(row.title)}</span>
-          <span data-agents-status="${escapeHtml(row.badge)}" class="shrink-0 rounded-full border border-border px-2 py-0.5 font-mono text-[11px] ${agentsBadgeTone(row)}">${escapeHtml(badge)}</span>
+    const status = agentsStatusIcon(row);
+    const updated = agentsClockHtml(row.kind === "desktop" ? "Reported" : "Updated", row.updatedAt);
+    const started = agentsClockHtml("Started", row.createdAt);
+    const body = `
+        <span class="mt-0.5 shrink-0" title="${escapeHtml(badge)}"><i data-lucide="${status.icon}" class="h-4 w-4 ${status.tone}" aria-hidden="true"></i></span>
+        <div class="grid min-w-0 flex-1 gap-1">
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="min-w-0 truncate font-semibold text-foreground${row.href ? " group-hover:text-accent" : ""}">${escapeHtml(row.title)}</span>
+            <span data-agents-status="${escapeHtml(row.badge)}" class="shrink-0 rounded-full border border-border px-2 text-xs font-medium leading-5 ${agentsBadgeTone(row)}">${escapeHtml(badge)}</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            ${repoLabel ? `<span class="font-medium text-foreground">${escapeHtml(repoLabel)}</span>` : ""}
+            <span>${escapeHtml(agentsKindLabel(row))}</span>
+            ${runtime ? `<span>${escapeHtml(runtime)}</span>` : ""}
+            ${row.node ? `<span class="inline-flex items-center gap-1"><i data-lucide="server" class="h-3 w-3 text-muted-foreground" aria-hidden="true"></i><span class="font-mono">${escapeHtml(row.node)}</span></span>` : ""}
+            ${row.createdBy ? `<span>by ${escapeHtml(row.createdBy)}</span>` : ""}
+            ${started ? `<span class="sm:hidden">${started}</span>` : ""}
+            ${updated ? `<span class="sm:hidden">${updated}</span>` : ""}
+          </div>
+          ${row.message ? `<p class="text-xs ${AGENTS_AMBER_TEXT}">${escapeHtml(row.message)}</p>` : ""}
+          ${row.kind === "desktop" ? `<p class="text-xs text-muted-foreground">End-to-end encrypted: the relay holds only a sealed copy. Open the repository's Agents tab while this desktop is running to follow and manage it.</p>` : ""}
         </div>
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pl-4 text-xs text-muted-foreground">
-          ${repoLabel ? `<span class="font-mono text-foreground">${escapeHtml(repoLabel)}</span>` : ""}
-          <span>${escapeHtml(agentsKindLabel(row))}</span>
-          ${runtime ? `<span>${escapeHtml(runtime)}</span>` : ""}
-          ${row.node ? `<span class="inline-flex items-center gap-1"><i data-lucide="server" class="h-3 w-3"></i><span class="font-mono">${escapeHtml(row.node)}</span></span>` : ""}
-          ${row.createdBy ? `<span>by ${escapeHtml(row.createdBy)}</span>` : ""}
-          ${agentsClockHtml("Started", row.createdAt)}
-          ${agentsClockHtml(row.kind === "desktop" ? "Reported" : "Updated", row.updatedAt)}
-        </div>
-        ${row.message ? `<p class="pl-4 text-xs text-amber-500">${escapeHtml(row.message)}</p>` : ""}
-        ${row.kind === "desktop" ? `<p class="pl-4 text-xs text-muted-foreground">End-to-end encrypted: the relay holds only a sealed copy. Open the repository's Agents tab while this desktop is running to follow and manage it.</p>` : ""}`;
+        ${started || updated ? `<div class="hidden shrink-0 gap-1 text-right text-xs text-muted-foreground sm:grid">${updated ? `<span class="inline-flex items-center justify-end gap-1"><i data-lucide="clock" class="h-3 w-3" aria-hidden="true"></i>${updated}</span>` : ""}${started}</div>` : ""}`;
     const attrs = `data-agents-row="${escapeHtml(row.key)}" data-agents-kind="${escapeHtml(row.kind)}"`;
     if (row.href) {
-      return `<a ${attrs} href="${escapeHtml(row.href)}" class="grid gap-1.5 px-4 sm:px-5 py-3 text-sm transition-colors hover:bg-secondary/50">${head}</a>`;
+      return `<a ${attrs} href="${escapeHtml(row.href)}" class="group flex items-start gap-3 px-4 py-3 text-sm transition-colors hover:bg-[rgb(var(--dashboard-subtle-rgb))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">${body}</a>`;
     }
-    return `<div ${attrs} class="grid gap-1.5 px-4 sm:px-5 py-3 text-sm">${head}</div>`;
+    return `<div ${attrs} class="flex items-start gap-3 px-4 py-3 text-sm">${body}</div>`;
+  }
+
+  function agentsBlankslate(icon, heading, detail) {
+    return `<div class="px-6 py-12 text-center">
+        <i data-lucide="${icon}" class="mx-auto h-6 w-6 text-muted-foreground" aria-hidden="true"></i>
+        <h3 class="mt-3 text-base font-semibold text-foreground">${escapeHtml(heading)}</h3>
+        <p class="mx-auto mt-1 max-w-md text-sm text-muted-foreground">${detail}</p>
+      </div>`;
   }
 
   function renderAgentsFilterOptions(rows) {
@@ -203,34 +224,65 @@
     const notice = $("[data-agents-notice]");
     if (!notice) return;
     notice.hidden = !message;
-    notice.textContent = message || "";
-    notice.classList.toggle("text-destructive", Boolean(isError));
-    notice.classList.toggle("text-muted-foreground", !isError);
+    notice.replaceChildren();
+    if (!message) return;
+    const flash = document.createElement("div");
+    flash.className = isError ? "fm-flash fm-flash-danger" : "fm-flash fm-flash-neutral";
+    const icon = document.createElement("i");
+    icon.setAttribute("data-lucide", isError ? "circle-alert" : "info");
+    icon.setAttribute("aria-hidden", "true");
+    const body = document.createElement("span");
+    body.className = "fm-flash-body";
+    body.textContent = message;
+    flash.append(icon, body);
+    notice.append(flash);
+    window.lucide?.createIcons();
+  }
+
+  function agentsCountText(rows) {
+    const working = rows.filter((row) => row.active).length;
+    const total = `${formatCount(rows.length)} ${rows.length === 1 ? "session" : "sessions"}`;
+    return working ? `${total} · ${formatCount(working)} working` : total;
+  }
+
+  function setAgentsSetup(show) {
+    const setup = $("[data-agents-setup]");
+    if (setup) setup.hidden = !show;
+  }
+
+  function agentsNothingCanRun(rows) {
+    if (agentsPageView.loading || agentsPageView.cloudError || agentsPageView.desktopError) return false;
+    if (rows.length) return false;
+    const picker = $("[data-runner-accounts-picker]");
+    return Boolean(picker && picker.hidden);
   }
 
   function renderAgentsPage() {
     const list = $("[data-agents-list]");
     if (!list) return;
     const count = $("[data-agents-count]");
+    const create = $("[data-agents-new]");
+    if (create) {
+      create.disabled = agentsPageView.signedOut;
+      create.title = agentsPageView.signedOut ? "Sign in to start an agent" : "Start an agent";
+    }
     if (agentsPageView.signedOut) {
       if (count) count.textContent = "Signed out";
       setAgentsNotice("");
-      list.innerHTML = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">Sign in to see your agents. <a href="/login?next=${encodeURIComponent("/dashboard/agents")}" class="underline hover:text-foreground">Sign in</a></div>`;
+      setAgentsSetup(false);
+      list.innerHTML = agentsBlankslate("bot", "Sign in to see your agents",
+        `Agent runs from your repositories, organizations and desktops are listed here. <a href="/login?next=${encodeURIComponent("/dashboard/agents")}" class="font-medium text-accent hover:underline">Sign in</a>`);
+      window.lucide?.createIcons();
       return;
     }
     if (agentsPageView.loading && !agentsPageView.cloud.length && !agentsPageView.desktop.length) {
       if (count) count.textContent = "Loading";
-      list.innerHTML = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${loadingHtml("Loading agents...")}</div>`;
+      list.innerHTML = `<div class="px-4 py-10 text-center text-sm text-muted-foreground">${loadingHtml("Loading agents...")}</div>`;
       return;
     }
     const rows = agentsRows();
     const visible = agentsFilteredRows(rows);
-    const working = rows.filter((row) => row.active).length;
-    if (count) {
-      count.textContent = working
-        ? `${formatCount(working)} working · ${formatCount(rows.length)} total`
-        : `${formatCount(rows.length)} total`;
-    }
+    if (count) count.textContent = agentsCountText(rows);
     renderAgentsFilterOptions(rows);
     const problems = [agentsPageView.cloudError, agentsPageView.desktopError].filter(Boolean);
     const notes = [];
@@ -241,13 +293,25 @@
       notes.push("Only the most recently reported desktop sessions are shown.");
     }
     setAgentsNotice(problems.length ? problems.join(" ") : notes.join(" "), problems.length > 0);
+    setAgentsSetup(agentsNothingCanRun(rows));
     const filtered = AGENTS_FILTER_KEYS.some((key) => agentsPageView.filters[key]);
     list.innerHTML = visible.length
       ? visible.map(renderAgentsRow).join("")
-      : `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${escapeHtml(filtered
-        ? "No agents match these filters."
-        : "No agent sessions yet. Start one from the robot button in the header, from a repository's Agents tab, or from the ForkMesh desktop.")}</div>`;
+      : filtered
+        ? agentsBlankslate("search", "No agents match these filters",
+          `<button data-agents-clear-filters type="button" class="font-medium text-accent hover:underline">Clear filters</button>`)
+        : agentsBlankslate("bot", "No agent sessions yet",
+          "Start one with New agent, from a repository's Agents tab, or from the ForkMesh desktop.");
     window.lucide?.createIcons();
+  }
+
+  function openAgentsComposer() {
+    if (agentsPageView.signedOut) return;
+    if (window.ForkMeshComposer?.open) {
+      window.ForkMeshComposer.open();
+      return;
+    }
+    $("#agentModalToggle")?.click();
   }
 
   function agentsErrorText(error, fallback) {
@@ -335,6 +399,13 @@
       agentsPageView.filters[key] = String(params.get(key) || "").trim().toLowerCase();
     }
     $("[data-agents-refresh]")?.addEventListener("click", () => { void loadAgentsPage(); });
+    $("[data-agents-new]")?.addEventListener("click", openAgentsComposer);
+    $("[data-agents-list]")?.addEventListener("click", (event) => {
+      if (!event.target?.closest?.("[data-agents-clear-filters]")) return;
+      for (const key of AGENTS_FILTER_KEYS) agentsPageView.filters[key] = "";
+      syncAgentsFilterUrl();
+      renderAgentsPage();
+    });
     $("[data-agents-filters]")?.addEventListener("change", (event) => {
       const key = event.target?.dataset?.agentsFilter;
       if (!AGENTS_FILTER_KEYS.includes(key)) return;

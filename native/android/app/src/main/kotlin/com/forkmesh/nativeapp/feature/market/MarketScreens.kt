@@ -106,6 +106,7 @@ private fun marketModel(filter: MarketFilter): MarketModel? =
         MarketModel(client, filter, StatusPageFeature::installedOrNull, PackageGateFeature::deviceSwitch).apply {
             organizationCache = PackageGateFeature::organizationCached
             legacy = { PackageGateFeature.legacy }
+            starterPack = PackageGateFeature::starterPack
         }
     }?.also { sharedMarket = it })?.also { it.filter = filter }
 

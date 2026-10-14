@@ -25,7 +25,10 @@ def test_shared_email_card_shows_the_forkmesh_logo():
         ENTRY.index("def _format_email_ts")
     ]
     assert 'src=\\"https://app.forkmesh.com/assets/logo-96.png\\"' in card
-    assert "background:#18181b" in card
+    assert "width:32px;height:auto" in card
+    assert "background:#18181b" not in card
+    assert "background:#171717" in ENTRY[ENTRY.index("def _forkmesh_email_action_html"):]
+    assert "data-forkmesh-email-footer" in card
     assert (ROOT.parent / "www" / "public" / "assets" / "logo-96.png").is_file()
 
 

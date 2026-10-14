@@ -18,7 +18,8 @@ window.ForkMeshDashboard.registerPage("status-page", ({ select: $, selectAll: $$
 
   function message(kind, value = "") {
     const node = $(`[data-status-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    const slot = node.querySelector("[data-status-message-text]") || node;
+    slot.textContent = value; node.classList.toggle("hidden", !value);
   }
   function monitorError(value = "") { message("monitor-error", value); }
   async function request(path, method = "GET", body = null) {
@@ -133,7 +134,7 @@ window.ForkMeshDashboard.registerPage("status-page", ({ select: $, selectAll: $$
       }
       if (field.type === "choice") {
         const options = (field.options || []).map((option) => `<option value="${escapeHtml(option.value)}"${String(option.value) === String(value) ? " selected" : ""}>${escapeHtml(option.label || option.value)}</option>`).join("");
-        return `<label class="flex flex-wrap items-center justify-between gap-3 text-sm text-foreground"><span>${label}</span><select data-status-setting="${key}" data-status-setting-type="choice" class="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"${state.busy ? " disabled" : ""}>${options}</select></label>`;
+        return `<label class="flex flex-wrap items-center justify-between gap-3 text-sm text-foreground"><span>${label}</span><select data-status-setting="${key}" data-status-setting-type="choice" class="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"${state.busy ? " disabled" : ""}>${options}</select></label>`;
       }
       return "";
     }).join("") : `<p class="text-sm text-muted-foreground">Status Page has no settings.</p>`;
@@ -148,7 +149,7 @@ window.ForkMeshDashboard.registerPage("status-page", ({ select: $, selectAll: $$
         : `<span class="block truncate text-xs text-muted-foreground">${escapeHtml(url)}</span>`;
       return `<div class="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-secondary">
         <span class="flex min-w-0 items-center gap-2"><span class="sp-dot is-${escapeHtml(visualState(customItem(monitor)))}" aria-hidden="true"></span><span class="min-w-0"><span class="block text-sm text-foreground">${escapeHtml(monitor.name || "")}</span>${address}</span></span>
-        <button type="button" data-status-monitor-remove="${escapeHtml(monitor.id)}" class="flex-none rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-destructive">Remove</button>
+        <button type="button" data-status-monitor-remove="${escapeHtml(monitor.id)}" class="fm-btn fm-btn-sm fm-btn-danger flex-none">Remove</button>
       </div>`;
     }).join("") : `<p class="text-sm text-muted-foreground">No monitors yet. Add a site below to get a dot for it.</p>`;
     const full = state.monitors.length >= state.max;

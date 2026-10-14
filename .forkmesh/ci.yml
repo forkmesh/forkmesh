@@ -49,6 +49,20 @@ jobs:
           set -eu
           python3 tools/run_critical_tests.py world
 
+      - name: Security guard contracts
+        run: |
+          set -eu
+          python3 tools/run_critical_tests.py security
+
+      - name: Mirror server Go tests
+        run: |
+          set -eu
+          ci_tmp="$PWD/.forkmesh-ci-tmp"
+          mkdir -p "$ci_tmp"
+          export GOCACHE="${FORKMESH_ACTIONS_CACHE:-$ci_tmp}/go-build"
+          export GOPATH="$ci_tmp/gopath"
+          python3 tools/run_critical_tests.py go
+
       - name: Versioned stock Git conformance
         run: |
           set -eu

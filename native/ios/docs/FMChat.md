@@ -36,6 +36,10 @@ mesh, the relay and node sync. The relay-switch overlay is `RelaySwitchScope { c
   `markBadgeSeen`, `setOwnStatus`, `resetForRelaySwitch`, `identityChanged`. Wire: frames carry
   `version: "flutter-1.0"` (a wire value); public channel chat uses the room cipher only;
   everything else is RoomSeal-sealed; `persist`/`notify` ride outside the seal.
+- `RelayService.groups`: one person row per account. Members key on `owner` (`ownerUser`); a
+  member without one (a signed-in web `/chat` tab sends `sender` and `accountKind: "user"` but no
+  `ownerUser`) joins the account row whose owner equals its name, so the Online sheet shows
+  "jett (you)" once instead of "jett (you)" plus "jett".
 - `ChatPersona`: the name the device speaks as: the Display name or account when signed in,
   else `guestChatName(nodeKey)` ("Guest ####"). `stamp(&frame)` adds `accountKind` and
   `ownerUser` to every frame and mesh beacon.

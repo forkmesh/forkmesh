@@ -32,19 +32,13 @@
             .mk-seg { display: inline-flex; border: 1px solid var(--mk-line); border-radius: 8px; padding: 2px; background: var(--mk-raised); }
             .mk-seg button { border: 0; background: none; padding: 3px 10px; border-radius: 6px; font: 500 12px var(--mk-mono); color: var(--mk-muted); }
             .mk-seg button[aria-pressed="true"] { background: var(--mk-card); color: var(--mk-fg); box-shadow: 0 0 0 1px var(--mk-line); }
-            .mk-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--mk-line); background: var(--mk-card); color: var(--mk-fg); border-radius: 8px; padding: 6px 11px; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
-            .mk-btn:hover { background: var(--mk-line-soft); }
-            .mk-btn:disabled { opacity: .5; cursor: default; }
-            .mk-btn-primary { background: rgb(var(--dashboard-primary-rgb)); color: rgb(var(--dashboard-primary-foreground-rgb)); border-color: transparent; }
-            .mk-btn-primary:hover { background: rgb(var(--dashboard-primary-rgb)); filter: brightness(1.08); }
-            .mk-btn-danger { color: rgb(var(--dashboard-destructive-rgb)); border-color: rgb(var(--dashboard-destructive-rgb) / .6); }
+            [data-view="marketing"] .hidden { display: none !important; }
+            [data-view="marketing"] .fm-flash .mk-insights li { padding: 2px 0; }
+            [data-view="marketing"] .fm-blankslate > .fm-btn, [data-view="marketing"] .fm-blankslate > .mk-link { margin-top: 12px; }
             .mk-menu { position: relative; }
-            .mk-menu > summary { list-style: none; cursor: pointer; padding: 6px 8px; }
+            .mk-menu > summary { list-style: none; cursor: pointer; }
             .mk-menu > summary::-webkit-details-marker { display: none; }
-            .mk-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 13rem; display: grid; padding: 4px; border: 1px solid var(--mk-line); border-radius: 10px; background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 12px 32px -12px rgba(0, 0, 0, .45); }
-            .mk-menu-list button { display: flex; align-items: center; gap: 8px; border: 0; background: none; color: var(--mk-fg); text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
-            .mk-menu-list button:hover { background: var(--mk-line-soft); }
-            .mk-menu-list hr { border: 0; border-top: 1px solid var(--mk-line); margin: 4px 0; }
+            .mk-menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 13rem; }
             .mk-panel { border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-card); min-width: 0; }
             .mk-ph { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .7rem 1rem; border-bottom: 1px solid var(--mk-line-soft); }
             .mk-ph h2 { font-size: 13.5px; font-weight: 600; color: var(--mk-fg); margin: 0; }
@@ -55,7 +49,7 @@
 
             .mk-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--mk-line); border-radius: 10px; overflow: hidden; background: var(--mk-card); }
             .mk-kpi { display: grid; gap: 4px; align-content: start; padding: .85rem 1rem .65rem; min-width: 0; border-left: 1px solid var(--mk-line-soft); }
-            .mk-kpi:first-child { border-left: 0; background: linear-gradient(180deg, var(--mk-good-soft), transparent 85%); }
+            .mk-kpi:first-child { border-left: 0; }
             .mk-kpi-label { font-size: 12px; color: var(--mk-muted); }
             .mk-kpi-value { font-size: 24px; font-weight: 500; line-height: 1.15; color: var(--mk-fg); }
             .mk-kpi-sub { display: flex; align-items: end; justify-content: space-between; gap: .5rem; min-height: 26px; font-size: 11.5px; color: var(--mk-muted); }
@@ -71,12 +65,11 @@
             .mk-chart { position: relative; }
             .mk-chart svg { width: 100%; height: auto; display: block; }
             .mk-chart text { fill: var(--mk-muted); font: 10.5px var(--mk-mono); }
-            .mk-tip { position: absolute; top: 8px; z-index: 5; min-width: 170px; pointer-events: none; padding: 8px 10px; border: 1px solid var(--mk-line); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 12px 32px -12px rgba(0, 0, 0, .45); font-size: 12px; color: var(--mk-fg); }
+            .mk-tip { position: absolute; top: 8px; z-index: 5; min-width: 170px; pointer-events: none; padding: 8px 10px; border: 1px solid var(--mk-line); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 8px 24px rgb(1 4 9 / .4); font-size: 12px; color: var(--mk-fg); }
             .mk-tip b { display: block; margin-bottom: 4px; font: 500 11px var(--mk-mono); color: var(--mk-muted); }
             .mk-tip div { display: flex; justify-content: space-between; gap: 10px; }
             .mk-tip div span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--mk-muted); }
             .mk-tip i { width: 8px; height: 8px; border-radius: 50%; }
-            .mk-empty { display: grid; place-items: center; gap: .5rem; padding: 2.5rem 1rem; text-align: center; font-size: 13px; color: var(--mk-muted); }
 
             .mk-stages { display: grid; gap: 6px; }
             .mk-stage { display: grid; grid-template-columns: 6rem minmax(0, 1fr) 2.5rem; align-items: center; gap: 10px; border: 0; background: none; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; text-align: left; font-size: 12.5px; color: var(--mk-muted); }
@@ -88,6 +81,9 @@
             .mk-flow-notes { display: grid; gap: 8px; margin-top: .85rem; padding-top: .75rem; border-top: 1px dashed var(--mk-line); font-size: 12px; color: var(--mk-muted); }
             .mk-flow-notes p { display: flex; align-items: start; gap: 8px; margin: 0; }
             .mk-flow-notes svg { margin-top: 2px; }
+            .mk-flow-notes p.mk-warn { color: var(--mk-fg); }
+            .mk-flow-notes p.mk-warn svg { color: var(--mk-warn); }
+            .mk-flow-notes svg { color: var(--mk-muted); }
 
             .mk-table-wrap { overflow-x: auto; }
             .mk-table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--mk-fg); }
@@ -111,13 +107,15 @@
             .mk-fresh.stale { color: var(--mk-warn); }
             .mk-fresh.stale::before { background: var(--mk-warn); }
             .mk-fresh.none::before { background: var(--mk-muted); }
-            .mk-link { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 3px 7px; border-radius: 6px; font-size: 12px; color: var(--mk-muted); text-decoration: none; }
-            .mk-link:hover { background: var(--mk-line-soft); color: var(--mk-fg); }
+            .mk-link { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 3px 7px; border-radius: var(--dashboard-control-radius); font-size: 12px; font-weight: 500; color: var(--mk-muted); text-decoration: none; }
+            .mk-link:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); color: var(--mk-fg); }
+            .mk-link:disabled { opacity: .5; cursor: not-allowed; }
+            .mk-link:disabled:hover { background: none; color: var(--mk-muted); }
 
             .mk-tabs { display: flex; gap: 2px; overflow-x: auto; padding: 0 .6rem; border-bottom: 1px solid var(--mk-line-soft); }
             .mk-tab { display: inline-flex; align-items: center; gap: 6px; border: 0; border-bottom: 2px solid transparent; background: none; padding: 9px 10px 8px; white-space: nowrap; font-size: 12.5px; color: var(--mk-muted); }
-            .mk-tab em { font: normal 11px var(--mk-mono); padding: 0 6px; border-radius: 999px; background: var(--mk-line-soft); color: var(--mk-muted); }
-            .mk-tab[aria-selected="true"] { color: var(--mk-fg); font-weight: 600; border-bottom-color: var(--mk-good); }
+            .mk-tab em { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: rgb(var(--dashboard-foreground-rgb) / .1); color: var(--mk-fg); font-style: normal; font-size: 12px; font-weight: 500; line-height: 1; }
+            .mk-tab[aria-selected="true"] { color: var(--mk-fg); font-weight: 600; border-bottom-color: rgb(var(--dashboard-primary-rgb)); }
             .mk-tools { display: flex; flex-wrap: wrap; gap: .5rem; padding: .6rem .75rem; }
             .mk-search { position: relative; flex: 1; min-width: 12rem; }
             .mk-search svg { position: absolute; left: .65rem; top: 50%; transform: translateY(-50%); color: var(--mk-muted); pointer-events: none; }
@@ -130,11 +128,13 @@
             .mk-content-title:hover b { text-decoration: underline; }
             .mk-swatch { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
             .mk-swatch i { width: 8px; height: 8px; border-radius: 2px; background: var(--mk-muted); }
-            .mk-pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border: 1px solid var(--mk-line); border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--mk-muted); }
             .mk-pill svg { width: 12px; height: 12px; }
-            .mk-pill.published { color: var(--mk-good); background: var(--mk-good-soft); border-color: transparent; }
-            .mk-pill.review { color: var(--mk-warn); background: var(--mk-warn-soft); border-color: transparent; }
+            .mk-pill:is(.published, .active, .running, .replied) { --fm-label-rgb: var(--dashboard-success-rgb); --fm-label-fg: var(--dashboard-success-rgb); }
+            .mk-pill:is(.review, .paused, .to_review) { --fm-label-rgb: var(--dashboard-attention-rgb); --fm-label-fg: var(--dashboard-attention-rgb); }
+            .mk-pill.planned { --fm-label-rgb: var(--dashboard-primary-rgb); --fm-label-fg: var(--dashboard-primary-rgb); }
+            .mk-pill.completed { --fm-label-fg: var(--dashboard-foreground-rgb); }
             .mk-pill.archived { opacity: .7; }
+            .mk-pill.idea { border-style: dashed; }
             .mk-tag { padding: 1px 7px; border-radius: 5px; background: var(--mk-line-soft); font: 11.5px var(--mk-mono); color: var(--mk-muted); }
             .mk-owner { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--mk-line); border-radius: 50%; background: var(--mk-line-soft); font: 600 9.5px var(--mk-mono); color: var(--mk-muted); }
             .mk-when b { display: block; font-size: 12.5px; font-weight: 500; }
@@ -146,7 +146,7 @@
             .mk-day-date { text-align: center; line-height: 1.1; }
             .mk-day-date small { display: block; font: 500 10px var(--mk-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mk-muted); }
             .mk-day-date b { font: 500 18px var(--mk-mono); color: var(--mk-fg); }
-            .mk-day.today .mk-day-date b { color: var(--mk-good); }
+            .mk-day.today .mk-day-date b { color: rgb(var(--dashboard-primary-rgb)); }
             .mk-slots { display: grid; align-content: center; gap: 4px; min-width: 0; }
             .mk-slot { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; background: none; padding: 2px 4px; margin: 0 -4px; border-radius: 5px; text-align: left; font-size: 12.5px; color: var(--mk-fg); }
             .mk-slot:hover { background: var(--mk-line-soft); }
@@ -157,7 +157,7 @@
 
             .mk-catalog-group { display: grid; gap: .6rem; }
             .mk-catalog-group + .mk-catalog-group { margin-top: 1.25rem; }
-            .mk-catalog-group h3 { margin: 0; font: 500 11px var(--mk-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mk-muted); }
+            .mk-catalog-group h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--mk-muted); }
             .mk-catalog-grid { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
             .mk-catalog-item { display: flex; align-items: center; gap: .75rem; padding: .7rem .8rem; border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-card); }
             .mk-catalog-item > div { min-width: 0; flex: 1; }
@@ -179,9 +179,6 @@
             .mk-budget .mk-bar.over { background: var(--mk-bad); }
             .mk-budget .mk-expected { position: absolute; top: -3px; width: 2px; height: 12px; border-radius: 1px; background: var(--mk-fg); }
             .mk-budget small { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--mk-muted); }
-            .mk-pill.active { color: var(--mk-good); background: var(--mk-good-soft); border-color: transparent; }
-            .mk-pill.paused { color: var(--mk-warn); background: var(--mk-warn-soft); border-color: transparent; }
-            .mk-pill.completed { color: var(--mk-fg); }
             .mk-pace { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--mk-muted); }
             .mk-pace svg { width: 12px; height: 12px; }
             .mk-pace.over, .mk-pace.under { color: var(--mk-warn); }
@@ -207,23 +204,20 @@
             .mk-funnel .mk-stage { grid-template-columns: 8rem minmax(0, 1fr) 9rem; cursor: default; }
             .mk-funnel .mk-stage.tight { background: var(--mk-warn-soft); color: var(--mk-fg); }
             .mk-funnel .mk-stage small { font: 11px var(--mk-mono); color: var(--mk-muted); }
-            .mk-score { display: inline-block; min-width: 2.5rem; padding: 1px 6px; border-radius: 999px; text-align: center; font: 500 11.5px var(--mk-mono); background: var(--mk-line-soft); color: var(--mk-fg); }
-            .mk-score.top { background: var(--mk-good-soft); color: var(--mk-good); }
-            .mk-pill.running { color: var(--mk-good); background: var(--mk-good-soft); border-color: transparent; }
-            .mk-pill.review { color: var(--mk-warn); background: var(--mk-warn-soft); border-color: transparent; }
+            .mk-score { display: inline-flex; align-items: center; justify-content: center; min-width: 2.5rem; height: 18px; padding: 0 6px; border-radius: 999px; font: 500 12px var(--mk-mono); background: rgb(var(--dashboard-foreground-rgb) / .1); color: var(--mk-fg); }
+            .mk-score.top { background: rgb(var(--dashboard-primary-rgb) / .15); color: rgb(var(--dashboard-primary-rgb)); }
             .mk-checks { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
-            .mk-checks li { display: flex; align-items: start; gap: 6px; }
-            .mk-checks li.error { color: var(--mk-bad); }
-            .mk-checks li.warning { color: var(--mk-warn); }
-            .mk-checks li.ok { color: var(--mk-good); }
+            .mk-checks li { display: flex; align-items: start; gap: 6px; color: var(--mk-fg); }
+            .mk-checks li svg { margin-top: 1px; color: var(--mk-muted); }
+            .mk-checks li.error svg { color: var(--mk-bad); }
+            .mk-checks li.warning svg { color: var(--mk-warn); }
+            .mk-checks li.ok svg { color: var(--mk-good); }
             .mk-link-out { display: block; width: 100%; overflow-wrap: anywhere; padding: 6px 8px; border: 1px solid var(--mk-line); border-radius: 8px; font: 12px var(--mk-mono); color: var(--mk-fg); }
             .mk-report { width: 100%; min-height: 50vh; font: 12px var(--mk-mono); }
             .mk-watch { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; }
             .mk-watch a { display: inline-block; padding: 2px 9px; border: 1px solid var(--mk-line); border-radius: 999px; font-size: 12px; color: var(--mk-fg); }
             .mk-watch a:hover { background: var(--mk-line-soft); }
             .mk-steps { display: grid; gap: 6px; margin: 0; padding-left: 1.4rem; font-size: 13px; list-style: decimal; }
-            .mk-pill.to_review { color: var(--mk-warn); background: var(--mk-warn-soft); border-color: transparent; }
-            .mk-pill.replied { color: var(--mk-good); background: var(--mk-good-soft); border-color: transparent; }
             .mk-rules-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
             .mk-rules-item { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--mk-line-soft); }
             .mk-rules-item:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -235,7 +229,7 @@
             .mk-groups { display: grid; gap: 1.25rem; }
             .mk-group { display: grid; gap: .6rem; }
             .mk-group-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; }
-            .mk-group-head h3 { margin: 0; font: 500 11px var(--mk-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--mk-muted); }
+            .mk-group-head h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--mk-muted); }
             .mk-group-head p { margin: 0; font-size: 12px; color: var(--mk-muted); }
             .mk-playbook { font-size: 12px; color: var(--mk-muted); }
             .mk-playbook summary { cursor: pointer; color: var(--mk-fg); }
@@ -247,11 +241,11 @@
             .mk-card-head > div { min-width: 0; flex: 1; }
             .mk-card-head b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; color: var(--mk-fg); }
             .mk-card-head small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--mk-muted); }
-            .mk-health { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; background: var(--mk-line-soft); color: var(--mk-muted); }
+            .mk-health { flex: none; }
             .mk-health::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-            .mk-health.good { background: var(--mk-good-soft); color: var(--mk-good); }
-            .mk-health.attention, .mk-health.stale { background: var(--mk-warn-soft); color: var(--mk-warn); }
-            .mk-health.setup { background: var(--mk-bad-soft); color: var(--mk-bad); }
+            .mk-health.good { --fm-label-rgb: var(--dashboard-success-rgb); --fm-label-fg: var(--dashboard-success-rgb); }
+            .mk-health.attention, .mk-health.stale { --fm-label-rgb: var(--dashboard-attention-rgb); --fm-label-fg: var(--dashboard-attention-rgb); }
+            .mk-health.setup { --fm-label-rgb: var(--dashboard-destructive-rgb); --fm-label-fg: var(--dashboard-destructive-rgb); }
             .mk-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; }
             .mk-facts div { padding: 6px 8px; border-radius: 8px; background: var(--mk-raised); min-width: 0; }
             .mk-facts dt { font-size: 10.5px; color: var(--mk-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -292,8 +286,6 @@
             .mk-card-foot > div { display: flex; flex-wrap: wrap; gap: 4px; }
             .mk-capture-state { font-size: 11.5px; color: var(--mk-muted); }
             .mk-capture-state.error { color: var(--mk-bad); }
-            .mk-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .75rem 1rem; border: 1px dashed var(--mk-line); border-radius: 10px; font-size: 12.5px; color: var(--mk-muted); }
-            .mk-banner b { color: var(--mk-fg); }
 
             .mk-kpis-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
             .mk-grid { display: grid; gap: 1rem; grid-template-columns: repeat(12, minmax(0, 1fr)); align-items: start; }
@@ -358,9 +350,6 @@
             .mk-tasks label { display: flex; align-items: start; gap: 6px; color: var(--mk-fg); }
             .mk-tasks label.done span { color: var(--mk-muted); text-decoration: line-through; }
             .mk-campaign-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0 -6px -4px; padding-top: 6px; border-top: 1px solid var(--mk-line-soft); }
-            .mk-pill.active, .mk-pill.planned { border-color: transparent; }
-            .mk-pill.planned { color: rgb(var(--dashboard-primary-rgb)); background: var(--mk-line-soft); }
-            .mk-pill.idea { border-style: dashed; }
 
             .mk-agent-face { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: var(--mk-s3); color: #fff; font: 600 10.5px var(--mk-mono); }
             .mk-ask { display: grid; gap: 6px; padding: .7rem 1rem .4rem; grid-template-columns: minmax(0, 1fr) auto; }
@@ -371,7 +360,7 @@
             .mk-idea header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
             .mk-idea header b { font-weight: 600; }
             .mk-idea small { color: var(--mk-muted); }
-            .mk-idea blockquote { margin: 0; padding: 6px 8px; border-left: 2px solid var(--mk-s3); background: var(--mk-raised); border-radius: 0 6px 6px 0; white-space: pre-wrap; font-size: 12px; }
+            .mk-idea blockquote { margin: 0; padding: 6px 8px; border-left: 2px solid var(--mk-line); background: var(--mk-raised); border-radius: 0 6px 6px 0; white-space: pre-wrap; font-size: 12px; }
             .mk-insights li .mk-link { margin-left: auto; flex: none; }
 
             .mk-x { display: grid; gap: 8px; }
@@ -409,7 +398,12 @@
 
             dialog.mk-drawer { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(40rem, 100vw); max-width: 100vw; border-radius: 0; border-width: 0 0 0 1px; }
             dialog.mk-drawer[open] { display: flex; flex-direction: column; }
-            dialog.mk-drawer form { flex: 1; overflow-y: auto; }
+            [data-view="marketing"] dialog.fm-dialog:not([open]) { display: none; }
+            [data-view="marketing"] dialog.fm-dialog > form, [data-view="marketing"] dialog.fm-dialog > .mk-dialog-frame { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+            [data-view="marketing"] .fm-dialog-header { align-items: flex-start; }
+            [data-view="marketing"] .fm-dialog-title h2 { font-size: 14px; font-weight: 600; }
+            [data-view="marketing"] .fm-dialog-title p { margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--mk-muted); }
+            [data-view="marketing"] .fm-dialog-footer .mk-dialog-start { margin-right: auto; }
             @media (prefers-reduced-motion: no-preference) {
               dialog.mk-drawer[open] { animation: mk-slide .18s ease-out; }
               @keyframes mk-slide { from { transform: translateX(24px); opacity: .6; } }
@@ -459,36 +453,36 @@
                     <button data-marketing-performance-range="90" type="button" aria-pressed="false">90D</button>
                   </div>
                   <select data-marketing-performance-project aria-label="Analytics project" class="mk-select" hidden></select>
-                  <button data-marketing-goals-open data-marketing-requires-install data-marketing-performance-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>Goals</button>
-                  <button data-marketing-ad-new data-marketing-requires-install data-marketing-ads-only type="button" class="mk-btn mk-btn-primary" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New ad</button>
-                  <button data-marketing-report-open data-marketing-requires-install data-marketing-growth-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>Weekly report</button>
-                  <button data-marketing-funnel-new data-marketing-requires-install data-marketing-growth-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v6l-4 2v-8Z"/></svg>Log week</button>
-                  <button data-marketing-experiment-new data-marketing-requires-install data-marketing-growth-only type="button" class="mk-btn mk-btn-primary" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New experiment</button>
-                  <button data-marketing-capture-stale data-marketing-requires-install data-marketing-channels-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>Update stale channels</button>
-                  <button data-marketing-catalog-open data-marketing-requires-install data-marketing-channels-only type="button" class="mk-btn mk-btn-primary" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add channels</button>
-                  <button data-marketing-reddit-watch-edit data-marketing-requires-install data-marketing-reddit-only type="button" class="mk-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>Watch list</button>
-                  <button data-marketing-reddit-new data-marketing-requires-install data-marketing-reddit-only type="button" class="mk-btn mk-btn-primary" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Log thread</button>
+                  <button data-marketing-goals-open data-marketing-requires-install data-marketing-performance-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>Goals</button>
+                  <button data-marketing-ad-new data-marketing-requires-install data-marketing-ads-only type="button" class="fm-btn fm-btn-cta" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New ad</button>
+                  <button data-marketing-report-open data-marketing-requires-install data-marketing-growth-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>Weekly report</button>
+                  <button data-marketing-funnel-new data-marketing-requires-install data-marketing-growth-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v6l-4 2v-8Z"/></svg>Log week</button>
+                  <button data-marketing-experiment-new data-marketing-requires-install data-marketing-growth-only type="button" class="fm-btn fm-btn-cta" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New experiment</button>
+                  <button data-marketing-capture-stale data-marketing-requires-install data-marketing-channels-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>Update stale channels</button>
+                  <button data-marketing-catalog-open data-marketing-requires-install data-marketing-channels-only type="button" class="fm-btn fm-btn-cta" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add channels</button>
+                  <button data-marketing-reddit-watch-edit data-marketing-requires-install data-marketing-reddit-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>Watch list</button>
+                  <button data-marketing-reddit-new data-marketing-requires-install data-marketing-reddit-only type="button" class="fm-btn fm-btn-cta" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Log thread</button>
                   <details data-marketing-menu data-marketing-requires-install class="mk-menu" hidden>
-                    <summary class="mk-btn" aria-label="More marketing actions"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary>
-                    <div class="mk-menu-list">
-                      <button data-marketing-catalog-open type="button"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg>Add channels</button>
-                      <button data-marketing-settings-open type="button"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Manage channels</button>
-                      <button data-marketing-refresh type="button"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>Refresh blog feed</button>
-                      <hr />
-                      <button data-marketing-export-all type="button"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Export JSON</button>
+                    <summary class="fm-btn fm-btn-icon" aria-label="More marketing actions"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary>
+                    <div class="mk-menu-list fm-popover fm-menu">
+                      <button data-marketing-catalog-open type="button" class="fm-menu-item"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg>Add channels</button>
+                      <button data-marketing-settings-open type="button" class="fm-menu-item"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Manage channels</button>
+                      <button data-marketing-refresh type="button" class="fm-menu-item"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>Refresh blog feed</button>
+                      <div class="fm-menu-divider" role="separator"></div>
+                      <button data-marketing-export-all type="button" class="fm-menu-item"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Export JSON</button>
                     </div>
                   </details>
                 </div>
               </header>
-              <div data-marketing-error class="hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
-              <div data-marketing-notice class="hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+              <div data-marketing-error class="hidden fm-flash fm-flash-danger" role="alert"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg><div data-marketing-error-text class="fm-flash-body"></div></div>
+              <div data-marketing-notice class="hidden fm-flash" role="status"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><div data-marketing-notice-text class="fm-flash-body"></div></div>
 
               <section data-marketing-install-panel class="mk-panel hidden">
                 <div class="mk-install">
                   <div>
                     <h2 class="text-base font-semibold text-foreground">Marketing is not installed for <span data-marketing-install-org class="font-mono"></span></h2>
                     <p class="mt-2 text-sm text-muted-foreground">Install a shared content pipeline, an ads manager for every channel, channel trends, a weekly schedule, and encrypted metric history for the whole organization.</p>
-                    <button data-marketing-install type="button" class="mk-btn mk-btn-primary mt-4 hidden">Install for this organization</button>
+                    <button data-marketing-install type="button" class="fm-btn fm-btn-cta mt-4 hidden">Install for this organization</button>
                     <p data-marketing-install-denied class="mt-4 hidden text-sm text-muted-foreground">Ask an organization owner or admin to install Marketing.</p>
                   </div>
                   <div class="mk-install-preview" aria-label="Preview with example figures">
@@ -521,7 +515,7 @@
                   <div class="mk-grid" data-marketing-panels>
                     <section data-marketing-panel="traffic" class="mk-panel mk-span-8">
                       <div class="mk-ph"><h2>Web traffic by channel</h2><span data-marketing-traffic-hint class="mk-hint"></span></div>
-                      <div data-marketing-traffic-setup class="mk-banner" style="margin:.75rem" hidden></div>
+                      <div data-marketing-traffic-setup class="fm-flash" style="margin:.75rem" hidden></div>
                       <div class="mk-table-wrap">
                         <table class="mk-table mk-table-dense">
                           <thead><tr><th>Channel</th><th>Share of visits</th><th class="r">Visits</th><th class="r">Change</th><th class="r">Conv. rate</th><th class="r">Avg time</th><th class="r">Bounce</th><th class="r">Pages / visit</th></tr></thead>
@@ -539,11 +533,11 @@
                           <tbody data-marketing-keywords></tbody>
                         </table>
                       </div>
-                      <div data-marketing-keywords-empty class="mk-empty" hidden></div>
+                      <div data-marketing-keywords-empty class="mk-empty fm-blankslate" hidden></div>
                     </section>
 
                     <section data-marketing-panel="channels" class="mk-panel mk-span-12">
-                      <div class="mk-ph"><h2>Channels</h2><div class="mk-ph-tools"><span data-marketing-channel-hint class="mk-hint"></span><button data-marketing-capture-stale type="button" class="mk-link">Update stale</button><button data-marketing-settings-open type="button" class="mk-link">Manage</button><button data-marketing-catalog-open type="button" class="mk-btn mk-btn-primary"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add channels</button></div></div>
+                      <div class="mk-ph"><h2>Channels</h2><div class="mk-ph-tools"><span data-marketing-channel-hint class="mk-hint"></span><button data-marketing-capture-stale type="button" class="mk-link">Update stale</button><button data-marketing-settings-open type="button" class="mk-link">Manage</button><button data-marketing-catalog-open type="button" class="fm-btn fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add channels</button></div></div>
                       <div data-marketing-channel-grid class="mk-tiles"></div>
                     </section>
 
@@ -553,7 +547,7 @@
                     </section>
 
                     <section data-marketing-panel="campaigns" class="mk-panel mk-span-8">
-                      <div class="mk-ph"><h2>Campaigns</h2><div class="mk-ph-tools"><div data-marketing-campaign-tabs class="mk-seg" role="group" aria-label="Campaign status"></div><button data-marketing-campaign-new type="button" class="mk-btn mk-btn-primary"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New campaign</button></div></div>
+                      <div class="mk-ph"><h2>Campaigns</h2><div class="mk-ph-tools"><div data-marketing-campaign-tabs class="mk-seg" role="group" aria-label="Campaign status"></div><button data-marketing-campaign-new type="button" class="fm-btn fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New campaign</button></div></div>
                       <div data-marketing-campaigns class="mk-campaigns"></div>
                     </section>
 
@@ -562,14 +556,14 @@
                       <form data-marketing-assistant-form class="mk-ask">
                         <select data-marketing-assistant-campaign aria-label="Campaign to plan" class="mk-select"></select>
                         <input data-marketing-assistant-question maxlength="600" class="mk-input" placeholder="Ask, e.g. what should we post this week?" aria-label="Question for the Marketing agent" />
-                        <button data-marketing-assistant-run type="submit" class="mk-btn mk-btn-primary">Suggest</button>
+                        <button data-marketing-assistant-run type="submit" class="fm-btn fm-btn-sm">Suggest</button>
                       </form>
                       <div data-marketing-assistant class="mk-pb mk-agent-out" hidden></div>
                       <div class="mk-pb mk-scroll" style="padding-top:.25rem"><ul data-marketing-suggestions class="mk-insights"></ul></div>
                     </section>
 
                     <section data-marketing-panel="flow" class="mk-panel mk-span-4">
-                      <div class="mk-ph"><h2>Content flow</h2><div class="mk-ph-tools"><button data-marketing-metric-open type="button" class="mk-link">Log metrics</button><button data-marketing-content-new type="button" class="mk-btn mk-btn-primary"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New content</button></div></div>
+                      <div class="mk-ph"><h2>Content flow</h2><div class="mk-ph-tools"><button data-marketing-metric-open type="button" class="mk-link">Log metrics</button><button data-marketing-content-new type="button" class="fm-btn fm-btn-sm fm-btn-cta"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New content</button></div></div>
                       <div class="mk-pb">
                         <div data-marketing-stages class="mk-stages"></div>
                         <div data-marketing-flow-notes class="mk-flow-notes"></div>
@@ -587,7 +581,7 @@
                         <p data-marketing-x-status class="mk-hint"></p>
                         <select data-marketing-x-content aria-label="Pipeline item to post" class="mk-select"></select>
                         <textarea data-marketing-x-text rows="4" maxlength="25000" class="mk-input" placeholder="What's happening?" aria-label="Post text"></textarea>
-                        <div class="mk-x-foot"><span data-marketing-x-count class="mk-num mk-hint">0 / 280</span><button data-marketing-x-post type="submit" class="mk-btn mk-btn-primary">Post to X</button></div>
+                        <div class="mk-x-foot"><span data-marketing-x-count class="mk-num mk-hint">0 / 280</span><button data-marketing-x-post type="submit" class="fm-btn fm-btn-sm">Post to X</button></div>
                       </form>
                     </section>
 
@@ -605,8 +599,8 @@
                           <tbody data-marketing-content-list></tbody>
                         </table>
                       </div>
-                      <div data-marketing-content-empty class="mk-empty" hidden>No content matches this view.</div>
-                      <div data-marketing-content-more class="mk-more" hidden><button data-marketing-content-more-button type="button" class="mk-btn"></button></div>
+                      <div data-marketing-content-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/></svg><p class="fm-blankslate-title">No content here</p><p class="fm-blankslate-desc">No content matches this view.</p></div>
+                      <div data-marketing-content-more class="mk-more" hidden><button data-marketing-content-more-button type="button" class="fm-btn fm-btn-sm"></button></div>
                     </section>
 
                     <section data-marketing-panel="week" class="mk-panel mk-span-4">
@@ -637,9 +631,9 @@
                 </div>
 
                 <div data-marketing-performance-page class="mk-page hidden">
-                  <section data-marketing-performance-setup class="mk-panel" hidden>
-                    <div class="mk-ph"><h2>Connect Analytics</h2><a href="/dashboard/analytics" class="mk-btn">Open Analytics</a></div>
-                    <div class="mk-pb"><ul data-marketing-performance-setup-list class="mk-insights"></ul></div>
+                  <section data-marketing-performance-setup class="fm-flash" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                    <div class="fm-flash-body"><span class="fm-flash-title">Connect Analytics</span><ul data-marketing-performance-setup-list class="mk-insights"></ul></div>
+                    <div class="fm-flash-actions"><a href="/dashboard/analytics" class="fm-btn fm-btn-sm">Open Analytics</a></div>
                   </section>
                   <div data-marketing-performance-body class="mk-page" hidden>
                     <section class="mk-kpis" aria-label="Campaign results">
@@ -659,7 +653,7 @@
                             <tbody data-marketing-performance-campaigns></tbody>
                           </table>
                         </div>
-                        <div data-marketing-performance-campaigns-empty class="mk-empty" hidden><p>No visits in this window.</p></div>
+                        <div data-marketing-performance-campaigns-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg><p class="fm-blankslate-title">No campaign visits</p><p class="fm-blankslate-desc">No visits in this window.</p></div>
                       </section>
                       <section class="mk-panel">
                         <div class="mk-ph"><h2>Where to improve</h2><span data-marketing-performance-insights-count class="mk-hint"></span></div>
@@ -676,7 +670,7 @@
                             <tbody data-marketing-performance-ads></tbody>
                           </table>
                         </div>
-                        <div data-marketing-performance-ads-empty class="mk-empty" hidden><p>No ads yet. Plan one in the Ads manager with a tagged landing link.</p></div>
+                        <div data-marketing-performance-ads-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 18-5v12L3 14v-3Z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><p class="fm-blankslate-title">No ads measured</p><p class="fm-blankslate-desc">No ads yet. Plan one in the Ads manager with a tagged landing link.</p></div>
                       </section>
                       <section class="mk-panel">
                         <div class="mk-ph"><h2>Landing pages</h2></div>
@@ -735,7 +729,7 @@
                         <tbody data-marketing-ads-list></tbody>
                       </table>
                     </div>
-                    <div data-marketing-ads-empty class="mk-empty" hidden><p>No ads match this view.</p><button data-marketing-ad-open type="button" class="mk-btn">New ad</button></div>
+                    <div data-marketing-ads-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 18-5v12L3 14v-3Z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><p class="fm-blankslate-title">No ads match this view</p><p class="fm-blankslate-desc">Plan an ad for any channel, then log its results here.</p><button data-marketing-ad-open type="button" class="fm-btn fm-btn-sm">New ad</button></div>
                   </section>
                   <p class="mk-hint">Ads are planned and measured here and bought in each platform’s own console. Results are logged by hand; ForkMesh never spends money or connects to an ad account. Follow each platform’s advertising policies and the disclosure rules of every market you advertise in.</p>
                 </div>
@@ -770,8 +764,8 @@
                         <datalist id="marketing-utm-sources" data-marketing-utm-sources></datalist>
                         <datalist id="marketing-utm-mediums" data-marketing-utm-mediums></datalist>
                         <datalist id="marketing-utm-campaigns" data-marketing-utm-campaigns></datalist>
-                        <div class="flex justify-end"><button type="submit" class="mk-btn mk-btn-primary">Build and check</button></div>
-                        <div data-marketing-link-result class="grid gap-2" hidden><code data-marketing-link-output class="mk-link-out"></code><div class="flex justify-end"><button data-marketing-link-copy type="button" class="mk-btn">Copy link</button></div><ul data-marketing-link-checks class="mk-checks"></ul></div>
+                        <div class="flex justify-end"><button type="submit" class="fm-btn fm-btn-sm">Build and check</button></div>
+                        <div data-marketing-link-result class="grid gap-2" hidden><code data-marketing-link-output class="mk-link-out"></code><div class="flex justify-end"><button data-marketing-link-copy type="button" class="fm-btn fm-btn-sm">Copy link</button></div><ul data-marketing-link-checks class="mk-checks"></ul></div>
                       </form>
                     </section>
                   </div>
@@ -786,7 +780,7 @@
                         <tbody data-marketing-experiments-list></tbody>
                       </table>
                     </div>
-                    <div data-marketing-experiments-empty class="mk-empty" hidden><p>No experiments in this view. Score each idea by impact, confidence and ease, then run the top three.</p><button data-marketing-experiment-open type="button" class="mk-btn">New experiment</button></div>
+                    <div data-marketing-experiments-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6L4 19a1 1 0 0 0 .9 1.5h14.2A1 1 0 0 0 20 19l-6-10V3"/></svg><p class="fm-blankslate-title">No experiments in this view</p><p class="fm-blankslate-desc">Score each idea by impact, confidence and ease, then run the top three.</p><button data-marketing-experiment-open type="button" class="fm-btn fm-btn-sm">New experiment</button></div>
                   </section>
 
                   <section class="mk-panel">
@@ -797,7 +791,7 @@
                         <tbody data-marketing-funnel-list></tbody>
                       </table>
                     </div>
-                    <div data-marketing-funnel-empty class="mk-empty" hidden><p>No weeks logged. Copy this week's numbers from your analytics.</p><button data-marketing-funnel-open type="button" class="mk-btn">Log week</button></div>
+                    <div data-marketing-funnel-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v6l-4 2v-8Z"/></svg><p class="fm-blankslate-title">No weeks logged</p><p class="fm-blankslate-desc">Copy this week's numbers from your analytics.</p><button data-marketing-funnel-open type="button" class="fm-btn fm-btn-sm">Log week</button></div>
                   </section>
                   <p class="mk-hint">Funnel numbers are copied by hand from your own analytics; ForkMesh does not estimate or fill them. A rate whose base is under 20 is marked as too small to read.</p>
                 </div>
@@ -810,7 +804,7 @@
                     <div class="mk-kpi"><span class="mk-kpi-label">Not set up</span><span data-marketing-health-stat="setup" class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub">no link, no numbers</span></div>
                     <div class="mk-kpi"><span class="mk-kpi-label">Audience</span><span data-marketing-health-audience class="mk-kpi-value mk-num">0</span><span class="mk-kpi-sub"><span data-marketing-health-change class="mk-delta">—</span><span>over 30 days</span></span></div>
                   </section>
-                  <div data-marketing-extension-banner class="mk-banner" hidden><span><b>Update any channel in one click.</b> Install the ForkMesh browser extension: each Update button opens the channel's page, reads its followers, posts, likes, views, ratings and reviews, and records them here.</span><a href="/dashboard/extension" class="mk-btn">Get the extension</a></div>
+                  <div data-marketing-extension-banner class="fm-flash" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><div class="fm-flash-body"><span class="fm-flash-title">Update any channel in one click.</span><p>Install the ForkMesh browser extension: each Update button opens the channel's page, reads its followers, posts, likes, views, ratings and reviews, and records them here.</p></div><div class="fm-flash-actions"><a href="/dashboard/extension" class="fm-btn fm-btn-sm">Get the extension</a></div></div>
                   <section class="mk-panel">
                     <div data-marketing-health-tabs class="mk-tabs" role="tablist" aria-label="Channel status"></div>
                     <div class="mk-tools">
@@ -819,7 +813,7 @@
                     </div>
                   </section>
                   <div data-marketing-channel-groups class="mk-groups"></div>
-                  <div data-marketing-channels-empty class="mk-empty" hidden><p>No channels in this view.</p><button data-marketing-catalog-open type="button" class="mk-btn">Add channels</button></div>
+                  <div data-marketing-channels-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg><p class="fm-blankslate-title">No channels in this view</p><p class="fm-blankslate-desc">Change the filter or search, or add channels from the catalog.</p><button data-marketing-catalog-open type="button" class="fm-btn fm-btn-sm">Add channels</button></div>
                   <p class="mk-hint">Health checks: a channel link, numbers updated in the last 7 days, a post within twice the channel's usual cadence, and an audience that is not shrinking. The extension reads only the channel page you asked it to open, in your own browser; ForkMesh's servers never sign in to your accounts.</p>
                 </div>
 
@@ -864,7 +858,7 @@
                         <tbody data-marketing-reddit-places></tbody>
                       </table>
                     </div>
-                    <p data-marketing-reddit-places-empty class="mk-empty" hidden><span>Add subreddits to the watch list to get suggestions.</span></p>
+                    <div data-marketing-reddit-places-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><p class="fm-blankslate-title">No suggestions yet</p><p class="fm-blankslate-desc">Add subreddits to the watch list to get suggestions.</p></div>
                   </section>
 
                   <section class="mk-panel">
@@ -892,7 +886,7 @@
                         <tbody data-marketing-reddit-list></tbody>
                       </table>
                     </div>
-                    <div data-marketing-reddit-empty class="mk-empty" hidden><p>No threads in this view. Open a watch link, read the thread on Reddit, then paste its address here.</p><button data-marketing-reddit-open type="button" class="mk-btn">Log thread</button></div>
+                    <div data-marketing-reddit-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><p class="fm-blankslate-title">No threads in this view</p><p class="fm-blankslate-desc">Open a watch link, read the thread on Reddit, then paste its address here.</p><button data-marketing-reddit-open type="button" class="fm-btn fm-btn-sm">Log thread</button></div>
                   </section>
                   <p class="mk-hint">The Reddit desk works from your own browser. ForkMesh’s servers never fetch or post to Reddit: you open each link yourself, and either log the thread by hand or let the <a href="/dashboard/extension" class="underline">ForkMesh browser extension</a> fill the log from the pages you open (watched subreddits, watched searches, threads and rules pages), then send it here from the extension’s popup. Nothing is ever posted, voted or sent to Reddit.</p>
                 </div>
@@ -900,21 +894,21 @@
                 <section data-marketing-catalog-page class="hidden">
                   <div class="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border bg-card p-4">
                     <div><h2 class="text-base font-semibold text-foreground">Add channels</h2><p class="mt-1 max-w-2xl text-sm text-muted-foreground">Choose from 100 social, owned, search, publishing, community, advertising, commerce, video, and audio channels used by teams worldwide. Add any channel to the dashboard with one click.</p><p class="mt-2 max-w-2xl text-xs text-muted-foreground">Availability is not a compliance certification. Follow each platform’s terms and the advertising, disclosure, review, email, SMS, privacy, and industry rules of every market you publish in.</p></div>
-                    <button data-marketing-dashboard-open type="button" class="mk-btn">← Back to dashboard</button>
+                    <button data-marketing-dashboard-open type="button" class="fm-btn fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back to dashboard</button>
                   </div>
                   <div class="mk-tools" style="padding:0 0 .75rem">
                     <label class="mk-search"><span class="sr-only">Search channels</span><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="marketing-catalog-search" data-marketing-catalog-search type="search" placeholder="Search 100 channels" class="mk-input" /></label>
                     <select id="marketing-catalog-category" data-marketing-catalog-category aria-label="Channel category" class="mk-select"><option value="">All categories</option></select>
                   </div>
                   <div data-marketing-catalog-list></div>
-                  <p data-marketing-catalog-empty class="mk-empty hidden">No channels match this search.</p>
+                  <div data-marketing-catalog-empty class="mk-empty fm-blankslate hidden"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><p class="fm-blankslate-title">No channels match this search</p><p class="fm-blankslate-desc">Try another name or category.</p></div>
                 </section>
               </div>
             </div>
 
-            <dialog data-marketing-campaign-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
-              <form data-marketing-campaign-form class="p-5">
-                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-campaign-title class="text-base font-semibold">New campaign</h2><p class="text-xs text-muted-foreground">One audience, one message, dated deliverables and a target. Content, ads and links join it by its name or tag.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-campaign-dialog class="fm-dialog mk-dialog mk-drawer backdrop:bg-background/80">
+              <form data-marketing-campaign-form>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-marketing-campaign-title>New campaign</h2><p>One audience, one message, dated deliverables and a target. Content, ads and links join it by its name or tag.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <input data-marketing-campaign-id type="hidden" />
                 <input data-marketing-campaign-source type="hidden" />
                 <div class="grid gap-3 sm:grid-cols-2">
@@ -942,12 +936,12 @@
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Brief<textarea data-marketing-campaign-field="brief" maxlength="20000" rows="7" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Internal notes<textarea data-marketing-campaign-field="notes" maxlength="10000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                 </div>
-                <div class="mt-4 flex items-center justify-between"><button data-marketing-campaign-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save campaign</button></div></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-campaign-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start hidden">Delete</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save campaign</button></div>
               </form>
             </dialog>
 
-            <dialog data-marketing-keyword-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-keyword-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-keyword-title class="text-base font-semibold">Track a keyword</h2><p class="text-xs text-muted-foreground">A search phrase you want to rank for. Log its position and clicks from Google Search Console or Bing Webmaster Tools.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-keyword-dialog class="fm-dialog mk-dialog w-full max-w-xl backdrop:bg-background/80">
+              <form data-marketing-keyword-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-marketing-keyword-title>Track a keyword</h2><p>A search phrase you want to rank for. Log its position and clicks from Google Search Console or Bing Webmaster Tools.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <input data-marketing-keyword-id type="hidden" />
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Keyword<input data-marketing-keyword-field="term" maxlength="100" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -963,12 +957,12 @@
                   </fieldset>
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Notes<textarea data-marketing-keyword-field="notes" maxlength="2000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                 </div>
-                <div class="mt-4 flex items-center justify-between"><button data-marketing-keyword-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save keyword</button></div></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-keyword-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start hidden">Delete</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save keyword</button></div>
               </form>
             </dialog>
 
-            <dialog data-marketing-keyword-import-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-keyword-import-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Import keywords</h2><p class="text-xs text-muted-foreground">Paste Search Console's Queries export (Top queries, Clicks, Impressions, CTR, Position), Bing's keyword report, or one keyword per line. Known keywords get a new reading; new ones are added.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-keyword-import-dialog class="fm-dialog mk-dialog w-full max-w-2xl backdrop:bg-background/80">
+              <form data-marketing-keyword-import-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Import keywords</h2><p>Paste Search Console's Queries export (Top queries, Clicks, Impressions, CTR, Position), Bing's keyword report, or one keyword per line. Known keywords get a new reading; new ones are added.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <textarea data-marketing-keyword-import-text rows="10" required class="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground" placeholder="Top queries,Clicks,Impressions,CTR,Position&#10;git mirror,12,340,3.5%,8.2"></textarea>
                 <div class="mt-3 grid gap-3 sm:grid-cols-3">
                   <label class="grid gap-1 text-xs text-muted-foreground">Reading date<input data-marketing-keyword-import-date type="date" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -976,13 +970,13 @@
                   <label class="grid gap-1 text-xs text-muted-foreground">Keep the top<input data-marketing-keyword-import-limit type="number" min="1" max="500" value="100" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                 </div>
                 <p data-marketing-keyword-import-preview class="mt-2 text-xs text-muted-foreground"></p>
-                <div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Import</button></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Import</button></div>
               </form>
             </dialog>
 
-            <dialog data-marketing-x-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-x-connect-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Connect X (Twitter)</h2><p class="text-xs text-muted-foreground">Owners and admins can post from Marketing with the organization's own X app. The keys are stored encrypted and are never shown again.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
-                <div class="mb-3 rounded-md border border-border p-3 text-xs"><p class="mb-2"><b>Let the browser extension walk you through it.</b> It opens X's developer console in a new tab and guides you page by page: it fills in X's forms, presses the generate buttons, reads the four keys off the page and saves them here. You only sign in to X, tick X's agreement boxes and add API credits yourself.</p><button data-marketing-x-guide type="button" class="mk-btn mk-btn-primary">Guide me with the extension</button><p data-marketing-x-guide-status class="mt-2 text-muted-foreground" hidden></p></div>
+            <dialog data-marketing-x-dialog class="fm-dialog mk-dialog w-full max-w-xl backdrop:bg-background/80">
+              <form data-marketing-x-connect-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Connect X (Twitter)</h2><p>Owners and admins can post from Marketing with the organization's own X app. The keys are stored encrypted and are never shown again.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
+                <div class="fm-flash mb-3"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><div class="fm-flash-body"><span class="fm-flash-title">Let the browser extension walk you through it.</span><p>It opens X's developer console in a new tab and guides you page by page: it fills in X's forms, presses the generate buttons, reads the four keys off the page and saves them here. You only sign in to X, tick X's agreement boxes and add API credits yourself.</p><p data-marketing-x-guide-status class="mt-2" hidden></p></div><div class="fm-flash-actions"><button data-marketing-x-guide type="button" class="fm-btn fm-btn-sm">Guide me with the extension</button></div></div>
                 <p class="mb-2 text-xs text-muted-foreground">Or do it yourself:</p>
                 <ol class="mk-steps mb-3 text-xs text-muted-foreground">
                   <li>Open <a href="https://console.x.com/" target="_blank" rel="noopener noreferrer" class="underline">X's developer console</a> and create an app.</li>
@@ -996,13 +990,13 @@
                   <label class="grid gap-1 text-xs text-muted-foreground">Access token<input data-marketing-x-key="accessToken" autocomplete="off" required class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Access token secret<input data-marketing-x-key="accessSecret" type="password" autocomplete="off" required class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" /></label>
                 </div>
-                <div class="mt-4 flex items-center justify-between"><button data-marketing-x-disconnect type="button" class="mk-btn mk-btn-danger" hidden>Disconnect</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Check and save</button></div></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-x-disconnect type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start" hidden>Disconnect</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Check and save</button></div>
               </form>
             </dialog>
 
-            <dialog data-marketing-content-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
-              <form data-marketing-content-form class="p-5">
-                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-content-title class="text-base font-semibold">New content</h2><p class="text-xs text-muted-foreground">One shared pipeline item for any supported channel.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-content-dialog class="fm-dialog mk-dialog mk-drawer backdrop:bg-background/80">
+              <form data-marketing-content-form>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-marketing-content-title>New content</h2><p>One shared pipeline item for any supported channel.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <input data-marketing-content-id type="hidden" />
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Title<input id="marketing-content-name" data-marketing-content-name maxlength="300" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -1017,13 +1011,13 @@
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Internal notes<textarea id="marketing-content-notes" data-marketing-content-notes maxlength="10000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                 </div>
                 <datalist id="marketing-campaign-options" data-marketing-campaign-options></datalist>
-                <div class="mt-4 flex items-center justify-between"><button data-marketing-content-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save content</button></div></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-content-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start hidden">Delete</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save content</button></div>
               </form>
             </dialog>
 
-            <dialog data-marketing-ad-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
-              <form data-marketing-ad-form class="p-5">
-                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-ad-title class="text-base font-semibold">New ad</h2><p data-marketing-ad-platform class="text-xs text-muted-foreground"></p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-ad-dialog class="fm-dialog mk-dialog mk-drawer backdrop:bg-background/80">
+              <form data-marketing-ad-form>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-marketing-ad-title>New ad</h2><p data-marketing-ad-platform></p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <input data-marketing-ad-id type="hidden" />
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Ad name<input id="marketing-ad-name" data-marketing-ad-name maxlength="200" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -1044,12 +1038,12 @@
                   <label class="grid gap-1 text-xs text-muted-foreground">Link to this ad in its console<input id="marketing-ad-manager" data-marketing-ad-manager maxlength="1000" placeholder="https://…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Internal notes<textarea id="marketing-ad-notes" data-marketing-ad-notes maxlength="10000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                 </div>
-                <div class="mt-4 flex items-center justify-between"><button data-marketing-ad-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save ad</button></div></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-ad-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start hidden">Delete</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save ad</button></div>
               </form>
             </dialog>
 
-            <dialog data-marketing-ad-results-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-ad-results-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Log ad results</h2><p data-marketing-ad-results-hint class="text-xs text-muted-foreground"></p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-ad-results-dialog class="fm-dialog mk-dialog w-full max-w-xl backdrop:bg-background/80">
+              <form data-marketing-ad-results-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Log ad results</h2><p data-marketing-ad-results-hint></p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <input data-marketing-ad-results-id type="hidden" />
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground">Spend to date<input id="marketing-ad-results-spend" data-marketing-ad-results-spend type="number" min="0" step="0.01" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -1057,12 +1051,12 @@
                   <label class="grid gap-1 text-xs text-muted-foreground">Impressions<input id="marketing-ad-results-impressions" data-marketing-ad-results-impressions type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Clicks<input id="marketing-ad-results-clicks" data-marketing-ad-results-clicks type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Conversions<input id="marketing-ad-results-conversions" data-marketing-ad-results-conversions type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
-                </div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save results</button></div></form>
+                </div></div><div class="fm-dialog-footer"><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save results</button></div></form>
             </dialog>
 
-            <dialog data-marketing-experiment-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
-              <form data-marketing-experiment-form class="p-5">
-                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-experiment-title class="text-base font-semibold">New experiment</h2><p class="text-xs text-muted-foreground">Score impact, confidence and ease from 1 to 10. The score is their product.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-experiment-dialog class="fm-dialog mk-dialog mk-drawer backdrop:bg-background/80">
+              <form data-marketing-experiment-form>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-marketing-experiment-title>New experiment</h2><p>Score impact, confidence and ease from 1 to 10. The score is their product.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <input data-marketing-experiment-id type="hidden" />
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Idea<input id="marketing-experiment-name" data-marketing-experiment-name maxlength="200" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -1087,12 +1081,12 @@
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Result<textarea id="marketing-experiment-result" data-marketing-experiment-result maxlength="2000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Internal notes<textarea id="marketing-experiment-notes" data-marketing-experiment-notes maxlength="10000" rows="3" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                 </div>
-                <div class="mt-4 flex items-center justify-between"><button data-marketing-experiment-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save experiment</button></div></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-experiment-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start hidden">Delete</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save experiment</button></div>
               </form>
             </dialog>
 
-            <dialog data-marketing-funnel-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-funnel-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Log funnel week</h2><p class="text-xs text-muted-foreground">Copy the week's numbers from your analytics. Leave a field empty when nobody measured it; empty is not zero.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-funnel-dialog class="fm-dialog mk-dialog w-full max-w-xl backdrop:bg-background/80">
+              <form data-marketing-funnel-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Log funnel week</h2><p>Copy the week's numbers from your analytics. Leave a field empty when nobody measured it; empty is not zero.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground">Week containing<input id="marketing-funnel-week" data-marketing-funnel-week type="date" required class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">North star<input id="marketing-funnel-northStar" data-marketing-funnel-field="northStar" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -1104,34 +1098,34 @@
                   <label class="grid gap-1 text-xs text-muted-foreground">…out of accounts eligible<input id="marketing-funnel-retainedBase" data-marketing-funnel-field="retainedBase" type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Revenue<input id="marketing-funnel-revenue" data-marketing-funnel-revenue type="number" min="0" step="0.01" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Currency<input id="marketing-funnel-currency" data-marketing-funnel-currency maxlength="3" pattern="[A-Za-z]{3}" placeholder="USD" style="text-transform:uppercase" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
-                  <div class="flex items-center justify-between gap-2 sm:col-span-2"><p data-marketing-funnel-analytics-note class="text-xs text-muted-foreground">Visits can be read from this organization's Analytics.</p><button data-marketing-funnel-analytics type="button" class="mk-btn">Fill visits from Analytics</button></div>
+                  <div class="flex items-center justify-between gap-2 sm:col-span-2"><p data-marketing-funnel-analytics-note class="text-xs text-muted-foreground">Visits can be read from this organization's Analytics.</p><button data-marketing-funnel-analytics type="button" class="fm-btn fm-btn-sm">Fill visits from Analytics</button></div>
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Source<input id="marketing-funnel-source" data-marketing-funnel-source-input maxlength="300" placeholder="Where these numbers came from" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Note<textarea id="marketing-funnel-note" data-marketing-funnel-note maxlength="2000" rows="2" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
-                </div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save week</button></div></form>
+                </div></div><div class="fm-dialog-footer"><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save week</button></div></form>
             </dialog>
 
-            <dialog data-marketing-goals-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-goals-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Conversion goals</h2><p class="text-xs text-muted-foreground">A visit converts when it records one of these Analytics events. Use the event your site already sends: a pageview of the signup or download page, or a button's product action. Up to 5 goals.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-goals-dialog class="fm-dialog mk-dialog w-full max-w-2xl backdrop:bg-background/80">
+              <form data-marketing-goals-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Conversion goals</h2><p>A visit converts when it records one of these Analytics events. Use the event your site already sends: a pageview of the signup or download page, or a button's product action. Up to 5 goals.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <div data-marketing-goals-list class="grid gap-2"></div>
-                <div class="mt-2 flex flex-wrap gap-2"><button data-marketing-goal-add="pageview" type="button" class="mk-btn">Add page goal</button><button data-marketing-goal-add="action" type="button" class="mk-btn">Add product action goal</button><button data-marketing-goal-add="event" type="button" class="mk-btn">Add custom event goal</button></div>
+                <div class="mt-2 flex flex-wrap gap-2"><button data-marketing-goal-add="pageview" type="button" class="fm-btn fm-btn-sm">Add page goal</button><button data-marketing-goal-add="action" type="button" class="fm-btn fm-btn-sm">Add product action goal</button><button data-marketing-goal-add="event" type="button" class="fm-btn fm-btn-sm">Add custom event goal</button></div>
                 <div class="mt-4 grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground">Default Analytics project<select id="marketing-goals-project" data-marketing-goals-project class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Your site's host<input id="marketing-goals-host" data-marketing-goals-host maxlength="253" placeholder="forkmesh.com" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                 </div>
                 <p class="mt-2 text-xs text-muted-foreground">Visits referred by your own host count as direct, not as referrals. Left empty, the host of the default landing page is used.</p>
                 <p data-marketing-goals-access class="mt-3 text-xs text-muted-foreground"></p>
-                <div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button data-marketing-goals-save type="submit" class="mk-btn mk-btn-primary">Save goals</button></div></form>
+                </div><div class="fm-dialog-footer"><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button data-marketing-goals-save type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save goals</button></div></form>
             </dialog>
 
-            <dialog data-marketing-report-dialog class="w-full max-w-3xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <div class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Weekly marketing report</h2><p class="text-xs text-muted-foreground">Scorecard, experiments, ads, content and the Reddit desk in Markdown, ready to paste into a plan, an issue or a special agent's run.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-report-dialog class="fm-dialog mk-dialog w-full max-w-3xl backdrop:bg-background/80">
+              <div class="mk-dialog-frame"><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Weekly marketing report</h2><p>Scorecard, experiments, ads, content and the Reddit desk in Markdown, ready to paste into a plan, an issue or a special agent's run.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <textarea data-marketing-report-text readonly class="mk-report rounded-md border border-border bg-background px-3 py-2 text-foreground"></textarea>
-                <div class="mt-4 flex justify-end gap-2"><button data-marketing-report-download type="button" class="mk-btn">Download .md</button><button data-marketing-report-copy type="button" class="mk-btn mk-btn-primary">Copy report</button></div></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-report-download type="button" class="fm-btn fm-btn-sm">Download .md</button><button data-marketing-report-copy type="button" class="fm-btn fm-btn-sm fm-btn-cta">Copy report</button></div></div>
             </dialog>
 
-            <dialog data-marketing-reddit-dialog class="mk-drawer bg-card text-foreground shadow-2xl backdrop:bg-background/80 border-border">
-              <form data-marketing-reddit-form class="p-5">
-                <div class="mb-4 flex items-center justify-between"><div><h2 data-marketing-reddit-title class="text-base font-semibold">Log thread</h2><p class="text-xs text-muted-foreground">Paste the address of a thread you opened and read yourself, or let the ForkMesh browser extension send the threads you open. ForkMesh stores what you or the extension record and never opens the thread itself.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-reddit-dialog class="fm-dialog mk-dialog mk-drawer backdrop:bg-background/80">
+              <form data-marketing-reddit-form>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-marketing-reddit-title>Log thread</h2><p>Paste the address of a thread you opened and read yourself, or let the ForkMesh browser extension send the threads you open. ForkMesh stores what you or the extension record and never opens the thread itself.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <input data-marketing-reddit-id type="hidden" />
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Thread address<input id="marketing-reddit-url" data-marketing-reddit-url type="url" maxlength="1000" required placeholder="https://www.reddit.com/r/…/comments/…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -1148,22 +1142,22 @@
                   <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Comment to monitor<input id="marketing-reddit-comment" data-marketing-reddit-comment type="url" maxlength="1000" placeholder="https://www.reddit.com/r/…/comments/…/comment/…/" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                   <p class="text-xs text-muted-foreground sm:col-span-2">A monitored thread’s views, points and comments, and those of its comment (or your reply when no comment is set), are read by the ForkMesh browser extension from your own signed-in Reddit tab. Reddit shows view counts only to the person who posted, so open it from that account. Pasting a comment link as the thread address fills this in.</p>
                 </div>
-                <div class="mt-4 flex items-center justify-between"><button data-marketing-reddit-delete type="button" class="mk-btn mk-btn-danger hidden">Delete</button><div class="ml-auto flex gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save thread</button></div></div>
+                </div><div class="fm-dialog-footer"><button data-marketing-reddit-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start hidden">Delete</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save thread</button></div>
               </form>
             </dialog>
 
-            <dialog data-marketing-reddit-watch-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-reddit-watch-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Reddit watch list</h2><p class="text-xs text-muted-foreground">Up to 40 subreddits and 40 searches. Each becomes a link that opens Reddit in your browser; ForkMesh’s servers never read them. The ForkMesh browser extension reads only these subreddits and searches when you open them.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div>
+            <dialog data-marketing-reddit-watch-dialog class="fm-dialog mk-dialog w-full max-w-xl backdrop:bg-background/80">
+              <form data-marketing-reddit-watch-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Reddit watch list</h2><p>Up to 40 subreddits and 40 searches. Each becomes a link that opens Reddit in your browser; ForkMesh’s servers never read them. The ForkMesh browser extension reads only these subreddits and searches when you open them.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
                 <div class="grid gap-3">
                   <label class="grid gap-1 text-xs text-muted-foreground">Subreddits, one per line<textarea id="marketing-reddit-watch-subreddits" data-marketing-reddit-watch-subreddits rows="6" placeholder="selfhosted" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Searches, one per line, up to 120 characters each<textarea id="marketing-reddit-watch-queries" data-marketing-reddit-watch-queries rows="6" placeholder="self-hosted git" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                   <label class="grid gap-1 text-xs text-muted-foreground">Your Reddit accounts, one per line, up to 10. The extension records each post and comment they make, with its link and views, in Posts<textarea id="marketing-reddit-watch-accounts" data-marketing-reddit-watch-accounts rows="3" placeholder="forkmesh" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
                   <p data-marketing-reddit-watch-access class="text-xs text-muted-foreground"></p>
-                </div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button data-marketing-reddit-watch-save type="submit" class="mk-btn mk-btn-primary">Save watch list</button></div></form>
+                </div></div><div class="fm-dialog-footer"><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button data-marketing-reddit-watch-save type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save watch list</button></div></form>
             </dialog>
 
-            <dialog data-marketing-metric-dialog class="w-full max-w-xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-metric-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Log channel metrics</h2><p class="text-xs text-muted-foreground">Record a point-in-time snapshot from a channel dashboard. Each snapshot becomes a point on the trend chart.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div><div class="grid gap-3 sm:grid-cols-2">
+            <dialog data-marketing-metric-dialog class="fm-dialog mk-dialog w-full max-w-xl backdrop:bg-background/80">
+              <form data-marketing-metric-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Log channel metrics</h2><p>Record a point-in-time snapshot from a channel dashboard. Each snapshot becomes a point on the trend chart.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body"><div class="grid gap-3 sm:grid-cols-2">
                 <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Channel<select id="marketing-metric-channel" data-marketing-metric-channel class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></select></label>
                 <p data-marketing-metric-previous class="text-xs text-muted-foreground sm:col-span-2"></p>
                 <label class="grid gap-1 text-xs text-muted-foreground">Reach<input id="marketing-metric-reach" data-marketing-metric-reach type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Followers<input id="marketing-metric-followers" data-marketing-metric-followers type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
@@ -1171,10 +1165,10 @@
                 <label class="grid gap-1 text-xs text-muted-foreground">Clicks<input id="marketing-metric-clicks" data-marketing-metric-clicks type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Views<input id="marketing-metric-views" data-marketing-metric-views type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                 <label class="grid gap-1 text-xs text-muted-foreground">Visits (30 days)<input id="marketing-metric-visits" data-marketing-metric-visits type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Pages on Google<input id="marketing-metric-indexed-pages" data-marketing-metric-indexed-pages type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
                 <label class="grid gap-1 text-xs text-muted-foreground">Stars (GitHub)<input id="marketing-metric-stars" data-marketing-metric-stars type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Forks (GitHub)<input id="marketing-metric-forks" data-marketing-metric-forks type="number" min="0" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
-              </div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button type="submit" class="mk-btn mk-btn-primary">Save snapshot</button></div></form>
+              </div></div><div class="fm-dialog-footer"><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save snapshot</button></div></form>
             </dialog>
 
-            <dialog data-marketing-settings-dialog class="w-full max-w-2xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
-              <form data-marketing-settings-form class="p-5"><div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Marketing channels</h2><p class="text-xs text-muted-foreground">Choose active channels and link their public profiles.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary">✕</button></div><div data-marketing-channel-settings class="grid max-h-[40vh] gap-3 overflow-y-auto pr-1"></div><details data-marketing-attribution class="mt-4 rounded-md border border-border bg-secondary p-3"><summary class="cursor-pointer text-xs font-semibold">Link tracking and funnel targets</summary><p class="mt-1 text-xs text-muted-foreground">The link builder and the Ads manager flag a link whose source, medium or campaign is not on these lists, or that lands on a path your analytics does not record. Copy the lists from your analytics configuration; separate values with commas.</p><div class="mt-2 grid gap-2 sm:grid-cols-2"><label class="grid gap-1 text-xs text-muted-foreground">Allowed sources<input data-marketing-attribution-field="sources" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Allowed mediums<input data-marketing-attribution-field="mediums" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Allowed campaigns<input data-marketing-attribution-field="campaigns" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Untracked paths<input data-marketing-attribution-field="untrackedPaths" placeholder="/blog, /docs" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Tracked domains<input data-marketing-attribution-field="domains" placeholder="example.com" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Default landing page<input data-marketing-attribution-field="landingUrl" placeholder="https://…" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label></div><p class="mt-3 text-xs text-muted-foreground">Targets, in percent. The Growth page names the rate furthest below its target as the bottleneck; with no targets it names none.</p><div class="mt-2 grid gap-2" style="grid-template-columns:repeat(4,minmax(0,1fr))"><label class="grid gap-1 text-xs text-muted-foreground">Signup<input data-marketing-target="signupRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Activation<input data-marketing-target="activationRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Retention<input data-marketing-target="retentionRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Referral<input data-marketing-target="referralRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label></div></details><p data-marketing-settings-access class="mt-3 text-xs text-muted-foreground"></p><div data-marketing-plugin-zone class="mt-4 hidden rounded-md border border-border bg-secondary p-3"><p class="text-xs font-semibold">Plugin data</p><p class="mt-1 text-xs text-muted-foreground">Export all organization marketing data, or uninstall and remove it.</p><div class="mt-2 flex gap-2"><button data-marketing-export-all type="button" class="mk-btn">Export JSON</button><button data-marketing-uninstall type="button" class="mk-btn mk-btn-danger">Uninstall…</button></div></div><div class="mt-4 flex justify-end gap-2"><button data-marketing-dialog-close type="button" class="mk-btn">Cancel</button><button data-marketing-settings-save type="submit" class="mk-btn mk-btn-primary">Save channels</button></div></form>
+            <dialog data-marketing-settings-dialog class="fm-dialog mk-dialog w-full max-w-2xl backdrop:bg-background/80">
+              <form data-marketing-settings-form><div class="fm-dialog-header"><div class="fm-dialog-title"><h2>Marketing channels</h2><p>Choose active channels and link their public profiles.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body"><div data-marketing-channel-settings class="grid max-h-[40vh] gap-3 overflow-y-auto pr-1"></div><details data-marketing-attribution class="mt-4 rounded-md border border-border bg-secondary p-3"><summary class="cursor-pointer text-xs font-semibold">Link tracking and funnel targets</summary><p class="mt-1 text-xs text-muted-foreground">The link builder and the Ads manager flag a link whose source, medium or campaign is not on these lists, or that lands on a path your analytics does not record. Copy the lists from your analytics configuration; separate values with commas.</p><div class="mt-2 grid gap-2 sm:grid-cols-2"><label class="grid gap-1 text-xs text-muted-foreground">Allowed sources<input data-marketing-attribution-field="sources" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Allowed mediums<input data-marketing-attribution-field="mediums" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Allowed campaigns<input data-marketing-attribution-field="campaigns" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Untracked paths<input data-marketing-attribution-field="untrackedPaths" placeholder="/blog, /docs" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Tracked domains<input data-marketing-attribution-field="domains" placeholder="example.com" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Default landing page<input data-marketing-attribution-field="landingUrl" placeholder="https://…" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label></div><p class="mt-3 text-xs text-muted-foreground">Targets, in percent. The Growth page names the rate furthest below its target as the bottleneck; with no targets it names none.</p><div class="mt-2 grid gap-2" style="grid-template-columns:repeat(4,minmax(0,1fr))"><label class="grid gap-1 text-xs text-muted-foreground">Signup<input data-marketing-target="signupRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Activation<input data-marketing-target="activationRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Retention<input data-marketing-target="retentionRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">Referral<input data-marketing-target="referralRate" type="number" min="0" max="100" step="0.01" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label></div></details><p data-marketing-settings-access class="mt-3 text-xs text-muted-foreground"></p><div data-marketing-plugin-zone class="fm-flash fm-flash-neutral mt-4 hidden"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><div class="fm-flash-body"><span class="fm-flash-title">Plugin data</span><p>Export all organization marketing data, or uninstall and remove it.</p></div><div class="fm-flash-actions"><button data-marketing-export-all type="button" class="fm-btn fm-btn-sm">Export JSON</button><button data-marketing-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger">Uninstall…</button></div></div></div><div class="fm-dialog-footer"><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button data-marketing-settings-save type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save channels</button></div></form>
             </dialog>
           </section>

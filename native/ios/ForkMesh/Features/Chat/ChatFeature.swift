@@ -74,6 +74,10 @@ enum ChatFeature {
 
         let hub = ChatHub(relay: relay, mesh: mesh, isGuest: { auth.isGuest })
         MeshAlerts.install(mesh: mesh, hub: hub)
+        ChatAttachmentView.sweepTemporaryFiles(includingRecordings: true)
+        AppLifecycle.shared.observe { (state: AppLifecycleState) in
+            if state == .paused { ChatAttachmentView.sweepTemporaryFiles(includingRecordings: false) }
+        }
         hub.onGuestBlocked = { (action: String) in
             guard let signIn = Services.get(SignInCoordinator.self) else { return }
             Task { _ = await signIn.requireAccount(action: action) }

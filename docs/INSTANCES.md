@@ -23,6 +23,10 @@ extra organization owners); optional mail provider; listing choices
   in browser storage. The page polls the launch every second, keeps the
   launch id in the URL, and on failure refills non-secret fields from the
   launch record.
+- The page follows the landing style, not the dashboard's: its checkboxes use
+  `--ink-strong` (white in dark mode, near-black in light), like its white
+  start button. Until October 2026 they used `--accent-bright` and showed
+  green, which the landing style keeps for status only.
 
 ## API (`app/src/instance_launch.py`)
 

@@ -360,6 +360,7 @@ public struct PingSettings: Equatable, Sendable {
             PingKindOption(kind: "subscribed", label: "Activity on things you follow", email: true),
             PingKindOption(kind: "chat_webhook", label: "Chat webhook posts"),
             PingKindOption(kind: "channel_unread", label: "Unread channel messages", email: true),
+            PingKindOption(kind: "direct_unread", label: "Unread direct messages", email: true),
             PingKindOption(kind: "calendar_invitation", label: "Calendar invitations", email: true),
             PingKindOption(kind: "calendar_reminder", label: "Calendar reminders", email: true),
             PingKindOption(kind: "calendar_rsvp", label: "Calendar replies", email: true),

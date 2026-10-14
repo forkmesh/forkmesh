@@ -15,6 +15,7 @@ enum MeshAlerts {
 
     static func install(mesh: LocalMeshService, hub: ChatHub) {
         mesh.onIncoming = { (message: ChatMessage, unread: Int) in
+            if hub.isFromBlocked(message) { return }
             let watching: Bool = MeshAlerts.foreground && MeshAlerts.onScreen && hub.inMesh
             guard let alert = meshAlert(message, unread: unread, watching: watching, now: Date()) else { return }
             MeshAlerts.shown = true
@@ -60,8 +61,10 @@ enum MeshAlerts {
             return
         }
         let delivered: [UNNotification] = await center.deliveredNotifications()
-        let wakes: [String] = delivered.filter { isMeshPush($0) && !isLocal($0.request.content.userInfo) }
-            .map { $0.request.identifier }
+        let wakes: [String] = delivered.filter {
+            isMeshPush($0) && !isLocal($0.request.content.userInfo) && $0.request.identifier != meshAlertIdentifier
+        }
+        .map { $0.request.identifier }
         if !wakes.isEmpty { center.removeDeliveredNotifications(withIdentifiers: wakes) }
     }
 

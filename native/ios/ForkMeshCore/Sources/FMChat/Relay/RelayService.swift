@@ -224,8 +224,11 @@ public final class RelayService: OwnStatusAnnouncer {
     nonisolated public static func groups(_ members: [Member]) -> [MemberGroup] {
         var order: [String] = []
         var byKey: [String: [Member]] = [:]
+        let owners = Set(members.map { $0.owner.dartTrimmed.lowercased() }.filter { !$0.isEmpty })
         for member in members {
-            let key = RelayService.identityKey(member)
+            var key = RelayService.identityKey(member)
+            let named = RelayService.displayName(member).lowercased()
+            if key.hasPrefix("name:") && owners.contains(named) { key = "owner:\(named)" }
             if byKey[key] == nil { order.append(key) }
             byKey[key, default: []].append(member)
         }

@@ -35,7 +35,12 @@
   function notesError(message = "") {
     const box = $("[data-notes-error]");
     if (!box) return;
-    box.textContent = message; box.hidden = !message;
+    box.replaceChildren();
+    if (message) {
+      box.innerHTML = `<i data-lucide="circle-alert"></i><div class="fm-flash-body">${escapeHtml(message)}</div>`;
+      refreshNoteIcons();
+    }
+    box.hidden = !message;
   }
 
   function noteNotice(place, message = "", tone = "good") {
@@ -428,7 +433,8 @@
         </div>`;
       }).join("") || '<p class="p-3 text-xs text-muted-foreground">No saved versions yet.</p>';
     } catch (error) {
-      target.innerHTML = `<p class="p-3 text-xs text-destructive">${escapeHtml(error.message)}</p>`;
+      target.innerHTML = `<div class="fm-flash fm-flash-danger"><i data-lucide="circle-alert"></i><div class="fm-flash-body">${escapeHtml(error.message)}</div></div>`;
+      refreshNoteIcons();
     }
   }
 

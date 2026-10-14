@@ -68,8 +68,12 @@ public enum RepoOwnerSigning {
         nowMillis: Int64
     ) throws -> RepoOwnerProof {
         try desktopCommandProof(
-            owner: repo.owner, name: repo.name, command: command, target: target, session: session, identity: identity,
-            nowMillis: nowMillis)
+            owner: desktopCommandOwner(repo, account: account(session)), name: repo.name, command: command,
+            target: target, session: session, identity: identity, nowMillis: nowMillis)
+    }
+
+    public static func desktopCommandOwner(_ repo: Repository, account: String) -> String {
+        account == repo.owner.dartTrimmed.lowercased() ? repo.owner : repo.displayOwner
     }
 
     public static func desktopCommandProof(
@@ -79,9 +83,6 @@ public enum RepoOwnerSigning {
         let account = account(session)
         guard let session, let identity, !account.isEmpty else {
             throw RepoException("Sign in with the repo owner account to request desktop control.")
-        }
-        if account != owner.dartTrimmed.lowercased() {
-            throw RepoException("Only the repo owner can request desktop control for this repo.")
         }
         if session.pubkey.dartTrimmed != identity.publicKeyB64url {
             throw RepoException("Pair this mobile device with the owner key before requesting desktop control.")
@@ -125,7 +126,9 @@ public enum RepoDesktopCommands {
         payload: JSONObject, successMessage: String, failureMessage: String = defaultFailure
     ) async -> String {
         await DesktopCommandRequests.request(
-            client: client, signer: signer, owner: repo.owner, name: repo.name, command: command, target: target,
+            client: client, signer: signer,
+            owner: RepoOwnerSigning.desktopCommandOwner(repo, account: RepoOwnerSigning.account(signer.session())),
+            name: repo.name, command: command, target: target,
             payload: payload, successMessage: successMessage, failureMessage: failureMessage)
     }
 

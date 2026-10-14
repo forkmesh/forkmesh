@@ -60,12 +60,12 @@
 
   function bountyStatusBadge(task) {
     if (bountyIsDone(task)) {
-      return '<span class="shrink-0 inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-emerald-400"><i data-lucide="check-circle-2" class="h-3 w-3"></i>Completed</span>';
+      return '<span class="fm-label fm-label-success shrink-0"><i data-lucide="circle-check" class="h-3 w-3"></i>Completed</span>';
     }
     if (task?.status === "active") {
-      return '<span class="shrink-0 inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary"><i data-lucide="loader-circle" class="h-3 w-3"></i>In progress</span>';
+      return '<span class="fm-label fm-label-accent shrink-0"><i data-lucide="loader-circle" class="h-3 w-3"></i>In progress</span>';
     }
-    return '<span class="shrink-0 inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"><i data-lucide="circle-dot" class="h-3 w-3"></i>Open</span>';
+    return '<span class="fm-label shrink-0"><i data-lucide="circle-dot" class="h-3 w-3"></i>Open</span>';
   }
 
   function bountyVisibleItems() {
@@ -87,7 +87,7 @@
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
           ${bountyStatusBadge(task)}
-          ${you ? '<span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">your bid</span>' : ""}
+          ${you ? '<span class="fm-label shrink-0">your bid</span>' : ""}
         </div>
         <a class="mt-2 block text-sm font-semibold text-foreground hover:underline" href="/dashboard/tasks?task=${encodeURIComponent(task.id)}">${escapeHtml(task.title || "Organization task")}</a>
         ${details ? `<p class="mt-1 text-xs text-muted-foreground line-clamp-2">${escapeHtml(details)}</p>` : ""}
@@ -97,7 +97,7 @@
         </p>
       </div>
       <div class="shrink-0 flex items-center justify-between gap-3 sm:flex-col sm:items-end">
-        <span class="font-mono text-sm font-semibold tabular-nums text-amber-500">${escapeHtml(amount)}</span>
+        <span class="font-mono text-sm font-semibold tabular-nums text-foreground">${escapeHtml(amount)}</span>
         <span class="text-[11px] capitalize text-muted-foreground">${escapeHtml(task.bountyRequest.status || "requested")}</span>
       </div>
     </article>`;
@@ -111,8 +111,19 @@
       root.innerHTML = "";
       return;
     }
-    const tone = view.noticeTone === "bad" ? "text-red-500" : "text-foreground";
-    root.innerHTML = `<p class="px-4 sm:px-5 py-3 border-b border-border text-sm ${tone}">${escapeHtml(view.notice)}</p>`;
+    const bad = view.noticeTone === "bad";
+    root.innerHTML = `<div class="px-4 sm:px-5 py-3 border-b border-border">${bountyFlashHtml(bad ? "danger" : "success", escapeHtml(view.notice))}</div>`;
+    window.lucide?.createIcons();
+  }
+
+  function bountyFlashHtml(tone, html) {
+    const icon = { danger: "circle-alert", success: "circle-check", warning: "triangle-alert", info: "info" }[tone] || "info";
+    const variant = tone === "info" ? "" : ` fm-flash-${tone}`;
+    return `<div class="fm-flash${variant}"><i data-lucide="${icon}" aria-hidden="true"></i><div class="fm-flash-body">${html}</div></div>`;
+  }
+
+  function bountyBlankslateHtml(icon, title, html) {
+    return `<div class="fm-blankslate"><i data-lucide="${icon}" aria-hidden="true"></i><p class="fm-blankslate-title">${title}</p>${html ? `<p class="fm-blankslate-desc">${html}</p>` : ""}</div>`;
   }
 
   function renderBountiesStart() {
@@ -123,11 +134,10 @@
     if (!bountySignedIn()) {
       const next = encodeURIComponent(`${location.pathname}${location.search}`);
       root.hidden = false;
-      root.innerHTML = `<p class="text-sm text-muted-foreground">
-        <a class="text-accent underline" href="/login?next=${next}">Log in</a>
-        with your organization account to see bounty bids and submit your own.
-      </p>`;
+      root.innerHTML = bountyFlashHtml("info", `<a class="text-accent underline" href="/login?next=${next}">Log in</a>
+        with your organization account to see bounty bids and submit your own.`);
       form.hidden = true;
+      window.lucide?.createIcons();
       return;
     }
     if (view.access === "member") {
@@ -141,8 +151,11 @@
     root.hidden = false;
     form.hidden = true;
     root.innerHTML = view.access === "denied"
-      ? `<p class="text-sm text-muted-foreground">${escapeHtml(BOUNTY_ERROR_TEXT.org_member_required)}</p>`
-      : `<p class="text-sm text-muted-foreground">${view.loading ? loadingHtml("Checking your organization membership...") : escapeHtml(view.error)}</p>`;
+      ? bountyFlashHtml("warning", escapeHtml(BOUNTY_ERROR_TEXT.org_member_required))
+      : view.loading
+        ? `<p class="text-sm text-muted-foreground">${loadingHtml("Checking your organization membership...")}</p>`
+        : bountyFlashHtml("danger", escapeHtml(view.error));
+    window.lucide?.createIcons();
   }
 
   function renderBountiesList() {
@@ -159,23 +172,26 @@
     }
     let body = "";
     if (!bountySignedIn()) {
-      body = "Bounty bids are organization-private. Log in to see them.";
+      body = bountyBlankslateHtml("lock", "Members only", "Bounty bids are organization-private. Log in to see them.");
     } else if (view.loading) {
-      body = loadingHtml("Loading bids...");
+      body = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${loadingHtml("Loading bids...")}</div>`;
     } else if (view.access === "denied") {
-      body = "Only organization members can see bounty bids.";
+      body = bountyBlankslateHtml("lock", "Members only", "Only organization members can see bounty bids.");
     } else if (view.error) {
-      body = escapeHtml(view.error);
+      body = bountyBlankslateHtml("circle-alert", "Bids did not load", escapeHtml(view.error));
     }
     if (body) {
-      root.innerHTML = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${body}</div>`;
+      root.innerHTML = body;
+      window.lucide?.createIcons();
       return;
     }
     const items = bountyVisibleItems().sort((a, b) =>
       Number(bountyIsDone(a)) - Number(bountyIsDone(b)) || Number(b.createdAt || 0) - Number(a.createdAt || 0));
     root.innerHTML = items.length
       ? items.map(bountyRowHtml).join("")
-      : `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${view.filter === "done" ? "No completed bids yet." : "No open bids yet. Propose the first piece of work above."}</div>`;
+      : view.filter === "done"
+        ? bountyBlankslateHtml("badge-dollar-sign", "No completed bids yet", "")
+        : bountyBlankslateHtml("badge-dollar-sign", "No open bids yet", "Propose the first piece of work above.");
     window.lucide?.createIcons();
   }
 

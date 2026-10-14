@@ -50,3 +50,24 @@ Errors are `{"ok": false, "error": "<code>"}`.
 - A composed dashboard page needs entries in `dashboard_shell.PAGES`,
   `static_routes.DASHBOARD_PAGE_ASSETS`, `BLOCKED_STATIC_HTML_PATHS` and
   `run_worker_first`, and a rebuild with `app/tools/build_dashboard_assets.py`.
+
+## Notices and empty states
+
+Event-only pieces use the shared dashboard components
+([dashboard-components.md](dashboard-components.md)) instead of page-local
+styles:
+
+- Challenges: the action notice is a success or danger `fm-flash`; an invite
+  ("X challenged you to ...") is a blue info flash with a small green **Accept
+  challenge** button, like GitHub's update banner. The finished banner (trophy)
+  and the upcoming hint are neutral flashes. Signed out, load error and no
+  challenges are `fm-blankslate`s. The phase pill is `fm-label` (`Live` is
+  `fm-label-success`), card actions are `fm-btn-sm`, and the gold rank-1 colour
+  is gone: ranks 1 to 3 are foreground, the rest muted.
+- Only **Start in one click** stays green; preset, customize, copy-invite and
+  the custom form's submit are neutral, so a page has one green button.
+- Hackathon: the "challenge has closed" notice is a warning flash; not joined,
+  signed out and load errors are blankslates (**Join the hackathon** is the one
+  green button). Card buttons are `fm-btn-sm`; mission, submission and
+  milestone pills are `fm-label` with `fm-label-success` for done. Reward and
+  trophy icons are muted grey; a beaten challenge's trophy is success green.

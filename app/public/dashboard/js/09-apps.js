@@ -48,19 +48,55 @@
   }
 
   function appsButton(label, onClick, danger) {
-    const button = appsEl("button", "inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-secondary transition-colors " + (danger ? "text-red-500" : "text-muted-foreground hover:text-foreground"), label);
+    const button = appsEl("button", "fm-btn fm-btn-sm" + (danger ? " fm-btn-danger" : ""), label);
     button.type = "button";
     button.addEventListener("click", onClick);
     return button;
+  }
+
+  function appsLink(label, href) {
+    const link = appsEl("a", "fm-btn fm-btn-sm", label);
+    link.href = href;
+    return link;
+  }
+
+  function appsEmpty(text) {
+    return appsEl("p", "apps-list-empty", text);
+  }
+
+  function appsCount(name, value) {
+    const counter = $(`[data-apps-count="${name}"]`);
+    if (counter) counter.textContent = value ? String(value) : "";
   }
 
   function setAppsNotice(selector, message, isError) {
     const notice = $(selector);
     if (!notice) return;
     notice.hidden = !message;
-    notice.textContent = message || "";
-    notice.classList.toggle("text-red-500", Boolean(isError));
-    notice.classList.toggle("text-muted-foreground", !isError);
+    notice.textContent = "";
+    if (message) notice.append(appsFlash(isError ? "danger" : "success", message));
+    window.lucide?.createIcons?.();
+  }
+
+  function appsLucide(name, className) {
+    const icon = appsEl("i", className);
+    icon.setAttribute("data-lucide", name);
+    icon.setAttribute("aria-hidden", "true");
+    return icon;
+  }
+
+  function appsFlash(tone, message) {
+    const box = appsEl("div", tone === "danger" ? "fm-flash fm-flash-danger" : "fm-flash fm-flash-success");
+    box.append(appsLucide(tone === "danger" ? "circle-alert" : "circle-check", "h-4 w-4"), appsEl("span", "fm-flash-body", message));
+    return box;
+  }
+
+  function appsBlankslate(icon, title, text) {
+    const box = appsEl("div", "fm-blankslate");
+    box.append(appsLucide(icon, "h-6 w-6"), appsEl("p", "fm-blankslate-title", title));
+    if (text) box.append(appsEl("p", "fm-blankslate-desc", text));
+    queueMicrotask(() => window.lucide?.createIcons?.());
+    return box;
   }
 
   function appsWhen(ms) {
@@ -75,7 +111,7 @@
   }
 
   function appsIcon(app) {
-    const box = appsEl("div", "shrink-0 h-9 w-9 rounded-md flex items-center justify-center text-sm font-semibold text-white overflow-hidden");
+    const box = appsEl("div", "apps-tile");
     const icon = app?.icon || {};
     if (icon.data && /^data:image\/(png|webp);base64,/.test(icon.data)) {
       const img = document.createElement("img");
@@ -86,38 +122,44 @@
       return box;
     }
     box.style.background = /^#[0-9a-f]{6}$/i.test(icon.color || "") ? icon.color : "#6366f1";
+    box.style.borderColor = "transparent";
+    box.style.color = "#fff";
     box.textContent = icon.glyph || String(app?.name || "?").slice(0, 1).toUpperCase();
     return box;
   }
 
   function appsHeader(app, subtitle) {
-    const head = appsEl("div", "flex items-start gap-3 min-w-0");
-    const text = appsEl("div", "min-w-0");
-    text.append(appsEl("p", "text-sm font-semibold text-foreground", app?.name || "App"));
-    if (subtitle) text.append(appsEl("p", "text-xs text-muted-foreground", subtitle));
+    const head = appsEl("div", "apps-row-main");
+    const text = appsEl("div", "apps-row-text");
+    const title = appsEl("div", "apps-row-title");
+    title.append(appsEl("span", "", app?.name || "App"));
+    text.append(title);
+    if (subtitle) text.append(appsEl("p", "apps-row-sub", subtitle));
     head.append(appsIcon(app), text);
     return head;
   }
 
   function appsScopeList(scopes) {
-    const list = appsEl("div", "flex flex-wrap gap-1");
+    const list = appsEl("div", "apps-scopes");
     for (const scope of scopes || []) {
-      const chip = appsEl("span", "rounded border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground", scope.scope || scope);
+      const chip = appsEl("span", "apps-scope", scope.scope || scope);
       if (scope.label) chip.title = scope.label;
       list.append(chip);
     }
     return list;
   }
 
+  function appsRow(app, subtitle, actions, scopes) {
+    const row = appsEl("div", "apps-row");
+    const action = appsEl("div", "apps-row-action");
+    for (const item of actions) action.append(item);
+    row.append(appsHeader(app, subtitle), action, appsScopeList(scopes));
+    return row;
+  }
+
   function appsInstallCard(install, onRevoke) {
-    const card = appsEl("div", "rounded-md border border-border p-3 grid gap-2");
-    const top = appsEl("div", "flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2");
-    top.append(appsHeader(install.app, `Installed by @${install.installedBy || "?"} · last used ${appsWhen(install.lastUsedAt)}`));
-    if (install.canRevoke) {
-      top.append(appsButton("Revoke", () => onRevoke(install), true));
-    }
-    card.append(top, appsScopeList(install.scopes));
-    return card;
+    const actions = install.canRevoke ? [appsButton("Revoke", () => onRevoke(install), true)] : [];
+    return appsRow(install.app, `Installed by @${install.installedBy || "?"} · last used ${appsWhen(install.lastUsedAt)}`, actions, install.scopes);
   }
 
   async function revokeAppInstall(install) {
@@ -131,36 +173,11 @@
     void loadInstalledApps();
   }
 
-  function renderOrgApps(org) {
-    const block = appsEl("div", "grid gap-3");
-    block.append(appsEl("h2", "text-sm font-semibold text-foreground", `${org.name} (${org.role})`));
-    const installs = org.installs || [];
-    if (!installs.length) block.append(appsEl("p", "text-sm text-muted-foreground", "No apps installed for this organization."));
-    for (const install of installs) block.append(appsInstallCard(install, revokeAppInstall));
-    if (!org.canManage) return block;
-    for (const request of org.requests || []) {
-      const card = appsEl("div", "rounded-md border border-border p-3 grid gap-2");
-      const top = appsEl("div", "flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2");
-      top.append(appsHeader(request.app, `@${request.requester} asked to install this for ${org.name}`));
-      const actions = appsEl("div", "flex gap-2");
-      const decide = async (action) => {
-        try {
-          await appsRequest("POST", `/api/apps/orgs/${encodeURIComponent(org.name)}/requests/${request.id}`, { action });
-          setAppsNotice("[data-apps-notice]", action === "approve" ? "Approved. The member can finish installing." : "Request denied.");
-        } catch (error) {
-          setAppsNotice("[data-apps-notice]", error.message, true);
-        }
-        void loadInstalledApps();
-      };
-      actions.append(appsButton("Approve", () => decide("approve")), appsButton("Deny", () => decide("deny"), true));
-      top.append(actions);
-      card.append(top, appsScopeList(request.scopes));
-      block.append(card);
-    }
+  function appsOrgPolicy(org) {
     const policy = org.policy || { requestPolicy: "any", allowlist: [] };
-    const form = appsEl("form", "flex flex-col sm:flex-row sm:items-end gap-2");
-    const label = appsEl("label", "grid gap-1 text-xs text-muted-foreground", "Members may request");
-    const select = appsEl("select", "rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground");
+    const form = appsEl("form", "apps-policy");
+    const label = appsEl("label", "", "Members may request");
+    const select = appsEl("select", "apps-input");
     for (const [value, text] of [["any", "any app"], ["allowlist", "only allowlisted apps"], ["none", "no apps"]]) {
       const option = appsEl("option", "", text);
       option.value = value;
@@ -168,11 +185,11 @@
       select.append(option);
     }
     label.append(select);
-    const allow = appsEl("label", "grid gap-1 text-xs text-muted-foreground min-w-0 flex-1", "Allowlisted app ids (comma separated)");
-    const input = appsEl("input", "rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs text-foreground");
+    const allow = appsEl("label", "", "Allowlisted app ids (comma separated)");
+    const input = appsEl("input", "apps-input font-mono");
     input.value = (policy.allowlist || []).join(", ");
     allow.append(input);
-    const save = appsEl("button", "inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground", "Save policy");
+    const save = appsEl("button", "fm-btn", "Save policy");
     save.type = "submit";
     form.append(label, allow, save);
     form.addEventListener("submit", async (event) => {
@@ -187,7 +204,33 @@
         setAppsNotice("[data-apps-notice]", error.message, true);
       }
     });
-    block.append(form);
+    return form;
+  }
+
+  function renderOrgApps(org) {
+    const block = appsEl("div", "apps-section");
+    const head = appsEl("h2", "apps-section-head", org.name);
+    head.append(appsEl("span", "fm-label", org.role));
+    const list = appsEl("div", "apps-list");
+    block.append(head, list);
+    const installs = org.installs || [];
+    if (!installs.length) list.append(appsEmpty("No apps installed for this organization."));
+    for (const install of installs) list.append(appsInstallCard(install, revokeAppInstall));
+    if (!org.canManage) return block;
+    for (const request of org.requests || []) {
+      const decide = async (action) => {
+        try {
+          await appsRequest("POST", `/api/apps/orgs/${encodeURIComponent(org.name)}/requests/${request.id}`, { action });
+          setAppsNotice("[data-apps-notice]", action === "approve" ? "Approved. The member can finish installing." : "Request denied.");
+        } catch (error) {
+          setAppsNotice("[data-apps-notice]", error.message, true);
+        }
+        void loadInstalledApps();
+      };
+      list.append(appsRow(request.app, `@${request.requester} asked to install this for ${org.name}`,
+        [appsButton("Approve", () => decide("approve")), appsButton("Deny", () => decide("deny"), true)], request.scopes));
+    }
+    list.append(appsOrgPolicy(org));
     return block;
   }
 
@@ -197,15 +240,18 @@
     if (!list) return;
     try {
       const payload = await appsRequest("GET", "/api/apps/installed");
+      const installs = payload.installs || [];
+      const organizations = payload.organizations || [];
       list.textContent = "";
-      if (!(payload.installs || []).length) list.append(appsEl("p", "text-sm text-muted-foreground", "You have not installed any apps."));
-      for (const install of payload.installs || []) list.append(appsInstallCard(install, revokeAppInstall));
+      if (!installs.length) list.append(appsEmpty("You have not installed any apps."));
+      for (const install of installs) list.append(appsInstallCard(install, revokeAppInstall));
       orgs.textContent = "";
-      orgs.hidden = !(payload.organizations || []).length;
-      for (const org of payload.organizations || []) orgs.append(renderOrgApps(org));
+      orgs.hidden = !organizations.length;
+      for (const org of organizations) orgs.append(renderOrgApps(org));
+      appsCount("installed", installs.length + organizations.reduce((sum, org) => sum + (org.installs || []).length, 0));
     } catch (error) {
       list.textContent = "";
-      list.append(appsEl("p", "text-sm text-muted-foreground", error.status === 401 ? "Sign in to see your apps." : error.message));
+      list.append(appsEmpty(error.status === 401 ? "Sign in to see your apps." : error.message));
     }
   }
 
@@ -215,56 +261,46 @@
     try {
       const payload = await appsRequest("GET", "/api/apps/directory");
       box.textContent = "";
-      if (!(payload.apps || []).length) box.append(appsEl("p", "text-sm text-muted-foreground", "No apps are listed yet."));
+      if (!(payload.apps || []).length) box.append(appsEmpty("No apps are listed yet."));
       for (const app of payload.apps || []) {
-        const card = appsEl("div", "rounded-md border border-border p-3 grid gap-2");
         const rating = app.rating?.count ? `${app.rating.average.toFixed(1)} stars from ${app.rating.count}` : "not rated yet";
-        const top = appsEl("div", "flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2");
-        top.append(appsHeader(app, `${app.organization || app.developer} · ${rating}`));
-        const links = appsEl("div", "flex gap-2");
+        const links = [];
         if (app.homepageUrl) {
-          const visit = appsEl("a", "inline-flex items-center rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary", "Visit to install");
-          visit.href = app.homepageUrl;
+          const visit = appsLink("Visit to install", app.homepageUrl);
           visit.rel = "noopener noreferrer";
           visit.target = "_blank";
-          links.append(visit);
+          links.push(visit);
         }
-        const rate = appsEl("a", "inline-flex items-center rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary", "Rate");
-        rate.href = `/market-reviews?market=forkmesh-apps&package=${encodeURIComponent(app.slug)}`;
-        links.append(rate);
-        top.append(links);
-        card.append(top);
-        if (app.description) card.append(appsEl("p", "text-sm text-muted-foreground", app.description));
-        card.append(appsScopeList(app.scopes));
-        box.append(card);
+        links.push(appsLink("Rate", `/market-reviews?market=forkmesh-apps&package=${encodeURIComponent(app.slug)}`));
+        const by = `${app.organization || app.developer} · ${rating}`;
+        const row = appsRow(app, app.description ? `${by} · ${app.description}` : by, links, app.scopes);
+        box.append(row);
       }
     } catch (error) {
       box.textContent = "";
-      box.append(appsEl("p", "text-sm text-muted-foreground", error.message));
+      box.append(appsEmpty(error.message));
     }
   }
 
   async function loadAppReviewQueue() {
-    const panel = $("[data-apps-review-panel]");
+    const tab = $('[data-apps-tab="review"]');
     const box = $("[data-apps-review]");
-    if (!panel || !box) return;
+    if (!tab || !box) return;
     let payload;
     try {
       payload = await appsRequest("GET", "/api/apps/review");
     } catch (_) {
-      panel.hidden = true;
+      tab.hidden = true;
       return;
     }
-    panel.hidden = false;
+    tab.hidden = false;
     box.textContent = "";
-    if (!(payload.apps || []).length) box.append(appsEl("p", "text-sm text-muted-foreground", "Nothing is waiting for review."));
-    for (const app of payload.apps || []) {
-      const card = appsEl("div", "rounded-md border border-border p-3 grid gap-2");
-      const top = appsEl("div", "flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2");
-      top.append(appsHeader(app, `by @${app.developer} · ${app.listing}`));
-      const reason = appsEl("input", "rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground");
+    const apps = payload.apps || [];
+    appsCount("review", apps.filter((app) => app.listing === "pending").length);
+    if (!apps.length) box.append(appsEmpty("Nothing is waiting for review."));
+    for (const app of apps) {
+      const reason = appsEl("input", "apps-input apps-review-input");
       reason.placeholder = "Reason (required to reject or suspend)";
-      const actions = appsEl("div", "flex flex-wrap gap-2");
       const act = async (action) => {
         try {
           await appsRequest("POST", `/api/apps/${app.id}/review`, { action, reason: reason.value, contentHash: app.contentHash });
@@ -275,24 +311,23 @@
         void loadAppReviewQueue();
         void loadAppDirectory();
       };
+      const actions = [];
       if (app.listing === "pending") {
-        actions.append(appsButton("Approve", () => act("approve")), appsButton("Reject", () => act("reject"), true));
+        actions.push(appsButton("Approve", () => act("approve")), appsButton("Reject", () => act("reject"), true));
       }
-      if (app.listing === "suspended") actions.append(appsButton("Reinstate", () => act("reinstate")));
-      else actions.append(appsButton("Suspend", () => act("suspend"), true));
-      top.append(actions);
-      card.append(top);
-      if (app.description) card.append(appsEl("p", "text-sm text-muted-foreground", app.description));
-      card.append(appsScopeList(app.scopes));
+      if (app.listing === "suspended") actions.push(appsButton("Reinstate", () => act("reinstate")));
+      else actions.push(appsButton("Suspend", () => act("suspend"), true));
+      const row = appsRow(app, `by @${app.developer} · ${app.listing}${app.description ? ` · ${app.description}` : ""}`, actions, app.scopes);
+      const urls = appsEl("div", "apps-scopes");
       for (const url of [...(app.redirectUris || []), app.eventUrl, app.interactivityUrl].filter(Boolean)) {
-        card.append(appsEl("p", "font-mono text-[11px] text-muted-foreground break-all", url));
+        urls.append(appsEl("span", "apps-scope break-all", url));
       }
-      card.append(reason);
-      box.append(card);
+      row.append(urls, reason);
+      box.append(row);
     }
   }
 
-  const appsPlugins = { market: [], installed: new Map(), places: new Map(), available: new Map(), busy: false, error: "", loaded: false };
+  const appsPlugins = { market: [], installed: new Map(), places: new Map(), available: new Map(), busy: false, error: "", loaded: false, show: "all", query: "", category: "" };
   const APPS_PLACES = Object.freeze([["mobile", "Phone"], ["desktop", "Desktop"], ["web", "Web"]]);
 
   function appsPlaceList(value) {
@@ -359,25 +394,27 @@
     appsPlugins.available = new Map(payload.packages.map((row) => [String(row.id), appsPlaceList(row.availablePlaces)]));
   }
 
+  function appsPluginCategory(row) {
+    return String(row?.category || "").trim() || "Other";
+  }
+
   function appsPluginPlacesControl(row) {
     const name = row.name || row.id;
     const available = appsPluginAvailable(row.id);
     const chosen = appsPluginPlaces(row.id);
-    const box = appsEl("div", "grid gap-1");
-    const group = appsEl("div", "flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground");
+    const group = appsEl("div", "apps-row-places apps-places");
     group.dataset.appsPluginPlaces = row.id;
     group.setAttribute("role", "group");
     group.setAttribute("aria-label", `Show ${name} on`);
-    group.append(appsEl("span", "font-semibold text-foreground", "Show on"));
     for (const [place, label] of APPS_PLACES) {
       if (!available.includes(place)) continue;
-      const item = appsEl("label", "inline-flex items-center gap-1.5");
-      const input = appsEl("input", "h-3.5 w-3.5");
+      const item = appsEl("label", "apps-place");
+      const input = appsEl("input", "");
       input.type = "checkbox";
       input.dataset.appsPluginPlace = place;
       input.checked = chosen.includes(place);
       input.disabled = appsPlugins.busy || (input.checked && chosen.length === 1);
-      if (input.checked && chosen.length === 1) input.title = `Remove ${name} to take it off everywhere.`;
+      item.title = input.checked && chosen.length === 1 ? `Remove ${name} to take it off everywhere.` : `Show ${name} on ${label}`;
       input.addEventListener("change", () => {
         const next = input.checked ? [...chosen, place] : chosen.filter((item) => item !== place);
         void setAppsPluginPlaces(row, appsPlaceList(next));
@@ -385,41 +422,104 @@
       item.append(input, appsEl("span", "", label));
       group.append(item);
     }
-    box.append(group);
-    if (!chosen.includes("web")) {
-      const note = available.includes("web")
-        ? "Not shown on the web. Turn on Web to show it here."
-        : `Not available on the web: it shows on ${appsPlaceNames(available)} only.`;
-      const hint = appsEl("p", "text-xs text-muted-foreground", note);
-      hint.dataset.appsPluginNotOnWeb = row.id;
-      box.append(hint);
-    }
-    return box;
+    return group;
   }
 
-  function appsPluginCard(row, depth) {
+  function appsPluginWebHint(row) {
+    const available = appsPluginAvailable(row.id);
+    if (appsPluginPlaces(row.id).includes("web")) return null;
+    const note = available.includes("web")
+      ? "Not shown on the web. Turn on Web to show it here."
+      : `Not available on the web: it shows on ${appsPlaceNames(available)} only.`;
+    const hint = appsEl("p", "apps-row-sub", note);
+    hint.dataset.appsPluginNotOnWeb = row.id;
+    return hint;
+  }
+
+  function appsPluginCard(row) {
     const on = appsPlugins.installed.get(row.id) === true;
-    const card = appsEl("div", "rounded-md border border-border p-3 grid gap-2");
+    const name = row.name || row.id;
+    const card = appsEl("div", on ? "apps-row" : "apps-row apps-row-off");
     card.dataset.appsPlugin = row.id;
-    const top = appsEl("div", "flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2");
-    const text = appsEl("div", "min-w-0");
-    text.append(appsEl("p", "text-sm font-semibold text-foreground", row.name || row.id));
-    text.append(appsEl("p", "text-xs text-muted-foreground", on ? "Installed" : "Not installed"));
-    if (row.summary) text.append(appsEl("p", "mt-1 text-sm text-muted-foreground", row.summary));
-    const toggle = appsButton(on ? "Remove" : "Install", () => { void setAppsPlugin(row, !on); }, on);
-    toggle.dataset.appsPluginToggle = row.id;
-    toggle.setAttribute("aria-label", `${on ? "Remove" : "Install"} ${row.name || row.id}`);
-    toggle.disabled = appsPlugins.busy;
-    top.append(text, toggle);
-    card.append(top);
-    if (on) card.append(appsPluginPlacesControl(row));
-    const children = depth < 3 ? appsPluginChildren(row.id) : [];
-    if (children.length) {
-      const nest = appsEl("div", "grid gap-2 pl-4 border-l border-border");
-      for (const child of children) nest.append(appsPluginCard(child, depth + 1));
-      card.append(nest);
+    const main = appsEl("div", "apps-row-main");
+    const text = appsEl("div", "apps-row-text");
+    const title = appsEl("div", "apps-row-title");
+    title.append(appsEl("span", "", name));
+    const parent = appsPluginDependencies(row)[0];
+    const parentRow = parent && appsPluginRows().find((item) => item.id === parent);
+    if (parentRow) title.append(appsEl("span", "fm-label", `Needs ${parentRow.name || parentRow.id}`));
+    const children = appsPluginChildren(row.id).length;
+    if (children) title.append(appsEl("span", "fm-label", `${children} add-on${children === 1 ? "" : "s"}`));
+    text.append(title);
+    if (row.summary) {
+      const summary = appsEl("p", "apps-row-sub", row.summary);
+      summary.title = row.summary;
+      text.append(summary);
     }
+    if (on) {
+      const hint = appsPluginWebHint(row);
+      if (hint) text.append(hint);
+    }
+    main.append(appsEl("div", "apps-tile", name.slice(0, 1).toUpperCase()), text);
+    card.append(main);
+    if (on) card.append(appsPluginPlacesControl(row));
+    const action = appsEl("div", "apps-row-action");
+    const toggle = appsEl("button", "apps-switch");
+    toggle.type = "button";
+    toggle.dataset.appsPluginToggle = row.id;
+    toggle.setAttribute("role", "switch");
+    toggle.setAttribute("aria-checked", on ? "true" : "false");
+    toggle.setAttribute("aria-label", `${on ? "Remove" : "Install"} ${name}`);
+    toggle.title = on ? `Remove ${name}` : `Install ${name}`;
+    toggle.disabled = appsPlugins.busy;
+    toggle.addEventListener("click", () => { void setAppsPlugin(row, !on); });
+    action.append(toggle);
+    card.append(action);
     return card;
+  }
+
+  function appsPluginMatches(row) {
+    const on = appsPlugins.installed.get(row.id) === true;
+    if (appsPlugins.show === "on" && !on) return false;
+    if (appsPlugins.show === "off" && on) return false;
+    if (appsPlugins.category && appsPluginCategory(row) !== appsPlugins.category) return false;
+    const query = appsPlugins.query.trim().toLowerCase();
+    if (!query) return true;
+    return [row.name, row.id, row.summary, appsPluginCategory(row)].some((value) => String(value || "").toLowerCase().includes(query));
+  }
+
+  function renderAppsPluginsRail(rows) {
+    const counts = new Map();
+    for (const row of rows) counts.set(appsPluginCategory(row), (counts.get(appsPluginCategory(row)) || 0) + 1);
+    const categories = [...counts.keys()].sort((a, b) => a.localeCompare(b));
+    if (appsPlugins.category && !counts.has(appsPlugins.category)) appsPlugins.category = "";
+    const rail = $("[data-apps-plugins-rail]");
+    if (rail) {
+      rail.textContent = "";
+      const item = (value, label, count) => {
+        const button = appsEl("button", "apps-rail-item");
+        button.type = "button";
+        button.setAttribute("aria-current", appsPlugins.category === value ? "true" : "false");
+        button.append(appsEl("span", "", label), appsEl("span", "", count));
+        button.addEventListener("click", () => {
+          appsPlugins.category = value;
+          renderAppsPlugins();
+        });
+        return button;
+      };
+      rail.append(item("", "All plugins", rows.length), appsEl("div", "apps-rail-divider"));
+      for (const category of categories) rail.append(item(category, category, counts.get(category)));
+    }
+    const select = $("[data-apps-plugins-category]");
+    if (select) {
+      select.textContent = "";
+      for (const [value, label] of [["", `All categories (${rows.length})`], ...categories.map((category) => [category, `${category} (${counts.get(category)})`])]) {
+        const option = appsEl("option", "", label);
+        option.value = value;
+        option.selected = appsPlugins.category === value;
+        select.append(option);
+      }
+    }
   }
 
   function renderAppsPlugins() {
@@ -427,17 +527,37 @@
     if (!box) return;
     box.textContent = "";
     if (appsPlugins.error) {
-      box.append(appsEl("p", "text-sm text-muted-foreground", appsPlugins.error));
+      box.append(appsEmpty(appsPlugins.error));
       return;
     }
-    const rows = appsPluginRows();
-    const known = new Set(rows.map((row) => row.id));
-    const roots = rows.filter((row) => !known.has(appsPluginDependencies(row)[0] || ""));
-    if (!roots.length) {
-      box.append(appsEl("p", "text-sm text-muted-foreground", "No plugins are available for your account yet."));
+    const rows = appsPluginRows().slice().sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+    appsCount("plugins", rows.filter((row) => appsPlugins.installed.get(row.id) === true).length);
+    renderAppsPluginsRail(rows);
+    if (!rows.length) {
+      box.append(appsEmpty("No plugins are available for your account yet."));
       return;
     }
-    for (const row of roots) box.append(appsPluginCard(row, 0));
+    const shown = rows.filter(appsPluginMatches);
+    if (!shown.length) {
+      box.append(appsEmpty("No plugins match."));
+      return;
+    }
+    if (appsPlugins.category || appsPlugins.query.trim()) {
+      for (const row of shown) box.append(appsPluginCard(row));
+      return;
+    }
+    const groups = new Map();
+    for (const row of shown) {
+      const category = appsPluginCategory(row);
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push(row);
+    }
+    for (const category of [...groups.keys()].sort((a, b) => a.localeCompare(b))) {
+      const header = appsEl("div", "apps-group");
+      header.append(appsEl("span", "", category), appsEl("span", "", groups.get(category).length));
+      box.append(header);
+      for (const row of groups.get(category)) box.append(appsPluginCard(row));
+    }
   }
 
   function appsPluginNames(ids) {
@@ -510,16 +630,56 @@
     renderAppsPlugins();
   }
 
+  const APPS_TABS = Object.freeze(["plugins", "installed", "directory", "review"]);
+
+  function showAppsTab(name) {
+    const tab = APPS_TABS.includes(name) && !$(`[data-apps-tab="${name}"]`)?.hidden ? name : "plugins";
+    for (const button of document.querySelectorAll("[data-apps-tab]")) {
+      button.setAttribute("aria-selected", button.dataset.appsTab === tab ? "true" : "false");
+    }
+    for (const panel of document.querySelectorAll("[data-apps-tabpanel]")) {
+      panel.hidden = panel.dataset.appsTabpanel !== tab;
+    }
+    return tab;
+  }
+
   function initAppsPage() {
     if (!$("[data-apps-panel]")) return;
+    for (const button of document.querySelectorAll("[data-apps-tab]")) {
+      button.addEventListener("click", () => {
+        const tab = showAppsTab(button.dataset.appsTab);
+        history.replaceState(null, "", tab === "plugins" ? location.pathname + location.search : `#${tab}`);
+      });
+    }
+    showAppsTab(location.hash.slice(1));
     $("[data-apps-plugins-refresh]")?.addEventListener("click", () => {
       setAppsNotice("[data-apps-plugins-notice]", "");
       void loadAppsPlugins();
     });
+    $("[data-apps-plugins-search]")?.addEventListener("input", (event) => {
+      appsPlugins.query = event.target.value;
+      if (appsPlugins.query.trim()) appsPlugins.category = "";
+      renderAppsPlugins();
+    });
+    $("[data-apps-plugins-category]")?.addEventListener("change", (event) => {
+      appsPlugins.category = event.target.value;
+      renderAppsPlugins();
+    });
+    for (const button of document.querySelectorAll("[data-apps-plugins-show]")) {
+      button.addEventListener("click", () => {
+        appsPlugins.show = button.dataset.appsPluginsShow;
+        for (const other of document.querySelectorAll("[data-apps-plugins-show]")) {
+          other.setAttribute("aria-pressed", other === button ? "true" : "false");
+        }
+        renderAppsPlugins();
+      });
+    }
     void loadAppsPlugins();
     void loadInstalledApps();
     void loadAppDirectory();
-    void loadAppReviewQueue();
+    void loadAppReviewQueue().then(() => {
+      if (location.hash === "#review") showAppsTab("review");
+    });
   }
 
   const appConsole = { apps: [], scopes: [], events: [], orgs: [] };
@@ -644,19 +804,20 @@
     box.textContent = "";
     try {
       const payload = await appsRequest("GET", `/api/apps/${app.id}/deliveries`);
-      if (!(payload.deliveries || []).length) box.append(appsEl("p", "text-sm text-muted-foreground", "No deliveries yet."));
+      if (!(payload.deliveries || []).length) box.append(appsBlankslate("send", "No deliveries yet", "Events sent to this app show up here."));
       for (const entry of payload.deliveries || []) {
         box.append(appsEl("p", "font-mono text-xs text-foreground", `${new Date(entry.ts).toLocaleString()}  ${entry.kind.padEnd(11)} ${(entry.eventType || "").padEnd(16)} ${String(entry.status).padStart(3)}  ${entry.outcome}  x${entry.attempts}${entry.detail ? "  " + entry.detail : ""}`));
       }
     } catch (error) {
-      box.append(appsEl("p", "text-sm text-red-500", error.message));
+      box.append(appsFlash("danger", error.message));
+      window.lucide?.createIcons?.();
     }
   }
 
   function renderAppConsoleList() {
     const list = $("[data-app-list]");
     list.textContent = "";
-    if (!appConsole.apps.length) list.append(appsEl("p", "text-sm text-muted-foreground", "You have not registered an app yet."));
+    if (!appConsole.apps.length) list.append(appsBlankslate("code", "No apps yet", "You have not registered an app yet."));
     for (const app of appConsole.apps) {
       const card = appsEl("div", "rounded-md border border-border p-3 grid gap-2");
       const status = [
@@ -699,7 +860,9 @@
     } catch (error) {
       const list = $("[data-app-list]");
       list.textContent = "";
-      list.append(appsEl("p", "text-sm text-muted-foreground", error.status === 401 ? "Sign in to build apps." : error.message));
+      list.append(error.status === 401
+        ? appsBlankslate("lock", "Sign in to build apps")
+        : appsBlankslate("circle-alert", "Your apps did not load", error.message));
     }
   }
 

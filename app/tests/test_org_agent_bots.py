@@ -296,7 +296,7 @@ def test_finished_queue_statuses_are_not_toned_as_still_running():
     # "completed" and "rejected" are the relay's queue words for outcomes the
     # desktop calls "success" and "failed"; toning them as pending made a run
     # that had already finished read as in flight.
-    assert 'if (value === "success" || value === "completed") return "text-primary";' in DASHBOARD
+    assert 'if (value === "success" || value === "completed") return "text-success";' in DASHBOARD
     assert '["failed", "stopped", "rejected"].includes(value)' in DASHBOARD
 
 

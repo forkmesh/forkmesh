@@ -80,10 +80,17 @@
 
   function challengePhaseBadge(phase) {
     const labels = { upcoming: "Starts soon", active: "Live", finished: "Finished" };
-    const tone = phase === "active"
-      ? "border-accent text-accent"
-      : "border-border text-muted-foreground";
-    return `<span class="shrink-0 rounded-full border ${tone} px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">${escapeHtml(labels[phase] || phase)}</span>`;
+    const tone = phase === "active" ? " fm-label-success" : "";
+    return `<span class="fm-label${tone} shrink-0">${escapeHtml(labels[phase] || phase)}</span>`;
+  }
+
+  function challengeFlashHtml(tone, icon, html, actions = "") {
+    const variant = tone ? ` fm-flash-${tone}` : "";
+    return `<div class="fm-flash${variant}"><i data-lucide="${icon}" aria-hidden="true"></i><div class="fm-flash-body">${html}</div>${actions ? `<div class="fm-flash-actions">${actions}</div>` : ""}</div>`;
+  }
+
+  function challengeBlankslateHtml(icon, title, html) {
+    return `<div class="fm-blankslate"><i data-lucide="${icon}" aria-hidden="true"></i><p class="fm-blankslate-title">${title}</p>${html ? `<p class="fm-blankslate-desc">${html}</p>` : ""}</div>`;
   }
 
   function challengeRulesText(item) {
@@ -111,9 +118,7 @@
   }
 
   function challengeEntryHtml(entry, item, days, peak) {
-    const rankTone = entry.rank === 1 && entry.total > 0
-      ? "text-amber-500"
-      : entry.rank <= 3 ? "text-foreground" : "text-muted-foreground";
+    const rankTone = entry.rank <= 3 && entry.total > 0 ? "text-foreground" : "text-muted-foreground";
     const counts = entry.counts || {};
     const detail = [
       challengePlural(counts.commits, "commit"),
@@ -129,7 +134,7 @@
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
           <a class="truncate text-sm font-semibold text-foreground hover:underline" href="${escapeHtml(publicProfileUrl(entry.name))}">${escapeHtml(entry.name)}</a>
-          ${entry.you ? '<span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">you</span>' : ""}
+          ${entry.you ? '<span class="fm-label shrink-0">you</span>' : ""}
           ${entry.owner ? '<span class="shrink-0 text-[10px] text-muted-foreground">host</span>' : ""}
         </div>
         <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(detail)}</p>
@@ -149,19 +154,17 @@
     const peak = Math.max(0, ...entries.flatMap((entry) => entry.days || []));
     const winners = Array.isArray(board.winners) ? board.winners : [];
     const banner = item.phase === "finished"
-      ? `<p class="mt-3 flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
-          <i data-lucide="trophy" class="h-4 w-4 text-amber-500"></i>
-          ${winners.length ? `${escapeHtml(winners.join(" and "))} ${winners.length === 1 ? "won" : "tied for the win"}.` : "Nobody scored, so nobody won this one."}
-        </p>`
+      ? `<div class="mt-3">${challengeFlashHtml("neutral", "trophy",
+          winners.length ? `${escapeHtml(winners.join(" and "))} ${winners.length === 1 ? "won" : "tied for the win"}.` : "Nobody scored, so nobody won this one.")}</div>`
       : item.phase === "upcoming"
-        ? '<p class="mt-3 text-sm text-muted-foreground">Scoring starts on the first day. Send the invite link so people can join before then.</p>'
+        ? `<div class="mt-3">${challengeFlashHtml("neutral", "clock", "Scoring starts on the first day. Send the invite link so people can join before then.")}</div>`
         : "";
     const action = item.isOwner
-      ? `<button data-challenges-delete="${escapeHtml(item.id)}" type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>Delete</button>`
-      : `<button data-challenges-leave="${escapeHtml(item.id)}" type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="log-out" class="w-3.5 h-3.5"></i>Leave</button>`;
+      ? `<button data-challenges-delete="${escapeHtml(item.id)}" type="button" class="fm-btn fm-btn-sm fm-btn-danger"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>Delete</button>`
+      : `<button data-challenges-leave="${escapeHtml(item.id)}" type="button" class="fm-btn fm-btn-sm"><i data-lucide="log-out" class="w-3.5 h-3.5"></i>Leave</button>`;
     const invite = item.phase === "finished" ? "" : `<div class="mt-3 flex flex-wrap items-center gap-2">
-        <input type="text" readonly aria-label="Invite link for ${escapeHtml(item.name)}" value="${escapeHtml(challengeInviteUrl(item))}" class="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-1.5 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
-        <button data-challenges-copy="${escapeHtml(item.id)}" type="button" class="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors"><i data-lucide="copy" class="w-3.5 h-3.5"></i>Copy invite link</button>
+        <input type="text" readonly aria-label="Invite link for ${escapeHtml(item.name)}" value="${escapeHtml(challengeInviteUrl(item))}" class="h-control-sm min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+        <button data-challenges-copy="${escapeHtml(item.id)}" type="button" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="copy" class="w-3.5 h-3.5"></i>Copy invite link</button>
       </div>`;
     const rows = entries.length
       ? `<div class="mt-2 divide-y divide-border">${entries.map((entry) => challengeEntryHtml(entry, item, days, peak)).join("")}</div>`
@@ -192,8 +195,9 @@
       root.innerHTML = "";
       return;
     }
-    const tone = view.noticeTone === "bad" ? "text-red-500" : "text-foreground";
-    root.innerHTML = `<p class="px-4 sm:px-5 py-3 border-b border-border text-sm ${tone}">${escapeHtml(view.notice)}</p>`;
+    const bad = view.noticeTone === "bad";
+    root.innerHTML = `<div class="px-4 sm:px-5 py-3 border-b border-border">${challengeFlashHtml(bad ? "danger" : "success", bad ? "circle-alert" : "circle-check", escapeHtml(view.notice))}</div>`;
+    window.lucide?.createIcons();
   }
 
   function renderChallengeInvite() {
@@ -205,9 +209,12 @@
       return;
     }
     if (view.inviteError || !view.invite) {
-      root.innerHTML = `<div class="px-4 sm:px-5 py-4 border-b border-border text-sm text-muted-foreground">${
-        view.inviteError ? escapeHtml(view.inviteError) : loadingHtml("Loading the challenge you were invited to...")
+      root.innerHTML = `<div class="px-4 sm:px-5 py-4 border-b border-border">${
+        view.inviteError
+          ? challengeFlashHtml("danger", "circle-alert", escapeHtml(view.inviteError))
+          : `<p class="text-sm text-muted-foreground">${loadingHtml("Loading the challenge you were invited to...")}</p>`
       }</div>`;
+      window.lucide?.createIcons();
       return;
     }
     const item = view.invite;
@@ -220,18 +227,16 @@
       ? `<p class="mt-1 text-xs text-muted-foreground">In it so far: ${escapeHtml(item.memberNames.join(", "))}</p>`
       : "";
     const button = item.phase === "finished"
-      ? '<p class="text-sm text-muted-foreground">This challenge has finished.</p>'
+      ? '<span class="text-xs text-muted-foreground">This challenge has finished.</span>'
       : challengeAccountName()
-        ? `<button data-challenges-join="${escapeHtml(item.id)}" type="button" class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors"${view.busy ? " disabled" : ""}><i data-lucide="swords" class="w-3.5 h-3.5"></i>Accept challenge</button>`
-        : `<a class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90" href="/login?next=${next}">Log in to accept</a>`;
-    root.innerHTML = `<div class="px-4 sm:px-5 py-4 border-b border-border bg-secondary/40">
-      <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">${escapeHtml(item.ownerName)} challenged you</p>
-      <p class="mt-1 text-sm font-semibold text-foreground">${escapeHtml(item.name)}</p>
-      <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(challengeWhenText(item))}</p>
-      <p class="mt-0.5 text-xs text-muted-foreground">${escapeHtml(challengeRulesText(item))}</p>
-      ${people}
-      <div class="mt-3">${button}</div>
-    </div>`;
+        ? `<button data-challenges-join="${escapeHtml(item.id)}" type="button" class="fm-btn fm-btn-sm fm-btn-cta"${view.busy ? " disabled" : ""}><i data-lucide="swords" class="w-3.5 h-3.5"></i>Accept challenge</button>`
+        : `<a class="fm-btn fm-btn-sm fm-btn-cta" href="/login?next=${next}">Log in to accept</a>`;
+    root.innerHTML = `<div class="px-4 sm:px-5 py-3 border-b border-border">${challengeFlashHtml("", "swords", `
+      <span class="fm-flash-title">${escapeHtml(item.ownerName)} challenged you to ${escapeHtml(item.name)}</span>
+      <p class="text-xs">${escapeHtml(challengeWhenText(item))}</p>
+      <p class="text-xs">${escapeHtml(challengeRulesText(item))}</p>
+      ${people}`, button)}</div>`;
+    window.lucide?.createIcons();
   }
 
   function renderChallengeStart() {
@@ -240,11 +245,10 @@
     const view = state.challengesView;
     if (!challengeAccountName()) {
       const next = encodeURIComponent(`${location.pathname}${location.search}`);
-      root.innerHTML = `<p class="text-sm text-muted-foreground">
-        <a class="text-accent underline" href="/login?next=${next}">Log in</a>
+      root.innerHTML = challengeFlashHtml("", "info", `<a class="text-accent underline" href="/login?next=${next}">Log in</a>
         or <a class="text-accent underline" href="/signup">create an account</a>
-        to start a challenge.
-      </p>`;
+        to start a challenge.`);
+      window.lucide?.createIcons();
       return;
     }
     const options = view.options;
@@ -262,14 +266,14 @@
           <p class="text-sm font-semibold text-foreground">${escapeHtml(primary.label)}</p>
           <p class="mt-0.5 text-xs text-muted-foreground">${escapeHtml(primary.description)} Everything is set up; you only share the link.</p>
         </div>
-        <button data-challenges-preset="${escapeHtml(primary.id)}" type="button" class="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-colors"${disabled}>
+        <button data-challenges-preset="${escapeHtml(primary.id)}" type="button" class="fm-btn fm-btn-cta shrink-0"${disabled}>
           <i data-lucide="zap" class="w-4 h-4"></i>
           Start in one click
         </button>
       </div>` : ""}
       <div class="flex flex-wrap items-center gap-2">
-        ${others.map((preset) => `<button data-challenges-preset="${escapeHtml(preset.id)}" type="button" title="${escapeHtml(preset.description)}" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"${disabled}>${escapeHtml(preset.label)}</button>`).join("")}
-        <button data-challenges-customize type="button" aria-expanded="${view.customizing ? "true" : "false"}" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+        ${others.map((preset) => `<button data-challenges-preset="${escapeHtml(preset.id)}" type="button" title="${escapeHtml(preset.description)}" class="fm-btn fm-btn-sm"${disabled}>${escapeHtml(preset.label)}</button>`).join("")}
+        <button data-challenges-customize type="button" aria-expanded="${view.customizing ? "true" : "false"}" class="fm-btn fm-btn-sm">
           <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
           ${view.customizing ? "Hide custom options" : "Customize"}
         </button>
@@ -326,7 +330,7 @@
         <input name="maxMembers" type="number" min="${Number(limits.minMembers) || 2}" max="${Number(limits.maxMembers) || 50}" value="10" class="${field}" />
       </label>
       <div class="sm:col-span-2 flex justify-end">
-        <button type="submit" class="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-colors">
+        <button type="submit" class="fm-btn">
           <i data-lucide="swords" class="w-4 h-4"></i>
           Start custom challenge
         </button>
@@ -369,14 +373,16 @@
     if (!root) return;
     const view = state.challengesView;
     if (!challengeAccountName()) {
-      root.innerHTML = '<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">Log in to see the challenges you are in.</div>';
+      root.innerHTML = challengeBlankslateHtml("lock", "Signed out", "Log in to see the challenges you are in.");
+      window.lucide?.createIcons();
       if (count) count.textContent = "Signed out";
       return;
     }
     if (view.loading || view.error) {
-      root.innerHTML = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${
-        view.loading ? loadingHtml("Loading challenges...") : escapeHtml(view.error)
-      }</div>`;
+      root.innerHTML = view.loading
+        ? `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${loadingHtml("Loading challenges...")}</div>`
+        : challengeBlankslateHtml("circle-alert", "Challenges did not load", escapeHtml(view.error));
+      window.lucide?.createIcons();
       if (count) count.textContent = view.loading ? "Loading" : "Unavailable";
       return;
     }
@@ -384,7 +390,7 @@
     if (count) count.textContent = `${formatCount(live)} open`;
     root.innerHTML = view.items.length
       ? view.items.map(challengeCardHtml).join("")
-      : '<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">No challenges yet. Start one above and send the invite link to the people you want to race.</div>';
+      : challengeBlankslateHtml("swords", "No challenges yet", "Start one above and send the invite link to the people you want to race.");
   }
 
   function renderChallengesPage() {

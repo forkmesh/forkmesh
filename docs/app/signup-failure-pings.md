@@ -23,7 +23,31 @@ address.
   it reports to `POST /api/accounts/signup/problem`: `challenge_unavailable`,
   `challenge_not_rendered`, `challenge_render_failed`,
   `challenge_token_missing`, `challenge_stale`, `challenge_error`,
-  `network_error`, or `unexpected_response`.
+  `network_error`, `signup_page_renew_failed`, or `unexpected_response`.
+
+## Claim renewal
+
+The signup claim (`forkmesh_signup_intent` cookie and its
+`account_signup_intents` row) lives 15 minutes. Visitors who left the page
+open longer, reloaded it in another tab, or retried after a claim was used
+got `signup_page_required` or `turnstile_stale_page` and had to reload,
+losing what they had typed (Ping of 2026-10-14).
+
+- `POST /api/accounts/signup/intent` mints a new claim exactly as a
+  `GET /signup` does: it replaces the cookie and answers the new email field
+  name and Turnstile cdata. It needs an allowed origin, nothing more; it gives
+  nothing a page view does not.
+- `signup.js` renews the claim before submitting once the page is 12 minutes
+  old (`SIGNUP_INTENT_RENEW_MS`, kept two minutes under the server TTL), and
+  in the background when a tab returns after that.
+- When the server still answers `signup_page_required` or
+  `turnstile_stale_page`, the page renews once, renames the email input,
+  re-renders the widget with the new cdata, waits for its token and resubmits.
+  A second refusal shows the reload message; a failed renewal shows its own
+  message and reports `signup_page_renew_failed`.
+- The server still pings on the first refusal, so a recovered refusal can
+  still produce a ping. A `signup_page_renew_failed` ping, or two refusals
+  for one visitor, is the sign of a real fault.
 
 ## Server side
 
@@ -53,4 +77,4 @@ address.
 | --- | --- |
 | `app/public/signup.js`, `app/public/signup.html` | Explicit render, `widgetToken()`, `reportProblem()` |
 | `app/src/entry.py` | `ping_signup_failure`, `_signup_refused`, `_account_signup_problem` |
-| `app/tests/test_signup_failure_pings.py`, `app/tests/test_turnstile.py` | Tests |
+| `app/tests/test_signup_failure_pings.py`, `app/tests/test_turnstile.py`, `app/tests/test_signup_page_renewal.py` | Tests |

@@ -69,7 +69,22 @@ MUST_PASS = (
     "app/tests/test_timer_pings.py",
     "app/tests/test_desktop_pings.py",
     "app/tests/test_operator_alerts.py",
+    "app/tests/test_users_nodes_claim_link.py",
+    "app/tests/test_account_totp_gate.py",
+    "app/tests/test_login_key_binding.py",
+    "app/tests/test_no_unguarded_destructive_deletes.py",
+    "app/tests/test_forkbot.py::test_forkbot_does_not_rekey_when_the_owner_is_a_plain_node",
+    "app/tests/test_forkbot.py::test_forkbot_agent_requests_ignore_the_claimed_chat_sender",
+    "app/tests/test_forkbot.py::test_forkbot_starts_agent_on_most_recent_issue_for_owner",
+    "app/tests/test_forkbot.py::test_forkbot_starts_agent_on_named_issue_for_admin",
+    "app/tests/test_forkbot.py::test_forkbot_resolves_only_allowlisted_model_picks",
+    "app/tests/test_forkbot.py::test_ai_workspace_name_rejects_unsigned_and_falls_back_on_unusable_results",
+    "app/tests/test_forkbot.py::test_ai_ask_refuses_unsigned_stale_and_unverified_callers",
+    "app/tests/test_forkbot.py::test_ai_agent_caps_the_output_tokens_a_client_may_request",
+    "app/tests/test_forkbot.py::test_forkbot_denies_agent_start_for_non_owner",
+    "app/tests/test_forkbot.py::test_forkbot_rejects_agent_start_on_unknown_issue",
 )
+GO_TEST_MODULES = ("server",)
 COMPARE_SUITE = ("app/tests/host",)
 TEST_WORKERS = 12
 TEST_TIMEOUT = 1800
@@ -706,7 +721,27 @@ def build_cache_dir() -> Path:
     return base / "worker-python"
 
 
-def sandbox_command(work: Path, venv: Path, data_bin: Path, argv: list) -> list:
+GO_FALLBACKS = ("/usr/local/go/bin/go", "/usr/lib/go/bin/go", "~/go/bin/go", "~/.local/go/bin/go")
+
+
+def go_root() -> Path:
+    go = shutil.which("go") or next(
+        (path for path in map(os.path.expanduser, GO_FALLBACKS) if os.path.isfile(path)), None)
+    if not go:
+        raise ToolError("go is required for the test gate (the %s Go tests); install it on "
+                        "this machine or put it on the agent's PATH" % ", ".join(GO_TEST_MODULES))
+    return Path(go).resolve().parent.parent
+
+
+def go_test_env(work: Path, venv: Path, root: Path) -> tuple:
+    return (("PATH", "%s/bin:%s/bin:/usr/bin:/bin" % (root, venv)),
+            ("GOROOT", str(root)), ("GOCACHE", str(work / "gocache")),
+            ("GOPATH", str(work / "gopath")), ("GOTOOLCHAIN", "local"),
+            ("GOPROXY", "off"), ("GOFLAGS", "-mod=readonly"), ("CGO_ENABLED", "0"))
+
+
+def sandbox_command(work: Path, venv: Path, data_bin: Path, argv: list, binds=(),
+                    env=()) -> list:
     bwrap = shutil.which("bwrap")
     if not bwrap:
         raise ToolError("bwrap is required for the test gate")
@@ -722,21 +757,29 @@ def sandbox_command(work: Path, venv: Path, data_bin: Path, argv: list) -> list:
         command += ["--ro-bind", str(cache), str(cache)]
     if data_bin.is_dir():
         command += ["--ro-bind", str(data_bin.resolve()), str(data_bin.resolve())]
+    for path in binds:
+        command += ["--ro-bind", str(path), str(path)]
     command += ["--clearenv", "--setenv", "HOME", str(work / "home"),
                 "--setenv", "PATH", "%s/bin:/usr/bin:/bin" % venv,
                 "--setenv", "LANG", "C.UTF-8", "--setenv", "TMPDIR", "/tmp",
                 "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
                 *(["--setenv", "FORKMESH_BUILD_CACHE", str(cache.parent)]
                   if cache.is_dir() else []),
+                *[item for name, value in env for item in ("--setenv", name, value)],
                 "--chdir", str(work / "src"), *argv]
     return command
 
 
 FAIL_RE = re.compile(r"^(FAILED|ERROR) (\S+)")
+GO_FAIL_RE = re.compile(r"^\s*--- FAIL: (\S+)")
 
 
 def failing_ids(lines) -> set:
     return {match.group(2) for match in map(FAIL_RE.match, lines) if match}
+
+
+def failing_go_ids(module, lines) -> set:
+    return {"%s::%s" % (module, match.group(1)) for match in map(GO_FAIL_RE.match, lines) if match}
 
 
 class Pipeline:
@@ -824,7 +867,7 @@ class Pipeline:
                 extra = sorted(p.relative_to(src).as_posix()
                                for p in (src / path).glob("test_*.py"))
             else:
-                extra = [path] if (src / path).exists() else []
+                extra = [path] if (src / path.split("::", 1)[0]).exists() else []
             files += [item for item in extra if item not in files]
         return files
 
@@ -835,6 +878,22 @@ class Pipeline:
         code = stream(sandbox_command(work, venv, work / "data" / "bin", argv),
                       lines.append, timeout=TEST_TIMEOUT, popen=self.popen)
         return path, code, failing_ids(lines), lines
+
+    def go_tests(self, work: Path, venv: Path):
+        root = go_root()
+        results = {}
+        for module in GO_TEST_MODULES:
+            started = time.monotonic()
+            lines = []
+            argv = [str(root / "bin" / "go"), "test", "-C", module, "./..."]
+            code = stream(sandbox_command(work, venv, work / "data" / "bin", argv,
+                                          binds=(root,), env=go_test_env(work, venv, root)),
+                          lines.append, timeout=TEST_TIMEOUT, popen=self.popen)
+            failures = failing_go_ids(module, lines)
+            results[module] = (code, failures, lines)
+            self.say("tests: go test %s: exit %d in %.0f s" % (
+                module, code, time.monotonic() - started))
+        return results
 
     def pytest_many(self, work: Path, venv: Path, files: list, label: str):
         from concurrent.futures import ThreadPoolExecutor
@@ -862,9 +921,18 @@ class Pipeline:
             self.archive(target, work)
             venv = self.venv(work / "src")
             self.prestage(work, venv)
-            results = self.pytest_many(work, venv, self.test_files(work / "src"),
-                                       "target")
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                go_future = pool.submit(self.go_tests, work, venv)
+                results = self.pytest_many(work, venv, self.test_files(work / "src"),
+                                           "target")
+                go_results = go_future.result()
             broken = []
+            for module, (code, failures, lines) in sorted(go_results.items()):
+                if code != 0:
+                    broken += sorted(failures) or ["go test %s exit %d" % (module, code)]
+                    for line in lines[-40:]:
+                        self.say("  " + line)
             for path, (code, failures, lines) in sorted(results.items()):
                 if not any(path == item or path.startswith(item.rstrip("/") + "/")
                            for item in MUST_PASS):

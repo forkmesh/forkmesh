@@ -134,14 +134,10 @@ object DesktopCommand {
         sessionNodeName: String?,
         sessionPubkey: String?,
         identityPublicKey: String?,
-        repoOwner: String,
     ): String {
         val account = sessionNodeName?.trim()?.lowercase() ?: ""
         if (sessionNodeName == null || identityPublicKey == null || account.isEmpty()) {
             throw DartException("Sign in with the repo owner account to request desktop control.")
-        }
-        if (account != repoOwner.trim().lowercase()) {
-            throw DartException("Only the repo owner can request desktop control for this repo.")
         }
         if ((sessionPubkey ?: "").trim() != identityPublicKey) {
             throw DartException("Pair this mobile device with the owner key before requesting desktop control.")

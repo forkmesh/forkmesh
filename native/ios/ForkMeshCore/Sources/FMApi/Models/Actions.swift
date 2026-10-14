@@ -189,7 +189,7 @@ public struct DesktopCommandResult: Equatable, Hashable, Sendable {
     public static func errorMessage(status: Int, code: String) -> String {
         switch code {
         case "not_authorized":
-            return "Only the repo owner can request desktop control for this repo."
+            return "Only the repo owner or an organization member with write access can request desktop control for this repo."
         case "unsupported_command":
             return "The server does not accept that desktop request."
         case "signature_required", "invalid_signature":

@@ -352,6 +352,18 @@ def test_every_ping_and_direct_message_is_its_own_banner(apns):
     assert apns.collapse_id_for("chat") == "chat"
 
 
+def test_the_mesh_wake_shares_the_phones_own_mesh_alert_slot(apns):
+    assert apns.collapse_id_for("chat", "#mesh") == "mesh-room"
+    assert apns.collapse_id_for("chat", "#general") == "chat"
+    assert apns.collapse_id_for("direct-messages", "#mesh") == ""
+    alert = apns.chat_message_alert("mesh", apns.APNS_MESH_CONVERSATION)
+    assert apns.collapse_id_for(
+        apns.APNS_CHAT_TOPIC, alert.get("conversation", "")) == "mesh-room"
+    swift = (ROOT.parent / "native" / "ios" / "ForkMeshCore" / "Sources"
+             / "FMChat" / "Mesh" / "MeshAlert.swift").read_text()
+    assert 'meshAlertIdentifier = "mesh-room"' in swift
+
+
 _REF = "0123456789abcdef0123456789abcdef01234567"
 _DIRECT_ID = "0123456789abcdef" * 2
 _CHANNEL_ID = "fedcba9876543210" * 2
@@ -652,7 +664,9 @@ def test_real_event_fan_out_unpacks_the_reason_it_ignores():
     source = _entry_function("_apns_send_tokens")
     assert "ok, dead, _status, _reason = await apns.send_one(" in source
     assert 'entry["token"], entry["environment"], alert,' in source
-    assert "collapse_id=apns.collapse_id_for(topic), topic=topic" in source
+    assert ('collapse_id=apns.collapse_id_for(\n'
+            '                    topic, alert.get("conversation", "")), '
+            'topic=topic') in source
 
 
 def test_a_ping_banner_is_rendered_from_the_row_just_written():
@@ -1442,7 +1456,8 @@ def test_the_fan_out_addresses_every_token_as_its_own_app():
     namespace = {
         "_apns_module": lambda: types.SimpleNamespace(
             provider_token=provider_token, send_one=send_one,
-            APNS_PUSH_BUDGET_MS=3000, collapse_id_for=lambda topic: ""),
+            APNS_PUSH_BUDGET_MS=3000,
+            collapse_id_for=lambda topic, conversation="": ""),
         "Date": types.SimpleNamespace(now=lambda: 0),
         "js_fetch_with_timeout": object(),
         "_apns_prune_token": None,

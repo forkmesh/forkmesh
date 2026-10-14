@@ -303,8 +303,8 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     options.render?.(body);
     const save = $(`[data-analytics-dialog-save]`);
     save.textContent = options.saveLabel || "Save"; save.hidden = !options.onSave; save.disabled = false;
-    save.classList.toggle("an-btn-danger", Boolean(options.danger));
-    save.classList.toggle("an-btn-primary", !options.danger);
+    save.classList.toggle("fm-btn-danger", Boolean(options.danger));
+    save.classList.toggle("fm-btn-cta", !options.danger);
     const remove = $(`[data-analytics-dialog-delete]`);
     remove.hidden = !options.onDelete; remove.textContent = options.deleteLabel || "Delete";
     dialog.classList.toggle("an-dialog-narrow", Boolean(options.narrow));
@@ -369,7 +369,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     const width = Math.max(300, Math.floor(host.clientWidth || 640)), height = options.height || 240;
     chartOptions.set(host, { options, width });
     chartObserver?.observe(host);
-    if (!count || !series.length) { host.innerHTML = `<div class="an-empty">No data in this range.</div>`; return; }
+    if (!count || !series.length) { host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">No data in this range.</p></div>`; return; }
     const type = options.type || "line", bars = type === "bar" || type === "stacked";
     const formatValue = options.formatValue || fmtNumber;
     const formatLabel = options.formatLabel || ((label) => String(label));
@@ -456,7 +456,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     svg += `<line class="an-cross" data-cross x1="0" x2="0" y1="${top}" y2="${top + plotHeight}" opacity="0"/>`
       + `<rect data-hit x="${left}" y="${top}" width="${plotWidth}" height="${plotHeight}" fill="transparent"/>`;
 
-    host.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" tabindex="0" aria-label="${h(options.label || "Chart")}">${svg}</svg><div class="an-tip" hidden></div>`;
+    host.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" tabindex="0" aria-label="${h(options.label || "Chart")}">${svg}</svg><div class="an-tip fm-popover" hidden></div>`;
     const figure = host.querySelector("svg"), tip = host.querySelector(".an-tip"), cross = host.querySelector("[data-cross]");
 
     // Legend: always for two or more series; text stays in text colours.
@@ -574,8 +574,8 @@ window.ForkMeshDashboard.registerPage("analytics", ({
             + `<select class="an-select" data-f="operator" aria-label="Operator">${optionList(operators.map((name) => [name, OPERATOR_LABELS[name] || name]), filter.operator || "exact")}</select>`
             + (valueless ? "" : `<input class="an-input" data-f="value" aria-label="Value (separate several with commas)" placeholder="Value" autocomplete="off" value="${h(filterValueText(filter))}" />`);
         }
-        return `<div class="an-filter" data-index="${index}">${typeSelect}${body}<button type="button" class="an-btn an-btn-small" data-f="remove">Remove</button></div>`;
-      }).join("")}<div><button type="button" class="an-btn an-btn-small" data-f="add">+ ${h(options.addLabel || "Add filter")}</button></div></div>`;
+        return `<div class="an-filter" data-index="${index}">${typeSelect}${body}<button type="button" class="fm-btn fm-btn-sm" data-f="remove">Remove</button></div>`;
+      }).join("")}<div><button type="button" class="fm-btn fm-btn-sm" data-f="add">+ ${h(options.addLabel || "Add filter")}</button></div></div>`;
     }
     host.onchange = (event) => {
       const control = event.target.closest("[data-f]"), row = event.target.closest("[data-index]");
@@ -633,7 +633,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       host.innerHTML = `<div class="an-stack-tight">${list.map((item, index) => {
         const custom = customEventRows.has(item);
         return `<div class="an-series" data-series="${index}">
-          <div class="an-series-head">${options.colors === false ? "" : `<span class="an-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span>`}<span>${h(noun)} ${options.noun === "Step" ? index + 1 : String.fromCharCode(65 + index)}</span>${list.length > minimum ? `<button type="button" class="an-btn an-btn-small" data-s="remove" style="margin-left:auto">Remove</button>` : ""}</div>
+          <div class="an-series-head">${options.colors === false ? "" : `<span class="an-swatch" style="background:${PALETTE[index % PALETTE.length]}"></span>`}<span>${h(noun)} ${options.noun === "Step" ? index + 1 : String.fromCharCode(65 + index)}</span>${list.length > minimum ? `<button type="button" class="fm-btn fm-btn-sm" data-s="remove" style="margin-left:auto">Remove</button>` : ""}</div>
           <div class="an-form-grid">
             <label class="an-field">Event<select class="an-select" data-s="event">${eventOptions(custom ? "" : item.event).replace('value="__custom"', `value="__custom"${custom ? " selected" : ""}`)}</select></label>
             ${custom ? `<label class="an-field">Event name<input class="an-input" data-s="custom" list="an-events-list" autocomplete="off" value="${h(item.event === "*" ? "" : item.event)}" /></label>` : ""}
@@ -644,7 +644,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
           </div>
           <div data-series-filters="${index}"></div>
         </div>`;
-      }).join("")}${list.length < maximum ? `<div><button type="button" class="an-btn an-btn-small" data-s="add">+ Add ${h(noun.toLowerCase())}</button></div>` : ""}</div>`;
+      }).join("")}${list.length < maximum ? `<div><button type="button" class="fm-btn fm-btn-sm" data-s="add">+ Add ${h(noun.toLowerCase())}</button></div>` : ""}</div>`;
       list.forEach((item, index) => {
         if (!Array.isArray(item.properties)) item.properties = [];
         mountFilters(host.querySelector(`[data-series-filters="${index}"]`), item.properties, { onChange, addLabel: "Filter this event" });
@@ -927,7 +927,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     host.style.position = "relative";
     const tipNode = () => {
       let tip = host.querySelector(":scope > .an-tip[data-tips]");
-      if (!tip) { tip = document.createElement("div"); tip.className = "an-tip"; tip.dataset.tips = ""; tip.hidden = true; host.append(tip); }
+      if (!tip) { tip = document.createElement("div"); tip.className = "an-tip fm-popover"; tip.dataset.tips = ""; tip.hidden = true; host.append(tip); }
       return tip;
     };
     const move = (event) => {
@@ -944,7 +944,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   }
   function shareBlock(rows, colorOf, noun) {
     const total = rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
-    if (!total) return `<div class="an-empty">Nothing recorded.</div>`;
+    if (!total) return `<div class="fm-blankslate"><p class="fm-blankslate-desc">Nothing recorded.</p></div>`;
     const tip = (row) => `${row.value}: ${fmtInt(row.count)} ${noun} (${fmtPct(row.count / total)})`;
     return `<div class="an-split-bar" role="img" aria-label="${h(rows.map(tip).join("; "))}">${rows.filter((row) => row.count).map((row) => `<span data-tip="${h(tip(row))}" style="flex:${Number(row.count)};background:${colorOf(row.value)}"></span>`).join("")}</div>`
       + `<div class="an-share-list">${rows.map((row) => `<div class="an-share-row" data-tip="${h(tip(row))}"><span class="an-swatch" style="background:${colorOf(row.value)}"></span><span class="an-break">${h(row.value)}</span><b>${h(fmtInt(row.count))}</b><span class="an-hint">${h(fmtPct(row.count / total, 0))}</span></div>`).join("")}</div>`;
@@ -994,7 +994,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     const kindsHost = $(`[data-analytics-visitor-kinds]`);
     kindsHost.innerHTML = fresh + back ? `<div class="an-big-pair"><div><span class="an-hint">New</span><b>${h(fmtCompact(fresh))}</b></div><div><span class="an-hint">Returning</span><b>${h(fmtCompact(back))}</b></div></div>`
       + shareBlock([{ value: "New", count: fresh }, { value: "Returning", count: back }], (name) => name === "New" ? PALETTE[0] : PALETTE[2], "visitors")
-      : `<div class="an-empty">Nothing recorded.</div>`;
+      : `<div class="fm-blankslate"><p class="fm-blankslate-desc">Nothing recorded.</p></div>`;
     attachTips(kindsHost);
 
     for (const [selector, rows, label] of [["[data-analytics-session-depth]", data.sessionDepth, "Sessions by pages viewed"], ["[data-analytics-session-length]", data.sessionLength, "Sessions by length"]]) {
@@ -1009,7 +1009,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     $(`[data-analytics-engagement]`).innerHTML = engagement.length ? `<div class="an-table-wrap an-scroll"><table class="an-table"><thead><tr><th scope="col">Path</th><th scope="col" class="r">Time</th><th scope="col" class="r">Scroll</th></tr></thead><tbody>${engagement.map((row) => {
       const scroll = row.scroll === null || row.scroll === undefined ? "—" : `<span class="an-scroll-meter"><span style="width:${(row.scroll * 100).toFixed(0)}%"></span></span>${h(fmtPct(row.scroll, 0))}`;
       return `<tr><th scope="row"><button type="button" class="an-link an-break" data-analytics-heatmap-open="${h(row.value)}" title="${h(`${fmtInt(row.count)} page leaves measured. Open the heatmap`)}">${h(row.value)}</button></th><td class="r">${h(fmtDuration(row.medianMs))}</td><td class="r">${scroll}</td></tr>`;
-    }).join("")}</tbody></table></div>` : `<div class="an-empty">No page leaves in this range.</div>`;
+    }).join("")}</tbody></table></div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">No page leaves in this range.</p></div>`;
 
     const vitals = data.webVitals || {};
     $(`[data-analytics-vitals]`).innerHTML = Object.keys(VITALS).some((key) => vitals[key]) ? `<div class="an-kpis">${Object.entries(VITALS).map(([key, [good, poor, unit, digits]]) => {
@@ -1023,7 +1023,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   function renderHours(grid) {
     const host = $(`[data-analytics-hours]`);
     const peak = Math.max(0, ...grid.flat().map((value) => Number(value) || 0));
-    if (!peak) { host.innerHTML = `<div class="an-empty">Nothing recorded.</div>`; return; }
+    if (!peak) { host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">Nothing recorded.</p></div>`; return; }
     const hourText = (hour) => `${String(hour).padStart(2, "0")}:00`;
     let busiest = [0, 0];
     grid.forEach((row, day) => row.forEach((count, hour) => { if (count > grid[busiest[0]][busiest[1]]) busiest = [day, hour]; }));
@@ -1052,7 +1052,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
         let label = `<span class="an-break">${h(text)}</span>`;
         if (card.key === "pages") label = `<button type="button" class="an-link an-break" data-analytics-heatmap-open="${h(row.value)}" title="Open the heatmap for this page">${h(text)}</button>`;
         return `<tr><th scope="row" class="an-bar-cell" style="--an-share:${((row.count || 0) / peak * 100).toFixed(1)}%">${label}</th>${withVisitors ? `<td class="r">${h(fmtInt(row.visitors))}</td>` : ""}<td class="r">${h(fmtInt(row.count))}</td><td class="r an-hint">${h(fmtPct(total ? Math.min(1, row.count / total) : 0, 0))}</td></tr>`;
-      }).join("")}</tbody></table></div>` : `<div class="an-empty">${pick.startsWith("referring") ? "No visits from other sites in this range." : "Nothing recorded."}</div>`;
+      }).join("")}</tbody></table></div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">${pick.startsWith("referring") ? "No visits from other sites in this range." : "Nothing recorded."}</p></div>`;
       return `<section class="an-card"><div class="an-card-head"><h3>${h(card.title)}</h3>${picker}</div>${body}</section>`;
     }).join("");
   }
@@ -1118,7 +1118,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   function renderInsightResult(host, query_, result, previous, options = {}) {
     if (!host) return;
     const kind = query_.kind, height = options.compact ? 200 : 280;
-    if (!result) { host.innerHTML = `<div class="an-empty">Run the query to see a result.</div>`; return; }
+    if (!result) { host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">Run the query to see a result.</p></div>`; return; }
     if (kind === "trends") return renderTrends(host, query_, result, previous, height);
     if (kind === "funnel") return renderFunnel(host, result, options);
     if (kind === "retention") return renderRetention(host, result);
@@ -1149,7 +1149,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     const before = previous?.series || [];
     const previousOf = (item) => before.find((other) => other.name === item.name && (other.breakdown || "") === (item.breakdown || ""));
     const note = all.length > shown.length ? `<p class="an-hint">Charting the top ${shown.length} of ${all.length} series. The table view lists every one.</p>` : "";
-    if (!all.length || !labels.length) { host.innerHTML = `<div class="an-empty">No matching events in this range.</div>`; return; }
+    if (!all.length || !labels.length) { host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">No matching events in this range.</p></div>`; return; }
     if (type === "number") {
       host.innerHTML = `<div class="an-number-tiles">${all.map((item) => {
         const earlier = previousOf(item);
@@ -1188,8 +1188,8 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   }
   function renderFunnel(host, result, options) {
     const steps = result.steps || [];
-    if (result.error || steps.length < 2) { host.innerHTML = `<div class="an-empty">A funnel needs at least two steps.</div>`; return; }
-    if (!steps[0].count) { host.innerHTML = `<div class="an-empty">Nobody entered this funnel in this range.</div>`; return; }
+    if (result.error || steps.length < 2) { host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">A funnel needs at least two steps.</p></div>`; return; }
+    if (!steps[0].count) { host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">Nobody entered this funnel in this range.</p></div>`; return; }
     const last = steps[steps.length - 1];
     let html = `<p class="an-sub" style="margin:0 0 .9rem"><b style="color:var(--an-fg)">${h(fmtPct(last.conversion))}</b> of ${h(fmtInt(steps[0].count))} people completed all ${steps.length} steps.</p>${funnelSteps(steps)}`;
     if (result.breakdown?.length && !options.compact) {
@@ -1200,7 +1200,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
 
   function renderRetention(host, result) {
     const rows = result.rows || [], period = result.period || "week";
-    if (!rows.some((row) => row.size)) { host.innerHTML = `<div class="an-empty">Nobody did the target event in this range.</div>`; return; }
+    if (!rows.some((row) => row.size)) { host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">Nobody did the target event in this range.</p></div>`; return; }
     const width = Math.max(...rows.map((row) => row.values.length));
     const word = period[0].toUpperCase() + period.slice(1);
     host.innerHTML = `<div class="an-table-wrap"><table class="an-table an-heat"><thead><tr><th scope="col">Cohort</th><th scope="col" class="r">People</th>${Array.from({ length: width }, (_, index) => `<th scope="col">${h(word)} ${index}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr><th scope="row">${h(fmtBucket(row.start, period))}</th><td class="r" style="background:none">${h(fmtInt(row.size))}</td>${Array.from({ length: width }, (_, index) => {
@@ -1213,7 +1213,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   // Paths: one column per step, nodes sized by traffic, links weighted by sessions.
   function renderPaths(host, result, options) {
     const edges = result.edges || [];
-    if (!edges.length) { host.innerHTML = `<div class="an-empty">No paths with at least two steps in this range.</div>`; return; }
+    if (!edges.length) { host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">No paths with at least two steps in this range.</p></div>`; return; }
     const nodes = new Map();
     const node = (id) => {
       if (!nodes.has(id)) {
@@ -1412,7 +1412,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   }
   function renderSavedInsights() {
     const items = state.objects.insight || [];
-    $(`[data-analytics-saved-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><button type="button" class="an-link an-break" data-analytics-insight-open="${h(item.id)}">${h(item.name || "Untitled insight")}</button>${item.pinned ? ` <span class="an-badge">Pinned</span>` : ""}${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td>${h(INSIGHT_LABELS[item.query?.kind] || "Trends")}</td><td>${h(relTime(item.updatedAt))}</td><td>${h(item.updatedBy || item.createdBy || "")}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-insight-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-saved-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><button type="button" class="an-link an-break" data-analytics-insight-open="${h(item.id)}">${h(item.name || "Untitled insight")}</button>${item.pinned ? ` <span class="fm-label">Pinned</span>` : ""}${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td>${h(INSIGHT_LABELS[item.query?.kind] || "Trends")}</td><td>${h(relTime(item.updatedAt))}</td><td>${h(item.updatedBy || item.createdBy || "")}</td><td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-insight-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
     $(`[data-analytics-saved-empty]`).hidden = items.length > 0;
   }
   function openSavedInsight(id) {
@@ -1450,7 +1450,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
 
   function renderActions() {
     const items = state.objects.action || [];
-    $(`[data-analytics-actions-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><span class="an-break">${h(item.name || "Untitled action")}</span>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td class="an-break">${(item.steps || []).map((step) => h([eventLabel(step.event), step.url && `URL ${step.urlMatching || "contains"} “${step.url}”`, step.text && `text “${step.text}”`, step.selector && `selector ${step.selector}`, step.properties?.length && `${step.properties.length} filter${step.properties.length === 1 ? "" : "s"}`].filter(Boolean).join(" · "))).join("<br>") || "—"}</td><td>${h(relTime(item.updatedAt))}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-action-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-actions-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><span class="an-break">${h(item.name || "Untitled action")}</span>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td class="an-break">${(item.steps || []).map((step) => h([eventLabel(step.event), step.url && `URL ${step.urlMatching || "contains"} “${step.url}”`, step.text && `text “${step.text}”`, step.selector && `selector ${step.selector}`, step.properties?.length && `${step.properties.length} filter${step.properties.length === 1 ? "" : "s"}`].filter(Boolean).join(" · "))).join("<br>") || "—"}</td><td>${h(relTime(item.updatedAt))}</td><td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-action-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
     $(`[data-analytics-actions-empty]`).hidden = items.length > 0;
   }
   function actionDialog(id = "") {
@@ -1463,8 +1463,8 @@ window.ForkMeshDashboard.registerPage("analytics", ({
         ${field("URL matching", `<select class="an-select" data-a="urlMatching">${optionList([["contains", "Contains"], ["exact", "Exactly"], ["regex", "Regex"]], step.urlMatching)}</select>`)}
         ${field("Element text contains", `<input class="an-input" data-a="text" maxlength="200" value="${h(step.text)}" placeholder="Start free trial" />`)}
         ${field("Selector (tag#id.class[attr=\"v\"])", `<input class="an-input an-mono" data-a="selector" maxlength="200" value="${h(step.selector)}" placeholder="button.cta" />`)}
-      </div><div data-step-filters="${index}"></div>${draft.steps.length > 1 ? `<div><button type="button" class="an-btn an-btn-small" data-a="remove">Remove this match</button></div>` : ""}</fieldset>`).join("")
-        + (draft.steps.length < 10 ? `<div><button type="button" class="an-btn an-btn-small" data-a="add">+ Add another match</button></div>` : "");
+      </div><div data-step-filters="${index}"></div>${draft.steps.length > 1 ? `<div><button type="button" class="fm-btn fm-btn-sm" data-a="remove">Remove this match</button></div>` : ""}</fieldset>`).join("")
+        + (draft.steps.length < 10 ? `<div><button type="button" class="fm-btn fm-btn-sm" data-a="add">+ Add another match</button></div>` : "");
       draft.steps.forEach((step, index) => mountFilters(host.querySelector(`[data-step-filters="${index}"]`), step.properties, { types: ["event", "person"], addLabel: "Property filter" }));
     }
     openDialog({
@@ -1500,7 +1500,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
 
   function renderAnnotations() {
     const items = (state.objects.annotation || []).slice().sort((a, b) => b.date - a.date);
-    $(`[data-analytics-annotations-list]`).innerHTML = items.map((item) => `<tr><td style="white-space:nowrap">${h(fmtDateTime(item.date))}</td><th scope="row" class="an-break">${h(item.content)}</th><td>${h(item.createdBy || "")}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-annotation-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-annotations-list]`).innerHTML = items.map((item) => `<tr><td style="white-space:nowrap">${h(fmtDateTime(item.date))}</td><th scope="row" class="an-break">${h(item.content)}</th><td>${h(item.createdBy || "")}</td><td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-annotation-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
     $(`[data-analytics-annotations-empty]`).hidden = items.length > 0;
   }
   function annotationDialog(id = "") {
@@ -1551,10 +1551,13 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     description.textContent = dashboard?.description || ""; description.hidden = !dashboard?.description;
     const tiles = dashboard?.tiles || [];
     empty.hidden = Boolean(tiles.length);
-    empty.textContent = dashboard ? "This dashboard has no tiles. Open a saved insight and press “Add to dashboard”." : "No dashboards yet. Create one, then add saved insights to it.";
+    empty.innerHTML = dashboard
+      ? `<i data-lucide="layout-grid"></i><p class="fm-blankslate-title">This dashboard has no tiles</p><p class="fm-blankslate-desc">Open a saved insight and press “Add to dashboard”.</p>`
+      : `<i data-lucide="layout-grid"></i><p class="fm-blankslate-title">No dashboards yet</p><p class="fm-blankslate-desc">Create one, then add saved insights to it.</p>`;
+    if (!tiles.length) icons();
     tilesHost.innerHTML = tiles.map((tile, index) => {
       const insight = (state.objects.insight || []).find((item) => item.id === tile.insightId);
-      return `<section class="an-card an-tile" style="--an-tile-span:${Math.max(1, Math.min(4, Number(tile.width) || 2))}"><div class="an-card-head"><h3 class="an-break">${insight ? `<button type="button" class="an-link" data-analytics-insight-open="${h(insight.id)}">${h(insight.name || "Untitled insight")}</button>` : "Deleted insight"}</h3><span class="an-hint">${h(insight ? INSIGHT_LABELS[insight.query?.kind] || "Trends" : "")}</span></div><div class="an-pad" data-analytics-tile="${index}">${insight ? `<div class="an-empty">Loading…</div>` : `<div class="an-empty">The insight behind this tile was deleted. Remove the tile under Edit.</div>`}</div></section>`;
+      return `<section class="an-card an-tile" style="--an-tile-span:${Math.max(1, Math.min(4, Number(tile.width) || 2))}"><div class="an-card-head"><h3 class="an-break">${insight ? `<button type="button" class="an-link" data-analytics-insight-open="${h(insight.id)}">${h(insight.name || "Untitled insight")}</button>` : "Deleted insight"}</h3><span class="an-hint">${h(insight ? INSIGHT_LABELS[insight.query?.kind] || "Trends" : "")}</span></div><div class="an-pad" data-analytics-tile="${index}">${insight ? `<div class="fm-blankslate"><p class="fm-blankslate-desc">Loading…</p></div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">The insight behind this tile was deleted. Remove the tile under Edit.</p></div>`}</div></section>`;
     }).join("");
     for (const [index, tile] of tiles.entries()) {
       const insight = (state.objects.insight || []).find((item) => item.id === tile.insightId); if (!insight) continue;
@@ -1564,7 +1567,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
         renderInsightResult(host, query_, outcome.result, outcome.previous, { compact: true });
       } catch (error) {
         if (isAbort(error)) throw error;
-        host.innerHTML = `<div class="an-empty">${h(error.message)}</div>`;
+        host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">${h(error.message)}</p></div>`;
       }
     }
   }
@@ -1573,7 +1576,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     const draft = { tiles: JSON.parse(JSON.stringify(item?.tiles || [])) };
     const insights = state.objects.insight || [];
     function renderTiles(host) {
-      host.innerHTML = (draft.tiles.length ? draft.tiles.map((tile, index) => `<div class="an-row" data-tile="${index}"><span class="an-grow an-break">${h(insights.find((entry) => entry.id === tile.insightId)?.name || "Deleted insight")}</span><select class="an-select" data-t="width" aria-label="Tile width">${optionList([[1, "Quarter"], [2, "Half"], [3, "Three quarters"], [4, "Full width"]], tile.width)}</select><button type="button" class="an-btn an-btn-small" data-t="up"${index ? "" : " disabled"}>Move up</button><button type="button" class="an-btn an-btn-small" data-t="remove">Remove</button></div>`).join("") : `<p class="an-hint" style="margin:0">No tiles yet.</p>`)
+      host.innerHTML = (draft.tiles.length ? draft.tiles.map((tile, index) => `<div class="an-row" data-tile="${index}"><span class="an-grow an-break">${h(insights.find((entry) => entry.id === tile.insightId)?.name || "Deleted insight")}</span><select class="an-select" data-t="width" aria-label="Tile width">${optionList([[1, "Quarter"], [2, "Half"], [3, "Three quarters"], [4, "Full width"]], tile.width)}</select><button type="button" class="fm-btn fm-btn-sm" data-t="up"${index ? "" : " disabled"}>Move up</button><button type="button" class="fm-btn fm-btn-sm" data-t="remove">Remove</button></div>`).join("") : `<p class="an-hint" style="margin:0">No tiles yet.</p>`)
         + (insights.length ? `<div class="an-row"><select class="an-select an-grow" data-t="pick" aria-label="Insight to add"><option value="">Add a saved insight…</option>${optionList(insights.map((entry) => [entry.id, entry.name || "Untitled insight"]), "")}</select></div>` : "");
     }
     openDialog({
@@ -1633,7 +1636,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       const detail = open ? `<tr><td colspan="5"><div class="an-stack-tight">
         <dl class="an-kv"><dt>Distinct id</dt><dd class="an-mono">${h(row.distinctId)}</dd><dt>Session</dt><dd>${row.sessionId ? `<span class="an-mono">${h(row.sessionId)}</span> · <button type="button" class="an-link" data-analytics-replay-open="${h(row.sessionId)}">Watch replay</button>` : "—"}</dd>${Object.keys(row.groups || {}).length ? `<dt>Groups</dt><dd>${h(Object.entries(row.groups).map(([type, key]) => `${type}: ${key}`).join(", "))}</dd>` : ""}</dl>
         <pre class="an-pre">${h(JSON.stringify(row.properties || {}, null, 2))}</pre></div></td></tr>` : "";
-      return `<tr><th scope="row"><span class="an-break">${h(eventLabel(row.event))}</span>${EVENT_LABELS[row.event] ? ` <span class="an-hint an-mono">${h(row.event)}</span>` : ""}</th><td><button type="button" class="an-link an-mono" data-analytics-person-open="${h(row.personId)}" title="Open this person">${h(shortId(row.distinctId))}</button></td><td><div class="an-clip" title="${h(eventPlace(row.properties))}">${h(eventPlace(row.properties)) || "—"}</div></td><td style="white-space:nowrap" title="${h(fmtDateTime(row.timestamp))}">${h(fmtDateTime(row.timestamp))}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-event-toggle="${index}" aria-expanded="${open}">${open ? "Hide" : "Details"}</button></td></tr>${detail}`;
+      return `<tr><th scope="row"><span class="an-break">${h(eventLabel(row.event))}</span>${EVENT_LABELS[row.event] ? ` <span class="an-hint an-mono">${h(row.event)}</span>` : ""}</th><td><button type="button" class="an-link an-mono" data-analytics-person-open="${h(row.personId)}" title="Open this person">${h(shortId(row.distinctId))}</button></td><td><div class="an-clip" title="${h(eventPlace(row.properties))}">${h(eventPlace(row.properties)) || "—"}</div></td><td style="white-space:nowrap" title="${h(fmtDateTime(row.timestamp))}">${h(fmtDateTime(row.timestamp))}</td><td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-event-toggle="${index}" aria-expanded="${open}">${open ? "Hide" : "Details"}</button></td></tr>${detail}`;
     }).join("");
     $(`[data-analytics-events-empty]`).hidden = view.rows.length > 0;
     $(`[data-analytics-events-more-wrap]`).hidden = !view.nextBefore;
@@ -1673,7 +1676,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     if (!/^[0-9a-f]{32}$/.test(String(personId))) return;
     const drawer = $(`[data-analytics-drawer]`), body = $(`[data-analytics-drawer-body]`);
     $(`[data-analytics-drawer-title]`).textContent = "Person";
-    body.innerHTML = `<div class="an-empty">Loading…</div>`;
+    body.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">Loading…</p></div>`;
     if (!drawer.open) drawer.showModal();
     try {
       const payload = await request(projectPath(`/persons/${personId}`), "GET", null, scope("person"));
@@ -1682,11 +1685,11 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       body.innerHTML = `
         <dl class="an-kv"><dt>Status</dt><dd>${person.identified ? "Identified" : "Anonymous"}</dd><dt>First seen</dt><dd>${h(fmtDateTime(person.firstSeen))}</dd><dt>Last seen</dt><dd>${h(fmtDateTime(person.lastSeen))}</dd><dt>Events</dt><dd>${h(fmtInt(person.events))}</dd><dt>Distinct ids</dt><dd class="an-mono">${(person.distinctIds || []).map((id) => h(id)).join("<br>") || "—"}</dd></dl>
         <section class="an-card"><div class="an-card-head"><h3>Properties</h3></div><div class="an-pad">${kvList(person.properties, "No person properties. Set them with identify() or setPersonProperties().")}</div></section>
-        <section class="an-card"><div class="an-card-head"><h3>Recordings</h3>${(payload.recordings || []).length ? `<button type="button" class="an-btn an-btn-small" data-analytics-person-recordings="${h(person.id)}">All of this person's recordings</button>` : ""}</div>${(payload.recordings || []).length ? `<div class="an-event-list">${payload.recordings.map((recording) => `<button type="button" class="an-event-item" data-analytics-replay-open="${h(recording.sessionId)}"><span>${h(fmtDateTime(recording.startedAt))}</span><span class="an-hint">${h(fmtDuration(recording.durationMs))} · ${h(fmtInt(recording.clicks))} clicks${recording.errors ? ` · ${h(fmtInt(recording.errors))} errors` : ""}</span></button>`).join("")}</div>` : `<div class="an-empty">No recordings.</div>`}</section>
-        <section class="an-card"><div class="an-card-head"><h3>Recent events</h3><span class="an-hint">Last 30 days, newest first</span></div>${(payload.events || []).length ? `<div class="an-table-wrap" style="max-height:24rem;overflow-y:auto"><table class="an-table"><thead><tr><th scope="col">Event</th><th scope="col">Where</th><th scope="col">Time</th></tr></thead><tbody>${payload.events.map((row) => `<tr><th scope="row" class="an-break">${h(eventLabel(row.event))}</th><td><div class="an-clip" style="max-width:14rem">${h(eventPlace(row.properties)) || "—"}</div></td><td style="white-space:nowrap">${h(fmtDateTime(row.timestamp))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="an-empty">No events in the last 30 days.</div>`}</section>
-        ${canManage() ? `<div class="an-row an-row-end"><button type="button" class="an-btn an-btn-danger" data-analytics-person-delete="${h(person.id)}">Delete person and data…</button></div>` : ""}`;
+        <section class="an-card"><div class="an-card-head"><h3>Recordings</h3>${(payload.recordings || []).length ? `<button type="button" class="fm-btn fm-btn-sm" data-analytics-person-recordings="${h(person.id)}">All of this person's recordings</button>` : ""}</div>${(payload.recordings || []).length ? `<div class="an-event-list">${payload.recordings.map((recording) => `<button type="button" class="an-event-item" data-analytics-replay-open="${h(recording.sessionId)}"><span>${h(fmtDateTime(recording.startedAt))}</span><span class="an-hint">${h(fmtDuration(recording.durationMs))} · ${h(fmtInt(recording.clicks))} clicks${recording.errors ? ` · ${h(fmtInt(recording.errors))} errors` : ""}</span></button>`).join("")}</div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">No recordings.</p></div>`}</section>
+        <section class="an-card"><div class="an-card-head"><h3>Recent events</h3><span class="an-hint">Last 30 days, newest first</span></div>${(payload.events || []).length ? `<div class="an-table-wrap" style="max-height:24rem;overflow-y:auto"><table class="an-table"><thead><tr><th scope="col">Event</th><th scope="col">Where</th><th scope="col">Time</th></tr></thead><tbody>${payload.events.map((row) => `<tr><th scope="row" class="an-break">${h(eventLabel(row.event))}</th><td><div class="an-clip" style="max-width:14rem">${h(eventPlace(row.properties)) || "—"}</div></td><td style="white-space:nowrap">${h(fmtDateTime(row.timestamp))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">No events in the last 30 days.</p></div>`}</section>
+        ${canManage() ? `<div class="an-row an-row-end"><button type="button" class="fm-btn fm-btn-sm fm-btn-danger" data-analytics-person-delete="${h(person.id)}">Delete person and data…</button></div>` : ""}`;
     } catch (error) {
-      if (!isAbort(error)) body.innerHTML = `<div class="an-banner an-banner-error">${h(error.message)}</div>`;
+      if (!isAbort(error)) body.innerHTML = `<div class="fm-flash fm-flash-danger">${h(error.message)}</div>`;
     }
   }
   async function deletePerson(personId) {
@@ -1717,7 +1720,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   }
   function renderCohorts() {
     const items = state.objects.cohort || [];
-    $(`[data-analytics-cohorts-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><span class="an-break">${h(item.name || "Untitled cohort")}</span>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td>${item.static ? "Static" : "Dynamic"}</td><td class="an-break">${h(cohortSummary(item))}</td><td>${h(relTime(item.updatedAt))}</td><td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-cohort-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+    $(`[data-analytics-cohorts-list]`).innerHTML = items.map((item) => `<tr><th scope="row"><span class="an-break">${h(item.name || "Untitled cohort")}</span>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th><td>${item.static ? "Static" : "Dynamic"}</td><td class="an-break">${h(cohortSummary(item))}</td><td>${h(relTime(item.updatedAt))}</td><td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-cohort-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
     $(`[data-analytics-cohorts-empty]`).hidden = items.length > 0;
   }
   function cohortDialog(id = "") {
@@ -1734,8 +1737,8 @@ window.ForkMeshDashboard.registerPage("analytics", ({
         <input class="an-input" data-c="event" aria-label="Event" list="an-events-list" autocomplete="off" value="${h(condition.event)}" />
         <label class="an-hint">at least <input class="an-input" style="width:4.5rem" type="number" min="1" max="10000" data-c="minCount" value="${Number(condition.minCount) || 1}" /> times</label>
         <label class="an-hint">in the last <input class="an-input" style="width:4.5rem" type="number" min="1" max="400" data-c="days" value="${Number(condition.days) || 30}" /> days</label>
-        <button type="button" class="an-btn an-btn-small" data-c="remove">Remove</button></div>`).join("")
-        + `<div><button type="button" class="an-btn an-btn-small" data-c="add">+ Add behaviour</button></div>`;
+        <button type="button" class="fm-btn fm-btn-sm" data-c="remove">Remove</button></div>`).join("")
+        + `<div><button type="button" class="fm-btn fm-btn-sm" data-c="add">+ Add behaviour</button></div>`;
     }
     openDialog({
       title: item ? "Edit cohort" : "New cohort",
@@ -1834,7 +1837,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       <td style="white-space:nowrap" title="${h(fmtDateTime(row.startedAt))}">${h(relTime(row.startedAt))}</td>
       <td class="r">${h(fmtDuration(row.durationMs))}</td><td class="r">${h(fmtDuration(row.activeMs))}</td>
       <td class="r">${h(fmtInt(row.clicks))}</td><td class="r">${h(fmtInt(row.keys))}</td>
-      <td class="r">${row.errors ? `<span class="an-badge an-badge-bad">${h(fmtInt(row.errors))}</span>` : "0"}</td>
+      <td class="r">${row.errors ? `<span class="fm-label fm-label-danger">${h(fmtInt(row.errors))}</span>` : "0"}</td>
       <td>${h(deviceText(row.device))}</td></tr>`).join("");
     $(`[data-analytics-replay-empty]`).hidden = view.rows.length > 0;
     $(`[data-analytics-replay-more-wrap]`).hidden = !view.nextBefore;
@@ -1879,7 +1882,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   }
   async function loadReplayEvents(recording, player) {
     const host = $(`[data-analytics-replay-events]`);
-    host.innerHTML = `<div class="an-empty">Loading…</div>`;
+    host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">Loading…</p></div>`;
     try {
       const result = await query("events", { sessionId: recording.sessionId, limit: 200 }, "replay-events",
         { from: recording.startedAt - 60000, to: (recording.lastAt || recording.startedAt) + 60000 });
@@ -1889,9 +1892,9 @@ window.ForkMeshDashboard.registerPage("analytics", ({
         const offset = Math.max(0, row.timestamp - player.start);
         const error = row.event === "$exception";
         return `<button type="button" class="an-event-item" data-analytics-replay-jump="${Math.round(offset)}"><span>${error ? `<span class="an-dot an-dot-bad"></span> ` : ""}<b class="an-mono">${h(fmtClock(offset))}</b> ${h(eventLabel(row.event))}</span><span class="an-hint an-clip">${h(error ? plainValue(row.properties?.$exception_message) : eventPlace(row.properties)) || "—"}</span></button>`;
-      }).join("") : `<div class="an-empty">No analytics events were sent in this session.</div>`;
+      }).join("") : `<div class="fm-blankslate"><p class="fm-blankslate-desc">No analytics events were sent in this session.</p></div>`;
     } catch (error) {
-      if (!isAbort(error)) host.innerHTML = `<div class="an-empty">${h(error.message)}</div>`;
+      if (!isAbort(error)) host.innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">${h(error.message)}</p></div>`;
     }
   }
   async function openRecording(sessionId) {
@@ -2070,7 +2073,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     $(`[data-analytics-heatmap-summary]`).innerHTML = `
       <dl class="an-kv"><dt>Page</dt><dd class="an-mono">${h(data.path)}</dd><dt>Pageviews</dt><dd>${h(fmtInt(data.pageviews))}</dd><dt>Page height</dt><dd>${data.pageHeight ? `${h(fmtInt(data.pageHeight))} px (90th percentile)` : "Unknown"}</dd>${data.type === "scroll" ? "" : `<dt>Recorded ${h(typeLabel)}</dt><dd>${h(fmtInt(total))}</dd>`}<dt>Drawn at</dt><dd>${h(fmtInt(data.pageWidth))} px wide</dd></dl>
       <p class="an-hint" style="margin:0">Fewer ${ramp} more</p>
-      ${empty ? `<div class="an-empty">No ${h(typeLabel)} recorded for this page in this range.${data.type === "move" && !settings().heatmaps ? " Mouse movement heatmaps are off in Settings." : ""}</div>` : ""}
+      ${empty ? `<div class="fm-blankslate"><p class="fm-blankslate-desc">No ${h(typeLabel)} recorded for this page in this range.${data.type === "move" && !settings().heatmaps ? " Mouse movement heatmaps are off in Settings." : ""}</p></div>` : ""}
       ${data.type === "scroll" && scroll.length ? `<table class="an-table"><thead><tr><th scope="col">Depth</th><th scope="col" class="r">Visitors reaching</th></tr></thead><tbody>${scrollRows}</tbody></table>` : ""}`;
   }
   function openHeatmap(path) {
@@ -2107,7 +2110,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       <td class="an-break">${h(flagRelease(item))}</td>
       <td>${h(relTime(item.updatedAt))}</td>
       <td><label class="an-check"><input type="checkbox" data-analytics-flag-active="${h(item.id)}"${item.active ? " checked" : ""} /> <span class="sr-only">Active</span>${item.active ? "On" : "Off"}</label></td>
-      <td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-flag-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+      <td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-flag-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
     $(`[data-analytics-flags-empty]`).hidden = items.length > 0;
   }
   async function toggleFlag(id, active) {
@@ -2126,10 +2129,10 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       host.innerHTML = (draft.variants.length ? draft.variants.map((variant, index) => `<div class="an-row" data-variant="${index}">
           <input class="an-input an-mono" data-v="key" aria-label="Variant key" maxlength="80" placeholder="${index ? `variant-${index}` : "control"}" value="${h(variant.key)}" />
           <label class="an-hint"><input class="an-input" style="width:5rem" type="number" min="0" max="100" data-v="percent" value="${Number(variant.percent) || 0}" /> %</label>
-          <button type="button" class="an-btn an-btn-small" data-v="remove">Remove</button></div>`).join("")
+          <button type="button" class="fm-btn fm-btn-sm" data-v="remove">Remove</button></div>`).join("")
         + `<p class="an-hint" style="margin:0" data-v="sum">Split total: <b>${sum}%</b>${sum === 100 ? "" : " (must be 100%)"}. Name one variant <span class="an-mono">control</span> so experiments have a baseline.</p>`
         : `<p class="an-hint" style="margin:0">No variants: the flag is simply on or off.</p>`)
-        + (draft.variants.length < 10 ? `<div><button type="button" class="an-btn an-btn-small" data-v="add">+ Add variant</button></div>` : "");
+        + (draft.variants.length < 10 ? `<div><button type="button" class="fm-btn fm-btn-sm" data-v="add">+ Add variant</button></div>` : "");
     }
     function renderConditions(host) {
       host.innerHTML = draft.conditions.map((condition, index) => `<fieldset class="an-fieldset" data-condition="${index}"><legend>Release condition ${index + 1}</legend>
@@ -2137,8 +2140,8 @@ window.ForkMeshDashboard.registerPage("analytics", ({
           <div class="an-form-grid">
             ${field("Roll out to (% of matching people)", `<input class="an-input" type="number" min="0" max="100" data-k="rolloutPercent" value="${Number(condition.rolloutPercent) || 0}" />`)}
             ${draft.variants.length ? field("Force variant (optional)", `<select class="an-select" data-k="variant">${optionList([["", "Use the split"], ...draft.variants.filter((variant) => variant.key).map((variant) => [variant.key, variant.key])], condition.variant || "")}</select>`) : ""}
-          </div>${draft.conditions.length > 1 ? `<div><button type="button" class="an-btn an-btn-small" data-k="remove">Remove condition</button></div>` : ""}</fieldset>`).join("")
-        + (draft.conditions.length < 10 ? `<div><button type="button" class="an-btn an-btn-small" data-k="add">+ Add condition</button></div>` : "")
+          </div>${draft.conditions.length > 1 ? `<div><button type="button" class="fm-btn fm-btn-sm" data-k="remove">Remove condition</button></div>` : ""}</fieldset>`).join("")
+        + (draft.conditions.length < 10 ? `<div><button type="button" class="fm-btn fm-btn-sm" data-k="add">+ Add condition</button></div>` : "")
         + `<p class="an-hint" style="margin:0">Conditions are checked in order; the first one a person matches decides. No person filters means everyone.</p>`;
       draft.conditions.forEach((condition, index) => mountFilters(host.querySelector(`[data-condition-filters="${index}"]`), condition.properties, { types: ["person", "cohort"], addLabel: "Match person property or cohort" }));
     }
@@ -2214,15 +2217,15 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     });
   }
 
-  const EXPERIMENT_STATUS = { draft: ["Draft", ""], running: ["Running", "an-badge-good"], stopped: ["Stopped", "an-badge-warn"] };
+  const EXPERIMENT_STATUS = { draft: ["Draft", ""], running: ["Running", "fm-label-success"], stopped: ["Stopped", "fm-label-attention"] };
   function renderExperiments() {
     const items = state.objects.experiment || [];
     $(`[data-analytics-experiments-list]`).innerHTML = items.map((item) => {
       const [label, tone] = EXPERIMENT_STATUS[item.status] || EXPERIMENT_STATUS.draft;
       return `<tr><th scope="row"><button type="button" class="an-link an-break" data-analytics-experiment-open="${h(item.id)}">${h(item.name || "Untitled experiment")}</button>${item.description ? `<div class="an-hint an-break">${h(item.description)}</div>` : ""}</th>
         <td class="an-mono an-break">${h(item.flagKey)}</td><td class="an-break">${h(eventLabel(item.goal?.event))}</td>
-        <td><span class="an-badge ${tone}">${h(label)}</span>${item.startedAt ? `<div class="an-hint">${h(fmtDate(item.startedAt))}${item.endedAt ? ` – ${h(fmtDate(item.endedAt))}` : ""}</div>` : ""}</td>
-        <td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-experiment-edit="${h(item.id)}">Edit…</button></td></tr>`;
+        <td><span class="fm-label ${tone}">${h(label)}</span>${item.startedAt ? `<div class="an-hint">${h(fmtDate(item.startedAt))}${item.endedAt ? ` – ${h(fmtDate(item.endedAt))}` : ""}</div>` : ""}</td>
+        <td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-experiment-edit="${h(item.id)}">Edit…</button></td></tr>`;
     }).join("");
     $(`[data-analytics-experiments-empty]`).hidden = items.length > 0;
     if (state.experimentOpen && !items.some((item) => item.id === state.experimentOpen)) {
@@ -2289,9 +2292,9 @@ window.ForkMeshDashboard.registerPage("analytics", ({
           <td style="min-width:9rem"><div class="an-row" style="flex-wrap:nowrap"><div class="an-meter an-grow" style="min-width:4rem"><span style="width:${best ? ((row.conversionRate || 0) / best * 100).toFixed(1) : 0}%"></span></div><b>${h(fmtPct(row.conversionRate))}</b></div></td>
           <td class="r">${row.lift === undefined || row.lift === null ? "—" : `${row.lift > 0 ? "+" : ""}${h(fmtPct(row.lift))}`}</td>
           <td class="r">${row.probabilityToBeatControl === null || row.probabilityToBeatControl === undefined ? "Baseline" : h(fmtPct(row.probabilityToBeatControl))}</td>
-          <td>${row.significant ? `<span class="an-badge an-badge-good">Yes</span>` : `<span class="an-hint">No</span>`}</td></tr>`).join("")}</tbody></table></div>` : ""}</div>`;
+          <td>${row.significant ? `<span class="fm-label fm-label-success">Yes</span>` : `<span class="an-hint">No</span>`}</td></tr>`).join("")}</tbody></table></div>` : ""}</div>`;
     } catch (error) {
-      if (!isAbort(error)) host.innerHTML = `<div class="an-pad"><div class="an-banner an-banner-error">${h(error.message)}</div></div>`;
+      if (!isAbort(error)) host.innerHTML = `<div class="an-pad"><div class="fm-flash fm-flash-danger">${h(error.message)}</div></div>`;
     }
   }
 
@@ -2317,7 +2320,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       <td>${h(fmtInt((item.questions || []).length))} · ${h([...new Set((item.questions || []).map((question) => QUESTION_TYPES[question.type] || question.type))].join(", ") || "—")}</td>
       <td class="an-break">${h(surveyTargeting(item))}</td><td>${h(relTime(item.updatedAt))}</td>
       <td><label class="an-check"><input type="checkbox" data-analytics-survey-active="${h(item.id)}"${item.active ? " checked" : ""} /> ${item.active ? "On" : "Off"}</label></td>
-      <td class="r"><button type="button" class="an-btn an-btn-small" data-analytics-survey-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
+      <td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-survey-edit="${h(item.id)}">Edit…</button></td></tr>`).join("");
     $(`[data-analytics-surveys-empty]`).hidden = items.length > 0;
     if (state.surveyOpen && !items.some((item) => item.id === state.surveyOpen)) {
       state.surveyOpen = ""; $(`[data-analytics-survey-results]`).hidden = true;
@@ -2346,8 +2349,8 @@ window.ForkMeshDashboard.registerPage("analytics", ({
           ${type === "rating" ? field("Scale", `<select class="an-select" data-q2="scale">${optionList([[3, "1–3"], [5, "1–5"], [7, "1–7"], [10, "1–10"]], question.scale)}</select>`) : ""}
           ${type === "rating" || type === "nps" ? field("Low label", `<input class="an-input" data-q2="lowLabel" maxlength="60" value="${h(question.lowLabel)}" placeholder="Unlikely" />`) + field("High label", `<input class="an-input" data-q2="highLabel" maxlength="60" value="${h(question.highLabel)}" placeholder="Very likely" />`) : ""}
           ${type === "link" ? field("Link (https only)", `<input class="an-input" data-q2="link" maxlength="500" value="${h(question.link)}" placeholder="https://example.com/interview" />`) + field("Button text", `<input class="an-input" data-q2="buttonText" maxlength="40" value="${h(question.buttonText)}" placeholder="Book a call" />`) : ""}
-        </div><div class="an-row"><label class="an-check"><input type="checkbox" data-q2="optional"${question.optional ? " checked" : ""} /> Optional</label>${index ? `<button type="button" class="an-btn an-btn-small" data-q2="up">Move up</button>` : ""}${draft.questions.length > 1 ? `<button type="button" class="an-btn an-btn-small" data-q2="remove">Remove</button>` : ""}</div></fieldset>`;
-      }).join("") + (draft.questions.length < 10 ? `<div><button type="button" class="an-btn an-btn-small" data-q2="add">+ Add question</button></div>` : "");
+        </div><div class="an-row"><label class="an-check"><input type="checkbox" data-q2="optional"${question.optional ? " checked" : ""} /> Optional</label>${index ? `<button type="button" class="fm-btn fm-btn-sm" data-q2="up">Move up</button>` : ""}${draft.questions.length > 1 ? `<button type="button" class="fm-btn fm-btn-sm" data-q2="remove">Remove</button>` : ""}</div></fieldset>`;
+      }).join("") + (draft.questions.length < 10 ? `<div><button type="button" class="fm-btn fm-btn-sm" data-q2="add">+ Add question</button></div>` : "");
     }
     openDialog({
       title: item ? "Edit survey" : "New survey",
@@ -2438,12 +2441,12 @@ window.ForkMeshDashboard.registerPage("analytics", ({
         if ((answers.texts || []).length) {
           body += `<div class="an-event-list" style="max-height:16rem">${answers.texts.map((entry) => `<div class="an-event-item" style="cursor:default"><span class="an-break">${h(entry.text)}</span><span class="an-hint">${h(relTime(entry.timestamp))}</span></div>`).join("")}</div>`;
         }
-        return `<section class="an-stack-tight"><h3 style="margin:0;font-size:.8125rem;color:var(--an-fg)" class="an-break">${index + 1}. ${h(question.question)} <span class="an-hint">${h(QUESTION_TYPES[question.type] || question.type)}</span></h3>${body || `<div class="an-empty">No answers yet.</div>`}</section>`;
+        return `<section class="an-stack-tight"><h3 style="margin:0;font-size:.8125rem;color:var(--an-fg)" class="an-break">${index + 1}. ${h(question.question)} <span class="an-hint">${h(QUESTION_TYPES[question.type] || question.type)}</span></h3>${body || `<div class="fm-blankslate"><p class="fm-blankslate-desc">No answers yet.</p></div>`}</section>`;
       }).join("");
       host.innerHTML = `<div class="an-card-head"><h2 class="an-break">${h(item.name || "Survey")}</h2><span class="an-hint">${h(rangeLabel())}</span></div>
         <div class="an-pad an-stack"><div class="an-kpis">${kpis.map(([label, value]) => `<div class="an-kpi"><div class="an-kpi-label">${h(label)}</div><div class="an-kpi-value">${h(value)}</div></div>`).join("")}</div>${questions}</div>`;
     } catch (error) {
-      if (!isAbort(error)) host.innerHTML = `<div class="an-pad"><div class="an-banner an-banner-error">${h(error.message)}</div></div>`;
+      if (!isAbort(error)) host.innerHTML = `<div class="an-pad"><div class="fm-flash fm-flash-danger">${h(error.message)}</div></div>`;
     }
   }
 
@@ -2466,7 +2469,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     const detail = $(`[data-analytics-error-detail]`);
     detail.hidden = !group;
     if (!group) return;
-    detail.innerHTML = `<div class="an-card-head"><h2 class="an-break">${h(group.type)}</h2>${group.sessionId && settings().replay?.enabled ? `<button type="button" class="an-btn an-btn-small" data-analytics-replay-open="${h(group.sessionId)}"><i data-lucide="play-circle"></i>Watch the latest session</button>` : ""}</div>
+    detail.innerHTML = `<div class="an-card-head"><h2 class="an-break">${h(group.type)}</h2>${group.sessionId && settings().replay?.enabled ? `<button type="button" class="fm-btn fm-btn-sm" data-analytics-replay-open="${h(group.sessionId)}"><i data-lucide="play-circle"></i>Watch the latest session</button>` : ""}</div>
       <div class="an-pad an-stack-tight">
         <dl class="an-kv"><dt>Message</dt><dd>${h(group.message) || "—"}</dd><dt>Occurrences</dt><dd>${h(fmtInt(group.count))} from ${h(fmtInt(group.users))} people in ${h(fmtInt(group.sessions))} sessions</dd><dt>First seen</dt><dd>${h(fmtDateTime(group.firstSeen))}</dd><dt>Last seen</dt><dd>${h(fmtDateTime(group.lastSeen))}</dd><dt>Last URL</dt><dd class="an-break">${h(group.url) || "—"}</dd><dt>Browser</dt><dd>${h(group.browser) || "—"}</dd><dt>Fingerprint</dt><dd class="an-mono">${h(group.fingerprint)}</dd></dl>
         ${group.stack ? `<pre class="an-pre" style="max-height:22rem;overflow:auto">${h(group.stack)}</pre>` : `<p class="an-hint" style="margin:0">No stack trace was sent.</p>`}

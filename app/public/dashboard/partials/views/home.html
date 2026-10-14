@@ -7,9 +7,9 @@
                     data-home-new-repo
                     href="/dashboard/repos/new"
                     title="Create a new repository"
-                    class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                    class="fm-btn fm-btn-sm fm-btn-cta"
                   >
-                    <i data-lucide="book-marked" class="h-3.5 w-3.5"></i>
+                    <i data-lucide="book-marked"></i>
                     New
                   </a>
                 </div>
@@ -18,7 +18,7 @@
                   <input data-home-repo-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a repository..." class="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
                 </label>
                 <div data-home-top-repositories class="grid gap-1">
-                  <div class="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading repositories...</div>
+                  <p class="px-1 py-2 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading repositories...</p>
                 </div>
                 <button data-home-repos-show-more type="button" class="mt-4 hidden text-xs font-medium text-muted-foreground hover:text-accent">Show more</button>
 
@@ -27,7 +27,7 @@
                   <i data-lucide="activity" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
                 </div>
                 <div data-home-feed class="grid gap-2">
-                  <div class="rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading activity...</div>
+                  <p class="px-1 py-2 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading activity...</p>
                 </div>
               </aside>
 
@@ -35,7 +35,7 @@
                 <h1 class="mb-5 text-2xl font-semibold tracking-normal text-foreground">Home</h1>
 
                 <div data-home-prompt data-composer-slot>
-                  <div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading prompt...</div>
+                  <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading prompt...</div>
                 </div>
 
                 <div data-plugin-entry="agents" class="mt-6 mb-3 flex items-center justify-between gap-3">
@@ -43,7 +43,7 @@
                   <span data-home-agents-count class="text-xs text-muted-foreground"></span>
                 </div>
                 <div data-home-agents data-plugin-entry="agents" class="grid gap-2">
-                  <div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading agents...</div>
+                  <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading agents...</div>
                 </div>
               </section>
 

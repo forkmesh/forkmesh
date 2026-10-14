@@ -217,3 +217,19 @@ def test_a_list_has_a_link_that_opens_it():
     assert 'crmSetListParam("");' in from_url
     assert 'url.searchParams.delete("list"); history.replaceState' in WEB_SCRIPT
     assert "openCrmListFromUrl();\n    openCrmContactFromUrl();" in WEB_SCRIPT
+
+
+def test_the_card_logs_a_toot_by_its_link_and_settings_check_sent_toots():
+    assert 'data-crm-contact-toot="${id}"' in WEB_SCRIPT
+    log = _function("logCrmToot")
+    assert 'crmOrganizationPath("/emails/toot"), "POST", { url, contactId }' in log
+    sync = _function("syncCrmToots")
+    assert 'crmOrganizationPath("/emails/toots")' in sync and "{ auto: true }" in sync
+    auto = _function("crmAutoSyncToots")
+    assert "settings?.mastodon?.connected" in auto and "CRM_TOOT_SYNC_MS" in auto
+    assert "crmAutoSyncToots();" in _function("loadCrm")
+    for hook in ("data-crm-mastodon-account", "data-crm-mastodon-token",
+                 "data-crm-mastodon-sync", "data-crm-mastodon-disconnect",
+                 "data-crm-mastodon-status"):
+        assert hook in WEB_VIEW
+    assert 'data-crm-mastodon-token type="password"' in WEB_VIEW

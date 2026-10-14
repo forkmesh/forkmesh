@@ -14889,7 +14889,7 @@ dialog[data-chat-thread-dialog] > form {
   padding: 14px 14px 14px 20px;
 }
 
-dialog[data-chat-thread-dialog] > form strong {
+dialog[data-chat-thread-dialog] > form :is(strong, .fm-dialog-title) {
   font: 600 1rem/1.3 var(--font-sans);
   letter-spacing: -0.01em;
 }
@@ -16308,13 +16308,23 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   font: 500 12px/18px var(--font-sans);
 }
 
-.fm-world .world-hud-island-feed #fullChatMessages > .rounded-lg {
+.fm-world .world-hud-island-feed #fullChatMessages > :is(.rounded-lg, .fm-blankslate) {
   margin: 0;
   border: 0;
   background: none;
   padding: 4px 6px;
   color: #9ca3af;
   font-size: 12.5px;
+}
+
+.fm-world .world-hud-island-feed #fullChatMessages > .fm-blankslate svg {
+  display: none;
+}
+
+.fm-world .world-hud-island-feed #fullChatMessages > .fm-blankslate :is(.fm-blankslate-title, .fm-blankslate-desc) {
+  display: inline;
+  margin: 0 4px 0 0;
+  font: inherit;
 }
 
 .fm-world .world-hud-island[data-expanded="false"] .world-hud-island-feed :is(.chat-message-bubble, .chat-system-bubble) {
@@ -19912,7 +19922,7 @@ forkmesh-world[data-world-island-expanded="true"] .fm-world .world-touch-control
   color: #111827;
 }
 
-.fm-world .world-native-chat #fullChatMessages > .rounded-lg {
+.fm-world .world-native-chat #fullChatMessages > :is(.rounded-lg, .fm-blankslate) {
   margin: 8px;
   border: 1px dashed #e4e7eb;
   border-radius: 12px;
@@ -19920,6 +19930,29 @@ forkmesh-world[data-world-island-expanded="true"] .fm-world .world-touch-control
   padding: 12px 14px;
   color: #6b7280;
   font: 400 0.8125rem/1.5 var(--font-sans);
+}
+
+.fm-world .world-native-chat #fullChatMessages > .fm-blankslate {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.fm-world .world-native-chat #fullChatMessages > .fm-blankslate svg {
+  width: 20px;
+  height: 20px;
+  margin-bottom: 4px;
+  color: #9ca3af;
+}
+
+.fm-world .world-native-chat #fullChatMessages > .fm-blankslate .fm-blankslate-title {
+  color: #374151;
+  font-weight: 600;
+}
+
+.fm-world .world-native-chat #fullChatMessages > .fm-blankslate .fm-blankslate-desc {
+  margin: 0;
 }
 
 .fm-world .world-quick-actions button:focus-visible {
@@ -21105,7 +21138,7 @@ dialog[data-chat-thread-dialog] > form {
   padding: 14px 14px 14px 20px;
 }
 
-dialog[data-chat-thread-dialog] > form strong {
+dialog[data-chat-thread-dialog] > form :is(strong, .fm-dialog-title) {
   font: 600 1rem/1.3 var(--font-sans);
   letter-spacing: -0.01em;
 }
@@ -21128,6 +21161,12 @@ dialog[data-chat-thread-dialog] > form > button {
   color: #6b7280;
   font: 400 1.25rem/1 var(--font-sans);
   cursor: pointer;
+}
+
+dialog[data-chat-thread-dialog] > form > button svg,
+.chat-image-preview-dialog > button svg {
+  width: 16px;
+  height: 16px;
 }
 
 dialog[data-chat-thread-dialog] > form > button:is(:hover, :focus-visible) {

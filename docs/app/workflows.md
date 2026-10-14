@@ -101,6 +101,18 @@ examples and the Repository view.
   only while the workflow is active with a webhook trigger.
 - There is no Code node: nothing a user types is executed.
 
+## Web styling
+
+`view.html` styles the page with its own `wf-*` classes but takes every colour
+and size from the dashboard theme tokens. `.wf-btn` is the 32px control,
+`.wf-btn-primary` is the green create colour (Run workflow, Add first step,
+Import), the active toggle is blue, and run, node and list status dots use the
+success, destructive and muted tokens. The File menu is a popover with 30px
+rows and muted icons, `.wf-notice` tints its top bar with the success,
+destructive or attention colour from `data-tone`, the dialogs use the shell
+dialog radius and shadow, and group headings are sentence case instead of
+capitals.
+
 ## Traps
 
 `/dashboard/workflows` must not be in `dashboard_shell.PAGES` (it stays in

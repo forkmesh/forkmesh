@@ -19,7 +19,8 @@ window.ForkMeshDashboard.registerPage("sugar-break", ({ select: $, selectAll: $$
   }
   function message(kind, value = "") {
     const node = $(`[data-sugar-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    const slot = node.querySelector("[data-sugar-message-text]") || node;
+    slot.textContent = value; node.classList.toggle("hidden", !value);
   }
   function apiPath(suffix = "") {
     state.day = localDay(new Date());
@@ -91,7 +92,7 @@ window.ForkMeshDashboard.registerPage("sugar-break", ({ select: $, selectAll: $$
     $(`[data-sugar-events]`).innerHTML = events.length ? events.map((event) => `<div class="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-secondary">
         <span class="text-sm text-foreground">${escapeHtml(new Date(Number(event.at || event.loggedAt || 0)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))} · ${event.kind === "slip" ? "Had sugar" : "+1 Skipped sugar"}</span>
         <button type="button" data-sugar-undo="${escapeHtml(event.id)}" class="text-xs text-muted-foreground hover:text-destructive">Undo</button>
-      </div>`).join("") : `<p class="text-sm text-muted-foreground">Nothing logged today. Tap +1 each time you skip sugar.</p>`;
+      </div>`).join("") : `<div class="fm-blankslate"><p class="fm-blankslate-title">Nothing logged today</p><p class="fm-blankslate-desc">Tap +1 each time you skip sugar.</p></div>`;
     const stats = [
       ["+1 total", String(summary.skips || 0), plural(Number(summary.slips || 0), "slip", "slips")],
       ["Sugar-free days", `${summary.sugarFreeDays || 0} of ${length}`, `${summary.percent || 0}%`],

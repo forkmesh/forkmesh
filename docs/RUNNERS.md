@@ -275,6 +275,23 @@ no memory figures (`/proc` and `sysinfo` are Linux only).
   token sealed to a one-time in-memory key, passed only through the job
   environment, for owners who opted in to cloud runs.
 
+## The runners page
+
+`/dashboard/runners` (`partials/views/runners.html`, `js/09-runners.js`)
+follows GitHub's settings layout: a short header with the long sign-in
+explanation folded under "How sign-in works", then one bordered list. Each
+runner is a tinted header row (name, scope label, online status, last
+check-in) followed by flat provider rows and hairline-separated account rows,
+so nothing nests a box in a box. Colour follows the dashboard theme: links,
+focus and the active account use the accent blue; green is kept for the
+"Set up a runner" button, the online dot and the "Signed in" label; usage
+bars are blue, amber from 80 % and red from 95 %. A runner counts as online
+when it checked in within 10 minutes, the same window as `ONLINE_MS` in
+`runner_logins.py`. The sign-in panel is a single box: the authorize URL as a
+truncated field with Copy and Open, the terminal as one flat code block, then
+the code form. The settings page renders the same rows into its own list
+container ([app/settings-agents-and-runners.md](app/settings-agents-and-runners.md)).
+
 ## Live agent output
 
 While someone watches a run, the runner streams validated stream-json lines
