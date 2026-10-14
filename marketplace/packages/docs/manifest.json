@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.0.0",
-  "summary": "The whole ForkMesh documentation library on a rail page, the same pages forkmesh.com/docs serves: browse by area, search every page, follow links between documents and jump through each page's outline, even offline.",
+  "version": "1.1.0",
+  "summary": "The whole ForkMesh documentation library on a rail page, the same pages forkmesh.com/docs serves, plus every open-source dependency with its GitHub repository and top three authors. Browse by area, search every page, even offline.",
   "license": {
     "model": "free-open-source",
     "spdx": "MIT",
@@ -39,7 +39,7 @@
     },
     {
       "id": "browser.open",
-      "label": "Open forkmesh.com and other links from a document in your web browser",
+      "label": "Open forkmesh.com, GitHub and other links from a document in your web browser",
       "risk": "low"
     }
   ],

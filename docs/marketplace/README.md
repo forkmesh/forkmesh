@@ -450,6 +450,14 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 ## Recent changes
 
+- 2026-10-14: Docs 1.1.0: a **Dependencies** page. The user asked for the
+  documentation plugin to list our dependencies with their GitHub URLs, their
+  top three authors' names and links to those authors' projects. The page sits
+  in its own sidebar area after the web library's areas and is built from a
+  snapshot, `marketplace/packages/docs/data/dependencies.json`, written by
+  `marketplace/tools/docs_dependencies.py`, so it works offline like the rest
+  of the library. See
+  [the package README](../../marketplace/packages/docs/README.md#dependencies).
 - 2026-10-13: Market sort, usage stats, packs and onboarding guides. The user
   asked for sorting and search, every usage stat and rating on the Market
   list, one-click installs, packs (one with everything, one with chat and

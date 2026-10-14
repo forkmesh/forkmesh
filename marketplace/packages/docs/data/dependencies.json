@@ -1,0 +1,1236 @@
+{
+  "schema": "forkmesh-docs-dependencies-v1",
+  "generated": "2026-10-14",
+  "generator": "marketplace/tools/docs_dependencies.py",
+  "dependencies": [
+    {
+      "ecosystem": "cpp",
+      "name": "libnghttp3",
+      "title": "nghttp3",
+      "version": "",
+      "development": false,
+      "usedBy": [
+        "desktop/CMakeLists.txt"
+      ],
+      "description": "HTTP/3 library written in C.",
+      "repository": "https://github.com/ngtcp2/nghttp3",
+      "authors": [
+        {
+          "login": "tatsuhiro-t",
+          "name": "Tatsuhiro Tsujikawa",
+          "profile": "https://github.com/tatsuhiro-t",
+          "projects": "https://github.com/tatsuhiro-t?tab=repositories",
+          "publicRepos": 46,
+          "website": "https://twitter.com/tatsuhiro_t",
+          "contributions": 1294
+        },
+        {
+          "login": "amirlivneh",
+          "name": "Amir Livneh",
+          "profile": "https://github.com/amirlivneh",
+          "projects": "https://github.com/amirlivneh?tab=repositories",
+          "publicRepos": 23,
+          "website": "",
+          "contributions": 29
+        },
+        {
+          "login": "vszakats",
+          "name": "Viktor Szakats",
+          "profile": "https://github.com/vszakats",
+          "projects": "https://github.com/vszakats?tab=repositories",
+          "publicRepos": 36,
+          "website": "",
+          "contributions": 8
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "cpp",
+      "name": "OpenSSL",
+      "title": "OpenSSL",
+      "version": "3.0+",
+      "development": false,
+      "usedBy": [
+        "desktop/CMakeLists.txt"
+      ],
+      "description": "TLS and general-purpose cryptography library, including the QUIC client.",
+      "repository": "https://github.com/openssl/openssl",
+      "authors": [
+        {
+          "login": "levitte",
+          "name": "Richard Levitte",
+          "profile": "https://github.com/levitte",
+          "projects": "https://github.com/levitte?tab=repositories",
+          "publicRepos": 32,
+          "website": "http://richard.levitte.org/",
+          "contributions": 6422
+        },
+        {
+          "login": "snhenson",
+          "name": "Stephen Henson",
+          "profile": "https://github.com/snhenson",
+          "projects": "https://github.com/snhenson?tab=repositories",
+          "publicRepos": 2,
+          "website": "",
+          "contributions": 4844
+        },
+        {
+          "login": "mattcaswell",
+          "name": "Matt Caswell",
+          "profile": "https://github.com/mattcaswell",
+          "projects": "https://github.com/mattcaswell?tab=repositories",
+          "publicRepos": 17,
+          "website": "",
+          "contributions": 4570
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "cpp",
+      "name": "Qt6",
+      "title": "Qt 6",
+      "version": "6.4+",
+      "development": false,
+      "usedBy": [
+        "desktop/CMakeLists.txt"
+      ],
+      "description": "Cross-platform application framework: widgets, networking, SVG and the event loop the desktop runs on.",
+      "repository": "https://github.com/qt/qtbase",
+      "authors": [
+        {
+          "login": "thiagomacieira",
+          "name": "Thiago Macieira",
+          "profile": "https://github.com/thiagomacieira",
+          "projects": "https://github.com/thiagomacieira?tab=repositories",
+          "publicRepos": 21,
+          "website": "",
+          "contributions": 4852
+        },
+        {
+          "login": "torarnv",
+          "name": "Tor Arne Vestbø",
+          "profile": "https://github.com/torarnv",
+          "projects": "https://github.com/torarnv?tab=repositories",
+          "publicRepos": 97,
+          "website": "",
+          "contributions": 3285
+        },
+        {
+          "login": "marcmutz",
+          "name": "Marc Mutz",
+          "profile": "https://github.com/marcmutz",
+          "projects": "https://github.com/marcmutz?tab=repositories",
+          "publicRepos": 10,
+          "website": "",
+          "contributions": 2984
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "anyio",
+      "title": "anyio",
+      "version": "4.15.1",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "High-level concurrency and networking framework on top of asyncio or Trio",
+      "repository": "https://github.com/agronholm/anyio",
+      "authors": [
+        {
+          "login": "agronholm",
+          "name": "Alex Grönholm",
+          "profile": "https://github.com/agronholm",
+          "projects": "https://github.com/agronholm?tab=repositories",
+          "publicRepos": 142,
+          "website": "",
+          "contributions": 1043
+        },
+        {
+          "login": "graingert",
+          "name": "Thomas Grainger",
+          "profile": "https://github.com/graingert",
+          "projects": "https://github.com/graingert?tab=repositories",
+          "publicRepos": 1293,
+          "website": "https://graingert.co.uk",
+          "contributions": 36
+        },
+        {
+          "login": "gschaffner",
+          "name": "Ganden Schaffner",
+          "profile": "https://github.com/gschaffner",
+          "projects": "https://github.com/gschaffner?tab=repositories",
+          "publicRepos": 8,
+          "website": "",
+          "contributions": 31
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "certifi",
+      "title": "certifi",
+      "version": "2026.7.22",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "Python package for providing Mozilla's CA Bundle.",
+      "repository": "https://github.com/certifi/python-certifi",
+      "authors": [
+        {
+          "login": "Lukasa",
+          "name": "Cory Benfield",
+          "profile": "https://github.com/Lukasa",
+          "projects": "https://github.com/Lukasa?tab=repositories",
+          "publicRepos": 140,
+          "website": "https://lukasa.co.uk",
+          "contributions": 86
+        },
+        {
+          "login": "alex",
+          "name": "Alex Gaynor",
+          "profile": "https://github.com/alex",
+          "projects": "https://github.com/alex?tab=repositories",
+          "publicRepos": 496,
+          "website": "https://alexgaynor.net",
+          "contributions": 24
+        },
+        {
+          "login": "sigmavirus24",
+          "name": "Ian Stapleton Cordasco",
+          "profile": "https://github.com/sigmavirus24",
+          "projects": "https://github.com/sigmavirus24?tab=repositories",
+          "publicRepos": 211,
+          "website": "https://blog.ian.stapletoncordas.co",
+          "contributions": 13
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "cffi",
+      "title": "cffi",
+      "version": "2.1.1",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "Foreign Function Interface for Python calling C code.",
+      "repository": "https://github.com/python-cffi/cffi",
+      "authors": [
+        {
+          "login": "arigo",
+          "name": "Armin Rigo",
+          "profile": "https://github.com/arigo",
+          "projects": "https://github.com/arigo?tab=repositories",
+          "publicRepos": 36,
+          "website": "",
+          "contributions": 3101
+        },
+        {
+          "login": "fijal",
+          "name": "Maciej Fijalkowski",
+          "profile": "https://github.com/fijal",
+          "projects": "https://github.com/fijal?tab=repositories",
+          "publicRepos": 43,
+          "website": "http://baroquesoftware.com",
+          "contributions": 66
+        },
+        {
+          "login": "nitzmahone",
+          "name": "Matt Davis",
+          "profile": "https://github.com/nitzmahone",
+          "projects": "https://github.com/nitzmahone?tab=repositories",
+          "publicRepos": 86,
+          "website": "",
+          "contributions": 57
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "click",
+      "title": "click",
+      "version": "8.5.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "Composable command line interface toolkit",
+      "repository": "https://github.com/pallets/click",
+      "authors": [
+        {
+          "login": "davidism",
+          "name": "David Lord",
+          "profile": "https://github.com/davidism",
+          "projects": "https://github.com/davidism?tab=repositories",
+          "publicRepos": 11,
+          "website": "https://davidism.com",
+          "contributions": 876
+        },
+        {
+          "login": "mitsuhiko",
+          "name": "Armin Ronacher",
+          "profile": "https://github.com/mitsuhiko",
+          "projects": "https://github.com/mitsuhiko?tab=repositories",
+          "publicRepos": 348,
+          "website": "https://lucumr.pocoo.org/",
+          "contributions": 593
+        },
+        {
+          "login": "Rowlando13",
+          "name": "Rowlando13",
+          "profile": "https://github.com/Rowlando13",
+          "projects": "https://github.com/Rowlando13?tab=repositories",
+          "publicRepos": 32,
+          "website": "https://wallstreet.io/platform",
+          "contributions": 379
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "cryptography",
+      "title": "cryptography",
+      "version": "50.0.1",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "cryptography is a package which provides cryptographic recipes and primitives to Python developers.",
+      "repository": "https://github.com/pyca/cryptography",
+      "authors": [
+        {
+          "login": "alex",
+          "name": "Alex Gaynor",
+          "profile": "https://github.com/alex",
+          "projects": "https://github.com/alex?tab=repositories",
+          "publicRepos": 496,
+          "website": "https://alexgaynor.net",
+          "contributions": 4869
+        },
+        {
+          "login": "reaperhulk",
+          "name": "Paul Kehrer",
+          "profile": "https://github.com/reaperhulk",
+          "projects": "https://github.com/reaperhulk?tab=repositories",
+          "publicRepos": 151,
+          "website": "https://langui.sh",
+          "contributions": 3985
+        },
+        {
+          "login": "dreid",
+          "name": "dreid",
+          "profile": "https://github.com/dreid",
+          "projects": "https://github.com/dreid?tab=repositories",
+          "publicRepos": 41,
+          "website": "",
+          "contributions": 303
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "h11",
+      "title": "h11",
+      "version": "0.16.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "A pure-Python, bring-your-own-I/O implementation of HTTP/1.1",
+      "repository": "https://github.com/python-hyper/h11",
+      "authors": [
+        {
+          "login": "njsmith",
+          "name": "Nathaniel J. Smith",
+          "profile": "https://github.com/njsmith",
+          "projects": "https://github.com/njsmith?tab=repositories",
+          "publicRepos": 141,
+          "website": "https://vorpus.org",
+          "contributions": 337
+        },
+        {
+          "login": "pgjones",
+          "name": "Phil Jones",
+          "profile": "https://github.com/pgjones",
+          "projects": "https://github.com/pgjones?tab=repositories",
+          "publicRepos": 106,
+          "website": "https://pgjones.dev",
+          "contributions": 39
+        },
+        {
+          "login": "Lukasa",
+          "name": "Cory Benfield",
+          "profile": "https://github.com/Lukasa",
+          "projects": "https://github.com/Lukasa?tab=repositories",
+          "publicRepos": 140,
+          "website": "https://lukasa.co.uk",
+          "contributions": 21
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "h2",
+      "title": "h2",
+      "version": "4.4.1",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "Pure-Python HTTP/2 protocol implementation",
+      "repository": "https://github.com/python-hyper/h2",
+      "authors": [
+        {
+          "login": "Lukasa",
+          "name": "Cory Benfield",
+          "profile": "https://github.com/Lukasa",
+          "projects": "https://github.com/Lukasa?tab=repositories",
+          "publicRepos": 140,
+          "website": "https://lukasa.co.uk",
+          "contributions": 1147
+        },
+        {
+          "login": "requires",
+          "name": "requires.io",
+          "profile": "https://github.com/requires",
+          "projects": "https://github.com/requires?tab=repositories",
+          "publicRepos": 3,
+          "website": "https://requires.io",
+          "contributions": 182
+        },
+        {
+          "login": "Kriechi",
+          "name": "Thomas Kriechbaumer",
+          "profile": "https://github.com/Kriechi",
+          "projects": "https://github.com/Kriechi?tab=repositories",
+          "publicRepos": 126,
+          "website": "",
+          "contributions": 103
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "hpack",
+      "title": "hpack",
+      "version": "4.2.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "Pure-Python HPACK header encoding",
+      "repository": "https://github.com/python-hyper/hpack",
+      "authors": [
+        {
+          "login": "Lukasa",
+          "name": "Cory Benfield",
+          "profile": "https://github.com/Lukasa",
+          "projects": "https://github.com/Lukasa?tab=repositories",
+          "publicRepos": 140,
+          "website": "https://lukasa.co.uk",
+          "contributions": 251
+        },
+        {
+          "login": "requires",
+          "name": "requires.io",
+          "profile": "https://github.com/requires",
+          "projects": "https://github.com/requires?tab=repositories",
+          "publicRepos": 3,
+          "website": "https://requires.io",
+          "contributions": 140
+        },
+        {
+          "login": "jimcarreer",
+          "name": "jimcarreer",
+          "profile": "https://github.com/jimcarreer",
+          "projects": "https://github.com/jimcarreer?tab=repositories",
+          "publicRepos": 28,
+          "website": "",
+          "contributions": 55
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "httpcore",
+      "title": "httpcore",
+      "version": "1.0.9",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "A minimal low-level HTTP client.",
+      "repository": "https://github.com/encode/httpcore",
+      "authors": [
+        {
+          "login": "lovelydinosaur",
+          "name": "Kim Christie",
+          "profile": "https://github.com/lovelydinosaur",
+          "projects": "https://github.com/lovelydinosaur?tab=repositories",
+          "publicRepos": 22,
+          "website": "https://www.lovelydinosaur.com/",
+          "contributions": 200
+        },
+        {
+          "login": "florimondmanca",
+          "name": "Florimond Manca",
+          "profile": "https://github.com/florimondmanca",
+          "projects": "https://github.com/florimondmanca?tab=repositories",
+          "publicRepos": 109,
+          "website": "https://florimond.dev",
+          "contributions": 32
+        },
+        {
+          "login": "karpetrosyan",
+          "name": "Kar Petrosyan",
+          "profile": "https://github.com/karpetrosyan",
+          "projects": "https://github.com/karpetrosyan?tab=repositories",
+          "publicRepos": 43,
+          "website": "https://karpetrosyan.dev",
+          "contributions": 23
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "httptools",
+      "title": "httptools",
+      "version": "0.8.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "A collection of framework independent HTTP protocol utils.",
+      "repository": "https://github.com/MagicStack/httptools",
+      "authors": [
+        {
+          "login": "elprans",
+          "name": "Elvis Pranskevichus",
+          "profile": "https://github.com/elprans",
+          "projects": "https://github.com/elprans?tab=repositories",
+          "publicRepos": 95,
+          "website": "",
+          "contributions": 26
+        },
+        {
+          "login": "fantix",
+          "name": "Fantix King",
+          "profile": "https://github.com/fantix",
+          "projects": "https://github.com/fantix?tab=repositories",
+          "publicRepos": 120,
+          "website": "http://about.me/fantix",
+          "contributions": 16
+        },
+        {
+          "login": "yohanboniface",
+          "name": "Yohan Boniface",
+          "profile": "https://github.com/yohanboniface",
+          "projects": "https://github.com/yohanboniface?tab=repositories",
+          "publicRepos": 124,
+          "website": "https://yohanboniface.me",
+          "contributions": 5
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "httpx",
+      "title": "httpx",
+      "version": "0.28.1",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "The next generation HTTP client.",
+      "repository": "https://github.com/encode/httpx",
+      "authors": [
+        {
+          "login": "lovelydinosaur",
+          "name": "Kim Christie",
+          "profile": "https://github.com/lovelydinosaur",
+          "projects": "https://github.com/lovelydinosaur?tab=repositories",
+          "publicRepos": 22,
+          "website": "https://www.lovelydinosaur.com/",
+          "contributions": 712
+        },
+        {
+          "login": "florimondmanca",
+          "name": "Florimond Manca",
+          "profile": "https://github.com/florimondmanca",
+          "projects": "https://github.com/florimondmanca?tab=repositories",
+          "publicRepos": 109,
+          "website": "https://florimond.dev",
+          "contributions": 151
+        },
+        {
+          "login": "sethmlarson",
+          "name": "Seth Larson",
+          "profile": "https://github.com/sethmlarson",
+          "projects": "https://github.com/sethmlarson?tab=repositories",
+          "publicRepos": 147,
+          "website": "https://sethmlarson.dev",
+          "contributions": 29
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "hyperframe",
+      "title": "hyperframe",
+      "version": "6.1.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "Pure-Python HTTP/2 framing",
+      "repository": "https://github.com/python-hyper/hyperframe",
+      "authors": [
+        {
+          "login": "Lukasa",
+          "name": "Cory Benfield",
+          "profile": "https://github.com/Lukasa",
+          "projects": "https://github.com/Lukasa?tab=repositories",
+          "publicRepos": 140,
+          "website": "https://lukasa.co.uk",
+          "contributions": 182
+        },
+        {
+          "login": "requires",
+          "name": "requires.io",
+          "profile": "https://github.com/requires",
+          "projects": "https://github.com/requires?tab=repositories",
+          "publicRepos": 3,
+          "website": "https://requires.io",
+          "contributions": 99
+        },
+        {
+          "login": "Kriechi",
+          "name": "Thomas Kriechbaumer",
+          "profile": "https://github.com/Kriechi",
+          "projects": "https://github.com/Kriechi?tab=repositories",
+          "publicRepos": 126,
+          "website": "",
+          "contributions": 68
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "idna",
+      "title": "idna",
+      "version": "3.20",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "Internationalized Domain Names in Applications (IDNA)",
+      "repository": "https://github.com/kjd/idna",
+      "authors": [
+        {
+          "login": "kjd",
+          "name": "Kim Davies",
+          "profile": "https://github.com/kjd",
+          "projects": "https://github.com/kjd?tab=repositories",
+          "publicRepos": 7,
+          "website": "http://kimdavies.com/",
+          "contributions": 464
+        },
+        {
+          "login": "hugovk",
+          "name": "Hugo van Kemenade",
+          "profile": "https://github.com/hugovk",
+          "projects": "https://github.com/hugovk?tab=repositories",
+          "publicRepos": 1405,
+          "website": "https://hugovk.dev",
+          "contributions": 12
+        },
+        {
+          "login": "jdufresne",
+          "name": "Jon Dufresne",
+          "profile": "https://github.com/jdufresne",
+          "projects": "https://github.com/jdufresne?tab=repositories",
+          "publicRepos": 42,
+          "website": "",
+          "contributions": 11
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "iniconfig",
+      "title": "iniconfig",
+      "version": "2.3.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "brain-dead simple config-ini parsing",
+      "repository": "https://github.com/pytest-dev/iniconfig",
+      "authors": [
+        {
+          "login": "RonnyPfannschmidt",
+          "name": "Ronny Pfannschmidt",
+          "profile": "https://github.com/RonnyPfannschmidt",
+          "projects": "https://github.com/RonnyPfannschmidt?tab=repositories",
+          "publicRepos": 143,
+          "website": "",
+          "contributions": 133
+        },
+        {
+          "login": "hugovk",
+          "name": "Hugo van Kemenade",
+          "profile": "https://github.com/hugovk",
+          "projects": "https://github.com/hugovk?tab=repositories",
+          "publicRepos": 1405,
+          "website": "https://hugovk.dev",
+          "contributions": 23
+        },
+        {
+          "login": "hpk42",
+          "name": "holger krekel",
+          "profile": "https://github.com/hpk42",
+          "projects": "https://github.com/hpk42?tab=repositories",
+          "publicRepos": 10,
+          "website": "",
+          "contributions": 20
+        }
+      ],
+      "authorsNote": "",
+      "fetched": "2026-10-14"
+    },
+    {
+      "ecosystem": "python",
+      "name": "orjson",
+      "title": "orjson",
+      "version": "3.12.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "packaging",
+      "title": "packaging",
+      "version": "26.3",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "Pillow",
+      "title": "Pillow",
+      "version": "12.3.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "pluggy",
+      "title": "pluggy",
+      "version": "1.6.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "pycparser",
+      "title": "pycparser",
+      "version": "3.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "Pygments",
+      "title": "Pygments",
+      "version": "2.21.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "pytest",
+      "title": "pytest",
+      "version": "9.1.1",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt",
+        "tools/requirements-ci.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "python-dotenv",
+      "title": "python-dotenv",
+      "version": "1.2.3",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "PyYAML",
+      "title": "PyYAML",
+      "version": "6.0.3",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "typing_extensions",
+      "title": "typing_extensions",
+      "version": "4.16.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "uvicorn",
+      "title": "uvicorn",
+      "version": "0.53.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "uvloop",
+      "title": "uvloop",
+      "version": "0.22.1",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "watchfiles",
+      "title": "watchfiles",
+      "version": "1.3.0",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "python",
+      "name": "websockets",
+      "title": "websockets",
+      "version": "17.1",
+      "development": false,
+      "usedBy": [
+        "app/host/requirements.txt"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@playwright/test",
+      "title": "@playwright/test",
+      "version": "1.61.0",
+      "development": true,
+      "usedBy": [
+        "app/browser_tests/package.json",
+        "world/browser_tests/package.json"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@types/node",
+      "title": "@types/node",
+      "version": "18.19.0",
+      "development": true,
+      "usedBy": [
+        "marketplace/packages/forkmesh-ide/content/vscode/package.json"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@types/vscode",
+      "title": "@types/vscode",
+      "version": "1.75.0",
+      "development": true,
+      "usedBy": [
+        "marketplace/packages/forkmesh-ide/content/vscode/package.json"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "npm",
+      "name": "esbuild",
+      "title": "esbuild",
+      "version": "0.25.10",
+      "development": true,
+      "usedBy": [
+        "world/tools/package.json"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "npm",
+      "name": "three",
+      "title": "three",
+      "version": "0.184.0",
+      "development": true,
+      "usedBy": [
+        "world/browser_tests/package.json"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "npm",
+      "name": "typescript",
+      "title": "typescript",
+      "version": "5.4.0",
+      "development": true,
+      "usedBy": [
+        "marketplace/packages/forkmesh-ide/content/vscode/package.json"
+      ],
+      "description": "",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "vendored",
+      "name": "lucide",
+      "title": "Lucide",
+      "version": "0.468.0",
+      "development": false,
+      "usedBy": [
+        "www/public/assets/vendor/lucide-0.468.0.min.js"
+      ],
+      "description": "Open-source icon library.",
+      "repository": "https://github.com/lucide-icons/lucide",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "vendored",
+      "name": "satellite-js",
+      "title": "satellite.js",
+      "version": "7.1.0",
+      "development": false,
+      "usedBy": [
+        "world/public/world/vendor/satellite-js-7.1.0.esm.js"
+      ],
+      "description": "Satellite propagation, SGP4/SDP4 orbit calculations in JavaScript.",
+      "repository": "https://github.com/shashwatak/satellite-js",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "vendored",
+      "name": "three",
+      "title": "three.js",
+      "version": "0.184.0",
+      "development": false,
+      "usedBy": [
+        "app/public/assets/codemap/vendor/three-0.184.0",
+        "world/public/world/vendor/three-0.184.0"
+      ],
+      "description": "JavaScript 3D library.",
+      "repository": "https://github.com/mrdoob/three.js",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "com.android.application",
+      "title": "Android Gradle Plugin",
+      "version": "9.4.0",
+      "development": true,
+      "usedBy": [
+        "native/android/build.gradle.kts"
+      ],
+      "description": "Builds Android apps with Gradle. Source is hosted on android.googlesource.com, not GitHub.",
+      "repository": "",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "androidx.activity:activity-compose",
+      "title": "androidx.activity:activity-compose",
+      "version": "1.13.0",
+      "development": false,
+      "usedBy": [
+        "native/android/app/build.gradle.kts"
+      ],
+      "description": "Android Jetpack libraries.",
+      "repository": "https://github.com/androidx/androidx",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "androidx.compose.foundation:foundation",
+      "title": "androidx.compose.foundation:foundation",
+      "version": "",
+      "development": false,
+      "usedBy": [
+        "native/android/app/build.gradle.kts"
+      ],
+      "description": "Android Jetpack libraries.",
+      "repository": "https://github.com/androidx/androidx",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "androidx.compose.material3:material3",
+      "title": "androidx.compose.material3:material3",
+      "version": "",
+      "development": false,
+      "usedBy": [
+        "native/android/app/build.gradle.kts"
+      ],
+      "description": "Android Jetpack libraries.",
+      "repository": "https://github.com/androidx/androidx",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "androidx.compose.ui:ui",
+      "title": "androidx.compose.ui:ui",
+      "version": "",
+      "development": false,
+      "usedBy": [
+        "native/android/app/build.gradle.kts"
+      ],
+      "description": "Android Jetpack libraries.",
+      "repository": "https://github.com/androidx/androidx",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "androidx.compose.ui:ui-tooling-preview",
+      "title": "androidx.compose.ui:ui-tooling-preview",
+      "version": "",
+      "development": false,
+      "usedBy": [
+        "native/android/app/build.gradle.kts"
+      ],
+      "description": "Android Jetpack libraries.",
+      "repository": "https://github.com/androidx/androidx",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "androidx.compose:compose-bom",
+      "title": "androidx.compose:compose-bom",
+      "version": "2026.09.00",
+      "development": false,
+      "usedBy": [
+        "native/android/app/build.gradle.kts"
+      ],
+      "description": "Android Jetpack libraries.",
+      "repository": "https://github.com/androidx/androidx",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "org.jetbrains.kotlin.plugin.compose",
+      "title": "Kotlin Compose compiler plugin",
+      "version": "2.4.20",
+      "development": true,
+      "usedBy": [
+        "native/android/build.gradle.kts"
+      ],
+      "description": "The Compose compiler plugin, shipped with Kotlin.",
+      "repository": "https://github.com/JetBrains/kotlin",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "org.jetbrains.kotlin.jvm",
+      "title": "Kotlin JVM Gradle plugin",
+      "version": "2.4.20",
+      "development": true,
+      "usedBy": [
+        "native/android/build.gradle.kts"
+      ],
+      "description": "The Kotlin compiler and its Gradle plugin.",
+      "repository": "https://github.com/JetBrains/kotlin",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    },
+    {
+      "ecosystem": "maven",
+      "name": "org.jetbrains.kotlinx:kotlinx-coroutines-android",
+      "title": "org.jetbrains.kotlinx:kotlinx-coroutines-android",
+      "version": "1.11.0",
+      "development": false,
+      "usedBy": [
+        "native/android/app/build.gradle.kts"
+      ],
+      "description": "Library support for Kotlin coroutines.",
+      "repository": "https://github.com/Kotlin/kotlinx.coroutines",
+      "authors": [],
+      "authorsNote": "",
+      "fetched": ""
+    }
+  ]
+}
