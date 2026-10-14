@@ -35444,17 +35444,20 @@ async def notify_pending_inbox(env, owner, repo, source, actor, title, number=0,
         # state — so the push for it found no unread row to show.
         dedupe += ":" + clean_string(text, 80)
     meta = {"number": number, "source": source, "hostOwner": host_owner}
-    await enqueue_notification(
-        env, owner, kind, label + joiner + slug,
-        body=host_body,
-        repo=slug, href=href,
-        actor=actor, source=source,
-        dedupe=dedupe,
-        meta=meta,
-    )
+    maintainers = (await _org_repo_maintainers(env, host_owner, repo)
+                   if opened else [])
+    if not await _node_owner_among(env, host_owner, maintainers):
+        await enqueue_notification(
+            env, owner, kind, label + joiner + slug,
+            body=host_body,
+            repo=slug, href=href,
+            actor=actor, source=source,
+            dedupe=dedupe,
+            meta=meta,
+        )
     if not opened:
         return
-    for maintainer in await _org_repo_maintainers(env, host_owner, repo):
+    for maintainer in maintainers:
         if maintainer == host_owner:
             continue
         await enqueue_notification(
@@ -35465,6 +35468,23 @@ async def notify_pending_inbox(env, owner, repo, source, actor, title, number=0,
             dedupe=dedupe,
             meta=meta,
         )
+
+
+async def _node_owner_among(env, host, accounts):
+    if not accounts:
+        return False
+    _, rec = await _account_row(env, host)
+    owner = clean_string((rec or {}).get("owner", ""), MAX_NODE_NAME).lower()
+    return bool(owner) and owner != host and owner in accounts
+
+
+async def _org_fanout_recipients(env, host, repo):
+    maintainers = await _org_repo_maintainers(env, host, repo)
+    recipients = [] if await _node_owner_among(env, host, maintainers) else [host]
+    for maintainer in maintainers:
+        if maintainer not in recipients and maintainer != host:
+            recipients.append(maintainer)
+    return recipients
 
 
 async def _org_repo_maintainers(env, host_owner, repo):
@@ -35577,11 +35597,7 @@ async def notify_repo_activity(env, owner, repo, event, body="", actor="",
               clean_string(key, 80))
     payload_meta = dict(meta or {})
     payload_meta["event"] = event
-    recipients = [owner]
-    for maintainer in await _org_repo_maintainers(env, owner, repo):
-        if maintainer not in recipients:
-            recipients.append(maintainer)
-    for recipient in recipients:
+    for recipient in await _org_fanout_recipients(env, owner, repo):
         await enqueue_notification(
             env, recipient, "repo_activity", title,
             body=text, repo=slug, href=href,
@@ -35846,11 +35862,8 @@ async def notify_release_published(env, owner, repo, release):
     # The organization that fronts the repository hears about a cut release
     # for the same reason it hears about a new issue (adhoc #295): the people
     # who run it are the people who answer for what shipped.
-    recipients = [clean_string(owner, MAX_NODE_NAME).lower()]
-    for maintainer in await _org_repo_maintainers(env, recipients[0], repo):
-        if maintainer not in recipients:
-            recipients.append(maintainer)
-    for recipient in recipients:
+    host = clean_string(owner, MAX_NODE_NAME).lower()
+    for recipient in await _org_fanout_recipients(env, host, repo):
         await enqueue_notification(
             env, recipient, "release_published", title,
             body=body,
