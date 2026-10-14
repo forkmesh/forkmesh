@@ -53,3 +53,12 @@ that fills red on hover, errors are red-tinted alerts, the webhook-created box
 is a blue info alert, and members and webhooks in settings are hairline-divided
 rows instead of boxes inside the panel. The encryption chip still shows the
 lock or globe emoji that `app/public/chat.js` writes.
+
+World also loads `dashboard-chat.js` (`world/public/world/world.js`) but none
+of the shell's `fm-*` CSS. So the blankslate icon carries `width="24"
+height="24"` and the close icons `width="16" height="16"` (the shell's CSS
+still sets the dashboard sizes), and `world/public/world/world.css` gives
+`#fullChatMessages > .fm-blankslate` the same treatment as the old
+`.rounded-lg` notice: one muted line with no icon in the HUD island feed, a
+dashed box with a 20px icon in the native chat panel. The World thread
+dialog's title rule matches `.fm-dialog-title` as well as the old `<strong>`.

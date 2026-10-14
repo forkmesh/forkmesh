@@ -1907,7 +1907,7 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function fullEmptyHtml() {
-    return `<div class="fm-blankslate"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span class="fm-blankslate-title">No messages yet</span><p class="fm-blankslate-desc">Type below to join the encrypted ${escapeHtml(CHANNEL)} collaboration channel.</p></div>`;
+    return `<div class="fm-blankslate"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span class="fm-blankslate-title">No messages yet</span><p class="fm-blankslate-desc">Type below to join the encrypted ${escapeHtml(CHANNEL)} collaboration channel.</p></div>`;
   }
 
   function sideEmptyHtml() {
@@ -1915,7 +1915,7 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function fullUserOnlyHtml() {
-    return `<div class="fm-blankslate"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span class="fm-blankslate-title">Sign in to chat here</span><p class="fm-blankslate-desc">Log in as a user to join the authenticated ${escapeHtml(CHANNEL)} channel. Guests can use only public World #general.</p></div>`;
+    return `<div class="fm-blankslate"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span class="fm-blankslate-title">Sign in to chat here</span><p class="fm-blankslate-desc">Log in as a user to join the authenticated ${escapeHtml(CHANNEL)} channel. Guests can use only public World #general.</p></div>`;
   }
 
   function sideUserOnlyHtml() {
@@ -2035,7 +2035,7 @@ function mountForkMeshDashboardChat(options = {}) {
       imagePreviewDialog = document.createElement("dialog");
       imagePreviewDialog.id = "dashboard-chat-image-preview-dialog";
       imagePreviewDialog.className = "chat-image-preview-dialog max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-background p-3 shadow-2xl";
-      imagePreviewDialog.innerHTML = '<button type="button" class="fm-btn fm-btn-icon fm-btn-sm absolute right-0 top-0" aria-label="Close image preview"><svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path></svg></button><img class="chat-image-preview-full max-h-[calc(100vh-1.5rem)] max-w-full object-contain" />';
+      imagePreviewDialog.innerHTML = '<button type="button" class="fm-btn fm-btn-icon fm-btn-sm absolute right-0 top-0" aria-label="Close image preview"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path></svg></button><img class="chat-image-preview-full max-h-[calc(100vh-1.5rem)] max-w-full object-contain" />';
       imagePreviewDialog.querySelector("button").addEventListener("click", () => imagePreviewDialog.close());
       imagePreviewDialog.addEventListener("click", (event) => {
         if (event.target === imagePreviewDialog) imagePreviewDialog.close();
@@ -2552,7 +2552,7 @@ function mountForkMeshDashboardChat(options = {}) {
     dialog.innerHTML = `
       <form method="dialog" class="fm-dialog-header">
         <div class="fm-dialog-title">Thread <span data-chat-thread-count class="ml-1 text-xs font-normal text-muted-foreground"></span></div>
-        <button type="submit" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm" aria-label="Close thread"><svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path></svg></button>
+        <button type="submit" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm" aria-label="Close thread"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path></svg></button>
       </form>
       <div data-chat-thread-list class="grid max-h-[62vh] gap-2 overflow-y-auto p-4"></div>
       <div class="fm-dialog-footer items-end">
