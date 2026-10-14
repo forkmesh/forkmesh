@@ -33,6 +33,36 @@ final class OfficeChannelsTests: XCTestCase {
         XCTAssertFalse(OfficeFrames.validName("Upper"))
     }
 
+    @MainActor func testSavedRoomsShowBeforeTheServerAnswersAndRefreshesSaveThem() async {
+        let api = FakeAccountApi()
+        let general: JSONObject = [
+            "id": .string(String(repeating: "e", count: 32)), "name": "general", "visibility": "public", "kind": "everyone",
+            "memberCount": 12, "readOnly": false,
+        ]
+        let team: JSONObject = [
+            "id": .string(OfficeChannelsTests.roomId), "name": "team", "visibility": "private", "canManage": true,
+            "topic": "plans", "members": ["alice", "bob"], "keyVersion": 3, "serverVisible": true,
+        ]
+        api.replies["GET /api/chat/channels"] = ["channels": [.object(general), .object(team)]]
+        let service = OfficeChannelService(
+            api: api, connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.next.forkmesh.com") }, selfId: { "me-node" }, displayName: { "Me" })
+        var saved: [OfficeRoom] = []
+        service.onRooms = { saved = $0 }
+        await service.load(attempts: 1)
+        XCTAssertEqual(saved.map(\.conversation), ["#office/general", "#office/team"])
+        let cached = JSON.encode(OfficeFrames.payload(saved))
+        let cold = OfficeChannelService(
+            api: FakeAccountApi(), connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.next.forkmesh.com") }, selfId: { "me-node" }, displayName: { "Me" })
+        cold.restore(JSON.parseObject(cached))
+        XCTAssertEqual(cold.rooms, saved)
+        XCTAssertTrue(cold.rooms[0].everyone)
+        XCTAssertEqual(cold.rooms[1].members, ["alice", "bob"])
+        cold.restore(["channels": []])
+        XCTAssertEqual(cold.rooms.count, 2, "a restore never replaces rooms already loaded")
+    }
+
     func testChatMessagesAreBoundedLikeTheDesktop() {
         let plain: JSONObject = ["type": "chat", "id": "x1", "senderId": "me", "text": "hello", "ts": 1000]
         let message = OfficeFrames.chatMessage(plain, conversation: "#office/a", selfId: "me")

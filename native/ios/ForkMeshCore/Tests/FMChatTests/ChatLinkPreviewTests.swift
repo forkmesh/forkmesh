@@ -107,13 +107,13 @@ final class ChatLinkPreviewTests: XCTestCase {
     @MainActor
     func testYouTubeUsesOEmbedAndThumbnail() async {
         let http = FakeHTTPClient()
-        http.on(path: "/oembed", json: .object(["title": "- Spotlight - Project 40", "author_name": "Vandana Verma"]))
+        http.on(path: "/oembed", json: .object(["title": "Project Spotlight 40", "author_name": "Sample Channel"]))
         let service = ChatLinkPreviewService(http: http, clock: FixedClock(Date(timeIntervalSince1970: 1_000)))
         let url = URL(string: "https://www.youtube.com/watch?v=plxcVWhdBTM&t=462s")!
         await service.load(url)
         let preview = service.preview(for: url)
-        XCTAssertEqual(preview?.title, "- Spotlight - Project 40")
-        XCTAssertEqual(preview?.author, "Vandana Verma")
+        XCTAssertEqual(preview?.title, "Project Spotlight 40")
+        XCTAssertEqual(preview?.author, "Sample Channel")
         XCTAssertEqual(preview?.siteName, "YouTube")
         XCTAssertEqual(preview?.imageUrl, "https://i.ytimg.com/vi/plxcVWhdBTM/hqdefault.jpg")
         XCTAssertEqual(preview?.kind, .video)

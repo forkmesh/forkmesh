@@ -49,6 +49,10 @@ final class ChatEveryoneTests: XCTestCase {
         XCTAssertTrue(hub.isEveryoneChannel("#office/welcome"))
         XCTAssertFalse(hub.isEveryoneChannel("#office/ops"))
         XCTAssertFalse(hub.isEveryoneChannel("#general"))
+        for conversation in ["#office/general", "#office/random", "#office/welcome", "#general", "#office/ops"] {
+            XCTAssertFalse(hub.canLeaveChannel(conversation), conversation)
+        }
+        XCTAssertTrue(hub.canLeaveChannel("#project"))
         XCTAssertEqual(
             try ChatReplyTarget.resolve("general", channels: ["#general"], roster: [], offices: hub.officeChannels),
             "#office/general", "a reply to general goes to the server channel, not World")

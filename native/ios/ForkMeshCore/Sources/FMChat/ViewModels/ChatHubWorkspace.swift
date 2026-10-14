@@ -155,6 +155,20 @@ extension ChatHub {
         return sent
     }
 
+    public static func recipient(for group: MemberGroup) -> ChatRecipient {
+        ChatRecipient(
+            kind: .person, name: group.name, account: group.account, peerId: group.id, online: group.online,
+            away: group.online && group.userStatus.away)
+    }
+
+    @discardableResult
+    public func openPerson(_ person: ChatRecipient) async -> Bool {
+        guard let target = await conversation(for: [person]) else { return false }
+        workspace.noteRecipients([person])
+        select(target)
+        return true
+    }
+
     func messagePerson(_ name: String, text: String) async -> Bool {
         let bare = name.trimmingCharacters(in: .whitespaces)
         if bare.isEmpty {

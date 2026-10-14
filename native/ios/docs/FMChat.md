@@ -987,8 +987,7 @@ popular site and for any site's own social image.
   fetch.
 - **Live check, 2026-10-14** (a throwaway probe against the real sites from
   the Linux box, not part of the suite): 62 of 68 links gave a card, including
-  the YouTube link of the request ("- Spotlight - Project 40 - - CVE
-  Lite CLI", Vandana Verma, the thumbnail). Medium, Etsy, Reuters and eBay
+  the YouTube link of the request (its title, channel and thumbnail). Medium, Etsy, Reuters and eBay
   refused this box (Cloudflare, DataDome) with either agent; a private Google
   Doc and a Bitbucket single-page app have no tags. Those links stay plain.
 
@@ -1024,15 +1023,33 @@ popular site and for any site's own social image.
   (the relay `#general`, labelled `worldLabel`, "World"), `retiredRelayLabels`,
   `welcomeSenderId` (`system:welcome`), `generalConversation`,
   `welcomeConversation`, `isWelcome(_:)`, `order(_:office:)`. The `ChatHub`
-  extension has `isEveryoneChannel`, `everyoneRooms`, `listedChannels`,
-  `generalConversation`, `refreshMemberDirectory(force:)` and
-  `adoptEveryoneGeneral()`.
+  extension has `isEveryoneChannel`, `canLeaveChannel(_:)`, `everyoneRooms`,
+  `listedChannels`, `generalConversation`, `refreshMemberDirectory(force:)`
+  and `adoptEveryoneGeneral()`. The fixed everyone rooms and World never offer
+  a local Leave action; ordinary channels still do.
 - `ChatHub.directoryMembers` holds the member names from
   `GET /api/chat/channels/<general>/members`. `ChatWorkspace.movedToEveryone` /
   `markMovedToEveryone()` record the one-time move from World to #general.
 - `ChatReplyTarget.resolve` checks server channels before relay labels.
 - Rationale: docs/native/NAVIGATION.md 2.0.102 and
   docs/app/chat-everyone-channels.md.
+
+## Chat list, people and delivery (branch 2010)
+
+- **Channels on open.** The channel list is saved on the phone and shown as soon as chat opens,
+  then refreshed from the server, with retries if the first load fails.
+- **Who is online.** The Online tile at the top of the conversation list opens a list of everyone
+  online. Tap a name to message them, or their avatar to see their person card.
+- **Tapping a person** opens your direct message with their account.
+- **Person card.** Tapping an avatar (People list, online list, next to a message) shows the
+  person's picture (tap for full screen), presence, status, bio, their local time, a Message button
+  and a link to their full profile. Local time uses the profile's time zone, or the time zone their
+  iPhone shares in chat.
+- **Delivery.** A direct message that the server has not confirmed within a few seconds is sent
+  again over a fresh connection, so it no longer stays at "Sending".
+- **Receipt mark** (sending, sent, delivered, read) is shown inside your own message bubble.
+- **Saving a recorded video.** While reviewing a video message, the button at the top right saves
+  it to Photos.
 
 ## Views (ForkMesh/Features/Chat)
 
