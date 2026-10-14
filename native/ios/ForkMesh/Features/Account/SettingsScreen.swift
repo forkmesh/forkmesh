@@ -266,6 +266,7 @@ struct SettingsScreen: View {
                 VStack(spacing: FmSpace.x3) {
                     SettingsCardBox { AppearanceCard(settings: settings) }
                     SettingsCardBox(padded: false) { HomeScreenSettingsCard() }
+                    SettingsCardBox(padded: false) { BottomBarSettingsCard() }
                     SettingsCardBox { DevicePreferencesCard(settings: settings) }
                     SettingsCardBox { GenieSpiderCard() }
                     SettingsCardBox { SuggestionModeCard() }

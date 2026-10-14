@@ -163,6 +163,7 @@ final class ShellBarPrefs {
     private(set) var layout: ShellBarLayout
     private(set) var menu: ShellMenuLayout
     private(set) var home: ShellHomeStyle
+    private(set) var barStyle: ShellBarStyle
     var homeGroups: [ShellHomeGroupInfo] = []
     var drag: ShellBarDrag?
 
@@ -175,7 +176,19 @@ final class ShellBarPrefs {
         layout = ShellBarLayout.load(store)
         menu = ShellMenuLayout.load(store)
         home = ShellHomeStyle.load(store)
+        barStyle = ShellBarStyle.load(store)
     }
+
+    func styleBar(_ edit: (inout ShellBarStyle) -> Void) {
+        var next: ShellBarStyle = barStyle
+        edit(&next)
+        next = next.clamped
+        guard next != barStyle else { return }
+        barStyle = next
+        next.save(store)
+    }
+
+    private var limit: Int { barStyle.limit }
 
     func styleHome(_ edit: (inout ShellHomeStyle) -> Void) {
         var next: ShellHomeStyle = home
@@ -246,16 +259,18 @@ final class ShellBarPrefs {
     static let keep: [String] = [ShellHome.homeId]
 
     func entries(_ items: [ShellBarItem]) -> [ShellBarEntry] {
-        layout.barSlots(items, ranking: ranking, keep: ShellBarPrefs.keep, id: \.id).map { ShellBarEntry(slot: $0) }
+        layout.barSlots(items, ranking: ranking, keep: ShellBarPrefs.keep, limit: limit, id: \.id).map {
+            ShellBarEntry(slot: $0)
+        }
     }
 
     func inBar(_ itemId: String, items: [ShellBarItem]) -> Bool {
-        layout.inBar(itemId, items: items, ranking: ranking, keep: ShellBarPrefs.keep, id: \.id)
+        layout.inBar(itemId, items: items, ranking: ranking, keep: ShellBarPrefs.keep, limit: limit, id: \.id)
     }
 
     func barIds(_ items: [ShellBarItem]) -> Set<String> {
         var ids: Set<String> = []
-        for slot in layout.barSlots(items, ranking: ranking, keep: ShellBarPrefs.keep, id: \.id) {
+        for slot in layout.barSlots(items, ranking: ranking, keep: ShellBarPrefs.keep, limit: limit, id: \.id) {
             switch slot {
             case let .item(item): ids.insert(item.id)
             case let .folder(_, members): ids.formUnion(members.map(\.id))
@@ -265,19 +280,24 @@ final class ShellBarPrefs {
     }
 
     func barIsFull(_ items: [ShellBarItem]) -> Bool {
-        layout.barIsFull(items, ranking: ranking, keep: ShellBarPrefs.keep, id: \.id)
+        layout.barIsFull(items, ranking: ranking, keep: ShellBarPrefs.keep, limit: limit, id: \.id)
     }
 
     func removeFromBar(_ ids: [String], items: [ShellBarItem]) {
         let current: [String] = ranking
-        arrange { $0.removeFromBar(ids, items: items, ranking: current, keep: ShellBarPrefs.keep, id: \.id) }
+        let room: Int = limit
+        arrange {
+            $0.removeFromBar(ids, items: items, ranking: current, keep: ShellBarPrefs.keep, limit: room, id: \.id)
+        }
     }
 
     @discardableResult
     func putInBar(_ itemId: String, at target: String? = nil, items: [ShellBarItem]) -> Bool {
         let current: [String] = ranking
         var next: ShellBarLayout = layout
-        guard next.putInBar(itemId, at: target, items: items, ranking: current, keep: ShellBarPrefs.keep, id: \.id)
+        guard
+            next.putInBar(
+                itemId, at: target, items: items, ranking: current, keep: ShellBarPrefs.keep, limit: limit, id: \.id)
         else { return false }
         arrange { $0 = next }
         if target != nil && sort != .usual {
@@ -296,7 +316,7 @@ final class ShellBarPrefs {
 
     private func fitted(_ items: [ShellBarItem]) -> ShellBarLayout {
         var next: ShellBarLayout = layout
-        next.fit(items, ranking: ranking, keep: ShellBarPrefs.keep, id: \.id)
+        next.fit(items, ranking: ranking, keep: ShellBarPrefs.keep, limit: limit, id: \.id)
         return next
     }
 
@@ -319,6 +339,7 @@ struct ShellBarSettingsItems: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     let prefs: ShellBarPrefs
+    var includesHome: Bool = true
 
     var body: some View {
         Picker(
@@ -359,15 +380,17 @@ struct ShellBarSettingsItems: View {
         .disabled(prefs.layout.hidden.isEmpty && prefs.layout.bar == nil)
         .accessibilityIdentifier("shell-bar-show-hidden")
         ShellBarResetButton(prefs: prefs)
-        Button(role: .destructive) {
-            withAnimation(reduceMotion ? nil : .snappy) {
-                prefs.resetMenu()
+        if includesHome {
+            Button(role: .destructive) {
+                withAnimation(reduceMotion ? nil : .snappy) {
+                    prefs.resetMenu()
+                }
+            } label: {
+                SwiftUI.Label("Reset Home order", systemImage: "square.grid.3x3")
             }
-        } label: {
-            SwiftUI.Label("Reset Home order", systemImage: "square.grid.3x3")
+            .disabled(prefs.menu.isEmpty)
+            .accessibilityIdentifier("shell-menu-reset-order")
         }
-        .disabled(prefs.menu.isEmpty)
-        .accessibilityIdentifier("shell-menu-reset-order")
     }
 
     static func title(_ sort: ShellBarSort) -> String {
@@ -435,31 +458,41 @@ struct ShellBottomBar: View {
     @State private var prefs: ShellBarPrefs = ShellBarPrefs.shared
     @State private var naming: ShellBarNaming?
     @State private var targeted: Bool = false
-    @State private var barWidth: CGFloat = 0
+    @State private var available: CGFloat = 0
+    @State private var settingsShown: Bool = false
 
     @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 20
     @ScaledMetric(relativeTo: .body) private var cellWidth: CGFloat = 64
     @ScaledMetric(relativeTo: .body) private var cellHeight: CGFloat = 52
 
+    private var style: ShellBarStyle { prefs.barStyle }
+
+    private var glyphSize: CGFloat { (iconSize * CGFloat(style.size.scale)).rounded() }
+
     var body: some View {
-        container {
+        let entries: [ShellBarEntry] = shown
+        let metrics: ShellBarMetrics = style.metrics(
+            available: Double(available), count: entries.count, cell: Double(cellWidth), height: Double(cellHeight))
+        let barShape: AnyShape = ShellBarShapes.bar(style, height: CGFloat(metrics.height))
+        return container {
             VStack(spacing: 0) {
-                glassCapsule(
-                    carousel
-                        .clipShape(Capsule())
-                )
-                .overlay {
-                    if targeted {
-                        Capsule().strokeBorder(fm.accent, lineWidth: 1.5)
-                            .allowsHitTesting(false)
+                carousel(entries, metrics: metrics)
+                    .shellBarBacked(style, shape: barShape)
+                    .overlay {
+                        if targeted {
+                            barShape.stroke(fm.accent, lineWidth: 1.5)
+                                .allowsHitTesting(false)
+                        }
                     }
-                }
-                .onDrop(of: [.text], delegate: drop(nil, isTargeted: $targeted))
-                .frame(maxWidth: .infinity)
-                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(ShellDock.barSpace)).minY }) {
-                    (top: CGFloat) in
-                    onCapsuleTop(top)
-                }
+                    .onDrop(of: [.text], delegate: drop(nil, isTargeted: $targeted))
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(ShellDock.barSpace)).minY }) {
+                        (top: CGFloat) in
+                        onCapsuleTop(top)
+                    }
+            }
+            .frame(maxWidth: .infinity)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { (width: CGFloat) in
+                available = width
             }
         }
         .padding(.horizontal, FmSpace.x3)
@@ -468,6 +501,9 @@ struct ShellBottomBar: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("shell-bottom-bar")
         .shellBarNaming($naming, prefs: prefs)
+        .sheet(isPresented: $settingsShown) {
+            ShellBarSettingsSheet(prefs: prefs)
+        }
     }
 
     @MainActor static func run(_ item: ShellBarItem, prefs: ShellBarPrefs, reduceMotion: Bool) {
@@ -496,21 +532,37 @@ struct ShellBottomBar: View {
         prefs.entries(landingItems)
     }
 
-    private var carousel: some View {
-        ScrollViewReader { (proxy: ScrollViewProxy) in
+    private var heat: [String: Double] {
+        guard style.highlightFrequent else { return [:] }
+        let ids: [String] = items.map(\.id)
+        var result: [String: Double] = [:]
+        for id in ids {
+            let level: Double = ShellBarOrder.heat(id, uses: prefs.uses, among: ids)
+            if level > 0 {
+                result[id] = level
+            }
+        }
+        return result
+    }
+
+    private func carousel(_ entries: [ShellBarEntry], metrics: ShellBarMetrics) -> some View {
+        let warmth: [String: Double] = heat
+        return ScrollViewReader { (proxy: ScrollViewProxy) in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(shown) { (entry: ShellBarEntry) in
-                        slot(entry)
-                            .id(entry.id)
+                HStack(spacing: CGFloat(metrics.gap)) {
+                    ForEach(entries) { (entry: ShellBarEntry) in
+                        slot(
+                            entry, metrics: metrics, first: entry.id == entries.first?.id,
+                            last: entry.id == entries.last?.id, heat: warmth
+                        )
+                        .id(entry.id)
                     }
                 }
-                .padding(4)
-            }
-            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { (width: CGFloat) in
-                barWidth = width
+                .padding(CGFloat(metrics.padding))
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .scrollClipDisabled(style.shape.separate && !metrics.scrolls)
+            .frame(width: style.width == .fit ? CGFloat(metrics.width) : nil)
             .onChange(of: selectedId) { (_: String?, next: String?) in
                 guard let next = next else { return }
                 withAnimation(.snappy) {
@@ -527,42 +579,54 @@ struct ShellBottomBar: View {
         .accessibilityIdentifier("shell-bottom-carousel")
     }
 
-    private var slotWidth: CGFloat {
-        let count: CGFloat = CGFloat(max(1, shown.count))
-        guard barWidth > 0 else { return cellWidth }
-        return max(44, min(cellWidth, (barWidth - 8 - 2 * (count - 1)) / count))
-    }
-
     private var selectedId: String? {
         guard let item = items.first(where: { $0.selected }) else { return nil }
         return shown.first { $0.contains(item.id) }?.id
     }
 
-    @ViewBuilder private func slot(_ entry: ShellBarEntry) -> some View {
+    @ViewBuilder private func slot(
+        _ entry: ShellBarEntry, metrics: ShellBarMetrics, first: Bool, last: Bool, heat: [String: Double]
+    ) -> some View {
+        let side: CGFloat = CGFloat(metrics.height)
+        let width: CGFloat = CGFloat(metrics.slot)
+        let shape: AnyShape = ShellBarShapes.cell(style, side: side, first: first, last: last)
         switch entry.slot {
         case let .item(item):
-            cell(item, shape: selectionShape(entry.id))
+            cell(item, shape: shape, width: width, height: side, heat: heat[item.id] ?? 0)
                 .contextMenu {
                     ShellBarItemMenu(
                         item: item, items: items, prefs: prefs,
                         onName: { (next: ShellBarNaming) in naming = next }, onPackage: onPackage)
+                    Section {
+                        settingsButton
+                    }
                 }
                 .onDrag {
                     prefs.drag = ShellBarDrag(id: item.id, fromBar: true)
                     return NSItemProvider(object: item.id as NSString)
                 } preview: {
-                    ShellBarCellLabel(item: item, iconSize: iconSize)
-                        .frame(width: slotWidth, height: cellHeight)
+                    ShellBarCellLabel(item: item, iconSize: glyphSize, look: style)
+                        .frame(width: width, height: side)
                         .background(Capsule().fill(fm.bgOverlay))
                 }
                 .onDrop(of: [.text], delegate: drop(entry.id, isTargeted: nil))
         case let .folder(folder, members):
             ShellBarFolderCell(
-                folder: folder, members: members, items: items, prefs: prefs, iconSize: iconSize,
-                cellWidth: slotWidth, cellHeight: cellHeight, shape: selectionShape(entry.id),
-                onName: { (next: ShellBarNaming) in naming = next }, onPackage: onPackage)
+                folder: folder, members: members, items: items, prefs: prefs, iconSize: glyphSize,
+                cellWidth: width, cellHeight: side, shape: shape, look: style,
+                onName: { (next: ShellBarNaming) in naming = next }, onPackage: onPackage,
+                onSettings: { settingsShown = true })
                 .onDrop(of: [.text], delegate: drop(entry.id, isTargeted: nil))
         }
+    }
+
+    private var settingsButton: some View {
+        Button {
+            settingsShown = true
+        } label: {
+            SwiftUI.Label("Bottom bar settings…", systemImage: "slider.horizontal.3")
+        }
+        .accessibilityIdentifier("shell-bar-open-settings")
     }
 
     private func drop(_ target: String?, isTargeted: Binding<Bool>?) -> ShellBarDropDelegate {
@@ -601,29 +665,17 @@ struct ShellBottomBar: View {
 
     static let innerRadius: CGFloat = 10
 
-    private func selectionShape(_ id: String) -> UnevenRoundedRectangle {
-        let outer: CGFloat = cellHeight / 2
-        let inner: CGFloat = ShellBottomBar.innerRadius
-        let leading: CGFloat = shown.first?.id == id ? outer : inner
-        let trailing: CGFloat = shown.last?.id == id ? outer : inner
-        return UnevenRoundedRectangle(
-            topLeadingRadius: leading, bottomLeadingRadius: leading, bottomTrailingRadius: trailing,
-            topTrailingRadius: trailing, style: .continuous)
-    }
-
-    private func cell(_ item: ShellBarItem, shape: UnevenRoundedRectangle) -> some View {
+    private func cell(_ item: ShellBarItem, shape: AnyShape, width: CGFloat, height: CGFloat, heat: Double)
+        -> some View
+    {
         Button {
             FmHaptics.selection()
             prefs.drag = nil
             ShellBottomBar.run(item, prefs: prefs, reduceMotion: reduceMotion)
         } label: {
-            ShellBarCellLabel(item: item, iconSize: iconSize)
-                .frame(width: slotWidth, height: cellHeight)
-                .background {
-                    if item.selected {
-                        shape.fill(fm.accent.opacity(0.14))
-                    }
-                }
+            ShellBarCellLabel(item: item, iconSize: glyphSize, showsCounts: style.showCounts, look: style, heat: heat)
+                .frame(width: width, height: height)
+                .shellBarSlotChrome(shape, style: style, selected: item.selected)
                 .contentShape(shape)
         }
         .buttonStyle(ShellBarButtonStyle())
@@ -649,7 +701,7 @@ struct ShellBottomBar: View {
     @ViewBuilder private func container<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: FmSpace.x3) {
+            GlassEffectContainer(spacing: style.shape.separate ? 0 : FmSpace.x3) {
                 content()
             }
         } else {
@@ -658,25 +710,6 @@ struct ShellBottomBar: View {
         #else
         content()
         #endif
-    }
-
-    @ViewBuilder private func glassCapsule<Content: View>(_ content: Content) -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Capsule())
-        } else {
-            materialCapsule(content)
-        }
-        #else
-        materialCapsule(content)
-        #endif
-    }
-
-    private func materialCapsule<Content: View>(_ content: Content) -> some View {
-        content
-            .background(Capsule().fill(.ultraThinMaterial))
-            .overlay(Capsule().strokeBorder(fm.border.opacity(0.6), lineWidth: 0.5))
-            .shadow(color: Color.black.opacity(0.12), radius: 12, y: 4)
     }
 }
 
@@ -689,22 +722,39 @@ struct ShellBarCellLabel: View {
     var spacing: CGFloat = 3
     var minimumScale: CGFloat = 0.75
     var pillCounts: Bool = false
+    var look: ShellBarStyle = ShellBarStyle()
+    var heat: Double = 0
 
     private var badgeText: String {
         showsCounts ? ShellBottomBar.countText(item.badge) : ShellBottomBar.badgeText(item.badge)
     }
 
+    private var tiled: Bool { look.icons == .tiles }
+
+    private var tileSide: CGFloat { (iconSize * 1.5).rounded() }
+
+    private var glyphHeight: CGFloat { tiled ? tileSide : iconSize + 4 }
+
+    private var activity: Bool { look.showActivity }
+
     var body: some View {
         VStack(spacing: spacing) {
-            Image(systemName: item.symbol)
-                .font(.system(size: iconSize, weight: item.selected ? .semibold : .regular))
-                .foregroundStyle(item.selected || item.active ? fm.accent : fm.textPrimary)
-                .symbolEffect(.bounce, value: item.pulse)
-                .frame(height: iconSize + 4)
+            glyph
+                .frame(height: glyphHeight)
                 .background {
-                    if item.active {
-                        ShellActivityHalo(size: iconSize + 10)
+                    if item.active && activity {
+                        ShellActivityHalo(size: (tiled ? tileSide : iconSize) + 10)
                             .transition(.scale.combined(with: .opacity))
+                    } else if heat > 0 {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [fm.accent.opacity(0.1 + 0.3 * heat), fm.accent.opacity(0)],
+                                    center: .center, startRadius: 0, endRadius: iconSize * (0.8 + 0.3 * CGFloat(heat)))
+                            )
+                            .frame(width: iconSize * 2.2, height: iconSize * 2.2)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
                 }
                 .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { (frame: CGRect) in
@@ -737,19 +787,68 @@ struct ShellBarCellLabel: View {
                     }
                 }
                 .overlay(alignment: .topLeading) {
-                    if item.live > 0 {
+                    if item.live > 0 && activity {
                         ShellHeartbeatCount(count: item.live)
                             .alignmentGuide(.leading) { (d: ViewDimensions) in d[.trailing] }
                             .offset(x: 2, y: -6)
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
-            Text(item.title)
-                .font(.system(size: 10, weight: item.selected ? .semibold : .medium))
-                .foregroundStyle(item.selected ? fm.accent : fm.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(minimumScale)
+            if look.labels.shows(selected: item.selected) {
+                Text(item.title)
+                    .font(.system(size: labelSize, weight: item.selected ? .semibold : .medium))
+                    .foregroundStyle(item.selected ? fm.accent : fm.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(minimumScale)
+                    .transition(.opacity)
+            }
         }
+        .shellBarLift(!look.shape.backed, dark: fm.dark)
+    }
+
+    private var labelSize: CGFloat { (10 * CGFloat(look.size.scale)).rounded() }
+
+    private var glyphColor: Color {
+        item.selected || item.active || look.icons == .accent ? fm.accent : fm.textPrimary
+    }
+
+    private var symbol: some View {
+        Image(systemName: item.symbol)
+            .font(.system(size: tiled ? iconSize * 0.82 : iconSize, weight: item.selected ? .semibold : .regular))
+            .symbolVariant(look.icons == .filled ? .fill : .none)
+            .foregroundStyle(glyphColor)
+            .symbolEffect(.bounce, value: item.pulse)
+    }
+
+    @ViewBuilder private var glyph: some View {
+        if tiled {
+            symbol
+                .frame(width: tileSide, height: tileSide)
+                .background(tile)
+        } else {
+            symbol
+        }
+    }
+
+    private var tile: some View {
+        let shape: RoundedRectangle = RoundedRectangle(cornerRadius: tileSide * 0.3, style: .continuous)
+        let raised: Color = fm.dark ? fm.bgElevated : fm.bgRaised
+        return shape
+            .fill(LinearGradient(colors: [raised, fm.bgOverlay], startPoint: .top, endPoint: .bottom))
+            .overlay {
+                if item.selected {
+                    shape.fill(fm.accent.opacity(0.16))
+                }
+            }
+            .overlay {
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(fm.dark ? 0.16 : 0.9), Color.white.opacity(fm.dark ? 0.03 : 0.2)],
+                        startPoint: .top, endPoint: .bottom),
+                    lineWidth: 0.75)
+            }
+            .shadow(color: Color.black.opacity(fm.dark ? 0.45 : 0.1), radius: 2.5, y: 1.5)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder private func countMark(_ text: String, value: Int, unread: Bool) -> some View {

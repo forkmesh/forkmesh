@@ -170,6 +170,25 @@ final class ShellBarLayoutTests: XCTestCase {
         XCTAssertFalse(layout.inBar("settings", items: items, ranking: [], keep: ["home"]) { $0 })
     }
 
+    func testTheBarLimitIsAChoice() {
+        var layout = ShellBarLayout()
+        let four: [String] = layout.barSlots(items, ranking: [], keep: ["home"], limit: 4) { $0 }.map {
+            ShellBarLayout.slotId($0) { $0 }
+        }
+        XCTAssertEqual(four, ["home", "Agents", "Inbox", "Repos"])
+        XCTAssertTrue(layout.barIsFull(items, ranking: [], keep: ["home"], limit: 4) { $0 })
+        XCTAssertEqual(layout.barSlots(items, ranking: [], keep: ["home"], limit: 8) { $0 }.count, items.count)
+        XCTAssertFalse(layout.barIsFull(Array(items.prefix(7)), ranking: [], keep: ["home"], limit: 8) { $0 })
+        XCTAssertTrue(layout.inBar("settings", items: items, ranking: [], keep: ["home"], limit: 8) { $0 })
+        XCTAssertFalse(layout.putInBar("Chat", items: items, ranking: [], keep: ["home"], limit: 4) { $0 })
+        XCTAssertTrue(layout.putInBar("Chat", at: "Inbox", items: items, ranking: [], keep: ["home"], limit: 4) { $0 })
+        let swapped: [String] = layout.barSlots(items, ranking: [], keep: ["home"], limit: 4) { $0 }.map {
+            ShellBarLayout.slotId($0) { $0 }
+        }
+        XCTAssertEqual(swapped, ["home", "Agents", "Chat", "Repos"])
+        XCTAssertEqual(layout.barSlots(items, ranking: [], keep: ["home"], limit: 0) { $0 }.count, 1)
+    }
+
     func testAnOldSavedLayoutWithoutABarStillLoads() {
         let store = InMemoryKeyValueStore()
         store.set(#"{"hidden":["Chat"],"folders":[],"order":["Inbox"]}"#, forKey: ShellBarLayout.key)
