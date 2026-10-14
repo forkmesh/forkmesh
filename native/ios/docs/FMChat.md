@@ -190,7 +190,15 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   `@everyone`) tags outside code; a warning above 6 other people.
 - **Everyone channels** (`ChatEveryone`): `kind:"everyone"` office rooms, the relay
   `#general` shown as "World", and the member directory from
-  `GET /api/chat/channels/<general>/members`.
+  `GET /api/chat/channels/<general>/members`. `ChatHub.canLeaveChannel(_:)` is false for
+  the fixed everyone rooms and World, so they never offer a local Leave action; ordinary
+  channels do.
+- **Channel list on open**: the list is saved on the phone and shown as soon as chat opens,
+  then refreshed from the server, retrying if the first load fails.
+- **People**: the Online tile opens everyone online; a name opens the DM with that account, an
+  avatar opens the person card (`ChatPersonSheet`: picture, presence, status, bio, local time,
+  Message button, profile link). Local time uses the profile's time zone, else the time zone the
+  person's phone shares in chat (`ChatLocalTime`).
 
 ## Direct message delivery
 
@@ -209,12 +217,15 @@ messages"). On iOS they live in `DirectMessageService`:
   new peer key appears, entries not wrapped for every known peer are resealed and resent
   (`resend: true`), and the old refs are sent in `forkmesh-superseded` frames.
 - **Dedupe.** A resend keeps the message id, so receivers drop the second copy.
+- **Unconfirmed sends.** A DM the server has not confirmed within a few seconds is sent again
+  over a fresh connection, so it does not stay at "Sending".
 
 ### Receipts, deletes, reactions and replies
 
 - **Receipt marks** (`ChatReceipt`: `sending`, `sent`, `delivered`, `read`; only moves
   forward). DMs: `forkmesh-recipients` makes a ref `sent`, `forkmesh-delivered` `delivered`,
-  `forkmesh-read` `read`. Office rooms reach `sent` only. Drawn by `ChatReceiptMark`.
+  `forkmesh-read` `read`. Office rooms reach `sent` only. Drawn by `ChatReceiptMark` inside
+  the sender's own bubble.
 - **Delete for everyone**: a sealed `delete` frame, removal from the outbox, and a
   `forkmesh-superseded` for the original ref. A received delete is honoured only from the
   target's sender; a delete arriving before its target is held (64 per room). Removed ids are
@@ -292,7 +303,8 @@ messages"). Core (`Direct/ViewOnceMedia.swift`):
 
 App (`Features/Chat/Messages/`): capture with `AVCaptureSession`/`AVAssetWriter` (H.264 480x640
 about 1 Mbit/s, AAC 64 kbit/s, 60 s) or `AVAudioRecorder` (AAC 32 kbit/s, 120 s), review before
-sending, protected temporary files deleted on send, discard or close. The viewer decrypts in
+sending (a button saves the recorded video to Photos), protected temporary files deleted on
+send, discard or close. The viewer decrypts in
 memory, plays without share controls, consumes as playback starts, blanks video while the screen
 is captured and notes screenshots. The sender can unsend an unopened message.
 

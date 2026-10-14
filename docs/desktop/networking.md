@@ -162,7 +162,7 @@ Passwords are only a fallback and travel via environment or stdin, never argv.
 Network → Hosts lists the app's cloud agent runners (`hostsRunnersTable`,
 `refreshRunners()`, `src/RunnerListView.*`) from `GET /api/runners`, with
 status, scope, last check-in and per-provider sign-in state, and buttons that
-open the runner sign-in dialog ([../RUNNERS.md](../RUNNERS.md#desktop-app-integration)).
+open the runner sign-in dialog ([../RUNNERS.md](../RUNNERS.md#provider-credentials)).
 Runners are never added to the saved hosts.
 
 ### Add core node

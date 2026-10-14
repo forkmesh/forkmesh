@@ -126,19 +126,9 @@ struct MessagesBubbleRow: View {
                 .padding(mine ? .trailing : .leading, group && !mine ? 46 : 12)
                 .accessibilityHint("Opens the replies")
             }
-            if let receipt = bubble.receipt {
-                HStack(spacing: 4) {
-                    if let label = OfficeFrames.recipientsLabel(message.recipients),
-                        let description = OfficeFrames.recipientsDescription(message.recipients)
-                    {
-                        Text(label)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(colors.meta)
-                            .accessibilityLabel(description)
-                    }
-                    ChatReceiptMark(receipt: receipt, muted: colors.meta, background: colors.canvas)
-                }
-                .padding(.trailing, 12)
+            if receiptPlace == .below {
+                receiptBadge(tint: colors.meta, fill: colors.canvas, accent: MessagesColors.blue)
+                    .padding(.trailing, 12)
             }
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
@@ -156,9 +146,57 @@ struct MessagesBubbleRow: View {
         }
     }
 
+    private enum ReceiptPlace {
+        case none, text, photo, shell, below
+    }
+
+    private var receiptPlace: ReceiptPlace {
+        guard bubble.receipt != nil else { return .none }
+        if !row.text.isEmpty { return bubble.jumbo ? .below : .text }
+        guard let attachment = row.attachment else { return message.fileName.isEmpty ? .below : .shell }
+        if attachment.kind == .image { return FmImageCache.image(attachment.data) == nil ? .below : .photo }
+        return .shell
+    }
+
+    @ViewBuilder private func receiptBadge(tint: Color, fill: Color, accent: Color) -> some View {
+        if let receipt = bubble.receipt {
+            HStack(spacing: 3) {
+                if let label = OfficeFrames.recipientsLabel(message.recipients),
+                    let description = OfficeFrames.recipientsDescription(message.recipients)
+                {
+                    Text(label)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(tint)
+                        .accessibilityLabel(description)
+                }
+                ChatReceiptMark(receipt: receipt, muted: tint, background: fill, accent: accent)
+            }
+        }
+    }
+
+    private var inBubbleReceipt: some View {
+        receiptBadge(
+            tint: mine ? colors.sentText.opacity(0.8) : colors.meta, fill: mine ? colors.sentFill : colors.receivedFill,
+            accent: mine ? colors.sentText : MessagesColors.blue)
+            .padding(.bottom, 1)
+    }
+
+    @ViewBuilder private func withReceipt<Inner: View>(_ place: ReceiptPlace, @ViewBuilder _ inner: () -> Inner) -> some View {
+        if receiptPlace == place {
+            HStack(alignment: .bottom, spacing: 6) {
+                inner()
+                inBubbleReceipt
+            }
+        } else {
+            inner()
+        }
+    }
+
     @ViewBuilder private var avatarSlot: some View {
         if bubble.position.hasTail {
             ChatSenderAvatar(message: message)
+                .onTapGesture { actions.onProfile?() }
+                .accessibilityAddTraits(actions.onProfile == nil ? [] : .isButton)
         } else {
             Color.clear.frame(width: 28, height: 1)
         }
@@ -170,11 +208,17 @@ struct MessagesBubbleRow: View {
             if let attachment, attachment.kind == .image {
                 photo(attachment)
             } else if let attachment, attachment.kind == .audio {
-                bubbleShell { MessagesAudioBubble(attachment: attachment, tint: mine ? colors.sentText : colors.receivedText) }
+                bubbleShell {
+                    withReceipt(.shell) {
+                        MessagesAudioBubble(attachment: attachment, tint: mine ? colors.sentText : colors.receivedText)
+                    }
+                }
             } else if !message.fileName.isEmpty {
                 bubbleShell {
-                    ChatAttachmentView(fileName: message.fileName, attachment: attachment)
-                        .tint(mine ? colors.sentText : MessagesColors.blue)
+                    withReceipt(.shell) {
+                        ChatAttachmentView(fileName: message.fileName, attachment: attachment)
+                            .tint(mine ? colors.sentText : MessagesColors.blue)
+                    }
                 }
             }
             if !row.text.isEmpty {
@@ -184,7 +228,11 @@ struct MessagesBubbleRow: View {
                         .padding(.horizontal, 6)
                         .accessibilityLabel(row.text)
                 } else {
-                    bubbleShell { MessagesBubbleText(text: row.text, color: mine ? colors.sentText : colors.receivedText) }
+                    bubbleShell {
+                        withReceipt(.text) {
+                            MessagesBubbleText(text: row.text, color: mine ? colors.sentText : colors.receivedText)
+                        }
+                    }
                 }
             }
             if let app = message.app, !app.blocks.isEmpty {
@@ -218,6 +266,15 @@ struct MessagesBubbleRow: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+                    .overlay(alignment: .bottomTrailing) {
+                        if receiptPlace == .photo {
+                            receiptBadge(tint: Color.white, fill: Color(white: 0.15), accent: Color.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.black.opacity(0.45)))
+                                .padding(8)
+                        }
+                    }
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Photo")
