@@ -67,6 +67,7 @@ struct ShellHomeSettingsForm: View {
             sortSection
             categorySection
             highlightSection
+            barSection
             resetSection
         }
         .navigationTitle("Home screen")
@@ -188,6 +189,20 @@ struct ShellHomeSettingsForm: View {
             Text("Highlights")
         } footer: {
             Text("Frequently used icons get a soft glow that grows with use. Unread badges always show, even with counts off.")
+        }
+    }
+
+    private var barSection: some View {
+        Section {
+            NavigationLink {
+                ShellBarSettingsForm(prefs: prefs)
+                    .shellPageClearance()
+            } label: {
+                SwiftUI.Label("Bottom bar", systemImage: "dock.rectangle")
+            }
+            .accessibilityIdentifier("shell-home-bar-settings-link")
+        } footer: {
+            Text("Shape, glass, icon style and size, labels and how the selected icon is marked.")
         }
     }
 

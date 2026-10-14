@@ -10926,6 +10926,8 @@ private:
     QTimer *m_celebrationBorderTimer = nullptr;
     bool m_noticeOwnsLoggedError = false;
     QString m_lastLocalOperationError;
+    QString m_lastOperationNotice;
+    quint64 m_operationNoticeSerial = 0;
     bool m_inLoggedErrorAlert = false;    // re-entrancy guard for alertOnLoggedError
     bool m_muteLoggedErrorAlert = false;
     QString m_lastLoggedErrorText;        // last error alerted on, for repeat de-duplication

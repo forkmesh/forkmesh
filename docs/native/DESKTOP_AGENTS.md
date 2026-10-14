@@ -1097,6 +1097,25 @@ branch name has room. The branch line no longer repeats above the first file.
 `MergeCleanupSheet` is kept for the Worktrees screen and the desktop session
 card.
 
+**A failed merge says why on the phone (2026-10-14).** A merge the desktop
+started but could not finish answered only `merge_failed`, which the phones
+showed as "The merge did not finish. The desktop's repository page says why.",
+so the user had to go to the desktop to read the reason. The desktop now
+sends that reason as the error's `message`: `flashMessageImpl` keeps the text
+of the last error or local-operation notice (`m_lastOperationNotice`) and
+counts them (`m_operationNoticeSerial`), and the `agentops.merge` handler sends
+the last one if a notice came after it started the merge. Local-operation
+notices count too because the most common refusal, "Can't merge … yet: the
+checkout has uncommitted changes …", is an info notice of that kind rather
+than an error. `AgentOpsClient.describe(error)` on iOS and Android then shows
+"The merge did not finish." followed by the desktop's words
+(`ControlErrorText.withReason`), in the same strip, sheet or dialog as
+before. With no message (an older desktop, or a merge that stopped before
+any notice) the phones keep the old text. Both the LAN and the relay
+connection already carried `message`. Tested by
+`RemoteViewModelsTests.testAFailedMergeSaysWhyWhenTheDesktopDoes` (iOS) and
+`AgentOpsTest.testAFailedMergeSaysWhyWhenTheDesktopDoes` (Android).
+
 Approval, merge and delete are confirmation-token operations checked and
 logged by the desktop. Approving a tool request also requires device
 authentication on the phone; denying does not require it because denial grants

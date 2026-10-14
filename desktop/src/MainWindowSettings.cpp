@@ -11079,6 +11079,10 @@ void MainWindow::flashMessageImpl(const QString &text, bool error,
     const bool unsolicited = route == NoticeRoute::Ping;
     if (error && kind == forkmesh::kLocalOperationNoticeKind)
         m_lastLocalOperationError = text.simplified();
+    if ((error || kind == forkmesh::kLocalOperationNoticeKind) && !text.trimmed().isEmpty()) {
+        m_lastOperationNotice = text.simplified();
+        ++m_operationNoticeSerial;
+    }
     if (kind != QLatin1String("search")) {
         m_noticeOwnsLoggedError = true;
         logSystemFrom(text, forkmesh::logSourceRelativePath(sourceFile),
