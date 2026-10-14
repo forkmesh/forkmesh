@@ -95,14 +95,18 @@ class FakeRuntime:
 
         async def d1_run(_env, sql, *args):
             if sql.lstrip().startswith("INSERT INTO notifications"):
-                dedupe_bi, recipient_bi, ts, read_at, data = args
+                dedupe_bi, recipient_bi, ts, read_at, data, content_bi = args
                 row = runtime.rows.get(dedupe_bi)
                 if row is None:
                     runtime.rows[dedupe_bi] = {
                         "recipient_bi": recipient_bi, "ts": ts,
-                        "read_at": read_at, "data": data}
-                else:  # ON CONFLICT keeps read_at
-                    row.update(recipient_bi=recipient_bi, ts=ts, data=data)
+                        "read_at": read_at, "data": data,
+                        "content_bi": content_bi}
+                elif row.get("content_bi") == content_bi:
+                    row.update(recipient_bi=recipient_bi)
+                else:
+                    row.update(recipient_bi=recipient_bi, ts=ts, data=data,
+                               content_bi=content_bi)
 
         async def d1_all(_env, sql, *args):
             if "FROM org_repos" in sql:
@@ -132,7 +136,7 @@ class FakeRuntime:
             return set(runtime.muted.get(recipient, ())), False
 
         self.ns = {
-            "re": re, "quote": quote,
+            "re": re, "quote": quote, "json": json,
             "Date": types.SimpleNamespace(now=lambda: runtime.now),
             "d1_run": d1_run, "d1_all": d1_all,
             "blind_index": blind_index, "encrypt_row": encrypt_row,

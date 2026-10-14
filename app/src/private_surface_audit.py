@@ -76,7 +76,7 @@ DECLARED_COLUMNS = {
     "repo_agents": {"repo_bi", "agent_id", "updated_at", "data"},
     "agent_prompts": {"id", "repo_bi", "agent_id", "queued_at", "data"},
     "notifications": {
-        "dedupe_bi", "recipient_bi", "ts", "read_at", "data",
+        "dedupe_bi", "recipient_bi", "ts", "read_at", "data", "content_bi",
     },
     "thread_subscriptions": {
         "thread_bi", "subscriber_bi", "ts", "data",

@@ -245,7 +245,7 @@ def _notification_db():
         CREATE TABLE notifications (
             dedupe_bi TEXT PRIMARY KEY, recipient_bi TEXT NOT NULL,
             ts INTEGER NOT NULL, read_at INTEGER NOT NULL DEFAULT 0,
-            data TEXT NOT NULL);
+            data TEXT NOT NULL, content_bi TEXT NOT NULL DEFAULT '');
         CREATE INDEX idx_notifications_recipient_ts
             ON notifications(recipient_bi, ts);
     """)
@@ -270,6 +270,7 @@ def _notification_writer(db, memo):
         return True
 
     ns = _load(ENTRY_TEXT, ["enqueue_notification", "_notification_trim_due"], {
+        "json": json,
         "ensure_schema": noop,
         "clean_string": lambda value, size: str(value or "")[:size],
         "MAX_NODE_NAME": 40,
