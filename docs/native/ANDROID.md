@@ -1054,6 +1054,12 @@ memory-only on Android. States arrive from the relay's `forkmesh-media`
 frame and from one `GET media?ids=` read per conversation open (after
 `forkmesh-history-end` and on select), which also retries a `consume` that
 failed. The sender can unsend an unopened message (`DELETE`).
+Because that history is memory-only, the `forkmesh-received` receipt for a
+view-once frame from the other person is held (by message id, every ref of
+it, live or replayed) until the message is opened (`consume` succeeded or
+answered 410), expired or withdrawn, from the viewer, the relay frame or the
+status read; until then the relay keeps the frame, so after a restart it is
+replayed and the status read corrects its state, as the web's held receipts.
 
 **Filter seam.** `MessageCaptureFilters` (`face`, `voice` stages, each
 `process(file, mime)`) is applied to the finished recording before upload,

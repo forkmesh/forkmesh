@@ -393,6 +393,61 @@ class ViewOnceMediaTest {
         dm.closeAll()
     }
 
+    private fun receipts(socket: FakeOfficeSocket): List<Any?> =
+        socket.sent.map { Json.parseObject(it) }.filter { it["kind"] == "forkmesh-received" }.flatMap { it["refs"] as List<*> }
+
+    fun testReceiptIsHeldUntilOpenedExpiredOrWithdrawn() {
+        val server = prepared(FakeMediaServer("sender"))
+        val key = ViewOnceCrypto.newKey()
+        val iv = ViewOnceCrypto.newIv()
+        val sealedMedia = ViewOnceCrypto.encrypt(ByteArray(3_000) { 7 }, key, iv)
+        val playId = ViewOnceClient(server).upload(conversationId, ViewOnceKind.VOICE, sealedMedia, 2_000)
+        server.role = "recipient"
+        val expireId = "3".repeat(32)
+        val withdrawId = "4".repeat(32)
+        server.items[expireId] = FakeMediaServer.Item("voice", 100, 1).also { it.state = "ready" }
+        server.items[withdrawId] = FakeMediaServer.Item("voice", 100, 1).also { it.state = "ready" }
+        val connector = FakeOfficeConnector()
+        val store = MemorySecretStore()
+        val dm = service(server, connector, store)
+        dm.refresh()
+        expect(dm.open(conversation))
+        val socket = connector.last!!
+        val peer = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
+        peer.acceptKeyFrame(RoomSeal.loadOrCreate(room, storageScope = "direct|app.forkmesh.com", secureStore = store).keyFrame())
+        fun chat(id: String, media: ViewOnceMedia?) = mapOf(
+            "type" to "chat", "id" to id, "senderId" to "pat-node", "sender" to "pat",
+            "channel" to conversation, "text" to "plain $id", "ts" to 1L,
+        ) + (if (media != null) mapOf("viewOnce" to ViewOnceCodec.field(media)) else emptyMap())
+        val playRef = "a".repeat(40)
+        val expireRef = "b".repeat(40)
+        val withdrawRef = "c".repeat(40)
+        val textRef = "e".repeat(40)
+        val replayRef = "f".repeat(40)
+        socket.onText(Json.stringify(crypto.encrypt(peer.seal(chat("v-play", ViewOnceMedia(ViewOnceKind.VOICE, playId, key, iv, "audio/mp4", 2_000, sealedMedia.size.toLong(), 1)))) + ("ref" to playRef)))
+        socket.onText(Json.stringify(crypto.encrypt(peer.seal(chat("v-expire", ViewOnceMedia(ViewOnceKind.VOICE, expireId, key, iv, "audio/mp4", 1_000, 100, 1)))) + ("ref" to expireRef)))
+        socket.onText(Json.stringify(crypto.encrypt(peer.seal(chat("v-withdraw", ViewOnceMedia(ViewOnceKind.VOICE, withdrawId, key, iv, "audio/mp4", 1_000, 100, 1)))) + ("ref" to withdrawRef) + ("historyReplay" to true)))
+        socket.onText(Json.stringify(crypto.encrypt(peer.seal(chat("t-1", null))) + ("ref" to textRef)))
+        socket.onText("""{"kind":"forkmesh-history-end","v":1}""")
+        assertEq(listOf(textRef), receipts(socket))
+        assertEq(3, dm.heldReceiptCount())
+        socket.onText(Json.stringify(crypto.encrypt(peer.seal(chat("v-play", ViewOnceMedia(ViewOnceKind.VOICE, playId, key, iv, "audio/mp4", 2_000, sealedMedia.size.toLong(), 1)))) + ("ref" to replayRef) + ("resend" to true)))
+        assertEq(listOf(textRef), receipts(socket))
+        dm.downloadViewOnce("v-play")
+        expect(dm.consumeViewOnce("v-play"))
+        assertEq(listOf(textRef, playRef, replayRef), receipts(socket))
+        socket.onText("""{"kind":"forkmesh-media","v":1,"id":"$expireId","state":"expired"}""")
+        assertEq(listOf(textRef, playRef, replayRef, expireRef), receipts(socket))
+        server.items[withdrawId]!!.state = "withdrawn"
+        dm.refreshViewOnce(conversation)
+        assertEq(listOf(textRef, playRef, replayRef, expireRef, withdrawRef), receipts(socket))
+        assertEq(0, dm.heldReceiptCount())
+        val lateRef = "9".repeat(40)
+        socket.onText(Json.stringify(crypto.encrypt(peer.seal(chat("v-expire", ViewOnceMedia(ViewOnceKind.VOICE, expireId, key, iv, "audio/mp4", 1_000, 100, 1)))) + ("ref" to lateRef)))
+        assertEq(lateRef, receipts(socket).last())
+        dm.closeAll()
+    }
+
     fun testCaptureFiltersArePassThrough() {
         val file = File("recording.mp4")
         expect(PassThroughCaptureFilters.apply(ViewOnceKind.VIDEO, file, "video/mp4") === file)

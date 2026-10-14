@@ -220,6 +220,7 @@ class DirectMessageService(
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val serverCopies = HashMap<String, Int>()
     private val media = ViewOnceClient(api)
+    private val heldReceipts = LinkedHashMap<String, Pair<String, LinkedHashSet<String>>>()
 
     val viewOnce = ViewOnceStore()
 
@@ -557,6 +558,10 @@ class DirectMessageService(
         val ref = DirectMessageFrames.relayRef(envelope)
         handle(plain, record, if (replay) null else holder)
         if (replay) noteOwn(holder, plain, ref, kids, envelope["notify"] == true)
+        if (ref.isNotEmpty() && holdReceipt(plain, holder.conversationId, ref)) {
+            if (learned) peerLearned(holder)
+            return
+        }
         if (ref.isNotEmpty()) {
             if (replay) {
                 synchronized(lock) { if (ref !in holder.replayRefs) holder.replayRefs.add(ref) }
@@ -782,9 +787,40 @@ class DirectMessageService(
         viewOnce.accept(message.id, message.conversation, parsed, message.self, message.timestamp)
     }
 
+    private fun holdReceipt(plain: Map<String, Any?>, conversationId: String, ref: String): Boolean {
+        if (jsonText(plain["type"]) != "chat") return false
+        val me = selfId()
+        if (me.isNotEmpty() && jsonText(plain["senderId"]) == me) return false
+        val parsed = ViewOnceCodec.parse(plain[ViewOnceCodec.FIELD]) ?: return false
+        val entry = viewOnce.byMedia(parsed.media) ?: return false
+        if (entry.self || (entry.state.terminal && !viewOnce.consumeDue(parsed.media))) return false
+        synchronized(lock) {
+            val held = heldReceipts.getOrPut(entry.messageId) { conversationId to LinkedHashSet() }
+            held.second.add(ref)
+            while (held.second.size > DirectMessageFrames.RECEIVED_REFS_PER_FRAME) held.second.remove(held.second.first())
+            while (heldReceipts.size > DirectMessageFrames.MAX_MESSAGES_PER_ROOM * 4) heldReceipts.remove(heldReceipts.keys.first())
+        }
+        return true
+    }
+
+    private fun releaseReceipt(messageId: String) {
+        val (holder, refs) = synchronized(lock) {
+            val held = heldReceipts[messageId] ?: return
+            val socket = sockets[held.first] ?: return
+            heldReceipts.remove(messageId)
+            socket to held.second.toList()
+        }
+        sendReceived(holder, refs)
+    }
+
+    fun heldReceiptCount(): Int = synchronized(lock) { heldReceipts.size }
+
     private fun applyViewOnceState(holder: RoomSocket?, mediaId: String, state: String) {
         val updated = viewOnce.update(mediaId, state) ?: return
-        if (updated.state.terminal) forgetViewOnceFrame(holder, mediaId)
+        if (updated.state.terminal) {
+            forgetViewOnceFrame(holder, mediaId)
+            releaseReceipt(updated.messageId)
+        }
         notifyListeners()
     }
 
@@ -868,7 +904,10 @@ class DirectMessageService(
         } catch (_: Exception) {
             false
         }
-        if (done) viewOnce.needsConsume(entry.mediaId, false)
+        if (done) {
+            viewOnce.needsConsume(entry.mediaId, false)
+            releaseReceipt(messageId)
+        }
         return done
     }
 
@@ -895,12 +934,16 @@ class DirectMessageService(
             if (viewOnce.consumeDue(mediaId)) {
                 if (state == "ready") {
                     viewOnce.byMedia(mediaId)?.let { entry ->
-                        if (runCatching { media.consume(conversationId, mediaId) }.isSuccess) viewOnce.needsConsume(mediaId, false)
+                        if (runCatching { media.consume(conversationId, mediaId) }.isSuccess) {
+                            viewOnce.needsConsume(mediaId, false)
+                            releaseReceipt(entry.messageId)
+                        }
                         if (entry.state != ViewOnceState.OPENED) viewOnce.mark(entry.messageId, ViewOnceState.OPENED)
                     }
                     continue
                 }
                 viewOnce.needsConsume(mediaId, false)
+                viewOnce.byMedia(mediaId)?.let { releaseReceipt(it.messageId) }
             }
             applyViewOnceState(null, mediaId, state)
         }
