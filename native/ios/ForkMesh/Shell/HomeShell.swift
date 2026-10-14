@@ -555,9 +555,7 @@ struct HomeShell: View {
             if page != nil || showsTopBar(router.selectedTab) {
                 topBar
             }
-            if settings?.project.hasInstance == false {
-                NoInstanceBanner(onChoose: { Services.get(SignInCoordinator.self)?.chooseInstance() })
-            } else {
+            if settings?.project.hasInstance != false {
                 FmConnectionBanner(state: offlineShown ? .offline : .connected, onRetry: { model.chat?.connect() })
             }
             if notice != nil {

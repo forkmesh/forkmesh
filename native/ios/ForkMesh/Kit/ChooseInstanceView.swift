@@ -70,25 +70,3 @@ struct ChooseInstanceView: View {
         .accessibilityIdentifier("choose-instance")
     }
 }
-
-struct NoInstanceBanner: View {
-    @Environment(\.fmPalette) private var fm
-    let onChoose: () -> Void
-
-    var body: some View {
-        HStack(spacing: FmSpace.x2) {
-            FmIcon("dns_outlined", size: 16, color: fm.textSecondary)
-            Text(AttachInstanceModel.bannerText)
-                .fmText(.bodySmall, color: fm.textSecondary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            FmTextButton("Choose instance", onPressed: onChoose)
-                .accessibilityIdentifier("no-instance-choose")
-        }
-        .padding(.leading, FmSpace.x4)
-        .padding(.trailing, FmSpace.x2)
-        .padding(.vertical, FmSpace.x1)
-        .background(fm.accentSubtle)
-        .accessibilityIdentifier("no-instance-banner")
-    }
-}
