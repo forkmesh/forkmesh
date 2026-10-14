@@ -13,7 +13,7 @@ public enum PackageGate {
         "repo-releases": "releases", "repo-actions": "actions", "repo-discussions": "discussions",
         "desktops": "desktops", "teammates": "special-agents", "shortcuts": "shortcuts", "hosts": "hosts",
         "network": "network", "coves": "coves", "localAI": "on-device-ai", "activity": "activity", "stats": "stats",
-        "orgs": "organizations", "world": "world",
+        "orgs": "organizations", "world": "world", "people": "people",
         "notes": "notes", "tasks": "tasks", "calendar": "calendar", "timers": "timers", "ledger": "ledger",
         "tour": "tour", "designSystem": "design-system", "status": "status-page", "speech": "speech",
         "glassesAlert": "glasses-alert", "vault": "vault", "calories": "calories", "steps": "steps", "water": "water",
@@ -40,7 +40,7 @@ public enum PackageGate {
         .competitors: "competitor", .ledger: "ledger",
         .vault: "vault", .coves: "coves", .cove: "coves", .calories: "calories", .steps: "steps", .water: "water",
         .sleep: "sleep", .sugarBreak: "sugar-break", .stretch: "stretch", .foodGuide: "food-guide", .speech: "speech",
-        .glassesAlert: "glasses-alert", .localAI: "on-device-ai", .activity: "activity",
+        .glassesAlert: "glasses-alert", .localAI: "on-device-ai", .activity: "activity", .people: "people",
         .stats: "stats", .status: "status-page", .orgs: "organizations", .org: "organizations", .tour: "tour",
     ]
 

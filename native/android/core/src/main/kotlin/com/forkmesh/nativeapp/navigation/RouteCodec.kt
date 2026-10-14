@@ -141,6 +141,7 @@ object RouteCodec {
             Route.Kind.Dm -> req("user")?.let(Route::Dm)
             Route.Kind.Discord -> req("guild")?.let { Route.Discord(it, s("channel")) }
             Route.Kind.Profile -> req("name")?.let(Route::Profile)
+            Route.Kind.People -> Route.People
             Route.Kind.Search -> Route.Search(s("q") ?: "", SearchScope.of(s("scope")) ?: SearchScope.Everything)
             Route.Kind.Notes -> Route.Notes
             Route.Kind.Note -> Route.Note(s("id") ?: "")

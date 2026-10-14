@@ -127,6 +127,12 @@ struct UsageMeterRow: View {
         return reset.isEmpty ? used : "\(used) · \(reset)"
     }
 
+    private var pace: String {
+        [window.periodLabel(nowMs: nowMs), window.paceLabel(nowMs: nowMs)]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -136,9 +142,63 @@ struct UsageMeterRow: View {
                 Text(caption)
                     .fmText(.labelSmall, color: fm.textSecondary)
             }
-            ProgressView(value: Double(window.usedPercent ?? 0), total: 100)
-                .tint(tint)
+            UsagePaceBar(
+                usedPercent: window.usedPercent ?? 0, tint: tint,
+                segments: window.elapsedFraction(nowMs: nowMs) == nil ? 1 : window.segments,
+                elapsed: window.elapsedFraction(nowMs: nowMs))
+            if !pace.isEmpty {
+                Text(pace)
+                    .fmText(.labelSmall, color: fm.textTertiary)
+            }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+struct UsagePaceBar: View {
+    @Environment(\.fmPalette) private var fm
+    let usedPercent: Int
+    let tint: Color
+    let segments: Int
+    let elapsed: Double?
+
+    private let barHeight: CGFloat = 6
+    private let gap: CGFloat = 2
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let count = max(1, segments)
+            let segmentWidth = max(0, (width - gap * CGFloat(count - 1)) / CGFloat(count))
+            let filled = width * CGFloat(min(max(usedPercent, 0), 100)) / 100
+            ZStack(alignment: .topLeading) {
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(fm.bgOverlay)
+                    Rectangle().fill(tint).frame(width: filled)
+                }
+                .frame(height: barHeight)
+                .mask(
+                    HStack(spacing: gap) {
+                        ForEach(0..<count, id: \.self) { _ in
+                            Rectangle().frame(width: segmentWidth, height: barHeight)
+                        }
+                    }
+                )
+                .clipShape(Capsule())
+                .offset(y: 4)
+                if let elapsed {
+                    Rectangle()
+                        .fill(fm.textPrimary)
+                        .frame(width: 1.5, height: 3)
+                        .offset(x: width * CGFloat(elapsed) - 0.75, y: 0)
+                    Rectangle()
+                        .fill(fm.textPrimary)
+                        .frame(width: 1.5, height: 3)
+                        .offset(x: width * CGFloat(elapsed) - 0.75, y: 4 + barHeight + 1)
+                }
+            }
+        }
+        .frame(height: barHeight + 8)
+        .accessibilityHidden(true)
     }
 }

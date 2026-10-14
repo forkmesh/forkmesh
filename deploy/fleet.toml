@@ -237,6 +237,16 @@ wg_ip = "10.77.0.3"
 wg_pubkey = "Ab8pL/fq7/2LiPVGedKusFdi7rr9aki9vFTT2zU+ax0="
 rqlite_id = "n3"
 
+[[nodes]]
+name = "n4"
+role = "core"
+label = "fmnext-core-4"
+instance_id = "d493c0e6-aaff-4259-a996-5eee9fbb887c"
+wg_ip = "10.77.0.4"
+wg_pubkey = "5+V9EYpw2A7JjF/5tQeX2o2cDHiiBgCHyu00dlXw73U="
+rqlite_id = "n4"
+rqlite_voter = false
+
 [[runners]]
 name = "r1"
 label = "fmnext-run-1"

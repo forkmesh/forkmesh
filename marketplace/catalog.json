@@ -113,6 +113,7 @@
     { "id": "stats", "version": "1.0.0", "manifest": "packages/stats/manifest.json" },
     { "id": "organizations", "version": "1.0.0", "manifest": "packages/organizations/manifest.json" },
     { "id": "world", "version": "1.0.0", "manifest": "packages/world/manifest.json" },
+    { "id": "people", "version": "1.0.0", "manifest": "packages/people/manifest.json" },
     { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" }
   ]
 }
