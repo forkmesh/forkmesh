@@ -108,8 +108,9 @@ runner, spending the teammate's Claude plan.
 - **One job user per account.** The installer creates `fmjob-<account>`
   (`fmjob-<first 19 characters>-<6 hex of SHA-256>` when the account name is
   longer than 26 characters, to fit the 32-character user name limit), with
-  its own home for the provider sign-in and its own work root
-  `<state>/jobs/fmjob-<account>` for stored accounts and session homes.
+  its own home for the provider sign-in and its own work root for stored
+  accounts and session homes. See [Several accounts on one
+  machine](#several-accounts-on-one-machine).
 
 Residual risks:
 
@@ -227,14 +228,11 @@ Any account can add a runner from `/dashboard/runners`:
   config, installs the service and its own nftables table (never touching the
   machine's firewall), installs the CLIs, runs `--check` and starts. It
   deletes nothing and has no uninstall mode.
-- **Re-running it.** For the same runner and account it keeps the key, job
-  user and work root already in the config, so an older install keeps its
-  `forkmesh-job` user and its sign-ins. For a different runner name it moves
-  the old key aside to `ed25519.pem.<old runner>` and makes a new one, so two
-  runner rows never share a key. When the machine's runner belonged to another
-  account it warns, and the new runner gets its own job user and work root:
-  the earlier account's sign-ins stay in its own 0700 home and work root and
-  are never used. One machine runs one runner at a time.
+- **Re-running it** updates the instance that already holds the runner
+  name, keeping its key, job user, work root and port. Another runner name of
+  the same account replaces that account's instance: the old key moves aside
+  to `ed25519.pem.<old runner>` and the new name gets a fresh key, so two
+  runner rows never share a key, while the job user and sign-ins stay.
 - **macOS** (macOS 12 or newer, Xcode Command Line Tools): the same command
   works. See [macOS runners](#macos-runners).
 - **From the desktop** (preferred for SSH): a `forkmesh://` hand-off fills the
@@ -248,6 +246,42 @@ Any account can add a runner from `/dashboard/runners`:
   `ssh-agent`; output is scrubbed. Without the helper socket the endpoints
   answer `503 ssh_setup_unavailable`.
 
+### Several accounts on one machine
+
+Each account that installs a runner on a machine gets its own instance
+next to the others; installing one never stops or rewrites another.
+
+| | Per account (`<account>` = the registrant) |
+|---|---|
+| Config | `/etc/forkmesh-runner/accounts/<account>/runner.json` (0700 folder) |
+| State | `/var/lib/forkmesh-runner/accounts/<account>/{identity,gateway,work,tmp,home}` |
+| Service | `forkmesh-runner@<account>.service` from the template `forkmesh-runner@.service`; `ReadWritePaths` is only its own state folder and its `/tmp` is its own `tmp` |
+| Job user | `fmjob-<account>`, home `…/accounts/<account>/home` (0700), GECOS `ForkMesh runner jobs for <account>` |
+| Loopback ports | `listen`/`gatewayProbe` pair from 8795 upward, skipping pairs another instance's config names or that are taken; kept on re-install |
+
+- **Finding instances.** The installer reads `/etc/forkmesh-runner/runner.json`
+  (an install from before 2026-10-14) and every
+  `/etc/forkmesh-runner/accounts/*/runner.json`. Before registering it looks
+  for the instance holding the runner name; a new name signs with a staged
+  key (`/var/lib/forkmesh-runner/pending-<name>.pem`) and moves into the
+  owner's instance once ForkMesh names the owner.
+- **Older installs.** The single-runner layout (`forkmesh-runner.service`,
+  `/var/lib/forkmesh-runner`, user `forkmesh-job`, ports 8795/8796) stays
+  that account's instance. Re-installing it rewrites its unit with
+  `InaccessiblePaths` over the `accounts` folders, so it cannot read the
+  other instances.
+- **Job users are never shared.** A job user that another instance's config
+  names is refused, and an existing system user is taken over only when its
+  GECOS (`RealName` on macOS) names the same account, so an account whose
+  name collides with another's derived user name, or with an unrelated user,
+  cannot inherit it.
+- **One firewall.** `jobs.nft` (Linux) and `jobs.pf` (macOS) are rebuilt on
+  every install with the rules for every instance's job user; a job user
+  that no longer exists is left out with a warning. A loaded nft table is
+  reloaded with `nft -f` in place.
+- The daemon needs no change: its idle sweep kills and deletes only what its
+  own job uid owns.
+
 ## macOS runners
 
 The installer printed `Runners need Linux with systemd.` on a Mac until
@@ -255,9 +289,9 @@ The installer printed `Runners need Linux with systemd.` on a Mac until
 
 | | Linux | macOS |
 |---|---|---|
-| Daemon | `forkmesh-runner.service` | launch daemon `com.forkmesh.runner` (`/Library/LaunchDaemons`), log `/private/var/log/forkmesh-runner.log` |
-| Paths | `/etc/forkmesh-runner`, `/var/lib/forkmesh-runner` | `/private/etc/forkmesh-runner`, `/private/var/db/forkmesh-runner` (real paths, so no `/etc` or `/var` symlink sits inside `workRoot`) |
-| Job user | `useradd --system fmjob-<account>` | `dscl` hidden user `fmjob-<account>`, first free uid from 400 down to 300, shell `/usr/bin/false`, home `/private/var/db/fmjob-<account>` |
+| Daemon | `forkmesh-runner@<account>.service` | launch daemon `com.forkmesh.runner.<account>` (`/Library/LaunchDaemons`), log `/private/var/log/forkmesh-runner-<account>.log` |
+| Paths | `/etc/forkmesh-runner/accounts/<account>`, `/var/lib/forkmesh-runner/accounts/<account>` | `/private/etc/forkmesh-runner/accounts/<account>`, `/private/var/db/forkmesh-runner/accounts/<account>` (real paths, so no `/etc` or `/var` symlink sits inside `workRoot`) |
+| Job user | `useradd --system fmjob-<account>` | `dscl` hidden user `fmjob-<account>`, first free uid from 400 down to 300, shell `/usr/bin/false`, home `…/accounts/<account>/home` |
 | Job firewall | nftables table `inet forkmesh_runner` | pf anchor `com.apple/forkmesh-runner` (`jobs.pf`, rules `user <uid>`), loaded by `com.forkmesh.runner-firewall` at boot and every 5 minutes; it enables pf if pf is off and never loads `/etc/pf.conf` |
 | Daemon binary | signed release via `install.sh` | built from `https://forkmesh.com/forkmesh/forkmesh` (`server/`, sparse clone) with Go, because releases publish only Linux `forkmesh-mirror-node` assets; `FORKMESH_RUNNER_SOURCE_URL` overrides the clone URL |
 | OpenSSL | system `openssl` | OpenSSL 3 (Homebrew `openssl@3`): the LibreSSL in macOS has no Ed25519 `genpkey` |

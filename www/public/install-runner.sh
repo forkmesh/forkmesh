@@ -12,14 +12,32 @@ BINARY=""
 INSTALL_SH_URL="${FORKMESH_INSTALL_SH_URL:-https://forkmesh.com/install.sh}"
 PREFIX="${FORKMESH_RUNNER_PREFIX:-}"
 TEST_MODE="${FORKMESH_RUNNER_TEST:-0}"
+INSTANCE=""
+INSTANCES=""
+FOUND=""
+INSTANCE_OWNER=""
+INSTANCE_NAME=""
+INSTANCE_JOB_USER=""
+INSTANCE_WORK=""
+INSTANCE_LISTEN=""
+OWNER=""
+OWNERS_JSON=""
 JOB_USER=""
 JOB_HOME=""
+JOB_COMMENT=""
 WORK=""
-OWNER=""
-EXISTING_NAME=""
-EXISTING_OWNER=""
-EXISTING_JOB_USER=""
-EXISTING_WORK=""
+LISTEN=""
+PROBE=""
+SIGN_KEY=""
+PUBLIC_KEY=""
+ETC=""
+STATE=""
+KEY=""
+IDENTITY=""
+CONFIG=""
+UNIT=""
+RUNNER_LABEL=""
+MAC_LOG=""
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -41,13 +59,14 @@ Options:
   --binary PATH    use this forkmesh-mirror-node binary instead of the signed release
 
 What it installs: /usr/local/bin/forkmesh-mirror-node (run as a runner, it serves no
-repositories), the forkmesh-runner service, an unprivileged job user of its own for your
-ForkMesh account (fmjob-<account>) that agent jobs and their sign-ins live under, firewall
-rules that keep jobs off private networks, and the chosen agent CLIs. The runner is private
-to your account: nobody else can see it or run jobs on it. It keeps any existing ForkMesh
-data on this machine and deletes nothing.
+repositories), a forkmesh-runner@<account> service, an unprivileged job user of its own for
+your ForkMesh account (fmjob-<account>) that agent jobs and their sign-ins live under,
+firewall rules that keep jobs off private networks, and the chosen agent CLIs. The runner is
+private to your account: nobody else can see it or run jobs on it. Several accounts can each
+install a runner on the same machine; each gets its own service, folders, key and user, and
+installing one leaves the others running. It deletes nothing.
 
-On macOS the service is the com.forkmesh.runner launch daemon, the firewall is a pf
+On macOS the service is the com.forkmesh.runner.<account> launch daemon, the firewall is a pf
 anchor, and forkmesh-mirror-node is built from source with Go (Homebrew installs Go,
 OpenSSL 3 and Node.js when they are missing). It needs macOS 12 or newer and the
 Xcode Command Line Tools.
@@ -99,27 +118,23 @@ SOURCE_URL="${FORKMESH_RUNNER_SOURCE_URL:-https://forkmesh.com/forkmesh/forkmesh
 OPENSSL="openssl"
 
 if [ "$PLATFORM" = "Darwin" ]; then
-  ETC="$PREFIX/private/etc/forkmesh-runner"
-  STATE="$PREFIX/private/var/db/forkmesh-runner"
+  ETC_ROOT="$PREFIX/private/etc/forkmesh-runner"
+  STATE_ROOT="$PREFIX/private/var/db/forkmesh-runner"
   JOB_BASE="$PREFIX/private/var/db"
   UNIT_DIR="$PREFIX/Library/LaunchDaemons"
   PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 else
-  ETC="$PREFIX/etc/forkmesh-runner"
-  STATE="$PREFIX/var/lib/forkmesh-runner"
+  ETC_ROOT="$PREFIX/etc/forkmesh-runner"
+  STATE_ROOT="$PREFIX/var/lib/forkmesh-runner"
   JOB_BASE="$PREFIX/var/lib"
   UNIT_DIR="$PREFIX/etc/systemd/system"
 fi
 BIN="$PREFIX/usr/local/bin/forkmesh-mirror-node"
-KEY="$STATE/identity/ed25519.pem"
-IDENTITY="$STATE/gateway/config.json"
-CONFIG="$ETC/runner.json"
-NFT="$ETC/jobs.nft"
-PF_RULES="$ETC/jobs.pf"
+NFT="$ETC_ROOT/jobs.nft"
+PF_RULES="$ETC_ROOT/jobs.pf"
 PF_ANCHOR="com.apple/forkmesh-runner"
-RUNNER_LABEL="com.forkmesh.runner"
 FIREWALL_LABEL="com.forkmesh.runner-firewall"
-MAC_LOG="/private/var/log/forkmesh-runner.log"
+STAGED_KEY="$STATE_ROOT/pending-$NAME.pem"
 
 say "ForkMesh runner installer v$RUNNER_INSTALLER_VERSION: runner $NAME for $APP_URL"
 
@@ -261,7 +276,7 @@ create_macos_job_user() {
     gid="$id"
     dscl . -create "/Groups/$JOB_USER"
     dscl . -create "/Groups/$JOB_USER" PrimaryGroupID "$gid"
-    dscl . -create "/Groups/$JOB_USER" RealName "ForkMesh runner jobs for $OWNER"
+    dscl . -create "/Groups/$JOB_USER" RealName "$JOB_COMMENT"
     dscl . -create "/Groups/$JOB_USER" Password '*'
   fi
   dscl . -create "/Users/$JOB_USER"
@@ -269,7 +284,7 @@ create_macos_job_user() {
   dscl . -create "/Users/$JOB_USER" PrimaryGroupID "$gid"
   dscl . -create "/Users/$JOB_USER" UserShell /usr/bin/false
   dscl . -create "/Users/$JOB_USER" NFSHomeDirectory "$(live_path "$JOB_HOME")"
-  dscl . -create "/Users/$JOB_USER" RealName "ForkMesh runner jobs for $OWNER"
+  dscl . -create "/Users/$JOB_USER" RealName "$JOB_COMMENT"
   dscl . -create "/Users/$JOB_USER" Password '*'
   dscl . -create "/Users/$JOB_USER" IsHidden 1
   dscacheutil -flushcache >/dev/null 2>&1 || true
@@ -286,66 +301,232 @@ job_user_for() {
   printf 'fmjob-%s-%s' "${account:0:19}" "$hash"
 }
 
-read_existing() {
-  local fields
-  if [ -s "$IDENTITY" ]; then
-    EXISTING_NAME="$(python3 -c 'import json,sys
-try: print(json.load(open(sys.argv[1]))["node"]["name"])
-except Exception: print("")' "$IDENTITY" 2>/dev/null || true)"
-    [[ "$EXISTING_NAME" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || EXISTING_NAME=""
+use_instance() {
+  INSTANCE="$1"
+  if [ -z "$INSTANCE" ]; then
+    ETC="$ETC_ROOT"
+    STATE="$STATE_ROOT"
+    UNIT="forkmesh-runner.service"
+    RUNNER_LABEL="com.forkmesh.runner"
+    MAC_LOG="/private/var/log/forkmesh-runner.log"
+  else
+    ETC="$ETC_ROOT/accounts/$INSTANCE"
+    STATE="$STATE_ROOT/accounts/$INSTANCE"
+    UNIT="forkmesh-runner@$INSTANCE.service"
+    RUNNER_LABEL="com.forkmesh.runner.$INSTANCE"
+    MAC_LOG="/private/var/log/forkmesh-runner-$INSTANCE.log"
   fi
-  [ -s "$CONFIG" ] || return 0
-  fields="$(python3 -c 'import json,sys
+  KEY="$STATE/identity/ed25519.pem"
+  IDENTITY="$STATE/gateway/config.json"
+  CONFIG="$ETC/runner.json"
+}
+
+scan_instances() {
+  python3 - "$PREFIX" "$(live_path "$ETC_ROOT")" <<'PY'
+import json, os, re, sys
+prefix, etc = sys.argv[1], sys.argv[2]
+NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+def load(path):
+    try:
+        with open(prefix + path) as handle:
+            return json.load(handle)
+    except Exception:
+        return None
+places = [("", etc + "/runner.json")]
 try:
-    r=json.load(open(sys.argv[1]))["runner"]
-    owners=r.get("allowedOwners") or []
-    print(owners[0] if len(owners)==1 else "", r.get("jobUser") or "", r.get("workRoot") or "", sep="\x1f")
-except Exception: print("\x1f\x1f")' "$CONFIG" 2>/dev/null || true)"
-  IFS=$'\x1f' read -r EXISTING_OWNER EXISTING_JOB_USER EXISTING_WORK <<<"$fields" || true
-  [[ "$EXISTING_OWNER" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || EXISTING_OWNER=""
-  [[ "$EXISTING_JOB_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$EXISTING_JOB_USER" != "root" ] || EXISTING_JOB_USER=""
-  case "$EXISTING_WORK" in
-    "$(live_path "$STATE")"/*) case "$EXISTING_WORK" in *..*) EXISTING_WORK="" ;; esac ;;
-    *) EXISTING_WORK="" ;;
-  esac
+    accounts = sorted(os.listdir(prefix + etc + "/accounts"))
+except OSError:
+    accounts = []
+places += [(a, etc + "/accounts/" + a + "/runner.json") for a in accounts if NAME.match(a)]
+for instance, path in places:
+    config = load(path)
+    if not isinstance(config, dict) or not isinstance(config.get("runner"), dict):
+        continue
+    runner = config["runner"]
+    owners = runner.get("allowedOwners") or []
+    owner = owners[0] if len(owners) == 1 and isinstance(owners[0], str) else ""
+    identity = load(str(config.get("gatewayConfig") or ""))
+    node = identity.get("node") if isinstance(identity, dict) else None
+    name = str(node.get("name") or "") if isinstance(node, dict) else ""
+    user = str(runner.get("jobUser") or "")
+    work = str(runner.get("workRoot") or "")
+    print("\x1f".join((
+        instance,
+        owner if NAME.match(owner) else "",
+        name if NAME.match(name) else "",
+        user if USER.match(user) and user != "root" else "",
+        work if work.startswith("/") and ".." not in work else "",
+        str(config.get("listen") or ""),
+        str(config.get("gatewayProbe") or ""))))
+PY
+}
+
+instance_where() {
+  local field="$1" value="$2" id owner name user work listen probe
+  while IFS=$'\x1f' read -r id owner name user work listen probe; do
+    case "$field" in
+      name) [ "$name" = "$value" ] || continue ;;
+      owner) [ "$owner" = "$value" ] || continue ;;
+    esac
+    FOUND=1
+    INSTANCE_OWNER="$owner"
+    INSTANCE_NAME="$name"
+    INSTANCE_JOB_USER="$user"
+    INSTANCE_WORK="$work"
+    INSTANCE_LISTEN="$listen"
+    use_instance "$id"
+    return 0
+  done <<<"$INSTANCES"
+  return 1
+}
+
+find_instance() {
+  INSTANCES="$(scan_instances)"
+  if instance_where name "$NAME"; then
+    say "Updating runner $NAME of ${INSTANCE_OWNER:-an unknown account} on this machine"
+  fi
+}
+
+settle_instance() {
+  if [ -z "$FOUND" ] && instance_where owner "$OWNER"; then
+    say "$OWNER's runner ${INSTANCE_NAME:-} on this machine becomes $NAME"
+  fi
+  if [ -z "$FOUND" ]; then
+    use_instance "$OWNER"
+    say "Adding $NAME next to the other runners on this machine, as $OWNER's own instance"
+  fi
+  install -d -m 0700 "$ETC"
+  install -d -m 0711 "$STATE"
+  install -d -m 0700 "$STATE/identity" "$STATE/gateway"
+  install -d -m 1777 "$STATE/tmp"
+  if [ "$SIGN_KEY" = "$STAGED_KEY" ]; then
+    if [ -s "$KEY" ]; then
+      local aside="$KEY.${INSTANCE_NAME:-previous}"
+      if [ -e "$aside" ]; then
+        aside="$aside.$(date +%s)"
+      fi
+      mv "$KEY" "$aside"
+      say "Kept the key of runner ${INSTANCE_NAME:-previous} at $aside; $NAME has its own key"
+    fi
+    mv "$STAGED_KEY" "$KEY"
+    chmod 0600 "$KEY"
+  fi
 }
 
 choose_job_user() {
-  if [ -n "$EXISTING_OWNER" ] && [ "$EXISTING_OWNER" != "$OWNER" ]; then
-    warn "This machine ran runner ${EXISTING_NAME:-?} for the ForkMesh account $EXISTING_OWNER. It now runs $NAME for $OWNER; $EXISTING_OWNER's job user and sign-ins stay where they are and $NAME never uses them."
+  local id owner name user rest
+  JOB_USER="$INSTANCE_JOB_USER"
+  if [ -z "$JOB_USER" ]; then
+    JOB_USER="$(job_user_for "$OWNER")"
   fi
-  if [ "$EXISTING_OWNER" = "$OWNER" ] && [ "$EXISTING_NAME" = "$NAME" ]; then
-    JOB_USER="$EXISTING_JOB_USER"
-    [ -n "$EXISTING_WORK" ] && WORK="$PREFIX$EXISTING_WORK"
-  fi
-  [ -n "$JOB_USER" ] || JOB_USER="$(job_user_for "$OWNER")"
   [[ "$JOB_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "Could not derive a job user name for $OWNER."
-  JOB_HOME="$JOB_BASE/$JOB_USER"
-  [ -n "$WORK" ] || WORK="$STATE/jobs/$JOB_USER"
+  if [ -z "$INSTANCE" ]; then
+    JOB_HOME="$JOB_BASE/$JOB_USER"
+  else
+    JOB_HOME="$STATE/home"
+  fi
+  WORK="$STATE/work"
+  case "$INSTANCE_WORK" in
+    "$(live_path "$STATE")"/*) WORK="$PREFIX$INSTANCE_WORK" ;;
+  esac
+  JOB_COMMENT="ForkMesh runner jobs for $OWNER"
+  while IFS=$'\x1f' read -r id owner name user rest; do
+    if [ "$id" != "$INSTANCE" ] && [ -n "$user" ] && [ "$user" = "$JOB_USER" ]; then
+      die "The job user $JOB_USER already belongs to the runner of ${owner:-another account} on this machine."
+    fi
+  done <<<"$INSTANCES"
+}
+
+check_job_user_owner() {
+  if [ -z "$INSTANCE_JOB_USER" ] && [ "$1" != "$JOB_COMMENT" ]; then
+    die "A user named $JOB_USER already exists on this machine and is not the job user of $OWNER's runner. It was left untouched."
+  fi
 }
 
 ensure_job_user() {
   step "Job user $JOB_USER for $OWNER"
-  if [ "$TEST_MODE" != "1" ] && [ "$PLATFORM" = "Darwin" ]; then
-    dscl . -read "/Users/$JOB_USER" UniqueID >/dev/null 2>&1 || create_macos_job_user
-    install -d -o "$JOB_USER" -g "$JOB_USER" -m 0700 "$JOB_HOME" "$JOB_HOME/.claude" "$JOB_HOME/.codex"
-  elif [ "$TEST_MODE" != "1" ]; then
-    if ! id "$JOB_USER" >/dev/null 2>&1; then
-      useradd --system --home-dir "$JOB_HOME" --create-home --shell /usr/sbin/nologin "$JOB_USER"
+  local comment
+  if [ "$TEST_MODE" = "1" ]; then
+    install -d -m 0700 "$JOB_HOME" "$JOB_HOME/.claude" "$JOB_HOME/.codex"
+  elif [ "$PLATFORM" = "Darwin" ]; then
+    if dscl . -read "/Users/$JOB_USER" UniqueID >/dev/null 2>&1; then
+      comment="$(dscl . -read "/Users/$JOB_USER" RealName 2>/dev/null | sed '1s/^RealName://' | tr '\n' ' ' | sed 's/^ *//; s/ *$//')"
+      check_job_user_owner "$comment"
+    else
+      create_macos_job_user
     fi
     install -d -o "$JOB_USER" -g "$JOB_USER" -m 0700 "$JOB_HOME" "$JOB_HOME/.claude" "$JOB_HOME/.codex"
   else
-    install -d -m 0700 "$JOB_HOME" "$JOB_HOME/.claude" "$JOB_HOME/.codex"
+    if id "$JOB_USER" >/dev/null 2>&1; then
+      comment="$(getent passwd "$JOB_USER" | cut -d: -f5)"
+      check_job_user_owner "$comment"
+    else
+      useradd --system --comment "$JOB_COMMENT" --home-dir "$(live_path "$JOB_HOME")" --create-home \
+        --shell /usr/sbin/nologin "$JOB_USER"
+    fi
+    install -d -o "$JOB_USER" -g "$JOB_USER" -m 0700 "$JOB_HOME" "$JOB_HOME/.claude" "$JOB_HOME/.codex"
   fi
   install -d -m 0711 "$WORK"
   say "Agent jobs for $OWNER run as $JOB_USER (home $(live_path "$JOB_HOME"), work $(live_path "$WORK"))"
 }
 
-ensure_dirs() {
-  install -d -m 0700 "$ETC"
-  install -d -m 0711 "$STATE" "$STATE/jobs"
-  install -d -m 0700 "$STATE/identity" "$STATE/gateway"
-  install -d -m 1777 "$STATE/tmp"
+pick_listen() {
+  local ports
+  ports="$(printf '%s\n' "$INSTANCES" | python3 -c '
+import socket, sys
+mine, listen = sys.argv[1], sys.argv[2]
+def port(value):
+    try:
+        return int(str(value).rsplit(":", 1)[1])
+    except (IndexError, ValueError):
+        return 0
+used = set()
+for line in sys.stdin:
+    parts = line.rstrip("\n").split("\x1f")
+    if len(parts) < 7 or parts[0] == mine:
+        continue
+    used.update(port(value) for value in parts[5:7])
+def free(number):
+    sock = socket.socket()
+    try:
+        sock.bind(("127.0.0.1", number))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+own = port(listen)
+if own and own not in used and own + 1 not in used:
+    print(own, own + 1)
+    sys.exit(0)
+for number in range(8795, 8995, 2):
+    if number not in used and number + 1 not in used and free(number) and free(number + 1):
+        print(number, number + 1)
+        sys.exit(0)
+sys.exit(1)' "$INSTANCE" "$INSTANCE_LISTEN")" ||
+    die "No free loopback port pair between 8795 and 8995 for the runner."
+  LISTEN="127.0.0.1:${ports% *}"
+  PROBE="127.0.0.1:${ports#* }"
+}
+
+job_users() {
+  local id owner name user rest
+  while IFS=$'\x1f' read -r id owner name user rest; do
+    if [ -z "$user" ]; then
+      continue
+    fi
+    if [ "$TEST_MODE" != "1" ] && ! id "$user" >/dev/null 2>&1; then
+      warn "The job user $user of ${owner:-a runner} no longer exists; the job firewall leaves it out."
+      continue
+    fi
+    printf '%s\n' "$user"
+  done <<<"$INSTANCES"
+}
+
+ensure_base_dirs() {
+  install -d -m 0700 "$ETC_ROOT" "$ETC_ROOT/accounts"
+  install -d -m 0711 "$STATE_ROOT" "$STATE_ROOT/accounts"
   local dir
   for dir in "$(dirname "$BIN")" "$UNIT_DIR"; do
     [ -d "$dir" ] || install -d -m 0755 "$dir"
@@ -417,26 +598,22 @@ b64url() { base64 | tr '+/' '-_' | tr -d '=\n'; }
 
 ensure_identity() {
   step "Runner identity"
-  if [ -s "$KEY" ] && [ -n "$EXISTING_NAME" ] && [ "$EXISTING_NAME" != "$NAME" ]; then
-    local aside="$KEY.$EXISTING_NAME"
-    [ -e "$aside" ] && aside="$aside.$(date +%s)"
-    mv "$KEY" "$aside"
-    say "Kept the key of runner $EXISTING_NAME at $aside; $NAME gets its own key"
-  fi
-  if [ -s "$KEY" ]; then
+  if [ -n "$FOUND" ] && [ -s "$KEY" ]; then
+    SIGN_KEY="$KEY"
     say "Reusing the runner key at $KEY"
   else
     local old_umask
     old_umask="$(umask)"
     umask 077
-    "$OPENSSL" genpkey -algorithm ed25519 -out "$KEY.new" 2>/dev/null ||
+    "$OPENSSL" genpkey -algorithm ed25519 -out "$STAGED_KEY.new" 2>/dev/null ||
       die "OpenSSL 1.1.1 or newer is required (Ed25519)."
-    mv "$KEY.new" "$KEY"
+    mv "$STAGED_KEY.new" "$STAGED_KEY"
     umask "$old_umask"
-    say "Made a new runner key at $KEY"
+    SIGN_KEY="$STAGED_KEY"
+    say "Made a new runner key for $NAME"
   fi
-  chmod 0600 "$KEY"
-  PUBLIC_KEY="$("$OPENSSL" pkey -in "$KEY" -pubout -outform DER | tail -c 32 | b64url)"
+  chmod 0600 "$SIGN_KEY"
+  PUBLIC_KEY="$("$OPENSSL" pkey -in "$SIGN_KEY" -pubout -outform DER | tail -c 32 | b64url)"
   [[ "$PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || die "Could not read the runner's public key."
 }
 
@@ -447,7 +624,7 @@ register_runner() {
   digest="$(printf '%s' "$TOKEN" | "$OPENSSL" dgst -sha256 -r | cut -d' ' -f1)"
   message_file="$(mktemp)"
   printf 'forkmesh-runner-register-token-v1\n%s\n%s\n%s\n%s' "$NAME" "$PUBLIC_KEY" "$digest" "$ts" >"$message_file"
-  signature="$("$OPENSSL" pkeyutl -sign -rawin -inkey "$KEY" -in "$message_file" | b64url)"
+  signature="$("$OPENSSL" pkeyutl -sign -rawin -inkey "$SIGN_KEY" -in "$message_file" | b64url)"
   rm -f "$message_file"
   body="$(FM_TOKEN="$TOKEN" FM_NAME="$NAME" FM_KEY="$PUBLIC_KEY" FM_SIG="$signature" FM_TS="$ts" python3 -c '
 import json, os
@@ -475,6 +652,9 @@ owner=d.get("registeredBy") or (owners[0] if len(owners)==1 else "")
 print(owner if owners==[owner] else "")')"
   [[ "$OWNER" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] ||
     die "ForkMesh did not answer with the one account this runner belongs to."
+  if [ -n "$INSTANCE_OWNER" ] && [ "$INSTANCE_OWNER" != "$OWNER" ]; then
+    die "Runner $NAME on this machine belongs to $INSTANCE_OWNER, but ForkMesh registered it for $OWNER."
+  fi
   OWNERS_JSON="[\"$OWNER\"]"
   say "Registered $NAME as a private runner of $OWNER."
 }
@@ -483,7 +663,7 @@ write_config() {
   step "Writing the runner configuration"
   FM_NAME="$NAME" FM_KEY="$PUBLIC_KEY" FM_IDENTITY="$IDENTITY" FM_CONFIG="$CONFIG" \
   FM_KEYFILE="$KEY" FM_APP="$APP_URL" FM_OWNERS="$OWNERS_JSON" FM_WORK="$WORK" \
-  FM_JOB_USER="$JOB_USER" FM_TEST="$TEST_MODE" FM_PREFIX="$PREFIX" python3 - <<'PY'
+  FM_JOB_USER="$JOB_USER" FM_PREFIX="$PREFIX" FM_LISTEN="$LISTEN" FM_PROBE="$PROBE" python3 - <<'PY'
 import json, os
 def write(path, doc):
     tmp = path + ".new"
@@ -499,36 +679,51 @@ write(os.environ["FM_IDENTITY"], {
     "node": {"name": os.environ["FM_NAME"], "publicKey": os.environ["FM_KEY"]},
     "repositories": [],
 })
-runner = {
-    "appUrl": os.environ["FM_APP"],
-    "maxConcurrentRuns": 1,
-    "workRoot": live(os.environ["FM_WORK"]),
-    "allowedOwners": json.loads(os.environ["FM_OWNERS"]),
-}
-if os.environ["FM_TEST"] != "1":
-    runner["jobUser"] = os.environ["FM_JOB_USER"]
 write(os.environ["FM_CONFIG"], {
     "schemaVersion": 1,
     "role": "runner",
-    "listen": "127.0.0.1:8795",
-    "gatewayProbe": "127.0.0.1:8796",
+    "listen": os.environ["FM_LISTEN"],
+    "gatewayProbe": os.environ["FM_PROBE"],
     "gatewayConfig": live(os.environ["FM_IDENTITY"]),
     "identityKey": live(os.environ["FM_KEYFILE"]),
-    "runner": runner,
+    "runner": {
+        "appUrl": os.environ["FM_APP"],
+        "maxConcurrentRuns": 1,
+        "workRoot": live(os.environ["FM_WORK"]),
+        "allowedOwners": json.loads(os.environ["FM_OWNERS"]),
+        "jobUser": os.environ["FM_JOB_USER"],
+    },
 })
 PY
   say "Wrote $CONFIG"
 }
 
+job_uid_of() {
+  if [ "$TEST_MODE" = "1" ]; then
+    id -u
+  else
+    id -u "$1"
+  fi
+}
+
+write_firewall_macos() {
+  local user uid
+  : >"$PF_RULES.new"
+  chmod 0600 "$PF_RULES.new"
+  for user in $(job_users); do
+    uid="$(job_uid_of "$user")"
+    cat >>"$PF_RULES.new" <<EOF
+block return out quick proto { tcp, udp } from any to { 169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 127.0.0.0/8, 0.0.0.0/8, 224.0.0.0/4, 240.0.0.0/4 } user $uid
+block return out quick inet6 proto { tcp, udp } from any to { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } user $uid
+EOF
+  done
+  mv "$PF_RULES.new" "$PF_RULES"
+}
+
 write_units_macos() {
   step "Installing the $RUNNER_LABEL launch daemon"
-  local job_uid live_state
+  local live_state
   live_state="$(live_path "$STATE")"
-  if [ "$TEST_MODE" = "1" ]; then
-    job_uid="$(id -u)"
-  else
-    job_uid="$(id -u "$JOB_USER")"
-  fi
   cat >"$UNIT_DIR/$RUNNER_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -582,11 +777,7 @@ write_units_macos() {
 </dict>
 </plist>
 EOF
-  cat >"$PF_RULES" <<EOF
-block return out quick proto { tcp, udp } from any to { 169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 127.0.0.0/8, 0.0.0.0/8, 224.0.0.0/4, 240.0.0.0/4 } user $job_uid
-block return out quick inet6 proto { tcp, udp } from any to { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } user $job_uid
-EOF
-  chmod 0600 "$PF_RULES"
+  write_firewall_macos
   cat >"$UNIT_DIR/$FIREWALL_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -613,12 +804,27 @@ EOF
   fi
 }
 
-write_units() {
-  if [ "$PLATFORM" = "Darwin" ]; then
-    write_units_macos
-    return 0
-  fi
-  step "Installing the forkmesh-runner service"
+write_firewall_linux() {
+  local user
+  {
+    printf 'table inet forkmesh_runner\n'
+    printf 'delete table inet forkmesh_runner\n'
+    printf 'table inet forkmesh_runner {\n'
+    printf '\tchain output {\n'
+    printf '\t\ttype filter hook output priority filter; policy accept;\n'
+    for user in $(job_users); do
+      printf '\t\tmeta skuid "%s" ip daddr 127.0.0.53 meta l4proto { tcp, udp } th dport 53 accept\n' "$user"
+      printf '\t\tmeta skuid "%s" ip daddr { 169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 127.0.0.0/8, 0.0.0.0/8, 224.0.0.0/4, 240.0.0.0/4 } counter reject\n' "$user"
+      printf '\t\tmeta skuid "%s" ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } counter reject\n' "$user"
+    done
+    printf '\t}\n'
+    printf '}\n'
+  } >"$NFT.new"
+  chmod 0600 "$NFT.new"
+  mv "$NFT.new" "$NFT"
+}
+
+write_legacy_unit() {
   cat >"$UNIT_DIR/forkmesh-runner.service" <<EOF
 [Unit]
 Description=ForkMesh runner $NAME (agent jobs, docs/RUNNERS.md)
@@ -653,7 +859,8 @@ ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/forkmesh-runner /var/lib/$JOB_USER
+ReadWritePaths=/var/lib/forkmesh-runner $(live_path "$JOB_HOME")
+InaccessiblePaths=-/var/lib/forkmesh-runner/accounts -/etc/forkmesh-runner/accounts
 IPAddressDeny=169.254.0.0/16
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=true
@@ -669,19 +876,74 @@ LimitNOFILE=8192
 [Install]
 WantedBy=multi-user.target
 EOF
-  cat >"$NFT" <<EOF
-table inet forkmesh_runner
-delete table inet forkmesh_runner
-table inet forkmesh_runner {
-	chain output {
-		type filter hook output priority filter; policy accept;
-		meta skuid "$JOB_USER" ip daddr 127.0.0.53 meta l4proto { tcp, udp } th dport 53 accept
-		meta skuid "$JOB_USER" ip daddr { 169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 127.0.0.0/8, 0.0.0.0/8, 224.0.0.0/4, 240.0.0.0/4 } counter reject
-		meta skuid "$JOB_USER" ip6 daddr { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } counter reject
-	}
 }
+
+write_account_unit() {
+  cat >"$UNIT_DIR/forkmesh-runner@.service" <<'EOF'
+[Unit]
+Description=ForkMesh runner of account %i (agent jobs, docs/RUNNERS.md)
+Wants=network-online.target forkmesh-runner-firewall.service
+After=network-online.target forkmesh-runner-firewall.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0077
+Environment=TZ=UTC
+Environment=HOME=/var/lib/forkmesh-runner/accounts/%i
+Environment=TMPDIR=/var/lib/forkmesh-runner/accounts/%i/tmp
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStartPre=/usr/local/bin/forkmesh-mirror-node --config /etc/forkmesh-runner/accounts/%i/runner.json --check
+ExecStart=/usr/local/bin/forkmesh-mirror-node --config /etc/forkmesh-runner/accounts/%i/runner.json
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+MemoryHigh=150M
+MemoryMax=250M
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=false
+BindPaths=/var/lib/forkmesh-runner/accounts/%i/tmp:/tmp /var/lib/forkmesh-runner/accounts/%i/tmp:/var/tmp
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/forkmesh-runner/accounts/%i
+IPAddressDeny=169.254.0.0/16
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_KILL CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SETUID CAP_SETGID
+SystemCallArchitectures=native
+TasksMax=128
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target
 EOF
-  chmod 0600 "$NFT"
+}
+
+write_units() {
+  INSTANCES="$(scan_instances)"
+  if [ "$PLATFORM" = "Darwin" ]; then
+    write_units_macos
+    return 0
+  fi
+  step "Installing the $UNIT service"
+  if [ -z "$INSTANCE" ]; then
+    write_legacy_unit
+  else
+    write_account_unit
+  fi
+  write_firewall_linux
   cat >"$UNIT_DIR/forkmesh-runner-firewall.service" <<'EOF'
 [Unit]
 Description=ForkMesh runner: keep agent jobs off private networks
@@ -767,6 +1029,21 @@ start_macos() {
   die "$RUNNER_LABEL did not start. Log: $MAC_LOG"
 }
 
+start_firewall_linux() {
+  if ! command -v nft >/dev/null 2>&1; then
+    warn "nftables is missing, so agent jobs are not kept off this machine's private network."
+    return 0
+  fi
+  systemctl enable forkmesh-runner-firewall.service >/dev/null 2>&1 || true
+  if systemctl is-active --quiet forkmesh-runner-firewall.service; then
+    nft -f "$(live_path "$NFT")" ||
+      warn "The job firewall did not reload; agent jobs can reach this machine's private network."
+  else
+    systemctl start forkmesh-runner-firewall.service ||
+      warn "The job firewall did not load; agent jobs can reach this machine's private network."
+  fi
+}
+
 check_and_start() {
   "$BIN" --config "$CONFIG" --check >/dev/null 2>&1 || {
     [ "$TEST_MODE" = "1" ] && return 0
@@ -779,34 +1056,31 @@ check_and_start() {
   fi
   step "Starting the runner"
   systemctl daemon-reload
-  if command -v nft >/dev/null 2>&1; then
-    systemctl enable --now forkmesh-runner-firewall.service ||
-      warn "The job firewall did not load; agent jobs can reach this machine's private network."
-  else
-    warn "nftables is missing, so agent jobs are not kept off this machine's private network."
-  fi
-  systemctl enable forkmesh-runner.service
-  systemctl restart forkmesh-runner.service
+  start_firewall_linux
+  systemctl enable "$UNIT"
+  systemctl restart "$UNIT"
   local tick
   for tick in 1 2 3 4 5 6; do
     sleep 2
-    if systemctl is-active --quiet forkmesh-runner.service; then
-      say "The runner is running. Logs: journalctl -u forkmesh-runner.service"
+    if systemctl is-active --quiet "$UNIT"; then
+      say "The runner is running. Logs: journalctl -u $UNIT"
       return 0
     fi
   done
-  die "forkmesh-runner.service did not start. Logs: journalctl -u forkmesh-runner.service"
+  die "$UNIT did not start. Logs: journalctl -u $UNIT"
 }
 
 require_system
 install_packages
-ensure_dirs
-read_existing
+ensure_base_dirs
 ensure_binary
+find_instance
 ensure_identity
 register_runner
+settle_instance
 choose_job_user
 ensure_job_user
+pick_listen
 write_config
 write_units
 install_providers
@@ -814,6 +1088,7 @@ check_and_start
 
 say ""
 say "Done. $NAME is registered as your private runner; its jobs run as $JOB_USER."
+say "Other accounts' runners on this machine keep running next to it, each with its own user."
 say "Next: open https://forkmesh.com/dashboard/runners and press Connect Claude (or Codex)"
 say "to sign the agent CLI in. The login stays on this machine."
 exit 0
