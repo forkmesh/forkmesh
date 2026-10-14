@@ -304,9 +304,130 @@ def test_register_skips_an_active_core_and_dry_run_posts_nothing(
     tool.register(FakeDb(pubkey), ssh, Runner(execute=True,
                                               out=io.StringIO()),
                   FLEET, "https://app.invalid")
+    assert len(ssh.commands) == 1
     tool.register(MissingDb(), ssh, Runner(execute=False, out=io.StringIO()),
                   FLEET, "https://app.invalid")
-    assert ssh.commands == []
+    assert len(ssh.commands) == 1
+
+
+def test_register_refuses_an_account_bound_to_another_key(node_key,
+                                                          monkeypatch):
+    pem, _pubkey = node_key
+    monkeypatch.setattr(tool, "post_account",
+                        lambda *a: pytest.fail("posted"))
+    with pytest.raises(tool.ToolError, match="another key"):
+        tool.register(FakeDb(b64(b"\0" * 32)), NodeSsh(pem),
+                      Runner(execute=True, out=io.StringIO()), FLEET,
+                      "https://app.invalid")
+
+
+FLEET2 = {"nodes": [{"name": "n1", "public_ipv4": "192.0.2.1"},
+                    {"name": "n4", "public_ipv4": "192.0.2.4"}]}
+
+
+class FleetDb:
+    def __init__(self, owner_pubkey):
+        self.accounts = {"fmnext-n1": {"kind": "node", "status": "active",
+                                       "owner": "jett"}}
+        self.rows = {"fmnext-n1": {"pubkey": "n1-key"}}
+        self.users = {"jett": {"kind": "user", "status": "active",
+                               "pubkey": owner_pubkey}}
+        self.executed = []
+
+    def record(self, table, key, name):
+        return self.users.get(name)
+
+    def account(self, name):
+        return self.accounts.get(name) or self.users.get(name)
+
+    def node_row(self, name):
+        return self.rows.get(name)
+
+    def audit_statement(self, actor, action, target_type, target, details):
+        return ["AUDIT", actor, action, target_type, target, details]
+
+    def execute(self, statements):
+        self.executed.append(statements)
+        return [{}]
+
+
+def fake_app(db, owner_pub=None):
+    def post_account(app_url, path, body):
+        if path == "finalize":
+            db.accounts[body["nodeName"]] = {"kind": "node",
+                                             "status": "active"}
+            db.rows[body["nodeName"]] = {"pubkey": body["pubkey"]}
+        return 201, {"ok": True}
+
+    def post_grant(app_url, body, session=""):
+        owner_pub.verify(unb64(body["acceptSig"]), tool.accept_canonical(
+            body["nodeName"], body["user"], body["sig"], body["acceptTs"]))
+        db.accounts[body["nodeName"]]["owner"] = body["user"]
+        return 200, {"ok": True, "linked": True, "user": body["user"]}
+    return post_account, post_grant
+
+
+def use_desktop_key(monkeypatch, pem):
+    import types
+    monkeypatch.setattr(tool.common, "layout",
+                        lambda: types.SimpleNamespace(identity_key=pem))
+
+
+def test_provision_registers_and_links_to_the_fleet_owner_with_the_desktop_key(
+        node_key, tmp_path, monkeypatch):
+    pem, pubkey = node_key
+    owner_pem, owner_pub = pem_key(tmp_path, "desktop.pem")
+    db = FleetDb(tool.key_pubkey(owner_pem))
+    post_account, post_grant = fake_app(db, owner_pub)
+    monkeypatch.setattr(tool, "post_account", post_account)
+    monkeypatch.setattr(tool, "post_grant", post_grant)
+    use_desktop_key(monkeypatch, owner_pem)
+    out = io.StringIO()
+    assert tool.provision_core(db, NodeSsh(pem), Runner(execute=True, out=out),
+                               FLEET2, FLEET2["nodes"][1], "https://app.invalid")
+    assert db.rows["fmnext-n4"]["pubkey"] == pubkey
+    assert db.accounts["fmnext-n4"]["owner"] == "jett"
+    assert [s[2] for batch in db.executed for s in batch] == [
+        "node.owner_transfer"]
+    out = io.StringIO()
+    assert not tool.provision_core(db, NodeSsh(pem),
+                                   Runner(execute=True, out=out), FLEET2,
+                                   FLEET2["nodes"][1], "https://app.invalid")
+    assert "already owned by jett" in out.getvalue()
+
+
+def test_provision_without_the_owners_key_registers_and_says_how_to_link(
+        node_key, tmp_path, monkeypatch):
+    pem, _pubkey = node_key
+    other_pem, _ = pem_key(tmp_path, "other.pem")
+    db = FleetDb("not-this-desktop")
+    post_account, _ = fake_app(db)
+    monkeypatch.setattr(tool, "post_account", post_account)
+    monkeypatch.setattr(tool, "post_grant", lambda *a: pytest.fail("posted"))
+    use_desktop_key(monkeypatch, other_pem)
+    out = io.StringIO()
+    assert not tool.provision_core(db, NodeSsh(pem),
+                                   Runner(execute=True, out=out), FLEET2,
+                                   FLEET2["nodes"][1], "https://app.invalid")
+    assert db.accounts["fmnext-n4"].get("owner") is None
+    assert "transfer --from '' --to jett" in out.getvalue()
+
+
+def test_provision_leaves_a_core_another_account_owns(node_key, tmp_path,
+                                                      monkeypatch):
+    pem, pubkey = node_key
+    owner_pem, _ = pem_key(tmp_path, "desktop.pem")
+    db = FleetDb(tool.key_pubkey(owner_pem))
+    db.accounts["fmnext-n4"] = {"kind": "node", "status": "active",
+                                "owner": "alice"}
+    db.rows["fmnext-n4"] = {"pubkey": pubkey}
+    monkeypatch.setattr(tool, "post_grant", lambda *a: pytest.fail("posted"))
+    use_desktop_key(monkeypatch, owner_pem)
+    out = io.StringIO()
+    tool.provision_core(db, NodeSsh(pem), Runner(execute=True, out=out),
+                        FLEET2, FLEET2["nodes"][1], "https://app.invalid")
+    assert db.accounts["fmnext-n4"]["owner"] == "alice"
+    assert "left as it is" in out.getvalue()
 
 
 def test_register_canonicals_match_the_next_app():
