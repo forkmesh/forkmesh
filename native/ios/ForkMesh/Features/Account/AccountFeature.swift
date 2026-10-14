@@ -23,6 +23,7 @@ final class SignInCoordinator {
     var guestSheetVisible: Bool = false
     /// The page the sign-in flow over the app opens on, while it is up.
     var signInStart: AuthFlowStart?
+    var instanceChooserShown: Bool = false
 
     @ObservationIgnored let auth: AuthService
     @ObservationIgnored let debugBuild: Bool
@@ -38,11 +39,23 @@ final class SignInCoordinator {
         return isGuestMode(authAvailable: true, isGuest: auth.isGuest)
     }
 
+    var needsInstance: Bool {
+        return Services.get(SettingsService.self)?.project.hasInstance == false
+    }
+
+    func chooseInstance() {
+        instanceChooserShown = true
+    }
+
     /// `requireAccount(context, action:)`: true when the caller may go ahead
     /// with a write. A guest sees the sheet; choosing Log in or Create an
     /// account opens sign-in, and the answer is whether they are signed in
     /// once that flow closes.
     func requireAccount(action: String) async -> Bool {
+        if needsInstance {
+            chooseInstance()
+            return false
+        }
         let auth: AuthService = self.auth
         return await FMApi.requireAccount(
             guest: isGuest,
@@ -82,6 +95,10 @@ final class SignInCoordinator {
     /// `openSignIn`: login (or signup) over the app; returns once the flow
     /// has closed, signed in or not.
     func openSignIn(_ start: AuthFlowStart = .login) async {
+        if needsInstance {
+            chooseInstance()
+            return
+        }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             signInWaiters.append(continuation)
             signInStart = start
@@ -147,6 +164,11 @@ struct SignInPresenter: ViewModifier {
                 onChoice: { (choice: GuestSignInChoice?) in
                     coordinator.guestSheetClosed(choice)
                 })
+            .sheet(isPresented: $coordinator.instanceChooserShown) {
+                if let settings = Services.get(SettingsService.self) {
+                    ChooseInstanceView(project: settings.project, onClose: { coordinator.instanceChooserShown = false })
+                }
+            }
             .fullScreenCover(isPresented: flowShown) {
                 AuthFlowView(
                     start: coordinator.signInStart ?? .login,

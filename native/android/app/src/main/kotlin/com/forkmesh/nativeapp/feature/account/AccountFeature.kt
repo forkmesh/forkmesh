@@ -29,6 +29,7 @@ import com.forkmesh.nativeapp.account.projects.NextProjectFold
 import com.forkmesh.nativeapp.account.projects.ProjectDirectory
 import com.forkmesh.nativeapp.api.AccountSettings
 import com.forkmesh.nativeapp.api.AuthController
+import com.forkmesh.nativeapp.feature.account.projects.ChooseInstanceSheet
 import com.forkmesh.nativeapp.feature.account.projects.FlutterDataMigration
 import com.forkmesh.nativeapp.feature.account.projects.ProjectsService
 import com.forkmesh.nativeapp.feature.push.PingCache
@@ -215,21 +216,26 @@ object AccountFeature {
         return remember<suspend (String) -> Boolean>(messenger) {
             { action: String ->
                 val auth = Services.get<AuthService>()
-                requireAccount(
-                    guest = com.forkmesh.nativeapp.account.isGuestMode(
-                        authAvailable = auth != null,
-                        isGuest = auth?.isGuest?.value == true,
-                    ),
-                    showSheet = {
-                        when (messenger.showGuestSignInSheet(action)) {
-                            GuestSignInChoice.LogIn -> AuthFlowStart.Login
-                            GuestSignInChoice.SignUp -> AuthFlowStart.Signup
-                            null -> null
-                        }
-                    },
-                    openSignIn = { start -> signIn(start) },
-                    isAuthenticated = { auth?.isAuthenticated == true },
-                )
+                if (ChooseInstanceSheet.needsInstance()) {
+                    ChooseInstanceSheet.open()
+                    false
+                } else {
+                    requireAccount(
+                        guest = com.forkmesh.nativeapp.account.isGuestMode(
+                            authAvailable = auth != null,
+                            isGuest = auth?.isGuest?.value == true,
+                        ),
+                        showSheet = {
+                            when (messenger.showGuestSignInSheet(action)) {
+                                GuestSignInChoice.LogIn -> AuthFlowStart.Login
+                                GuestSignInChoice.SignUp -> AuthFlowStart.Signup
+                                null -> null
+                            }
+                        },
+                        openSignIn = { start -> signIn(start) },
+                        isAuthenticated = { auth?.isAuthenticated == true },
+                    )
+                }
             }
         }
     }
@@ -242,6 +248,11 @@ object AccountFeature {
     }
 
     fun openSignIn(start: AuthFlowStart = AuthFlowStart.Login, onClosed: () -> Unit = {}) {
+        if (ChooseInstanceSheet.needsInstance()) {
+            ChooseInstanceSheet.open()
+            onClosed()
+            return
+        }
         AppNavigation.navigator.push(AuthFlowScreen(start, onClosed))
     }
 
@@ -263,6 +274,7 @@ object AccountFeature {
         androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
             androidx.compose.runtime.key(generation) { GateBody(content) }
             com.forkmesh.nativeapp.feature.account.projects.ProjectDrawerHost()
+            com.forkmesh.nativeapp.feature.account.projects.ChooseInstanceHost()
             com.forkmesh.nativeapp.feature.account.projects.ProjectSwitchOverlay()
         }
     }
@@ -277,7 +289,7 @@ object AccountFeature {
         val projects = Services.get<ProjectsService>()
         val active = projects?.active?.collectAsState()?.value
         if (projects != null && active != null && !active.hasInstance) {
-            com.forkmesh.nativeapp.feature.account.projects.ChooseInstance(projects, active)
+            content()
             return
         }
         val auth = Services.get<AuthService>()
