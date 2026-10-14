@@ -20,7 +20,8 @@ enum PackagesFeature {
         let store = AccountPackagesStore(
             client: client, prefs: settings.prefs, signedIn: { PackagesFeature.signedIn },
             legacyProject: { [weak settings] in settings?.legacyProject ?? true },
-            projectNamespace: { [weak settings] in settings?.scope.namespace ?? "" })
+            projectNamespace: { [weak settings] in settings?.scope.namespace ?? "" },
+            starterPack: { [weak settings] in StarterPack.fromName(settings?.starterPack) })
         store.onChange = { PackageGateSync.publish() }
         Services.put(store)
         PackageGateSync.publish()

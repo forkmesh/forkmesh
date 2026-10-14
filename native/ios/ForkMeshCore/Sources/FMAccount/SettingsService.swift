@@ -99,6 +99,7 @@ public final class SettingsService {
     nonisolated public static let signInOnKey = "packages/sign-in/on"
     nonisolated public static let aquariumOnKey = "packages/aquarium/on"
     nonisolated public static let removedPackagesKey = "packages/removed"
+    nonisolated public static let starterPackKey = "packages/starter-pack"
     /// Seven days, in milliseconds.
     nonisolated public static let sponsoredHideDurationMs: Int64 = 7 * 24 * 60 * 60 * 1000
 
@@ -567,6 +568,18 @@ public final class SettingsService {
     public var legacyProject: Bool {
         track()
         return ProjectLegacyMarker.stored(prefs, scope: scope) ?? settleLegacyProject()
+    }
+
+    public var starterPack: String? {
+        track()
+        return prefs.string(forKey: scope.key(SettingsService.starterPackKey))
+    }
+
+    public var needsStarterPack: Bool { !legacyProject && starterPack == nil }
+
+    public func setStarterPack(_ name: String) {
+        prefs.set(name, forKey: scope.key(SettingsService.starterPackKey))
+        notifyListeners()
     }
 
     public var signInOn: Bool {
