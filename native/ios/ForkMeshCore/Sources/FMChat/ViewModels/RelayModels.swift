@@ -375,9 +375,11 @@ public final class AttachInstanceModel {
     }
 
     public static func intro(_ projectName: String) -> String {
-        "\(projectName) is not connected to any instance yet. Enter the one it should use: its account, repositories "
-            + "and chat live there. Until you choose, nothing is loaded from any instance."
+        "\(projectName) works on this device without an instance: repositories you keep on the phone stay here. "
+            + "Connect one to sign in, sync repositories and chat. Until you do, nothing is loaded from any instance."
     }
+
+    public static let bannerText = "On this device only"
 }
 
 /// The relay networks screen: every relay's repositories, side by side.
