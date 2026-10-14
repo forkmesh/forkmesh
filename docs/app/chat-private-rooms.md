@@ -950,8 +950,12 @@ track. `chat-view-once-filters.js` connects the call engine:
   microphone. While recording, the call engine's own privacy rule applies:
   frames where no face is tracked are blurred, never shown raw.
 
-The native recorders (iOS `MessagesViewOnceCapture.swift`, Android
-`ViewOnceMessages.kt`) record unfiltered for now; their
+On iOS the call preview's "Record message" (2026-10-14) records a video
+message from the call page itself, so it carries the previewed face,
+background and voice and refuses rather than record raw
+(native/ios/docs/FMChat.md). The composer's recorders (iOS
+`MessagesViewOnceCapture.swift`, Android `ViewOnceMessages.kt`) still record
+unfiltered; their
 `MessageCaptureFilters` hooks are pass-through. Follow-up: drive the
 WebView call page's `FmCallFaces.createFaceStage` and voice stage from those
 recorders (or record from the page in preview mode, as
