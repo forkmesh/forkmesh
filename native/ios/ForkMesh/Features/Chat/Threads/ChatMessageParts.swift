@@ -339,6 +339,7 @@ struct ChatComposerBar: View {
                 }
             }
         }
+        .fmKeepsKeyboard()
         .photosPicker(isPresented: $choosingPhoto, selection: $photo, matching: .any(of: [.images, .videos]))
         .onChange(of: photo) { _, item in
             guard let item else { return }
