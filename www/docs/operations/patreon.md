@@ -56,8 +56,18 @@ reconciliation cannot fetch member snapshots.
 | Callback `expired` / `replayed` | State TTL or retry | Start Connect again |
 | Callback `wrong_campaign` | Membership on another campaign | Check `PATREON_CAMPAIGN_ID` |
 | Callback `duplicate_identity` | Patreon user linked to another account | Unlink the prior account |
-| Webhook 503 | Missing webhook secret | Publish `PATREON_WEBHOOK_SECRET` |
+| Webhook 503 `patreon_webhook_not_configured` | Missing webhook secret | Publish `PATREON_WEBHOOK_SECRET` |
+| Webhook 503 `patreon_reconciliation_not_configured` | Missing campaign or creator token | Publish `PATREON_CAMPAIGN_ID` and `PATREON_CREATOR_ACCESS_TOKEN` |
+| Webhook 503 `patreon_reconciliation_failed` | Patreon member fetch failed or token revoked | Check the token; Patreon retries the delivery |
 | Webhook accepted, roles unchanged | Creator token or campaign mismatch | Rotate the token; check the campaign |
+
+The two `*_not_configured` answers, like OAuth start's, carry
+`x-forkmesh-expected-degraded: 1`: a deployment without Patreon is a choice,
+not an API failure, so they never reach the error log or the `/status` API
+alert. A failed member fetch or membership write is still logged. The served
+stack (ForkMesh Next) has no `PATREON_*` secrets in `secrets.env`; the retired
+Cloudflare worker held them, while Patreon still posts to forkmesh.com
+(2026-10-14 alert).
 
 Git, collaboration, mobile, and self-hosted paths never depend on Patreon;
 only Connect, webhook sync, and membership-gated hosted features do.
