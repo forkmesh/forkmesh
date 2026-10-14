@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Health",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "summary": "A private calorie and macro diary for your own account, encrypted at rest under your own key, synced across web, desktop, and mobile, with photo identification, barcode scanning, goals, reminders, charts, and challenges.",
   "screenshots": [
     {

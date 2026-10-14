@@ -2,7 +2,7 @@
             <style>
               .calories-viz { --cal-series-1: #2a78d6; --cal-series-2: #eb6834; --cal-series-3: #1baf7a; --cal-series-4: #eda100; --cal-grid: rgb(var(--dashboard-border-rgb) / 0.9); --cal-ink: rgb(var(--dashboard-foreground-rgb)); --cal-ink-muted: rgb(var(--dashboard-muted-foreground-rgb)); --cal-surface: rgb(var(--dashboard-card-rgb)); }
               :root[data-dashboard-theme="dark"] .calories-viz { --cal-series-1: #3987e5; --cal-series-2: #d95926; --cal-series-3: #199e70; --cal-series-4: #c98500; }
-              .calories-viz svg { display: block; width: 100%; height: auto; overflow: visible; }
+              .calories-viz .cal-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
               .calories-viz .cal-bar { transition: opacity .12s; }
               .calories-viz .cal-bar:hover { opacity: .75; }
               .calories-viz .cal-hit { fill: transparent; }
@@ -14,13 +14,15 @@
               .cal-video { width: 100%; max-height: 320px; border-radius: .5rem; background: #000; object-fit: cover; }
               .cal-preview { max-height: 260px; width: auto; max-width: 100%; border-radius: .5rem; }
               .cal-scan-frame { position: relative; }
-              .cal-diary-grid { display: grid; gap: 1rem; }
+              .cal-diary-grid { display: grid; gap: .75rem; grid-template-areas: "main" "quick" "diary"; }
               .cal-diary-grid > * { min-width: 0; }
-              .cal-quick { order: -1; }
+              .cal-main { grid-area: main; }
+              .cal-diary { grid-area: diary; }
+              .cal-quick { grid-area: quick; }
               .cal-quick-list { max-height: 15rem; overflow-y: auto; }
               @media (min-width: 1280px) {
-                .cal-diary-grid { grid-template-columns: minmax(0, 1fr) 20rem; align-items: start; }
-                .cal-quick { order: 0; position: sticky; top: 0; }
+                .cal-diary-grid { grid-template-columns: minmax(0, 1fr) 20rem; grid-template-rows: auto 1fr; grid-template-areas: "main quick" "diary quick"; align-items: start; }
+                .cal-quick { position: sticky; top: 0; }
                 .cal-quick-list { max-height: 22rem; }
               }
               .cal-quick-row { display: flex; align-items: center; gap: .25rem; border-radius: .375rem; }
@@ -31,22 +33,35 @@
               .cal-quick-row .cal-quick-side:hover { color: rgb(var(--dashboard-foreground-rgb)); }
               .cal-quick-row[data-busy="1"] { opacity: .5; pointer-events: none; }
               @media (pointer: coarse) { .cal-quick-row > button { min-height: 44px; } }
-              .cal-search { position: relative; flex: 1 1 18rem; min-width: 14rem; }
+              .cal-search { position: relative; flex: 1 1 12rem; min-width: 10rem; }
               .calories-viz .cal-search-icon { position: absolute; left: .7rem; top: 50%; width: .875rem; height: .875rem; transform: translateY(-50%); pointer-events: none; }
               .cal-search-panel { position: absolute; left: 0; right: 0; top: calc(100% + .25rem); z-index: 30; border-radius: .375rem; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 8px 24px rgb(0 0 0 / .25); }
               .cal-search-list { max-height: 24rem; overflow-y: auto; padding: .25rem; }
               .cal-search-option { display: block; width: 100%; border: 0; border-radius: .25rem; padding: .45rem .6rem; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
               .cal-search-option:hover, .cal-search-option[aria-selected="true"] { background: rgb(var(--dashboard-secondary-rgb)); }
+              .cal-summary { display: grid; gap: 1px; overflow: hidden; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: .5rem; background: rgb(var(--dashboard-border-rgb)); }
+              .cal-summary > * { min-width: 0; padding: .75rem .875rem; background: rgb(var(--dashboard-card-rgb)); }
+              .cal-main { container-type: inline-size; }
+              @container (min-width: 36rem) { .cal-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+              @container (min-width: 60rem) { .cal-summary { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, .9fr); } }
+              .cal-today { display: flex; align-items: center; gap: .875rem; }
+              .cal-today .cal-chart { flex: none; width: 6.5rem; }
+              .cal-kv { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; font-size: .75rem; line-height: 1.25rem; }
+              .cal-kv > :first-child { color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .cal-kv > :last-child { color: rgb(var(--dashboard-foreground-rgb)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+              .calories-viz .cal-week svg { height: 3.5rem; }
+              @container (max-width: 52rem) { .cal-tool-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .cal-tool { width: var(--dashboard-control-height); padding: 0; } }
+              .cal-diary-table th, .cal-diary-table td { padding: .375rem .75rem; }
               .cal-scan-frame::after { content: ""; position: absolute; inset: 22% 12%; border: 2px solid var(--cal-series-3); border-radius: .5rem; pointer-events: none; }
             </style>
             <div class="w-full p-3 sm:p-6">
-              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h1 class="text-lg font-semibold text-foreground">Calorie Counter</h1>
-                  <p class="mt-1 text-sm text-muted-foreground">Your private food diary, goals, reminders, and challenges with friends. Synced to your account across web, desktop, and mobile.</p>
+                  <p class="text-sm text-muted-foreground">Your private food diary, goals, reminders, and challenges with friends, synced across web, desktop, and mobile.</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  <button data-calories-manage data-calories-requires-install type="button" class="fm-btn hidden"><i data-lucide="settings"></i>Plugin data</button>
+                  <button data-calories-manage data-calories-requires-install type="button" class="fm-btn fm-btn-sm hidden"><i data-lucide="settings"></i>Plugin data</button>
                 </div>
               </div>
               <div data-calories-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-calories-message-text class="fm-flash-body"></p></div>
@@ -60,7 +75,7 @@
               </section>
 
               <div data-calories-app class="hidden">
-                <div role="tablist" aria-label="Calorie Counter sections" class="mb-4 flex flex-wrap gap-1 rounded-md border border-border bg-card p-1">
+                <div role="tablist" aria-label="Calorie Counter sections" class="mb-3 flex flex-wrap gap-1 rounded-md border border-border bg-card p-1">
                   <button data-calories-tab="diary" role="tab" aria-selected="true" type="button" class="cal-tab rounded px-3 py-1.5 text-xs font-semibold text-muted-foreground">Diary</button>
                   <button data-calories-tab="trends" role="tab" aria-selected="false" type="button" class="cal-tab rounded px-3 py-1.5 text-xs font-semibold text-muted-foreground">Trends</button>
                   <button data-calories-tab="goals" role="tab" aria-selected="false" type="button" class="cal-tab rounded px-3 py-1.5 text-xs font-semibold text-muted-foreground">Goals &amp; reminders</button>
@@ -70,58 +85,69 @@
                 <!-- Diary: everything logged, newest first -->
                 <section data-calories-panel="diary" role="tabpanel">
                   <div class="cal-diary-grid">
-                  <div>
-                  <div class="mb-4 flex flex-wrap items-center gap-2">
-                    <label class="flex items-center gap-2 text-xs font-semibold text-muted-foreground">Log to<input data-calories-log-day type="date" aria-label="Day new entries are logged to" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <div class="cal-main">
+                  <div class="mb-3 flex flex-wrap items-center gap-2">
+                    <label class="flex items-center gap-2 text-xs font-semibold text-muted-foreground">Log to<input data-calories-log-day type="date" aria-label="Day new entries are logged to" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground" /></label>
                     <button data-calories-log-today type="button" class="fm-btn">Today</button>
                     <div data-calories-search class="cal-search">
                       <i data-lucide="search" class="cal-search-icon h-3.5 w-3.5 text-muted-foreground"></i>
-                      <input data-calories-search-query type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="calories-search-results" aria-label="Search foods" autocomplete="off" spellcheck="false" maxlength="80" placeholder="Search foods: trader joes buffalo chicken wrap…" class="w-full rounded-md border border-border bg-background py-2 pl-8 pr-3 text-sm text-foreground" />
+                      <input data-calories-search-query type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="calories-search-results" aria-label="Search foods" autocomplete="off" spellcheck="false" maxlength="80" placeholder="Search foods: trader joes buffalo chicken wrap…" class="h-control w-full rounded-md border border-border bg-background pl-8 pr-3 text-control text-foreground" />
                       <div data-calories-search-panel class="cal-search-panel hidden">
                         <div id="calories-search-results" data-calories-search-results role="listbox" aria-label="Foods" class="cal-search-list text-sm"></div>
                         <p class="border-t border-border px-3 py-1.5 text-xs text-muted-foreground"><span data-calories-search-status></span> Open Food Facts<span data-calories-search-usda></span> · ↑ ↓ to move, Enter to log.</p>
                       </div>
                     </div>
                     <button data-calories-open-photo type="button" class="fm-btn fm-btn-cta"><i data-lucide="camera"></i>Photo</button>
-                    <button data-calories-open-scan type="button" class="fm-btn"><i data-lucide="scan-barcode"></i>Barcode</button>
-                    <button data-calories-open-manual type="button" class="fm-btn"><i data-lucide="plus"></i>Add</button>
-                    <button data-calories-open-weight type="button" class="fm-btn"><i data-lucide="scale"></i>Weigh in</button>
+                    <button data-calories-open-scan type="button" class="fm-btn cal-tool" title="Barcode"><i data-lucide="scan-barcode"></i><span class="cal-tool-label">Barcode</span></button>
+                    <button data-calories-open-manual type="button" class="fm-btn cal-tool" title="Add"><i data-lucide="plus"></i><span class="cal-tool-label">Add</span></button>
+                    <button data-calories-open-weight type="button" class="fm-btn cal-tool" title="Weigh in"><i data-lucide="scale"></i><span class="cal-tool-label">Weigh in</span></button>
                   </div>
-                  <div class="mb-4 grid gap-3 md:grid-cols-3">
-                    <div class="rounded-lg border border-border bg-card p-4 md:row-span-2">
-                      <p class="text-xs font-medium text-muted-foreground">Calories</p>
-                      <div data-calories-ring class="mx-auto mt-2 max-w-[220px]"></div>
-                      <p data-calories-ring-caption class="mt-2 text-center text-sm text-muted-foreground"></p>
+                  <div class="cal-summary">
+                    <div class="cal-today">
+                      <div data-calories-ring class="cal-chart"></div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-xs font-semibold text-foreground">Today</p>
+                        <p data-calories-ring-caption class="mb-1 text-xs text-muted-foreground"></p>
+                        <div data-calories-meals></div>
+                      </div>
                     </div>
-                    <div class="rounded-lg border border-border bg-card p-4 md:col-span-2">
-                      <p class="text-xs font-medium text-muted-foreground">Macros today</p>
-                      <div data-calories-macros class="mt-3 grid gap-3"></div>
+                    <div>
+                      <p class="text-xs font-semibold text-foreground">Macros</p>
+                      <div data-calories-macros class="mt-1.5 grid gap-2"></div>
                     </div>
-                    <div class="grid gap-3 sm:grid-cols-3 md:col-span-2">
-                      <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-medium text-muted-foreground">Logging streak</p><p data-calories-stat-logged class="mt-1 text-2xl font-semibold text-foreground">0</p><p class="text-xs text-muted-foreground">days in a row</p></div>
-                      <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-medium text-muted-foreground">Within goal</p><p data-calories-stat-goal class="mt-1 text-2xl font-semibold text-foreground">0</p><p class="text-xs text-muted-foreground">days in a row</p></div>
-                      <div class="rounded-lg border border-border bg-card p-4"><p class="text-xs font-medium text-muted-foreground">Weight</p><p data-calories-stat-weight class="mt-1 text-2xl font-semibold text-foreground">—</p><p data-calories-stat-weight-caption class="text-xs text-muted-foreground">No weigh-in yet</p></div>
+                    <div>
+                      <div class="flex items-baseline justify-between gap-2"><p class="text-xs font-semibold text-foreground">Last 7 days</p><p data-calories-week-average class="text-xs text-muted-foreground"></p></div>
+                      <div data-calories-week class="cal-chart cal-week relative mt-1.5"></div>
+                    </div>
+                    <div>
+                      <p class="text-xs font-semibold text-foreground">Progress</p>
+                      <div class="mt-1">
+                        <p class="cal-kv"><span>Logging streak</span><span><span data-calories-stat-logged>0</span> days</span></p>
+                        <p class="cal-kv"><span>Within goal</span><span><span data-calories-stat-goal>0</span> days</span></p>
+                        <p class="cal-kv"><span>Weight</span><span data-calories-stat-weight>—</span></p>
+                        <p data-calories-stat-weight-caption class="truncate text-xs text-muted-foreground">No weigh-in yet</p>
+                      </div>
                     </div>
                   </div>
-                  <section class="overflow-hidden rounded-lg border border-border bg-card">
-                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
+                  </div>
+                  <section class="cal-diary overflow-hidden rounded-lg border border-border bg-card">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
                       <h2 class="text-sm font-semibold text-foreground">Diary</h2>
                       <p data-calories-diary-summary class="text-xs text-muted-foreground"></p>
                     </div>
-                    <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="px-4 py-2 font-semibold">Food</th><th class="px-4 py-2 font-semibold">Meal</th><th class="px-4 py-2 text-right font-semibold">kcal</th><th class="px-4 py-2 text-right font-semibold">Protein</th><th class="px-4 py-2 text-right font-semibold">Carbs</th><th class="px-4 py-2 text-right font-semibold">Fat</th><th class="px-4 py-2 text-right font-semibold">Actions</th></tr></thead><tbody data-calories-entries class="divide-y divide-border"></tbody></table></div>
-                    <div data-calories-entries-empty class="hidden p-8 text-center text-sm text-muted-foreground">Nothing logged yet. Snap a photo, scan a barcode, or add a meal.</div>
+                    <div class="overflow-x-auto"><table class="cal-diary-table w-full text-left text-sm"><thead class="border-b border-border bg-secondary text-xs text-muted-foreground"><tr><th class="font-semibold">Food</th><th class="font-semibold">Meal</th><th class="text-right font-semibold">kcal</th><th class="text-right font-semibold">Protein</th><th class="text-right font-semibold">Carbs</th><th class="text-right font-semibold">Fat</th><th class="text-right font-semibold"><span class="sr-only">Actions</span></th></tr></thead><tbody data-calories-entries class="divide-y divide-border"></tbody></table></div>
+                    <div data-calories-entries-empty class="hidden p-6 text-center text-sm text-muted-foreground">Nothing logged yet. Snap a photo, scan a barcode, or add a meal.</div>
                     <p data-calories-entries-more class="hidden border-t border-border p-3 text-center text-xs text-muted-foreground"></p>
                   </section>
-                  </div>
                   <aside data-calories-quick class="cal-quick rounded-lg border border-border bg-card p-3" aria-label="Quick add">
                     <div class="flex items-center justify-between gap-2">
                       <h2 class="text-sm font-semibold text-foreground">Quick add</h2>
-                      <label data-calories-receipt-button class="cursor-pointer rounded-md border border-border bg-secondary px-2 py-1 text-xs font-semibold text-foreground" title="Read a grocery or restaurant receipt into My foods"><i data-lucide="receipt" class="mr-1 inline h-3.5 w-3.5"></i>Receipt<input data-calories-receipt-file type="file" accept="image/*" class="hidden" /></label>
+                      <label data-calories-receipt-button class="fm-btn fm-btn-sm cursor-pointer" title="Read a grocery or restaurant receipt into My foods"><i data-lucide="receipt"></i>Receipt<input data-calories-receipt-file type="file" accept="image/*" class="hidden" /></label>
                     </div>
-                    <p class="mt-1 text-xs text-muted-foreground">One click logs a serving to <span data-calories-quick-day></span>. Upload a receipt photo to fill My foods.</p>
+                    <p class="mt-1 text-xs text-muted-foreground">One click logs a serving to <span data-calories-quick-day></span>.</p>
                     <div class="mt-2 flex gap-2">
-                      <input data-calories-quick-filter type="search" placeholder="Filter foods" aria-label="Filter quick add foods" class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground" />
-                      <select data-calories-quick-meal aria-label="Meal for quick adds" class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"><option value="">By time</option><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select>
+                      <input data-calories-quick-filter type="search" placeholder="Filter foods" aria-label="Filter quick add foods" class="h-control-sm min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-control text-foreground" />
+                      <select data-calories-quick-meal aria-label="Meal for quick adds" class="h-control-sm rounded-md border border-border bg-background px-2 text-xs text-foreground"><option value="">By time</option><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select>
                     </div>
                     <p data-calories-quick-status class="mt-2 text-xs text-muted-foreground" role="status" aria-live="polite"></p>
                     <div data-calories-quick-lists class="mt-1 grid gap-3"></div>
@@ -135,18 +161,18 @@
                   <div class="grid gap-3">
                     <section class="rounded-lg border border-border bg-card p-4">
                       <div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 class="text-sm font-semibold text-foreground">Calories · last 30 days</h2><div class="flex items-center gap-3 text-xs text-muted-foreground"><span><span class="cal-legend-swatch" style="background:var(--cal-series-1)"></span>Logged</span><span><span class="cal-legend-swatch" style="background:var(--cal-series-4)"></span>Goal</span><button data-calories-table-toggle="calories" type="button" class="rounded border border-border px-2 py-1">Table</button></div></div>
-                      <div data-calories-chart="calories" class="relative"></div>
+                      <div data-calories-chart="calories" class="cal-chart relative"></div>
                       <div data-calories-table="calories" class="hidden max-h-64 overflow-auto"></div>
                     </section>
                     <div class="grid gap-3 lg:grid-cols-2">
                       <section class="rounded-lg border border-border bg-card p-4">
                         <div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 class="text-sm font-semibold text-foreground">Macros · last 7 days</h2><div class="flex items-center gap-3 text-xs text-muted-foreground"><span><span class="cal-legend-swatch" style="background:var(--cal-series-1)"></span>Protein</span><span><span class="cal-legend-swatch" style="background:var(--cal-series-2)"></span>Carbs</span><span><span class="cal-legend-swatch" style="background:var(--cal-series-3)"></span>Fat</span><button data-calories-table-toggle="macros" type="button" class="rounded border border-border px-2 py-1">Table</button></div></div>
-                        <div data-calories-chart="macros" class="relative"></div>
+                        <div data-calories-chart="macros" class="cal-chart relative"></div>
                         <div data-calories-table="macros" class="hidden max-h-64 overflow-auto"></div>
                       </section>
                       <section class="rounded-lg border border-border bg-card p-4">
                         <div class="mb-2 flex flex-wrap items-center justify-between gap-2"><h2 class="text-sm font-semibold text-foreground">Weight · last 180 days</h2><div class="flex items-center gap-3 text-xs text-muted-foreground"><span><span class="cal-legend-swatch" style="background:var(--cal-series-3)"></span>Weigh-ins</span><span><span class="cal-legend-swatch" style="background:var(--cal-series-4)"></span>Target</span><button data-calories-table-toggle="weight" type="button" class="rounded border border-border px-2 py-1">Table</button></div></div>
-                        <div data-calories-chart="weight" class="relative"></div>
+                        <div data-calories-chart="weight" class="cal-chart relative"></div>
                         <div data-calories-table="weight" class="hidden max-h-64 overflow-auto"></div>
                       </section>
                     </div>
