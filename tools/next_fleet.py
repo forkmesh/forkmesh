@@ -1142,7 +1142,7 @@ def verify_target_instance(vultr, name, ip):
     return instance
 
 
-SSH_IDENTITY_SCRIPT = "hostname -f; test -d /etc/forkmesh-next && echo fmnext-node"
+SSH_IDENTITY_SCRIPT = "hostname -f; if test -d /etc/forkmesh-next; then echo fmnext-node; fi"
 
 
 def verify_target_ssh(ssh, fleet, name, ip):
