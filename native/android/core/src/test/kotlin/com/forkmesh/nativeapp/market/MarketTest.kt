@@ -185,8 +185,8 @@ class MarketTest {
 
         expect(model.isInstalled(pkg("agents")), "an account package the store does not know yet follows the legacy fallback")
         legacy = false
-        expect(!model.isInstalled(pkg("agents")))
-        assertEq(MarketCardAction.INSTALL, model.cardAction(pkg("agents"), opens = true))
+        expect(model.isInstalled(pkg("agents")), "a starter package is on in a new project")
+        assertEq(MarketCardAction.OPEN, model.cardAction(pkg("agents"), opens = true))
 
         expect(model.isInstalled(pkg("crm")))
         assertEq(MarketCardAction.OPEN, model.cardAction(pkg("crm"), opens = true))
