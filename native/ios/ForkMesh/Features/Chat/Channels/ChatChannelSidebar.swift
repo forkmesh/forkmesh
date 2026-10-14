@@ -36,9 +36,9 @@ struct ChatChannelSidebar: View {
 
     private var rows: [ChannelGroups.Row] {
         let state = groups?.state ?? ChannelGroups.State()
-        let listed: [String] = (hub.channels + hub.officeChannels).filter { !hub.workspace.isStarred($0) }
+        let listed: [String] = hub.listedChannels.filter { !hub.workspace.isStarred($0) }
         return ChannelGroups.layout(state, channels: listed) { channel in
-            OfficeFrames.isOffice(channel) ? "Office" : ""
+            OfficeFrames.isOffice(channel) && !hub.isEveryoneChannel(channel) ? "Office" : ""
         }
     }
 
@@ -141,7 +141,7 @@ struct ChatChannelSidebar: View {
                 if let channel = leaving {
                     hub.workspace.forget(conversation: channel)
                     hub.extras.removeChannel(channel)
-                    if hub.currentConversation == channel { hub.select("#general") }
+                    if hub.currentConversation == channel { hub.select(hub.generalConversation) }
                 }
                 leaving = nil
             }
@@ -421,7 +421,8 @@ struct ChatChannelSidebar: View {
         let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(channel)
         let preview: ChatListPreview? = hub.listPreview(channel)
         ChatChannelTile(
-            title: office?.name.isEmpty == false ? "#\(office!.name)" : channel, icon: locked ? "lock.fill" : "number",
+            title: office?.name.isEmpty == false ? "#\(office!.name)" : hub.conversationLabel(channel),
+            icon: locked ? "lock.fill" : (channel == ChatEveryone.worldConversation ? "globe" : "number"),
             selected: hub.currentConversation == channel, unread: hub.isUnread(channel), onTap: { select(channel) },
             muted: hub.workspace.isMuted(channel),
             draft: hub.workspace.hasDraft(channel) && hub.currentConversation != channel,
@@ -439,7 +440,7 @@ struct ChatChannelSidebar: View {
                     if hub.extras.isPrivate(channel) {
                         Button(action: { inviting = channel }) { Label("Invite people", systemImage: "person.badge.plus") }
                     }
-                    if !ChatEveryone.contains(channel) {
+                    if channel != "#general" {
                         Button(role: .destructive, action: { leaving = channel }) {
                             Label("Leave channel", systemImage: "rectangle.portrait.and.arrow.right")
                         }

@@ -191,7 +191,7 @@ test("admin manages a private channel while only invited users join", async ({ p
   }, session("alice"));
   await page.reload();
 
-  await expect(page.locator("#chat-channel-title")).toHaveText("#general");
+  await expect(page.locator("#chat-channel-title")).toHaveText("World");
   await expect(page.locator("#chat-rooms")).not.toContainText("release-team");
 
   await page.evaluate((value) => {
@@ -199,7 +199,7 @@ test("admin manages a private channel while only invited users join", async ({ p
   }, session("bob"));
   await page.reload();
 
-  await expect(page.locator("#chat-channel-title")).toHaveText("#general");
+  await expect(page.locator("#chat-channel-title")).toHaveText("World");
   await expect(page.locator("#chat-rooms")).not.toContainText("release-team");
 });
 
@@ -326,7 +326,7 @@ test("registered users discover a relay-provided public channel", async ({ page 
   });
   await page.reload();
 
-  await expect(page.locator("#chat-channel-title")).toHaveText("#general");
+  await expect(page.locator("#chat-channel-title")).toHaveText("World");
   await expect(page.locator("#chat-rooms")).not.toContainText("#announcements");
 });
 
@@ -557,7 +557,7 @@ test("a channel manager renames and deletes a channel from its settings", async 
   await page.getByRole("button", { name: "Delete channel" }).click();
   await page.getByRole("button", { name: "Yes, delete" }).click();
   await expect(page.locator("#chat-channel-settings")).toBeHidden();
-  await expect(page.locator("#chat-channel-title")).toHaveText("#general");
+  await expect(page.locator("#chat-channel-title")).toHaveText("World");
   await expect(page.locator("#chat-rooms")).not.toContainText("#shipping");
   await expect(page.locator("#chat-log")).toContainText(
     "Channel #shipping was deleted",

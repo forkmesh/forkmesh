@@ -338,7 +338,7 @@ private:
     QString m_lastTxType;
     QString m_lastTxScope;
 
-    QStringList m_channels{"#general", "#welcome", "#random"};
+    QStringList m_channels{"#general"};
     QSet<QString> m_privateChannels;
     QSet<QString> m_hiddenChannels;
     QHash<QString, Peer> m_peers;

@@ -1,4 +1,3 @@
-import FMAccount
 import FMApi
 import FMBase
 import FMNet
@@ -9,80 +8,100 @@ import XCTest
 
 @MainActor
 final class ChatEveryoneTests: XCTestCase {
-    private func hub() async throws -> (ChatHub, RelayHarness, FakeAccountApi) {
+    static let general = String(repeating: "a", count: 32)
+    static let random = String(repeating: "b", count: 32)
+    static let welcome = String(repeating: "c", count: 32)
+    static let ops = String(repeating: "d", count: 32)
+
+    private func hub(store: KeyValueStore = InMemoryKeyValueStore()) async throws -> (ChatHub, RelayHarness, FakeAccountApi, OfficeChannelService) {
         let h = try await RelayHarness.start()
         let mesh = LocalMeshService(settings: h.device.settings, identity: h.device.identity, secureStore: h.device.secure)
         let hub = ChatHub(relay: h.relay, mesh: mesh, isGuest: { false })
+        hub.workspace = ChatWorkspace(store: store, scope: "next")
         let api = FakeAccountApi()
-        hub.accounts = api
-        return (hub, h, api)
-    }
-
-    private func user(_ name: String, createdAt: Int64) -> JSONValue {
-        .object(["name": .string(name), "kind": "user", "createdAt": .int(createdAt)])
-    }
-
-    func testEveryMemberIsInGeneralRandomAndWelcome() async throws {
-        let (hub, h, api) = try await hub()
-        let now = Date().epochMillis
-        api.replies["GET /api/accounts/users"] = [
-            "users": .array([
-                user("alice", createdAt: now - 40 * 86_400_000), user("bob", createdAt: now - 3_600_000),
-                user("pat", createdAt: now - 90 * 86_400_000), user("Alice", createdAt: 0),
-            ]),
+        api.replies["GET /api/chat/channels"] = [
+            "channels": [
+                ["id": .string(Self.ops), "name": "ops", "visibility": "public"],
+                ["id": .string(Self.welcome), "name": "welcome", "visibility": "public", "kind": "everyone", "memberCount": 4],
+                ["id": .string(Self.general), "name": "general", "visibility": "public", "kind": "everyone", "memberCount": 4],
+                ["id": .string(Self.random), "name": "random", "visibility": "public", "kind": "everyone", "memberCount": 4],
+            ],
         ]
+        api.replies["GET /api/chat/channels/\(Self.general)/members"] = [
+            "everyone": true,
+            "members": [["username": "alice"], ["username": "bob"], ["username": "pat"], ["username": "Alice"]],
+        ]
+        let office = OfficeChannelService(
+            api: api, connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.forkmesh.com") }, selfId: { "me-node" }, displayName: { "Me" })
+        hub.office = office
+        await office.refresh()
+        return (hub, h, api, office)
+    }
+
+    func testServerChannelsAreListedFirstAndTheSharedRoomIsWorld() async throws {
+        let (hub, h, _, office) = try await hub()
+        XCTAssertEqual(office.rooms.filter(\.everyone).map(\.name), ["welcome", "general", "random"])
+        XCTAssertEqual(hub.listedChannels, ["#office/general", "#office/random", "#office/welcome", "#general", "#office/ops"])
+        XCTAssertEqual(hub.conversationLabel("#office/general"), "#general")
+        XCTAssertEqual(hub.conversationLabel("#general"), "World")
+        XCTAssertEqual(hub.generalConversation, "#office/general")
+        XCTAssertTrue(hub.isEveryoneChannel("#office/welcome"))
+        XCTAssertFalse(hub.isEveryoneChannel("#office/ops"))
+        XCTAssertFalse(hub.isEveryoneChannel("#general"))
+        XCTAssertEqual(
+            try ChatReplyTarget.resolve("general", channels: ["#general"], roster: [], offices: hub.officeChannels),
+            "#office/general", "a reply to general goes to the server channel, not World")
+        try h.sendPlain([
+            "type": "hello", "id": "h1", "senderId": "old-desktop", "sender": "Old", "ts": 1000,
+            "channels": ["#general", "#random", "#welcome"],
+        ])
+        _ = await waitUntil { h.relay.channels.contains("#random") }
+        XCTAssertEqual(hub.channels, ["#general"], "an older client's relay labels stay out of the list")
+        await h.close()
+    }
+
+    func testEveryMemberIsInTheServerChannels() async throws {
+        let (hub, h, api, _) = try await hub()
+        XCTAssertEqual(hub.memberCount("#office/general"), 4, "the server's count stands in until the list loads")
         try await h.sendProtected([
-            "type": "presence", "id": "p1", "senderId": "peer-1", "sender": "Pat", "ownerUser": "pat", "ts": .int(now),
+            "type": "presence", "id": "p1", "senderId": "peer-1", "sender": "Pat", "ownerUser": "pat", "ts": .int(Date().epochMillis),
         ])
         _ = await waitUntil { h.relay.roster().contains { $0.id == "peer-1" } }
-        XCTAssertEqual(h.relay.channels, ["#general", "#random", "#welcome"])
         await hub.refreshMemberDirectory()
-        XCTAssertEqual(api.calls.map(\.1), [PeopleModel.directoryPath])
-        for channel in ChatEveryone.channels {
-            let others = hub.channelMembers(channel).filter { !$0.isSelf }
-            XCTAssertEqual(Set(others.map { $0.account.lowercased() }), ["alice", "bob", "pat"], channel)
+        XCTAssertEqual(hub.directoryMembers, ["alice", "bob", "pat"])
+        for conversation in ["#office/general", "#office/random", "#office/welcome"] {
+            let others = hub.channelMembers(conversation).filter { !$0.isSelf }
+            XCTAssertEqual(Set(others.map { $0.account.lowercased() }), ["alice", "bob", "pat"], conversation)
             XCTAssertEqual(others.first { $0.account == "pat" }?.online, true)
             XCTAssertEqual(others.first { $0.account == "bob" }?.online, false)
         }
-        XCTAssertFalse(hub.channelMembers("#ops").contains { $0.account == "alice" })
-        let welcome = h.relay.messages("#welcome")
-        XCTAssertEqual(welcome.map(\.text), [ChatEveryone.welcomeText("bob")])
-        XCTAssertEqual(welcome.first?.senderId, "forkbot")
-        XCTAssertFalse(h.relay.hasUnread("#welcome"), "backfilled welcomes are not news")
+        XCTAssertFalse(hub.channelMembers("#office/ops").contains { $0.account == "alice" })
         await hub.refreshMemberDirectory()
-        XCTAssertEqual(api.calls.count, 1, "the directory is not re-read within five minutes")
-        hub.sharedRoom = { false }
-        XCTAssertFalse(hub.channelMembers("#general").contains { $0.account == "alice" })
+        XCTAssertEqual(api.calls.filter { $0.1.hasSuffix("/members") }.count, 1, "not re-read within five minutes")
         await h.close()
     }
 
-    func testSignedNewMemberFrameWelcomesThemInWelcome() async throws {
-        let (hub, h, api) = try await hub()
-        api.replies["GET /api/accounts/users"] = ["users": .array([])]
-        h.server.receive(text: #"{"kind":"forkmesh-new-member","v":1,"name":"newbie"}"#)
-        h.server.receive(text: #"{"kind":"forkmesh-new-member","v":1,"name":"Not A Handle!"}"#)
-        h.server.receive(text: #"{"kind":"forkmesh-new-member","v":1,"name":"newbie"}"#)
-        _ = await waitUntil { !h.relay.messages("#welcome").isEmpty }
-        let welcome = h.relay.messages("#welcome")
-        XCTAssertEqual(welcome.map(\.text), ["\u{1F389} Welcome to ForkMesh, @newbie! Everyone, come say hi \u{1F44B}"])
-        XCTAssertTrue(ChatEveryone.isWelcome(try XCTUnwrap(welcome.first)))
-        XCTAssertEqual(h.relay.unreadCountFor("#welcome"), 1)
-        _ = await waitUntil { !api.calls.isEmpty }
-        XCTAssertEqual(api.calls.map(\.1), [PeopleModel.directoryPath], "a join refreshes the member list")
-        _ = hub
+    func testThePhoneMovesToServerGeneralOnce() async throws {
+        let store = InMemoryKeyValueStore()
+        let (hub, h, _, _) = try await hub(store: store)
+        XCTAssertEqual(hub.currentConversation, "#general")
+        hub.adoptEveryoneGeneral()
+        XCTAssertEqual(hub.currentConversation, "#office/general")
+        hub.select("#general")
+        hub.adoptEveryoneGeneral()
+        XCTAssertEqual(hub.currentConversation, "#general", "World stays open once the member chose it")
+        XCTAssertTrue(ChatWorkspace(store: store, scope: "next").movedToEveryone)
         await h.close()
     }
 
-    func testEveryoneChannelsCannotBeLeft() {
-        let extras = ChatExtras(clock: SystemClock())
-        extras.restoreChannels(privateChannels: [], hiddenChannels: ["#random", "#welcome", "#ops"])
-        XCTAssertEqual(extras.hiddenChannels, ["#ops"])
-        for channel in ChatEveryone.channels {
-            extras.removeChannel(channel)
-            XCTAssertFalse(extras.hiddenChannels.contains(channel))
-        }
-        XCTAssertNil(ChatEveryone.handle("-bad"))
-        XCTAssertNil(ChatEveryone.handle(""))
-        XCTAssertEqual(ChatEveryone.handle(" Jett-2 "), "jett-2")
+    func testTheServerWelcomeIsRecognised() {
+        let welcome = ChatMessage(
+            id: "w1", conversation: "#office/welcome", senderId: "system:welcome", senderName: "ForkMesh",
+            text: "\u{1F389} Welcome to ForkMesh, @newbie! Everyone, come say hi \u{1F44B}", timestamp: Date())
+        XCTAssertTrue(ChatEveryone.isWelcome(welcome))
+        XCTAssertEqual(ChatEveryone.welcomeConversation, "#office/welcome")
+        XCTAssertFalse(ChatEveryone.isWelcome(ChatMessage(
+            id: "m1", conversation: "#office/welcome", senderId: "bob", senderName: "bob", text: "hi", timestamp: Date())))
     }
 }

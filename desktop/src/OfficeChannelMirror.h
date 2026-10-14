@@ -39,6 +39,15 @@ QString directPeerForConversation(const QString &conversation);
 QString roomForConversation(const QString &conversation);
 QString organizationForConversation(const QString &conversation);
 
+QString everyoneChannelId(const QString &name);
+bool isEveryoneChannelName(const QString &name);
+QStringList everyoneConversations();
+QString everyoneGeneralConversation();
+QString everyoneWelcomeConversation();
+QString worldConversation();
+QString worldLabel();
+bool isRetiredRelayChannel(const QString &channel);
+
 QByteArray channelListProof(const QString &account, const QString &ts);
 QByteArray channelAccessProof(const QString &account, const QString &channelId,
                               const QString &ts);
@@ -134,6 +143,8 @@ public:
     QStringList conversations() const;
     QStringList membersForConversation(const QString &conversation) const;
     bool isPrivateConversation(const QString &conversation) const;
+    bool isEveryoneConversation(const QString &conversation) const;
+    int memberCountForConversation(const QString &conversation) const;
     bool isServerVisibleConversation(const QString &conversation) const;
     bool isReadOnlyConversation(const QString &conversation) const;
     QString topicForConversation(const QString &conversation) const;
@@ -243,6 +254,8 @@ private:
         bool serverVisible = false;
         bool readOnly = false;
         bool canManage = false;
+        bool everyone = false;
+        int memberCount = 0;
         QString topic;
         QStringList members;
         qint64 lastTs = 0;
@@ -270,6 +283,7 @@ private:
     QString upsertDirectRoom(const QJsonObject &conversation, int order);
     void sendMemberChange(const QString &conversation, const QString &username,
                           const QByteArray &method);
+    void fetchEveryoneMembers();
     QString wireChannel(const Room &room) const;
     void ensureReceiver(const QString &channelId);
     void scheduleReconnect(const QString &channelId);
@@ -320,6 +334,8 @@ private:
     bool m_listingDirect = false;
     bool m_relistDirectPending = false;
     QStringList m_directConversations;
+    bool m_everyoneMembersFetching = false;
+    int m_everyoneMembersFetchedCount = -1;
     QHash<QString, Room> m_rooms; // channel id -> room
     QStringList m_conversations;  // stable display order
     // channel id -> webhooks last listed, with a URL kept only for the ones

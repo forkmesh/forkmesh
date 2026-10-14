@@ -53,16 +53,15 @@ struct ChatInstaller: AppServicesInstaller {
                 _ = direct.acceptMeshDirect(channel, sealKeyId: keyId, plain: plain)
             }
             hub.forkbot = api
-            hub.accounts = api
-            if let settings = settings {
-                hub.sharedRoom = { settings.room == SettingsService.defaultRoom && settings.passphrase.isEmpty }
-            }
-            Task { await hub.refreshMemberDirectory(force: true) }
             hub.apps = api.appsClient
             Services.put(office)
             Services.put(direct)
             if !(auth?.session?.sessionToken ?? "").isEmpty {
-                Task { await office.refresh() }
+                Task {
+                    await office.refresh()
+                    hub.adoptEveryoneGeneral()
+                    await hub.refreshMemberDirectory(force: true)
+                }
                 Task { await direct.refresh() }
                 Task { await hub.applyReadMarks() }
             }
@@ -80,10 +79,13 @@ struct ChatInstaller: AppServicesInstaller {
                             live.clear()
                             readMarks.clear()
                         } else {
-                            Task { await office.refresh() }
+                            Task {
+                                await office.refresh()
+                                hub.adoptEveryoneGeneral()
+                                await hub.refreshMemberDirectory(force: true)
+                            }
                             Task { await direct.refresh() }
                             Task { await hub.applyReadMarks() }
-                            Task { await hub.refreshMemberDirectory(force: true) }
                         }
                     }
                 }
@@ -248,7 +250,9 @@ enum ChatWelcome {
             guard hub.relay.state == .connected, let session = auth.session, session.sessionKind != "preview" else { return }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             let account: String = session.nodeName
-            let already: Bool = hub.relay.messages(ChatWelcomeAnnouncer.channel).contains {
+            guard let office = hub.office, office.room(for: ChatEveryone.welcomeConversation) != nil else { return }
+            await office.loadHistory(ChatEveryone.welcomeConversation)
+            let already: Bool = office.messages(ChatEveryone.welcomeConversation).contains {
                 $0.senderName.lowercased() == account.lowercased() && $0.text == ChatWelcomeAnnouncer.text
             }
             let should: Bool = announcer.shouldAnnounce(
@@ -256,8 +260,7 @@ enum ChatWelcome {
                 nowMs: Date().epochMillis, alreadyInRoom: already)
             if !should { return }
             announcer.markAnnounced(account: account)
-            hub.relay.addChannel(ChatWelcomeAnnouncer.channel)
-            _ = await hub.relay.sendMessage(ChatWelcomeAnnouncer.text, to: ChatWelcomeAnnouncer.channel)
+            _ = await office.send(ChatEveryone.welcomeConversation, text: ChatWelcomeAnnouncer.text)
         }
     }
 }

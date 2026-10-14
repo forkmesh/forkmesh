@@ -179,6 +179,7 @@ extension ChatHub {
 
     public func conversationLabel(_ conversation: String) -> String {
         if conversation == meshConversation { return meshConversation }
+        if conversation == ChatEveryone.worldConversation { return ChatEveryone.worldLabel }
         if OfficeFrames.isOffice(conversation) { return "#" + conversation.dropFirst(OfficeFrames.prefix.count) }
         if DirectMessageFrames.isDirect(conversation) {
             return "@" + (direct?.record(for: conversation)?.otherUser ?? "direct message")

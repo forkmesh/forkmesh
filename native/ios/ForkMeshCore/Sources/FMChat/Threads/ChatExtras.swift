@@ -573,7 +573,7 @@ public final class ChatExtras {
     }
 
     public func removeChannel(_ channel: String) {
-        if ChatEveryone.contains(channel) { return }
+        if channel == "#general" { return }
         hiddenChannels.insert(channel)
         privateChannels.remove(channel)
         looks.removeValue(forKey: channel)
@@ -588,7 +588,7 @@ public final class ChatExtras {
     }
 
     public func restoreChannels(privateChannels: [String], hiddenChannels: [String]) {
-        self.hiddenChannels.formUnion(hiddenChannels.filter { !ChatEveryone.contains($0) })
+        self.hiddenChannels.formUnion(hiddenChannels)
         for channel in privateChannels where !self.hiddenChannels.contains(channel) {
             self.privateChannels.insert(channel)
             onChannelJoined?(channel)

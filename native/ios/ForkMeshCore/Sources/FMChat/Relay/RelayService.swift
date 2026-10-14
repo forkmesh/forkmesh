@@ -51,7 +51,6 @@ public final class RelayService: OwnStatusAnnouncer {
     @ObservationIgnored public var onLogLine: ((String) -> Void)?
     @ObservationIgnored public var frameObserver: (@MainActor (JSONObject) -> Void)?
     @ObservationIgnored public var onMessage: (@MainActor (ChatMessage) -> Void)?
-    @ObservationIgnored public var onNewMember: (@MainActor (String) -> Void)?
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored public var isReadElsewhere: (@MainActor (ChatMessage) -> Bool)?
     @ObservationIgnored public let listeners = Listeners()
@@ -83,7 +82,7 @@ public final class RelayService: OwnStatusAnnouncer {
     @ObservationIgnored private var draining = false
 
     public private(set) var state: RelayConnectionState = .offline
-    public private(set) var channels: [String] = ["#general", "#random", "#welcome"]
+    public private(set) var channels: [String] = ["#general"]
     public private(set) var currentConversation = "#general"
     public private(set) var log: [String] = []
     /// Bumped by every change, and by the presence tick (so staleness is re-evaluated even with
@@ -788,27 +787,6 @@ public final class RelayService: OwnStatusAnnouncer {
 
     public var historySnapshot: [String: [ChatMessage]] { history }
 
-    @discardableResult
-    public func insertLocal(_ message: ChatMessage, countUnread: Bool) -> Bool {
-        if message.id.isEmpty || seenIds.contains(message.id) { return false }
-        if countUnread {
-            if !appendMessage(message) { return false }
-        } else {
-            if isExpired?(message.conversation, message.timestamp) == true { return false }
-            var list = history[message.conversation] ?? []
-            var at = list.count
-            while at > 0 && RelayService.compareMessages(list[at - 1], message) > 0 { at -= 1 }
-            list.insert(message, at: at)
-            history[message.conversation] = list
-        }
-        seenIds.insert(message.id)
-        if message.conversation.hasPrefix("#") && !channels.contains(message.conversation) {
-            channels.append(message.conversation)
-        }
-        notifyListeners()
-        return true
-    }
-
     public func restoreHistory(_ messages: [ChatMessage]) {
         var changed = false
         for message in messages where !message.id.isEmpty && !seenIds.contains(message.id) {
@@ -889,10 +867,6 @@ public final class RelayService: OwnStatusAnnouncer {
         case .data(let value): text = String(decoding: value, as: UTF8.self)
         }
         guard case .object(let env)? = try? JSON.parse(text) else { return }
-        if env["kind"]?.text == "forkmesh-new-member" {
-            if let name = env["name"]?.text, !name.isEmpty { onNewMember?(name) }
-            return
-        }
         guard let decrypted = crypto.decrypt(env) else { return }
         guard let plain = openSealedFrame(decrypted) else { return }
         handle(plain)
