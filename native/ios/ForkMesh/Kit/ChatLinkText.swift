@@ -5,6 +5,29 @@ import FMChat
 import FMCode
 import SwiftUI
 
+struct ChatMentionNamesKey: EnvironmentKey {
+    static let defaultValue: [String] = []
+}
+
+extension EnvironmentValues {
+    var chatMentionNames: [String] {
+        get { self[ChatMentionNamesKey.self] }
+        set { self[ChatMentionNamesKey.self] = newValue }
+    }
+}
+
+struct ChatMentionColors {
+    var person: Color
+    var you: Color
+    var youBackground: Color
+
+    static func of(_ fm: FmPalette) -> ChatMentionColors {
+        ChatMentionColors(
+            person: fm.accent, you: fm.dark ? Color(fmARGB: 0xFFFFD866) : Color(fmARGB: 0xFF8A5A00),
+            youBackground: Color(fmARGB: fm.dark ? 0x40F2C744 : 0x55F2C744))
+    }
+}
+
 /// A chat message body whose links are tappable where they were written,
 /// instead of having to be sent as a message of their own.
 ///
@@ -14,6 +37,7 @@ import SwiftUI
 /// address goes to the system.
 struct ChatLinkText: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.chatMentionNames) private var mentionNames
 
     private let text: String
     private let segments: [ChatTextSegment]
@@ -31,9 +55,11 @@ struct ChatLinkText: View {
         }
     }
 
-    private var attributed: AttributedString { chatRichAttributed(segments) }
+    private var attributed: AttributedString {
+        chatRichAttributed(segments, own: mentionNames, mentions: ChatMentionColors.of(fm))
+    }
 
-    private var formatted: Bool { ChatRichText.hasFormatting(text) }
+    private var formatted: Bool { ChatRichText.hasFormatting(text) || text.contains("@") }
 
     private var opener: OpenURLAction {
         let handler: ((String) -> Void)? = onOpen
@@ -57,7 +83,9 @@ struct ChatLinkText: View {
     }
 }
 
-func chatRichAttributed(_ segments: [ChatTextSegment]) -> AttributedString {
+func chatRichAttributed(
+    _ segments: [ChatTextSegment], own: [String] = [], mentions: ChatMentionColors? = nil
+) -> AttributedString {
     var result: AttributedString = AttributedString()
     for segment in segments {
         if let address = segment.url, let url = URL(string: address) {
@@ -68,14 +96,29 @@ func chatRichAttributed(_ segments: [ChatTextSegment]) -> AttributedString {
             continue
         }
         for span in ChatRichText.spans(segment.text) {
-            var part: AttributedString = AttributedString(span.text)
-            var intent: InlinePresentationIntent = []
-            if span.bold { intent.insert(.stronglyEmphasized) }
-            if span.italic { intent.insert(.emphasized) }
-            if span.code { intent.insert(.code) }
-            if !intent.isEmpty { part.inlinePresentationIntent = intent }
-            if span.strike { part.strikethroughStyle = Text.LineStyle.single }
-            result.append(part)
+            let pieces: [ChatMentionPiece] =
+                mentions == nil || span.code ? [ChatMentionPiece(span.text)] : ChatSmartMentions.split(span.text, own: own)
+            for piece in pieces {
+                var part: AttributedString = AttributedString(piece.text)
+                var intent: InlinePresentationIntent = []
+                if span.bold || piece.kind != .text { intent.insert(.stronglyEmphasized) }
+                if span.italic { intent.insert(.emphasized) }
+                if span.code { intent.insert(.code) }
+                if !intent.isEmpty { part.inlinePresentationIntent = intent }
+                if span.strike { part.strikethroughStyle = Text.LineStyle.single }
+                if let mentions {
+                    switch piece.kind {
+                    case .text:
+                        break
+                    case .person:
+                        part.foregroundColor = mentions.person
+                    case .you, .broadcast:
+                        part.foregroundColor = mentions.you
+                        part.backgroundColor = mentions.youBackground
+                    }
+                }
+                result.append(part)
+            }
         }
     }
     return result
