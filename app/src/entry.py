@@ -30186,9 +30186,11 @@ def _instance_brand_email(env, text, html):
         html = (html
                 .replace("https://app.forkmesh.com/assets/logo-96.png",
                          site + logo)
-                .replace("font-weight:800\">ForkMesh</td>",
-                         "font-weight:800\">" + escaped + "</td>")
+                .replace("alt=\"ForkMesh\"", "alt=\"" + escaped + "\"")
                 .replace(">Open ForkMesh</a>", ">Open " + escaped + "</a>")
+                .replace(">ForkMesh &middot; ", ">" + escaped + " &middot; ")
+                .replace("https://app.forkmesh.com/dashboard/settings",
+                         _html_escape(site) + "dashboard/settings")
                 .replace("href=\"" + FORKMESH_SITE_URL + "\"",
                          "href=\"" + _html_escape(site) + "\""))
         footer = ("<p data-instance-powered-by style=\"margin:18px 0 0;"
@@ -36992,13 +36994,12 @@ def _light_email_fragment(fragment):
 
 def _forkmesh_email_action_html(label, url):
     return (
-        "<p data-forkmesh-site-action style=\"margin:22px 0 0\">"
+        "<p data-forkmesh-site-action style=\"margin:24px 0 0\">"
         "<a href=\"" + _html_escape(url or FORKMESH_SITE_URL) + "\" "
-        "style=\"display:inline-block;border:1px solid #1a7f37;"
-        "border-radius:6px;background:#1f883d;color:#ffffff;"
-        "padding:10px 15px;text-decoration:none;font-size:14px;"
-        "font-weight:800\">" + _html_escape(label or "Open ForkMesh") +
-        "</a></p>"
+        "style=\"display:inline-block;border-radius:6px;background:#171717;"
+        "color:#ffffff;padding:9px 16px;text-decoration:none;font-size:14px;"
+        "line-height:20px;font-weight:500\">" +
+        _html_escape(label or "Open ForkMesh") + "</a></p>"
     )
 
 
@@ -37006,42 +37007,44 @@ def _forkmesh_email_card_html(
         heading, intro_html, body_html, footer_html="",
         action_label="Open ForkMesh",
         action_url="https://forkmesh.com/"):
-    # One explicit light palette avoids the unreadable hybrid produced when an
-    # email client honors only some dark-mode declarations or inline colors.
     intro_html = _light_email_fragment(intro_html)
     body_html = _light_email_fragment(body_html)
     footer_html = _light_email_fragment(footer_html)
+    link = _html_escape(action_url or FORKMESH_SITE_URL)
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         "<meta name=\"color-scheme\" content=\"light\">"
         "<meta name=\"supported-color-schemes\" content=\"light\">"
         "<style>:root{color-scheme:light;supported-color-schemes:light}"
-        "a{color:#0969da}</style>"
+        "a{color:#171717}</style>"
         "</head>"
-        "<body style=\"margin:0;padding:0;background:#f4f4f5\">"
-        "<div class=\"fm-bg\" style=\"margin:0;padding:28px 16px;background:#f4f4f5;"
-        "font-family:'ForkMesh Lato',-apple-system,BlinkMacSystemFont,"
-        "Segoe UI,Helvetica,Arial,sans-serif;color:#18181b;line-height:1.55\">"
-        "<div class=\"fm-card\" style=\"max-width:560px;margin:0 auto;border:1px solid #d4d4d8;"
-        "border-radius:8px;background:#ffffff;padding:24px\">"
-        "<table role=\"presentation\" class=\"fm-brand\" cellpadding=\"0\" "
-        "cellspacing=\"0\" border=\"0\" style=\"margin:0 0 22px;"
-        "border-collapse:separate\"><tr>"
-        "<td style=\"background:#18181b;border-radius:6px;padding:5px 6px;"
-        "line-height:0\"><img "
+        "<body style=\"margin:0;padding:0;background:#fafafa\">"
+        "<div class=\"fm-bg\" style=\"margin:0;padding:40px 20px;background:#fafafa;"
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',"
+        "Helvetica,Arial,sans-serif;color:#171717;font-size:14px;"
+        "line-height:1.6\">"
+        "<div class=\"fm-card\" style=\"max-width:480px;margin:0 auto\">"
+        "<img class=\"fm-brand\" "
         "src=\"https://app.forkmesh.com/assets/logo-96.png\" "
-        "width=\"26\" height=\"30\" alt=\"\" style=\"display:block;border:0;"
-        "outline:none;width:26px;height:30px\"></td>"
-        "<td style=\"padding:0 0 0 10px;color:#18181b;font-size:15px;"
-        "letter-spacing:0;font-weight:800\">ForkMesh</td>"
-        "</tr></table>"
-        "<h1 class=\"fm-h1\" style=\"margin:0 0 14px;color:#18181b;font-size:24px;"
-        "line-height:1.25;font-weight:800\">" + heading + "</h1>"
-        "<p class=\"fm-text\" style=\"margin:0 0 18px;color:#3f3f46;font-size:15px\">" +
+        "width=\"32\" alt=\"ForkMesh\" style=\"display:block;border:0;"
+        "outline:none;width:32px;height:auto\">"
+        "<h1 class=\"fm-h1\" style=\"margin:28px 0 12px;color:#171717;"
+        "font-size:22px;line-height:1.3;font-weight:600;"
+        "letter-spacing:-0.01em\">" + heading + "</h1>"
+        "<p class=\"fm-text\" style=\"margin:0 0 20px;color:#525252;font-size:14px\">" +
         intro_html + "</p>" + body_html +
         (footer_html if footer_html else "") +
         _forkmesh_email_action_html(action_label, action_url) +
+        "<p data-forkmesh-email-link style=\"margin:20px 0 0;color:#737373;"
+        "font-size:13px;word-break:break-all\">Or open this link: "
+        "<a href=\"" + link + "\" style=\"color:#171717;text-decoration:none\">" +
+        link + "</a></p>"
+        "<p data-forkmesh-email-footer style=\"margin:32px 0 0;padding:16px 0 0;"
+        "border-top:1px solid #e5e5e5;color:#a3a3a3;font-size:12px;"
+        "line-height:1.6\">ForkMesh &middot; "
+        "<a href=\"https://app.forkmesh.com/dashboard/settings\" "
+        "style=\"color:#737373\">Email settings</a></p>"
         "</div></div></body></html>")
 
 
