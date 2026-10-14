@@ -21,6 +21,7 @@ struct ShellHomeLayout {
     let docked: Set<String>
     let heat: [String: Double]
     let frequent: Set<String>
+    let origins: [String: ShellMenuGroup]
     let tileHeight: CGFloat
     let tileScale: CGFloat
 }
@@ -68,6 +69,10 @@ struct ShellHome: View {
     }
 
     private var shownGroups: [ShellMenuGroup] {
+        shownGroups(linked)
+    }
+
+    private func shownGroups(_ linked: [ShellMenuGroup]) -> [ShellMenuGroup] {
         ShellHome.arranged(
             ShellHome.filtered(linked, query: query), style: style, uses: prefs.uses, recent: prefs.recent,
             searching: !trimmedQuery.isEmpty)
@@ -97,24 +102,32 @@ struct ShellHome: View {
     }
 
     private func makeLayout() -> ShellHomeLayout {
-        let shown: [ShellMenuGroup] = shownGroups
+        let linked: [ShellMenuGroup] = self.linked
+        let shown: [ShellMenuGroup] = shownGroups(linked)
         let items: [ShellBarItem] = barItems
-        let ids: [String] = homeIds
+        let ids: [String] = linked.flatMap { $0.items.map(\.id) }
         let uses: [String: Int] = prefs.uses
+        let most: Int = ShellBarOrder.mostUses(uses, among: ids)
         var heat: [String: Double] = [:]
         var frequent: Set<String> = []
         for id in Set(ids) {
             if style.highlightFrequent {
-                heat[id] = ShellBarOrder.heat(id, uses: uses, among: ids)
+                heat[id] = ShellBarOrder.heat(id, uses: uses, most: most)
             }
-            if ShellBarOrder.frequentMark(id, uses: uses, among: ids) != nil {
+            if ShellBarOrder.frequentMark(id, uses: uses, most: most) != nil {
                 frequent.insert(id)
+            }
+        }
+        var origins: [String: ShellMenuGroup] = [:]
+        for group in linked {
+            for item in group.items where origins[item.id] == nil {
+                origins[item.id] = group
             }
         }
         let height: CGFloat = fittedTileHeight(shown)
         return ShellHomeLayout(
             shown: shown, barItems: items, docked: prefs.barIds(items), heat: heat, frequent: frequent,
-            tileHeight: height, tileScale: gridTileHeight > 0 ? height / gridTileHeight : 1)
+            origins: origins, tileHeight: height, tileScale: gridTileHeight > 0 ? height / gridTileHeight : 1)
     }
 
     private var trimmedQuery: String {
@@ -252,10 +265,6 @@ struct ShellHome: View {
         .accessibilityIdentifier("shell-home-open-settings")
     }
 
-    private func origin(_ itemId: String) -> ShellMenuGroup? {
-        linked.first { $0.items.contains { $0.id == itemId } }
-    }
-
     private func sectionHeader(_ group: ShellMenuGroup) -> some View {
         let title: String = group.title
         return HStack(spacing: FmSpace.x2) {
@@ -322,10 +331,6 @@ struct ShellHome: View {
 
     private var barItems: [ShellBarItem] {
         groups.flatMap(\.items)
-    }
-
-    private var homeIds: [String] {
-        ShellHome.linkGroups(groups).flatMap { $0.items.map(\.id) }
     }
 
     private var pullSensor: some View {
@@ -548,7 +553,7 @@ struct ShellHome: View {
                 item: item, items: layout.barItems, prefs: prefs, inBar: false,
                 onName: { (next: ShellBarNaming) in naming = next }, onPackage: onPackage)
             Section {
-                homeMenuItems(hiding: origin(item.id))
+                homeMenuItems(hiding: layout.origins[item.id])
             }
         }
         .onDrag {

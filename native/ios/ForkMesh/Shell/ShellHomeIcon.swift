@@ -21,15 +21,49 @@ struct ShellHomeGroupInfo: Equatable, Identifiable {
     }
 }
 
+struct ShellHomeIconFace: Equatable {
+    let title: String
+    let symbol: String
+    let badge: Int
+    let selected: Bool
+    let pulse: Int
+    let active: Bool
+    let count: Int?
+    let live: Int
+
+    init(_ item: ShellBarItem) {
+        title = item.title
+        symbol = item.symbol
+        badge = item.badge
+        selected = item.selected
+        pulse = item.pulse
+        active = item.active
+        count = item.count
+        live = item.live
+    }
+}
+
 struct ShellHomeIcon: View {
     @Environment(\.fmPalette) var fm
 
-    let item: ShellBarItem
+    let item: ShellHomeIconFace
     let style: ShellHomeIconStyle
     let iconSize: CGFloat
     let labelSize: CGFloat
-    var showsCounts: Bool = true
-    var heat: Double = 0
+    let showsCounts: Bool
+    let heat: Double
+
+    init(
+        item: ShellBarItem, style: ShellHomeIconStyle, iconSize: CGFloat, labelSize: CGFloat, showsCounts: Bool = true,
+        heat: Double = 0
+    ) {
+        self.item = ShellHomeIconFace(item)
+        self.style = style
+        self.iconSize = iconSize
+        self.labelSize = labelSize
+        self.showsCounts = showsCounts
+        self.heat = heat
+    }
 
     static let boxRatio: CGFloat = 1.75
     static let gap: CGFloat = 5

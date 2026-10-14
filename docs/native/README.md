@@ -229,6 +229,15 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
   list); throttle shell counts (`ThrottledSnapshot`, at most 4 reads a
   second); bump roster revisions only on real changes.
 - Decode images once through `FmImageCache` (48 MB cap), never in `body`.
+- Home and the bottom bar scale with the installed packages, so the shell
+  builds their groups once per redraw and hands the installed set down
+  (`HubGroups.current(guest:installed:)`). `installedGatedPackages` reads the
+  project settings once and indexes the account state and catalog by id; a
+  per-package scan of both made every redraw quadratic in the package count.
+- Home tiles take their lookups (heat, frequent marks, owning section) from the
+  layout built once per body. `ShellHomeIcon` keeps only the shown fields
+  (`ShellHomeIconFace`), not the item's action closure, so SwiftUI skips icons
+  that did not change.
 - The performance monitor ignores frame gaps that reach back into the
   background.
 

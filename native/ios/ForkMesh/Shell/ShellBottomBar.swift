@@ -535,9 +535,11 @@ struct ShellBottomBar: View {
     private var heat: [String: Double] {
         guard style.highlightFrequent else { return [:] }
         let ids: [String] = items.map(\.id)
+        let uses: [String: Int] = prefs.uses
+        let most: Int = ShellBarOrder.mostUses(uses, among: ids)
         var result: [String: Double] = [:]
         for id in ids {
-            let level: Double = ShellBarOrder.heat(id, uses: prefs.uses, among: ids)
+            let level: Double = ShellBarOrder.heat(id, uses: uses, most: most)
             if level > 0 {
                 result[id] = level
             }

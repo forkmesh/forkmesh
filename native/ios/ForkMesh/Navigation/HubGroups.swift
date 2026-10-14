@@ -79,7 +79,7 @@ enum PackageGateSync {
 
 @MainActor
 enum HubGroups {
-    static func current(guest: Bool) -> [HubGroup] {
+    static func current(guest: Bool, installed known: Set<String>? = nil) -> [HubGroup] {
         let admin: Bool = Services.get(AuthService.self)?.session?.isAdmin ?? false
         let groups: [HubGroup] = HubCatalog.groups(guest: guest, admin: admin) { (kind: Route.Kind) -> Bool in
             AppServices.current?.routes.isRegistered(kind) ?? false
@@ -90,7 +90,7 @@ enum HubGroups {
             HubItem(
                 id: entry.id, title: entry.title, symbol: RouteCatalog.symbol(entry.route.kind), action: .route(entry.route))
         }
-        let installed: Set<String> = PackageGateSync.publish()
+        let installed: Set<String> = known ?? PackageGateSync.publish()
         let arranged: [HubGroup] = groups.map { (group: HubGroup) -> HubGroup in
             group.id == "business" ? HubGroup(id: group.id, title: group.title, items: business) : group
         }

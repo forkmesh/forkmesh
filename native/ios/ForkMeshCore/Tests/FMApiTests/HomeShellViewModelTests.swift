@@ -201,6 +201,8 @@ final class HomeShellViewModelTests: XCTestCase {
         XCTAssertGreaterThan(inbox, 0)
         XCTAssertLessThan(world, 1)
         XCTAssertEqual(ShellBarOrder.heat("settings", uses: [:], among: ids), 0)
+        XCTAssertEqual(ShellBarOrder.mostUses(uses, among: ids), 40)
+        XCTAssertEqual(ShellBarOrder.heat("world", uses: uses, most: ShellBarOrder.mostUses(uses, among: ids)), world)
     }
 
     func testFrequentMarkNeedsThreeOpensAndHalfTheTopHeat() {
@@ -215,6 +217,7 @@ final class HomeShellViewModelTests: XCTestCase {
         XCTAssertNil(ShellBarOrder.frequentMark("Repos", uses: uses, among: ids))
         XCTAssertNil(ShellBarOrder.frequentMark("Search", uses: ["Search": 2], among: ids))
         XCTAssertNotNil(ShellBarOrder.frequentMark("Search", uses: ["Search": 3], among: ids))
+        XCTAssertEqual(ShellBarOrder.frequentMark("world", uses: uses, most: 40), world)
     }
 
     func testPullingHomeDownPastTheThresholdRevealsSearchOnce() {

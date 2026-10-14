@@ -222,9 +222,9 @@ struct HomeShell: View {
         return route.kind == .timers
     }
 
-    private var hubBarGroups: [ShellMenuGroup] {
+    private func hubBarGroups(installed: Set<String>) -> [ShellMenuGroup] {
         let live: ShellLiveCounts = liveCounts
-        return HubGroups.current(guest: auth?.isGuest ?? false).map { (group: HubGroup) -> ShellMenuGroup in
+        return HubGroups.current(guest: auth?.isGuest ?? false, installed: installed).map { (group: HubGroup) -> ShellMenuGroup in
             let items: [ShellBarItem] = group.items
                 .filter { HomeShell.movesToBar($0.action) }
                 .map { (item: HubItem) -> ShellBarItem in
@@ -303,7 +303,7 @@ struct HomeShell: View {
     private var barGroups: [ShellMenuGroup] {
         let installed: Set<String> = PackageGateSync.publish()
         let main: ShellMenuGroup = ShellMenuGroup(id: "main", title: "Go to", items: primaryBarItems)
-        let gated: [ShellMenuGroup] = ([main] + repoBarGroups + hubBarGroups).compactMap {
+        let gated: [ShellMenuGroup] = ([main] + repoBarGroups + hubBarGroups(installed: installed)).compactMap {
             (group: ShellMenuGroup) -> ShellMenuGroup? in
             let items: [ShellBarItem] = group.items.filter { PackageGate.shows(item: $0.id, installed: installed) }
             return items.isEmpty ? nil : ShellMenuGroup(id: group.id, title: group.title, items: items)
@@ -322,20 +322,20 @@ struct HomeShell: View {
         return shown
     }
 
-    private var bottomBar: some View {
+    private func bottomBar(_ groups: [ShellMenuGroup]) -> some View {
         ShellBottomBar(
-            items: barGroups.flatMap(\.items),
+            items: groups.flatMap(\.items),
             onPackage: { (id: String) in openPackage(id) },
             onCapsuleTop: { (top: CGFloat) in capsuleTop = top })
             .opacity(composer.isOpen ? 0 : 1)
             .allowsHitTesting(!composer.isOpen)
     }
 
-    @ViewBuilder private var pageView: some View {
+    @ViewBuilder private func pageView(_ groups: [ShellMenuGroup]) -> some View {
         switch page {
         case .home:
             ShellHome(
-                groups: barGroups, prefs: ShellBarPrefs.shared, onPackage: { (id: String) in openPackage(id) },
+                groups: groups, prefs: ShellBarPrefs.shared, onPackage: { (id: String) in openPackage(id) },
                 onSearch: { (query: String) in
                     leavePage { openSearch(query) }
                 }
@@ -414,8 +414,8 @@ struct HomeShell: View {
         page == nil ? docks[router.selectedTab]?.height ?? 0 : 0
     }
 
-    private var barStack: some View {
-        bottomBar
+    private func barStack(_ groups: [ShellMenuGroup]) -> some View {
+        bottomBar(groups)
         .coordinateSpace(.named(ShellDock.barSpace))
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { (height: CGFloat) in
             barHeight = height
@@ -503,18 +503,19 @@ struct HomeShell: View {
     }
 
     private var tabs: some View {
-        ZStack {
+        let groups: [ShellMenuGroup] = barGroups
+        return ZStack {
             if mounted(.code) { tab(.code) }
             if mounted(.agents) { tab(.agents) }
             if mounted(.chat) { tab(.chat) }
             if mounted(.inbox) { tab(.inbox) }
-            pageView
+            pageView(groups)
                 .safeAreaPadding(.bottom, barClearance)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .bottom) {
             if showsBar {
-                barStack
+                barStack(groups)
             }
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.safeAreaInsets.bottom }) { (inset: CGFloat) in
