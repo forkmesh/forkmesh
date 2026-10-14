@@ -159,7 +159,9 @@ func newRunnerAgentJobs(d *Daemon) (*agentJobRunner, error) {
 		backend.actions = newRunnerActions(backend)
 	}
 	r.backend = backend
-	if box.sandboxed() {
+	if box.direct {
+		log.Printf("runner: jobs run as uid %d without systemd; no memory or CPU limits, only the job timeout", box.uid)
+	} else if box.sandboxed() {
 		log.Printf("runner: jobs run in systemd scopes (MemoryMax=%s CPUQuota=%s user-manager=%v uid=%d ip-filter=%v)",
 			box.memoryMax, box.cpuQuota, box.user, box.uid, box.sandboxed() && !box.user)
 	} else {
