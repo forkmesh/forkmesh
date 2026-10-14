@@ -93,3 +93,26 @@ per-page colours:
 - Ctrl/Cmd+Enter in a form field submits through the form's primary button,
   found as `.bg-cta, .fm-btn-cta` (`08-repo-detail-network.js`), so forms
   whose green button is now an `fm-btn-cta` keep the shortcut.
+
+## Code page About rail
+
+The About rail beside the Code tab is a details list, not a stack of cards
+(October 2026 restyle, the "details list" variant the user picked from three).
+Under the description and the Readme / Activity / clean-URL links, one row per
+fact shows a muted label on the left and the value on the right: Website,
+Release, Stars, Watchers, Forks, Mirrors, Files and Size. Stars toggles a star,
+Watchers and Forks open their popovers to the right, Mirrors opens the Mirrors
+tab, Release opens Releases, and Size opens the Size map tab beside a tiny
+sunburst. Rows stay hidden until their data loads.
+
+The rail has no banner or logo header: the user asked for the fediverse banner,
+repository logo, handle and follower avatars to be removed from it. The
+fediverse handle and watcher list are still in the Watchers popover.
+
+Below the list, Languages, Contributors and Direct access are plain sections
+with sentence-case headings. Contributor avatars are neutral initials (the
+name and commit count are in the tooltip), not coloured gradients. Direct
+access lists online mirrors as plain rows with no green: the node name, its
+version or, for the node serving the page, the response time, and an
+open-direct icon. The repository-logo suggestion form and the owner's
+fediverse posts sit at the bottom as collapsibles.

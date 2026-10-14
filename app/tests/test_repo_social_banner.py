@@ -576,12 +576,11 @@ def test_dashboard_probes_the_banner_before_painting_it():
     assert 'applyRepoSocialBanner(repo, String(body.bannerUrl || ""))' in source
 
 
-def test_social_badge_markup_starts_with_no_banner():
+def test_about_rail_shows_no_banner_or_logo_header():
     markup = REPO_DETAIL_JS.read_text(encoding="utf-8")
-    banner = markup[markup.index("<div data-repo-social-banner"):]
-    banner = banner[:banner.index(">") + 1]
-    assert "hidden" in banner
-    assert "data-repo-social-identity" in markup
+    assert "data-repo-social-badge" not in markup
+    assert "data-repo-social-banner" not in markup
+    assert "data-repo-social-logo" not in markup
 
 
 # --- ForkMesh's own repository ----------------------------------------------
