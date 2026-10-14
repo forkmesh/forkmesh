@@ -96,6 +96,11 @@ public final class ChatHub: ShellChatBridge {
             direct?.onRemoved = { [weak self] conversation, id in self?.messageRemoved(conversation, id) }
             direct?.onFrame = { [weak self] frame, conversation in
                 guard let self, let direct = self.direct else { return }
+                if frame["type"]?.text == DirectMessageFrames.typingType {
+                    let other = direct.record(for: conversation)?.otherUser ?? ""
+                    let sender = (frame["sender"]?.text ?? "").lowercased()
+                    if other.isEmpty || sender != other || self.workspace.isBlocked(other) { return }
+                }
                 self.extras.applyRoomFrame(frame, conversation: conversation, selfId: direct.currentSelfId)
             }
             direct?.onMessage = { [weak self] message in
@@ -127,6 +132,7 @@ public final class ChatHub: ShellChatBridge {
     public private(set) var appBusy: Set<String> = []
     @ObservationIgnored private var appCommandsLoaded = false
     @ObservationIgnored private var ephemeralSequence = 0
+    @ObservationIgnored private var directTypingSent: [String: Date] = [:]
     private var ephemerals: [String: [ChatMessage]] = [:]
     @ObservationIgnored public var history: ChatHistoryStore?
     @ObservationIgnored public var historyScope: @MainActor () -> String = { "" }
@@ -301,7 +307,7 @@ public final class ChatHub: ShellChatBridge {
     nonisolated static let welcomeChannel = "#welcome"
 
     func filePing(_ message: ChatMessage) {
-        guard let pings, !message.isSelf, !message.id.isEmpty,
+        guard let pings, !message.isSelf, !message.id.isEmpty, !isFromBlocked(message),
               clock.now.timeIntervalSince(message.timestamp) < ChatHub.pingFreshness else { return }
         let conversation = message.conversation
         let name = message.senderName.dartTrimmed
@@ -369,7 +375,10 @@ public final class ChatHub: ShellChatBridge {
             return false
         }
         if let handled = await runAppCommand(body, conversation: conversation) {
-            if !OfficeFrames.isOffice(conversation) { extras.sendTyping(conversation: conversation, active: false) }
+            if !OfficeFrames.isOffice(conversation) {
+                extras.sendTyping(conversation: conversation, active: false)
+                sendDirectTyping(conversation, active: false)
+            }
             return handled
         }
         let sent = await deliver(body, to: conversation)
@@ -401,6 +410,7 @@ public final class ChatHub: ShellChatBridge {
             return true
         }
         if DirectMessageFrames.isDirect(conversation) {
+            directTypingSent.removeValue(forKey: conversation)
             guard let direct, await direct.send(conversation, text: text) else {
                 notice = ChatNotice("The direct message could not be sent. Reconnecting...")
                 return false
@@ -581,7 +591,10 @@ public final class ChatHub: ShellChatBridge {
     /// The transcript with grouping, queue and delete flags worked out.
     public var rows: [ChatRow] {
         _ = extras.revision
-        let list = transcript.filter { !extras.isHidden($0.id) && !extras.isRemoved($0.id) }
+        let blockedIds = blockedSenderIds()
+        let list = transcript.filter {
+            !extras.isHidden($0.id) && !extras.isRemoved($0.id) && !isFromBlocked($0, blockedIds: blockedIds)
+        }
         var out: [ChatRow] = []
         out.reserveCapacity(list.count)
         let mutableRoom = !inMesh && !isReadOnly(relay.currentConversation)
@@ -757,12 +770,33 @@ public final class ChatHub: ShellChatBridge {
     public func composerChanged(_ text: String) {
         let conversation = relay.currentConversation
         if conversation == meshConversation || inOffice { return }
-        extras.sendTyping(conversation: conversation, active: !text.dartTrimmed.isEmpty)
+        let active = !text.dartTrimmed.isEmpty
+        if DirectMessageFrames.isDirect(conversation) {
+            sendDirectTyping(conversation, active: active)
+            return
+        }
+        extras.sendTyping(conversation: conversation, active: active)
+    }
+
+    func sendDirectTyping(_ conversation: String, active: Bool) {
+        guard let direct, DirectMessageFrames.isDirect(conversation) else { return }
+        let now = clock.now
+        if active {
+            if let last = directTypingSent[conversation], now.timeIntervalSince(last) < ChatLimits.typingResend { return }
+            directTypingSent[conversation] = now
+        } else if directTypingSent.removeValue(forKey: conversation) == nil {
+            return
+        }
+        Task { await direct.sendTyping(conversation, active: active) }
     }
 
     public var typingLine: String {
         _ = extras.revision
-        return ChatExtras.typingLabel(extras.typingNames(in: relay.currentConversation))
+        return ChatExtras.typingLabel(typingNames(in: relay.currentConversation))
+    }
+
+    public func typingNames(in conversation: String) -> [String] {
+        extras.typingNames(in: conversation).filter { !workspace.isBlocked($0) }
     }
 
     public var mentionNames: [String] {
@@ -1044,12 +1078,14 @@ public final class ChatHub: ShellChatBridge {
 
     public func select(_ conversation: String) {
         conversationChosen = true
+        if ChatHub.isPersonConversation(conversation) { workspace.restoreConversation(conversation) }
         if conversation != relay.currentConversation || unreadStart[conversation] == nil {
             let start = ChatHub.firstUnreadId(messages(in: conversation), unread: unreadCount(conversation))
             unreadStart = start.map { [conversation: $0] } ?? [:]
         }
         workspace.setLastConversation(conversation)
         extras.sendTyping(conversation: relay.currentConversation, active: false)
+        sendDirectTyping(relay.currentConversation, active: false)
         relay.switchConversation(conversation)
         queueReadMark(conversation)
         pings?.markConversationRead(conversation)

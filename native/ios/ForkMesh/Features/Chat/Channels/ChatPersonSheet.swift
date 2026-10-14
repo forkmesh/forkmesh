@@ -61,6 +61,8 @@ struct ChatPersonSheet: View {
 
     private var isSelf: Bool { group?.isSelf ?? false }
 
+    private var blocked: Bool { hub.isBlocked(handle) }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -164,7 +166,7 @@ struct ChatPersonSheet: View {
 
     private var actions: some View {
         VStack(spacing: FmSpace.x2) {
-            if !isSelf {
+            if !isSelf && !blocked {
                 Button(action: message) {
                     Label("Message", systemImage: "bubble.left.fill")
                         .font(.system(size: 17, weight: .semibold))
@@ -188,6 +190,18 @@ struct ChatPersonSheet: View {
                         .background(Capsule().fill(fm.accentSubtle))
                 }
                 .buttonStyle(.plain)
+            }
+            if !isSelf && !ChatVisitorPresence.isTransientVisitor(name: person.name) {
+                Button(role: blocked ? nil : .destructive, action: { hub.setBlocked(handle, !blocked) }) {
+                    Label(blocked ? "Unblock" : "Block", systemImage: blocked ? "hand.raised.slash" : "hand.raised")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(blocked ? fm.accent : fm.danger)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(Capsule().fill(blocked ? fm.accentSubtle : fm.danger.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(
+                    blocked ? "Shows \(person.name)'s messages again" : "Hides \(person.name)'s messages, typing and alerts on this phone")
             }
         }
         .padding(.top, FmSpace.x2)
@@ -286,6 +300,7 @@ struct ChatOnlineSheet: View {
     private func row(_ group: MemberGroup) -> some View {
         let away: Bool = group.userStatus.away
         let visitor: Bool = ChatVisitorPresence.isTransientVisitor(name: group.name)
+        let blocked: Bool = !group.isSelf && hub.isBlocked(group.account.isEmpty ? group.name : group.account)
         return HStack(spacing: FmSpace.x3) {
             Button(action: { person = ChatPersonKey(group: group) }) {
                 ZStack(alignment: .bottomTrailing) {
@@ -309,11 +324,11 @@ struct ChatOnlineSheet: View {
                                 .lineLimit(1)
                             UserStatusEmoji(status: group.userStatus, size: FmType.body)
                         }
-                        Text(visitor ? "Visitor" : (away ? "Away" : "Online"))
-                            .fmText(.labelSmall, color: away ? fm.warning : fm.textTertiary)
+                        Text(blocked ? "Blocked" : (visitor ? "Visitor" : (away ? "Away" : "Online")))
+                            .fmText(.labelSmall, color: blocked ? fm.danger : (away ? fm.warning : fm.textTertiary))
                     }
                     Spacer(minLength: 0)
-                    if !group.isSelf && !visitor {
+                    if !group.isSelf && !visitor && !blocked {
                         Image(systemName: "bubble.left")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(fm.accent)
@@ -323,8 +338,8 @@ struct ChatOnlineSheet: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(group.isSelf || visitor)
-            .accessibilityHint(group.isSelf || visitor ? "" : "Opens your direct messages with \(group.name)")
+            .disabled(group.isSelf || visitor || blocked)
+            .accessibilityHint(group.isSelf || visitor || blocked ? "" : "Opens your direct messages with \(group.name)")
         }
         .padding(.vertical, FmSpace.x1)
     }

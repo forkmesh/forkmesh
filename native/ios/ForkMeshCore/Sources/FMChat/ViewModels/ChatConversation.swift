@@ -216,7 +216,7 @@ extension ChatHub {
 
     public var conversationTyping: [String] {
         _ = extras.revision
-        return extras.typingNames(in: relay.currentConversation)
+        return typingNames(in: relay.currentConversation)
     }
 
     public var canChangeLook: Bool {
@@ -312,7 +312,7 @@ extension ChatHub {
     }
 
     public func clearConversationHistory() {
-        for row in rows { extras.hideMessage(row.id) }
+        deleteConversation(relay.currentConversation)
     }
 
     public func leaveGroupConversation() {

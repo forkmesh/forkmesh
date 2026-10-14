@@ -3404,7 +3404,8 @@ async def _apns_send_tokens(env, tokens, topic, alert):
             ok, dead, _status, _reason = await apns.send_one(
                 env, js_fetch_with_timeout, jwt,
                 entry["token"], entry["environment"], alert,
-                collapse_id=apns.collapse_id_for(topic), topic=topic,
+                collapse_id=apns.collapse_id_for(
+                    topic, alert.get("conversation", "")), topic=topic,
                 bundle_id=entry.get("bundle_id", ""))
         except Exception:
             continue
