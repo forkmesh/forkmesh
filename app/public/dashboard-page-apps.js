@@ -63,9 +63,30 @@
     const notice = $(selector);
     if (!notice) return;
     notice.hidden = !message;
-    notice.textContent = message || "";
-    notice.classList.toggle("text-red-500", Boolean(isError));
-    notice.classList.toggle("text-muted-foreground", !isError);
+    notice.textContent = "";
+    if (message) notice.append(appsFlash(isError ? "danger" : "success", message));
+    window.lucide?.createIcons?.();
+  }
+
+  function appsLucide(name, className) {
+    const icon = appsEl("i", className);
+    icon.setAttribute("data-lucide", name);
+    icon.setAttribute("aria-hidden", "true");
+    return icon;
+  }
+
+  function appsFlash(tone, message) {
+    const box = appsEl("div", tone === "danger" ? "fm-flash fm-flash-danger" : "fm-flash fm-flash-success");
+    box.append(appsLucide(tone === "danger" ? "circle-alert" : "circle-check", "h-4 w-4"), appsEl("span", "fm-flash-body", message));
+    return box;
+  }
+
+  function appsBlankslate(icon, title, text) {
+    const box = appsEl("div", "fm-blankslate");
+    box.append(appsLucide(icon, "h-6 w-6"), appsEl("p", "fm-blankslate-title", title));
+    if (text) box.append(appsEl("p", "fm-blankslate-desc", text));
+    queueMicrotask(() => window.lucide?.createIcons?.());
+    return box;
   }
 
   function appsWhen(ms) {

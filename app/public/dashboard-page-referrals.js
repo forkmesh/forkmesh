@@ -80,11 +80,12 @@
     const link = referralShareLink();
     if (!link) {
       const next = encodeURIComponent(`${location.pathname}${location.search}`);
-      root.innerHTML = `<p class="text-sm text-muted-foreground">
+      root.innerHTML = `<div class="fm-flash"><i data-lucide="info" aria-hidden="true"></i><div class="fm-flash-body">
         <a class="text-accent underline" href="/login?next=${next}">Log in</a>
         or <a class="text-accent underline" href="/signup">create an account</a>
         to get your personal referral link. The leaderboard below is public.
-      </p>`;
+      </div></div>`;
+      window.lucide?.createIcons();
       return;
     }
     root.innerHTML = `<div class="flex flex-wrap items-center gap-2">
@@ -94,12 +95,12 @@
         readonly
         aria-label="Your referral link"
         value="${escapeHtml(link)}"
-        class="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"
+        class="h-control-sm min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"
       />
       <button
         data-referrals-copy
         type="button"
-        class="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors"
+        class="fm-btn fm-btn-sm shrink-0"
       >
         <i data-lucide="copy" class="w-3.5 h-3.5"></i>
         Copy link
@@ -113,9 +114,7 @@
     const name = String(row.name || "user");
     const you = referralAccountName() &&
       name.toLowerCase() === referralAccountName();
-    const rankClass = rank === 1
-      ? "text-amber-500"
-      : rank <= 3 ? "text-foreground" : "text-muted-foreground";
+    const rankClass = rank <= 3 ? "text-foreground" : "text-muted-foreground";
     const referredUsers = Array.from(new Set(
       (Array.isArray(row.referredUsers) ? row.referredUsers : [])
         .map((value) => String(value || "").trim().toLowerCase())
@@ -130,7 +129,7 @@
         <a class="block truncate text-sm font-semibold text-foreground hover:underline" href="${escapeHtml(publicProfileUrl(name))}">${escapeHtml(name)}</a>
         ${referredLinks ? `<p class="mt-0.5 truncate text-[11px]">${referredLinks}</p>` : ""}
       </div>
-      ${you ? '<span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">you</span>' : ""}
+      ${you ? '<span class="fm-label shrink-0">you</span>' : ""}
       <span class="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">${escapeHtml(referralPlural(row.clicks, "click"))} · ${escapeHtml(referralPlural(row.signups, "signup"))}</span>
     </div>`;
   }
@@ -141,24 +140,24 @@
     if (!board) return;
     renderReferralLinkArea();
     if (state.referralsView.loading || state.referralsView.error) {
-      board.innerHTML = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${
-        state.referralsView.loading
-          ? loadingHtml("Loading leaderboard...")
-          : escapeHtml(state.referralsView.error)
-      }</div>`;
+      board.innerHTML = state.referralsView.loading
+        ? `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${loadingHtml("Loading leaderboard...")}</div>`
+        : `<div class="fm-blankslate"><i data-lucide="circle-alert" aria-hidden="true"></i><p class="fm-blankslate-title">The leaderboard did not load</p><p class="fm-blankslate-desc">${escapeHtml(state.referralsView.error)}</p></div>`;
+      window.lucide?.createIcons();
       if (count) count.textContent = state.referralsView.loading ? "Loading" : "Unavailable";
       renderReferralStats();
       return;
     }
     board.innerHTML = state.referralsView.board.length
       ? state.referralsView.board.map(referralRowHtml).join("")
-      : '<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">No referrals counted yet - share your link and be the first on the board.</div>';
+      : '<div class="fm-blankslate"><i data-lucide="users" aria-hidden="true"></i><p class="fm-blankslate-title">No referrals yet</p><p class="fm-blankslate-desc">No referrals counted yet - share your link and be the first on the board.</p></div>';
     if (count) {
       count.textContent = state.referralsView.board.length
         ? `${state.referralsView.board.length} ranked`
         : "0 ranked";
     }
     renderReferralStats();
+    window.lucide?.createIcons();
   }
 
   // How deep the public referring-site board runs. Matches
@@ -215,22 +214,22 @@
     const summary = $("[data-referrals-sites-summary]");
     if (!root) return;
     if (state.referralsView.sitesLoading || state.referralsView.sitesError) {
-      root.innerHTML = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${
-        state.referralsView.sitesLoading
-          ? loadingHtml("Loading referring sites...")
-          : escapeHtml(state.referralsView.sitesError)
-      }</div>`;
+      root.innerHTML = state.referralsView.sitesLoading
+        ? `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${loadingHtml("Loading referring sites...")}</div>`
+        : `<div class="fm-blankslate"><i data-lucide="circle-alert" aria-hidden="true"></i><p class="fm-blankslate-title">Referring sites did not load</p><p class="fm-blankslate-desc">${escapeHtml(state.referralsView.sitesError)}</p></div>`;
+      window.lucide?.createIcons();
       return;
     }
     root.innerHTML = state.referralsView.sites.length
       ? state.referralsView.sites.map(referralSiteRowHtml).join("")
-      : '<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">No website referrals counted yet.</div>';
+      : '<div class="fm-blankslate"><i data-lucide="globe" aria-hidden="true"></i><p class="fm-blankslate-title">No referring sites yet</p><p class="fm-blankslate-desc">No website referrals counted yet.</p></div>';
     if (summary) {
       const { sites, visits } = state.referralsView.sitesTotals;
       summary.textContent = sites
         ? `${referralPlural(sites, "site")} · ${referralPlural(visits, "visit")} · top ${REFERRAL_SITE_BOARD_LIMIT} by visits`
         : `Which sites link visitors to ForkMesh - top ${REFERRAL_SITE_BOARD_LIMIT} by visits`;
     }
+    window.lucide?.createIcons();
   }
 
   async function loadReferralSites(options = {}) {

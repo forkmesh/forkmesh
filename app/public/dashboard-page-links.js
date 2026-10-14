@@ -65,8 +65,8 @@
       ? ""
       : wallet
         ? `<div class="flex items-stretch gap-1.5">
-            <a href="${escapeHtml(payUri)}" class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-semibold text-foreground hover:bg-secondary transition-colors"><i data-lucide="wallet" class="h-3 w-3"></i>Pay in wallet</a>
-            <button data-links-copy-wallet="${index}" type="button" title="Copy ${escapeHtml(submitter)}'s Solana address" aria-label="Copy ${escapeHtml(submitter)}'s Solana address" class="inline-flex items-center rounded-md border border-border p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="copy" class="h-3 w-3"></i></button>
+            <a href="${escapeHtml(payUri)}" class="fm-btn fm-btn-sm"><i data-lucide="wallet" class="h-3 w-3"></i>Pay in wallet</a>
+            <button data-links-copy-wallet="${index}" type="button" title="Copy ${escapeHtml(submitter)}'s Solana address" aria-label="Copy ${escapeHtml(submitter)}'s Solana address" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="copy" class="h-3 w-3"></i></button>
           </div>`
         : you
           ? '<a href="/dashboard/settings" class="text-[11px] text-accent underline">Add a Solana address</a>'
@@ -77,7 +77,7 @@
           ${url
             ? `<a href="${escapeHtml(url)}" target="_blank" rel="nofollow ugc noopener noreferrer" class="min-w-0 truncate text-sm font-semibold text-foreground hover:underline">${escapeHtml(title)}</a>`
             : `<span class="min-w-0 truncate text-sm font-semibold text-foreground">${escapeHtml(title)}</span>`}
-          ${you ? '<span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">you</span>' : ""}
+          ${you ? '<span class="fm-label shrink-0">you</span>' : ""}
         </div>
         <p class="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">${escapeHtml(String(link.host || ""))}</p>
         <p class="mt-1.5 text-xs text-muted-foreground">
@@ -94,10 +94,10 @@
       </div>
       <div class="shrink-0 flex items-center justify-between gap-3 sm:flex-col sm:items-end">
         <div class="flex items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
-          <span class="font-mono text-sm font-semibold tabular-nums text-amber-500">${escapeHtml(linkRewardText(reward))}</span>
+          <span class="font-mono text-sm font-semibold tabular-nums text-foreground">${escapeHtml(linkRewardText(reward))}</span>
           ${paid
-            ? '<span class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-emerald-400"><i data-lucide="check" class="h-3 w-3"></i>Paid</span>'
-            : '<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Unpaid</span>'}
+            ? '<span class="fm-label fm-label-success"><i data-lucide="check" class="h-3 w-3"></i>Paid</span>'
+            : '<span class="fm-label">Unpaid</span>'}
         </div>
         ${payAction}
       </div>
@@ -112,8 +112,19 @@
       root.innerHTML = "";
       return;
     }
-    const tone = view.noticeTone === "bad" ? "text-red-500" : "text-foreground";
-    root.innerHTML = `<p class="px-4 sm:px-5 py-3 border-b border-border text-sm ${tone}">${escapeHtml(view.notice)}</p>`;
+    const bad = view.noticeTone === "bad";
+    root.innerHTML = `<div class="px-4 sm:px-5 py-3 border-b border-border">${linkFlashHtml(bad ? "danger" : "success", escapeHtml(view.notice))}</div>`;
+    window.lucide?.createIcons();
+  }
+
+  function linkFlashHtml(tone, html) {
+    const icon = { danger: "circle-alert", success: "circle-check" }[tone] || "info";
+    const variant = tone === "danger" || tone === "success" ? ` fm-flash-${tone}` : "";
+    return `<div class="fm-flash${variant}"><i data-lucide="${icon}" aria-hidden="true"></i><div class="fm-flash-body">${html}</div></div>`;
+  }
+
+  function linkBlankslateHtml(icon, title, html) {
+    return `<div class="fm-blankslate"><i data-lucide="${icon}" aria-hidden="true"></i><p class="fm-blankslate-title">${title}</p>${html ? `<p class="fm-blankslate-desc">${html}</p>` : ""}</div>`;
   }
 
   function renderLinksStart() {
@@ -123,12 +134,11 @@
     if (!linkAccountName()) {
       const next = encodeURIComponent(`${location.pathname}${location.search}`);
       root.hidden = false;
-      root.innerHTML = `<p class="text-sm text-muted-foreground">
-        <a class="text-accent underline" href="/login?next=${next}">Log in</a>
+      root.innerHTML = linkFlashHtml("info", `<a class="text-accent underline" href="/login?next=${next}">Log in</a>
         or <a class="text-accent underline" href="/signup">create an account</a>
-        to submit a link. The list below is public.
-      </p>`;
+        to submit a link. The list below is public.`);
       form.hidden = true;
+      window.lucide?.createIcons();
       return;
     }
     root.hidden = true;
@@ -147,14 +157,15 @@
       count.textContent = view.loading ? "Loading" : view.error ? "Unavailable" : `${formatCount(view.items.length)} links`;
     }
     if (view.loading || view.error) {
-      root.innerHTML = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${
-        view.loading ? loadingHtml("Loading links...") : escapeHtml(view.error)
-      }</div>`;
+      root.innerHTML = view.loading
+        ? `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${loadingHtml("Loading links...")}</div>`
+        : linkBlankslateHtml("circle-alert", "Links did not load", escapeHtml(view.error));
+      window.lucide?.createIcons();
       return;
     }
     root.innerHTML = view.items.length
       ? view.items.map(linkRowHtml).join("")
-      : '<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">No links have been submitted yet. Share something you made about ForkMesh and be the first.</div>';
+      : linkBlankslateHtml("link", "No links yet", "No links have been submitted yet. Share something you made about ForkMesh and be the first.");
     window.lucide?.createIcons();
   }
 
