@@ -1725,6 +1725,11 @@
         outline-offset: 2px;
       }
 
+      :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]), select, textarea):focus-visible {
+        outline: 1px solid rgb(var(--dashboard-primary-rgb));
+        outline-offset: -1px;
+      }
+
       [data-dashboard-skip-link] {
         position: fixed;
         left: 0.75rem;
