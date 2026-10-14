@@ -24,6 +24,7 @@ PYTEST_SUITES = {
         "app/tests/test_static_route_canonicalization.py",
         "app/tests/test_offline_ci_workflow.py",
         "app/tests/test_discord_accounts.py",
+        "app/tests/test_codemagic_native_build.py",
     ),
     "world": (
         "world/tests/test_world_backend.py::test_context_returns_only_country_and_shared_clock_fields",
