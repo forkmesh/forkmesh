@@ -43,6 +43,7 @@ public final class ChatWorkspace {
     public private(set) var starred: [String] = []
     public private(set) var drafts: [String: String] = [:]
     public private(set) var recentPeople: [String] = []
+    public private(set) var lastConversation: String = ""
 
     public init(store: KeyValueStore? = nil, scope: String = "") {
         self.store = store
@@ -64,6 +65,7 @@ public final class ChatWorkspace {
         muted = Set(store.stringList(forKey: key("muted")) ?? [])
         starred = store.stringList(forKey: key("starred")) ?? []
         recentPeople = store.stringList(forKey: key("recentPeople")) ?? []
+        lastConversation = store.string(forKey: key("lastConversation")) ?? ""
         if let json = store.string(forKey: key("drafts")), let data = json.data(using: .utf8),
             let decoded = try? JSONDecoder().decode([String: String].self, from: data)
         {
@@ -132,6 +134,12 @@ public final class ChatWorkspace {
         if on == starred.contains(conversation) || conversation.isEmpty { return }
         if on { starred.append(conversation) } else { starred.removeAll { $0 == conversation } }
         store?.set(starred, forKey: key("starred"))
+    }
+
+    public func setLastConversation(_ conversation: String) {
+        if conversation.isEmpty || conversation == lastConversation { return }
+        lastConversation = conversation
+        store?.set(conversation, forKey: key("lastConversation"))
     }
 
     public func draft(for conversation: String) -> String { drafts[conversation] ?? "" }

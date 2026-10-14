@@ -59,6 +59,7 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public let mesh: LocalMeshService
     @ObservationIgnored let isGuest: @MainActor () -> Bool
     @ObservationIgnored let clock: Clock
+    @ObservationIgnored private var conversationChosen = false
 
     /// Called with the "Sign in to ..." phrase when a guest tries to post where they cannot; the
     /// view shows the guest sheet.
@@ -1023,7 +1024,17 @@ public final class ChatHub: ShellChatBridge {
         }
     }
 
+    public func restoreLastConversation() {
+        if conversationChosen { return }
+        conversationChosen = true
+        let last = workspace.lastConversation
+        if last.isEmpty || last == relay.currentConversation { return }
+        open(last)
+    }
+
     public func select(_ conversation: String) {
+        conversationChosen = true
+        workspace.setLastConversation(conversation)
         extras.sendTyping(conversation: relay.currentConversation, active: false)
         relay.switchConversation(conversation)
         queueReadMark(conversation)

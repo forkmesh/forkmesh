@@ -29,7 +29,6 @@ private struct ChatScreenBody: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let hub: ChatHub
     @State private var channelsOpen: Bool = false
-    @State private var drawerDrag: CGFloat = 0
     @State private var notice: FmNotice?
     @State private var pushed: Route?
     @State private var issueDraft: ChatIssueDraftBox?
@@ -40,7 +39,10 @@ private struct ChatScreenBody: View {
     var body: some View {
         content
             .directCalls(hub)
-            .onAppear { syncShellTop(channelsOpen) }
+            .onAppear {
+                hub.restoreLastConversation()
+                syncShellTop(channelsOpen)
+            }
             .onDisappear { syncShellTop(false) }
             .sheet(item: $issueDraft) { (box: ChatIssueDraftBox) in
                 ChatIssueSheet(draft: box.draft, onFiled: { notice = FmNotice($0) })
@@ -127,25 +129,11 @@ private struct ChatScreenBody: View {
                     closeChannels()
                     pushed = route
                 },
-                onCompose: { composing = true }, onSearch: { searchRequest = ChatSearchRequest() })
+                onCompose: { composing = true }, onSearch: { searchRequest = ChatSearchRequest() },
+                onClose: { closeChannels() })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(fm.bgRaised.ignoresSafeArea(.container, edges: .bottom))
             .shadow(color: .black.opacity(0.3), radius: 18, x: 6)
-            .offset(x: min(0, drawerDrag))
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12)
-                    .onChanged { value in
-                        if abs(value.translation.width) > abs(value.translation.height) {
-                            drawerDrag = value.translation.width
-                        }
-                    }
-                    .onEnded { value in
-                        if drawerDrag < -80 || (drawerDrag < 0 && value.predictedEndTranslation.width < -160) {
-                            closeChannels()
-                        } else {
-                            withAnimation(.easeOut(duration: 0.2)) { drawerDrag = 0 }
-                        }
-                    })
             .transition(.move(edge: .leading))
             .zIndex(2)
         }
@@ -153,7 +141,6 @@ private struct ChatScreenBody: View {
 
     private func openChannels() {
         ShellKeyboard.dismiss()
-        drawerDrag = 0
         withAnimation(.easeOut(duration: 0.25)) {
             channelsOpen = true
             syncShellTop(true)
@@ -163,7 +150,6 @@ private struct ChatScreenBody: View {
     private func closeChannels() {
         withAnimation(.easeOut(duration: 0.25)) {
             channelsOpen = false
-            drawerDrag = 0
             syncShellTop(false)
         }
     }

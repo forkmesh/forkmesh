@@ -12,6 +12,7 @@ struct ChatChannelSidebar: View {
     let onRoute: (Route) -> Void
     var onCompose: (() -> Void)? = nil
     var onSearch: (() -> Void)? = nil
+    var onClose: (() -> Void)? = nil
     @State private var groups: ChannelGroupsStore? = Services.get(ChannelGroupsStore.self)
     @State private var discord: DiscordBridge? = Services.get(DiscordBridge.self)
     @State private var statusSheet: Bool = false
@@ -42,7 +43,7 @@ struct ChatChannelSidebar: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if onSearch != nil || onCompose != nil {
+                if onSearch != nil || onCompose != nil || onClose != nil {
                     jumpBar.padding(.bottom, FmSpace.x3)
                 }
                 if !hub.workspace.starred.isEmpty {
@@ -158,6 +159,18 @@ struct ChatChannelSidebar: View {
 
     private var jumpBar: some View {
         HStack(spacing: FmSpace.x2) {
+            if let onClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(fm.textPrimary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                        .shellGlass(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close conversations")
+            }
             if let onSearch {
                 Button(action: onSearch) {
                     HStack(spacing: FmSpace.x2) {

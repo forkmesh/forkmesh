@@ -18,7 +18,9 @@ import com.forkmesh.nativeapp.chat.DirectMessageService
 import com.forkmesh.nativeapp.chat.DiscordBridge
 import com.forkmesh.nativeapp.chat.FamilyDiscordControl
 import com.forkmesh.nativeapp.chat.LocalMeshRoom
+import com.forkmesh.nativeapp.chat.MESH_CONVERSATION
 import com.forkmesh.nativeapp.chat.OfficeChannelService
+import com.forkmesh.nativeapp.chat.OfficeFrames
 import com.forkmesh.nativeapp.chat.RelayConnectionState
 import com.forkmesh.nativeapp.chat.RelayRoom
 import com.forkmesh.nativeapp.chat.RelayRoomChat
@@ -52,6 +54,7 @@ import kotlinx.coroutines.withContext
 
 object ChatDepth {
     private const val SAVE_DELAY_MS = 2_000L
+    private const val LAST_CONVERSATION_KEY = "chat/lastConversation"
 
     private val revisionState = MutableStateFlow(0)
     private val noticeFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -64,6 +67,12 @@ object ChatDepth {
     @Volatile
     var hub: ChatHub? = null
         private set
+
+    @Volatile
+    private var conversationChosen = false
+
+    @Volatile
+    private var lastConversationKey = LAST_CONVERSATION_KEY
 
     @Volatile
     var office: OfficeChannelService? = null
@@ -119,6 +128,19 @@ object ChatDepth {
         }
     }
 
+    fun restoreLastConversation() {
+        if (conversationChosen) return
+        conversationChosen = true
+        val chat = hub ?: return
+        val room = ChatFeature.relay ?: return
+        val last = Services.get<PrefStore>()?.getString(lastConversationKey).orEmpty()
+        if (last.isEmpty() || last == room.currentConversation) return
+        if (last.startsWith("#") && !OfficeFrames.isOffice(last) && last != MESH_CONVERSATION && last !in room.channels) {
+            room.addChannel(last)
+        }
+        chat.select(last)
+    }
+
     fun install(app: App, room: RelayRoom, settings: SettingsService, scopeInfo: ProjectScope) {
         val auth = Services.get<AuthService>()
         val api = Services.get<ApiService>()
@@ -126,6 +148,13 @@ object ChatDepth {
         val prefs = Services.get<PrefStore>()
         val chat = ChatHub(RelayRoomChat(room))
         room.frameObserver = { frame -> chat.extras.apply(frame) }
+        val lastKey = scopeInfo.key(LAST_CONVERSATION_KEY)
+        lastConversationKey = lastKey
+        conversationChosen = false
+        room.onConversationSwitched = { conversation ->
+            conversationChosen = true
+            if (conversation.isNotEmpty()) prefs?.putString(lastKey, conversation)
+        }
         chat.onNotice = { post(it) }
         chat.selfName = { auth?.session?.value?.nodeName ?: room.persona.name }
         chat.extras.onChange = {
