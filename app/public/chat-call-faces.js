@@ -28,7 +28,15 @@ const HOLD_MS = 500;
 const FADE_IN = 0.3;
 const FADE_OUT = 0.2;
 const PHOTO_SIZE = 512;
-const BUDGET_MS = [22, 32, 40];
+const QUALITY = Object.freeze([
+  Object.freeze({ network: 1, hair: 1, guide: 320 }),
+  Object.freeze({ network: 1, hair: 2, guide: 320 }),
+  Object.freeze({ network: 2, hair: 3, guide: 256 }),
+  Object.freeze({ network: 3, hair: 4, guide: 192 }),
+]);
+const SLOW_MS = 34;
+const FAST_MS = 20;
+const QUALITY_HOLD = 24;
 
 export const CALL_FACE_STORAGE_KEY = "forkmesh.chat.callFace";
 export const CALL_FACE_PHOTO_BASE = "/assets/call-faces/";
@@ -347,9 +355,10 @@ export function createFaceStage({
   let stopped = false;
   const modelsRequested = new Set();
   let cost = 0;
-  let skip = 0;
-  let netEvery = 1;
-  const stats = { frames: 0, network: 0, drawMs: 0, maxDrawMs: 0 };
+  let level = 0;
+  let steady = 0;
+  let count = 0;
+  const stats = { frames: 0, network: 0, hair: 0, drawMs: 0, maxDrawMs: 0, frameMs: 0, level: 0 };
 
   function wantsMatte() {
     return Boolean(face) || background.mode !== "off";
@@ -402,7 +411,18 @@ export function createFaceStage({
     return { points: fitTemplate(faceTemplate(), smooth), mask: null };
   }
 
-  function render(frame, result, time) {
+  function adapt(spent) {
+    cost = cost ? cost * 0.9 + spent * 0.1 : spent;
+    steady += 1;
+    if (steady < QUALITY_HOLD) return;
+    const next = cost > SLOW_MS ? Math.min(level + 1, QUALITY.length - 1) : cost < FAST_MS ? Math.max(level - 1, 0) : level;
+    if (next === level) return;
+    level = next;
+    steady = 0;
+    renderer.matte?.setGuideWidth(QUALITY[level].guide);
+  }
+
+  function render(frame, result, time, startedAt) {
     const points = result?.points || null;
     if (points) {
       live = points;
@@ -423,24 +443,28 @@ export function createFaceStage({
       if (result?.mask) matte.setHostMask(result.mask.bytes, result.mask.width, result.mask.height);
       else if (!hostMasks) matte.clearHostMask();
     }
-    let runNetwork = true;
-    if (!hostMasks && netEvery > 1) {
-      skip = (skip + 1) % netEvery;
-      runNetwork = skip === 0;
-    }
+    count += 1;
+    const quality = QUALITY[level];
+    const runNetwork = hostMasks || count % quality.network === 0;
+    const runHair = count % quality.hair === 0;
     const started = now();
+    const hairBefore = renderer.hairMatte?.ran || 0;
     renderer.draw(frame.canvas, width, height, face ? live : null, {
       presence,
       hide: face ? hide : 0,
       runNetwork,
+      runHair,
       uploaded: Boolean(result?.uploaded),
     });
     const spent = now() - started;
-    cost = cost ? cost * 0.9 + spent * 0.1 : spent;
-    netEvery = cost > BUDGET_MS[2] ? 3 : cost > BUDGET_MS[1] ? 2 : cost < BUDGET_MS[0] ? 1 : netEvery;
+    const whole = now() - (startedAt ?? started);
+    adapt(hostLocate ? spent : whole);
     stats.frames += 1;
     stats.network += runNetwork && !hostMasks && renderer.segmentation && wantsMatte() ? 1 : 0;
+    stats.hair += (renderer.hairMatte?.ran || 0) - hairBefore;
     stats.drawMs += spent;
+    stats.frameMs += whole;
+    stats.level = level;
     stats.maxDrawMs = Math.max(stats.maxDrawMs, spent);
   }
 
@@ -463,11 +487,12 @@ export function createFaceStage({
     frame.busy = true;
     inFlight += 1;
     const id = ++sequence;
+    const startedAt = now();
     return Promise.resolve(locate(frame.canvas, w, h, time)).catch(() => null).then((result) => {
       inFlight -= 1;
       if (!stopped && id > shown) {
         shown = id;
-        render(frame, result, time);
+        render(frame, result, time, startedAt);
       }
       frame.busy = false;
       return true;

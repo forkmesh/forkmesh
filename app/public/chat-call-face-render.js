@@ -619,6 +619,9 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
     get faceMesh() {
       return faceMesh;
     },
+    get hairMatte() {
+      return hairMatte;
+    },
     trackFace(frame, w, h) {
       if (!faceMesh || gl.isContextLost()) return null;
       upload(frame);
@@ -655,7 +658,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
     get lastHead() {
       return lastHead;
     },
-    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, needMatte = false, uploaded = false } = {}) {
+    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, runHair = true, needMatte = false, uploaded = false } = {}) {
       if (gl.isContextLost()) {
         lost = true;
         return false;
@@ -716,7 +719,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       }
       let hair = null;
       if (showFace && hasMatte && hairMatte && lastHead) {
-        hair = hairMatte.update(camera, w, h, hairRegion(lastHead.pose, w, h));
+        hair = hairMatte.update(camera, w, h, hairRegion(lastHead.pose, w, h), { run: runHair });
       }
       let fill = camera;
       let backdrop = camera;
