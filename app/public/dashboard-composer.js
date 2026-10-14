@@ -66,6 +66,8 @@
   const DEFAULT_MODEL = { "claude-code": "opus", codex: "sol", "local-llama": "gemma4:e4b" };
   const PROMPTABLE_STATUSES = new Set(["running", "queued", "completed", "failed"]);
   const CLOUD_RUNTIMES = new Set(["headless", "runner-pool"]);
+  const RUNNER_SETUP_PAGE = "/dashboard/runners?setup=1";
+  const DESKTOP_PAGE = "/desktop";
   const BUILTIN_COMMANDS = new Set(["clear", "apps", "help", "model", "mode", "agent", "speed"]);
 
   const ICONS = {
@@ -275,6 +277,43 @@
     return (Array.isArray(targets) ? targets : []).filter((target) =>
       Array.isArray(target?.providers) && target.providers.some((provider) => wanted.includes(provider)) &&
       (cloud === undefined || isCloudTarget(target) === Boolean(cloud)));
+  }
+
+  function agentPlacement(data, mode, wantCloud) {
+    if (!data || !Array.isArray(data.targets)) return null;
+    const canCloud = eligibleTargets(data.targets, mode, true).length > 0;
+    const canDesktop = eligibleTargets(data.targets, mode, false).length > 0;
+    const ready = canCloud || canDesktop;
+    return {
+      cloud: canCloud && (wantCloud || !canDesktop),
+      canCloud,
+      canDesktop,
+      ready,
+      otherAgent: !ready && data.targets.some((target) => Array.isArray(target?.providers) && target.providers.length > 0),
+      denied: !ready && [401, 403, 404].includes(Number(data.errorStatus || 0)),
+      failed: !ready && Boolean(data.error),
+    };
+  }
+
+  function placementNotice(placement, repo, mode) {
+    if (!placement || placement.ready || !repo) return null;
+    if (placement.denied) {
+      return { text: `Only ${repo.owner} can start agents on ${repo.display}. Use task to ask for this instead.`, links: [] };
+    }
+    if (placement.failed) {
+      return { text: `Agent targets for ${repo.display} could not be loaded. Use refresh to try again.`, links: [] };
+    }
+    if (placement.otherAgent) {
+      const label = AGENTS.find((agent) => agent.value === mode)?.label || mode;
+      return { text: `Nothing that serves ${repo.display} runs ${label}. Pick another model.`, links: [] };
+    }
+    return {
+      text: `To run agents on ${repo.display}, set up a ForkMesh runner on any Linux machine or open the desktop app.`,
+      links: [
+        { href: RUNNER_SETUP_PAGE, label: "Set up a runner" },
+        { href: DESKTOP_PAGE, label: "Get the desktop app" },
+      ],
+    };
   }
 
   function ownerAgentEndpoint(repo) {
@@ -622,6 +661,7 @@
           <span class="fmc-gauge" data-composer-gauge role="img" aria-label="No context usage reported" title="No context usage reported">${"<span></span>".repeat(GAUGE_BARS)}</span>
           <input type="file" data-composer-file multiple hidden tabindex="-1" />
         </div>
+        <p class="fmc-setup" data-composer-setup hidden></p>
         <p id="fmcStatus" class="fmc-status" data-composer-status role="status" aria-live="polite"></p>
       </section>`;
     return root;
@@ -680,6 +720,7 @@
       gauge: $("[data-composer-gauge]"),
       file: $("[data-composer-file]"),
       status: $("[data-composer-status]"),
+      setup: $("[data-composer-setup]"),
     };
   }
 
@@ -814,20 +855,61 @@
     }
   }
 
+  function currentPlacement() {
+    return agentPlacement(activeRepoData(), currentAgent(), composer.stored.cloud === true);
+  }
+
   function runsInCloud() {
-    return composer.stored.cloud === true;
+    const placement = currentPlacement();
+    return placement ? placement.cloud : composer.stored.cloud === true;
+  }
+
+  function canToggleCloud() {
+    const placement = currentPlacement();
+    return !placement || (placement.canCloud && placement.canDesktop);
+  }
+
+  function canStartNew() {
+    return currentPlacement()?.ready !== false;
   }
 
   function renderCloud() {
     const button = composer.els.cloud;
     if (!button) return;
+    const placement = currentPlacement();
     const on = runsInCloud();
-    const label = on
-      ? "New agents run on a ForkMesh cloud runner (on); click to run them on your desktop"
-      : "New agents run on your desktop (cloud off); click to run them on a ForkMesh cloud runner";
+    const where = activeRepo()?.display || "this repository";
+    const label = !placement || (placement.canCloud && placement.canDesktop)
+      ? (on
+        ? "New agents run on a ForkMesh cloud runner (on); click to run them on your desktop"
+        : "New agents run on your desktop (cloud off); click to run them on a ForkMesh cloud runner")
+      : placement.canCloud
+        ? `New agents run on a ForkMesh cloud runner; no desktop serves ${where}`
+        : placement.canDesktop
+          ? `New agents run on your desktop; no ForkMesh cloud runner serves ${where}`
+          : `No desktop or cloud runner serves ${where} yet`;
+    button.disabled = !canToggleCloud();
     button.setAttribute("aria-pressed", String(on));
     button.setAttribute("aria-label", label);
     button.title = label;
+  }
+
+  function renderAvailability() {
+    renderCloud();
+    const notice = placementNotice(currentPlacement(), activeRepo(), currentAgent());
+    const { create, setup } = composer.els;
+    if (create) create.disabled = composer.busy || !canStartNew();
+    if (!setup) return;
+    setup.replaceChildren();
+    setup.hidden = !notice;
+    if (!notice) return;
+    setup.append(document.createTextNode(notice.text));
+    for (const link of notice.links) {
+      const anchor = document.createElement("a");
+      anchor.href = link.href;
+      anchor.textContent = link.label;
+      setup.append(" ", anchor);
+    }
   }
 
   function renderCount() {
@@ -1044,6 +1126,7 @@
       targetField.hidden = targets.length < 2;
     }
     renderAddVisibility();
+    renderAvailability();
   }
 
   function renderAddVisibility() {
@@ -1189,10 +1272,11 @@
       sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
       models: payload?.models && typeof payload.models === "object" ? payload.models : null,
       error: "",
+      errorStatus: 0,
     }));
     const ownerPath = repo.owns ? "" : ownerAgentEndpoint(repo);
     const pending = Promise.all([
-      load(repo.endpoint).catch((error) => ({ targets: [], sessions: [], models: null, error: String(error?.message || "") })),
+      load(repo.endpoint).catch((error) => ({ targets: [], sessions: [], models: null, error: String(error?.message || "Request failed."), errorStatus: Number(error?.status || 0) })),
       ownerPath ? load(ownerPath).catch(() => null) : null,
     ]).then(([primary, owner]) => {
       const data = { loadedAt: Date.now(), ...withOwnerRoute(primary, owner, ownerPath) };
@@ -1224,6 +1308,7 @@
     for (const button of [composer.els.task, composer.els.add, composer.els.create, composer.els.page]) {
       if (button) button.disabled = busy;
     }
+    if (composer.els.create && !busy) composer.els.create.disabled = !canStartNew();
     composer.els.panel?.setAttribute("aria-busy", String(busy));
   }
 
@@ -1279,10 +1364,9 @@
       const mode = currentAgent();
       const cloud = runsInCloud();
       const placed = eligibleTargets(data?.targets, mode, cloud);
-      if (!placed.length && (cloud || eligibleTargets(data?.targets, mode).length)) {
-        setStatus(cloud
-          ? data?.error || `No ForkMesh cloud runner can run this agent on ${repo.display}. Turn off cloud to run it on your desktop.`
-          : `No desktop can run this agent on ${repo.display}. Turn on cloud to run it on a ForkMesh cloud runner.`, "bad");
+      if (!placed.length) {
+        setStatus("");
+        renderAvailability();
         return;
       }
       const chosen = String(composer.els.targetSelect?.value || "");
@@ -1654,7 +1738,7 @@
       { group: "Model", label: "Switch permission mode…", hint: RUN_MODES.find((item) => item.value === currentRunMode())?.label || "", run: () => openChoice("mode") },
       { group: "Model", label: "Switch speed…", hint: EFFORTS.find((item) => item.value === currentEffort())?.label || "", run: () => openChoice("speed") },
       { group: "Model", label: composer.stored.createPr === true ? "Don't open a pull request" : "Open a pull request when done", hint: "green dot", run: togglePr },
-      { group: "Model", label: runsInCloud() ? "Run on your desktop" : "Run in the cloud", hint: "cloud", run: toggleCloud },
+      ...(canToggleCloud() ? [{ group: "Model", label: runsInCloud() ? "Run on your desktop" : "Run in the cloud", hint: "cloud", run: toggleCloud }] : []),
       { group: "Apps", label: "/apps", hint: "list your app commands", run: () => { composer.els.input.value = "/apps"; void maybeRunSlashCommand(); } },
     );
     for (const entry of composer.appCommands || []) {
@@ -1817,6 +1901,7 @@
   }
 
   function toggleCloud() {
+    if (!canToggleCloud()) return;
     setStored({ cloud: !runsInCloud() });
     renderCloud();
     renderSessionsAndTargets();
@@ -2330,6 +2415,8 @@
       modelOptions,
       pickTarget,
       eligibleTargets,
+      agentPlacement,
+      placementNotice,
       withOwnerRoute,
       promptableSessions,
       contextUsage,

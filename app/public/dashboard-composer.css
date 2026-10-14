@@ -723,6 +723,21 @@ body[data-page="chat"]:has(> .fmc-root) #fullChatMessages {
   background: var(--fmc-danger);
 }
 
+.fmc-setup {
+  margin: 0;
+  color: var(--fmc-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fmc-setup a {
+  margin-left: 6px;
+  color: var(--fmc-ring);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .fmc-status {
   margin: 0;
   color: var(--fmc-muted);

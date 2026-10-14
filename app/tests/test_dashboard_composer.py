@@ -145,6 +145,28 @@ const out = {
       unchanged: api.withOwnerRoute(org, null, endpoint) === org,
     };
   })(),
+  availability: (() => {
+    const desktop = { node: "laptop", providers: ["claude-code"], online: true, runtimeMode: "desktop" };
+    const runner = { node: "fmnext-r1", providers: ["claude-code"], online: true, runtimeMode: "runner-pool" };
+    const repo = { owner: "alice", display: "alice/engine" };
+    const place = (targets, mode, cloud, extra = {}) => api.agentPlacement({ targets, ...extra }, mode, cloud);
+    return {
+      pending: api.agentPlacement({ pending: true }, "auto", true),
+      both: place([desktop, runner], "auto", false),
+      bothCloud: place([desktop, runner], "auto", true),
+      onlyRunner: place([runner], "auto", false),
+      onlyDesktop: place([desktop], "auto", true),
+      none: place([], "auto", true),
+      wrongAgent: place([desktop], "codex", false),
+      denied: place([], "auto", false, { error: "Not found.", errorStatus: 404 }),
+      failed: place([], "auto", false, { error: "Request failed (HTTP 502).", errorStatus: 502 }),
+      noticeReady: api.placementNotice(place([desktop], "auto", false), repo, "auto"),
+      noticeNone: api.placementNotice(place([], "auto", false), repo, "auto"),
+      noticeAgent: api.placementNotice(place([desktop], "codex", false), repo, "codex"),
+      noticeDenied: api.placementNotice(place([], "auto", false, { error: "x", errorStatus: 403 }), repo, "auto"),
+      noticeFailed: api.placementNotice(place([], "auto", false, { error: "x", errorStatus: 500 }), repo, "auto"),
+    };
+  })(),
   sessions: api.promptableSessions([
     { id: "old", status: "completed", localAgentId: 1, updatedAt: 1 },
     { id: "new", status: "running", localAgentId: 2, updatedAt: 5 },
@@ -371,3 +393,29 @@ def test_pages_can_take_over_enter_once_the_composer_says_it_is_ready(internals)
     assert internals["pageHandler"] == {"rejected": "invalid_composer_page_handler", "unregister": "function"}
     source = COMPOSER.read_text(encoding="utf-8")
     assert 'if (action === "page") void runPageAction();' in source
+
+
+def test_agent_placement_follows_what_can_actually_run(internals):
+    cases = internals["availability"]
+    assert cases["pending"] is None
+    assert cases["both"]["cloud"] is False and cases["both"]["ready"] is True
+    assert cases["bothCloud"]["cloud"] is True
+    assert cases["onlyRunner"]["cloud"] is True
+    assert cases["onlyRunner"]["canDesktop"] is False
+    assert cases["onlyDesktop"]["cloud"] is False
+    assert cases["onlyDesktop"]["canCloud"] is False
+    assert cases["none"]["ready"] is False and cases["none"]["otherAgent"] is False
+    assert cases["wrongAgent"]["ready"] is False and cases["wrongAgent"]["otherAgent"] is True
+    assert cases["denied"]["denied"] is True
+    assert cases["failed"]["denied"] is False and cases["failed"]["failed"] is True
+
+
+def test_placement_notice_links_to_runner_and_desktop_setup(internals):
+    cases = internals["availability"]
+    assert cases["noticeReady"] is None
+    none = cases["noticeNone"]
+    assert "alice/engine" in none["text"]
+    assert [link["href"] for link in none["links"]] == ["/dashboard/runners?setup=1", "/desktop"]
+    assert "Codex" in cases["noticeAgent"]["text"] and cases["noticeAgent"]["links"] == []
+    assert cases["noticeDenied"]["text"].startswith("Only alice can start agents")
+    assert "could not be loaded" in cases["noticeFailed"]["text"]
