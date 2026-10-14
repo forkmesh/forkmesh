@@ -76,7 +76,7 @@ struct DesktopTerminalScreen: View {
 
     var body: some View {
         content
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarItems }

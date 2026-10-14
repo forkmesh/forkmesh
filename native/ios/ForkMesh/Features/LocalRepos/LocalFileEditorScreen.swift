@@ -33,7 +33,7 @@ struct LocalFileEditorScreen: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(fm.editorSurface)
+        .background(fm.readingSurface)
         .navigationTitle(model.fileName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

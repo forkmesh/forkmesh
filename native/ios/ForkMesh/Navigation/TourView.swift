@@ -65,7 +65,7 @@ struct TourView: View {
             .padding(.horizontal, FmSpace.x4)
             .padding(.bottom, FmSpace.x4)
         }
-        .fmPreGlassBackground(fm.bgBase)
+        .fmPreGlassBackground(fm.canvas)
         .navigationTitle("Tour")
         .navigationBarTitleDisplayMode(.inline)
     }
