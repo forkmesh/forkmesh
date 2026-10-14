@@ -230,7 +230,7 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 ## Recent changes
 
 - 2026-10-14 (branch 1995, iOS): the keyboard closes on a tap outside the
-  field and has a grabber to drag it shut. Asked: "If we click anywhere on
+  field. Asked: "If we click anywhere on
   mobile outside of the keyboard and we are not in an input then please close
   the keyboard also add the little drag to close on it". Changes, all in
   `Kit/FmKeyboard.swift`:
@@ -247,12 +247,10 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
     check needs the marked area to contain the editing field, which is why
     the hidden shell composer (always mounted) keeps nothing for other fields.
   - `FmKeyboard` watches `textDidBeginEditing` for `UITextField` and
-    `UITextView`. Every field with no accessory of its own gets an
-    `FmKeyboardGrabber` as its `inputAccessoryView`: a 22 pt clear strip with
-    a pill in the middle. Dragging it down 16 pt (or flicking it) closes the
-    keyboard, and so does tapping the pill. The code editor keeps its
-    `CodeKeyBar`. A field with a SwiftUI keyboard toolbar (`SpeechScreen`)
-    should keep that toolbar. This has not been checked on a device.
+    `UITextView` to know which field is editing.
+  - A drag-to-close grabber above the keyboard (an `inputAccessoryView` pill)
+    was added, then removed on request ("Remove the drag to close"). The
+    keyboard has no accessory of ours.
   - Parse-checked only (`swiftc -parse`); not run on a device. Android is
     unchanged.
 
