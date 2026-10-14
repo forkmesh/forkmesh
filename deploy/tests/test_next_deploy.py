@@ -878,24 +878,21 @@ def test_wheels_go_to_a_node_only_when_it_lacks_them(tmp_path, monkeypatch):
 
 
 def test_join_tree_carries_only_the_public_addresses(sandbox, tmp_path):
-    next_common.save_json(sandbox / "fleet-instances.json", {
-        "fmnext-core-1": {"id": "x", "plan": "p", "region": "ewr",
-                          "ip": "203.0.113.11", "ipv6": "2001:19f0:ffff::11"},
-        "fmnext-core-2": {"id": "y", "ip": "203.0.113.12"},
-        "fmnext-core-3": {"id": "z", "ip": "203.0.113.13"},
-        "fmnext-run-1": {"id": "w", "ip": "203.0.113.21"}})
+    from fakes import repo_fleet_instances
+    instances = repo_fleet_instances()
+    private = {label: dict(info, id="id-" + label, plan="p", region="ewr")
+               for label, info in instances.items()}
+    next_common.save_json(sandbox / "fleet-instances.json", private)
     stage = tmp_path / "stage"
     next_deploy.stage_join_tree(stage, state={})
     written = json.loads((stage / "deploy" / "fleet-instances.public.json").read_text())
-    assert written["fmnext-core-1"] == {"ip": "203.0.113.11", "ipv6": "2001:19f0:ffff::11"}
-    assert written["fmnext-run-1"] == {"ip": "203.0.113.21"}
+    assert written == instances
     import render
     fleet = render.load_fleet(
         stage / "deploy" / "fleet.toml", state={},
         instances_path=stage / "deploy" / "fleet-instances.public.json")
     assert [n["public_ipv4"] for n in fleet["nodes"]] == [
-        "203.0.113.11", "203.0.113.12", "203.0.113.13"]
-
+        instances[n["label"]]["ip"] for n in fleet["nodes"]]
 
 def test_prune_dist_keeps_newest_releases_and_the_named_one(tmp_path):
     names = ["%012x" % n for n in range(9)]
