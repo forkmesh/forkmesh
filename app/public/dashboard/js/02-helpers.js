@@ -23,6 +23,10 @@
       : location.origin;
   }
 
+  function signedOutHomeUrl() {
+    return `${publicSiteOrigin()}/`;
+  }
+
   function publicProfileUrl(name, suffix = "") {
     const handle = String(name || "").trim().toLowerCase();
     return handle
@@ -428,7 +432,7 @@
     const finish = () => {
       if (redirected) return;
       redirected = true;
-      location.replace("/");
+      location.replace(signedOutHomeUrl());
     };
     Promise.allSettled([serverLogout, cleanup]).then(finish);
     window.setTimeout(finish, 1200);
@@ -504,7 +508,7 @@
       const channel = new BroadcastChannel("forkmesh.session");
       channel.addEventListener("message", (event) => {
         if (event.data?.type === "signed-out" && readSession()) {
-          clearForkMeshBrowserState().finally(() => location.replace("/"));
+          clearForkMeshBrowserState().finally(() => location.replace(signedOutHomeUrl()));
         }
       });
     } catch (_) {}

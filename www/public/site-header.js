@@ -39,6 +39,9 @@
     ? "/market"
     : "https://forkmesh.com/market";
   const HOME_HREF = MARKETING_HOST ? "/" : "https://forkmesh.com/";
+  const SIGNED_OUT_HREF = /^(?:app|world)\.forkmesh\.com$/i.test(location.hostname)
+    ? "https://forkmesh.com/"
+    : "/";
   const APP_PAGE_ORIGIN = MARKETING_HOST ? "https://app.forkmesh.com" : "";
   const PROFILE_HREF = APP_PAGE_ORIGIN + "/dashboard/profile";
   const REPOS_HREF = APP_PAGE_ORIGIN + "/dashboard/repos";
@@ -350,7 +353,7 @@
     const finish = () => {
       if (redirected) return;
       redirected = true;
-      location.replace("/");
+      location.replace(SIGNED_OUT_HREF);
     };
     Promise.allSettled([serverLogout, cleanup]).then(finish);
     window.setTimeout(finish, 1200);
@@ -514,7 +517,7 @@
         if (event.data?.type !== "signed-out" || !readSession()) return;
         clearSignedInBrowserState().finally(() => {
           renderAccountAreas();
-          location.replace("/");
+          location.replace(SIGNED_OUT_HREF);
         });
       });
     } catch (_) {}

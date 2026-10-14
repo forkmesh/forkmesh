@@ -37,3 +37,16 @@ def test_revoked_devices_poll_authoritative_session_state_and_boot_on_401():
     assert "validateActiveWorldSession()" in WORLD
     assert 'new BroadcastChannel("forkmesh.session")' in DASHBOARD
     assert 'new BroadcastChannel("forkmesh.session")' in HEADER
+
+
+def test_logout_lands_on_the_public_homepage_not_the_app():
+    assert "return `${publicSiteOrigin()}/`;" in DASHBOARD
+    logout = DASHBOARD[DASHBOARD.index("function logout()"):]
+    logout = logout[:logout.index("\n  }\n")]
+    assert "location.replace(signedOutHomeUrl())" in logout
+    assert 'location.replace("/")' not in logout
+    assert "clearForkMeshBrowserState().finally(() => location.replace(signedOutHomeUrl()))" in DASHBOARD
+    assert '/^(?:app|world)\\.forkmesh\\.com$/i.test(location.hostname)' in HEADER
+    assert '? "https://forkmesh.com/"' in HEADER
+    assert HEADER.count("location.replace(SIGNED_OUT_HREF)") == 2
+    assert 'location.replace("/")' not in HEADER

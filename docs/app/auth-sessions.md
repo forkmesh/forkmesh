@@ -53,6 +53,18 @@ lives in `www/public/home-header-auth.js` (never in `index.html`), runs only
 after the session is confirmed, is skipped for visits referred from a
 ForkMesh page or URLs with a hash or query, and uses `location.replace`.
 
+## Where sign-out lands
+
+Signing out, in this tab or another, sends the browser to the public homepage,
+never back into the app. `https://app.forkmesh.com/` answers 308 to
+`/dashboard`, so the old `location.replace("/")` after logout reopened the
+dashboard (issue 2017). The dashboard uses `signedOutHomeUrl()` in
+`02-helpers.js` (`https://forkmesh.com/` on the official hosts, the node's own
+`/` on a self-hosted origin); `site-header.js` uses `SIGNED_OUT_HREF`
+(`https://forkmesh.com/` from `app.` and `world.`, `/` elsewhere). The arrival
+is referred from a ForkMesh page, so the signed-in homepage redirect above
+does not fire.
+
 ## Two-factor authentication for administrators
 
 Every account with `users.is_admin=1` must use TOTP (RFC 6238: SHA-1, 6
