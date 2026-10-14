@@ -91,7 +91,7 @@ python3 tools/next_node_owner.py register            # dry-run: which cores lack
 python3 tools/next_node_owner.py register n4 --execute
 ```
 
-On the node, `python3 -I` signs `forkmesh-reserve-v1\n<node>\n<ts>` and `forkmesh-finalize-v1\n<node>\n\n<ts>` with `/var/lib/forkmesh/identity/ed25519.pem`; only the public key and the two signatures come back. The tool posts them to `/api/accounts/reserve` and `/api/accounts/finalize` with no link code and checks that `nodes.pubkey` reads back as the node's key. `add-core` now runs the same call in its `register` step. The new account has no owner; `transfer --from '' --to jett --accept-key <PEM> --execute` links it like the others (the owner is only the desktop's `ownerUser` label).
+On the node, `python3 -I` signs `forkmesh-reserve-v1\n<node>\n<ts>` and `forkmesh-finalize-v1\n<node>\n\n<ts>` with `/var/lib/forkmesh/identity/ed25519.pem`; only the public key and the two signatures come back. The tool posts them to `/api/accounts/reserve` and `/api/accounts/finalize` with no link code and checks that `nodes.pubkey` reads back as the node's key. `add-core` now runs the same call in its `register` step. The new account has no owner; `transfer --from '' --to jett --accept-key <PEM> --execute` links it like the others (the owner is only the desktop's `ownerUser` label). The operator desktop's own identity key, `~/projects/forkmesh/data/identity/ed25519.pem`, is jett's primary account `pubkey`, so it is the accept key; n4 was linked to jett that way on 2026-10-13.
 
 If an SSH call fails with `ControlPath too long` (an agent's long `TMPDIR`), set `FMNEXT_SSH_MUX_DIR` to a short directory, or to a path that cannot be created to turn multiplexing off.
 
