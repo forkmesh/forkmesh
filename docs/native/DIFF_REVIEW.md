@@ -35,6 +35,15 @@ changed-files card over a 420pt preview of the raw patch.
   (status badge, name, directory or old path, `+A −D`, and a **Viewed**
   checkbox). The header of the file being read stays pinned at the top. Tapping
   the pinned header scrolls back to the start of that file.
+- **Full file names (iOS).** Since 2026-10-14 (branch
+  `2004-mobile-file-navigation-buttons`) a file header always shows the whole
+  file name; the user asked for it because the name matters more than the
+  folder it sits in. The directory (or old path of a rename) beside it gets
+  only the space left over and loses its start first (`…/collab/`), so the
+  folder nearest the file stays. A name too long for the row wraps onto a
+  second line instead of being cut, and the pinned header grows to fit. Before
+  this the name and directory were one line cut in the middle, which could
+  hide the end of the name. The file list sheet wraps long names the same way.
 - **Scrolling stays cheap (iOS).** The top row lives in `DiffScrollAnchor`, an
   observable object that only the pinned header overlay (`DiffPinnedHeaders`)
   reads. Before 2026-10-02 it was view state on the stream, so every row that
@@ -77,6 +86,9 @@ when it does not fit. From left to right:
      only. Both are on by default and saved as `diff/scrollSound` and
      `diff/scrollHaptic`. The app-wide Sounds and Haptics switches still
      apply on top.
+   - **Page buttons** (`unfold_more`), iOS, shows or hides the page up and
+     page down buttons (see "Page buttons"). On by default, saved as
+     `diff/pageButtons`.
 8. **Smaller / larger text**, from 9 to 18 points. Android only. Since
    2026-10-02 (branch `1245-move-branch-name-take`) iOS has no buttons for
    it: pinch the diff to zoom. The size follows the pinch in half-point steps
@@ -115,7 +127,7 @@ strip. If they do not fit beside the back and merge buttons, they scroll
 sideways. The pills are one view, `DiffHealthPills`, in both places.
 
 The settings (layout, wrap, syntax, findings, auto-viewed, scroll sound and
-haptic, text size) are saved
+haptic, page buttons, text size) are saved
 under `diff/*` in the app preferences, so they carry across screens and
 launches.
 
@@ -155,7 +167,8 @@ launches.
 - An agent diff has two sections, "Committed on the branch" and "Uncommitted in
   the worktree". A path in both sections gets a separate mark in each.
 - **The Viewed button (iOS)** is 26.5 pt tall, which is 10% taller than the
-  first version. It never shrinks: the file name truncates first. Every
+  first version. It never shrinks: the directory truncates first, then the
+  file name wraps (see "Full file names"). Every
   full-width row (the screen header, sections, file headers, notices) is sized
   to the screen width in both wrap modes. Before this, a wide screen header
   could make the wrapped stream wider than the phone, which clipped the button
@@ -371,6 +384,22 @@ the next file"). How the Genie hears them is in
   `GeniePageTests`. The scrolling itself was only parsed on Linux; on a phone
   check that a page lands with the cut-off line just under the pinned header,
   in wrapped and unwrapped layouts.
+
+## Page buttons (iOS)
+
+Added 2026-10-14 (branch `2004-mobile-file-navigation-buttons`). The user
+asked for two small Liquid Glass buttons at the bottom right of the diff to
+step a page down or up without scrolling by hand. Two 34 pt circles of glass
+(`shellGlass`, a thin material before iOS 26) with an up and a down chevron
+sit about 17 pt in from the bottom-right corner of the diff, each in a 44 pt tap
+area. They do exactly what "next page" and "previous page" do by voice (see
+"Turning pages by voice"): `DiffReviewModel.pageDown` and `pageUp` pick the
+row, so a page lands with the cut-off line under the pinned header, and rows
+paged past are marked viewed as when scrolling. At either end the tap gives a
+warning haptic and the diff does not move. They are hidden while the diff has
+no files. The toolbar's page-buttons toggle turns them off; they are on by
+default (`DiffViewSettings.pageButtons`, `diff/pageButtons`). Android has no
+page buttons.
 
 ## Line marks
 

@@ -337,6 +337,7 @@ final class CollabDiffViewingTests: XCTestCase {
         settings.syntax = false
         settings.scrollSound = false
         settings.scrollHaptic = false
+        settings.pageButtons = false
         settings.setFontSize(15)
         settings.reset()
         XCTAssertFalse(settings.split)
@@ -344,6 +345,7 @@ final class CollabDiffViewingTests: XCTestCase {
         XCTAssertTrue(settings.syntax)
         XCTAssertTrue(settings.scrollSound)
         XCTAssertTrue(settings.scrollHaptic)
+        XCTAssertTrue(settings.pageButtons)
         XCTAssertEqual(settings.fontSize, 12)
     }
 }
