@@ -896,8 +896,8 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
     switch-project action). `ProjectDrawer` is a full-screen cover with no
     presentation animation and a clear background; inside it the switcher
     slides in from the leading edge at 75% of the width over a 45% black
-    scrim. Tapping the scrim, swiping left or the VoiceOver escape gesture
-    closes it. Picking a project closes the drawer first (0.18 s), then starts
+    scrim. Tapping the scrim or the VoiceOver escape gesture closes it;
+    swiping does not move it (NAVIGATION 2.0.96). Picking a project closes the drawer first (0.18 s), then starts
     the switch, because the switch re-creates the view tree that presents the
     drawer.
   - Faster: the overlay used to stay up until the new project's chat socket
@@ -939,7 +939,7 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
     `LocalControlServiceTests.testASwitchToAnotherProjectDropsThisProjectsDesktop`.
   - Android drawer: `ProjectDrawer` / `ProjectDrawerHost` in
     `feature/account/projects/ProjectsUi.kt` (75% width, 250 ms slide, 50%
-    scrim; scrim tap, swipe left past 30% or a fling, and Back close it).
+    scrim; scrim tap and Back close it, a swipe does not move it, NAVIGATION 2.0.96).
     `AccountFeature.Gate` draws it above the app and below the switch overlay,
     outside the part rebuilt on a switch, so it keeps animating closed while
     the switch runs. The top-bar `ProjectSwitcherTitle`, the sign-in

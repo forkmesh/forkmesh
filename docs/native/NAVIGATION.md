@@ -133,8 +133,9 @@ top bar, the room's details in its place.
 - The channel list slides in from the left as a drawer, not a bottom sheet
   (2026-09-30, iOS and Android phones): the back chevron (iOS) or menu button
   (Android) opens it over a dimmed room, about 85% of the screen wide (at most
-  360 pt/dp; full width since 2.0.80). Tapping the dimmed area, swiping the
-  drawer left, picking a room or the system back (Android) closes it. Wide layouts keep the fixed sidebar.
+  360 pt/dp; full width since 2.0.80). Its buttons, picking a room or the
+  system back (Android) close it; swiping does not move it (2.0.96). Wide
+  layouts keep the fixed sidebar.
   On iOS phones the open drawer swaps the room header for the shell's top
   bar (2.0.11).
 
@@ -2361,6 +2362,7 @@ it opens.
   left and starts under the top bar on iOS (2.0.11).
 - With no dimmed strip left to tap, it closes by swiping it left, picking a
   room, or the system back (Android). Wide layouts keep the fixed sidebar.
+  Swiping was removed in 2.0.96 for a close button.
 
 ### 2.0.81 A thread's reply box docks on the bar (2026-10-09, iPhone)
 
@@ -3224,6 +3226,44 @@ to load faster or not flash.
   (iOS core), `ApiServiceTest.testKnownAccountAvatarIsReadWithoutARequest`
   (Android core). The app sources were only parsed on Linux, not run on a
   device.
+
+### 2.0.96 The Chat tab reopens the last conversation; drawers only move by their buttons (2026-10-14, iOS and Android)
+
+The user asked for the Chat button in the bottom bar to land on the last
+channel or direct message they had open instead of #general, and for the
+slide-out panels (the chat room list and the project list) not to move when
+swiped: only the buttons that open and close them may move them.
+
+- **Last conversation.** The open conversation lived only in memory
+  (`RelayService.currentConversation` / `RelayRoom.conversation`, starting at
+  `#general`), so after the phone dropped the app the Chat tab came back on
+  #general. Each switch is now saved per project and restored the first time
+  the chat screen appears in a launch.
+  - iOS: `ChatHub.select` writes `ChatWorkspace.lastConversation`
+    (`chat/workspace/<project>/lastConversation`); `ChatScreenBody.onAppear`
+    calls `ChatHub.restoreLastConversation()`, which reopens it through
+    `ChatHub.open` (re-adding a `#channel` the relay list no longer has).
+  - Android: `RelayRoom.onConversationSwitched` (every switch, including the
+    ones push and inbox make on the room directly) writes
+    `chat/lastConversation` under the project's `ProjectScope.key`;
+    `ChatScreen` calls `ChatDepth.restoreLastConversation()` once.
+  - A conversation chosen before the screen appears (a notification tap, a
+    deep link) wins: any switch marks the launch as chosen and the restore
+    then does nothing.
+- **Drawers do not follow a swipe.** The drag gestures are gone from the chat
+  channel drawer (iOS `ChatScreenBody.channelDrawer`, Android
+  `ChannelDrawer`) and the project drawer (iOS `ProjectDrawer`, Android
+  `ProjectDrawerHost`). A swipe over either one now scrolls or does nothing.
+  - The project drawer still closes from its scrim, picking a project, its
+    actions, VoiceOver escape and Android Back.
+  - The iPhone channel drawer is full width and hides the room header (and
+    its open button) while out, so it gains an **×** button (`Close
+    conversations`) at the start of its search row
+    (`ChatChannelSidebar.onClose`). Android's menu button stays visible above
+    its drawer and toggles it, as before.
+- Tests: `ChatNewMessageTests.testTheChatTabReopensTheLastConversation` (iOS
+  core). The app sources were parsed (iOS) and compiled (Android) on Linux,
+  not run on a device.
 
 ### 2.0.58 Tour can be removed from the phone (2026-10-05, iOS and Android)
 

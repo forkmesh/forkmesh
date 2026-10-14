@@ -12,10 +12,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,7 +36,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -54,11 +49,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.chat.ChatRow
 import com.forkmesh.nativeapp.chat.DirectMessageFrames
@@ -102,7 +95,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 private const val FOLLOW_SLACK_ITEMS = 2
 
@@ -131,6 +123,7 @@ class ChatScreen : Screen() {
         FmQuietSounds()
         val messenger = LocalFmMessenger.current
         val pendingIssue by ChatDepth.pendingIssue.collectAsState()
+        LaunchedEffect(Unit) { withContext(Dispatchers.IO) { ChatDepth.restoreLastConversation() } }
         LaunchedEffect(Unit) { ChatDepth.notices.collect { status.show(it) } }
         val snapshot = relay
         LaunchedEffect(pendingIssue, snapshot?.currentConversation) {
@@ -181,14 +174,9 @@ class ChatScreen : Screen() {
     @Composable
     private fun ChannelDrawer(open: Boolean, onClose: () -> Unit, content: @Composable () -> Unit) {
         val duration = 250
-        var dragX by remember { mutableFloatStateOf(0f) }
-        val closeDistance = with(LocalDensity.current) { 80.dp.toPx() }
         val focus = LocalFocusManager.current
         LaunchedEffect(open) {
-            if (open) {
-                dragX = 0f
-                focus.clearFocus()
-            }
+            if (open) focus.clearFocus()
         }
         Box(Modifier.fillMaxSize()) {
             AnimatedVisibility(visible = open, enter = fadeIn(tween(duration)), exit = fadeOut(tween(duration))) {
@@ -207,16 +195,8 @@ class ChatScreen : Screen() {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .offset { IntOffset(dragX.roundToInt(), 0) }
                         .shadow(18.dp)
-                        .background(Fm.colors.bgRaised)
-                        .draggable(
-                            orientation = Orientation.Horizontal,
-                            state = rememberDraggableState { delta -> dragX = (dragX + delta).coerceAtMost(0f) },
-                            onDragStopped = { velocity ->
-                                if (dragX < -closeDistance || velocity < -1200f) onClose() else dragX = 0f
-                            },
-                        ),
+                        .background(Fm.colors.bgRaised),
                 ) {
                     content()
                 }
