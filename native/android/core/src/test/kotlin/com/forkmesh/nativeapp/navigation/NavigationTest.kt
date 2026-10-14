@@ -346,6 +346,7 @@ class NavigationTest {
         val requirement = ClientVersionGate.requirement(body, "1.9.9")!!
         assertEq("2.0.0", requirement.minimum)
         assertEq(ClientVersionGate.DEFAULT_STORE_URL, requirement.storeUrl)
+        assertEq("https://forkmesh.com/mobile", ClientVersionGate.DEFAULT_STORE_URL)
         assertEq(null, ClientVersionGate.requirement(body, "2.0.0"))
         assertEq(null, ClientVersionGate.requirement(mapOf("minimumIosVersion" to "9"), "1.0"))
         assertEq("1.0", ClientVersionGate.requirement(mapOf("minimumAndroidVersion" to "1.1"), "1.0")!!.running)
