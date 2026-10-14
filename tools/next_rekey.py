@@ -104,6 +104,7 @@ DROP_TABLES = {
     "organization_agent_presence": "Office agent presence (hours of retention), keyed by account blind indexes",
     "probe_visitors": "404 probe scores keyed by an IP blind index (an hour of window)",
     "probe_bans": "automatic probe bans keyed by an IP blind index; the next sweep lifts their request_block_rules rows",
+    "notification_email_sends": "notification email send claims keyed by a blind index of the address and ping (30-day retention)",
 }
 
 # Every *_bi column of the schema (app/migrations + app/src/schema.py).
@@ -233,7 +234,8 @@ BI_COLUMNS = {
     "note_shares": ("principal_bi", "added_by_bi"),
     "note_versions": ("author_bi",),
     "notes": ("owner_bi",),
-    "notifications": ("dedupe_bi", "recipient_bi"),
+    "notifications": ("dedupe_bi", "recipient_bi", "content_bi"),
+    "notification_email_sends": ("send_bi",),
     "org_agent_attachments": ("org_bi",),
     "org_agent_jobs": ("org_bi",),
     "org_agent_sessions": ("org_bi", "created_by_bi"),

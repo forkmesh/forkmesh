@@ -816,6 +816,7 @@ NOTIFICATION_TRIM_INTERVAL_MS = 15 * 60 * 1000
 NOTIFICATION_TRIM_MEMO_MAX = 512
 MAX_NOTIFICATIONS_FETCH = 100
 NOTIFICATION_RETAIN_MS = 90 * 24 * 60 * 60 * 1000
+NOTIFICATION_EMAIL_SEND_RETAIN_MS = 30 * 24 * 60 * 60 * 1000
 NOTIFICATION_KINDS = frozenset({
     "mention",
     # Hackathon squad progress: only ever sent to the participant about
@@ -13284,6 +13285,7 @@ SCHEMA_ALTER_STATEMENTS = [
     """ALTER TABLE chat_direct_participants
        ADD COLUMN unread_reminded_at INTEGER NOT NULL DEFAULT 0
        CHECK (unread_reminded_at >= 0)""",
+    "ALTER TABLE notifications ADD COLUMN content_bi TEXT NOT NULL DEFAULT ''",
 ]
 
 # Fingerprint of the DDL this build would apply. The latest native migration
@@ -13294,7 +13296,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "f6b1f7f7a4bbf3af12a47342f9531f10f9c37d42ef0558873cfce3422eb4fd8f"
+    "4e9c64d2bf5a897f1aa75a4e0456bcb7f77f83d68b43af86165cfc9e6f65cc0c"
 )
 
 
@@ -35098,6 +35100,13 @@ def _notification_trim_due(recipient_bi, now):
     return True
 
 
+def _notification_content_text(payload):
+    return json.dumps(
+        {key: value for key, value in (payload or {}).items()
+         if key not in ("ts", "readAt", "id")},
+        sort_keys=True, separators=(",", ":"), default=str)
+
+
 async def enqueue_notification(env, recipient, kind, title, body="", repo="",
                                href="", actor="", source="", dedupe="",
                                ts=0, meta=None, push=True, force=False,
@@ -35132,15 +35141,22 @@ async def enqueue_notification(env, recipient, kind, title, body="", repo="",
     dedupe_value = dedupe or (kind + ":" + recipient + ":" + source + ":" +
                               repo + ":" + str(now))
     dedupe_bi = await blind_index(env, "notification:" + recipient + ":" + dedupe_value)
+    content_bi = await blind_index(
+        env, "notification-content:" + _notification_content_text(payload))
     await d1_run(
         env,
-        """INSERT INTO notifications (dedupe_bi, recipient_bi, ts, read_at, data)
-           VALUES (?,?,?,?,?)
+        """INSERT INTO notifications
+             (dedupe_bi, recipient_bi, ts, read_at, data, content_bi)
+           VALUES (?,?,?,?,?,?)
            ON CONFLICT(dedupe_bi) DO UPDATE SET
              recipient_bi=excluded.recipient_bi,
-             ts=excluded.ts,
-             data=excluded.data""",
+             ts=CASE WHEN notifications.content_bi=excluded.content_bi
+                     THEN notifications.ts ELSE excluded.ts END,
+             data=CASE WHEN notifications.content_bi=excluded.content_bi
+                       THEN notifications.data ELSE excluded.data END,
+             content_bi=excluded.content_bi""",
         dedupe_bi, recipient_bi, now, 0, await encrypt_row(env, payload),
+        content_bi,
     )
     cutoff = now - NOTIFICATION_RETAIN_MS
     await d1_run(
@@ -36455,6 +36471,7 @@ async def _notification_email_items(env, rows, email_rec, last):
         payload = await decrypt_row(env, row.get("data", ""))
         if not payload:
             continue
+        payload = dict(payload, id=row.get("dedupe_bi") or "")
         kind = clean_string(payload.get("kind", ""), 40)
         if not prefs.get(kind, False):
             continue
@@ -36561,7 +36578,7 @@ async def _deliver_instant_notifications(env, recipient_bi, rec, email_rec,
     last = int(rec.get("last_digest_ts", 0) or 0)
     rows = await d1_all(
         env,
-        "SELECT ts, data FROM notifications "
+        "SELECT dedupe_bi, ts, data FROM notifications "
         "WHERE recipient_bi=? AND read_at=0 AND ts>? AND ts<=? "
         "ORDER BY ts ASC LIMIT ?",
         recipient_bi, last, now if cutoff is None else cutoff,
@@ -36608,15 +36625,67 @@ async def _send_notification_emails_singly(env, rec, email_rec, email, items,
     base_url = _public_base_url(env) or FORKMESH_SITE_URL.rstrip("/")
     sent = 0
     for item in items:
+        claim = await _claim_notification_email(env, email, item, now)
+        if not claim:
+            sent += 1
+            continue
         subject, text, html = _notification_instant_email(
             greeting, item, identity=identity, base_url=base_url)
         ok = await _send_email(env, email, subject, text, html,
                                email_kind="notifications")
         _stamp_account_email(rec, "notifications", ok, now)
         if not ok:
+            await _release_notification_emails(env, [claim])
             break
         sent += 1
     return sent
+
+
+async def _notification_email_send_key(env, email, item):
+    item = item if isinstance(item, dict) else {}
+    ident = clean_string(item.get("id", ""), 128) or (
+        "title:" + clean_string(item.get("title", ""), 160))
+    return await blind_index(env, "notification-email:" + "\n".join((
+        clean_string(email, 254).strip().lower(),
+        clean_string(item.get("kind", ""), 40),
+        clean_string(item.get("repo", ""), 180).lower(),
+        ident,
+        str(int(item.get("ts") or 0)),
+    )))
+
+
+async def _claim_notification_email(env, email, item, now):
+    key = await _notification_email_send_key(env, email, item)
+    try:
+        result = await d1_run(
+            env,
+            "INSERT OR IGNORE INTO notification_email_sends "
+            "(send_bi, created_at) VALUES (?,?)",
+            key, int(now))
+    except Exception:
+        return key
+    try:
+        return key if int(result.meta.changes) > 0 else ""
+    except Exception:
+        return key
+
+
+async def _release_notification_emails(env, keys):
+    for key in keys or []:
+        try:
+            await d1_run(
+                env,
+                "DELETE FROM notification_email_sends WHERE send_bi=?", key)
+        except Exception:
+            pass
+
+
+async def prune_notification_email_sends(env):
+    await ensure_schema(env)
+    await d1_run(
+        env,
+        "DELETE FROM notification_email_sends WHERE created_at < ?",
+        int(Date.now()) - NOTIFICATION_EMAIL_SEND_RETAIN_MS)
 
 
 async def _deliver_immediate_notifications(env, recipient_bi, rec, email_rec,
@@ -36624,7 +36693,7 @@ async def _deliver_immediate_notifications(env, recipient_bi, rec, email_rec,
     last = _notification_immediate_watermark(rec)
     rows = await d1_all(
         env,
-        "SELECT ts, data FROM notifications "
+        "SELECT dedupe_bi, ts, data FROM notifications "
         "WHERE recipient_bi=? AND read_at=0 AND ts>? AND ts<=? "
         "ORDER BY ts ASC LIMIT ?",
         recipient_bi, last, now if cutoff is None else cutoff,
@@ -36635,6 +36704,8 @@ async def _deliver_immediate_notifications(env, recipient_bi, rec, email_rec,
     reads = {}
     for row in rows or []:
         payload = await decrypt_row(env, row.get("data", ""))
+        if isinstance(payload, dict):
+            payload = dict(payload, id=row.get("dedupe_bi") or "")
         wanted = (isinstance(payload, dict)
                   and prefs.get(clean_string(payload.get("kind", ""), 40),
                                 False)
@@ -36842,7 +36913,7 @@ async def send_notification_digests(env, include_general_chat=True):
             continue
         rows = await d1_all(
             env,
-            "SELECT ts, data FROM notifications "
+            "SELECT dedupe_bi, ts, data FROM notifications "
             "WHERE recipient_bi=? AND read_at=0 AND ts>? AND ts<=? "
             "ORDER BY ts DESC LIMIT ?",
             recipient_bi, last, max_age_cut, NOTIFICATION_DIGEST_MAX_ITEMS)
@@ -36850,6 +36921,14 @@ async def send_notification_digests(env, include_general_chat=True):
             env, rows, email_rec, last)
         items = [item for item in items
                  if not notification_email_immediate(item)]
+        claims = []
+        unsent = []
+        for item in items:
+            claim = await _claim_notification_email(env, email, item, now)
+            if claim:
+                claims.append(claim)
+                unsent.append(item)
+        items = unsent
         if not items:
             if newest > last:
                 rec["last_digest_ts"] = newest
@@ -36870,6 +36949,8 @@ async def send_notification_digests(env, include_general_chat=True):
             env, email, subject, text, html, email_kind="notifications")
         if ok:
             rec["last_digest_ts"] = newest
+        else:
+            await _release_notification_emails(env, claims)
         _stamp_account_email(rec, "notifications", ok, now)
         await _save_account(env, recipient_bi, rec)
     if include_general_chat:
@@ -50621,6 +50702,7 @@ async def _run_cron_phase(env, phase, minute_slot):
         # board's long tail, and the blog read-dedupe rows whose window has
         # long since closed.
         await prune_site_referrers(env)
+        await prune_notification_email_sends(env)
         return await prune_blog_post_view_seen(env)
     if phase == "microjob-payouts":
         # Batch approved microjob claims into one public unsigned plan. The
