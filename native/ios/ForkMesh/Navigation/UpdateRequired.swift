@@ -70,7 +70,7 @@ struct UpdateRequiredView: View {
         .padding(FmSpace.x6)
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .interactiveDismissDisabled(true)
         .accessibilityIdentifier("update-required")
     }

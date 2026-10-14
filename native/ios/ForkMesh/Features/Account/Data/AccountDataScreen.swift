@@ -34,7 +34,7 @@ struct AccountDataScreen: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("Data")
         .navigationBarTitleDisplayMode(.inline)
         .fileExporter(
@@ -131,7 +131,7 @@ struct SecurityReportScreen: View {
             .padding(FmSpace.x4)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("Report a vulnerability")
         .navigationBarTitleDisplayMode(.inline)
     }

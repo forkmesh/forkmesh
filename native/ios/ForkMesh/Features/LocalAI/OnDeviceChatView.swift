@@ -36,7 +36,7 @@ struct OnDeviceChatView: View {
             }
             OnDeviceChatComposer(chat: chat)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("On-device chat")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

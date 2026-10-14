@@ -16,7 +16,7 @@ struct VaultShareScreen: View {
 
     var body: some View {
         content
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationBarTitleDisplayMode(.inline)
             .task { await model.start() }
             .fmDialog(isPresented: stopShown) { stopDialog }
@@ -213,7 +213,7 @@ struct VaultSettingsScreen: View {
 
     var body: some View {
         VaultSettingsForm(model: model, transfer: transfer, onDestroy: { confirmDestroy = true })
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationTitle(VaultSettingsModel.title)
             .navigationBarTitleDisplayMode(.inline)
             .task { await model.start() }

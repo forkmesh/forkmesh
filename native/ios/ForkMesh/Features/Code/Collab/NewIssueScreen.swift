@@ -22,7 +22,7 @@ struct NewIssueScreen: View {
 
     var body: some View {
         form
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .safeAreaInset(edge: .bottom) {
                 submitBar
             }

@@ -130,7 +130,7 @@ struct AppleHealthGuideScreen: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle(AppleHealthGuide.title)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("apple-health-guide")

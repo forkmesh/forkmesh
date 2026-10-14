@@ -182,7 +182,7 @@ struct RepoAgentSessionScreen: View {
             }
             .padding(20)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle(model.title)
         .navigationBarTitleDisplayMode(.inline)
         .task {

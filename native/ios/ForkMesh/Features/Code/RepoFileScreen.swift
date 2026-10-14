@@ -179,7 +179,7 @@ struct RepoUnsupportedPreview: View {
             }
             .padding(FmSpace.x5)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
     }
 }
 

@@ -353,7 +353,7 @@ private struct AuthPageScaffold<Content: View>: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
     }
 }
 

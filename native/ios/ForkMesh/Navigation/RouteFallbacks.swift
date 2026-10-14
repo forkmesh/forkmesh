@@ -145,7 +145,7 @@ struct ProjectsRouteScreen: View {
             RelaySettingsSection()
                 .padding(FmSpace.x4)
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("Projects")
         .navigationBarTitleDisplayMode(.inline)
     }

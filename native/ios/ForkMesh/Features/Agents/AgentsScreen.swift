@@ -86,7 +86,7 @@ struct AgentsScreen: View {
     var body: some View {
         let shown: [AgentLine] = lines
         return tabBody(shown)
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .onAppear {
             leaving?.cancel()
             leaving = nil
