@@ -148,7 +148,7 @@ struct RepoImagePreview: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
     }
 }
 

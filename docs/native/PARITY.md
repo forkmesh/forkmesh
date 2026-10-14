@@ -142,6 +142,23 @@ app let it through:
 - A chat's own conversation background, set in the conversation's details,
   still wins over the app background.
 
+Every page lets the background image through (2026-10-14). Only router
+routes got the clear navigation container from `HomeShell`; a page pushed by
+a `NavigationLink` or a view's own `navigationDestination` kept the system's
+opaque container, so most second-level pages (Settings rows, repository
+issues and pulls, agent runs, hosts, desktops) hid the picture. The clear
+container (`fmNavigationCanvas(fm.canvas)`) now comes from
+`shellPageClearance()`, which every pushed shell page already adds, and from
+`shellDock`, which the docked pages (agent run, agent screen, launched agent
+session, chat thread) use instead; `HomeShell` no longer sets it itself. The
+issue list's push to `IssueDetailScreen` lacked `shellPageClearance()` and
+now has it. The People page, a Discord channel, the image preview in the
+file viewer and the patch commit page painted `bgBase` and now paint
+`fm.canvas`; the CRM board's grouped grey is clear with a background image.
+Code, diff, editor and terminal surfaces, bars, cards, sheets and the chat
+channel drawer keep their solid fills. The clear container needs iOS 18; on
+iOS 17 pushed pages still show the system background.
+
 Liquid Glass (the bottom bar, top bar and prompt card) refracts whatever is
 under it, so with a background image the glass picks up its colours. Android
 has the accents but not the background image yet.

@@ -38,6 +38,7 @@ extension EnvironmentValues {
 
 private struct ShellDocked<Dock: View>: ViewModifier {
     @Environment(\.shellDock) private var shell
+    @Environment(\.fmPalette) private var fm
     @State private var key: UUID = UUID()
     @State private var height: CGFloat = 0
     @State private var pageBottom: CGFloat = 0
@@ -65,6 +66,7 @@ private struct ShellDocked<Dock: View>: ViewModifier {
             .ignoresSafeArea(.container, edges: .bottom)
             .onAppear { shell.set(key, height) }
             .onDisappear { shell.remove(key) }
+            .fmNavigationCanvas(fm.canvas)
         } else {
             VStack(spacing: 0) {
                 content
@@ -82,11 +84,13 @@ extension View {
 
 private struct ShellPageClearance: ViewModifier {
     @Environment(\.shellDock) private var shell
+    @Environment(\.fmPalette) private var fm
 
     func body(content: Content) -> some View {
         content
             .safeAreaPadding(.top, shell?.top ?? 0)
             .safeAreaPadding(.bottom, shell?.clearance ?? 0)
+            .fmNavigationCanvas(fm.canvas)
     }
 }
 

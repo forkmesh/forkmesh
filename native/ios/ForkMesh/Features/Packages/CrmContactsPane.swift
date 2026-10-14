@@ -552,6 +552,7 @@ struct CrmBulkBar: View {
 }
 
 struct CrmBoard: View {
+    @Environment(\.fmPalette) private var fm
     @Bindable var model: CrmModel
     let data: CrmOrganizationData
     let flow: CrmFlow
@@ -572,7 +573,7 @@ struct CrmBoard: View {
                 .padding(.vertical, 8)
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(fm.wallpaper ? Color.clear : Color(uiColor: .systemGroupedBackground))
         .fmRefreshable { await model.load() }
         .confirmationDialog(
             "Delete \(pendingDelete?.displayName ?? "this contact")?",
