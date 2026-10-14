@@ -747,10 +747,11 @@ void DatabaseManagerWidget::updateActions()
     const D1DatabaseTable *table = currentTable();
     const bool readable = table && !table->restricted;
     const bool writable = table && table->writable && m_tableHasRowid;
+    const bool deletable = table && table->deletable && m_tableHasRowid;
     const int selected = selectedRowIndexes().size();
     m_newButton->setEnabled(writable);
     m_editButton->setEnabled(writable && selected == 1);
-    m_deleteButton->setEnabled(writable && selected > 0);
+    m_deleteButton->setEnabled(deletable && selected > 0);
     m_exportButton->setEnabled(readable && !m_exporting);
     m_schemaButton->setEnabled(table != nullptr);
     m_previousButton->setEnabled(readable && m_pageCursors.size() > 1);
@@ -764,7 +765,9 @@ void DatabaseManagerWidget::updateActions()
     m_editButton->setToolTip(
         reason.isEmpty() ? QStringLiteral("Edit the selected row") : reason);
     m_deleteButton->setToolTip(
-        reason.isEmpty() ? QStringLiteral("Delete the selected rows") : reason);
+        deletable || reason.isEmpty()
+            ? QStringLiteral("Delete the selected rows")
+            : reason);
 }
 
 QList<int> DatabaseManagerWidget::selectedRowIndexes() const
@@ -999,20 +1002,34 @@ void DatabaseManagerWidget::deleteSelectedRows()
 {
     const D1DatabaseTable *table = currentTable();
     const QList<int> indexes = selectedRowIndexes();
-    if (!table || !table->writable || indexes.isEmpty())
+    if (!table || !table->deletable || indexes.isEmpty())
         return;
     QJsonArray rowids;
     for (int index : indexes)
         rowids.append(m_rows.at(index).toObject().value(QStringLiteral("rowid")));
+    const bool repositories = m_table == QLatin1String("repositories");
+    const QString question =
+        repositories
+            ? QStringLiteral("Permanently purge %1 repositor%2? Every row the "
+                             "relay keeps for %3 is erased and the owner's "
+                             "node is stopped from republishing it. There is "
+                             "no undo.")
+                  .arg(indexes.size())
+                  .arg(indexes.size() == 1 ? QStringLiteral("y")
+                                           : QStringLiteral("ies"))
+                  .arg(indexes.size() == 1 ? QStringLiteral("it")
+                                           : QStringLiteral("them"))
+            : QStringLiteral("Permanently delete %1 row%2 from %3? D1 keeps no "
+                             "undo; the sensitive audit log records a digest "
+                             "of what was removed, not the rows.")
+                  .arg(indexes.size())
+                  .arg(indexes.size() == 1 ? QString() : QStringLiteral("s"))
+                  .arg(m_table);
     const QMessageBox::StandardButton answer = QMessageBox::warning(
-        this, QStringLiteral("Delete rows"),
-        QStringLiteral("Permanently delete %1 row%2 from %3? D1 keeps no undo; "
-                       "the sensitive audit log records a digest of what was "
-                       "removed, not the rows.")
-            .arg(indexes.size())
-            .arg(indexes.size() == 1 ? QString() : QStringLiteral("s"))
-            .arg(m_table),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+        this,
+        repositories ? QStringLiteral("Purge repositories")
+                     : QStringLiteral("Delete rows"),
+        question, QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (answer != QMessageBox::Yes)
         return;
     QJsonObject payload{
