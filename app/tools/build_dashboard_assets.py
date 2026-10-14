@@ -43,6 +43,11 @@ def main():
         meta["asset"]: dashboard_shell.compose_page_from_reader(_read, page_id)
         for page_id, meta in dashboard_shell.PAGES.items()
     }
+    app_outputs.update(
+        (meta["asset"], dashboard_shell.compose_page_from_reader(
+            _read, page_id, page=meta))
+        for page_id, meta in dashboard_shell.PACKAGED_PAGE_COPIES.items()
+    )
     app_outputs["dashboard.js"] = dashboard_js
     app_outputs.update(chunks)
     changed = [

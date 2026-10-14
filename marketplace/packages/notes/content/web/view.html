@@ -10,18 +10,18 @@
             .notes-icon-btn { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: .375rem; color: var(--nt-muted); }
             .notes-icon-btn:hover { background: var(--nt-hover); color: rgb(var(--dashboard-foreground-rgb)); }
             .notes-icon-btn:disabled { opacity: .45; pointer-events: none; }
-            .notes-new { background: var(--nt-primary); color: rgb(var(--dashboard-primary-foreground-rgb)); }
-            .notes-new:hover { background: var(--nt-primary); color: rgb(var(--dashboard-primary-foreground-rgb)); filter: brightness(1.1); }
+            .notes-new { background: rgb(var(--dashboard-cta-rgb)); color: rgb(var(--dashboard-cta-foreground-rgb)); }
+            .notes-new:hover { background: rgb(var(--dashboard-cta-rgb) / .9); color: rgb(var(--dashboard-cta-foreground-rgb)); }
             .notes-search { position: relative; margin: 0 .85rem .6rem; }
             .notes-search svg.lucide { position: absolute; left: .55rem; top: .5rem; width: .875rem; height: .875rem; color: var(--nt-faint); }
             .notes-search input { width: 100%; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding: .3rem .6rem .3rem 1.85rem; font-size: .8rem; outline: none; }
-            .notes-search input:focus { border-color: var(--nt-accent); box-shadow: 0 0 0 3px rgb(var(--dashboard-accent-rgb) / .15); }
+            .notes-search input:focus { border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
             .notes-seg { display: flex; gap: 2px; padding: 2px; border-radius: .45rem; background: var(--nt-hover); }
             .notes-seg button { flex: 1; border-radius: .3rem; padding: .15rem .6rem; font-size: .75rem; color: var(--nt-muted); white-space: nowrap; }
             .notes-seg button[aria-pressed="true"] { background: rgb(var(--dashboard-card-rgb)); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: 0 0 0 1px var(--nt-border); }
             .notes-filters { margin: 0 .85rem .35rem; }
             .notes-list { flex: 1; min-height: 0; overflow-y: auto; padding: .25rem .5rem .75rem; }
-            .notes-group { padding: .75rem .5rem .25rem; font-size: .68rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--nt-faint); }
+            .notes-group { padding: .75rem .5rem .25rem; font-size: 12px; font-weight: 600; color: var(--nt-muted); }
             .notes-row { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto; gap: 1px .5rem; border-radius: .375rem; padding: .45rem .5rem; text-align: left; }
             .notes-row:hover { background: var(--nt-hover); }
             .notes-row[aria-selected="true"] { background: var(--nt-selected); }
@@ -40,8 +40,8 @@
             .notes-pill svg.lucide { width: .7rem; height: .7rem; }
             .notes-pill[data-visibility="public"] { border-color: rgb(var(--dashboard-accent-rgb) / .4); color: var(--nt-accent); }
             .notes-save { display: inline-flex; align-items: center; gap: .4rem; font-size: .75rem; color: var(--nt-muted); white-space: nowrap; }
-            .notes-save::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--nt-primary); }
-            .notes-save[data-state="dirty"]::before, .notes-save[data-state="saving"]::before { background: rgb(210 153 34); }
+            .notes-save::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: rgb(var(--dashboard-success-rgb)); }
+            .notes-save[data-state="dirty"]::before, .notes-save[data-state="saving"]::before { background: rgb(var(--dashboard-attention-rgb)); }
             .notes-save[data-state="saving"]::before { animation: notes-pulse 1s infinite; }
             .notes-save[data-state="error"] { color: var(--nt-danger); }
             .notes-save[data-state="error"]::before { background: var(--nt-danger); }
@@ -50,16 +50,16 @@
             .notes-faces { display: flex; align-items: center; }
             .notes-face { position: relative; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; margin-left: -.35rem; border: 2px solid rgb(var(--dashboard-card-rgb)); border-radius: 50%; font-size: .6rem; font-weight: 700; color: #fff; text-transform: uppercase; }
             .notes-face:first-child { margin-left: 0; }
-            .notes-btn { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-card-rgb)); padding: .25rem .75rem; font-size: .75rem; font-weight: 500; line-height: 1.25rem; white-space: nowrap; }
+            .notes-btn { display: inline-flex; align-items: center; gap: 6px; height: var(--dashboard-control-height-sm); border: 1px solid var(--nt-border); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-secondary-rgb)); padding: 0 10px; font-size: 12px; font-weight: 500; white-space: nowrap; }
             .notes-btn:hover { background: var(--nt-hover); }
-            .notes-btn svg.lucide { width: .875rem; height: .875rem; }
-            .notes-btn-primary { border-color: transparent; background: var(--nt-primary); color: rgb(var(--dashboard-primary-foreground-rgb)); }
-            .notes-btn-primary:hover { background: var(--nt-primary); filter: brightness(1.1); }
-            .notes-btn-danger { border-color: rgb(var(--dashboard-destructive-rgb) / .6); background: rgb(var(--dashboard-destructive-rgb) / .12); color: var(--nt-danger); }
-            .notes-banner { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin: .75rem 1rem 0; border: 1px solid rgb(210 153 34 / .4); border-radius: .375rem; background: rgb(210 153 34 / .12); padding: .45rem .75rem; font-size: .8rem; }
-            .notes-banner[data-tone="bad"] { border-color: rgb(var(--dashboard-destructive-rgb) / .4); background: rgb(var(--dashboard-destructive-rgb) / .1); }
-            .notes-banner > span { min-width: 12rem; flex: 1; }
-            .notes-banner button { font-size: .75rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-btn svg.lucide { width: 14px; height: 14px; color: var(--nt-muted); }
+            .notes-btn-primary { border-color: rgb(var(--dashboard-foreground-rgb) / .1); background: rgb(var(--dashboard-cta-rgb)); color: rgb(var(--dashboard-cta-foreground-rgb)); }
+            .notes-btn-primary:hover { background: rgb(var(--dashboard-cta-rgb) / .9); }
+            .notes-btn-primary svg.lucide { color: currentColor; }
+            .notes-btn-danger { color: var(--nt-danger); }
+            .notes-btn-danger:hover { border-color: var(--nt-danger); background: var(--nt-danger); color: #fff; }
+            .notes-banner { margin: .75rem 1rem 0; }
+            [data-view="notes"] .fm-flash { align-items: center; }
             .notes-work { display: grid; flex: 1; min-height: 0; grid-template-columns: 1fr 1fr; }
             .notes-work[data-mode="write"], .notes-work[data-mode="preview"] { grid-template-columns: 1fr; }
             .notes-work[data-mode="write"] [data-note-preview-pane], .notes-work[data-mode="preview"] [data-note-write-pane] { display: none; }
@@ -73,9 +73,7 @@
             .notes-chip { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--nt-soft); border-radius: 999px; background: var(--nt-hover); padding: .05rem .3rem .05rem .5rem; font-size: .75rem; color: rgb(var(--dashboard-foreground-rgb) / .85); }
             .notes-chip a:hover { color: var(--nt-accent); }
             .notes-chip svg.lucide { width: .8rem; height: .8rem; }
-            .notes-chip [data-kind="issue"] { color: var(--nt-primary); }
-            .notes-chip [data-kind="pull"] { color: rgb(137 87 229); }
-            .notes-chip [data-kind="discussion"] { color: var(--nt-accent); }
+            .notes-chip [data-kind] { color: var(--nt-muted); }
             .notes-chip-x { display: inline-grid; place-items: center; width: 1rem; height: 1rem; border-radius: 50%; color: var(--nt-faint); }
             .notes-chip-x:hover { background: var(--nt-hover); color: var(--nt-danger); }
             .notes-chip-x svg.lucide { width: .7rem; height: .7rem; }
@@ -94,14 +92,14 @@
             .notes-preview ol { list-style: decimal; padding-left: 1.4rem; }
             .notes-preview-empty { color: var(--nt-faint); font-style: italic; }
             .notes-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; border-top: 1px solid var(--nt-soft); padding: .3rem 1rem; font-size: .68rem; color: var(--nt-faint); font-variant-numeric: tabular-nums; }
-            .notes-pop { position: absolute; z-index: 30; border: 1px solid var(--nt-border); border-radius: .6rem; background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-popover-foreground-rgb)); box-shadow: 0 16px 40px rgb(0 0 0 / .35); }
+            .notes-pop { position: absolute; z-index: 30; border: 1px solid var(--nt-border); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-popover-foreground-rgb)); box-shadow: 0 8px 24px rgb(1 4 9 / .4); }
             .notes-share { top: 2.9rem; right: .75rem; width: min(25rem, calc(100% - 1.5rem)); }
             .notes-pop-sec { padding: .85rem 1rem; }
             .notes-pop-sec + .notes-pop-sec { border-top: 1px solid var(--nt-soft); }
-            .notes-pop h2 { margin: 0 0 .6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; font-weight: 600; }
+            .notes-pop h2 { margin: 0 0 .6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
             .notes-invite { display: flex; gap: .4rem; }
             .notes-field { display: flex; min-width: 0; flex: 1; align-items: center; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding-right: .2rem; }
-            .notes-field:focus-within { border-color: var(--nt-accent); box-shadow: 0 0 0 3px rgb(var(--dashboard-accent-rgb) / .15); }
+            .notes-field:focus-within { border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
             .notes-field input { min-width: 0; flex: 1; border: 0; background: transparent; padding: .3rem .55rem; font-size: .8rem; outline: none; }
             .notes-field select, .notes-person select { border: 0; background: transparent; font-size: .72rem; color: var(--nt-muted); outline: none; }
             .notes-field select option, .notes-person select option, .notes-link-form select option { background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-popover-foreground-rgb)); }
@@ -112,7 +110,7 @@
             .notes-person-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; font-weight: 500; }
             .notes-person-hint { font-size: .72rem; color: var(--nt-muted); }
             .notes-publish { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: center; gap: .6rem; }
-            .notes-globe { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .5rem; background: rgb(var(--dashboard-accent-rgb) / .12); color: var(--nt-accent); }
+            .notes-globe { display: grid; place-items: center; width: 2rem; height: 2rem; color: var(--nt-muted); }
             .notes-switch { position: relative; width: 2.1rem; height: 1.25rem; border-radius: 999px; background: var(--nt-border); transition: background .15s; }
             .notes-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 1rem; height: 1rem; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: translate .15s; }
             .notes-switch[aria-checked="true"] { background: var(--nt-primary); }
@@ -120,16 +118,17 @@
             .notes-switch:disabled { opacity: .5; }
             .notes-copy { display: flex; overflow: hidden; margin-top: .6rem; border: 1px solid var(--nt-border); border-radius: .375rem; }
             .notes-copy a { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgb(var(--dashboard-background-rgb)); padding: .3rem .55rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; color: var(--nt-muted); }
-            .notes-copy button { border-left: 1px solid var(--nt-border); padding: 0 .75rem; font-size: .75rem; font-weight: 500; }
+            .notes-copy button { border-left: 1px solid var(--nt-border); background: rgb(var(--dashboard-secondary-rgb)); padding: 0 .75rem; font-size: 12px; font-weight: 500; }
             .notes-copy button:hover { background: var(--nt-hover); }
-            .notes-menu { top: 2.9rem; right: .75rem; width: 14rem; padding: .35rem; }
-            .notes-menu button, .notes-menu a { display: flex; width: 100%; align-items: center; gap: .6rem; border-radius: .375rem; padding: .4rem .5rem; text-align: left; font-size: .8rem; color: rgb(var(--dashboard-popover-foreground-rgb) / .85); }
-            .notes-menu button:hover, .notes-menu a:hover { background: var(--nt-hover); color: rgb(var(--dashboard-popover-foreground-rgb)); }
-            .notes-menu hr { margin: .35rem 0; border: 0; border-top: 1px solid var(--nt-soft); }
-            .notes-menu [data-note-delete], .notes-menu [data-note-delete]:hover { color: var(--nt-danger); }
-            .notes-drawer { position: absolute; z-index: 25; top: 0; right: 0; bottom: 0; display: flex; width: min(22rem, 100%); flex-direction: column; border-left: 1px solid var(--nt-border); background: rgb(var(--dashboard-popover-rgb)); box-shadow: -16px 0 40px rgb(0 0 0 / .25); }
+            .notes-menu { top: 2.9rem; right: .75rem; width: 14rem; padding: 4px; }
+            .notes-menu button, .notes-menu a { display: flex; width: 100%; height: var(--dashboard-menu-row-height); align-items: center; gap: 8px; border-radius: var(--dashboard-control-radius); padding: 0 8px; text-align: left; font-size: var(--dashboard-control-font); color: rgb(var(--dashboard-popover-foreground-rgb)); }
+            .notes-menu button:hover, .notes-menu a:hover, .notes-menu button:focus-visible, .notes-menu a:focus-visible { background: var(--nt-selected); outline: none; }
+            .notes-menu svg.lucide { color: var(--nt-muted); }
+            .notes-menu hr { margin: 4px 0; border: 0; border-top: 1px solid var(--nt-soft); }
+            .notes-menu [data-note-delete], .notes-menu [data-note-delete]:hover, .notes-menu [data-note-delete] svg.lucide { color: var(--nt-danger); }
+            .notes-drawer { position: absolute; z-index: 25; top: 0; right: 0; bottom: 0; display: flex; width: min(22rem, 100%); flex-direction: column; border-left: 1px solid var(--nt-border); background: rgb(var(--dashboard-popover-rgb)); box-shadow: -8px 0 24px rgb(1 4 9 / .3); }
             .notes-drawer-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--nt-soft); padding: .7rem .8rem .7rem 1.1rem; }
-            .notes-drawer-head h2 { margin: 0; font-size: .875rem; font-weight: 600; }
+            .notes-drawer-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
             .notes-versions { overflow-y: auto; padding: .6rem; }
             .notes-version { position: relative; display: grid; grid-template-columns: .875rem minmax(0, 1fr) auto; gap: .6rem; border-radius: .5rem; padding: .55rem .5rem; }
             .notes-version:hover { background: var(--nt-hover); }
@@ -143,16 +142,17 @@
             .notes-version:hover button, .notes-version button:focus-visible { opacity: 1; }
             .notes-version-tag { align-self: center; font-size: .7rem; color: var(--nt-primary); }
             .notes-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem; text-align: center; }
-            .notes-empty h2 { margin: .75rem 0 .25rem; font-size: 1rem; font-weight: 600; }
-            .notes-empty p { max-width: 34ch; margin: 0 auto 1rem; color: var(--nt-muted); }
-            .notes-empty-icon { display: inline-grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: .75rem; background: var(--nt-hover); color: var(--nt-muted); }
+            .notes-empty h2 { margin: .5rem 0 .25rem; font-size: 16px; font-weight: 600; }
+            .notes-empty p { max-width: 34ch; margin: 0 auto 1rem; font-size: 14px; color: var(--nt-muted); }
+            .notes-empty-icon { display: inline-grid; place-items: center; color: var(--nt-muted); }
+            .notes-empty-icon svg.lucide { width: 24px; height: 24px; }
             .notes-notice { margin: .5rem 1rem 0; font-size: .75rem; line-height: 1.45; color: var(--nt-muted); }
             .notes-notice[data-tone="bad"] { color: var(--nt-danger); }
             .notes-doc .notes-notice { margin: -.6rem 0 .9rem; }
             .notes-pop .notes-notice { margin: 0; padding: 0 1rem .85rem; }
             .notes-drawer .notes-notice { margin: 0; padding: .6rem 1.1rem 0; }
-            .notes-modal { width: min(26rem, calc(100vw - 2rem)); border: 1px solid var(--nt-border); border-radius: .75rem; background: rgb(var(--dashboard-popover-rgb)); padding: 0; color: rgb(var(--dashboard-popover-foreground-rgb)); box-shadow: 0 24px 64px rgb(0 0 0 / .45); }
-            .notes-modal::backdrop { background: rgb(0 0 0 / .6); backdrop-filter: blur(2px); }
+            .notes-modal { width: min(26rem, calc(100vw - 2rem)); border: 0; background: transparent; padding: 0; color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-modal::backdrop { background: rgb(1 4 9 / .6); }
             @media (max-width: 1100px) { .notes-bar [data-note-mode-group] { display: none; } }
             @media (max-width: 767px) {
               .notes-app { grid-template-columns: minmax(0, 1fr); }
@@ -189,7 +189,7 @@
             </aside>
 
             <div class="notes-main">
-              <div data-notes-error class="notes-banner" data-tone="bad" hidden></div>
+              <div data-notes-error class="notes-banner fm-flash fm-flash-danger" data-tone="bad" role="alert" hidden></div>
               <p data-note-notice="main" class="notes-notice" role="status" hidden></p>
 
               <div data-note-empty class="notes-empty">
@@ -216,15 +216,20 @@
                     <button type="button" data-note-mode="split" aria-pressed="true">Split</button>
                     <button type="button" data-note-mode="preview" aria-pressed="false">Preview</button>
                   </div>
-                  <button data-note-share-open type="button" class="notes-btn notes-btn-primary" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="user-plus"></i>Share</button>
+                  <button data-note-share-open type="button" class="notes-btn" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="user-plus"></i>Share</button>
                   <button data-note-menu-open type="button" class="notes-icon-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
                 </header>
 
-                <div data-note-conflict class="notes-banner" hidden>
+                <div data-note-conflict class="notes-banner fm-flash fm-flash-warning" role="alert" hidden>
                   <i data-lucide="triangle-alert"></i>
-                  <span>Someone saved a newer version while you were editing.</span>
-                  <button data-note-conflict-mine type="button">Keep my version</button>
-                  <button data-note-conflict-theirs type="button">Load latest</button>
+                  <div class="fm-flash-body">
+                    <span class="fm-flash-title">This note changed</span>
+                    <p>Someone saved a newer version while you were editing.</p>
+                  </div>
+                  <div class="fm-flash-actions">
+                    <button data-note-conflict-mine type="button" class="fm-btn fm-btn-sm">Keep my version</button>
+                    <button data-note-conflict-theirs type="button" class="fm-btn fm-btn-sm">Load latest</button>
+                  </div>
                 </div>
 
                 <div data-note-work class="notes-work" data-mode="split">
@@ -268,7 +273,7 @@
                         <input data-note-share-name autocomplete="off" placeholder="Username or organization" aria-label="Name" />
                         <select data-note-share-role aria-label="Role"><option value="editor">Can edit</option><option value="viewer">Can view</option></select>
                       </div>
-                      <button data-note-share-add type="submit" class="notes-btn notes-btn-primary">Invite</button>
+                      <button data-note-share-add type="submit" class="notes-btn">Invite</button>
                     </form>
                     <div data-note-shares class="notes-people"></div>
                   </div>
@@ -307,15 +312,18 @@
             </div>
           </div>
 
-          <dialog data-note-delete-dialog class="notes-modal">
-            <form method="dialog">
-              <div style="padding:1.1rem 1.25rem .5rem">
-                <h2 style="margin:0;font-size:.95rem;font-weight:600">Delete this note?</h2>
-                <p data-note-delete-copy style="margin:.4rem 0 0;font-size:.8rem;color:rgb(var(--dashboard-muted-foreground-rgb))"></p>
+          <dialog data-note-delete-dialog class="notes-modal" aria-labelledby="note-delete-title">
+            <form method="dialog" class="fm-dialog">
+              <div class="fm-dialog-header">
+                <h2 id="note-delete-title" class="fm-dialog-title">Delete this note?</h2>
+                <button value="cancel" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon" aria-label="Close"><i data-lucide="x"></i></button>
               </div>
-              <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:.75rem 1.25rem 1.1rem">
-                <button value="cancel" class="notes-btn">Cancel</button>
-                <button value="delete" data-note-delete-confirm class="notes-btn notes-btn-danger">Delete note</button>
+              <div class="fm-dialog-body">
+                <p data-note-delete-copy class="text-sm text-muted-foreground"></p>
+              </div>
+              <div class="fm-dialog-footer">
+                <button value="cancel" class="fm-btn fm-btn-sm">Cancel</button>
+                <button value="delete" data-note-delete-confirm class="fm-btn fm-btn-sm fm-btn-danger">Delete note</button>
               </div>
             </form>
           </dialog>

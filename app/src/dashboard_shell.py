@@ -288,6 +288,23 @@ PAGES = {
     },
 }
 
+PACKAGED_PAGE_COPIES = {
+    page_id: {
+        "view": page_id,
+        "section": page_id,
+        "nav": page_id,
+        "route": "/dashboard/" + page_id,
+        "asset": "dashboard/%s/index.html" % page_id,
+        "title": title + " - ForkMesh",
+        "description": description,
+    }
+    for page_id, title, description in (
+        ("tasks", "Tasks", "The organization-private ForkMesh task catalog: status, routing, and assignment for every task the desktop app and the World office board share."),
+        ("calendar", "Calendar", "Private personal and organization calendars with invitations, agenda views, time zones, and reminders."),
+        ("notes", "Notes", "Collaborative Markdown notes with sharing, publishing, snapshots, and repository conversation links."),
+    )
+}
+
 
 def partial_path(name):
     """public/-relative path to a partial by its include name."""

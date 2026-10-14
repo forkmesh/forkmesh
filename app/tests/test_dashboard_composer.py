@@ -13,7 +13,6 @@ REPOSITORY = ROOT.parent
 PUBLIC = ROOT / "public"
 COMPOSER = PUBLIC / "dashboard-composer.js"
 COMPOSER_CSS = PUBLIC / "dashboard-composer.css"
-HAND_PAGES = ("dashboard/tasks/index.html", "dashboard/notes/index.html", "dashboard/calendar/index.html")
 
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
@@ -21,6 +20,8 @@ if str(REPOSITORY / "world" / "src") not in sys.path:
     sys.path.insert(0, str(REPOSITORY / "world" / "src"))
 
 import dashboard_shell  # noqa: E402
+
+HAND_PAGES = tuple(meta["asset"] for meta in dashboard_shell.PACKAGED_PAGE_COPIES.values())
 
 
 HARNESS = r'''
@@ -209,6 +210,16 @@ def internals(tmp_path_factory):
 
 def _built_pages():
     return [meta["asset"] for meta in dashboard_shell.PAGES.values()] + list(HAND_PAGES)
+
+
+@pytest.mark.parametrize("page_id", sorted(dashboard_shell.PACKAGED_PAGE_COPIES))
+def test_packaged_page_copies_are_composed_from_the_shell(page_id):
+    meta = dashboard_shell.PACKAGED_PAGE_COPIES[page_id]
+    read = lambda relative: (PUBLIC / relative).read_text(encoding="utf-8")
+    composed = dashboard_shell.compose_page_from_reader(read, page_id, page=meta)
+    assert (PUBLIC / meta["asset"]).read_text(encoding="utf-8") == composed
+    assert ".fm-blankslate {" in composed
+    assert ".fm-menu-item" in composed
 
 
 def test_every_dashboard_page_loads_the_composer_after_the_bundle():
