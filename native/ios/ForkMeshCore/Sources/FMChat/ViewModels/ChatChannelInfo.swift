@@ -98,6 +98,7 @@ public enum ChatSmartMentions {
     }
 
     public static func broadcasts(in text: String) -> [ChatBroadcast] {
+        guard text.contains("@") else { return [] }
         var found: [ChatBroadcast] = []
         for piece in split(text, own: []) where piece.kind == .broadcast {
             if let kind = ChatBroadcast(rawValue: String(piece.text.dropFirst()).lowercased()), !found.contains(kind) {
@@ -157,7 +158,8 @@ public enum ChatSmartMentions {
     }
 
     public static func mentionsYou(_ text: String, own: [String]) -> Bool {
-        split(text, own: own).contains { $0.kind == .you || $0.kind == .broadcast }
+        guard text.contains("@") else { return false }
+        return split(text, own: own).contains { $0.kind == .you || $0.kind == .broadcast }
     }
 }
 
