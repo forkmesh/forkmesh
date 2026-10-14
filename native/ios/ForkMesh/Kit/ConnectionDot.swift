@@ -77,10 +77,11 @@ struct AvatarWithDot: View {
     private let away: Bool
     private let diagnosticsTroubled: Bool
     private let size: CGFloat
+    private let rounded: Bool
 
     init(
         state: FmConnectionState, label: String, avatarPng: String = "", statusEmoji: String = "", away: Bool = false,
-        diagnosticsTroubled: Bool = false, size: CGFloat = 34
+        diagnosticsTroubled: Bool = false, size: CGFloat = 34, rounded: Bool = false
     ) {
         self.state = state
         self.label = label
@@ -89,6 +90,7 @@ struct AvatarWithDot: View {
         self.away = away
         self.diagnosticsTroubled = diagnosticsTroubled
         self.size = size
+        self.rounded = rounded
     }
 
     private var dotColor: Color {
@@ -123,14 +125,35 @@ struct AvatarWithDot: View {
         }
     }
 
-    var body: some View {
-        HStack(spacing: size * 0.12) {
-            emoji
-            FmAvatar(name: label, avatarPng: avatarPng, size: size)
-                .overlay(alignment: .bottomTrailing) { dot }
+    @ViewBuilder private var badge: some View {
+        if !statusEmoji.isEmpty {
+            Text(verbatim: statusEmoji)
+                .font(Font.system(size: size * 0.42))
+                .lineLimit(1)
+                .fixedSize()
+                .shadow(color: Color.black.opacity(0.35), radius: 1, x: 0, y: 0.5)
+                .offset(x: size * 0.14, y: size * 0.14)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "Connection status: \(statusLabel). Account \(label)"))
+    }
+
+    var body: some View {
+        if rounded {
+            FmAvatar(name: label, avatarPng: avatarPng, size: size, corner: size * 0.28)
+                .overlay(alignment: statusEmoji.isEmpty ? .bottomTrailing : .topTrailing) {
+                    dot.offset(x: 2, y: statusEmoji.isEmpty ? 2 : -4)
+                }
+                .overlay(alignment: .bottomTrailing) { badge }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: "Connection status: \(statusLabel). Account \(label)"))
+        } else {
+            HStack(spacing: size * 0.12) {
+                emoji
+                FmAvatar(name: label, avatarPng: avatarPng, size: size)
+                    .overlay(alignment: .bottomTrailing) { dot }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: "Connection status: \(statusLabel). Account \(label)"))
+        }
     }
 }
 

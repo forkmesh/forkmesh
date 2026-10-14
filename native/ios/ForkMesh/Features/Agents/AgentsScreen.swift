@@ -248,26 +248,21 @@ struct AgentsScreen: View {
                         withAnimation(.easeOut(duration: 0.2)) { listSort = option }
                         Services.get(KeyValueStore.self)?.set(option.rawValue, forKey: AgentLineSort.storageKey)
                     } label: {
-                        if option == listSort {
-                            Label(option.caption, systemImage: "checkmark")
-                        } else {
-                            Text(option.caption)
-                        }
+                        Label(option.caption, systemImage: option == listSort ? "checkmark" : option.symbol)
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(fm.accent)
-                    Text(listSort.caption)
-                        .font(.system(size: 12, weight: .semibold))
+                VStack(spacing: 1) {
+                    Image(systemName: listSort.symbol)
+                        .font(.system(size: 7, weight: .bold))
                         .foregroundStyle(fm.textPrimary)
-                        .lineLimit(1)
-                        .contentTransition(.opacity)
+                        .frame(height: 8)
+                        .contentTransition(.symbolEffect(.replace))
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(fm.accent)
                 }
-                .fixedSize()
-                .padding(.horizontal, 10)
+                .frame(width: 30)
                 .modifier(AgentToolChip())
             }
             .buttonStyle(ShellBarButtonStyle())
@@ -284,7 +279,6 @@ struct AgentsScreen: View {
             .accessibilityIdentifier("agents-list-view")
             if let center = HostsFeature.agents, center.queue != nil {
                 DesktopQueueMenu(center: center)
-                    .padding(.horizontal, 2)
                     .modifier(AgentToolChip())
             }
             if let client = AgentOpsFeature.client {
@@ -737,6 +731,20 @@ struct AgentLazyPage<Page: View>: View {
     }
 
     var body: some View { build() }
+}
+
+extension AgentLineSort {
+    var symbol: String {
+        switch self {
+        case .recent: return "clock"
+        case .running: return "play.fill"
+        case .status: return "circle.lefthalf.filled"
+        case .priority: return "exclamationmark"
+        case .name: return "textformat"
+        case .repo: return "folder"
+        case .changes: return "plus.forwardslash.minus"
+        }
+    }
 }
 
 struct AgentToolChip: ViewModifier {

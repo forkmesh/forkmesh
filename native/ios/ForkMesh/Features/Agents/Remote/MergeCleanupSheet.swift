@@ -461,7 +461,7 @@ struct MergeLandedReport: View {
             }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .onAppear { shown = true }
         .task { await leaveAfterCountdown() }
         .accessibilityIdentifier("merge-landed-report")

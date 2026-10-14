@@ -40,7 +40,7 @@ struct ReportBugSheet: View {
                 sendButton
             }
         }
-        .fmPreGlassBackground(fm.bgRaised)
+        .fmPreGlassBackground(fm.wallpaper ? fm.canvas : fm.bgRaised)
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
         .interactiveDismissDisabled(model.busy)

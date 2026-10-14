@@ -90,12 +90,9 @@ struct ShellTopBar: View {
                     AvatarWithDot(
                         state: state.relayState.fmState, label: state.name, avatarPng: state.avatarPng,
                         statusEmoji: state.statusEmoji, away: state.statusAway,
-                        diagnosticsTroubled: state.diagnosticsTroubled)
-                        .padding(.leading, state.statusEmoji.isEmpty ? 5 : FmSpace.x3)
-                        .padding(.trailing, 5)
+                        diagnosticsTroubled: state.diagnosticsTroubled, size: 36, rounded: true)
                         .frame(minWidth: 44, minHeight: 44)
-                        .shellGlass(Capsule())
-                        .contentShape(Capsule())
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .popoverTip(hubTip)
@@ -144,11 +141,9 @@ struct ShellProjectSlot: View {
         if let settings = settings {
             let project: RelayProfile = settings.project
             Button(action: openSwitcher) {
-                ProjectIcon(project: project, size: 34)
-                    .clipShape(Circle())
-                    .padding(5)
-                    .shellGlass(Circle())
-                    .contentShape(Circle())
+                ProjectIcon(project: project, size: 40)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(ShellBarButtonStyle())
             .accessibilityLabel(Text("Project \(project.label), \(project.displayOrigin)"))
@@ -159,9 +154,8 @@ struct ShellProjectSlot: View {
             Image("Logo")
                 .resizable()
                 .scaledToFit()
-                .padding(8)
-                .frame(width: 44, height: 44)
-                .shellGlass(Circle())
+                .frame(width: 40, height: 40)
+                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityLabel(Text("ForkMesh"))
                 .accessibilityIdentifier("home-project-slot")
         }

@@ -311,6 +311,10 @@ struct FmPalette: Equatable {
     /// FmTheme.editorSurface.
     var editorSurface: Color { return dark ? FmColors.darkBgBase : FmColors.bgRaised }
 
+    var readingSurface: Color { return wallpaper ? Color.clear : editorSurface }
+
+    var readingGutter: Color { return wallpaper ? editorGutter.opacity(0.4) : editorGutter }
+
     /// `bottomSheetTheme.backgroundColor` and the dialog and popup-menu
     /// surfaces: a shadow does almost nothing in dark mode, so overlays sit on
     /// the overlay layer there, one step lighter than the page behind them.
