@@ -394,8 +394,8 @@ application id `com.forkmesh.nativeapp` installs beside it.
 ## 13. Core features as plugins
 
 The Home grid, bar tabs and repository tiles follow Market packages, off by
-default in new projects except the starter set: Agents, Chat, Inbox, Code,
-Tour and Sign in (`docs/marketplace/core-plugins.md`).
+default in new projects except the chosen starter pack
+(`docs/marketplace/core-plugins.md`, "Phone starter packs").
 
 - **One gate.** `C/market/PackageGate.kt` maps hub ids, `Route.Kind`s, bar tabs
   and repository tiles (`RepoHubSection`) to package ids;
@@ -404,10 +404,20 @@ Tour and Sign in (`docs/marketplace/core-plugins.md`).
   also needs `mobile` among its places ([NAVIGATION.md](NAVIGATION.md)).
 - **Effective install state.** `AccountPackagesStore.isInstalled` uses the
   account row, else `PackageGate.fallback` (installed when `default`, or when
-  `installedBefore` and the project is legacy, or a `PackageGate.STARTER`
-  package in a new project). In a new project a starter package stays
+  `installedBefore` and the project is legacy, or a package of the project's
+  `StarterPack` in a new project). In a new project a pack package stays
   installed until the project removes it. Dependencies apply. The cache is per
   project (`ProjectScope.prefs`).
+- **Starter pack.** `StarterPack` (`MINIMAL` = `code`; `STANDARD` =
+  `PackageGate.STARTER`: agents, chat, inbox, code, tour; `EVERYTHING` = every
+  gated package except the organization packages) sits beside `STARTER` in
+  `C/market/PackageGate.kt`. A new project with no `packages/starterPack` in
+  its prefs shows `A/feature/market/StarterPackScreen.kt` once ("Choose how to
+  start", Standard preselected, Continue) from `Features.Root`, driven by
+  `PackageGateFeature.starterPackPending`; Continue stores the pack id
+  (`PackageGateFeature.chooseStarterPack`) and republishes the gate. Unset
+  reads as `STANDARD`; legacy projects are never asked. `MarketModel.starterPack`
+  feeds the same pack to the Market's fallback. Same ids and contents as iOS.
 - **Legacy marker.** `PackageGate.legacyProject` writes
   `packages/legacyProject` once per project, before other features install,
   from existing prefs or a saved session; it never changes.
@@ -423,8 +433,8 @@ Tour and Sign in (`docs/marketplace/core-plugins.md`).
   when one of the user's organizations installed them (`/api/plugins/<org>`,
   refreshed at most every ten minutes, cached in
   `packages/organization/installed`).
-- **Sign in** is per phone (`packages/sign-in/on`, on until removed); Settings
-  always keeps Sign out and Log in so nobody is locked out.
+- **Sign in** is per phone (`packages/sign-in/on`, on until removed, whatever
+  the pack); Settings always keeps Sign out and Log in so nobody is locked out.
 - **Market.** `A/feature/market/MarketScreens.kt` and `C/market/MarketModels.kt`
   offer the web Market's sorts and filters, usage from
   `/api/market/installs` and `/api/market/reviews/summary`, and one-tap

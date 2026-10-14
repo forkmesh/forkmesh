@@ -44,6 +44,76 @@ class PackageGateTest {
     private fun chosen(vararg choices: Pair<String, Boolean>): MemoryPrefStore =
         MemoryPrefStore(mapOf(PackageGate.PROJECT_INSTALLS_KEY to Json.stringify(choices.toMap())))
 
+    private fun packed(pack: StarterPack, vararg choices: Pair<String, Boolean>): MemoryPrefStore =
+        chosen(*choices).also { PackageGate.chooseStarterPack(pack, it) }
+
+    fun testStarterPacksHoldTheirPackages() {
+        assertEq(listOf(StarterPack.MINIMAL, StarterPack.STANDARD, StarterPack.EVERYTHING), StarterPack.values().toList())
+        assertEq(listOf("minimal", "standard", "everything"), StarterPack.values().map { it.id })
+        assertEq(StarterPack.STANDARD, StarterPack.FALLBACK)
+        assertEq(setOf("code"), StarterPack.MINIMAL.packages)
+        assertEq(setOf("agents", "chat", "inbox", "code", "tour"), StarterPack.STANDARD.packages)
+        assertEq(PackageGate.STARTER, StarterPack.STANDARD.packages)
+        assertEq(PackageGate.GATED - PackageGate.ORGANIZATION_PACKAGES, StarterPack.EVERYTHING.packages)
+        expect(StarterPack.EVERYTHING.packages.containsAll(listOf("agents", "notes", "vault", "pull-requests", "workflows")))
+        expect(StarterPack.EVERYTHING.packages.none { it in PackageGate.ORGANIZATION_PACKAGES })
+        assertEq(StarterPack.STANDARD, StarterPack.fromId(null))
+        assertEq(StarterPack.STANDARD, StarterPack.fromId("bogus"))
+        assertEq(StarterPack.MINIMAL, StarterPack.fromId("minimal"))
+        assertEq(StarterPack.EVERYTHING, StarterPack.fromId("everything"))
+        StarterPack.values().forEach { expect(it.label.isNotEmpty() && it.summary.isNotEmpty(), it.id) }
+    }
+
+    fun testANewProjectChoosesItsStarterPackOnce() {
+        val prefs = MemoryPrefStore()
+        expect(!PackageGate.legacyProject(prefs))
+        expect(PackageGate.needsStarterPack(prefs, legacy = false))
+        assertEq(StarterPack.STANDARD, PackageGate.starterPack(prefs))
+        PackageGate.chooseStarterPack(StarterPack.MINIMAL, prefs)
+        assertEq("minimal", prefs.getString(PackageGate.STARTER_PACK_KEY))
+        assertEq(StarterPack.MINIMAL, PackageGate.starterPack(prefs))
+        expect(!PackageGate.needsStarterPack(prefs, legacy = false))
+        expect(!PackageGate.needsStarterPack(MemoryPrefStore(), legacy = true))
+        expect(!PackageGate.needsStarterPack(null, legacy = false))
+        assertEq(true, PhonePackages.isOn(PhonePackages.SIGN_IN, prefs, legacy = false))
+    }
+
+    fun testTheMinimalPackStartsANewProjectWithCodeOnly() {
+        val minimal = store(legacy = false, packed(StarterPack.MINIMAL))
+        assertEq(StarterPack.MINIMAL, minimal.starterPack)
+        expect(minimal.isInstalled("code"))
+        for (id in listOf("agents", "chat", "inbox", "tour", "notes", "special-agents")) expect(!minimal.isInstalled(id), id)
+        val surfaces = PackageSurfaces.of(minimal::isInstalled)
+        assertEq(setOf(AppTab.Agents, AppTab.Inbox, AppTab.Chat), surfaces.tabs)
+        expect(surfaces.code && !surfaces.agents)
+        val picked = store(legacy = false, packed(StarterPack.MINIMAL, "agents" to true, "code" to false))
+        expect(picked.isInstalled("agents") && !picked.isInstalled("code"))
+        expect(store(legacy = true, packed(StarterPack.MINIMAL)).isInstalled("agents"))
+        expect(!PackageGate.fallback("agents", null, legacy = false, pack = StarterPack.MINIMAL))
+        expect(PackageGate.fallback("code", null, legacy = false, pack = StarterPack.MINIMAL))
+    }
+
+    fun testTheEverythingPackStartsANewProjectWithEveryPackage() {
+        val everything = store(legacy = false, packed(StarterPack.EVERYTHING))
+        for (id in listOf("agents", "special-agents", "vault", "timers", "workflows", "notes", "pull-requests", "status-page")) {
+            expect(everything.isInstalled(id), id)
+        }
+        val picked = store(legacy = false, packed(StarterPack.EVERYTHING, "notes" to false, "agents" to false))
+        expect(!picked.isInstalled("notes") && !picked.isInstalled("special-agents"))
+        expect(picked.isInstalled("vault"))
+        expect(!store(legacy = true, packed(StarterPack.EVERYTHING)).isInstalled("vault"))
+        expect(PackageGate.fallback("vault", null, legacy = false, pack = StarterPack.EVERYTHING))
+        expect(!PackageGate.fallback("crm", null, legacy = false, pack = StarterPack.EVERYTHING))
+    }
+
+    fun testTheStandardPackIsTheDefault() {
+        val unset = store(legacy = false)
+        assertEq(StarterPack.STANDARD, unset.starterPack)
+        val standard = store(legacy = false, packed(StarterPack.STANDARD))
+        for (id in PackageGate.STARTER) expect(unset.isInstalled(id) && standard.isInstalled(id), id)
+        for (id in listOf("notes", "vault", "special-agents")) expect(!unset.isInstalled(id) && !standard.isInstalled(id), id)
+    }
+
     fun testMarketRowsCarryInstalledBeforeIntoTheCachedCatalog() {
         val pkg = MarketPackage.fromJson(row("agents"))!!
         assertEq("2026-10-11", pkg.installedBefore)
@@ -72,19 +142,27 @@ class PackageGateTest {
         expect(PackageGate.legacyProject(null))
     }
 
-    fun testNewProjectStartsWithEveryGatedPackageRemoved() {
+    fun testNewProjectStartsWithOnlyTheStarterPackages() {
         val store = store(legacy = false)
-        for (id in listOf("agents", "inbox", "chat", "code", "notes", "special-agents", "pull-requests", "timers", "vault")) {
+        for (id in listOf("notes", "special-agents", "pull-requests", "timers", "vault", "workflows")) {
             expect(!store.isInstalled(id), id)
         }
+        for (id in PackageGate.STARTER) expect(store.isInstalled(id), id)
         expect(!store.isInstalled("never-heard-of"))
         val surfaces = PackageSurfaces.of(store::isInstalled)
-        assertEq(setOf(AppTab.Agents, AppTab.Inbox, AppTab.Chat), surfaces.tabs)
-        expect(surfaces.showsTab(AppTab.Code))
-        expect(!surfaces.agents && !surfaces.code && !surfaces.signIn)
-        expect("allAgents" in surfaces.hubItems && "teammates" in surfaces.hubItems && "notes" in surfaces.hubItems)
+        assertEq(emptySet<AppTab>(), surfaces.tabs)
+        expect(surfaces.agents && surfaces.code && !surfaces.signIn)
+        expect("allAgents" !in surfaces.hubItems && "tour" !in surfaces.hubItems)
+        expect("teammates" in surfaces.hubItems && "notes" in surfaces.hubItems)
         expect(RepoHubSection.Pulls in surfaces.repoSections && RepoHubSection.Branches in surfaces.repoSections)
-        expect(Route.Kind.Compose in surfaces.routeKinds)
+        expect(Route.Kind.Compose !in surfaces.routeKinds)
+    }
+
+    fun testANewProjectCanRemoveAStarterPackage() {
+        val fresh = store(legacy = false, chosen("agents" to false, "tour" to false))
+        fresh.adopt(state("chat" to false))
+        expect(!fresh.isInstalled("agents") && !fresh.isInstalled("tour"))
+        expect(fresh.isInstalled("chat") && fresh.isInstalled("inbox") && fresh.isInstalled("code"))
     }
 
     fun testLegacyProjectKeepsWhatWasInstalledBefore() {
@@ -96,7 +174,8 @@ class PackageGateTest {
         expect(store.isInstalled("status-check-api"))
         val unloaded = AccountPackagesStore(null, MemoryPrefStore()) { true }
         expect(unloaded.isInstalled("agents"))
-        expect(!AccountPackagesStore(null, MemoryPrefStore()) { false }.isInstalled("agents"))
+        expect(!AccountPackagesStore(null, MemoryPrefStore()) { false }.isInstalled("notes"))
+        expect(AccountPackagesStore(null, MemoryPrefStore()) { false }.isInstalled("agents"))
     }
 
     fun testAccountAnswerWinsAndDependenciesMustBeInstalled() {
@@ -108,10 +187,10 @@ class PackageGateTest {
         val fresh = store(legacy = false, chosen("timers" to true, "special-agents" to true, "pull-requests" to true, "branches" to true))
         fresh.adopt(state("timers" to true, "special-agents" to true, "pull-requests" to true, "branches" to false))
         expect(fresh.isInstalled("timers"))
-        expect(!fresh.isInstalled("special-agents"))
+        expect(fresh.isInstalled("special-agents"))
         expect(!fresh.isInstalled("pull-requests"))
         fresh.adopt(state("timers" to true, "special-agents" to true, "agents" to true, "pull-requests" to true, "branches" to true))
-        expect(!fresh.isInstalled("special-agents"))
+        expect(fresh.isInstalled("special-agents"))
         expect(fresh.isInstalled("pull-requests"))
         expect(!fresh.isInstalled("notes"))
     }
@@ -128,7 +207,7 @@ class PackageGateTest {
         assertEq(AccountPackagesState.fromJson(reply.toJson()), reply)
         val fresh = store(legacy = false, chosen("notes" to true))
         fresh.adopt(reply)
-        expect(!fresh.isInstalled("agents"))
+        expect(fresh.isInstalled("agents"))
         expect(fresh.isInstalled("notes"))
         val picked = store(legacy = false, chosen("agents" to true))
         picked.adopt(reply)
@@ -285,10 +364,11 @@ class PackageGateTest {
         )
         expect(fresh.isInstalled("timers"))
         expect(fresh.isInstalled("vault"))
-        for (id in listOf("notes", "inbox", "agents", "chat", "workflows", "status-page", "status-check-api")) expect(!fresh.isInstalled(id), id)
+        for (id in listOf("notes", "workflows", "status-page", "status-check-api")) expect(!fresh.isInstalled(id), id)
+        for (id in listOf("inbox", "agents", "chat")) expect(fresh.isInstalled(id), id)
         val hidden = PackageSurfaces.of(fresh::shows).hubItems
-        expect("timers" !in hidden && "vault" !in hidden)
-        expect("notes" in hidden && "allAgents" in hidden && "shortcuts" in hidden && "workflows" in hidden)
+        expect("timers" !in hidden && "vault" !in hidden && "allAgents" !in hidden)
+        expect("notes" in hidden && "shortcuts" in hidden && "workflows" in hidden)
         val withPage = store(legacy = false, chosen("status-page" to true))
         expect(withPage.isInstalled("status-page"))
         expect(withPage.isInstalled("status-check-api"))
@@ -299,7 +379,7 @@ class PackageGateTest {
     fun testAnAccountInstallFromAnotherProjectDoesNotShowHere() {
         val fresh = store(legacy = false)
         fresh.adopt(state("timers" to true, "notes" to true, "agents" to true))
-        expect(!fresh.isInstalled("timers") && !fresh.isInstalled("notes") && !fresh.isInstalled("agents"))
+        expect(!fresh.isInstalled("timers") && !fresh.isInstalled("notes"))
         val chosenHere = store(legacy = false, chosen("timers" to true))
         chosenHere.adopt(state("timers" to false))
         expect(!chosenHere.isInstalled("timers"))
