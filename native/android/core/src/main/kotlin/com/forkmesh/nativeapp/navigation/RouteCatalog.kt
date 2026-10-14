@@ -145,6 +145,7 @@ object RouteCatalog {
         Route.Kind.Cove -> "Cove"
         Route.Kind.Calories -> "Calories"
         Route.Kind.GlassesAlert -> "Glasses Alert"
+        Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
         Route.Kind.Stats -> "Stats"
@@ -207,6 +208,7 @@ object RouteCatalog {
         Route.Kind.Coves, Route.Kind.Cove -> "shield"
         Route.Kind.Calories -> "restaurant"
         Route.Kind.GlassesAlert -> "visibility"
+        Route.Kind.FaceChanger -> "face"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
         Route.Kind.Stats -> "bar_chart"
@@ -304,6 +306,7 @@ object HubCatalog {
         HubItem.destination(Route.Coves(null), needsRegistration = true, guestAction = "open your coves"),
         HubItem.destination(Route.Calories, guestAction = "use the calorie counter"),
         HubItem.destination(Route.GlassesAlert),
+        HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.LocalAI, needsRegistration = true),
         HubItem.destination(Route.Activity),
     )

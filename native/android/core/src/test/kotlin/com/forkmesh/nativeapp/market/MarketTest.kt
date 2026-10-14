@@ -417,6 +417,83 @@ class MarketTest {
         assertEq(QuickRate.Failed("Sign in again to continue."), PackageReviewsModel(PackagesClient(transport), "crm").quickRate(5))
     }
 
+    private fun uninstallModel(device: MutableMap<String, Boolean?>, account: MutableMap<String, Boolean?>): MarketModel {
+        val transport = FakeTransport()
+        transport.answer(
+            "GET", "/api/market/packages",
+            mapOf(
+                "packages" to listOf(
+                    mapOf("id" to "notes", "name" to "Notes", "accountSync" to true, "dataScope" to "account"),
+                    mapOf("id" to "agents", "name" to "Agents", "accountSync" to true, "installedBefore" to "2026-10-11"),
+                    mapOf("id" to "sign-in", "name" to "Sign in", "bundled" to true),
+                    mapOf("id" to "crm", "name" to "CRM", "dataScope" to "organization"),
+                    mapOf("id" to "wiki", "name" to "Wiki", "dataScope" to "organization"),
+                    mapOf("id" to "board", "name" to "Board", "dataScope" to "organization"),
+                    mapOf("id" to "capture", "name" to "Capture", "default" to true, "surfaces" to mapOf("desktop" to true)),
+                    mapOf("id" to "orb", "name" to "Orb", "surfaces" to mapOf("world" to true)),
+                ),
+            ),
+        )
+        transport.answer(
+            "GET", "/api/market/reviews/summary",
+            mapOf("usage" to mapOf("orb" to mapOf("people" to 1, "opens" to 90), "crm" to mapOf("people" to 9, "opens" to 20), "wiki" to mapOf("people" to 2, "opens" to 20))),
+        )
+        val wikiAndCrm = listOf(mapOf("id" to "wiki", "installed" to true), mapOf("id" to "crm", "installed" to true))
+        transport.answer("GET", "/api/plugins/acme", mapOf("organization" to "acme", "canManage" to true, "plugins" to wikiAndCrm))
+        transport.answer("GET", "/api/plugins/beta", mapOf("organization" to "beta", "canManage" to true, "plugins" to wikiAndCrm))
+        transport.answer(
+            "GET", "/api/plugins/gamma",
+            mapOf("organization" to "gamma", "canManage" to false, "plugins" to listOf(mapOf("id" to "board", "installed" to true), mapOf("id" to "wiki", "installed" to true))),
+        )
+        val model = MarketModel(PackagesClient(transport), accountSwitch = { account[it] }, deviceSwitch = { device[it] })
+        model.refresh(listOf("acme", "beta", "gamma"))
+        return model
+    }
+
+    fun testUninstallActionFollowsHowThePackageIsInstalled() {
+        val device = mutableMapOf<String, Boolean?>("sign-in" to true, "crm" to true)
+        val account = mutableMapOf<String, Boolean?>("notes" to true)
+        val model = uninstallModel(device, account)
+        val pkg = { id: String -> model.pkg(id)!! }
+
+        assertEq(MarketUninstall.Account, model.uninstallAction(pkg("notes"), signedIn = true))
+        assertEq(null, model.uninstallAction(pkg("notes"), signedIn = false), "a guest cannot change the account's packages")
+        expect(model.isInstalled(pkg("agents")))
+        assertEq(null, model.uninstallAction(pkg("agents"), signedIn = true), "an install the account store has not confirmed has no uninstall")
+        account["notes"] = false
+        assertEq(null, model.uninstallAction(pkg("notes"), signedIn = true))
+
+        assertEq(MarketUninstall.Phone, model.uninstallAction(pkg("sign-in"), signedIn = false))
+        device["sign-in"] = false
+        assertEq(null, model.uninstallAction(pkg("sign-in"), signedIn = true))
+
+        assertEq(MarketUninstall.Phone, model.uninstallAction(pkg("crm"), signedIn = true), "a per-phone organization package hides on this phone")
+        device["crm"] = false
+        assertEq(null, model.uninstallAction(pkg("crm"), signedIn = true))
+
+        assertEq(MarketUninstall.Organization(listOf("acme", "beta")), model.uninstallAction(pkg("wiki"), signedIn = true))
+        assertEq(null, model.uninstallAction(pkg("wiki"), signedIn = false))
+        expect(model.isInstalled(pkg("board")))
+        assertEq(null, model.uninstallAction(pkg("board"), signedIn = true), "only an owner or admin can remove it from an organization")
+
+        expect(model.isInstalled(pkg("capture")))
+        assertEq(null, model.uninstallAction(pkg("capture"), signedIn = true), "desktop packages are removed on the desktop")
+        assertEq(null, model.uninstallAction(pkg("orb"), signedIn = true))
+    }
+
+    fun testMostOpenedAndInstalledFirstSorts() {
+        val model = uninstallModel(mutableMapOf("sign-in" to true, "crm" to true), mutableMapOf("notes" to true))
+        assertEq(MarketSort.OPENED, MarketSort.of("opened"))
+        assertEq(MarketSort.INSTALLED_FIRST, MarketSort.of("Installed-First"))
+        assertEq("Most opened", MarketSort.OPENED.title)
+        assertEq("Installed first", MarketSort.INSTALLED_FIRST.title)
+        model.options = MarketOptions(sort = MarketSort.OPENED)
+        assertEq(listOf("orb", "crm", "wiki"), model.shelves.single().packages.take(3).map { it.id })
+        model.options = MarketOptions(sort = MarketSort.INSTALLED_FIRST)
+        val ids = model.shelves.single().packages.map { it.id }
+        assertEq(listOf("agents", "board", "capture", "crm", "notes", "sign-in", "wiki", "orb"), ids)
+    }
+
     fun testMarketUninstallKeepsTheExport() {
         val transport = FakeTransport()
         transport.answer("GET", "/api/market/packages", mapOf("packages" to listOf(mapOf("id" to "crm", "name" to "CRM", "dataScope" to "organization"))))

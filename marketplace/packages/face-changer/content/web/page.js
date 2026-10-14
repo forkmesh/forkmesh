@@ -25,6 +25,7 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
   const clipPanel = el("clip");
   const clipPlayer = el("clip-player");
   const clipDownload = el("clip-download");
+  const clipShare = el("clip-share");
   const clipDiscard = el("clip-discard");
   const clipMeta = el("clip-meta");
 
@@ -46,6 +47,7 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     clip: null,
     clipUrl: "",
     popout: null,
+    native: false,
     unwatchFace: null,
     generation: 0,
   };
@@ -83,6 +85,7 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     stopRecordButton.hidden = !recording;
     snapshotButton.disabled = !on;
     popoutButton.disabled = !on;
+    popoutButton.hidden = state.native;
     const popped = Boolean(state.popout && !state.popout.closed());
     popoutButton.setAttribute("aria-pressed", popped ? "true" : "false");
     recBadge.hidden = !recording;
@@ -352,7 +355,25 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     player.setAttribute("aria-label", "Play back your clip");
     clipPlayer.append(player);
     clipMeta.textContent = `${studio.formatStudioTime(result.durationMs)} · ${studio.formatStudioSize(result.blob.size)}`;
+    clipShare.hidden = !studio.canShareStudioFiles(result.mime);
+    clipDownload.hidden = state.native;
     clipPanel.hidden = false;
+  }
+
+  async function shareBlob(blob, name, title) {
+    try {
+      const outcome = await state.m.studio.shareStudioBlob(blob, name, { title });
+      if (outcome === "unsupported") status("Sharing is not available in this browser. Download it instead.", "error");
+      else if (outcome !== "cancelled") status("");
+    } catch (_) {
+      status("It could not be shared. Try again.", "error");
+    }
+  }
+
+  function shareClip() {
+    if (!state.clip) return;
+    const { studio } = state.m;
+    void shareBlob(state.clip.blob, studio.studioFileName("face-changer", studio.studioClipExtension(state.clip.mime)), "Face Changer clip");
   }
 
   async function startRecording() {
@@ -377,7 +398,9 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
       const result = await state.recording.done;
       if (result.blob.size) {
         showClip(result);
-        status("Clip ready. Play it back, download it or discard it.");
+        status(clipShare.hidden
+          ? "Clip ready. Play it back, download it or discard it."
+          : "Clip ready. Play it back, share it or discard it.");
       } else {
         status("Nothing was recorded. Try again.", "error");
       }
@@ -398,6 +421,10 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     const { studio } = state.m;
     try {
       const blob = await studio.studioSnapshot(state.stage.canvas);
+      if (state.native) {
+        await shareBlob(blob, studio.studioFileName("face-changer", "png"), "Face Changer snapshot");
+        return;
+      }
       studio.downloadStudioBlob(blob, studio.studioFileName("face-changer", "png"));
       status("Snapshot saved.");
     } catch (_) {
@@ -485,6 +512,7 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     const { studio } = state.m;
     studio.downloadStudioBlob(state.clip.blob, studio.studioFileName("face-changer", studio.studioClipExtension(state.clip.mime)));
   });
+  clipShare.addEventListener("click", shareClip);
   clipDiscard.addEventListener("click", () => {
     clearClip();
     status("Clip discarded.");
@@ -499,6 +527,7 @@ window.ForkMeshDashboard.registerPage("face-changer", ({ select }) => {
     state.m = modules;
     const { studio, backgrounds, outfits } = modules;
     state.support = studio.studioSupport(globalThis);
+    state.native = Boolean(studio.studioShareBridge());
     state.faceId = state.support.faces ? studio.savedStudioFace() : "";
     state.faceImage = studio.studioFaceImage(state.faceId);
     const saved = state.support.backgrounds ? backgrounds.savedCallBackground() : { id: "", image: "" };

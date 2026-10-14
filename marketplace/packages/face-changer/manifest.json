@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Privacy",
-  "version": "1.1.0",
-  "summary": "Wear a stand-in face and a new outfit, swap your background and change your voice live in the browser. Record a clip, snapshot it, or pop it out into any call or meeting app. Video and sound stay on your device.",
+  "version": "1.2.0",
+  "summary": "Wear a stand-in face and a new outfit, swap your background and change your voice live in the browser or the phone app. Share a clip, take a snapshot, or pop it out into any call or meeting app. Video and sound stay on your device.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -86,6 +86,7 @@
     "default": false,
     "sync": "account",
     "places": [
+      "mobile",
       "desktop",
       "web"
     ]

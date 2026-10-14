@@ -30,7 +30,7 @@ class NavigationTest {
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.GlassesAlert, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.GlassesAlert, Route.FaceChanger, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -117,6 +117,9 @@ class NavigationTest {
         assertEq(Route.Repo(repo, null), RouteParser.parse("forkmesh://fm/app")!!.destination)
         assertEq(listOf(AppTab.barOrder.first().root), RouteParser.parse("forkmesh://dashboard")!!.stack)
         assertEq(listOf(Route.Docs), RouteParser.parse("https://app.forkmesh.com/dashboard/docs")!!.stack)
+        assertEq(listOf(Route.FaceChanger), RouteParser.parse("https://app.forkmesh.com/dashboard/face-changer")!!.stack)
+        assertEq(listOf(Route.FaceChanger), RouteParser.parse("forkmesh://face-changer")!!.stack)
+        assertEq("Face Changer", RouteCatalog.title(Route.Kind.FaceChanger))
         assertEq(listOf(Route.Docs), RouteParser.parse("forkmesh://docs")!!.stack)
         assertEq(listOf(Route.Docs), RouteParser.parse("forkmesh://dashboard/docs")!!.stack)
         assertEq(null, RouteParser.parse("https://forkmesh.com/docs/library"))

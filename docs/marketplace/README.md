@@ -148,7 +148,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `tour`, `people` ([people.md](people.md)), `aquarium`
   ([aquarium.md](aquarium.md)), `winamp` (theme), `gemma-4` (agent model).
-- **Face and voice:** `face-changer` (web page plus a desktop rail link) and
+- **Face and voice:** `face-changer` (web page, a desktop rail link, and a
+  Face Changer screen in the phone apps that hosts the page and shares clips) and
   `voice-changer` (desktop virtual microphone plus a web page). Both web pages
   run the call engine from `app/public` and share `app/public/call-studio.js`
   ([../app/chat-direct-calls.md](../app/chat-direct-calls.md#plug-ins)).

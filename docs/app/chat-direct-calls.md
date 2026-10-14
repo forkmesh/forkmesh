@@ -417,6 +417,15 @@ the stage's blur-on-lost-face rule holds there too. Each manifest's
 gives exactly those routes `camera=(self)` (when asked) and `mediastream:`
 in `media-src`, as `/chat` has.
 
+Clips can go to a share sheet: `shareStudioBlob` sends the file to the
+ForkMesh phone app when it hosts the page (`fmShare` on iOS, `FmShareBridge`
+on Android, as begin, 384 KiB base64 chunks and end messages) and otherwise
+calls `navigator.share` with the file where the browser can share files
+(`canShareStudioFiles`), so phone browsers get their own share sheet. Inside
+the phone app the face page hides Download and Pop out, which a web view
+cannot do, and Snapshot shares the PNG instead of downloading it
+([NAVIGATION.md](../native/NAVIGATION.md#203-other-pages)).
+
 The face page also has the Outfit picker (thumbnails drawn by
 `callOutfitThumbnail`, one per tick after the page loads so it never blocks),
 and its stage takes the picture's own shape: the `<video>`'s `resize` event

@@ -172,6 +172,7 @@ public enum RouteCatalog {
         case .foodGuide: return "Food Guide"
         case .speech: return "Speech"
         case .glassesAlert: return "Glasses Alert"
+        case .faceChanger: return "Face Changer"
         case .localAI: return "On-device AI"
         case .activity: return "Activity"
         case .stats: return "Stats"
@@ -241,6 +242,7 @@ public enum RouteCatalog {
         case .foodGuide: return "carrot"
         case .speech: return "speaker.wave.2"
         case .glassesAlert: return "eyeglasses"
+        case .faceChanger: return "theatermasks"
         case .localAI: return "cpu"
         case .activity: return "bolt"
         case .stats: return "chart.bar"
@@ -365,6 +367,7 @@ public enum HubCatalog {
         .destination(.foodGuide),
         .destination(.speech),
         .destination(.glassesAlert),
+        .destination(.faceChanger),
         .destination(.localAI),
         .destination(.activity),
     ]

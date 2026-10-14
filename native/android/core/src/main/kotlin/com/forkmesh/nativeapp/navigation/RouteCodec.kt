@@ -173,6 +173,7 @@ object RouteCodec {
             Route.Kind.Cove -> req("id")?.let(Route::Cove)
             Route.Kind.Calories -> Route.Calories
             Route.Kind.GlassesAlert -> Route.GlassesAlert
+            Route.Kind.FaceChanger -> Route.FaceChanger
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity
             Route.Kind.Stats -> Route.Stats

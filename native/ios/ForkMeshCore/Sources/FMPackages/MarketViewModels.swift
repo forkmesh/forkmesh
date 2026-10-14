@@ -146,6 +146,18 @@ public final class MarketModel {
         }
     }
 
+    public func uninstallAction(_ package: MarketPackage, signedIn: Bool) -> MarketUninstall? {
+        guard isInstalled(package), !isBusy(package) else { return nil }
+        if package.accountSync {
+            return signedIn && account?.isInstalled(package.id) == true ? .account : nil
+        }
+        if PhonePackages.isOn(package.id) == true { return .device }
+        if PhonePackages.canRemove(package) { return .phone }
+        guard package.installsPerOrganization, signedIn else { return nil }
+        let managed = organizations.filter { $0.canManage && $0.isInstalled(package.id) }.map(\.organization)
+        return managed.isEmpty ? nil : .organization(managed)
+    }
+
     public func isBusy(_ package: MarketPackage) -> Bool {
         account?.isBusy(package.id) == true || installing.contains { $0.hasSuffix("/" + package.id) }
     }
