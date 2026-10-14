@@ -571,11 +571,24 @@ call face and voice stages (`createFaceStage` / `createVoiceStage`) run in the c
 are not wired in. Voice messages go through `AVAudioRecorder`, which has no sample hook, so a
 voice filter would need an `AVAudioEngine` recorder first.
 
-Limits: the sender cannot withdraw from the UI yet (`withdrawViewOnce` exists in the core).
-Desktop and web clients that do not know `viewOnce` show only the fallback text.
+Held receipts: the phone keeps no DM history on disk, so acknowledging a view-once frame
+(`forkmesh-received`) would let the relay delete the only copy of an unopened message. A sealed
+chat frame with a valid `viewOnce` from the other account is therefore not acknowledged, live or
+replayed, while the message is unopened or its `consume` is still owed. Its refs are kept per
+message id (`heldReceipts`, at most 800) and sent once the message is final: `consume` succeeded
+or answered 410, or the relay frame or the status read said opened, expired or withdrawn. With no
+socket open at that moment the refs stay held; a later replay of a final message is acknowledged at
+once. A `consume` that failed offline is remembered under `chat/viewOnce/consume` and retried when
+the conversation's status is next read. Same rule as web (`holdReceipt`) and Android.
+
+Unsend: the sender's unopened row has an "Unsend" button (with a confirmation) that calls
+`ChatHub.unsendViewOnce`, which withdraws the media (`DELETE`); the row then says "Withdrawn".
+
+Limits: desktop and web clients that do not know `viewOnce` show only the fallback text.
 
 Verified: ForkMeshCore tests on Linux (`swift test`, the new suite and the whole package). The
-app target was compiled on the office Mac (Xcode 26.6, Debug, iOS Simulator x86_64, no signing,
+held receipts and Unsend came later and were checked with the FMChat tests and `swiftc -parse`
+only. The rest of the app target was compiled on the office Mac (Xcode 26.6, Debug, iOS Simulator x86_64, no signing,
 in a scratch folder) with no errors or warnings in the new files. Nothing was run on a device:
 capture, playback and the screen-capture notices are untested on hardware.
 

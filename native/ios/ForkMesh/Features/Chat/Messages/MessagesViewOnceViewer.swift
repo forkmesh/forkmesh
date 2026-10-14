@@ -11,6 +11,8 @@ struct MessagesViewOnceRow: View {
     let colors: MessagesColors
     let busy: Bool
     let onOpen: () -> Void
+    let onUnsend: () -> Void
+    @State private var confirmUnsend: Bool = false
 
     private var mine: Bool { entry.mine }
 
@@ -36,6 +38,23 @@ struct MessagesViewOnceRow: View {
                 content
                 if !mine { Spacer(minLength: 56) }
             }
+            if entry.canUnsend {
+                Button(action: { confirmUnsend = true }) {
+                    Text("Unsend")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(MessagesColors.blue)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Unsend \(entry.kind.label.lowercased()) before it is opened")
+            }
+        }
+        .confirmationDialog("Unsend this \(entry.kind.label.lowercased())?", isPresented: $confirmUnsend, titleVisibility: .visible) {
+            Button("Unsend", role: .destructive, action: onUnsend)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It is deleted from the server and can no longer be played.")
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(.top, bubble.position.startsRun ? 8 : 1)

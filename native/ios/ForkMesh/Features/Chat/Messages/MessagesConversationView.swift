@@ -154,7 +154,8 @@ struct MessagesConversationView<Drawer: View>: View {
                 MessagesViewOnceRow(
                     bubble: bubble, entry: entry, group: group, colors: palette,
                     busy: hub.direct?.viewOnce.isBusy(entry.messageId) ?? false,
-                    onOpen: { viewOnceOpen = entry })
+                    onOpen: { viewOnceOpen = entry },
+                    onUnsend: { Task { await hub.unsendViewOnce(entry.messageId) } })
             } else {
                 messageRow(bubble, palette: palette, group: group)
             }
