@@ -7,6 +7,7 @@ import tomllib
 
 from _dashboard_shell import assembled_dashboard, assembled_dashboard_page
 from _dashboard_bundle import assembled_dashboard_js
+import dashboard_shell
 from dashboard_shell import PAGES
 import static_routes
 
@@ -1365,7 +1366,7 @@ def test_repository_context_links_and_fediverse_avatars_replace_redundant_ui():
     assert 'referrerpolicy="no-referrer"' in follower_loader
     assert 'followerAvatars.classList.toggle("flex", shown.length > 0);' in follower_loader
 
-    assert "--dashboard-header-rgb: 246 248 250;" in shell
+    assert "--dashboard-header-rgb: 246 248 250;" in dashboard_shell.apply_theme(shell, lambda rel: _read(PUBLIC / rel))
     assert "[data-repo-github-header]" in shell
     assert "background: rgb(var(--dashboard-header-rgb));" in shell
 

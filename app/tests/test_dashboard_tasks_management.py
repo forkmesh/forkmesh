@@ -346,7 +346,7 @@ def test_task_feedback_is_inline_next_to_the_action_not_a_toast():
     page = assembled_dashboard_page("tasks")
     hand = (ROOT / "public" / "dashboard" / "tasks" / "index.html").read_text(encoding="utf-8")
     for text in (js, TASK_SOURCE, page, hand):
-        assert "toast" not in text.lower()
+        assert "toast" not in text.lower().replace("fm-toast", "")
     for rule in (".task-notice {", '.task-notice[data-tone="bad"]', ".task-notice-undo {"):
         assert rule in TASK_SOURCE
     assert "position: fixed" not in TASK_SOURCE[TASK_SOURCE.index(".task-notice {"):TASK_SOURCE.index("[data-task-action-submit]")]

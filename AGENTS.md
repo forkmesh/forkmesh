@@ -65,3 +65,22 @@ comments or docstrings. Put the reason for a change in the matching
 `docs/*.md`; `docs/README.md` maps each subsystem to its home page. The only exceptions are lines tools read: shebangs, encoding
 lines, build tags and `//go:embed`, lint/type directives, license headers,
 build markers in templates, and user-facing help or UI text.
+
+## Web dashboard styling
+
+Before building or restyling any dashboard page, read
+`app/public/dashboard/theme.json`: it holds every colour, the compact control
+sizes, and what each colour is for, and the build writes it into every page.
+Use its roles, not your own colours:
+
+- `primary` / `accent` (blue): links, focus, selection, checkboxes, active tabs
+  and nav, the current day.
+- `cta` (green): only the single create/new button on a page
+  (`bg-cta text-cta-foreground hover:bg-cta/90`).
+- `success` (green): status only. Icons are `muted-foreground`.
+- Controls use the compact size (`text-control`, `h-control`/`h-control-sm`,
+  menu rows `h-menu-row`). Plain page headers, solid surfaces, no box nested
+  in a box. `docs/app/dashboard-colors.md` explains the choices.
+
+`app/tests/test_dashboard_theme_tokens.py` fails a page that uses green for
+focus, selection or links.
