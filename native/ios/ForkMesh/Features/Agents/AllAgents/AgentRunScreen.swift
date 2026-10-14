@@ -15,6 +15,7 @@ struct AgentRunScreen: View {
 
     @State private var follower = TranscriptFollower()
     @State private var blocks: [TranscriptBlock] = []
+    @State private var pending = PendingPrompts()
     @State private var questions: [AgentQuestion] = []
     @State private var blockCache = TranscriptBlockCache()
     @State private var status = ""
@@ -100,21 +101,22 @@ struct AgentRunScreen: View {
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
                     }
-                    if blocks.isEmpty {
+                    if shownBlocks.isEmpty {
                         Text("No transcript yet.")
                             .fmText(.bodyMedium, color: fm.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
                     } else {
-                        AgentTranscriptBlocksView(blocks: blocks, repo: row.repoOwner.isEmpty || row.repoName.isEmpty ? nil : RepoRef(owner: row.repoOwner, name: row.repoName))
+                        AgentTranscriptBlocksView(blocks: shownBlocks, repo: row.repoOwner.isEmpty || row.repoName.isEmpty ? nil : RepoRef(owner: row.repoOwner, name: row.repoName))
                             .padding(.horizontal, 12)
                             .padding(.vertical, FmSpace.x2)
                     }
                 }
                 .onChange(of: follower.next) { _, _ in
-                    let last = blocks.count - 1
-                    if last < 0 { return }
-                    DispatchQueue.main.async { proxy.scrollTo(last, anchor: .bottom) }
+                    scrollToEnd(proxy)
+                }
+                .onChange(of: pending) { _, _ in
+                    scrollToEnd(proxy)
                 }
             }
             if !error.isEmpty {
@@ -157,7 +159,7 @@ struct AgentRunScreen: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .modifier(AgentRunToolbar {
-            HStack(spacing: FmSpace.x3) {
+            HStack(spacing: 6) {
                 if row.isPhoneTerminal {
                     NavigationLink {
                         DesktopTerminalScreen(center: center, terminal: row.terminal)
@@ -305,6 +307,7 @@ struct AgentRunScreen: View {
                     .accessibilityIdentifier("agent-run-delete")
                 }
             }
+            .buttonStyle(AgentRunActionButtonStyle())
             .modifier(AgentRunActionsCap())
         } changes: {
             changesLink
@@ -400,6 +403,14 @@ struct AgentRunScreen: View {
     }
 
     private var followsCloudLive: Bool { isRunnerRun && active && !liveRefused }
+
+    private var shownBlocks: [TranscriptBlock] { pending.isEmpty ? blocks : blocks + pending.blocks }
+
+    private func scrollToEnd(_ proxy: ScrollViewProxy) {
+        let last = shownBlocks.count - 1
+        if last < 0 { return }
+        DispatchQueue.main.async { proxy.scrollTo(last, anchor: .bottom) }
+    }
 
     @ViewBuilder private var changesLink: some View {
         if row.isDesktop, row.localId > 0, let client = AgentOpsFeature.client {
@@ -682,6 +693,7 @@ struct AgentRunScreen: View {
     private func show(_ delta: AgentTranscriptDelta) {
         follower.apply(delta)
         blocks = blockCache.update(follower.text)
+        pending.settle(blocks)
         status = delta.status
         queue = delta.queue
         active = delta.active
@@ -703,12 +715,14 @@ struct AgentRunScreen: View {
         let model = pickedModel.flatMap { $0 == live.model ? nil : $0 } ?? ""
         let provider = pickedModel.flatMap { id in modelChoices.first { $0.modelId == id }?.provider } ?? ""
         let mode = pickedMode?.rawValue ?? ""
+        let echo = pending.add(promptOrPhotoNote(text, images), shown: blocks)
         await perform {
             try await center.prompt(live, text, images: images, model: model, mode: mode, provider: provider)
         }
         notice = error.isEmpty ? center.promptNotice : ""
         if error.isEmpty, row.isDesktop, !streaming { await follow() }
         if !error.isEmpty {
+            pending.remove(echo)
             if prompt.isEmpty { prompt = text }
             if photos.isEmpty { photos = images }
         }
@@ -744,6 +758,33 @@ struct AgentRunScreen: View {
     }
 }
 
+private struct AgentRunActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        AgentRunActionChip(configuration: configuration)
+    }
+}
+
+private struct AgentRunActionChip: View {
+    @Environment(\.fmPalette) private var fm
+    @Environment(\.isEnabled) private var isEnabled
+    let configuration: ButtonStyleConfiguration
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 9, style: .continuous) }
+
+    var body: some View {
+        configuration.label
+            .labelStyle(.iconOnly)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(configuration.role == .destructive ? fm.danger : fm.accent)
+            .padding(.horizontal, 7)
+            .frame(minWidth: 32, minHeight: 32)
+            .shellGlass(shape)
+            .contentShape(shape)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+    }
+}
+
 private struct AgentRunActionsCap: ViewModifier {
     static let maxWidth: CGFloat = 184
     @State private var width: CGFloat = 0
@@ -770,7 +811,7 @@ private struct AgentRunToolbar<Actions: View, Changes: View>: ViewModifier {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             content.toolbar {
-                actionsItem
+                actionsItem.sharedBackgroundVisibility(.hidden)
                 changesItem.sharedBackgroundVisibility(.hidden)
             }
         } else {

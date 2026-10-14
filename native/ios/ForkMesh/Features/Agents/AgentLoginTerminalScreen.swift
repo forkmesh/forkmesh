@@ -46,7 +46,7 @@ struct AgentLoginTerminalScreen: View {
 
     var body: some View {
         content
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationTitle("Sign in to \(agentProviderLabel(provider))")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarItems }
@@ -289,6 +289,10 @@ struct TerminalKeyBar: View {
 
 // MARK: - Grid
 
+extension FmPalette {
+    var terminalSurface: Color { return wallpaper ? TerminalPalette.background.opacity(0.8) : TerminalPalette.background }
+}
+
 /// xterm's 16 base colours, then the 6x6x6 cube and greyscale ramp: the
 /// palette the dashboard's terminal draws with.
 enum TerminalPalette {
@@ -331,6 +335,7 @@ enum TerminalPalette {
 /// The grid itself: a fixed-pitch row per line, scrollback above, pinned to
 /// the bottom. Sized to the pane; a settled layout change is sent once.
 struct TerminalGridView: View {
+    @Environment(\.fmPalette) private var fm
     let terminal: any StreamedTerminal
     @State private var resizeTask: Task<Void, Never>?
     @State private var pitch: CGFloat = TerminalGridView.cellWidth
@@ -357,7 +362,7 @@ struct TerminalGridView: View {
                 }
         }
         .background(alignment: .topLeading) { ruler }
-        .background(TerminalPalette.background)
+        .background(fm.terminalSurface)
         .clipped()
     }
 

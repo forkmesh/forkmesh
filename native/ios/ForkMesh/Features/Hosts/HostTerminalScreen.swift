@@ -34,7 +34,7 @@ struct HostTerminalScreen: View {
             })
             inputLine
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("SSH to \(host)")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarItems }

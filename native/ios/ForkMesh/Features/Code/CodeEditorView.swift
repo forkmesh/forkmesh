@@ -108,8 +108,8 @@ struct CodeEditorPalette: Equatable {
 
     init(_ fm: FmPalette) {
         dark = fm.dark
-        surface = UIColor(fm.editorSurface)
-        gutter = UIColor(fm.editorGutter)
+        surface = UIColor(fm.readingSurface)
+        gutter = UIColor(fm.readingGutter)
         border = UIColor(fm.border)
         activeLine = UIColor(fm.editorActiveLine)
         numbers = UIColor(fm.textDisabled)

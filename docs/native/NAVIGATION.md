@@ -3347,6 +3347,48 @@ and then for `@everyone` and `@here` tags that work as in Discord and Slack.
   `ChatChannelInfoTests`, `ChatHubTests.testTheRoomHeaderNamesTheRoomAndWhoIsIn`
   (iOS core, Linux). The Android app was not changed.
 
+### 2.0.98 Bare logo and avatar, square agent tools, glass run buttons (2026-10-14, iOS)
+
+The user asked for the top-left project logo without its round glass button,
+a little larger; the avatar as a rounded rectangle, off its glass capsule,
+with the status emoji at its bottom right; the agent sort chip without the
+word "Recent"; the desktop queue's "1/10" as a square that shows the slots;
+the agent run page's actions as separate small glass buttons; and a
+follow-up sent to a running agent to show at once.
+
+- `ShellProjectSlot` draws `ProjectIcon` at 40 pt in its own rounded square,
+  with no `shellGlass`, in a 44 pt tap target. The no-settings fallback logo
+  is 40 pt with no glass too.
+- The top bar's avatar is `AvatarWithDot(size: 36, rounded: true)`: a
+  rounded rectangle (corner 28% of the side) with no glass. The status emoji
+  is a badge at 42% of the avatar's side over its bottom-right corner, with a
+  faint shadow so it reads on any photo. With an emoji the connection dot
+  moves to the top right; without one it stays bottom right. The You hub's
+  avatar keeps the round style.
+- The Agents tool row's sort chip is a 30 pt square: a tiny symbol for the
+  current order (`AgentLineSort.symbol`: clock Recent, play Running, half
+  circle Status, exclamation mark Priority, text Name, folder Repo, plus-minus
+  Changes) above the sort arrows. The menu shows each order's symbol.
+- `DesktopQueueMenu`'s label is `DesktopQueueSlots`, a 30 pt square: one small
+  rounded cell per slot in a near-square grid (10 slots are 4, 4 and 2), the
+  running ones in the accent colour, with an amber dot at the corner while
+  agents wait. Above 25 slots it shows "running" over "limit" in small type.
+  The accessibility label still reads the queue summary.
+- `AgentRunScreen`'s toolbar actions (terminal, retry, continue, stop, move to
+  desktop, PR, merge, update, fix conflicts, clean up, delete) each sit on
+  their own 32 pt rounded-rectangle glass (`AgentRunActionButtonStyle`):
+  accent icons, red for stop and delete, dimmed when disabled. On iOS 26 the
+  toolbar's shared capsule is hidden behind them, as it already was for the
+  branch diff button.
+- A follow-up sent from the run page used to appear only once the desktop or
+  runner wrote it into the transcript, which for a running agent can be after
+  its current turn. `PendingPrompts` (FMControl) now shows the sent text as a
+  prompt block straight away and drops it when the transcript carries it (a
+  prompt or steer block containing the text, counted against how many did
+  before sending, so a repeated "continue" waits for its own echo). A failed
+  send takes it back and returns the text to the composer.
+  `PendingPromptsTests` covers it (iOS core, Linux).
+
 ### 2.0.58 Tour can be removed from the phone (2026-10-05, iOS and Android)
 
 Reported: "Was unable to remove tour button in app". On iOS the Tour cell's

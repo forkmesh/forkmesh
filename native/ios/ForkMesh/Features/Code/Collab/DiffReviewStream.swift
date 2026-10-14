@@ -237,7 +237,7 @@ struct DiffReviewStream<Header: View>: View {
                 }
             }
         }
-        .background(fm.editorSurface)
+        .background(fm.readingSurface)
         .genieTurnsPages { (page: GeniePageTurn) -> String in
             turn(page)
         }
@@ -765,7 +765,7 @@ struct DiffReviewStream<Header: View>: View {
                 .padding(.horizontal, FmSpace.x2)
                 .padding(.vertical, FmSpace.x2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(fm.bgBase)
+                .background(fm.canvas)
                 .frame(width: width)
             }
         }
@@ -803,7 +803,7 @@ struct DiffReviewStream<Header: View>: View {
             .padding(.horizontal, FmSpace.x3)
             .padding(.top, FmSpace.x3)
             .padding(.bottom, FmSpace.x1)
-            .background(fm.bgBase)
+            .background(fm.canvas)
     }
 
     private func fileHeader(_ index: Int, pinned: Bool, celebrate: Bool = false) -> some View {
@@ -1089,7 +1089,7 @@ struct DiffReviewStream<Header: View>: View {
         switch kind {
         case .added: return fm.success.opacity(0.20)
         case .removed: return fm.danger.opacity(0.18)
-        case .context: return fm.editorGutter
+        case .context: return fm.readingGutter
         }
     }
 
