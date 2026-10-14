@@ -184,6 +184,18 @@ export function createChatRoomTransport({
     }
   }
 
+  function refsForIds(ids) {
+    const wanted = new Set(ids.map((id) => String(id || "")).filter(Boolean));
+    const refs = [];
+    for (const [ref, id] of recipientRefs) {
+      if (wanted.has(id)) refs.push(ref);
+    }
+    for (const entry of outbox) {
+      if (wanted.has(entry.id) && !refs.includes(entry.ref)) refs.push(entry.ref);
+    }
+    return { wanted, refs };
+  }
+
   function transition(next, detail = {}) {
     transportState = next;
     onState(next, { ...detail, room: currentRoom });
@@ -680,6 +692,24 @@ export function createChatRoomTransport({
       activeSocket.send(text);
       if (persist && sealed && room === outboxRoom && isDirectRoom(room)) {
         rememberOutbox(ref, moderated, sealed, envelope.notify === true);
+      }
+      return true;
+    },
+    refsFor(ids) {
+      return refsForIds(Array.isArray(ids) ? ids : [ids]).refs;
+    },
+    supersede(ids) {
+      const { wanted, refs } = refsForIds(Array.isArray(ids) ? ids : [ids]);
+      outbox = outbox.filter((entry) => !wanted.has(entry.id));
+      if (!refs.length || !this.connected || !isDirectRoom(currentRoom)) {
+        return false;
+      }
+      for (let start = 0; start < refs.length; start += RECEIVED_REFS_MAX) {
+        socket.send(JSON.stringify({
+          kind: "forkmesh-superseded",
+          v: 1,
+          refs: refs.slice(start, start + RECEIVED_REFS_MAX),
+        }));
       }
       return true;
     },

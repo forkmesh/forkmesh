@@ -212,8 +212,15 @@ def test_label_renders_to_n_with_delivered_tooltip_and_hides_when_unknown():
         "Delivered to 30 people: @alice, @bob and 28 more")
 
 
-def test_chat_rows_and_threads_show_the_relay_count_only():
+def test_chat_rows_and_threads_show_the_relay_count_beside_the_receipt():
     build_row = _function_source("buildRow")
+    assert build_row.index("row.append(record.recipientsEl);") < (
+        build_row.index("if (receipt) row.append(makeReceipt(record));"))
+    assert "if (receipt && isDirectMessageKey(record.channel)) {" in build_row
+    header = _function_source("threadMessageHeader")
+    assert "!(receipt && isDirectMessageKey(record.channel))" in header
+    assert header.index('"chat-thread-recipients"') < header.index(
+        "if (receipt) meta.append(makeReceipt(record));")
     assert "record.recipientsEl = makeRecipientLabel(\n" \
         "      record.recipients, \"chat-recipients\", record.recipientNames);" \
         in build_row

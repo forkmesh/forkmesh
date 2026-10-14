@@ -44,6 +44,12 @@ switch the World already uses, and rewrites `?space=` in the address bar. The
 `#fullChatChannel` select keeps its old behaviour, which reloads into the World
 embed.
 
+The rail's direct-message chips stay name-only: this page never opens or
+decrypts a direct room (a chip links to `/chat`), so it has no last line to
+show. The full chat page `/chat` and Office show the newest line of every
+conversation and the other person's picture
+([chat-private-rooms.md](chat-private-rooms.md#last-line-and-pictures-in-the-conversation-list-2026-10-13)).
+
 ## Transcript
 
 - Avatars are 40px circles with a 16px gap. The name is semi-bold and the

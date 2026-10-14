@@ -118,6 +118,7 @@ def _harness(channel=None, members=(), participants=()):
     ]
     stored = []
     retained = []
+    retained_handles = []
 
     async def d1_first(_env, sql, *args):
         if "FROM chat_channels" in sql:
@@ -166,8 +167,9 @@ def _harness(channel=None, members=(), participants=()):
     async def noop(*_args, **_kwargs):
         return None
 
-    async def direct_retained(*args):
+    async def direct_retained(*args, **kwargs):
         retained.append(args[1:3])
+        retained_handles.append(kwargs)
 
     async def admitted(*_args, **_kwargs):
         return True
@@ -192,6 +194,7 @@ def _harness(channel=None, members=(), participants=()):
         "_maintenance_socket_closed": lambda *_args: False,
         "_chat_direct_message_retained": direct_retained,
         "_retained": retained,
+        "_retained_handles": retained_handles,
         "_ws_attr": lambda ws, name, default=None: getattr(
             ws.deserializeAttachment(), name, default),
         "chat_history_store": chat_history_store,
@@ -690,6 +693,9 @@ def test_only_new_messages_raise_the_direct_unread_count():
 
     _relay(room_type, [alice, bob], alice, _chat_frame(data="new"))
     assert namespace["_retained"] == [(DIRECT, ALICE)]
+    ref = _kind(bob, "cipher")[-1]["ref"]
+    assert namespace["_retained_handles"] == [
+        {"ref": ref, "key_version": 1}]
 
 
 def _live_frame(**extra):

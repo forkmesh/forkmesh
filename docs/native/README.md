@@ -50,9 +50,9 @@ The Commits screen's Graph tab (lane graph, where Desktop, Web and Mobile are):
 
 | Path | Responsibility |
 | --- | --- |
-| `native/ios/ForkMeshCore/` | Swift package with everything that is not a view; builds and tests on Linux. Modules FMBase, FMCrypto, FMNet, FMGit, FMDiff, FMVault, FMAccount, FMApi, FMChat, FMCode, FMLocalAI, FMAgents, FMTools, FMAssistant. |
+| `native/ios/ForkMeshCore/` | Swift package with everything that is not a view; builds and tests on Linux. Modules FMBase, FMCrypto, FMNet, FMGit, FMDiff, FMVault, FMAccount, FMApi, FMChat, FMCode, FMLocalAI, FMAgents, FMTools, FMAssistant, FMPush. |
 | `native/ios/ForkMesh/` | The app target: SwiftUI views and iOS glue (`App/`, `Platform/`, `Theme/`, `Kit/`, `Shell/`, `Features/`). |
-| `native/ios/NotificationService/`, `native/ios/Shared/` | Notification service extension; code compiled into both targets. |
+| `native/ios/NotificationService/`, `native/ios/Shared/` | Notification service extension (links the `ForkMeshPushCore` product: FMBase, FMCrypto, FMPush); code compiled into both targets. |
 | `native/ios/Config/` | Info.plists, entitlements, `Version.xcconfig`, `Package.resolved`, `ExportOptions.plist`. |
 | `native/ios/tools/` | `generate_project.rb` (the Xcode project is generated), `check_swift_syntax.sh`, `asc_bundle_ids.py`. |
 | `native/ios/docs/` | One API note per core module. |
@@ -228,6 +228,36 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 ## Recent changes
 
+- 2026-10-13 (branch 1974, secure chat, round 2): the iOS chat list shows a
+  second, muted line per channel and direct message with the newest
+  top-level message the phone holds ("You: ..." for your own, "<sender>: ..."
+  in channels, "📎 <file>" for a file), a short time on the name line, and
+  the other person's profile picture with the presence dot on direct-message
+  rows. Asked: "Make sure threads still work too also in the chat list show
+  the last line per channel and per message with users also show their user
+  icon in the chat list". Thread replies in direct messages and office
+  channels were checked with new tests; no regression found. Details:
+  [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md), "Chat list
+  last line, avatars and threads". The SwiftUI row is parse-checked only.
+- 2026-10-13 (branch 1974, secure chat): iOS draws Signal-style receipt marks
+  on every own message (sending, sent, delivered, read; channels stop at
+  sent), lets you delete for everyone what you sent, and react to, edit and
+  reply in a thread on messages in direct messages and office rooms. Chat
+  pushes now show the message: the extension fetches the still-encrypted
+  frame (`/pending?ref=`), decrypts it with the device key and shows sender
+  and text, as Signal does; Settings, Notifications has "Notification
+  content" (Name and message, Name only, No name or message). Asked: "add
+  these symbols for each chat message", "make it so that you can delete for
+  everyone something you sent", "make it so that chat text shows in the push
+  notifications - signal has a way of doing it securely so lets do it like
+  they do", "also have it so you can reply and react to chats from others in
+  p2p". The new FMPush module holds the testable push logic and is linked
+  into the extension as `ForkMeshPushCore`. Details:
+  [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md), "Receipt
+  marks, deletes, reactions and replies in direct messages" and "Message text
+  in push notifications". Not verified on a device: the extension's keychain
+  read of the device key, the PBKDF2 time inside the extension, and the
+  SwiftUI views (parse-checked only).
 - 2026-10-13: a new project is not linked to any instance unless you name
   one. Before, a project made from a name alone stored the build's default
   server URL, so it signed in on app.forkmesh.com and listed that instance's

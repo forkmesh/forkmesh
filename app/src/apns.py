@@ -17,7 +17,9 @@ names the channel or the sender. There is no generic "something happened"
 banner any more: a push with nothing specific to say is not sent at all (see
 alert_payload). The one thing no push can carry is the text of a chat or
 direct message, which is sealed end to end and unreadable to this Worker too —
-those alerts say who or where, and say that the text is encrypted.
+those alerts say who or where, and say that the text is encrypted. The phone
+replaces that fallback with the text it decrypts itself, the way Signal does
+(docs/app/chat-push-previews.md).
 
 This deliberately hands Apple the text of pings. Every alert also sets
 `mutable-content`, so the bundled notification service extension
@@ -61,6 +63,9 @@ APNS_SEALED_BODY = "End-to-end encrypted \u2014 open Chat in ForkMesh to read it
 APNS_WORLD_CHAT_NAME = "World chat"
 APNS_DIRECT_CONVERSATION_PREFIX = "direct:"
 APNS_DIRECT_ID_RE = re.compile(r"[0-9a-f]{32}")
+APNS_CHANNEL_ID_RE = re.compile(r"[0-9a-f]{32}")
+APNS_REF_RE = re.compile(r"[0-9a-f]{40}")
+APNS_KEY_VERSION_MAX = 1_000_000_000
 APNS_OFFICE_CONVERSATION_PREFIX = "#office/"
 APNS_OFFICE_NAME_MAX_CHARS = 32
 APNS_MESH_CONVERSATION = "#mesh"
@@ -88,22 +93,9 @@ APNS_CODE_PUSH_TOPIC = "code-push"
 APNS_PUSH_TOPICS = ("pings", "direct-messages", APNS_CHAT_TOPIC,
                     APNS_CODE_PUSH_TOPIC)
 
-# Topics whose banners replace one another on the phone. A conversation in
-# full flow would otherwise stack one identical banner per message. Pings
-# deliberately do not collapse: every one of them is its own notification.
-#
-# This is also exactly the set whose alert names its topic in the payload, and
-# that is not a coincidence — see alert_payload. A collapse id travels to Apple
-# as a plain header, so for these two topics Apple can already read the
-# category off the request; naming it again inside the payload discloses
-# nothing further, and it is what lets the phone tell a sealed conversation
-# (which nothing on the relay can describe) apart from an inbox notification
-# (which it can).
-APNS_COLLAPSE_TOPICS = ("direct-messages", APNS_CHAT_TOPIC)
-# Topics named in the payload: the two conversations above, plus code pushes,
-# whose banner text already says "Pushed to owner/repo" — naming the topic
-# tells Apple nothing the alert does not.
-APNS_MARKED_TOPICS = APNS_COLLAPSE_TOPICS + (APNS_CODE_PUSH_TOPIC,)
+APNS_CONVERSATION_TOPICS = ("direct-messages", APNS_CHAT_TOPIC)
+APNS_COLLAPSE_TOPICS = (APNS_CHAT_TOPIC,)
+APNS_MARKED_TOPICS = APNS_CONVERSATION_TOPICS + (APNS_CODE_PUSH_TOPIC,)
 
 # How long Apple holds an alert for a phone it cannot reach. Apple keeps only
 # the newest alert per app for an offline device, so a long window costs one
@@ -293,7 +285,28 @@ def apns_host(environment):
             else APNS_HOST_PRODUCTION)
 
 
-def direct_message_alert(sender="", started=False, conversation_id=""):
+def _key_version(value):
+    if isinstance(value, bool):
+        return 0
+    try:
+        value = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return value if 0 < value <= APNS_KEY_VERSION_MAX else 0
+
+
+def _fetch_fields(alert, ref, key_version):
+    ref = str(ref or "").strip().lower()
+    if APNS_REF_RE.fullmatch(ref):
+        alert["ref"] = ref
+    key_version = _key_version(key_version)
+    if key_version:
+        alert["keyVersion"] = key_version
+    return alert
+
+
+def direct_message_alert(sender="", started=False, conversation_id="",
+                         ref="", key_version=0):
     """The banner for a direct message, which the relay cannot read."""
     sender = str(sender or "").strip()
     if started:
@@ -316,10 +329,13 @@ def direct_message_alert(sender="", started=False, conversation_id=""):
     conversation_id = str(conversation_id or "").strip().lower()
     if APNS_DIRECT_ID_RE.fullmatch(conversation_id):
         alert["conversation"] = APNS_DIRECT_CONVERSATION_PREFIX + conversation_id
+        if not started:
+            _fetch_fields(alert, ref, key_version)
     return alert
 
 
-def chat_message_alert(channel_name="", conversation=""):
+def chat_message_alert(channel_name="", conversation="", channel_id="",
+                       ref="", key_version=0):
     """The banner for a channel or room message, which the relay cannot read."""
     channel_name = str(channel_name or "").strip()
     if channel_name and channel_name != APNS_WORLD_CHAT_NAME:
@@ -333,6 +349,10 @@ def chat_message_alert(channel_name="", conversation=""):
     conversation = str(conversation or "").strip()
     if conversation:
         alert["conversation"] = conversation
+    channel_id = str(channel_id or "").strip().lower()
+    if APNS_CHANNEL_ID_RE.fullmatch(channel_id):
+        alert["channelId"] = channel_id
+        _fetch_fields(alert, ref, key_version)
     return alert
 
 
@@ -372,7 +392,9 @@ def alert_payload(alert, topic="", origin=""):
     stay off the screen of the person who just typed it (a public room's
     socket is anonymous, so the relay cannot leave the sender's own phone out
     of the fan-out), and the extension must not go looking for inbox text for
-    a message that is sealed end to end.
+    a message that is sealed end to end. They also carry the relay ref and key
+    version of the stored ciphertext so the extension can fetch and decrypt
+    it on the phone (docs/app/chat-push-previews.md).
     """
     alert = alert if isinstance(alert, dict) else {}
     title = str(alert.get("title") or "").strip()
@@ -397,11 +419,25 @@ def alert_payload(alert, topic="", origin=""):
         if value:
             payload[key] = value
     conversation = str(alert.get("conversation") or "").strip()
-    if (str(topic or "") in APNS_COLLAPSE_TOPICS and conversation
+    sealed = str(topic or "") in APNS_CONVERSATION_TOPICS
+    if (sealed and conversation
             and len(conversation) <= APNS_CONVERSATION_MAX_CHARS
             and conversation.startswith(("#", APNS_DIRECT_CONVERSATION_PREFIX))
             and all(c.isprintable() for c in conversation)):
         payload["conversation"] = conversation
+        if not thread:
+            payload["aps"]["thread-id"] = conversation[:64]
+    if sealed:
+        channel_id = str(alert.get("channelId") or "").strip().lower()
+        if APNS_CHANNEL_ID_RE.fullmatch(channel_id):
+            payload["channelId"] = channel_id
+            payload["aps"].setdefault("thread-id", "channel:" + channel_id)
+        ref = str(alert.get("ref") or "").strip().lower()
+        if APNS_REF_RE.fullmatch(ref):
+            payload["ref"] = ref
+        key_version = _key_version(alert.get("keyVersion"))
+        if key_version:
+            payload["keyVersion"] = key_version
     sender = str(alert.get("sender") or "").strip().lower()
     if sender and len(sender) <= 64 and all(
             c.isascii() and (c.isalnum() or c in "-_.") for c in sender):
@@ -525,8 +561,6 @@ async def send_one(env, fetch_impl, jwt, token, environment, alert,
             int(int(Date.now()) / 1000) + APNS_EXPIRATION_SECONDS),
     }
     if collapse_id:
-        # Several messages in a row collapse into one banner instead of
-        # stacking one per message.
         headers["apns-collapse-id"] = collapse_id[:64]
     try:
         response = await fetch_impl(

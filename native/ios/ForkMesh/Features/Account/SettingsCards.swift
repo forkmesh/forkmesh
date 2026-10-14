@@ -7,6 +7,7 @@ import FMAccount
 import FMAgents
 import FMApi
 import FMBase
+import FMPush
 import SwiftUI
 import Speech
 import UIKit
@@ -739,6 +740,29 @@ struct PushNotificationsCard: View {
                 FmNoticeLine($notice)
                     .padding(.top, FmSpace.x2)
             }
+        }
+    }
+}
+
+struct NotificationContentCard: View {
+    @AppStorage(PushPreviewMode.preferenceKey) private var stored: String = PushPreviewMode.nameAndMessage.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: FmSpace.x2) {
+            Picker("Notification content", selection: Binding<String>(
+                get: { PushPreviewMode.parse(stored).rawValue },
+                set: { (value: String) in
+                    stored = value
+                    PushCredentialStore.setPreview(value)
+                })
+            ) {
+                ForEach(PushPreviewMode.allCases, id: \.rawValue) { (mode: PushPreviewMode) in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.navigationLink)
+            .accessibilityIdentifier("settings-notification-content")
+            SettingsNote(text: "What a chat notification shows. The server never sees the message: this phone fetches the still-encrypted message and opens it itself, as Signal does. Name only shows who wrote; No name or message shows only that something arrived.")
         }
     }
 }

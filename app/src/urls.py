@@ -31,6 +31,8 @@ CHAT_CHANNEL_ROOM_ACCESS_RE = re.compile(
 # over this read-only poll instead.
 CHAT_CHANNEL_HISTORY_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/history/?$")
+CHAT_CHANNEL_PENDING_RE = re.compile(
+    r"^/api/chat/channels/([0-9a-f]{32})/pending/?$")
 CHAT_CHANNEL_WEBHOOKS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/webhooks/?$")
 CHAT_CHANNEL_WEBHOOK_RE = re.compile(
@@ -52,6 +54,8 @@ CHAT_DIRECT_MESSAGE_ROOM_ACCESS_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/room-access/?$")
 CHAT_DIRECT_MESSAGE_READ_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/read/?$")
+CHAT_DIRECT_MESSAGE_PENDING_RE = re.compile(
+    r"^/api/chat/direct-messages/([0-9a-f]{32})/pending/?$")
 CHAT_DIRECT_MESSAGE_WS_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/ws/?$")
 CHAT_READS_RE = re.compile(r"^/api/chat/reads/?$")

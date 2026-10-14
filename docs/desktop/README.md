@@ -1260,6 +1260,189 @@ Details, manual CMake, test targets and known failures:
 
 ## Recent changes
 
+- 2026-10-13: The chat sidebar shows each conversation's last line, and
+  direct-message rows show the other person's picture (branch 1974, round 2).
+  The user asked for "the last line per channel and per message with users"
+  and "their user icon in the chat list", and for threads to keep working
+  after round 1.
+
+  **Last line.** `forkmesh::chatlist::preview` (`ChatListPreview.h`, header
+  only) picks the newest top-level message the window holds in `m_history`
+  for the conversation. Thread replies (except Discord replies, which sit in
+  the transcript), deleted rows and frames with no text or file are skipped.
+  Formatting goes through `chatformat::toPlainText` (or the blocks summary
+  for senders allowed to format), newlines collapse to spaces, and the line
+  is cut at 200 characters before it reaches the item. Channels read
+  "<sender>: <text>", DMs just "<text>", own messages "You: <text>" (the
+  `self` flag, or the sender name equal to `chatDisplayName()`), and a file
+  with no text "📎 <file name>". The text and the message time live in item
+  roles (`ChannelGroupTree::kPreviewRole`, `kPreviewTimeRole`), not in
+  more DisplayRole prefixes. Only text the device already decrypted is used;
+  nothing new is stored or sent.
+
+  `MainWindow::refreshChatListPreview(conversation)` updates the one row in
+  place (and only when the value changed) from `onMessage` (after the insert),
+  `onMessageEdited`, `onMessageDeleted`, the Discord in-place refresh and a
+  failed Office send that removes its echo. A history replay therefore costs
+  one backward scan from the end of the list and one row lookup per message,
+  not a sidebar rebuild. `refreshChannelList` and `refreshDmList` fill the
+  roles when they rebuild, and `loadChatHistory` calls
+  `refreshChatListPreviews()` once after the cache is read.
+
+  **Row layout.** `ChatRoomRowDelegate` (MainWindowIssues.cpp) now draws
+  conversation rows 44 px tall in the Next design (group headers stay
+  32 px; `ChannelGroupTree` no longer sets uniform row heights, and the
+  sidebar's `fitToRows` adds up each row's own height). The name sits on the
+  first line and the last line, 13 px and muted (stronger when unread), on
+  the second; the time ("2:02 PM" today, the weekday this week, then "Oct 3"
+  and "12/24/25", same 12-hour clock as the transcript) sits at the right of
+  the name line, and the unread badge moves to the right of the second line.
+  A row with no message yet keeps the same height with its name centred, so
+  rows stay aligned. The lead slot is 28 px for every room row (the `#`, the
+  lock, or the avatar), so channel and DM names start at the same x. DM rows
+  without unread now reserve the same right margin as channel rows (the gear
+  column), so times and badges line up across both sections. In the Classic
+  design the base style paints the row with its text at the top, the
+  delegate adds the second line inside the item's text rect, and the avatar
+  goes in as the item's decoration (with `decorationSize` set explicitly,
+  because the view's default caps decorations at 16 px).
+
+  **DM avatars.** `MainWindow::chatListAvatar` builds a 28 px round picture
+  from `chatSenderAvatarSource` (the peer id for mesh DMs, `user:<name>` for
+  Office DMs), falling back to `MessageRow::initialsAvatar`. The presence dot
+  is baked into its bottom-right corner: green online, amber away, a hollow
+  ring offline. The ring around the dot is punched out with
+  `CompositionMode_Source` and a transparent brush, so it shows whatever row
+  colour is behind it (hover, selected or rail) instead of a guessed one.
+  The pictures are cached in `m_chatMemberAvatarCache` under a `dm|` key that
+  includes the source pixmap's cache key, the pixel ratio and the presence,
+  so a status or picture change makes a new entry and the cache is not
+  invalidated by hand. `refreshVisibleRowAvatars` (called when a picture
+  arrives) now also rebuilds the DM list.
+
+  **Threads after round 1.** Checked that replies still work in channels and
+  in Office DMs: the root's reply summary, opening the thread pane, a reply
+  arriving while the pane is open, and a reply deleted for everyone leaving
+  the pane and the count. Mesh `@peer` DMs still have no threads (their `dm`
+  frames have no `thread-reply` form).
+
+  Tests: `testChatListPreview` in `test_chat_transport.cpp` (sender prefix,
+  You:, formatting and newlines, skipped replies/deleted/empty frames, the
+  paperclip line, Discord replies, the length cap and the time label), and
+  an added check in `testOfficeDirectMessageRoundTrip` that the relay's echo
+  of an own Office DM reply does not show it twice. Window test
+  `checkChatListPreviewsAndDmThreads` (run with `--chat-unread-only`) checks
+  the preview through send, thread reply, edit and delete, row heights, the
+  DM avatar (initials, then a profile picture cut round), and an Office DM
+  thread (summary count, pane, delete, a live reply).
+  `FORKMESH_CHAT_LIST_SHOT=<prefix>` saves the sidebar in both designs and
+  both themes.
+  `--chat-unread-only` now also runs `checkReplayedBacklogRepaintsOnce`
+  (the channel thread check) after the new check. Run straight after
+  `checkChatUnreadSurface` it fails its splitter-geometry assertion, on
+  round 1 as well as here: the thread pane's geometry is read before the
+  splitter has applied its sizes (split 740 px wide, sizes 200/269/269, pane
+  still at its old 360 px). After the new check, which resizes and shows the
+  window first, it passes. The failure message now prints the splitter's
+  width, sizes and minimums.
+- 2026-10-13: Receipt marks, delete for everyone, edits, reactions and
+  replies in Office conversations (branch 1974). The user asked for
+  Signal-style ticks on every chat message, "delete for everyone" for what
+  you sent, and replies and reactions in direct messages. The shared design
+  is in [../app/chat-private-rooms.md](../app/chat-private-rooms.md).
+
+  **Receipt marks.** Every own message row in a mesh `#channel`, an Office
+  channel or an Office DM (`#office/@user`) shows a mark next to the time and
+  the "to N" label (`MessageRow::setReceiptMark`, object name
+  `messageReceipt`). `MessageRow::receiptMarkPixmap` paints it with QPainter
+  at the screen's pixel ratio, 17 x 11 px, from the shared 22 x 14 geometry:
+  a dotted ring at 70% (Sending), one ring with a tick (Sent), a second ring
+  behind it (Delivered), and both rings filled in the accent blue with the
+  ticks cut out (Read). The cut-out uses `CompositionMode_Clear`, so it shows
+  whatever is behind the row, not a guessed background colour. Tooltip and
+  accessible name are "Sending", "Sent", "Delivered", "Read".
+  `MainWindow::chatReceiptMark` decides which rows get a mark: none for
+  Discord, the local mesh, mesh `@peer` DMs (their `dm` frames get no relay
+  ack, so they would never leave Sending), the device-local `#team` room and
+  teammate rows. The state is `forkmesh::recipients::receiptMark`
+  (`ChatRecipients.h`): Read and Delivered come from `ChatMessage::receipt`,
+  Sent from a known recipient count, and everything else is Sending. A row
+  loaded from the chat cache counts as Sent even without a count
+  (`historical` is set on load): a send that failed is removed from the
+  history (`messageSendFailed`), so a saved own row is one that was handed to
+  the relay. The cost is that a message cut off by a crash mid-send also reads
+  Sent after the restart. The cache saves `receipt` as `delivered` or `read`.
+  DMs drop the "to 1" label (`showsRecipientCount`), because a DM's count is
+  always 1 and says nothing; channels keep it.
+
+  Where the states come from:
+  - `ServerNode` keeps a bounded message-id/ref map (`m_sentRefs`,
+    `m_sentRefIds`, 256 entries) for its own sends, re-seal resends and own
+    frames the relay replays (sent from another device of mine, or retained
+    history). `m_recipientRefs` could not be reused: an entry leaves it as
+    soon as the recipients ack arrives, and a delivered frame comes later.
+  - `forkmesh-delivered` (direct rooms only) maps its refs to ids
+    (`messagesDelivered`); `forkmesh-read` emits `conversationRead`.
+    `OfficeChannelMirror` re-emits both with the conversation, the same way
+    as `messageRecipientsKnown`. A DM the local mesh handed to one of the other
+    person's devices (`room.meshDelivered`) is Delivered at once.
+  - `MainWindow::applyMessagesDelivered` raises named own messages to
+    Delivered; `applyConversationRead` marks every own message of the DM
+    that is already Sent or Delivered as Read, and leaves Sending ones alone.
+  - Channels stop at Sent: the relay sends delivered and read frames only in
+    direct rooms.
+
+  **Edit, delete for everyone, reactions and replies in Office rooms.**
+  `chatMessageFromPlain` used to accept only `chat`, and the window refused
+  edit, delete, reactions and "Reply in thread" for every `#office/`
+  conversation. Now:
+  - `OfficeChannelMirror::sendThreadReply`, `sendReaction`, `editMessage` and
+    `deleteMessage` queue the frame with the room's pending sends (`kind` on
+    `PendingText`) and flush it through the room's `ServerNode`
+    (`sendThreadReplyWithId`, `sendRoomReaction`, `sendRoomEdit`,
+    `sendRoomDelete`), sealed like any DM frame, with the frame shapes the
+    web uses. A reply shows at once as an echo, like a message. A reaction,
+    edit or delete is applied locally at once. An edit or delete of a message
+    still waiting in the queue rewrites or drops the queued copy instead.
+    Queued mutations survive a failed connection (they are not reported as
+    failed sends, which would restore their text into the composer).
+  - `ServerNode::sendRoomDelete` also sends
+    `{"kind":"forkmesh-superseded","v":1,"refs":[ref]}` for the original
+    frame when it knows the ref, so the relay drops the stored ciphertext if
+    the other person has not received it yet. It drops the message from the
+    re-seal outbox, so a later key change cannot resend it. The delete frame
+    itself stays on the relay until the other device receives it.
+  - Incoming `reaction`, `edit` and `delete` frames reach the mirror through
+    `ServerNode::roomMutationArrived` (live socket) or the channel history
+    (`applyHistory`, which applies mutations after every message in the batch,
+    the same way the web's `handleHistory` does). `roomMutationFromPlain`
+    checks the fields and refuses a reaction whose `reactorId` is not its
+    sender. The mirror passes on each mutation once (by frame id), with its
+    author.
+  - The author check is in the window (`applyOfficeEdit`,
+    `applyOfficeDelete`): the frame's `senderId` must equal the stored
+    message's. It cannot stay in `ServerNode`: its author index only knows
+    messages from the current session, and a DM row the other person sent
+    before a restart is gone from the relay once it was received. A mutation
+    whose target is not there yet waits in `m_pendingOfficeMutations` (200
+    targets) and is applied when the message arrives
+    (`replayPendingOfficeMutations` in `onMessage`).
+  - A delete tombstones the row (`deleted`, text and file cleared) in
+    `m_history`. The tombstone is saved in the chat cache, so its id stays in
+    `m_historyIds` and a replay cannot bring the message back.
+  - Own mutations sent from another of my devices are not applied yet:
+    `ServerNode::processFrame` still stops at own frames, except to remember
+    their refs.
+
+  Tests: `testReceiptMarkStates`, `testDirectReceiptsAndRoomMutations`,
+  `testOfficeRoomMutationFrames` and `testOfficeDirectMessageRoundTrip` in
+  `test_chat_transport.cpp` (the last runs a mirror against a loopback relay
+  and room socket: echo, sent, delivered, read, reply, reaction, edit,
+  delete and superseded out, and the other person's reply, reaction, edit
+  and delete in). `WebSocketHarness::blackholeFirst` lets a test accept the
+  first connection. Window test `checkChatReceiptMark` (also under
+  `--recipient-label-only`) checks the four marks, their names, the pixel
+  size and the to-N label beside the mark.
 - 2026-10-09: Every shortcut shows how long its last run took, and a running
   one shows a progress bar estimated from that time. The user asked for both
   on all shortcuts. The table view has a **Took** column (the last measured

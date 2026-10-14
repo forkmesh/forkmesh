@@ -182,6 +182,13 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     fun rootOfReply(id: String): String? = synchronized(lock) { replyRoot[id] }
 
+    fun replyAuthorOf(id: String): String? = replyAuthor(id).second
+
+    fun hasReacted(messageId: String, value: String): Boolean {
+        val me = selfId
+        return me.isNotEmpty() && synchronized(lock) { reactionState[messageId]?.get(value)?.containsKey(me) == true }
+    }
+
     fun text(message: ChatMessage): String = synchronized(lock) { editedText[message.id] ?: message.text }
 
     fun isEdited(id: String): Boolean = synchronized(lock) { editedText.containsKey(id) }
@@ -244,7 +251,8 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val rootId = jsonText(frame["rootId"]).trim().take(ChatLimits.MAX_ROOT_ID_CHARS)
         val channel = jsonText(frame["channel"])
         val id = jsonText(frame["id"])
-        if (rootId.isEmpty() || id.isEmpty() || !channel.startsWith("#") || channel in hiddenSet) return
+        if (rootId.isEmpty() || id.isEmpty() || channel in hiddenSet) return
+        if (!channel.startsWith("#") && !DirectMessageFrames.isDirect(channel)) return
         if (replyRoot.containsKey(id)) return
         val ts = frame["ts"]
         val millis = if (ts is Number) ts.toLong() else now()

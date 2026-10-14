@@ -122,7 +122,16 @@ dropped with the Flutter iOS app.
   signs with `ForkMesh-Release.entitlements` (`aps-environment` production),
   Debug with `ForkMesh-Debug.entitlements` (development).
 - The app and `NotificationService` list the same keychain access group, or the
-  extension cannot read the session token the app leaves for it.
+  extension cannot read the session token the app leaves for it. Since
+  2026-10-13 the extension also reads the chat device key
+  (`chat/e2ee/x25519PrivateV2`, service `com.forkmesh.forkmesh.secure`) to
+  open chat pushes, so the app's own keychain items must keep landing in that
+  shared group (they are written without an explicit group, which picks the
+  first `keychain-access-groups` entry).
+- `NotificationService` links the `ForkMeshPushCore` product (FMBase, FMCrypto,
+  FMPush), linked by `tools/generate_project.rb`;
+  `StoreConfigTests.testTheNotificationExtensionLinksOnlyThePushCore` checks
+  the project, the generator and `Package.swift` agree.
 - `APNS_BUNDLE_ID` in `app/src/apns.py` is the app's bundle id. The server sends
   it as `apns-topic` for tokens registered without a known bundle id, and the
   native app registers with `Bundle.main.bundleIdentifier`.
@@ -140,8 +149,8 @@ dropped with the Flutter iOS app.
   project would be a membership exception that leaves one out.
 - Each manifest declares every required-reason API category that its bundle's
   Swift sources use: the app bundle is `ForkMesh`, `Shared`, `SharedSurfaces`
-  and `ForkMeshCore/Sources`, and the extension bundle is `NotificationService`
-  and `Shared`. Each category is found by a short list of API names. The
+  and `ForkMeshCore/Sources`, and the extension bundle is `NotificationService`,
+  `Shared` and the FMPush, FMCrypto and FMBase sources it links. Each category is found by a short list of API names. The
   test's first run found DiskSpace undeclared: `LocalModelStore.availableCapacity`
   reads free space to refuse a model download that would not fit (`E174.1`)
   and shows it in Local AI settings (`85F4.1`). SystemBootTime (`35F9.1`) is

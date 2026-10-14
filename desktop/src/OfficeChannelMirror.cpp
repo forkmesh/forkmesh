@@ -307,7 +307,12 @@ bool chatMessageFromPlain(const QJsonObject &plain, const QString &conversation,
 {
     if (!out || conversation.isEmpty())
         return false;
-    if (plain.value(QStringLiteral("type")).toString() != QLatin1String("chat"))
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    if (type != QLatin1String("chat") && type != QLatin1String("thread-reply"))
+        return false;
+    const QString rootId =
+        plain.value(QStringLiteral("rootId")).toString().trimmed().left(96);
+    if (type == QLatin1String("thread-reply") && rootId.isEmpty())
         return false;
     const QString id = plain.value(QStringLiteral("id")).toString();
     if (id.isEmpty() || id.size() > 64)
@@ -320,6 +325,8 @@ bool chatMessageFromPlain(const QJsonObject &plain, const QString &conversation,
     ChatMessage message;
     message.id = id;
     message.conversation = conversation;
+    if (type == QLatin1String("thread-reply"))
+        message.threadRootId = rootId;
     message.senderId =
         plain.value(QStringLiteral("senderId")).toString().left(64);
     message.senderName = boundedText(plain, "sender", kMaxDisplayNameChars);
@@ -347,6 +354,54 @@ bool chatMessageFromPlain(const QJsonObject &plain, const QString &conversation,
     if (message.text.isEmpty() && !message.hasFile())
         return false;
     *out = message;
+    return true;
+}
+
+bool roomMutationFromPlain(const QJsonObject &plain, RoomMutation *out)
+{
+    if (!out)
+        return false;
+    RoomMutation mutation;
+    mutation.type = plain.value(QStringLiteral("type")).toString();
+    if (mutation.type != QLatin1String("reaction") &&
+        mutation.type != QLatin1String("edit") &&
+        mutation.type != QLatin1String("delete"))
+        return false;
+    mutation.id = plain.value(QStringLiteral("id")).toString();
+    mutation.target = plain.value(QStringLiteral("target")).toString();
+    mutation.senderId =
+        plain.value(QStringLiteral("senderId")).toString().left(64);
+    if (mutation.id.isEmpty() || mutation.id.size() > 96 ||
+        mutation.target.isEmpty() || mutation.target.size() > 96 ||
+        mutation.senderId.isEmpty())
+        return false;
+    if (mutation.type == QLatin1String("reaction")) {
+        mutation.emoji = plain.value(QStringLiteral("emoji")).toString();
+        const QJsonValue added = plain.value(QStringLiteral("added"));
+        if (mutation.emoji.trimmed().isEmpty() || mutation.emoji.size() > 32 ||
+            !added.isBool())
+            return false;
+        mutation.added = added.toBool();
+        const QString reactorId =
+            plain.value(QStringLiteral("reactorId")).toString().left(64);
+        if (!reactorId.isEmpty() && reactorId != mutation.senderId)
+            return false;
+        mutation.reactorName =
+            boundedText(plain, "reactorName", kMaxDisplayNameChars).trimmed();
+        if (mutation.reactorName.isEmpty())
+            mutation.reactorName =
+                boundedText(plain, "sender", kMaxDisplayNameChars).trimmed();
+        if (mutation.reactorName.isEmpty())
+            return false;
+    } else if (mutation.type == QLatin1String("edit")) {
+        if (plain.value(QStringLiteral("text")).toString().size() > kMaxTextChars)
+            return false;
+        mutation.text = ServerNode::moderatedChatText(
+            forkmesh::chatformat::bodySource(plain, kMaxTextChars));
+        if (mutation.text.trimmed().isEmpty())
+            return false;
+    }
+    *out = mutation;
     return true;
 }
 
@@ -1098,6 +1153,7 @@ bool OfficeChannelMirror::sendMessage(const QString &conversation,
                                                    echo.text, room.deviceKeys);
             if (reached > 0) {
                 room.meshDelivered.insert(messageId);
+                emit messagesDelivered(room.conversation, {messageId});
                 emit sendActivity(
                     QStringLiteral("Office chat: delivered a message for %1 to "
                                    "%2 device(s) over the local mesh.")
@@ -1202,6 +1258,156 @@ bool OfficeChannelMirror::sendBotMessage(const QString &conversation,
         return true;
     }
     return false;
+}
+
+OfficeChannelMirror::Room *OfficeChannelMirror::findRoom(
+    const QString &conversation)
+{
+    for (auto it = m_rooms.begin(); it != m_rooms.end(); ++it)
+        if (it->conversation == conversation)
+            return &it.value();
+    return nullptr;
+}
+
+bool OfficeChannelMirror::queueMutation(const QString &conversation,
+                                        const PendingText &pending)
+{
+    if (!canSend(conversation))
+        return false;
+    Room *room = findRoom(conversation);
+    if (!room || !reservePendingSlot(*room))
+        return false;
+    room->pendingTexts.enqueue(pending);
+    if (room->sender && room->senderConnected)
+        flushPending(*room);
+    else if (!room->sender && !room->accessFetching)
+        fetchRoomAccess(room->id);
+    return true;
+}
+
+bool OfficeChannelMirror::sendThreadReply(const QString &conversation,
+                                          const QString &rootId,
+                                          const QString &text)
+{
+    const QString message = text.trimmed().left(kMaxTextChars);
+    const QString root = rootId.trimmed().left(96);
+    if (message.isEmpty() || root.isEmpty() || !canSend(conversation))
+        return false;
+    Room *room = findRoom(conversation);
+    if (!room || !reservePendingSlot(*room))
+        return false;
+    PendingText pending;
+    pending.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    pending.text = message;
+    pending.kind = QStringLiteral("reply");
+    pending.rootId = root;
+    room->pendingTexts.enqueue(pending);
+    rememberSeen(*room, pending.id);
+    ChatMessage echo;
+    echo.id = pending.id;
+    echo.conversation = room->conversation;
+    echo.threadRootId = root;
+    echo.senderId = m_selfId;
+    echo.senderName = m_displayName.isEmpty() ? m_account : m_displayName;
+    echo.text = ServerNode::moderatedChatText(message);
+    echo.timestampMs = QDateTime::currentMSecsSinceEpoch();
+    echo.self = true;
+    const QString roomId = room->id;
+    emit messageArrived(echo);
+    if (!m_rooms.contains(roomId))
+        return true;
+    Room &live = m_rooms[roomId];
+    if (live.sender && live.senderConnected)
+        flushPending(live);
+    else if (!live.sender && !live.accessFetching)
+        fetchRoomAccess(roomId);
+    return true;
+}
+
+bool OfficeChannelMirror::sendReaction(const QString &conversation,
+                                       const QString &messageId,
+                                       const QString &emoji, bool added)
+{
+    const QString target = messageId.trimmed();
+    if (target.isEmpty() || target.size() > 96 || emoji.trimmed().isEmpty() ||
+        emoji.size() > 32)
+        return false;
+    PendingText pending;
+    pending.kind = QStringLiteral("reaction");
+    pending.target = target;
+    pending.emoji = emoji;
+    pending.added = added;
+    if (!queueMutation(conversation, pending))
+        return false;
+    emit reactionChanged(conversation, target, emoji,
+                         m_displayName.isEmpty() ? m_account : m_displayName,
+                         added);
+    return true;
+}
+
+bool OfficeChannelMirror::editMessage(const QString &conversation,
+                                      const QString &messageId,
+                                      const QString &text)
+{
+    const QString target = messageId.trimmed();
+    const QString edited =
+        ServerNode::moderatedChatText(text.trimmed().left(kMaxTextChars));
+    if (target.isEmpty() || target.size() > 96 || edited.trimmed().isEmpty())
+        return false;
+    Room *room = canSend(conversation) ? findRoom(conversation) : nullptr;
+    if (!room)
+        return false;
+    bool queued = false;
+    for (PendingText &pending : room->pendingTexts) {
+        if (pending.id == target && pending.fileData.isEmpty() &&
+            (pending.kind.isEmpty() || pending.kind == QLatin1String("reply")) &&
+            !room->meshDelivered.contains(target)) {
+            pending.text = edited;
+            queued = true;
+        }
+    }
+    if (!queued) {
+        PendingText pending;
+        pending.kind = QStringLiteral("edit");
+        pending.target = target;
+        pending.text = edited;
+        if (!queueMutation(conversation, pending))
+            return false;
+    }
+    emit messageEdited(conversation, target, m_selfId, edited);
+    return true;
+}
+
+bool OfficeChannelMirror::deleteMessage(const QString &conversation,
+                                        const QString &messageId)
+{
+    const QString target = messageId.trimmed();
+    if (target.isEmpty() || target.size() > 96)
+        return false;
+    Room *room = canSend(conversation) ? findRoom(conversation) : nullptr;
+    if (!room)
+        return false;
+    bool unsent = false;
+    if (!room->meshDelivered.contains(target)) {
+        for (qsizetype i = room->pendingTexts.size() - 1; i >= 0; --i) {
+            const PendingText &pending = room->pendingTexts.at(i);
+            if (pending.id == target &&
+                (pending.kind.isEmpty() ||
+                 pending.kind == QLatin1String("reply"))) {
+                room->pendingTexts.removeAt(i);
+                unsent = true;
+            }
+        }
+    }
+    if (!unsent) {
+        PendingText pending;
+        pending.kind = QStringLiteral("delete");
+        pending.target = target;
+        if (!queueMutation(conversation, pending))
+            return false;
+    }
+    emit messageDeleted(conversation, target, m_selfId);
+    return true;
 }
 
 bool OfficeChannelMirror::setTopic(const QString &conversation,
@@ -2031,6 +2237,30 @@ void OfficeChannelMirror::openSender(const QString &channelId,
                 emit messageRecipientsKnown(m_rooms[channelId].conversation,
                                             messageId, recipients, names);
             });
+    connect(sender, &ServerNode::roomMutationArrived, this,
+            [this, channelId, sender](const QJsonObject &plain) {
+                if (!m_rooms.contains(channelId) ||
+                    m_rooms[channelId].sender != sender)
+                    return;
+                applyMutation(m_rooms[channelId], plain);
+            });
+    if (room.direct) {
+        connect(sender, &ServerNode::messagesDelivered, this,
+                [this, channelId, sender](const QStringList &messageIds) {
+                    if (!m_rooms.contains(channelId) ||
+                        m_rooms[channelId].sender != sender)
+                        return;
+                    emit messagesDelivered(m_rooms[channelId].conversation,
+                                           messageIds);
+                });
+        connect(sender, &ServerNode::conversationRead, this,
+                [this, channelId, sender] {
+                    if (!m_rooms.contains(channelId) ||
+                        m_rooms[channelId].sender != sender)
+                        return;
+                    emit conversationRead(m_rooms[channelId].conversation);
+                });
+    }
     if (room.direct) {
         rememberDeviceKeys(room, sender->roomSealPeerKeyIds());
         connect(sender, &ServerNode::roomSealPeersChanged, this,
@@ -2111,7 +2341,18 @@ void OfficeChannelMirror::flushPending(Room &room)
     while (!room.pendingTexts.isEmpty()) {
         const PendingText pending = room.pendingTexts.dequeue();
         room.meshDelivered.remove(pending.id);
-        if (pending.fileData.isEmpty())
+        if (pending.kind == QLatin1String("reply"))
+            room.sender->sendThreadReplyWithId(wireChannel(room), pending.rootId,
+                                               pending.text, pending.id);
+        else if (pending.kind == QLatin1String("reaction"))
+            room.sender->sendRoomReaction(wireChannel(room), pending.target,
+                                          pending.emoji, pending.added);
+        else if (pending.kind == QLatin1String("edit"))
+            room.sender->sendRoomEdit(wireChannel(room), pending.target,
+                                      pending.text);
+        else if (pending.kind == QLatin1String("delete"))
+            room.sender->sendRoomDelete(wireChannel(room), pending.target);
+        else if (pending.fileData.isEmpty())
             room.sender->sendChatWithId(wireChannel(room), pending.text, pending.id);
         else
             room.sender->sendFileWithId(wireChannel(room), pending.fileName,
@@ -2133,7 +2374,10 @@ void OfficeChannelMirror::failPending(Room &room, const QString &reason)
     int failed = 0;
     while (!room.pendingTexts.isEmpty()) {
         const PendingText pending = room.pendingTexts.dequeue();
-        if (room.meshDelivered.contains(pending.id)) {
+        if (room.meshDelivered.contains(pending.id) ||
+            pending.kind == QLatin1String("reaction") ||
+            pending.kind == QLatin1String("edit") ||
+            pending.kind == QLatin1String("delete")) {
             kept.enqueue(pending);
             continue;
         }
@@ -2237,6 +2481,7 @@ void OfficeChannelMirror::applyHistory(Room &room, const QJsonObject &payload)
 
     const QJsonArray messages =
         payload.value(QStringLiteral("messages")).toArray();
+    QList<QJsonObject> mutations;
     for (const QJsonValue &value : messages) {
         const QJsonObject entry = value.toObject();
         const qint64 ts = qint64(entry.value(QStringLiteral("ts")).toDouble());
@@ -2261,6 +2506,12 @@ void OfficeChannelMirror::applyHistory(Room &room, const QJsonObject &payload)
             // same fail-closed policy as the live socket for private rooms.
             continue;
         }
+        const QString type = plain.value(QStringLiteral("type")).toString();
+        if (type == QLatin1String("reaction") || type == QLatin1String("edit") ||
+            type == QLatin1String("delete")) {
+            mutations.append(plain);
+            continue;
+        }
         ChatMessage message;
         if (!forkmesh::office::chatMessageFromPlain(plain, room.conversation,
                                                     m_selfId, &message))
@@ -2279,4 +2530,28 @@ void OfficeChannelMirror::applyHistory(Room &room, const QJsonObject &payload)
         rememberSeen(room, message.id);
         emit messageArrived(message);
     }
+    const QString roomId = room.id;
+    for (const QJsonObject &plain : std::as_const(mutations)) {
+        if (!m_rooms.contains(roomId))
+            return;
+        applyMutation(m_rooms[roomId], plain);
+    }
+}
+
+void OfficeChannelMirror::applyMutation(Room &room, const QJsonObject &plain)
+{
+    forkmesh::office::RoomMutation mutation;
+    if (!forkmesh::office::roomMutationFromPlain(plain, &mutation) ||
+        room.seenIds.contains(mutation.id))
+        return;
+    rememberSeen(room, mutation.id);
+    if (mutation.type == QLatin1String("reaction"))
+        emit reactionChanged(room.conversation, mutation.target, mutation.emoji,
+                             mutation.reactorName, mutation.added);
+    else if (mutation.type == QLatin1String("edit"))
+        emit messageEdited(room.conversation, mutation.target,
+                           mutation.senderId, mutation.text);
+    else
+        emit messageDeleted(room.conversation, mutation.target,
+                            mutation.senderId);
 }

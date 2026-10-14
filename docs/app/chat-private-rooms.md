@@ -327,7 +327,8 @@ even while the other person is offline, so it said nothing):
   frame it opens. It turns the two frames into `onDelivered(ids, room)` and
   `onRead(room)`, and only for direct rooms.
 - `chat.js`: `directReceiptState`, `directReceiptIcon`, `paintDirectReceipt`,
-  `applyDirectDelivered` and `applyDirectRead`. `buildRow` puts the mark
+  `applyDirectDelivered` and `applyDirectRead` (renamed and widened on
+  2026-10-13, see the next section). `buildRow` puts the mark
   where the recipient label was. The `.chat-receipt` styles are in `chat.css`.
 - A hidden tab, or a frame for a conversation that is not the open one, no
   longer posts `/read`. The read is deferred (`directReadDeferred`) until the
@@ -344,7 +345,8 @@ even while the other person is offline, so it said nothing):
   delivery or read that happens with no socket open is not replayed.
 - Desktop, iOS, Android and the Office chat still show their earlier labels.
   To add ticks there, handle the same two frames in `ServerNode`, the native
-  `DirectMessageService` and `office/public/features/chat.js`.
+  `DirectMessageService` and `office/public/features/chat.js`. (Done on
+  2026-10-13, see the next section.)
 
 Tests: `app/tests/test_chat_recipient_count.py`
 (`test_receiving_a_direct_message_tells_the_sender_it_was_delivered`,
@@ -353,6 +355,222 @@ Tests: `app/tests/test_chat_recipient_count.py`
 `app/tests/test_chat_direct_messages_api.py`
 (`test_reading_announces_to_the_sender_only_when_the_cursor_moves`) and
 `app/tests/test_chat_direct_receipts_frontend.py`.
+
+## Delivery ticks on every own message, all clients (2026-10-13)
+
+Asked: "add these symbols for each chat message", with two references:
+Signal's rings (sent: one ring with a tick; delivered: two overlapping rings
+with ticks; read: two filled rings with the ticks cut out) and a tick row
+(sending: dotted; sent: tick; delivered: double tick; read: blue double
+tick). One design combines both, and every client draws the same shape.
+
+| State | Mark | Set when |
+| --- | --- | --- |
+| Sending | One ring drawn dotted, no tick, muted at 70% opacity | The message is on screen and the relay has not acknowledged it |
+| Sent | One outlined ring with a tick inside | `forkmesh-recipients` arrived for its ref, or it arrived as a relayed or replayed frame (your other device, or history) |
+| Delivered | Two overlapping outlined rings, each with a tick; the back ring sits left, partly behind the front one | `forkmesh-delivered` named its ref (direct messages only) |
+| Read | The same two rings filled with the accent blue, ticks cut out in the background colour | `forkmesh-read` arrived after it was sent (direct messages only) |
+
+Accessible name and tooltip: "Sending", "Sent", "Delivered", "Read". A client
+that already had a failure state keeps it.
+
+### Geometry
+
+A 22 x 14 box, stroke width 1.4, round caps and joins, drawn about 17 x 11 px
+next to the time:
+
+- Front ring: centre (14, 7), radius 5.2.
+- Back ring: centre (8.5, 7), radius 5.2, drawn only outside the front ring.
+  On the web that is the arc `M11.25 2.59A5.2 5.2 0 1 0 11.25 11.41`, from one
+  crossing of the two circles to the other.
+- Front tick: (11.7, 7.2) to (13.4, 8.9) to (16.4, 5.6).
+- Back tick: (6.2, 7.2) to (7.9, 8.9) to (9.3, 7.4). The last stretch runs
+  under the front ring, so the web stops it where it meets the front circle
+  (8.87, 7.86).
+- Read: the front disc is filled (fill and stroke, so its edge matches the
+  outlined ring). The back disc is filled only outside the front disc, with a
+  0.9 gap in the background colour between them, so they read as two
+  (`M10.21 1.35A5.9 5.9 0 1 0 10.21 12.65A6.8 6.8 0 0 1 10.21 1.35Z`). Both
+  ticks are stroked in the background colour; the back tick is cut where the
+  gap starts (7.33, 8.33).
+- Colours: sending, sent and delivered use the client's muted text colour;
+  read uses the accent blue (web `--accent`: `#58a6ff` dark, `#0969da`
+  light; Office `--brand`; desktop and phones their own accent blue).
+
+### Scope
+
+Every own message shows the mark: chat rows and thread replies, in direct
+messages, private rooms and public or Office channels. Direct messages go
+through all four states. Channels reach only sending and sent: the relay
+sends `forkmesh-delivered` and `forkmesh-read` only in direct rooms, because
+honest per-member delivery in a room with many readers would need server work
+that is not in this change. Channels keep their "to N" label next to the
+mark; direct messages show the mark instead of "to 1", as before.
+
+### Clients
+
+| Client | Where |
+| --- | --- |
+| Web `/chat` (and the World office embed) | `chat.js`: `receiptState`, `receiptIcon`, `paintReceipt`, `makeReceipt`, `updateReceipt`, `applyReceiptSent`, `applyDirectDelivered`, `applyDirectRead`. `buildRow` adds the mark to every own row (after "to N" in channels); `threadMessageHeader` adds it to own thread replies and the thread root. Records that came from the relay carry `relayed` (set in `renderChatEntry` / `renderThreadEntry`), which counts as sent. World #general has no relay ack, so a send that the socket accepted marks it sent (`send`). Thread replies keep `receipt` in the thread store (`portableMessageRecord`). Styles: `.chat-receipt` in `chat.css` |
+| Office | `office/public/features/chat/core.js` (`receiptState`, `receiptShapes`, `RECEIPT_LABELS`) and `features/chat.js` (`receiptNode`, `onRecipients`, `advance` for `onDelivered` / `onRead`, `isDirectRoom` passed to the transport). A sent message is shown at once as "Sending" and removed again, with its text put back in the composer, when the transport refuses it. Relay recipient counts are kept on the message (`recipients`); Office never showed "to N" and still does not, to stay inside its bundle budget. Styles: `.rc` in `features/chat.css` |
+| Desktop | `desktop/**` ([docs/desktop](../desktop/README.md)) |
+| iOS | `native/ios/**` ([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)) |
+| Android | `native/android/**` ([native/ANDROID.md](../native/ANDROID.md)) |
+
+Tests: `app/tests/test_chat_direct_receipts_frontend.py` (states, shapes,
+channels stop at sent, thread replies, supersede),
+`app/tests/test_chat_recipient_count_frontend.py` (count beside the mark),
+`office/tests/chat.test.mjs`.
+
+## Delete for everyone, replies and reactions in direct messages (2026-10-13)
+
+Asked: "make it so that you can delete for everyone something you sent" and
+"also have it so you can reply and react to chats from others in p2p" (p2p
+meaning direct messages between two people).
+
+### Frames
+
+Direct messages use the frames relay rooms and web channels already use, sealed
+like any other DM frame (the same RoomSeal path as `chat`):
+
+| Frame | Shape | Relay flags |
+| --- | --- | --- |
+| Reply | `{type:"thread-reply", id, senderId, sender, ts, rootId, channel:"direct:<id>", text, richText?}` | persist and notify, like `chat` |
+| Reaction | `{type:"reaction", id, senderId, sender, ts, conversation:"direct:<id>", target, emoji, reactorId, reactorName, added}` | persist |
+| Edit | `{type:"edit", id, senderId, sender, ts, conversation:"direct:<id>", target, text, richText?, editedAt}` | persist |
+| Delete | `{type:"delete", id, senderId, sender, ts, conversation:"direct:<id>", target}` | persist |
+
+### Rules
+
+- Reply and react work on any message in a direct message, yours or the other
+  person's. Edit and "Delete for everyone" only on your own. "Delete for me"
+  stays where a client already has it.
+- A receiver applies an edit or delete only when the frame's `senderId` equals
+  the target message's `senderId`.
+- A delete removes the message and its reactions from the transcript and from
+  any saved local history, so it does not come back after a restart or a
+  history replay. Mutations replayed ahead of their target are applied after
+  the replay (web `handleHistory` registers every `chat` and `thread-reply`
+  first).
+
+### Withdrawing the server copy
+
+Like Signal, the sender also withdraws the copy the relay still holds. After
+sending `delete`, the client sends
+`{"kind":"forkmesh-superseded","v":1,"refs":["<ref of the original frame>"]}`
+when it knows that ref. `chat_direct_superseded` then deletes the stored
+ciphertext, but only rows the same account sent and only if the recipient has
+not received them yet (received rows are already gone). The delete frame
+itself stays on the relay until the other person's device receives it, so an
+offline recipient still gets it.
+
+The ref is known for your own sends and for your own frames replayed to this
+device. Web `chat-room-transport.js` already keeps `recipientRefs` (ref to
+message id, 256 entries) for its sends, re-seal resends and every frame it
+opens in a direct room. `refsFor(ids)` looks the refs up by message id, also
+checking the re-seal outbox, and `supersede(ids)` sends the frame (in batches
+of 64 refs, direct rooms only) and drops those messages from the outbox so a
+later re-seal cannot resend a deleted message. `confirmMessageDelete` in
+`chat.js` and `sendMutation` in Office call it once the delete frame is sent.
+
+### Web and Office today
+
+Web `/chat` direct messages already had reply in thread, reactions, edit and
+delete on the right messages (`buildRow`, `buildThreadReply`), the author
+check in `handlePlain`, and replay ordering in `handleHistory`; the only
+change is the server-copy withdrawal. The web keeps no local message history,
+so there is nothing else to delete. Office has edit and delete only (no
+threads or reactions); it now withdraws the server copy of a deleted direct
+message too.
+
+Desktop, iOS and Android: see their own pages
+([docs/desktop](../desktop/README.md), [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md),
+[native/ANDROID.md](../native/ANDROID.md)). On iOS a received delete also
+removes the delivered notification for that message
+([chat-push-previews.md](chat-push-previews.md)).
+
+Tests: `app/tests/test_chat_direct_receipts_frontend.py`
+(`test_delete_for_everyone_withdraws_the_server_copy`,
+`test_supersede_is_a_no_op_outside_direct_messages`),
+`app/tests/test_chat_recipient_count.py`
+(`test_sender_can_supersede_only_its_own_stored_copies`),
+`office/tests/chat.test.mjs`.
+
+## Last line and pictures in the conversation list (2026-10-13)
+
+Asked: "Make sure threads still work too also in the chat list show the last
+line per channel and per message with users also show their user icon in the
+chat list".
+
+### What a row shows
+
+- A second, muted, single line under the name with the newest top-level
+  message this device has decrypted for that conversation: the text in a
+  direct message, "You: text" for your own (also when sent from another of
+  your devices), "Name: text" in channels. A file with no text shows
+  "📎 name". Markdown is reduced to plain text (`plainTextFromRichSource`)
+  and newlines collapse to spaces.
+- Thread replies, reactions and key frames never count. A delete takes the
+  message out, so the line falls back to the one before; an edit of the
+  newest message replaces the line.
+- A short time on the right of the name: the clock time today, the weekday
+  within six days, otherwise day and month.
+- A direct-message row shows the other person's picture (30 px on web, 28 px
+  in Office) with the presence dot over its lower right corner.
+
+### Plaintext stays on the device
+
+The line is built from messages the client already holds in memory. No server
+API gained plaintext and the web stores nothing new. Web `/chat` and Office
+keep one room socket open at a time, so a conversation not opened in this
+session has no line yet: its row keeps the empty second line, so every row has
+the same height.
+
+### Web `/chat`
+
+`renderRooms` and `renderDirectMessages` build each row with
+`roomTextColumn` (name line, time, preview) and tag it with `data-channel`.
+`conversationPreviewRecord` walks `channelMessages` from the end for the
+newest record with text or a file that is not a deleted thread root;
+`conversationPreviewText` formats it. Any change to a conversation
+(`insertMessage`, `removeMessage`, an edit in `handlePlain` or
+`saveMessageEdit`, `pruneExpiredMessages`) calls `queueRoomPreview`, which
+collects channels and repaints only their preview nodes once after 50 ms
+(`flushRoomPreviews`), so a replayed backlog costs one repaint, not one per
+frame. The direct-message list is now sorted by recency (the server's
+`updatedAt`, or the newest message seen here, whichever is later; the server
+already pages it that way), and the flush rebuilds that list only when the
+order actually changed. Under 680 px the rooms become a chip strip and the
+preview and time are hidden there. The picture is `makeAvatar`, the same
+loader and cache as the transcript.
+
+### Office
+
+`renderList` in `office/public/features/chat.js` shows the same line
+(`lastLine` and `listTime` in `features/chat/core.js`) and repaints when a
+line arrives, a backlog replays or you send (the list is a handful of rows).
+A direct row asks `/api/accounts/<peer>/avatar?size=128`; a 404 falls back to
+the letter avatar and is remembered (`S.noPic`) so the list does not ask
+again. The presence dot shows when the peer is in the office (matched by the
+account handle or name). The DM list sorts by the later of `updatedAt` and
+the newest message seen here.
+
+### Threads after the 2026-10-13 changes
+
+Web `/chat` threads were checked in channels and direct messages: a reply is
+sent with `channel: channelWireLabel(...)` (`direct:<id>` in a DM), the
+receiver's `frameMatchesScope` accepts it only in that room, and
+`renderThreadEntry` adds it once to the thread store and repaints the summary
+and the open thread. Office has no threads.
+
+Round 1 (`de27d1cc03`) dropped Office's `mutate` while adding receipts but
+left its three callers, so the first non-chat frame in a room (presence,
+edit or delete) threw and edits and deletes from others never applied. It is
+back, with the author check; `office/tests/chat.test.mjs` now checks it is
+defined.
+
+Tests: `app/tests/test_chat_list_previews_frontend.py`,
+`office/tests/chat.test.mjs`.
 
 ## Direct messages over the local mesh (2026-10-09)
 

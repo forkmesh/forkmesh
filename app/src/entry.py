@@ -1104,11 +1104,13 @@ _urls = _LazyModule("urls")
 _URL_EXPORT_NAMES = (
     "ROOM_RE", "REPO_ROOM_RE", "CHAT_CHANNELS_RE", "CHAT_CHANNEL_RE",
     "CHAT_CHANNEL_MEMBERS_RE", "CHAT_CHANNEL_ROOM_ACCESS_RE",
-    "CHAT_CHANNEL_HISTORY_RE", "CHAT_CHANNEL_WEBHOOKS_RE",
+    "CHAT_CHANNEL_HISTORY_RE", "CHAT_CHANNEL_PENDING_RE",
+    "CHAT_CHANNEL_WEBHOOKS_RE",
     "CHAT_CHANNEL_WEBHOOK_RE", "CHAT_WEBHOOK_DELIVERY_RE",
     "CHAT_CHANNEL_INVITE_RE", "CHAT_INVITE_RE", "CHAT_CHANNEL_WS_RE",
     "CHAT_DIRECT_MESSAGES_RE", "CHAT_DIRECT_MESSAGE_USERS_RE",
     "CHAT_DIRECT_MESSAGE_ROOM_ACCESS_RE", "CHAT_DIRECT_MESSAGE_READ_RE",
+    "CHAT_DIRECT_MESSAGE_PENDING_RE",
     "CHAT_DIRECT_MESSAGE_WS_RE", "CHAT_READS_RE", "REPO_ISSUES_RE", "REPO_PULLS_RE",
     "REPO_PULL_MERGE_RE", "REPO_PULL_UPDATE_RE", "REPO_PULL_RULES_RE",
     "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE",
@@ -3157,8 +3159,25 @@ ACCOUNT_EVENT_PUSH_MEMO_MAX = 512
 # "re-read your inbox", so one frame answers any number of rows; a banner is
 # the notification itself, and a second ping inside the window that produced
 # no banner is a ping the phone never heard about.
-ACCOUNT_EVENT_PUSH_EVERY_TOPICS = ("pings",)
-ACCOUNT_EVENT_SOCKET_EVERY_TOPICS = ("chat-read",)
+ACCOUNT_EVENT_PUSH_EVERY_TOPICS = ("pings", "direct-messages")
+ACCOUNT_EVENT_SOCKET_EVERY_TOPICS = ("chat-read", "direct-messages")
+
+
+def _account_event_query(topic, push_alert):
+    if topic != "direct-messages" or not isinstance(push_alert, dict):
+        return ""
+    conversation = str(push_alert.get("conversation") or "")
+    if not re.fullmatch(r"direct:[0-9a-f]{32}", conversation):
+        return ""
+    query = "&conversation=" + quote(conversation)
+    ref = str(push_alert.get("ref") or "")
+    if re.fullmatch(r"[0-9a-f]{40}", ref):
+        query += "&ref=" + ref
+    key_version = push_alert.get("keyVersion")
+    if (isinstance(key_version, int) and not isinstance(key_version, bool)
+            and key_version > 0):
+        query += "&keyVersion=" + str(key_version)
+    return query
 
 
 async def notify_account_event(env, owner, topic, push_alert=None):
@@ -3197,6 +3216,7 @@ async def notify_account_event(env, owner, topic, push_alert=None):
             await node_object.fetch(
                 "https://forkmesh.internal/api/nodes/notify"
                 "?topic=" + quote(topic)
+                + _account_event_query(topic, push_alert)
             )
         except Exception:
             pass
@@ -3210,6 +3230,21 @@ async def notify_account_event(env, owner, topic, push_alert=None):
         return await push_account_apns(env, owner, topic, push_alert)
     except Exception:
         return 0
+
+
+def _account_event_direct_fields(query):
+    fields = {}
+    conversation = str((query.get("conversation") or [""])[0])
+    if not re.fullmatch(r"direct:[0-9a-f]{32}", conversation):
+        return fields
+    fields["conversation"] = conversation
+    ref = str((query.get("ref") or [""])[0])
+    if re.fullmatch(r"[0-9a-f]{40}", ref):
+        fields["ref"] = ref
+    key_version = str((query.get("keyVersion") or [""])[0])
+    if re.fullmatch(r"[1-9][0-9]{0,8}", key_version):
+        fields["keyVersion"] = int(key_version)
+    return fields
 
 
 def _apns_module():
@@ -3448,7 +3483,8 @@ async def _chat_channel_push_accounts(env, channel_id):
     return audience, name
 
 
-async def push_chat_room_apns(env, room_key, channel_id="", sender_bi=""):
+async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
+                              ref="", key_version=0):
     """Best-effort APNs fan-out for one retained chat message.
 
     Direct messages have a named recipient and go through
@@ -3490,7 +3526,8 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi=""):
         env, tokens, apns.APNS_CHAT_TOPIC,
         apns.chat_message_alert(
             channel_name,
-            apns.office_conversation(channel_name) if channel_id else ""))
+            apns.office_conversation(channel_name) if channel_id else "",
+            channel_id=channel_id, ref=ref, key_version=key_version))
 
 
 async def register_apns_device_token(env, account, token, environment,
@@ -9996,7 +10033,8 @@ async def _chat_direct_passphrase(env, conversation_id, key_version):
 
 
 async def _chat_direct_message_retained(
-        env, conversation_id, account_bi, retained_at):
+        env, conversation_id, account_bi, retained_at, ref="",
+        key_version=0):
     await _contribution_run_batch(env, [
         (
             "UPDATE chat_direct_conversations "
@@ -10025,7 +10063,8 @@ async def _chat_direct_message_retained(
         await notify_account_event(
             env, recipient, "direct-messages",
             _apns_module().direct_message_alert(
-                sender, conversation_id=conversation_id))
+                sender, conversation_id=conversation_id, ref=ref,
+                key_version=key_version))
 
 
 # conversation_id -> {sender account_bi: (peer name, sender name)}. A direct
@@ -11054,6 +11093,10 @@ class _ChatDirectMessagesRuntime(_WorldCommunityRuntime):
     async def announce_read(self, conversation_id, key_version, account_bi):
         await _announce_chat_direct_read(
             self.env, conversation_id, key_version, account_bi)
+
+    async def passphrase(self, conversation_id, key_version):
+        return await _chat_direct_passphrase(
+            self.env, conversation_id, key_version)
 
     async def announce_media(
             self, conversation_id, key_version, account_bi, media_id, state):
@@ -53523,7 +53566,10 @@ class ForkMeshRoom(DurableObject):
                     and envelope.get("resend") is not True
                 ):
                     await _chat_direct_message_retained(
-                        self.env, direct_id, account_bi, int(Date.now()))
+                        self.env, direct_id, account_bi, int(Date.now()),
+                        ref=msg_id[:40],
+                        key_version=int(
+                            _ws_attr(ws, "direct_version", 0) or 0))
             elif not direct_id and envelope.get("notify") is True:
                 # A direct message names its recipient above. Every other
                 # message wakes the room's audience instead. The relay only
@@ -53544,7 +53590,9 @@ class ForkMeshRoom(DurableObject):
                 await push_chat_room_apns(
                     self.env, room_key,
                     channel_id=str(_ws_attr(ws, "channel_id", "") or ""),
-                    sender_bi=account_bi)
+                    sender_bi=account_bi, ref=msg_id[:40],
+                    key_version=int(
+                        _ws_attr(ws, "channel_version", 0) or 0))
         except Exception:
             pass
 
@@ -53777,6 +53825,8 @@ class ForkMeshNodes(DurableObject):
                     "topic": clean_string(query.get("topic", [""])[0], 40),
                     "repo": clean_string(query.get("repo", [""])[0], 200),
                 }
+                if frame_data["topic"] == "direct-messages":
+                    frame_data.update(_account_event_direct_fields(query))
                 # A source-signed refs digest lets a headless mirror tell
                 # "fetch succeeded" from "the selected peer was stale". It
                 # remains only a convergence target; repository bytes and

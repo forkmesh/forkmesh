@@ -65,6 +65,28 @@ public struct MemberGroup: Equatable, Hashable, Sendable, Identifiable {
     public var nodeCount: Int { members.count }
 }
 
+public enum ChatReceipt: String, Equatable, Hashable, Sendable, CaseIterable {
+    case sending, sent, delivered, read
+
+    public var label: String {
+        switch self {
+        case .sending: return "Sending"
+        case .sent: return "Sent"
+        case .delivered: return "Delivered"
+        case .read: return "Read"
+        }
+    }
+
+    public var rank: Int {
+        switch self {
+        case .sending: return 0
+        case .sent: return 1
+        case .delivered: return 2
+        case .read: return 3
+        }
+    }
+}
+
 public struct ChatMessage: Equatable, Hashable, Sendable, Identifiable {
     public var id: String
     /// "#channel" or "@peerId".

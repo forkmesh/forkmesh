@@ -121,6 +121,15 @@ final class StoreConfigTests: XCTestCase {
         XCTAssertTrue(seen.contains("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly"))
     }
 
+    func testTheNotificationExtensionLinksOnlyThePushCore() throws {
+        let project = try text("ForkMesh.xcodeproj/project.pbxproj")
+        XCTAssertTrue(project.contains("productName = ForkMeshPushCore;"))
+        let generator = try text("tools/generate_project.rb")
+        XCTAssertTrue(generator.contains("extension.package_product_dependencies << push_product"))
+        let package = try text("ForkMeshCore/Package.swift")
+        XCTAssertTrue(package.contains("let pushModules = [\"FMBase\", \"FMCrypto\", \"FMPush\"]"))
+    }
+
     func testTheServerSendsPushesToThisBundleId() throws {
         let apns = try text("app/src/apns.py", in: Self.repoRoot)
         let line = apns.components(separatedBy: "\n").first { $0.hasPrefix("APNS_BUNDLE_ID = ") }
@@ -194,7 +203,10 @@ final class StoreConfigTests: XCTestCase {
     func testEachPrivacyManifestDeclaresTheRequiredReasonAPIsItsBundleUses() throws {
         let bundles: [(manifest: String, sources: [String])] = [
             ("ForkMesh/Resources/PrivacyInfo.xcprivacy", ["ForkMesh", "Shared", "SharedSurfaces", "ForkMeshCore/Sources"]),
-            ("NotificationService/PrivacyInfo.xcprivacy", ["NotificationService", "Shared"]),
+            ("NotificationService/PrivacyInfo.xcprivacy", [
+                "NotificationService", "Shared", "ForkMeshCore/Sources/FMPush", "ForkMeshCore/Sources/FMCrypto",
+                "ForkMeshCore/Sources/FMBase",
+            ]),
             ("ForkMeshWidgets/PrivacyInfo.xcprivacy", ["ForkMeshWidgets", "SharedSurfaces", "ForkMeshCore/Sources"]),
             ("ForkMeshWatch/PrivacyInfo.xcprivacy", [
                 "ForkMeshWatch", "ForkMeshCore/Sources/FMBase", "ForkMeshCore/Sources/FMAgentWatch",

@@ -9,6 +9,7 @@ import com.forkmesh.nativeapp.json.jsonLong
 import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
+import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.model.ChatRetention
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.net.WebSocketClient
@@ -253,6 +254,7 @@ class OfficeChannelService(
     private val history = HashMap<String, List<ChatMessage>>()
     private val pendingRefs = LinkedHashMap<String, String>()
     private val ackedCounts = HashMap<String, Int>()
+    private val sendingIds = HashSet<String>()
     private val sequence = AtomicInteger()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
@@ -291,6 +293,8 @@ class OfficeChannelService(
     fun room(conversation: String): OfficeRoom? = rooms.firstOrNull { it.conversation == conversation }
 
     fun messages(conversation: String): List<ChatMessage> = synchronized(lock) { history[conversation].orEmpty() }
+
+    fun receipt(messageId: String): ChatReceipt? = synchronized(lock) { if (messageId in sendingIds) ChatReceipt.SENDING else null }
 
     fun isConnected(conversation: String): Boolean {
         val room = room(conversation) ?: return false
@@ -473,15 +477,20 @@ class OfficeChannelService(
 
     private fun rememberSent(ref: String, id: String) = synchronized(lock) {
         pendingRefs[ref] = id
+        sendingIds.add(id)
         while (pendingRefs.size > OfficeFrames.MAX_PENDING_REFS) {
             val oldest = pendingRefs.keys.first()
-            pendingRefs.remove(oldest)?.let { ackedCounts.remove(it) }
+            pendingRefs.remove(oldest)?.let {
+                ackedCounts.remove(it)
+                sendingIds.remove(it)
+            }
         }
     }
 
     private fun applyAck(ref: String, count: Int, conversation: String) = synchronized(lock) {
         val id = pendingRefs[ref] ?: return@synchronized
         ackedCounts[id] = count
+        sendingIds.remove(id)
         setRecipients(count, id, conversation)
     }
 

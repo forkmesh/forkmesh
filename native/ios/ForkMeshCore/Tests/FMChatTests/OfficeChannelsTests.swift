@@ -112,10 +112,13 @@ final class OfficeChannelsTests: XCTestCase {
         XCTAssertEqual(chatEnvelope["persist"], .bool(true))
         let chatText = try XCTUnwrap(connection.sentTexts.first { crypto.decrypt(JSON.parseObject($0))?["type"]?.text == "chat" })
         XCTAssertNil(service.messages("#office/lobby").first { $0.isSelf }?.recipients)
+        let ownId = try XCTUnwrap(service.messages("#office/lobby").first { $0.isSelf }?.id)
+        XCTAssertEqual(service.receipt(ownId), .sending)
         let ack: JSONObject = ["kind": "forkmesh-recipients", "v": 1, "ref": .string(OfficeFrames.sentRef(chatText)), "recipients": 4]
         connection.receive(text: JSON.encode(ack))
         let ackApplied = await waitUntil { service.messages("#office/lobby").first { $0.isSelf }?.recipients == 4 }
         XCTAssertTrue(ackApplied)
+        XCTAssertEqual(service.receipt(ownId), .sent)
         var live = try crypto.encrypt(["type": "chat", "id": "live-1", "senderId": "peer", "sender": "Pat", "text": "welcome", "ts": 9_999_999_999_999])
         live["recipients"] = 3
         connection.receive(text: JSON.encode(live))
@@ -123,7 +126,84 @@ final class OfficeChannelsTests: XCTestCase {
         XCTAssertTrue(ok89)
         XCTAssertEqual(service.messages("#office/lobby").map(\.text), ["earlier", "hi office", "welcome"])
         XCTAssertEqual(service.messages("#office/lobby").map(\.recipients), [2, 4, 3])
+        var removed: [String] = []
+        service.onRemoved = { removed.append($1) }
+        let deleted = await service.deleteForEveryone("#office/lobby", messageId: ownId)
+        XCTAssertTrue(deleted)
+        XCTAssertEqual(service.messages("#office/lobby").map(\.text), ["earlier", "welcome"])
+        let delete = try XCTUnwrap(connection.sentTexts.compactMap { crypto.decrypt(JSON.parseObject($0)) }.first { $0["type"]?.text == "delete" })
+        XCTAssertEqual(delete["target"]?.text, ownId)
+        XCTAssertEqual(delete["conversation"]?.text, "#lobby")
+        let forged: JSONObject = ["type": "delete", "id": "d-1", "senderId": "mallory", "sender": "M", "target": "live-1", "ts": 1]
+        connection.receive(text: JSON.encode(try crypto.encrypt(forged)))
+        var real = forged
+        real["id"] = "d-2"
+        real["senderId"] = "peer"
+        connection.receive(text: JSON.encode(try crypto.encrypt(real)))
+        let gone = await waitUntil { service.messages("#office/lobby").map(\.text) == ["earlier"] }
+        XCTAssertTrue(gone)
+        XCTAssertEqual(removed, [ownId, "live-1"])
         await service.closeAll()
+    }
+
+    @MainActor func testThreadRepliesInAnOfficeChannelGoBothWays() async throws {
+        let api = FakeAccountApi()
+        api.replies["GET /api/chat/channels"] = [
+            "channels": [["id": .string(OfficeChannelsTests.roomId), "name": "lobby", "visibility": "public", "canManage": true]]
+        ]
+        let room = "chat-channel:\(OfficeChannelsTests.roomId):v1"
+        api.replies["GET /api/chat/channels/\(OfficeChannelsTests.roomId)/room-access"] = [
+            "room": .string(room), "passphrase": "office-pass",
+            "webSocketUrl": .string("/api/chat/channels/\(OfficeChannelsTests.roomId)/ws?ticket=abc"),
+        ]
+        let crypto = await Task.detached { RoomCrypto.withPassphrase(room, "office-pass") }.value
+        let ws = FakeWebSocketConnector()
+        let service = OfficeChannelService(
+            api: api, connector: ws, secureStore: InMemorySecureStore(), origin: { URL(string: "https://app.next.forkmesh.com") },
+            selfId: { "me-node" }, displayName: { "Me" })
+        let h = try await RelayHarness.start()
+        let mesh = LocalMeshService(settings: h.device.settings, identity: h.device.identity, secureStore: h.device.secure)
+        let hub = ChatHub(relay: h.relay, mesh: mesh)
+        hub.office = service
+        await service.refresh()
+        let opened = await service.open("#office/lobby")
+        XCTAssertTrue(opened)
+        hub.select("#office/lobby")
+        let connection = try XCTUnwrap(ws.lastConnection)
+        let now = Date().epochMillis
+        connection.receive(text: JSON.encode(try crypto.encrypt([
+            "type": "chat", "id": "root-1", "senderId": "peer", "sender": "Pat", "text": "question", "ts": .int(now - 60_000),
+        ])))
+        let rooted = await waitUntil { hub.rows.map(\.id) == ["root-1"] }
+        XCTAssertTrue(rooted)
+        connection.receive(text: JSON.encode(try crypto.encrypt([
+            "type": "thread-reply", "id": "reply-1", "senderId": "peer", "sender": "Pat", "rootId": "root-1",
+            "channel": "#lobby", "text": "first", "ts": .int(now - 50_000),
+        ])))
+        let threaded = await waitUntil { hub.threadRows("root-1").map(\.text) == ["first"] }
+        XCTAssertTrue(threaded)
+        XCTAssertEqual(hub.rows.map(\.id), ["root-1"])
+        XCTAssertEqual(hub.rows.first?.thread?.replyCount, 1)
+        XCTAssertEqual(hub.threadRows("root-1").first?.message.conversation, "#office/lobby")
+
+        let sent = await hub.replyInThread(channel: "#office/lobby", rootId: "root-1", text: "answer")
+        XCTAssertTrue(sent)
+        let mine = try XCTUnwrap(hub.threadRows("root-1").last)
+        XCTAssertEqual(mine.text, "answer")
+        XCTAssertTrue(mine.message.isSelf)
+        XCTAssertEqual(mine.receipt, .sending)
+        let wire = try XCTUnwrap(connection.sentTexts.first { crypto.decrypt(JSON.parseObject($0))?["type"]?.text == "thread-reply" })
+        let reply = try XCTUnwrap(crypto.decrypt(JSON.parseObject(wire)))
+        XCTAssertEqual(reply["rootId"]?.text, "root-1")
+        XCTAssertEqual(reply["channel"]?.text, "#lobby")
+        XCTAssertEqual(JSON.parseObject(wire)["notify"], .bool(true))
+        connection.receive(text: JSON.encode(["kind": "forkmesh-recipients", "v": 1, "ref": .string(OfficeFrames.sentRef(wire)), "recipients": 2] as JSONObject))
+        let acked = await waitUntil { hub.threadRows("root-1").last?.receipt == .sent }
+        XCTAssertTrue(acked)
+        XCTAssertEqual(hub.rows.first?.thread?.replyCount, 2)
+        XCTAssertEqual(hub.listPreview("#office/lobby")?.text, "Pat: question")
+        await service.closeAll()
+        await h.close()
     }
 
     @MainActor func testAServerVisibleNoticesChannelShowsServerNotes() async throws {

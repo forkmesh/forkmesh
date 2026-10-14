@@ -257,6 +257,22 @@ class RoomSeal private constructor(
             return seal
         }
 
+        fun existing(roomName: String, storageScope: String? = null, secureStore: SecretStore): RoomSeal? {
+            val encoded = try {
+                secureStore.read(PRIVATE_KEY_STORE_KEY)
+            } catch (_: Exception) {
+                null
+            }
+            if (encoded.isNullOrEmpty()) return null
+            val decoded = B64.decodeOrNull(encoded) ?: return null
+            if (decoded.size != 32) return null
+            return try {
+                fromPrivateKey(roomName, decoded, storageScope, null)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
+
         fun fromPrivateKey(
             roomName: String,
             privateKey: ByteArray,

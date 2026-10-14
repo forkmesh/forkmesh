@@ -740,6 +740,8 @@ void MessageRow::setRecipientCount(int count, const QStringList &names)
     m_message.recipientCount = count;
     if (!names.isEmpty())
         m_message.recipientNames = names;
+    if (!forkmesh::recipients::showsRecipientCount(m_message.conversation))
+        return;
     if (!m_recipientsLabel) {
         m_recipientsLabel = new QLabel;
         m_recipientsLabel->setObjectName(QStringLiteral("messageRecipients"));
@@ -1028,4 +1030,116 @@ void MessageRow::showReactionPicker()
     }
     popup->move(pos);
     popup->show();
+}
+
+QPixmap MessageRow::receiptMarkPixmap(forkmesh::recipients::ReceiptMark mark,
+                                      const QColor &muted, const QColor &accent,
+                                      qreal dpr)
+{
+    using forkmesh::recipients::ReceiptMark;
+    if (mark == ReceiptMark::None)
+        return QPixmap();
+    constexpr int kWidth = 17;
+    constexpr int kHeight = 11;
+    dpr = qMax<qreal>(1.0, dpr);
+    QPixmap pixmap(qRound(kWidth * dpr), qRound(kHeight * dpr));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    const qreal scale = kWidth / 22.0;
+    painter.translate(0, (kHeight - 14.0 * scale) / 2.0);
+    painter.scale(scale, scale);
+
+    const QPointF front(14.0, 7.0);
+    const QPointF back(8.5, 7.0);
+    constexpr qreal kRadius = 5.2;
+    constexpr qreal kStroke = 1.4;
+    constexpr qreal kOuter = kRadius + kStroke / 2.0;
+    QPainterPath frontTick;
+    frontTick.moveTo(11.7, 7.2);
+    frontTick.lineTo(13.4, 8.9);
+    frontTick.lineTo(16.4, 5.6);
+    QPainterPath backTick;
+    backTick.moveTo(6.2, 7.2);
+    backTick.lineTo(7.9, 8.9);
+    backTick.lineTo(9.3, 7.4);
+    QPainterPath box;
+    box.addRect(QRectF(0, 0, 22, 14));
+    const auto disc = [](const QPointF &centre, qreal radius) {
+        QPainterPath path;
+        path.addEllipse(centre, radius, radius);
+        return path;
+    };
+    QPen pen(mark == ReceiptMark::Read ? accent : muted, kStroke, Qt::SolidLine,
+             Qt::RoundCap, Qt::RoundJoin);
+    painter.setBrush(Qt::NoBrush);
+
+    if (mark == ReceiptMark::Sending) {
+        painter.setOpacity(0.7);
+        pen.setDashPattern({0.01, 2.1});
+        painter.setPen(pen);
+        painter.drawEllipse(front, kRadius, kRadius);
+        return pixmap;
+    }
+    if (mark == ReceiptMark::Read) {
+        const QPainterPath backDisc =
+            disc(back, kOuter).subtracted(disc(front, kOuter + 0.9));
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(accent);
+        painter.drawPath(backDisc);
+        painter.drawPath(disc(front, kOuter));
+        painter.setCompositionMode(QPainter::CompositionMode_Clear);
+        painter.setBrush(Qt::NoBrush);
+        pen.setColor(Qt::black);
+        painter.setPen(pen);
+        painter.drawPath(frontTick);
+        painter.setClipPath(backDisc);
+        painter.drawPath(backTick);
+        return pixmap;
+    }
+    painter.setPen(pen);
+    if (mark == ReceiptMark::Delivered) {
+        painter.save();
+        painter.setClipPath(box.subtracted(disc(front, kOuter)));
+        painter.drawEllipse(back, kRadius, kRadius);
+        painter.drawPath(backTick);
+        painter.restore();
+    }
+    painter.drawEllipse(front, kRadius, kRadius);
+    painter.drawPath(frontTick);
+    return pixmap;
+}
+
+void MessageRow::setReceiptMark(forkmesh::recipients::ReceiptMark mark)
+{
+    using forkmesh::recipients::ReceiptMark;
+    if (!m_headerRow || mark == m_receiptMark)
+        return;
+    m_receiptMark = mark;
+    if (mark == ReceiptMark::None) {
+        if (m_receiptLabel)
+            m_receiptLabel->hide();
+        return;
+    }
+    if (!m_receiptLabel) {
+        m_receiptLabel = new QLabel;
+        m_receiptLabel->setObjectName(QStringLiteral("messageReceipt"));
+        QWidget *anchor = m_recipientsLabel ? static_cast<QWidget *>(m_recipientsLabel)
+                                            : static_cast<QWidget *>(m_senderLabel);
+        m_headerRow->insertWidget(m_headerRow->indexOf(anchor) + 1,
+                                  m_receiptLabel, 0, Qt::AlignVCenter);
+    }
+    const QColor muted =
+        Theme::nextOr(Theme::Role::FgMuted, QColor(QStringLiteral("#6b7280")));
+    const QColor accent = Theme::nextOr(
+        Theme::Role::AccentFg,
+        QColor(themeIsDark() ? QStringLiteral("#58a6ff")
+                             : QStringLiteral("#0969da")));
+    const qreal dpr = qGuiApp ? qGuiApp->devicePixelRatio() : 1.0;
+    m_receiptLabel->setPixmap(receiptMarkPixmap(mark, muted, accent, dpr));
+    const QString label = forkmesh::recipients::receiptLabel(mark);
+    m_receiptLabel->setToolTip(label);
+    m_receiptLabel->setAccessibleName(label);
+    m_receiptLabel->show();
 }

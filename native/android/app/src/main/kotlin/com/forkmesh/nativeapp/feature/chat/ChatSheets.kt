@@ -280,7 +280,7 @@ suspend fun messageActionsFlow(
         Spacer(Modifier.height(FmSpace.x2))
         if (relayRoom) ChatQuickReactions(onPick = { close("react:$it") }, onMore = { close("more") })
         Column {
-            if (relayRoom && !inThread && conversation.startsWith("#")) {
+            if (relayRoom && !inThread && chat.canReplyInThread(conversation)) {
                 FmListRow(title = "Reply in thread", leading = { FmIconTile(icon = "forum_outlined") }, onTap = { close("thread") })
                 FmRowDivider()
             }

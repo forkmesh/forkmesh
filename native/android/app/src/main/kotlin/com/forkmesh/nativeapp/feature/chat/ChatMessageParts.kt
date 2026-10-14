@@ -139,6 +139,10 @@ fun ChatMessageRow(
                     ChatSenderStatus(message, liveStatus)
                     Spacer(Modifier.width(FmSpace.x2))
                     Text(messageTime(message.timestamp), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+                    row.receipt?.let {
+                        Spacer(Modifier.width(FmSpace.x1))
+                        ChatReceiptMark(it)
+                    }
                     val recipientsLabel = OfficeFrames.recipientsLabel(message.recipients)
                     val recipientsDescription = OfficeFrames.recipientsDescription(message.recipients)
                     if (recipientsLabel != null && recipientsDescription != null) {
@@ -178,6 +182,10 @@ fun ChatMessageRow(
             if (row.reactions.isNotEmpty() && onToggleReaction != null) ChatReactionChips(row.reactions, onToggleReaction)
             val thread = row.thread
             if (thread != null && onOpenThread != null) ChatThreadSummaryButton(thread, onOpenThread)
+        }
+        val receipt = row.receipt
+        if (grouped && receipt != null) {
+            ChatReceiptMark(receipt, Modifier.align(Alignment.Bottom).padding(start = FmSpace.x1, bottom = 3.dp))
         }
     }
 }

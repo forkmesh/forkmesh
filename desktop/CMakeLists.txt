@@ -718,6 +718,7 @@ set(FORKMESH_APP_SOURCES
     src/ForkMeshIdentity.cpp
     src/ChatBackend.h
     src/ChatRecipients.h
+    src/ChatListPreview.h
     src/ClientErrorReports.h
     src/ClientErrorReports.cpp
     src/GitRefusal.h
@@ -1790,6 +1791,7 @@ if(FORKMESH_BUILD_TESTS)
         tests/test_chat_transport.cpp
         src/MainnodeRoom.h
         src/ChatBackend.h
+        src/ChatListPreview.h
         # NodeDiagnostics classifies log lines through forkmesh::splitLogSource,
         # so this target does not link without it.
         src/LogSource.h

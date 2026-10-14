@@ -46,7 +46,7 @@ private struct ChatThreadBody: View {
         }
             .shellDock { composer }
             .background(fm.bgBase)
-            .navigationTitle("Thread in \(channel)")
+            .navigationTitle("Thread in \(hub.conversationLabel(channel))")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $pushed) { (route: Route) in RouteDestinationView(route: route).shellPageClearance() }
             .onChange(of: hub.notice) { _, posted in
@@ -142,7 +142,7 @@ private struct ChatThreadBody: View {
         ChatRowActions(
             onCopied: { notice = FmNotice("Copied to clipboard") },
             onReact: { (value: String) in hub.toggleReaction(root, value: value) }, onThread: nil, onEdit: nil, onDelete: nil,
-            onIssue: nil, onPrompt: nil, onProfile: nil)
+            onIssue: nil, onPrompt: nil, onProfile: nil, onHide: { hub.hide(root) })
     }
 
     private func replyActions(_ row: ChatRow) -> ChatRowActions {
