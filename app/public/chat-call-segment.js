@@ -607,15 +607,74 @@ void main() {
   float variance = max(m.w - m.x * m.x, 0.0);
   float a = (m.z - m.x * m.y) / (variance + uEps);
   float b = m.y - a * m.x;
-  gl_FragColor = vec4(a, b, 0.0, 1.0);
+  gl_FragColor = vec4(a, b, variance / (variance + uEps * 3.0), 1.0);
+}`;
+
+const SEED_FRAGMENT = `
+precision highp float;
+uniform sampler2D uMask;
+uniform sampler2D uPrev;
+uniform vec2 uStep;
+uniform vec3 uFace;
+uniform float uFresh;
+varying vec2 vUv;
+void main() {
+  float m = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) m = max(m, texture2D(uMask, vUv + vec2(float(i), float(j)) * uStep).r);
+  }
+  float inside = smoothstep(0.25, 0.5, m);
+  float seed = step(0.86, vUv.y);
+  if (uFace.z > 0.0) seed = max(seed, step(length(vUv - uFace.xy), uFace.z));
+  float prev = uFresh > 0.5 ? 0.0 : texture2D(uPrev, vUv).r;
+  gl_FragColor = vec4(min(inside, max(seed, prev)), inside, 0.0, 1.0);
+}`;
+
+const GROW_FRAGMENT = `
+precision highp float;
+uniform sampler2D uSource;
+uniform vec2 uStep;
+varying vec2 vUv;
+void main() {
+  vec4 here = texture2D(uSource, vUv);
+  float grown = here.r;
+  grown = max(grown, texture2D(uSource, vUv + vec2(uStep.x, 0.0)).r);
+  grown = max(grown, texture2D(uSource, vUv - vec2(uStep.x, 0.0)).r);
+  grown = max(grown, texture2D(uSource, vUv + vec2(0.0, uStep.y)).r);
+  grown = max(grown, texture2D(uSource, vUv - vec2(0.0, uStep.y)).r);
+  grown = max(grown, texture2D(uSource, vUv + uStep).r);
+  grown = max(grown, texture2D(uSource, vUv - uStep).r);
+  grown = max(grown, texture2D(uSource, vUv + vec2(uStep.x, -uStep.y)).r);
+  grown = max(grown, texture2D(uSource, vUv + vec2(-uStep.x, uStep.y)).r);
+  gl_FragColor = vec4(min(here.g, grown), here.g, 0.0, 1.0);
+}`;
+
+const CLEAN_FRAGMENT = `
+precision highp float;
+uniform sampler2D uMask;
+uniform sampler2D uKeep;
+uniform vec2 uStep;
+varying vec2 vUv;
+void main() {
+  float keep = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) keep = max(keep, texture2D(uKeep, vUv + vec2(float(i), float(j)) * uStep).r);
+  }
+  gl_FragColor = vec4(texture2D(uMask, vUv).r * smoothstep(0.05, 0.4, keep), 0.0, 0.0, 1.0);
 }`;
 
 export const MATTE_SAMPLE = `
+uniform sampler2D uMatteMask;
 float callMatte(sampler2D coefficients, vec3 color, vec2 uv) {
-  vec2 ab = texture2D(coefficients, uv).rg;
+  vec3 abc = texture2D(coefficients, uv).rgb;
   float i = dot(color, vec3(0.299, 0.587, 0.114));
-  return clamp(ab.x * i + ab.y, 0.0, 1.0);
+  float guided = clamp(abc.x * i + abc.y, 0.0, 1.0);
+  float hard = smoothstep(0.3, 0.7, texture2D(uMatteMask, uv).r);
+  return mix(hard, guided, smoothstep(0.15, 0.6, abc.z));
 }`;
+
+const REGION_WIDTH = 64;
+const GROW_ROUNDS = 8;
 
 export function chooseModel(models, width, height) {
   const landscape = width / Math.max(1, height) > 1.2;
@@ -631,6 +690,9 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth:
   const programs = {
     input: compileProgram(gl, MATTE_QUAD, INPUT_FRAGMENT),
     temporal: compileProgram(gl, MATTE_QUAD, TEMPORAL_FRAGMENT),
+    seed: compileProgram(gl, MATTE_QUAD, SEED_FRAGMENT),
+    grow: compileProgram(gl, MATTE_QUAD, GROW_FRAGMENT),
+    clean: compileProgram(gl, MATTE_QUAD, CLEAN_FRAGMENT),
     moments: compileProgram(gl, MATTE_QUAD, MOMENTS_FRAGMENT),
     box: compileProgram(gl, MATTE_QUAD, BOX_FRAGMENT.replace(/RADIUS/g, String(radius))),
     coefficients: compileProgram(gl, MATTE_QUAD, COEFFICIENT_FRAGMENT),
@@ -659,6 +721,8 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth:
   let hostMask = null;
   let state = null;
   let guide = null;
+  let regions = null;
+  let regionsFresh = true;
   let first = true;
   let lastModel = null;
   let ran = 0;
@@ -679,7 +743,8 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth:
     });
     for (const [name, value] of Object.entries(uniforms)) {
       if (!program.uniforms[name]) continue;
-      if (Array.isArray(value)) gl.uniform2f(program.uniforms[name], value[0], value[1]);
+      if (Array.isArray(value) && value.length === 3) gl.uniform3f(program.uniforms[name], value[0], value[1], value[2]);
+      else if (Array.isArray(value)) gl.uniform2f(program.uniforms[name], value[0], value[1]);
       else gl.uniform1f(program.uniforms[name], value);
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -691,8 +756,28 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth:
 
   function ensureState(width, height) {
     if (state && state.width === width && state.height === height) return;
-    state = { width, height, ping: target(width, height), pong: target(width, height) };
+    state = { width, height, ping: target(width, height), pong: target(width, height), clean: target(width, height) };
     first = true;
+    const rw = REGION_WIDTH;
+    const rh = Math.max(4, Math.round((REGION_WIDTH * height) / width));
+    regions = { width: rw, height: rh, ping: target(rw, rh), pong: target(rw, rh), keep: target(rw, rh) };
+    regionsFresh = true;
+  }
+
+  function connect(face) {
+    const step = [1 / regions.width, 1 / regions.height];
+    draw(programs.seed, regions.ping, [["uMask", state.ping.texture], ["uPrev", regions.keep.texture]], {
+      uStep: [0.5 / regions.width, 0.5 / regions.height],
+      uFresh: regionsFresh ? 1 : 0,
+      uFace: face || [0, 0, -1],
+    });
+    for (let round = 0; round < GROW_ROUNDS; round += 1) {
+      draw(programs.grow, regions.pong, [["uSource", regions.ping.texture]], { uStep: step });
+      [regions.ping, regions.pong] = [regions.pong, regions.ping];
+    }
+    [regions.keep, regions.ping] = [regions.ping, regions.keep];
+    regionsFresh = false;
+    draw(programs.clean, state.clean, [["uMask", state.ping.texture], ["uKeep", regions.keep.texture]], { uStep: step });
   }
 
   function ensureGuide(width, height) {
@@ -710,7 +795,7 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth:
       return guide?.coefficients.texture || null;
     },
     get mask() {
-      return state?.ping.texture || null;
+      return state?.clean.texture || null;
     },
     get ready() {
       return Boolean(guide && state && !first);
@@ -731,7 +816,7 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth:
     reset() {
       first = true;
     },
-    update(camera, width, height, { runNetwork = true } = {}) {
+    update(camera, width, height, { runNetwork = true, face = null } = {}) {
       gl.disable(gl.BLEND);
       let raw = null;
       let rawWidth = 0;
@@ -768,8 +853,9 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth:
         first = false;
       }
       if (!state) return false;
+      connect(face);
       ensureGuide(width, height);
-      draw(programs.moments, guide.a, [["uCam", camera], ["uMask", state.ping.texture]], {
+      draw(programs.moments, guide.a, [["uCam", camera], ["uMask", state.clean.texture]], {
         uStep: [0.25 * (width / guide.width) / width, 0.25 * (height / guide.height) / height],
       });
       draw(programs.box, guide.b, [["uSource", guide.a.texture]], { uStep: [1 / guide.width, 0] });
@@ -783,7 +869,7 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth:
     dispose() {
       for (const net of networks.values()) net.dispose();
       gl.deleteTexture(host);
-      for (const entry of [state?.ping, state?.pong, guide?.a, guide?.b, guide?.coefficients]) {
+      for (const entry of [state?.ping, state?.pong, state?.clean, regions?.ping, regions?.pong, regions?.keep, guide?.a, guide?.b, guide?.coefficients]) {
         if (!entry) continue;
         gl.deleteTexture(entry.texture);
         gl.deleteFramebuffer(entry.framebuffer);
@@ -893,7 +979,8 @@ export function createHairMatte(gl, model, { format = floatTargets(gl), width = 
     });
     for (const [name, value] of Object.entries(uniforms)) {
       if (!program.uniforms[name]) continue;
-      if (Array.isArray(value)) gl.uniform2f(program.uniforms[name], value[0], value[1]);
+      if (Array.isArray(value) && value.length === 3) gl.uniform3f(program.uniforms[name], value[0], value[1], value[2]);
+      else if (Array.isArray(value)) gl.uniform2f(program.uniforms[name], value[0], value[1]);
       else gl.uniform1f(program.uniforms[name], value);
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);

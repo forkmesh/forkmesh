@@ -3295,6 +3295,10 @@ html:not(.dark) .chat-app-blocks.is-notice { --tone-good: #1a7f37; --tone-warn: 
 .chat-call-background-swatch.is-custom { background-image: linear-gradient(transparent, transparent), repeating-linear-gradient(45deg, var(--surface3, #2a2f36) 0 6px, var(--surface2) 6px 12px); }
 .chat-call-background-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-call-preview-slot[hidden] { display: none; }
+.chat-call-preview-slot .chat-call-voice-preview { display: grid; gap: 6px; }
+.chat-call-preview-slot button { justify-self: start; font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-strong); background: transparent; color: var(--fg); cursor: pointer; }
+.chat-call-preview-slot button[aria-pressed="true"] { background: var(--fg); color: var(--surface2); }
+.chat-call-preview-slot .chat-call-meta { margin: 0; }
 .chat-call-start[hidden] { display: none; }
 .chat-call-panel.is-preview { width: min(440px, calc(100vw - 36px)); max-height: calc(100vh - 36px); overflow-y: auto; }
 .chat-call-panel.is-preview #chat-call-remote { display: none; }
