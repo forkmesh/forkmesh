@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -52,6 +53,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.forkmesh.nativeapp.feature.account.openExternalUrl
+import com.forkmesh.nativeapp.feature.account.projects.ProjectActions
 import com.forkmesh.nativeapp.ui.SoundCue
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmColors
@@ -556,6 +559,7 @@ fun FmDialogActions(
 
 object FmNeedsDesktopNote {
     const val headline = "Needs a desktop or server node on this account"
+    const val action = "Get the desktop app"
 }
 
 @Composable
@@ -584,6 +588,14 @@ fun FmNeedsDesktopNote(
                 },
                 style = Fm.text.bodySmall.copy(lineHeight = FmType.meta * FmType.leadingRelaxed),
             )
+            val context = LocalContext.current
+            FmTextButton(
+                onClick = { openExternalUrl(context, ProjectActions.desktopUrl()) },
+                minHeight = 36.dp,
+                contentPadding = PaddingValues(0.dp),
+            ) {
+                Text(FmNeedsDesktopNote.action)
+            }
         }
     }
 }

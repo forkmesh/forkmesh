@@ -426,6 +426,8 @@ object LegalLinks {
     fun membershipFor(homepage: String): String = withPath(homepage, "/", "membership")
 
     fun designFor(homepage: String): String = withPath(homepage, "/design")
+
+    fun desktopFor(homepage: String): String = withPath(homepage, "/desktop")
 }
 
 fun loginSubtitle(projects: List<Project>, active: Project?): String {
