@@ -185,6 +185,7 @@ struct ProjectSwitcher: View {
     @State private var adding: Bool = false
     @State private var managing: Bool = false
     @State private var inviting: Bool = false
+    @State private var choosingInstance: RelayProfile?
 
     init(close: @escaping (_ then: (() -> Void)?) -> Void) {
         self.close = close
@@ -216,6 +217,21 @@ struct ProjectSwitcher: View {
                 ProjectInviteSheet(project: active)
             }
         }
+        .sheet(isPresented: choosingInstanceShown) {
+            if let project = choosingInstance {
+                ChooseInstanceView(project: project, onClose: { choosingInstance = nil })
+            }
+        }
+    }
+
+    private var choosingInstanceShown: Binding<Bool> {
+        Binding<Bool>(
+            get: { choosingInstance != nil },
+            set: { (shown: Bool) in
+                if !shown {
+                    choosingInstance = nil
+                }
+            })
     }
 
     private func content(_ model: RelaySettingsModel) -> some View {
@@ -236,7 +252,8 @@ struct ProjectSwitcher: View {
                                 info: entry.element,
                                 online: entry.element.active && model.connection == .connected,
                                 onTap: entry.element.active || model.canSwitch
-                                    ? { switchTo(entry.element.relay) } : nil)
+                                    ? { switchTo(entry.element.relay) } : nil,
+                                onChooseInstance: { choosingInstance = entry.element.relay })
                         }
                     }
                 }
@@ -301,18 +318,47 @@ struct ProjectSwitcherRow: View {
     let info: RelayRowInfo
     var online: Bool = false
     let onTap: (() -> Void)?
+    var onChooseInstance: (() -> Void)? = nil
 
     var body: some View {
-        FmListRow(
-            title: info.relay.label,
-            subtitleView: AnyView(subtitle),
-            leading: AnyView(ProjectIcon(project: info.relay, size: 32)),
-            trailing: info.active
-                ? AnyView(Text("Active").fmText(.labelSmall, color: fm.accent))
-                : nil,
-            onTap: onTap,
-            showChevron: false)
-            .accessibilityLabel(accessibility)
+        HStack(spacing: 0) {
+            FmListRow(
+                title: info.relay.label,
+                subtitleView: AnyView(subtitle),
+                leading: AnyView(ProjectIcon(project: info.relay, size: 32)),
+                trailing: info.active
+                    ? AnyView(Text("Active").fmText(.labelSmall, color: fm.accent))
+                    : nil,
+                onTap: onTap,
+                showChevron: false)
+                .accessibilityLabel(accessibility)
+            if !info.relay.hasInstance, let onChooseInstance = onChooseInstance {
+                chooseInstanceButton(onChooseInstance)
+            }
+        }
+    }
+
+    private func chooseInstanceButton(_ action: @escaping () -> Void) -> some View {
+        Button {
+            FmHaptics.tap()
+            action()
+        } label: {
+            Text("Choose instance")
+                .fmText(.labelSmall, color: fm.accent)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, FmSpace.x2)
+                .frame(minHeight: 26)
+                .overlay {
+                    Capsule().strokeBorder(fm.border, lineWidth: 1)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, FmSpace.x3)
+        .accessibilityLabel("Choose an instance for \(info.relay.label)")
+        .accessibilityIdentifier("project-choose-instance")
     }
 
     @ViewBuilder private var subtitle: some View {
