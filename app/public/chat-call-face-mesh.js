@@ -35,12 +35,20 @@ uniform vec2 uAxisX;
 uniform vec2 uAxisY;
 uniform vec2 uFrame;
 uniform vec2 uRange;
+uniform float uTexel;
 varying vec2 vUv;
 void main() {
   vec2 p = uCenter + (vUv.x - 0.5) * uAxisX + (vUv.y - 0.5) * uAxisY;
   vec2 uv = p / uFrame;
   vec3 c = vec3(0.0);
-  if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0) c = texture2D(uCam, uv).rgb;
+  if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0) {
+    vec2 sx = uAxisX / uFrame * uTexel / 3.0;
+    vec2 sy = uAxisY / uFrame * uTexel / 3.0;
+    for (int i = -1; i <= 1; i++) {
+      for (int j = -1; j <= 1; j++) c += texture2D(uCam, uv + float(i) * sx + float(j) * sy).rgb;
+    }
+    c /= 9.0;
+  }
   gl_FragColor = vec4(c * uRange.x + uRange.y, 0.0);
 }`;
 
@@ -168,7 +176,7 @@ export function createFaceMesh(gl, models, format = floatTargets(gl)) {
   gl.bindAttribLocation(program, 0, "aPos");
   gl.linkProgram(program);
   const uniform = (name) => gl.getUniformLocation(program, name);
-  const u = Object.fromEntries(["uCam", "uCenter", "uAxisX", "uAxisY", "uFrame", "uRange"].map((name) => [name, uniform(name)]));
+  const u = Object.fromEntries(["uCam", "uCenter", "uAxisX", "uAxisY", "uFrame", "uRange", "uTexel"].map((name) => [name, uniform(name)]));
   let roi = null;
   let lastScore = 0;
 
@@ -186,6 +194,7 @@ export function createFaceMesh(gl, models, format = floatTargets(gl)) {
     gl.uniform2f(u.uAxisY, -s * region.sizeY, c * region.sizeY);
     gl.uniform2f(u.uFrame, width, height);
     gl.uniform2f(u.uRange, range[0], range[1]);
+    gl.uniform1f(u.uTexel, 1 / size);
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);

@@ -795,14 +795,20 @@ precision highp float;
 uniform sampler2D uCam;
 uniform sampler2D uPrev;
 uniform vec2 uCenter;
-uniform float uSide;
+uniform vec2 uSide;
 uniform vec2 uFrame;
+uniform vec2 uSize;
 varying vec2 vUv;
 void main() {
   vec2 p = uCenter + (vUv - 0.5) * uSide;
   vec2 uv = p / uFrame;
   bool inside = uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0;
-  vec3 c = inside ? texture2D(uCam, uv).rgb : vec3(0.0);
+  vec2 step = uSide / uSize / uFrame / 3.0;
+  vec3 c = vec3(0.0);
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) c += texture2D(uCam, uv + vec2(float(i), float(j)) * step).rgb;
+  }
+  c = inside ? c / 9.0 : vec3(0.0);
   float prev = inside ? texture2D(uPrev, uv).r : 0.0;
   gl_FragColor = vec4(c, prev);
 }`;
@@ -812,7 +818,7 @@ precision highp float;
 uniform sampler2D uLogits;
 uniform sampler2D uPrev;
 uniform vec2 uCenter;
-uniform float uSide;
+uniform vec2 uSide;
 uniform vec2 uFrame;
 uniform vec2 uLogitSize;
 uniform float uRate;
@@ -839,6 +845,8 @@ void main() {
   float rate = mix(uRate, 1.0, smoothstep(0.1, 0.5, change));
   gl_FragColor = vec4(mix(prev, now, rate), 0.0, 0.0, 1.0);
 }`;
+
+const WARM_ROUNDS = 3;
 
 export function createHairMatte(gl, model, { format = floatTargets(gl), width = 256, rate = 0.5 } = {}) {
   if (!format || !model) return null;
@@ -905,15 +913,18 @@ export function createHairMatte(gl, model, { format = floatTargets(gl), width = 
         fresh = true;
       }
       gl.disable(gl.BLEND);
-      const uniforms = { uCenter: region.center, uSide: region.side, uFrame: [w, h] };
-      draw(crop, net.input, [["uCam", camera], ["uPrev", state.ping.texture]], uniforms);
-      net.run();
-      draw(frame, state.pong, [["uLogits", logits.texture], ["uPrev", state.ping.texture]], {
-        ...uniforms,
-        uLogitSize: [net.inputWidth, net.inputHeight],
-        uRate: fresh ? 1 : rate,
-      });
-      [state.ping, state.pong] = [state.pong, state.ping];
+      const uniforms = { uCenter: region.center, uSide: region.size, uFrame: [w, h] };
+      const rounds = fresh ? WARM_ROUNDS : 1;
+      for (let round = 0; round < rounds; round += 1) {
+        draw(crop, net.input, [["uCam", camera], ["uPrev", state.ping.texture]], { ...uniforms, uSize: [net.inputWidth, net.inputHeight] });
+        net.run();
+        draw(frame, state.pong, [["uLogits", logits.texture], ["uPrev", state.ping.texture]], {
+          ...uniforms,
+          uLogitSize: [net.inputWidth, net.inputHeight],
+          uRate: fresh ? 1 : rate,
+        });
+        [state.ping, state.pong] = [state.pong, state.ping];
+      }
       fresh = false;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       return state.ping.texture;

@@ -375,6 +375,14 @@ export function coverRect(imageWidth, imageHeight, width, height) {
   return [0, (1 - span) / 2, 1, span];
 }
 
+export function hairRegion(pose, width, height) {
+  const center = projectPose(pose, HAIR_CENTER);
+  const side = HAIR_SIDE * pose.scale;
+  const size = [Math.min(side, width), Math.min(side, height)];
+  const fit = (value, extent, limit) => Math.min(Math.max(value, extent / 2), limit - extent / 2);
+  return { center: [fit(center[0], size[0], width), fit(center[1], size[1], height)], size };
+}
+
 export function zoneFrame(head, pose) {
   const center = projectPose(pose, [0, 0, -0.35]);
   const frame = faceFrame(head);
@@ -708,8 +716,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       }
       let hair = null;
       if (showFace && hasMatte && hairMatte && lastHead) {
-        const center = projectPose(lastHead.pose, HAIR_CENTER);
-        hair = hairMatte.update(camera, w, h, { center, side: HAIR_SIDE * lastHead.pose.scale });
+        hair = hairMatte.update(camera, w, h, hairRegion(lastHead.pose, w, h));
       }
       let fill = camera;
       let backdrop = camera;

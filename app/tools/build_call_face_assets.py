@@ -407,6 +407,8 @@ def build_face(name, original: Path, offset: int, points, selfie: Path, hair: Pa
     aux = np.stack([matte, skin, hair_soft], -1)
     color, aux = complete_top(color, aux, eyes_l[1])
     canvas = color.shape[0]
+    rows = np.arange(canvas, dtype=np.float32)[:, None]
+    aux = aux * (1 - smoothstep(canvas - span * 0.55, canvas - span * 0.05, rows))[..., None]
     photo = Image.fromarray((np.clip(color, 0, 1) * 255 + 0.5).astype(np.uint8)).resize((SIZE, SIZE), Image.LANCZOS)
     aux_image = Image.fromarray((np.clip(aux, 0, 1) * 255 + 0.5).astype(np.uint8), "RGB").resize((SIZE, SIZE), Image.LANCZOS)
     photo.save(out_dir / f"{name}.jpg", quality=88, optimize=True, progressive=True)
