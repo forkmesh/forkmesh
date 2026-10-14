@@ -917,7 +917,7 @@ popular site and for any site's own social image.
   `ChatHub.directoryMembers`.
 - `RelayService.onNewMember` (the relay's signed `forkmesh-new-member` frame)
   and `RelayService.insertLocal(_:countUnread:)`.
-- Rationale: docs/native/NAVIGATION.md 2.0.101.
+- Rationale: docs/native/NAVIGATION.md 2.0.102.
 
 ## Views (ForkMesh/Features/Chat)
 
