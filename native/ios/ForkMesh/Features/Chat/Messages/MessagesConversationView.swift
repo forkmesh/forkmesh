@@ -233,6 +233,7 @@ struct MessagesConversationView<Drawer: View>: View {
                     Color.clear.frame(width: 44, height: 44)
                 }
             }
+            .zIndex(1)
             Button(action: { details = true }) {
                 VStack(spacing: 4) {
                     MessagesConversationAvatar(hub: hub, size: 50)
@@ -282,6 +283,7 @@ struct MessagesConversationView<Drawer: View>: View {
                     Color.clear.frame(width: 44, height: 44)
                 }
             }
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, FmSpace.x1)
@@ -303,6 +305,7 @@ struct MessagesHeaderLayout: Layout {
         var title: CGSize
         var trailing: CGSize
         var titleX: CGFloat
+        var trailingX: CGFloat
 
         var height: CGFloat { max(leading.height, title.height, trailing.height) }
     }
@@ -316,7 +319,8 @@ struct MessagesHeaderLayout: Layout {
         let low: CGFloat = leading.width + spacing
         let high: CGFloat = width - trailing.width - spacing - title.width
         let titleX: CGFloat = max(low, min((width - title.width) / 2, high))
-        return Frames(leading: leading, title: title, trailing: trailing, titleX: titleX)
+        let trailingX: CGFloat = max(low, width - trailing.width)
+        return Frames(leading: leading, title: title, trailing: trailing, titleX: titleX, trailingX: trailingX)
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -331,7 +335,7 @@ struct MessagesHeaderLayout: Layout {
         subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY), proposal: ProposedViewSize(laid.leading))
         subviews[1].place(at: CGPoint(x: bounds.minX + laid.titleX, y: bounds.minY), proposal: ProposedViewSize(laid.title))
         subviews[2].place(
-            at: CGPoint(x: bounds.maxX - laid.trailing.width, y: bounds.minY), proposal: ProposedViewSize(laid.trailing))
+            at: CGPoint(x: bounds.minX + laid.trailingX, y: bounds.minY), proposal: ProposedViewSize(laid.trailing))
     }
 }
 
