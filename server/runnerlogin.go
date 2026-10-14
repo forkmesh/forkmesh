@@ -498,7 +498,7 @@ func (b *runnerBackend) startLogin(login runnerLogin) (loginProcess, error) {
 		b.box.accounts.beginLogin(provider)
 	}
 	b.box.begin()
-	process, err := startPtyCommand(program, argv, env, dir, cols, rows)
+	process, err := startPtyCommand(program, argv, env, dir, cols, rows, b.box.credential())
 	if err != nil {
 		b.box.end()
 		if signIn {

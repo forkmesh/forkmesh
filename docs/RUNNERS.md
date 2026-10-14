@@ -187,6 +187,8 @@ Any account can add a runner from `/dashboard/runners`:
   and its own nftables table (never touching the machine's firewall), installs
   the CLIs, runs `--check` and starts. It deletes nothing and has no uninstall
   mode.
+- **macOS** (macOS 12 or newer, Xcode Command Line Tools): the same command
+  works. See [macOS runners](#macos-runners).
 - **From the desktop** (preferred for SSH): a `forkmesh://` hand-off fills the
   Hosts form; the desktop verifies the host key and runs the install line over
   its own SSH session, so the password never leaves the desktop.
@@ -197,6 +199,56 @@ Any account can add a runner from `/dashboard/runners`:
   `SSH_ASKPASS` from the child environment and a key only via a private
   `ssh-agent`; output is scrubbed. Without the helper socket the endpoints
   answer `503 ssh_setup_unavailable`.
+
+## macOS runners
+
+The installer printed `Runners need Linux with systemd.` on a Mac until
+2026-10-14. On Darwin it now differs from Linux in these ways:
+
+| | Linux | macOS |
+|---|---|---|
+| Daemon | `forkmesh-runner.service` | launch daemon `com.forkmesh.runner` (`/Library/LaunchDaemons`), log `/private/var/log/forkmesh-runner.log` |
+| Paths | `/etc/forkmesh-runner`, `/var/lib/forkmesh-runner` | `/private/etc/forkmesh-runner`, `/private/var/db/forkmesh-runner` (real paths, so no `/etc` or `/var` symlink sits inside `workRoot`) |
+| Job user | `useradd --system forkmesh-job` | `dscl` hidden user `forkmesh-job`, first free uid from 400 down to 300, shell `/usr/bin/false`, home `/private/var/db/forkmesh-job` |
+| Job firewall | nftables table `inet forkmesh_runner` | pf anchor `com.apple/forkmesh-runner` (`jobs.pf`, rules `user <uid>`), loaded by `com.forkmesh.runner-firewall` at boot and every 5 minutes; it enables pf if pf is off and never loads `/etc/pf.conf` |
+| Daemon binary | signed release via `install.sh` | built from `https://forkmesh.com/forkmesh/forkmesh` (`server/`, sparse clone) with Go, because releases publish only Linux `forkmesh-mirror-node` assets; `FORKMESH_RUNNER_SOURCE_URL` overrides the clone URL |
+| OpenSSL | system `openssl` | OpenSSL 3 (Homebrew `openssl@3`): the LibreSSL in macOS has no Ed25519 `genpkey` |
+| Agent CLIs | `npm -g` as root | `npm -g` as the `sudo` user, so the Homebrew prefix stays theirs |
+
+Homebrew runs as the user who ran `sudo` (`SUDO_USER`), never as root, to
+install a missing Go, `openssl@3` or Node.js. The Go build folder stays in
+`/private/tmp`, which macOS clears when it restarts; the installer deletes
+nothing.
+
+### Job sandbox on macOS
+
+macOS has no systemd, so `detectJobSandbox` (`server/sandbox_darwin.go` sets
+`directJobUID`) runs a root daemon's jobs directly: the child gets the job
+uid and gid via `SysProcAttr.Credential` with no supplementary groups, in its
+own process group. The sign-in pty uses the same credential. When no job is
+running, the daemon runs `/bin/kill -KILL -1` as the job user, which ends
+everything that user left behind, then sweeps the shared temp folders
+(`/private/tmp`, `/private/var/tmp`).
+
+What macOS lacks next to Linux:
+
+- No memory, CPU or task limits; only the job timeout. `ulimit -v` is not
+  applied because macOS refuses `RLIMIT_AS`.
+- No per-scope `IPAddressDeny`; the pf anchor is the only network control and
+  covers TCP and UDP only.
+- HOME is set after the uid switch, so the per-session HOME does apply here
+  (the Linux HOME gap above does not occur).
+
+Untested on a live Mac: the launch daemon, `dscl` user and pf anchor have
+not been loaded on a real machine as root. `pfctl -n` parses the generated
+`jobs.pf` and `plutil -lint` accepts both plists (office Mac, macOS 15).
+Claude Code on macOS normally stores its login in the Keychain, while the
+runner copies credential files; check that a web sign-in as the hidden job
+user writes `~/.claude/.credentials.json`.
+
+The daemon builds for `darwin`: `pty_darwin.go` opens a pty with
+`TIOCPTYGRANT`/`TIOCPTYUNLK`/`TIOCPTYGNAME`, and `memory_darwin.go` reports
+no memory figures (`/proc` and `sysinfo` are Linux only).
 
 ## Provider credentials
 

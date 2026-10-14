@@ -573,13 +573,7 @@ func memoryUsage() (uint64, uint64) {
 			return total - available, total
 		}
 	}
-	var info syscall.Sysinfo_t
-	if syscall.Sysinfo(&info) != nil {
-		return 0, 0
-	}
-	total := info.Totalram * uint64(info.Unit)
-	free := (info.Freeram + info.Bufferram) * uint64(info.Unit)
-	return total - free, total
+	return systemMemoryUsage()
 }
 
 var readMemInfo = func() ([]byte, error) { return os.ReadFile("/proc/meminfo") }

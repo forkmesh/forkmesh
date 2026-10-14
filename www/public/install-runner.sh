@@ -21,7 +21,7 @@ die() { printf 'Error: %s\n' "$1" >&2; exit "${2:-1}"; }
 
 usage() {
   cat <<'EOF'
-ForkMesh runner installer: turns this Linux machine into a personal agent runner.
+ForkMesh runner installer: turns this Linux or macOS machine into a personal agent runner.
 
   curl -fsSL https://forkmesh.com/install-runner.sh | sudo bash -s -- \
     --token <one-time token> --name <runner name> [--app https://app.forkmesh.com]
@@ -37,6 +37,11 @@ What it installs: /usr/local/bin/forkmesh-mirror-node (run as a runner, it serve
 repositories), the forkmesh-runner service, the unprivileged forkmesh-job user that
 agent jobs run as, firewall rules that keep jobs off private networks, and the chosen
 agent CLIs. It keeps any existing ForkMesh data on this machine and deletes nothing.
+
+On macOS the service is the com.forkmesh.runner launch daemon, the firewall is a pf
+anchor, and forkmesh-mirror-node is built from source with Go (Homebrew installs Go,
+OpenSSL 3 and Node.js when they are missing). It needs macOS 12 or newer and the
+Xcode Command Line Tools.
 EOF
 }
 
@@ -77,23 +82,102 @@ if [ -n "$BINARY" ] && [ ! -f "$BINARY" ]; then
   die "--binary $BINARY does not exist." 2
 fi
 
-ETC="$PREFIX/etc/forkmesh-runner"
-STATE="$PREFIX/var/lib/forkmesh-runner"
-JOB_HOME="$PREFIX/var/lib/$JOB_USER"
+PLATFORM="$(uname -s)"
+if [ "$TEST_MODE" = "1" ] && [ -n "${FORKMESH_RUNNER_PLATFORM:-}" ]; then
+  PLATFORM="$FORKMESH_RUNNER_PLATFORM"
+fi
+SOURCE_URL="${FORKMESH_RUNNER_SOURCE_URL:-https://forkmesh.com/forkmesh/forkmesh}"
+OPENSSL="openssl"
+
+if [ "$PLATFORM" = "Darwin" ]; then
+  ETC="$PREFIX/private/etc/forkmesh-runner"
+  STATE="$PREFIX/private/var/db/forkmesh-runner"
+  JOB_HOME="$PREFIX/private/var/db/$JOB_USER"
+  UNIT_DIR="$PREFIX/Library/LaunchDaemons"
+  PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+else
+  ETC="$PREFIX/etc/forkmesh-runner"
+  STATE="$PREFIX/var/lib/forkmesh-runner"
+  JOB_HOME="$PREFIX/var/lib/$JOB_USER"
+  UNIT_DIR="$PREFIX/etc/systemd/system"
+fi
 BIN="$PREFIX/usr/local/bin/forkmesh-mirror-node"
-UNIT_DIR="$PREFIX/etc/systemd/system"
 KEY="$STATE/identity/ed25519.pem"
 IDENTITY="$STATE/gateway/config.json"
 CONFIG="$ETC/runner.json"
 NFT="$ETC/jobs.nft"
+PF_RULES="$ETC/jobs.pf"
+PF_ANCHOR="com.apple/forkmesh-runner"
+RUNNER_LABEL="com.forkmesh.runner"
+FIREWALL_LABEL="com.forkmesh.runner-firewall"
+MAC_LOG="/private/var/log/forkmesh-runner.log"
 
 say "ForkMesh runner installer v$RUNNER_INSTALLER_VERSION: runner $NAME for $APP_URL"
 
+live_path() { printf '%s' "${1#"$PREFIX"}"; }
+
 require_system() {
   [ "$TEST_MODE" = "1" ] && return 0
-  [ "$(uname -s)" = "Linux" ] || die "Runners need Linux with systemd."
-  [ "$(id -u)" = "0" ] || die "Run this as root (the command pipes into sudo bash)."
-  command -v systemctl >/dev/null 2>&1 || die "Runners need systemd (systemctl was not found)."
+  case "$PLATFORM" in
+    Linux)
+      [ "$(id -u)" = "0" ] || die "Run this as root (the command pipes into sudo bash)."
+      command -v systemctl >/dev/null 2>&1 || die "Runners need systemd (systemctl was not found)."
+      ;;
+    Darwin)
+      [ "$(id -u)" = "0" ] || die "Run this as root (the command pipes into sudo bash)."
+      local major
+      major="$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)"
+      if ! [[ "$major" =~ ^[0-9]+$ ]] || [ "$major" -lt 12 ]; then
+        die "Runners need macOS 12 or newer."
+      fi
+      for tool in launchctl dscl pfctl; do
+        command -v "$tool" >/dev/null 2>&1 || die "$tool was not found; this does not look like macOS."
+      done
+      ;;
+    *) die "Runners need Linux with systemd, or macOS." ;;
+  esac
+}
+
+login_user() {
+  [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] || return 1
+  printf '%s' "$SUDO_USER"
+}
+
+as_login_user() {
+  local who
+  who="$(login_user)" || return 1
+  sudo -u "$who" -H "$@"
+}
+
+brew_install() {
+  local brew
+  brew="$(command -v brew 2>/dev/null)" || return 1
+  as_login_user "$brew" install "$@" </dev/null
+}
+
+find_openssl() {
+  local candidate
+  for candidate in "$(command -v openssl 2>/dev/null || true)" \
+      /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+    if "$candidate" version 2>/dev/null | grep -Eq '^OpenSSL (1\.1\.1|[3-9]\.)'; then
+      OPENSSL="$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+find_go() {
+  local candidate
+  for candidate in "$(command -v go 2>/dev/null || true)" \
+      /opt/homebrew/bin/go /usr/local/go/bin/go /usr/local/bin/go; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
 }
 
 pm_install() {
@@ -111,8 +195,26 @@ pm_install() {
   fi
 }
 
+install_packages_macos() {
+  step "Checking system tools"
+  if ! xcode-select -p >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1 ||
+     ! python3 -c '' >/dev/null 2>&1; then
+    die "Runners need the Xcode Command Line Tools (git and python3). Install them with: xcode-select --install"
+  fi
+  command -v curl >/dev/null 2>&1 || die "curl is required."
+  if ! find_openssl; then
+    say "Installing OpenSSL 3 with Homebrew (the LibreSSL in macOS cannot sign with Ed25519)"
+    brew_install openssl@3 || true
+    find_openssl || die "OpenSSL 3 is required. Install it with: brew install openssl@3"
+  fi
+}
+
 install_packages() {
   [ "$TEST_MODE" = "1" ] && return 0
+  if [ "$PLATFORM" = "Darwin" ]; then
+    install_packages_macos
+    return 0
+  fi
   step "Checking system packages"
   local missing=()
   command -v curl >/dev/null 2>&1 || missing+=(curl)
@@ -130,8 +232,46 @@ install_packages() {
   done
 }
 
+free_macos_id() {
+  local used id
+  used=" $( { dscl . -list /Users UniqueID; dscl . -list /Groups PrimaryGroupID; } | awk '{print $2}' | tr '\n' ' ') "
+  for id in $(seq 400 -1 300); do
+    case "$used" in
+      *" $id "*) ;;
+      *) printf '%s' "$id"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
+create_macos_job_user() {
+  local id gid
+  id="$(free_macos_id)" || die "No free system user id between 300 and 400 for $JOB_USER."
+  gid="$(dscl . -read "/Groups/$JOB_USER" PrimaryGroupID 2>/dev/null | awk '{print $2}' || true)"
+  if [ -z "$gid" ]; then
+    gid="$id"
+    dscl . -create "/Groups/$JOB_USER"
+    dscl . -create "/Groups/$JOB_USER" PrimaryGroupID "$gid"
+    dscl . -create "/Groups/$JOB_USER" RealName "ForkMesh runner jobs"
+    dscl . -create "/Groups/$JOB_USER" Password '*'
+  fi
+  dscl . -create "/Users/$JOB_USER"
+  dscl . -create "/Users/$JOB_USER" UniqueID "$id"
+  dscl . -create "/Users/$JOB_USER" PrimaryGroupID "$gid"
+  dscl . -create "/Users/$JOB_USER" UserShell /usr/bin/false
+  dscl . -create "/Users/$JOB_USER" NFSHomeDirectory "$(live_path "$JOB_HOME")"
+  dscl . -create "/Users/$JOB_USER" RealName "ForkMesh runner jobs"
+  dscl . -create "/Users/$JOB_USER" Password '*'
+  dscl . -create "/Users/$JOB_USER" IsHidden 1
+  dscacheutil -flushcache >/dev/null 2>&1 || true
+  say "Created the job user $JOB_USER (uid $id)"
+}
+
 ensure_job_user() {
-  if [ "$TEST_MODE" != "1" ]; then
+  if [ "$TEST_MODE" != "1" ] && [ "$PLATFORM" = "Darwin" ]; then
+    dscl . -read "/Users/$JOB_USER" UniqueID >/dev/null 2>&1 || create_macos_job_user
+    install -d -o "$JOB_USER" -g "$JOB_USER" -m 0700 "$JOB_HOME" "$JOB_HOME/.claude" "$JOB_HOME/.codex"
+  elif [ "$TEST_MODE" != "1" ]; then
     if ! id "$JOB_USER" >/dev/null 2>&1; then
       useradd --system --home-dir "$JOB_HOME" --create-home --shell /usr/sbin/nologin "$JOB_USER"
     fi
@@ -146,7 +286,10 @@ ensure_dirs() {
   install -d -m 0711 "$STATE" "$STATE/work"
   install -d -m 0700 "$STATE/identity" "$STATE/gateway"
   install -d -m 1777 "$STATE/tmp"
-  install -d -m 0755 "$(dirname "$BIN")" "$UNIT_DIR"
+  local dir
+  for dir in "$(dirname "$BIN")" "$UNIT_DIR"; do
+    [ -d "$dir" ] || install -d -m 0755 "$dir"
+  done
 }
 
 ensure_binary() {
@@ -161,6 +304,10 @@ ensure_binary() {
     return 0
   fi
   [ "$TEST_MODE" = "1" ] && die "No --binary given in test mode."
+  if [ "$PLATFORM" = "Darwin" ]; then
+    build_binary_from_source
+    return 0
+  fi
   local stage
   stage="$(mktemp -d /tmp/forkmesh-runner-stage.XXXXXX)"
   curl -fsSL --retry 3 "$INSTALL_SH_URL" -o "$stage/install.sh" ||
@@ -177,6 +324,35 @@ ensure_binary() {
   say "Installed $BIN"
 }
 
+build_binary_from_source() {
+  local go stage src
+  if ! go="$(find_go)"; then
+    say "Installing Go with Homebrew to build forkmesh-mirror-node"
+    brew_install go || true
+    go="$(find_go)" ||
+      die "Go is required to build forkmesh-mirror-node on macOS. Install it with: brew install go"
+  fi
+  stage="$(mktemp -d /private/tmp/forkmesh-runner-build.XXXXXX)"
+  say "Building forkmesh-mirror-node from $SOURCE_URL (the signed release has no macOS build of it)"
+  src="$stage/src"
+  if ! { git clone --quiet --depth 1 --filter=blob:none --sparse "$SOURCE_URL" "$src" &&
+         git -C "$src" sparse-checkout set server; } </dev/null; then
+    src="$stage/full"
+    git clone --quiet --depth 1 "$SOURCE_URL" "$src" </dev/null ||
+      die "Could not clone $SOURCE_URL."
+  fi
+  [ -f "$src/server/go.mod" ] || die "$SOURCE_URL has no server/go.mod."
+  if ! (cd "$src/server" && HOME="$stage" GOPATH="$stage/go" GOCACHE="$stage/cache" CGO_ENABLED=0 \
+          "$go" build -trimpath -o "$stage/forkmesh-mirror-node" ./cmd/forkmesh-mirror-node) </dev/null; then
+    warn "The go.mod toolchain could not be used; building with the installed Go."
+    (cd "$src/server" && HOME="$stage" GOPATH="$stage/go" GOCACHE="$stage/cache" CGO_ENABLED=0 \
+       GOTOOLCHAIN=local "$go" build -trimpath -o "$stage/forkmesh-mirror-node" ./cmd/forkmesh-mirror-node) </dev/null ||
+      die "Could not build forkmesh-mirror-node."
+  fi
+  install -m 0755 "$stage/forkmesh-mirror-node" "$BIN"
+  say "Installed $BIN (macOS clears the build folder $stage when it restarts)"
+}
+
 b64url() { base64 | tr '+/' '-_' | tr -d '=\n'; }
 
 ensure_identity() {
@@ -187,14 +363,14 @@ ensure_identity() {
     local old_umask
     old_umask="$(umask)"
     umask 077
-    openssl genpkey -algorithm ed25519 -out "$KEY.new" 2>/dev/null ||
+    "$OPENSSL" genpkey -algorithm ed25519 -out "$KEY.new" 2>/dev/null ||
       die "OpenSSL 1.1.1 or newer is required (Ed25519)."
     mv "$KEY.new" "$KEY"
     umask "$old_umask"
     say "Made a new runner key at $KEY"
   fi
   chmod 0600 "$KEY"
-  PUBLIC_KEY="$(openssl pkey -in "$KEY" -pubout -outform DER | tail -c 32 | b64url)"
+  PUBLIC_KEY="$("$OPENSSL" pkey -in "$KEY" -pubout -outform DER | tail -c 32 | b64url)"
   [[ "$PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || die "Could not read the runner's public key."
 }
 
@@ -202,10 +378,10 @@ register_runner() {
   step "Registering $NAME with ForkMesh"
   local ts digest message_file signature body answer
   ts="$(python3 -c 'import time; print(int(time.time() * 1000))')"
-  digest="$(printf '%s' "$TOKEN" | openssl dgst -sha256 -r | cut -d' ' -f1)"
+  digest="$(printf '%s' "$TOKEN" | "$OPENSSL" dgst -sha256 -r | cut -d' ' -f1)"
   message_file="$(mktemp)"
   printf 'forkmesh-runner-register-token-v1\n%s\n%s\n%s\n%s' "$NAME" "$PUBLIC_KEY" "$digest" "$ts" >"$message_file"
-  signature="$(openssl pkeyutl -sign -rawin -inkey "$KEY" -in "$message_file" | b64url)"
+  signature="$("$OPENSSL" pkeyutl -sign -rawin -inkey "$KEY" -in "$message_file" | b64url)"
   rm -f "$message_file"
   body="$(FM_TOKEN="$TOKEN" FM_NAME="$NAME" FM_KEY="$PUBLIC_KEY" FM_SIG="$signature" FM_TS="$ts" python3 -c '
 import json, os
@@ -274,7 +450,104 @@ PY
   say "Wrote $CONFIG"
 }
 
+write_units_macos() {
+  step "Installing the $RUNNER_LABEL launch daemon"
+  local job_uid live_state
+  live_state="$(live_path "$STATE")"
+  if [ "$TEST_MODE" = "1" ]; then
+    job_uid="$(id -u)"
+  else
+    job_uid="$(id -u "$JOB_USER")"
+  fi
+  cat >"$UNIT_DIR/$RUNNER_LABEL.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>$RUNNER_LABEL</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/forkmesh-mirror-node</string>
+		<string>--config</string>
+		<string>$(live_path "$CONFIG")</string>
+	</array>
+	<key>UserName</key>
+	<string>root</string>
+	<key>GroupName</key>
+	<string>wheel</string>
+	<key>Umask</key>
+	<integer>63</integer>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>TZ</key>
+		<string>UTC</string>
+		<key>HOME</key>
+		<string>$live_state</string>
+		<key>TMPDIR</key>
+		<string>$live_state/tmp</string>
+		<key>PATH</key>
+		<string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>ExitTimeOut</key>
+	<integer>15</integer>
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>NumberOfFiles</key>
+		<integer>8192</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>$MAC_LOG</string>
+	<key>StandardErrorPath</key>
+	<string>$MAC_LOG</string>
+</dict>
+</plist>
+EOF
+  cat >"$PF_RULES" <<EOF
+block return out quick proto { tcp, udp } from any to { 169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 127.0.0.0/8, 0.0.0.0/8, 224.0.0.0/4, 240.0.0.0/4 } user $job_uid
+block return out quick inet6 proto { tcp, udp } from any to { ::1, ::ffff:0:0/96, fc00::/7, fe80::/10, ff00::/8 } user $job_uid
+EOF
+  chmod 0600 "$PF_RULES"
+  cat >"$UNIT_DIR/$FIREWALL_LABEL.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>$FIREWALL_LABEL</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>/sbin/pfctl -s info 2&gt;/dev/null | grep -q 'Status: Enabled' || /sbin/pfctl -E; /sbin/pfctl -a $PF_ANCHOR -f $(live_path "$PF_RULES")</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>300</integer>
+</dict>
+</plist>
+EOF
+  chmod 0644 "$UNIT_DIR/$RUNNER_LABEL.plist" "$UNIT_DIR/$FIREWALL_LABEL.plist"
+  if [ "$TEST_MODE" != "1" ]; then
+    chown root:wheel "$UNIT_DIR/$RUNNER_LABEL.plist" "$UNIT_DIR/$FIREWALL_LABEL.plist"
+  fi
+}
+
 write_units() {
+  if [ "$PLATFORM" = "Darwin" ]; then
+    write_units_macos
+    return 0
+  fi
   step "Installing the forkmesh-runner service"
   cat >"$UNIT_DIR/forkmesh-runner.service" <<EOF
 [Unit]
@@ -356,25 +629,72 @@ WantedBy=multi-user.target
 EOF
 }
 
+npm_global_install() {
+  if [ "$PLATFORM" = "Darwin" ] && login_user >/dev/null; then
+    as_login_user npm install -g --no-fund --no-audit "$1" </dev/null && return 0
+  fi
+  npm install -g --no-fund --no-audit "$1" </dev/null
+}
+
 install_providers() {
   [ "$PROVIDERS" = "none" ] && return 0
   [ "$TEST_MODE" = "1" ] && return 0
   step "Agent CLIs ($PROVIDERS)"
   if ! command -v npm >/dev/null 2>&1; then
     say "Installing Node.js and npm"
-    pm_install nodejs npm || warn "Could not install Node.js; install the agent CLIs yourself."
+    if [ "$PLATFORM" = "Darwin" ]; then
+      brew_install node || warn "Could not install Node.js with Homebrew; install the agent CLIs yourself."
+    else
+      pm_install nodejs npm || warn "Could not install Node.js; install the agent CLIs yourself."
+    fi
   fi
   command -v npm >/dev/null 2>&1 || return 0
   case ",$PROVIDERS," in
     *,claude,*)
       if command -v claude >/dev/null 2>&1; then say "Claude Code is installed"
-      else npm install -g --no-fund --no-audit @anthropic-ai/claude-code </dev/null || warn "Could not install Claude Code."; fi ;;
+      else npm_global_install @anthropic-ai/claude-code || warn "Could not install Claude Code."; fi ;;
   esac
   case ",$PROVIDERS," in
     *,codex,*)
       if command -v codex >/dev/null 2>&1; then say "Codex is installed"
-      else npm install -g --no-fund --no-audit @openai/codex </dev/null || warn "Could not install Codex."; fi ;;
+      else npm_global_install @openai/codex || warn "Could not install Codex."; fi ;;
   esac
+}
+
+bootstrap_daemon() {
+  local label="$1" tick
+  launchctl bootout "system/$label" >/dev/null 2>&1 || true
+  launchctl enable "system/$label" >/dev/null 2>&1 || true
+  for tick in 1 2 3 4 5; do
+    launchctl bootstrap system "$UNIT_DIR/$label.plist" 2>/dev/null && return 0
+    sleep 1
+  done
+  return 1
+}
+
+start_macos() {
+  step "Starting the runner"
+  local tick rules="" state=""
+  if bootstrap_daemon "$FIREWALL_LABEL"; then
+    for tick in 1 2 3 4 5; do
+      rules="$(pfctl -a "$PF_ANCHOR" -s rules 2>/dev/null || true)"
+      case "$rules" in *user*) break ;; esac
+      sleep 1
+    done
+  fi
+  case "$rules" in
+    *user*) say "The job firewall is loaded (pf anchor $PF_ANCHOR)" ;;
+    *) warn "The job firewall did not load; agent jobs can reach this machine's private network." ;;
+  esac
+  bootstrap_daemon "$RUNNER_LABEL" || die "launchctl could not load $RUNNER_LABEL. Log: $MAC_LOG"
+  for tick in 1 2 3 4 5 6; do
+    sleep 2
+    state="$(launchctl print "system/$RUNNER_LABEL" 2>/dev/null || true)"
+    case "$state" in
+      *"state = running"*) say "The runner is running. Log: $MAC_LOG"; return 0 ;;
+    esac
+  done
+  die "$RUNNER_LABEL did not start. Log: $MAC_LOG"
 }
 
 check_and_start() {
@@ -383,6 +703,10 @@ check_and_start() {
     die "The runner configuration did not pass forkmesh-mirror-node --check. Run it by hand to see why."
   }
   [ "$TEST_MODE" = "1" ] && return 0
+  if [ "$PLATFORM" = "Darwin" ]; then
+    start_macos
+    return 0
+  fi
   step "Starting the runner"
   systemctl daemon-reload
   if command -v nft >/dev/null 2>&1; then

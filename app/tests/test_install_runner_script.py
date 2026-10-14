@@ -166,3 +166,32 @@ def test_the_script_deletes_nothing_recursively_and_never_flushes_the_firewall()
     assert "flush ruleset" not in text
     assert "--uninstall" not in text and "--purge" not in text
     assert text.rstrip().endswith("}")
+
+
+def test_macos_installs_a_launch_daemon_and_a_pf_anchor(tmp_path):
+    app = App()
+    try:
+        binary = fake_binary(tmp_path)
+        env = sandbox_env(tmp_path)
+        env["FORKMESH_RUNNER_PLATFORM"] = "Darwin"
+        result = run(tmp_path, "--token", TOKEN, "--name", "alice-mac", "--app",
+                     app.url, "--binary", str(binary), env=env)
+    finally:
+        app.close()
+    assert result.returncode == 0, result.stderr
+    root = tmp_path / "root"
+    config = json.loads((root / "private/etc/forkmesh-runner/runner.json").read_text())
+    assert config["identityKey"] == "/private/var/db/forkmesh-runner/identity/ed25519.pem"
+    assert config["runner"]["workRoot"] == "/private/var/db/forkmesh-runner/work"
+    assert (root / "private/var/db/forkmesh-job/.claude").is_dir()
+    assert not (root / "etc/systemd").exists() and not (root / "var/lib").exists()
+    plist = (root / "Library/LaunchDaemons/com.forkmesh.runner.plist").read_text()
+    assert "<string>/private/etc/forkmesh-runner/runner.json</string>" in plist
+    assert "<string>/private/var/db/forkmesh-runner/tmp</string>" in plist
+    assert str(tmp_path) not in plist and TOKEN not in plist
+    pf = (root / "private/etc/forkmesh-runner/jobs.pf").read_text()
+    assert "192.168.0.0/16" in pf and "user %d" % os.getuid() in pf
+    assert stat.S_IMODE((root / "private/etc/forkmesh-runner/jobs.pf").stat().st_mode) == 0o600
+    firewall = (root / "Library/LaunchDaemons/com.forkmesh.runner-firewall.plist").read_text()
+    assert "pfctl -a com.apple/forkmesh-runner -f /private/etc/forkmesh-runner/jobs.pf" in firewall
+    assert "pfctl -F" not in firewall and "pf.conf" not in firewall

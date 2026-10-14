@@ -12,6 +12,9 @@ import (
 )
 
 func TestDetectJobSandboxPicksSystemdOrFallsBack(t *testing.T) {
+	if directJobUID {
+		t.Skip("this platform runs jobs without systemd")
+	}
 	cfg := &RunnerConfig{JobMemoryMax: "700M", JobCPUQuota: "90%"}
 	found := func(string) (string, error) { return "/usr/bin/systemd-run", nil }
 	missing := func(string) (string, error) { return "", errors.New("no") }
@@ -60,6 +63,35 @@ func TestDetectJobSandboxPicksSystemdOrFallsBack(t *testing.T) {
 	}
 }
 
+func TestDetectJobSandboxRunsJobsAsTheJobUserWithoutSystemd(t *testing.T) {
+	saved := directJobUID
+	directJobUID = true
+	defer func() { directJobUID = saved }()
+	missing := func(string) (string, error) { return "", errors.New("no") }
+	noEnv := func(string) string { return "" }
+	no := func(string) bool { return false }
+	withUID := &RunnerConfig{JobMemoryMax: "700M", JobCPUQuota: "90%", JobUID: 2001}
+	box, err := detectJobSandbox(withUID, missing, noEnv, 0, no)
+	if err != nil || !box.direct || box.sandboxed() || box.uid != 2001 {
+		t.Fatalf("root jobUid without systemd: %+v %v", box, err)
+	}
+	box.gid = 2002
+	credential := box.credential()
+	if credential == nil || credential.Uid != 2001 || credential.Gid != 2002 || credential.Groups == nil || len(credential.Groups) != 0 {
+		t.Fatalf("credential = %+v", credential)
+	}
+	if _, err := detectJobSandbox(&RunnerConfig{JobMemoryMax: "700M", JobCPUQuota: "90%"}, missing, noEnv, 0, no); err == nil {
+		t.Fatal("a root daemon without a job user was accepted")
+	}
+	if _, err := detectJobSandbox(withUID, missing, noEnv, 1000, no); err == nil {
+		t.Fatal("jobUid accepted without root")
+	}
+	box, err = detectJobSandbox(&RunnerConfig{JobMemoryMax: "700M", JobCPUQuota: "90%"}, missing, noEnv, 1000, no)
+	if err != nil || box.direct || box.credential() != nil {
+		t.Fatalf("a non-root daemon runs jobs as itself: %+v %v", box, err)
+	}
+}
+
 func TestJobSandboxArgv(t *testing.T) {
 	box := jobSandbox{memoryMax: "700M", cpuQuota: "90%", systemdRun: "/usr/bin/systemd-run", user: true}
 	program, args := box.argv("claude", []string{"-p", "x"})
@@ -83,6 +115,12 @@ func TestJobSandboxArgv(t *testing.T) {
 	}
 	fallback := jobSandbox{memoryMax: "1G"}
 	program, args = fallback.argv("claude", []string{"-p"})
+	if !addressLimitSupported {
+		if program != "claude" || strings.Join(args, " ") != "-p" {
+			t.Fatalf("fallback argv = %s %q", program, args)
+		}
+		return
+	}
 	wantKiB := (4*(uint64(1)<<30) + sandboxAddressHeadroom) >> 10
 	if program != "/bin/sh" || args[0] != "-c" || !strings.Contains(args[1], "ulimit -v "+strconv.FormatUint(wantKiB, 10)) ||
 		strings.Join(args[2:], " ") != "forkmesh-job claude -p" {
@@ -101,7 +139,11 @@ func TestFallbackSandboxAppliesTheAddressLimitAndDropsNodeSecrets(t *testing.T) 
 		t.Fatalf("%v: %s", err, stderr)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 2 || lines[0] != strconv.FormatUint(box.addressLimit()>>10, 10) || lines[1] != "cfg=none vultr=none" {
+	limit := strconv.FormatUint(box.addressLimit()>>10, 10)
+	if !addressLimitSupported {
+		limit = "unlimited"
+	}
+	if len(lines) != 2 || lines[0] != limit || lines[1] != "cfg=none vultr=none" {
 		t.Fatalf("sandboxed output = %q", out.String())
 	}
 }
