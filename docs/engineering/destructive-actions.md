@@ -37,7 +37,12 @@ Every helper takes the target and the **expected parent** folder, and refuses
 
 Both `HOME` and the passwd home are protected, so a test that sandboxes `HOME`
 but inherits `FORKMESH_HOME` still cannot reach real folders. Symlinks are
-unlinked, never followed.
+unlinked, never followed. Paths are compared after resolving symlinks in the
+deepest folder above the target that exists, so `/var/...` and
+`/private/var/...` on macOS compare equal even when the target's own parent
+does not exist yet (the Go helper resolved only an existing parent until
+2026-10-15, so the agent work folder check in `server/sandbox.go` accepted a
+folder under the node key's folder on macOS).
 
 | Language | Helper | Own worktree | Move aside |
 | --- | --- | --- | --- |
