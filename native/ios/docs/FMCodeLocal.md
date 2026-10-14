@@ -203,6 +203,10 @@ Changes made in Files while the app is running show up the next time it starts.
   feature) with its own workspace.
 - The network catalog (`ReposScreen`) keeps every row and badges the ones on this device "Cloned"
   (or "On device") through `store.record(for:)`.
+- The `.localRepos` route (the "On this device" search and navigation entry) opens
+  `LocalReposRouteScreen` (`ForkMesh/Navigation/RouteFallbacks.swift`): the same section on its own
+  screen. Until 2026-10-14 nothing was registered for it, so the phone showed the "Coming soon"
+  placeholder ("This screen (localRepos) is being built by WS5").
 
 ## Not verified / left out
 
