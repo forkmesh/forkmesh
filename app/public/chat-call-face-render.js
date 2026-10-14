@@ -1,4 +1,4 @@
-import { faceFrame, liveHead, projectPose } from "./chat-call-face-geometry.js";
+import { centroid, faceFrame, liveHead, projectPose, vertexDepths } from "./chat-call-face-geometry.js";
 import { createFaceMesh } from "./chat-call-face-mesh.js";
 import { createHairMatte, createMatte, floatTargets, MATTE_SAMPLE } from "./chat-call-segment.js";
 
@@ -15,6 +15,9 @@ const MIN_UNITS = 14;
 const HALO_STRENGTH = 0.25;
 const HAIR_SIDE = 6.4;
 const HAIR_CENTER = [0, 0.5, -0.3];
+const DEPTH_SCALE = 0.5;
+const EYE_UV_HALF = [0.62, 0.36];
+const LOOK_GAIN = 0.55;
 
 export const BACKGROUND_MODES = Object.freeze({ off: 0, blur: 1, image: 2 });
 
@@ -32,6 +35,7 @@ attribute vec2 aPos;
 attribute vec2 aUv;
 attribute float aHole;
 attribute float aRegion;
+attribute float aDepth;
 uniform vec2 uSize;
 varying vec2 vUv;
 varying float vHole;
@@ -40,7 +44,7 @@ void main() {
   vUv = aUv;
   vHole = aHole;
   vRegion = aRegion;
-  gl_Position = vec4(aPos / uSize * 2.0 - 1.0, 0.0, 1.0);
+  gl_Position = vec4(aPos / uSize * 2.0 - 1.0, clamp(-aDepth * ${DEPTH_SCALE.toFixed(2)}, -0.99, 0.99), 1.0);
 }`;
 
 const WARP_FRAGMENT = `
@@ -48,9 +52,26 @@ precision mediump float;
 uniform sampler2D uPhoto;
 uniform sampler2D uAux;
 uniform float uAuxPass;
+uniform vec4 uEyeL;
+uniform vec4 uEyeR;
+uniform vec4 uLook;
+uniform vec2 uClose;
 varying vec2 vUv;
 varying float vHole;
 varying float vRegion;
+vec2 gaze(vec2 uv, vec4 eye, vec2 look) {
+  vec2 q = (uv - eye.xy) / eye.zw;
+  float m = 1.0 - smoothstep(0.45, 1.0, length(q));
+  return uv - look * eye.zw * m;
+}
+vec3 lid(vec3 color, vec4 eye, float close) {
+  if (close < 0.01) return color;
+  vec2 q = (vUv - eye.xy) / eye.zw;
+  float m = 1.0 - smoothstep(0.6, 1.05, length(q * vec2(1.0, 0.8)));
+  vec3 skin = 0.5 * (texture2D(uPhoto, vec2(vUv.x, eye.y - eye.w * 1.25), 1.5).rgb + texture2D(uPhoto, vec2(vUv.x, eye.y + eye.w * 1.6), 1.5).rgb);
+  float lash = (1.0 - smoothstep(0.0, 0.22, abs(q.y - 0.3))) * (1.0 - smoothstep(0.5, 0.95, abs(q.x))) * 0.45;
+  return mix(color, skin * (1.0 - lash), m * smoothstep(0.15, 0.85, close));
+}
 void main() {
   vec3 aux = texture2D(uAux, vUv).rgb;
   float open = 1.0 - step(0.5, vHole);
@@ -58,7 +79,9 @@ void main() {
     float skin = texture2D(uAux, vUv, 2.5).g;
     gl_FragColor = vec4(skin * aux.r * open, aux.b, 1.0 - open, vRegion);
   } else {
-    gl_FragColor = vec4(texture2D(uPhoto, vUv).rgb, aux.r * open);
+    vec2 uv = gaze(gaze(vUv, uEyeL, uLook.xy), uEyeR, uLook.zw);
+    vec3 color = lid(lid(texture2D(uPhoto, uv).rgb, uEyeL, uClose.x), uEyeR, uClose.y);
+    gl_FragColor = vec4(color, aux.r * open);
   }
 }`;
 
@@ -215,10 +238,22 @@ uniform float uPresence;
 uniform float uHide;
 uniform vec2 uFaceUv;
 uniform vec4 uImageRect;
+uniform float uTongue;
+uniform vec2 uTongueCenter;
+uniform vec2 uTongueX;
+uniform vec2 uTongueY;
+uniform float uSkinRed;
 varying vec2 vUv;
 ${MATTE_SAMPLE}
 ${ZONE}
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+float tongueAt(vec2 uv, vec3 cam) {
+  vec2 d = uv * uPixels - uTongueCenter;
+  vec2 q = vec2(dot(d, uTongueX), dot(d, uTongueY));
+  float inside = 1.0 - smoothstep(0.75, 1.0, length(q));
+  float red = (cam.r - cam.g) / (cam.r + cam.g + cam.b + 0.047);
+  return inside * smoothstep(uSkinRed + 0.04, uSkinRed + 0.1, red);
+}
 vec3 ratio(vec4 cam, vec4 face) {
   return (cam.rgb + 0.004 * cam.a) / (face.rgb + 0.004 * face.a);
 }
@@ -270,6 +305,7 @@ void main() {
     skin = smoothstep(0.15, 0.85, skin);
     vec3 face = clamp(warp.rgb * mix(hair, local * shade, skin), 0.0, 1.0);
     color = mix(color, face, warp.a * uPresence);
+    if (uTongue > 0.001) color = mix(color, cam, tongueAt(vUv, cam) * uTongue * uPresence);
   }
   if (uHide > 0.001) {
     vec3 plain = texture2D(uLowPlain, vUv).rgb;
@@ -313,15 +349,29 @@ function texture(gl, filter = gl.LINEAR) {
   return handle;
 }
 
-function target(gl, width, height, type) {
+function target(gl, width, height, type, depth = false) {
   const handle = texture(gl);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, type, null);
   const framebuffer = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, handle, 0);
-  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  let renderbuffer = null;
+  if (depth) {
+    renderbuffer = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbuffer);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+  }
+  let ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  if (!ok && renderbuffer) {
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, null);
+    gl.deleteRenderbuffer(renderbuffer);
+    renderbuffer = null;
+    ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return ok ? { texture: handle, framebuffer, width, height } : null;
+  return ok ? { texture: handle, framebuffer, width, height, depth: Boolean(renderbuffer) } : null;
 }
 
 export function faceWebGL(canvas) {
@@ -342,14 +392,14 @@ export function backgroundCapable(gl) {
   return Boolean(gl && gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) >= MIN_UNITS && floatTargets(gl));
 }
 
-export const VERTEX_FLOATS = 6;
+export const VERTEX_FLOATS = 7;
 
 export function vertexRegion(v) {
   if (v >= 68) return 0;
   return v <= 26 ? 0.25 : 1;
 }
 
-export function warpVertices(mesh, layout, livePoints, photoSize) {
+export function warpVertices(mesh, layout, livePoints, photoSize, depths = null) {
   const out = new Float32Array(mesh.triangles.length * 3 * VERTEX_FLOATS);
   let at = 0;
   for (const triangle of mesh.triangles) {
@@ -360,6 +410,7 @@ export function warpVertices(mesh, layout, livePoints, photoSize) {
       out[at++] = layout[v][1] / photoSize;
       out[at++] = triangle.mouth ? 1 : 0;
       out[at++] = vertexRegion(v);
+      out[at++] = depths ? depths[v] : 0;
     }
   }
   return out;
@@ -382,6 +433,28 @@ export function hairRegion(pose, width, height) {
   const size = [Math.min(side, width), Math.min(side, height)];
   const fit = (value, extent, limit) => Math.min(Math.max(value, extent / 2), limit - extent / 2);
   return { center: [fit(center[0], size[0], width), fit(center[1], size[1], height)], size };
+}
+
+export function photoEyes(layout, photoSize) {
+  return [[36, 39, [36, 37, 38, 39, 40, 41]], [42, 45, [42, 43, 44, 45, 46, 47]]].map(([a, b, ring]) => {
+    const width = Math.hypot(layout[b][0] - layout[a][0], layout[b][1] - layout[a][1]) / photoSize;
+    const center = centroid(layout, ring);
+    return [center[0] / photoSize, center[1] / photoSize, EYE_UV_HALF[0] * width, EYE_UV_HALF[1] * width];
+  });
+}
+
+export function lookUniform(look) {
+  if (!look) return [0, 0, 0, 0];
+  const pick = (side, k) => (Number.isFinite(look[side]?.[k]) ? look[side][k] * LOOK_GAIN : 0);
+  return [pick(0, 0), pick(0, 1), pick(1, 0), pick(1, 1)];
+}
+
+export function axisFrame(box) {
+  return {
+    center: box.center,
+    x: [box.ux[0] / box.half[0], box.ux[1] / box.half[0]],
+    y: [box.uy[0] / box.half[1], box.uy[1] / box.half[1]],
+  };
 }
 
 export function zoneFrame(head, pose) {
@@ -490,8 +563,8 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
     const blurWidth = Math.max(1, Math.ceil(fillWidth / 2));
     const blurHeight = Math.max(1, Math.ceil(fillHeight / 2));
     targets = {
-      warp: target(gl, w, h, gl.UNSIGNED_BYTE),
-      aux: target(gl, w, h, gl.UNSIGNED_BYTE),
+      warp: target(gl, w, h, gl.UNSIGNED_BYTE, true),
+      aux: target(gl, w, h, gl.UNSIGNED_BYTE, true),
       cam: make(lowWidth, lowHeight),
       face: make(lowWidth, lowHeight),
       plain: make(lowWidth, lowHeight),
@@ -637,7 +710,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       gl.bindTexture(gl.TEXTURE_2D, auxPhoto);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, auxImage);
       gl.generateMipmap(gl.TEXTURE_2D);
-      face = { mesh, layout, model, size };
+      face = { mesh, layout, model, size, eyes: photoEyes(layout, size) };
     },
     clearPhoto() {
       face = null;
@@ -659,7 +732,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
     get lastHead() {
       return lastHead;
     },
-    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, runHair = true, needMatte = false, uploaded = false } = {}) {
+    draw(frame, w, h, live, { presence = 1, hide = 0, runNetwork = true, runHair = true, needMatte = false, uploaded = false, expression = null, tongueBox = null } = {}) {
       if (gl.isContextLost()) {
         lost = true;
         return false;
@@ -687,11 +760,11 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
         zone = zoneFrame(live, head.pose);
         const center = faceFrame(live).mid;
         faceUv = [center[0] / w, center[1] / h];
-        const vertices = warpVertices(face.mesh, face.layout, head.points, face.size);
+        const vertices = warpVertices(face.mesh, face.layout, head.points, face.size, vertexDepths(face.model, head.pose));
         gl.useProgram(warp.program);
         gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-        const attrs = [["aPos", 2, 0], ["aUv", 2, 8], ["aHole", 1, 16], ["aRegion", 1, 20]].map(([name, size, offset]) => {
+        const attrs = [["aPos", 2, 0], ["aUv", 2, 8], ["aHole", 1, 16], ["aRegion", 1, 20], ["aDepth", 1, 24]].map(([name, size, offset]) => {
           const at = gl.getAttribLocation(warp.program, name);
           gl.enableVertexAttribArray(at);
           gl.vertexAttribPointer(at, size, gl.FLOAT, false, VERTEX_FLOATS * 4, offset);
@@ -699,14 +772,27 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
         }).filter((at) => at >= 0);
         bindTextures(warp, [["uPhoto", photo], ["uAux", auxPhoto]]);
         gl.uniform2f(warp.uniforms.uSize, w, h);
+        gl.uniform4f(warp.uniforms.uEyeL, ...face.eyes[0]);
+        gl.uniform4f(warp.uniforms.uEyeR, ...face.eyes[1]);
+        gl.uniform4f(warp.uniforms.uLook, ...lookUniform(expression?.look));
+        gl.uniform2f(warp.uniforms.uClose, expression?.close?.[0] || 0, expression?.close?.[1] || 0);
         for (const [out, pass] of [[targets.warp, 0], [targets.aux, 1]]) {
           into(out);
           gl.clearColor(0, 0, 0, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
+          if (out.depth) {
+            gl.enable(gl.DEPTH_TEST);
+            gl.depthFunc(gl.LESS);
+            gl.depthMask(true);
+            gl.clearDepth(1);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          } else {
+            gl.clear(gl.COLOR_BUFFER_BIT);
+          }
           gl.uniform1f(warp.uniforms.uAuxPass, pass);
           gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffer);
           for (const at of attrs) gl.enableVertexAttribArray(at);
           gl.drawArrays(gl.TRIANGLES, 0, vertices.length / VERTEX_FLOATS);
+          gl.disable(gl.DEPTH_TEST);
         }
         for (const at of attrs) gl.disableVertexAttribArray(at);
         const span = faceFrame(live).span;
@@ -766,6 +852,13 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
       gl.uniform1f(composite.uniforms.uHide, hide);
       gl.uniform2f(composite.uniforms.uFaceUv, faceUv[0], faceUv[1]);
       gl.uniform4f(composite.uniforms.uImageRect, imageRect[0], imageRect[1], imageRect[2], imageRect[3]);
+      const tongue = showFace && tongueBox && expression ? Math.max(0, Math.min(1, expression.tongue || 0)) : 0;
+      const mouth = tongue > 0 ? axisFrame(tongueBox) : { center: [-1e5, -1e5], x: [0, 0], y: [0, 0] };
+      gl.uniform1f(composite.uniforms.uTongue, tongue);
+      gl.uniform2f(composite.uniforms.uTongueCenter, mouth.center[0], mouth.center[1]);
+      gl.uniform2f(composite.uniforms.uTongueX, mouth.x[0], mouth.x[1]);
+      gl.uniform2f(composite.uniforms.uTongueY, mouth.y[0], mouth.y[1]);
+      gl.uniform1f(composite.uniforms.uSkinRed, expression?.skinRed ?? 0.12);
       setZone(composite, zone);
       drawQuad(composite, 1);
       return true;

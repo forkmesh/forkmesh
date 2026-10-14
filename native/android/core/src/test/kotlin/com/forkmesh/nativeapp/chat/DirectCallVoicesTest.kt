@@ -75,7 +75,7 @@ class DirectCallVoicesTest {
 
     fun testChoosingAVoiceOverridesTheFaceAndOffIsNatural() {
         val rig = Rig()
-        expect(!rig.engine.setVoiceChoice("robot"))
+        expect(!rig.engine.setVoiceChoice("nobody"))
         expect(rig.engine.start("direct:abc", DirectCallKind.VIDEO))
         rig.peerAccepts()
         assertEq(listOf("offer"), rig.log)
@@ -92,5 +92,19 @@ class DirectCallVoicesTest {
         assertEq("off", rig.engine.voiceChoice)
         assertEq("Ren", DirectCallEngine.voiceLabel("ren"))
         assertEq("Your own", DirectCallEngine.voiceLabel(""))
+    }
+
+    fun testVoicesAreTheFaceVoicesPlusTheExtraVoices() {
+        assertEq(
+            listOf(
+                "maya", "theo", "kofi", "ingrid", "ren",
+                "deep", "older-man", "young-man", "warm", "low", "older-woman", "teen", "neutral", "robot",
+            ),
+            DirectCallEngine.VOICES.map { it.id },
+        )
+        assertEq("Older woman", DirectCallEngine.voiceLabel("older-woman"))
+        val rig = Rig()
+        expect(rig.engine.setVoiceChoice("robot"))
+        assertEq("robot", rig.engine.effectiveVoice)
     }
 }
