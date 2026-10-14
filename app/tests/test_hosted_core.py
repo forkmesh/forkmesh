@@ -905,3 +905,14 @@ def test_worker_wiring():
     assert runtime.count('globals().get("hosted_private_read")') == 2
     toml = (ROOT / "wrangler.toml").read_text(encoding="utf-8")
     assert 'HOSTED_GIT_CORE_NODES = "fmnext-n1,fmnext-n2,fmnext-n3"' in toml
+
+
+def test_core_owners_add_retired_cores_only_while_hosting_is_on():
+    env = type("Env", (), {
+        "HOSTED_GIT_CORE_NODES": "fmnext-n2,fmnext-n3",
+        "HOSTED_GIT_CORE_OWNERS": "fmnext-n2, FMNEXT-N1,bad name,fmnext-n3"})()
+    assert hosted_repos.core_owners(env) == ["fmnext-n2", "fmnext-n3", "fmnext-n1"]
+    assert hosted_repos.core_nodes(env) == ["fmnext-n2", "fmnext-n3"]
+    assert hosted_git.hosted_core_owners(env) == hosted_repos.core_owners(env)
+    env.HOSTED_GIT_CORE_NODES = ""
+    assert hosted_repos.core_owners(env) == []

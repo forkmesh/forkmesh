@@ -1393,3 +1393,28 @@ def test_a_push_through_an_org_alias_targets_the_alias_path_on_the_gateway():
     _run_proxy(namespace, request, is_info=False)
     assert "/acme/app/" in fetches[0][0]
     assert "/alice/app/" not in fetches[0][0]
+
+
+def test_a_retired_core_still_owns_its_repositories_for_push_routing():
+    namespace = _load({"_core_push_nodes"}, {})
+    namespace["hosted_core_nodes"] = lambda _env: ["fmnext-n2"]
+    assert namespace["_core_push_nodes"](None) == {"fmnext-n2"}
+    namespace["hosted_core_owners"] = lambda _env: ["fmnext-n2", "FMNEXT-N1"]
+    assert namespace["_core_push_nodes"](None) == {"fmnext-n2", "fmnext-n1"}
+
+
+def test_core_endpoints_take_a_push_for_a_retired_core_owner():
+    namespace = _candidates_harness(
+        context={"owner": "fmnext-n1", "repo": "forkmesh"},
+        routed=[_endpoint("fmnext-n2"), _endpoint("fmnext-n3")],
+        proofs={"fmnext-n2": True, "fmnext-n3": True},
+        write_row=None,
+    )
+    namespace["hosted_core_nodes"] = lambda _env: ["fmnext-n2", "fmnext-n3"]
+    env = type("Env", (), {})()
+    assert _run_candidates(namespace, env) == []
+    namespace["hosted_core_owners"] = lambda _env: [
+        "fmnext-n2", "fmnext-n3", "fmnext-n1"]
+    held = "fmnext-n1" in namespace["_core_push_nodes"](env)
+    assert [e["node"] for e in _run_candidates(
+        namespace, env, core_allowed=held)] == ["fmnext-n2", "fmnext-n3"]
