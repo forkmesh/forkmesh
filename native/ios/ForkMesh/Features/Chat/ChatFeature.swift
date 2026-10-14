@@ -23,6 +23,7 @@ enum ChatFeature {
     /// everything it needs is already in `Services` (see docs/FMChat.md).
     @MainActor
     static func register() {
+        ChatAvatarCache.shared.warm()
         guard let settings = Services.get(SettingsService.self),
             let auth = Services.get(AuthService.self),
             let api = Services.get(ApiService.self),

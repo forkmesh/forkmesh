@@ -162,6 +162,7 @@ extension ApiService {
                 return map
             } catch {
                 entry.permanent = true
+                entry.unreachable = error is HTTPError
                 return nil
             }
         }
@@ -173,11 +174,16 @@ extension ApiService {
     /// Base64 PNG avatar a user account uploaded, or "" when it has none (or is not a user
     /// account). Read once per session.
     public func accountAvatarPng(_ name: String) async -> String {
+        await accountAvatarPngIfReached(name) ?? ""
+    }
+
+    public func accountAvatarPngIfReached(_ name: String) async -> String? {
         let key = name.dartTrimmed.lowercased()
         if key.isEmpty { return "" }
         if let task = accountAvatarCache[key] { return await task.value }
-        let task = Task<String, Never> { @MainActor in
+        let task = Task<String?, Never> { @MainActor in
             let data = await self.accountLookup(key)
+            if data == nil, self.accountLookupCache[key]?.unreachable == true { return nil }
             return data?["avatarPng"].flatMap { $0.isNull ? nil : $0.text } ?? ""
         }
         accountAvatarCache[key] = task
