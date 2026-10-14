@@ -285,7 +285,17 @@ extension ChatHub {
                 name: group.name, account: owner, peerId: group.id, online: group.online,
                 away: group.online && group.userStatus.away, isSelf: group.isSelf)
         }
-        if let room = office?.room(for: conversation), !room.members.isEmpty {
+        if let room = office?.room(for: conversation), room.everyone, !directoryMembers.isEmpty {
+            let own = Set(ownNames.map { $0.lowercased() })
+            for group in roster { add(fromGroup(group)) }
+            for name in directoryMembers {
+                let group = onlineByName[name.lowercased()]
+                add(ChatChannelMember(
+                    name: group?.name ?? name, account: name, peerId: group?.id ?? "", online: group?.online ?? false,
+                    away: (group?.online ?? false) && (group?.userStatus.away ?? false),
+                    isSelf: own.contains(name.lowercased()) || (group?.isSelf ?? false)))
+            }
+        } else if let room = office?.room(for: conversation), !room.members.isEmpty {
             let own = Set(ownNames.map { $0.lowercased() })
             for name in room.members {
                 let group = onlineByName[name.lowercased()]
@@ -313,7 +323,11 @@ extension ChatHub {
         }
     }
 
-    public func memberCount(_ conversation: String) -> Int { channelMembers(conversation).count }
+    public func memberCount(_ conversation: String) -> Int {
+        let listed = channelMembers(conversation).count
+        guard let room = office?.room(for: conversation), room.everyone, directoryMembers.isEmpty else { return listed }
+        return max(listed, room.memberCount)
+    }
 
     public func onlineMemberCount(_ conversation: String) -> Int { channelMembers(conversation).filter(\.online).count }
 

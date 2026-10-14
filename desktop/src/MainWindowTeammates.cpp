@@ -5810,7 +5810,7 @@ void MainWindow::appendTeammateCollaborationFields(QVBoxLayout *form,
     }
     publicRooms.sort(Qt::CaseInsensitive);
     for (const QString &room : publicRooms)
-        relayRoom->addItem(room, room);
+        relayRoom->addItem(chatConversationLabel(room), room);
     const int relayRoomIndex = relayRoom->findData(teammate.relayChannel);
     relayRoom->setCurrentIndex(relayRoomIndex >= 0 ? relayRoomIndex : 0);
     relayRoom->setEnabled(relayCheck->isChecked());

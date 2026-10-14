@@ -3,6 +3,7 @@
 #include "../src/MainWindow.h"
 #include "../src/MainWindowInternal.h"
 #include "../src/MainWindowNextAccess.h"
+#include "../src/OfficeChannelMirror.h"
 #include "../src/WindowFrameControl.h"
 #include "../src/SourceTreeWatch.h"
 #include "../src/AgentWorktree.h"
@@ -12611,6 +12612,74 @@ void checkAgentTaskLink(MainWindow &window)
 
 } // namespace
 
+void checkEveryoneChannels(MainWindow &window)
+{
+    using namespace forkmesh::office;
+    window.resize(1440, 900);
+    window.show();
+    QApplication::processEvents();
+    const QString world = worldConversation();
+    const QString lobby = QStringLiteral("#lobby");
+    const QString design = QStringLiteral("#office/design");
+    const QStringList everyone = everyoneConversations();
+    window.testShowChatSection();
+    window.testSetOfficeConversations({});
+    window.testSetChannels({world, QStringLiteral("#welcome"),
+                            QStringLiteral("#random"), lobby});
+    QStringList rows = window.testChatSidebarRows();
+    check(rows.mid(0, 2) == QStringList{world, lobby} &&
+              !rows.contains(QStringLiteral("#welcome")) &&
+              !rows.contains(QStringLiteral("#random")),
+          QStringLiteral("the relay's retired #welcome and #random rooms get no "
+                         "sidebar row (rows = %1)")
+              .arg(rows.join(QStringLiteral(", "))));
+    check(window.testChatConversationLabel(world) == QStringLiteral("World"),
+          QStringLiteral("the relay room keeps its key but reads World (%1)")
+              .arg(window.testChatConversationLabel(world)));
+    window.testSwitchConversation(world);
+    check(window.testWelcomeChannel() == world,
+          QStringLiteral("signed out, a welcome opens the World chat (%1)")
+              .arg(window.testWelcomeChannel()));
+
+    window.testSetOfficeConversations(
+        {design, everyone.value(2), everyone.value(0), everyone.value(1)});
+    QApplication::processEvents();
+    rows = window.testChatSidebarRows();
+    check(rows.mid(0, 6) == QStringList{everyone.value(0), everyone.value(1),
+                                        everyone.value(2), world, lobby, design},
+          QStringLiteral("#general, #random and #welcome lead the sidebar, "
+                         "before World and the other channels (rows = %1)")
+              .arg(rows.join(QStringLiteral(", "))));
+    check(window.testChatConversationLabel(everyone.value(0)) ==
+                  QStringLiteral("#general") &&
+              window.testChatConversationLabel(everyone.value(1)) ==
+                  QStringLiteral("#random") &&
+              window.testChatConversationLabel(everyone.value(2)) ==
+                  QStringLiteral("#welcome"),
+          QStringLiteral("the everyone channels read #general, #random and "
+                         "#welcome"));
+    check(window.testCurrentConversation() == everyone.value(0),
+          QStringLiteral("server #general replaces World as the open "
+                         "conversation when it first arrives (now %1)")
+              .arg(window.testCurrentConversation()));
+    check(window.testWelcomeChannel() == everyone.value(2),
+          QStringLiteral("signed in, a welcome opens server #welcome (%1)")
+              .arg(window.testWelcomeChannel()));
+
+    window.testSwitchConversation(world);
+    window.testSetOfficeConversations(
+        {everyone.value(0), everyone.value(1), everyone.value(2), design});
+    QApplication::processEvents();
+    check(window.testCurrentConversation() == world,
+          QStringLiteral("a later relist leaves a World conversation the user "
+                         "opened alone (now %1)")
+              .arg(window.testCurrentConversation()));
+
+    window.testSetOfficeConversations({});
+    window.testSetChannels({world});
+    QApplication::processEvents();
+}
+
 void checkChatUnreadSurface(MainWindow &window)
 {
     window.resize(1440, 900);
@@ -14498,6 +14567,7 @@ else:
     }
 
     if (app.arguments().contains(QStringLiteral("--chat-unread-only"))) {
+        checkEveryoneChannels(window);
         checkChatUnreadSurface(window);
         checkChatListPreviewsAndDmThreads(window);
         checkReplayedBacklogRepaintsOnce(window);
@@ -19158,31 +19228,31 @@ else:
               .arg(chatSplit ? int(chatSplit->isCollapsible(2)) : -1)
               .arg(chatSidebarPane ? chatSidebarPane->minimumWidth() : -1)
               .arg(chatSidebarPane ? chatSidebarPane->maximumWidth() : -1));
-    window.testSetChannels({QStringLiteral("#general"), QStringLiteral("#welcome"),
-                            QStringLiteral("#random")});
+    window.testSetChannels({QStringLiteral("#general"), QStringLiteral("#lobby"),
+                            QStringLiteral("#design")});
     const QString sidebarGroup = QStringLiteral("Window test group");
     check(window.testCreateChannelGroup(sidebarGroup) &&
               window.testChatSidebarRows() ==
-                  QStringList{QStringLiteral("#general"), QStringLiteral("#welcome"),
-                              QStringLiteral("#random"),
+                  QStringList{QStringLiteral("#general"), QStringLiteral("#lobby"),
+                              QStringLiteral("#design"),
                               QStringLiteral("[Window test group]")},
           QStringLiteral("a new sidebar group renders as an empty header after "
                          "the channels"));
-    window.testMoveChannelToGroup(QStringLiteral("#random"), sidebarGroup);
+    window.testMoveChannelToGroup(QStringLiteral("#design"), sidebarGroup);
     check(window.testChatSidebarRows() ==
-                  QStringList{QStringLiteral("#general"), QStringLiteral("#welcome"),
+                  QStringList{QStringLiteral("#general"), QStringLiteral("#lobby"),
                               QStringLiteral("[Window test group]"),
-                              QStringLiteral("Window test group > #random")} &&
+                              QStringLiteral("Window test group > #design")} &&
               QSettings()
                   .value(QStringLiteral("chat/channelGroups"))
                   .toString()
-                  .contains(QStringLiteral("\"#random\"")),
+                  .contains(QStringLiteral("\"#design\"")),
           QStringLiteral("a channel moved into a group renders under its header "
                          "and persists in one settings key"));
-    window.testMoveChannelToGroup(QStringLiteral("#random"), QString());
+    window.testMoveChannelToGroup(QStringLiteral("#design"), QString());
     check(window.testChatSidebarRows() ==
-              QStringList{QStringLiteral("#general"), QStringLiteral("#welcome"),
-                          QStringLiteral("#random"),
+              QStringList{QStringLiteral("#general"), QStringLiteral("#lobby"),
+                          QStringLiteral("#design"),
                           QStringLiteral("[Window test group]")},
           QStringLiteral("a channel moved back out of a group returns to the "
                          "top level"));

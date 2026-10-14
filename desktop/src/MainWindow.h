@@ -1418,6 +1418,16 @@ public:
     }
     void testRemoveChannelGroup(const QString &group) { removeChannelGroup(group); }
     void testSetChannels(const QStringList &channels) { setChannels(channels); }
+    void testSetOfficeConversations(const QStringList &conversations)
+    {
+        m_officeConversations = conversations;
+        setChannels(m_channels);
+    }
+    QString testChatConversationLabel(const QString &conversation) const
+    {
+        return chatConversationLabel(conversation);
+    }
+    QString testWelcomeChannel() const { return welcomeChannelForIdentity(); }
     void testShowLedgerSection() { showSection(kLedgerSectionIndex); }
     // Feed the page exactly what the two relay endpoints would have returned,
     // so the row and payment-button rules are exercised without a network.

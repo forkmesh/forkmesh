@@ -165,7 +165,7 @@ def test_public_chat_splits_guest_general_from_authenticated_channels():
     assert "access.webSocketUrl" in PUBLIC_CHAT
     assert "switchChatRoom" in PUBLIC_CHAT
     assert "frameMatchesScope" in PUBLIC_CHAT
-    assert "Guests can participate only in public World #general" in PUBLIC_CHAT
+    assert "Guests can chat only in World" in PUBLIC_CHAT
     assert "lockChatForNonUser" in PUBLIC_CHAT
 
 
@@ -312,7 +312,8 @@ def test_public_chat_has_rooms_conversation_and_people_panes():
     assert ".chat-people-pane" in PUBLIC_CHAT_CSS
     # Sends carry the selected display label while private buffers and room
     # access stay keyed by the server-provided opaque channel id.
-    assert "channel: channelDisplayLabel(activeChannel)" in PUBLIC_CHAT
+    assert "channel: channelWireLabel(activeChannel)" in PUBLIC_CHAT
+    assert "channel: channelDisplayLabel(activeChannel)" not in PUBLIC_CHAT
     assert "function setActiveChannel(" in PUBLIC_CHAT
     assert 'const PRIVATE_CHANNELS_ENDPOINT = "/api/chat/channels"' in PUBLIC_CHAT
     assert 'DEFAULT_CHANNELS = ["#general", "#welcome", "#random"]' not in PUBLIC_CHAT

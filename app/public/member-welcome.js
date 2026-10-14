@@ -14,7 +14,7 @@
 
 const WELCOME_MS = 12000;
 export const NEW_MEMBER_GREETING = (name) =>
-  `🎉 ${name} just joined ForkMesh. Say hello in #general.`;
+  `🎉 ${name} just joined ForkMesh. Say hello in #welcome.`;
 const STYLE_ID = "forkmesh-member-welcome-style";
 // Matches valid_node_name in the Worker: lowercase, digits, inner hyphens.
 const HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;

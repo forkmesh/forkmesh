@@ -94,6 +94,7 @@ public final class ChatWorkspace {
     public private(set) var drafts: [String: String] = [:]
     public private(set) var recentPeople: [String] = []
     public private(set) var lastConversation: String = ""
+    public private(set) var movedToEveryone = false
     public private(set) var mentionsOnly: Set<String> = []
     public private(set) var bookmarks: [String: [ChatBookmark]] = [:]
     public private(set) var canvases: [String: ChatCanvas] = [:]
@@ -119,6 +120,7 @@ public final class ChatWorkspace {
         starred = store.stringList(forKey: key("starred")) ?? []
         recentPeople = store.stringList(forKey: key("recentPeople")) ?? []
         lastConversation = store.string(forKey: key("lastConversation")) ?? ""
+        movedToEveryone = store.bool(forKey: key("movedToEveryone")) ?? false
         if let json = store.string(forKey: key("drafts")), let data = json.data(using: .utf8),
             let decoded = try? JSONDecoder().decode([String: String].self, from: data)
         {
@@ -204,6 +206,11 @@ public final class ChatWorkspace {
         if conversation.isEmpty || conversation == lastConversation { return }
         lastConversation = conversation
         store?.set(conversation, forKey: key("lastConversation"))
+    }
+
+    public func markMovedToEveryone() {
+        movedToEveryone = true
+        store?.set(true, forKey: key("movedToEveryone"))
     }
 
     public func draft(for conversation: String) -> String { drafts[conversation] ?? "" }

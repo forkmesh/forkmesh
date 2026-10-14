@@ -1016,6 +1016,24 @@ popular site and for any site's own social image.
 - `ChatHub.unreadStart`: the conversation that was opened and the id of its
   first unread message, for the NEW line; it is replaced on the next `select`.
 
+## Everyone channels (branch 2005)
+
+- `OfficeRoom.everyone` and `memberCount`, from `kind:"everyone"` and
+  `memberCount` in `GET /api/chat/channels`.
+- `ViewModels/ChatEveryone.swift`: `ChatEveryone.names`, `worldConversation`
+  (the relay `#general`, labelled `worldLabel`, "World"), `retiredRelayLabels`,
+  `welcomeSenderId` (`system:welcome`), `generalConversation`,
+  `welcomeConversation`, `isWelcome(_:)`, `order(_:office:)`. The `ChatHub`
+  extension has `isEveryoneChannel`, `everyoneRooms`, `listedChannels`,
+  `generalConversation`, `refreshMemberDirectory(force:)` and
+  `adoptEveryoneGeneral()`.
+- `ChatHub.directoryMembers` holds the member names from
+  `GET /api/chat/channels/<general>/members`. `ChatWorkspace.movedToEveryone` /
+  `markMovedToEveryone()` record the one-time move from World to #general.
+- `ChatReplyTarget.resolve` checks server channels before relay labels.
+- Rationale: docs/native/NAVIGATION.md 2.0.102 and
+  docs/app/chat-everyone-channels.md.
+
 ## Views (ForkMesh/Features/Chat)
 
 `ChatScreen(showComposer:)`, `RelaySettingsSection()`, `RelayNetworksScreen()`,

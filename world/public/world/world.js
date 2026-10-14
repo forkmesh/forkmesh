@@ -11376,7 +11376,7 @@ class ForkMeshWorld extends HTMLElement {
     }
     layer.append(fireworks, confetti);
     this.append(layer);
-    this.notifyChatArea(`🎉 ${name} just joined ForkMesh. Say hello in #general.`, "status");
+    this.notifyChatArea(`🎉 ${name} just joined ForkMesh. Say hello in #welcome.`, "status");
     this.memberWelcomeTimer = window.setTimeout(() => {
       layer.remove();
       this.memberWelcomeTimer = 0;

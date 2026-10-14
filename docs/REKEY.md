@@ -166,6 +166,11 @@ run time, a `*_bi` column or a ciphertext column the registry does not know
 under `WARNING unregistered_*` in the summary (`--strict-registry` aborts
 instead).
 
+The end-to-end case signs up one account over HTTP, then adds two chat rows
+directly. Signup posts a welcome into the fixed `#welcome` channel
+(`chat_channels_api.post_welcome`), so the test expects three re-sealed chat
+rows, one of them in `#welcome`'s room.
+
 ## 3. Rollout runbook
 
 Run from `~/projects/forkmesh/src`. `K=~/projects/forkmesh/ssh/fleet/next_fleet_ed25519`,

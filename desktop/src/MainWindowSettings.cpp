@@ -1,6 +1,7 @@
 
 #include "AwsSettingsPanel.h"
 #include "HiddenTerms.h"
+#include "OfficeChannelMirror.h"
 #include "ProcessReaper.h"
 #include "CoreNodeLogs.h"
 #include "PingSettingsPanel.h"
@@ -10692,7 +10693,10 @@ bool MainWindow::openNoticeHref(const QString &href)
     }
     if (href == QLatin1String("fm:chat:general")) {
         showChatView();
-        switchConversation(QStringLiteral("#general"));
+        const QString general = forkmesh::office::everyoneGeneralConversation();
+        switchConversation(m_officeConversations.contains(general)
+                               ? general
+                               : forkmesh::office::worldConversation());
         return true;
     }
     if (href.startsWith(QLatin1String("fm:pings:settings"))) {
