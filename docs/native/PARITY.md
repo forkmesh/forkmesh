@@ -22,8 +22,8 @@ desktop-only; on-device models run through MLX on iOS).
 
 | # | Feature |
 |---|---|
-| 1 | Log in with password and TOTP, bound to the device key |
-| 2 | Sign up (hands off to the website `/signup`) |
+| 1 | Log in with password and TOTP, bound to the device key; "Forgot password?" opens `/forgot-password` |
+| 2 | Sign up (hands off to the website `/signup`, then returns to the login form) |
 | 3 | Guest mode and the guest gate on writes |
 | 4 | Device Ed25519 identity and owner-device enrolment (X25519 + ML-KEM-768), needed to read sealed agent transcripts |
 | 5 | Portable identity recovery kit (core library; no screen on iOS) |
