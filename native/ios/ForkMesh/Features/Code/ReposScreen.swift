@@ -1,3 +1,4 @@
+import FMAccount
 import FMApi
 import FMBase
 import FMChat
@@ -9,6 +10,7 @@ struct ReposScreen: View {
     @Environment(\.fmPalette) private var fm
     @State private var model: ReposScreenModel
     @State private var desktop: DesktopReposModel
+    @State private var settings: SettingsService? = Services.get(SettingsService.self)
 
     init() {
         _model = State(initialValue: ReposScreenModel(client: RepoServices.client))
@@ -21,12 +23,22 @@ struct ReposScreen: View {
 
     var body: some View {
         catalog
-            .task {
-                await model.start()
+            .task(id: hasInstance) {
+                if hasInstance {
+                    await model.start()
+                }
             }
             .task {
                 await desktop.start()
             }
+    }
+
+    private var hasInstance: Bool { settings?.project.hasInstance != false }
+
+    private func reloadNetwork() async {
+        if hasInstance {
+            await model.reload()
+        }
     }
 
     // MARK: Search, filters, sort
@@ -63,7 +75,7 @@ struct ReposScreen: View {
     private var refreshButton: some View {
         Button(action: {
             FmHaptics.tap()
-            Task { await model.reload() }
+            Task { await reloadNetwork() }
             Task { await desktop.load() }
         }) {
             FmIcon("refresh", size: 24, color: fm.textSecondary)
@@ -82,15 +94,17 @@ struct ReposScreen: View {
                 LazyVStack(spacing: 0) {
                     TabTopAnchor()
                     DesktopReposSection(model: desktop, query: model.query)
-                    LocalReposSection()
-                    FmSliverFadeIn(stateKey: model.stateKey) {
-                        networkSection
+                    LocalReposSection(showsNetwork: hasInstance)
+                    if hasInstance {
+                        FmSliverFadeIn(stateKey: model.stateKey) {
+                            networkSection
+                        }
                     }
                 }
             }
             .background(fm.listSurface)
             .fmRefreshable {
-                await model.reload()
+                await reloadNetwork()
                 await desktop.load()
             }
             .safeAreaInset(edge: .top, spacing: 0) {

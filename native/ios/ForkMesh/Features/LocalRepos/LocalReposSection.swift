@@ -10,9 +10,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LocalReposSection: View {
+    var showsNetwork: Bool = true
+
     var body: some View {
         if let store = LocalRepoServices.store {
-            LocalReposSectionContent(store: store)
+            LocalReposSectionContent(store: store, showsNetwork: showsNetwork)
         } else {
             EmptyView()
         }
@@ -41,9 +43,11 @@ private struct LocalReposSectionContent: View {
     @State private var importProblem: String?
     @State private var mirroring: Bool = false
     private let store: LocalRepoStore
+    private let showsNetwork: Bool
 
-    init(store: LocalRepoStore) {
+    init(store: LocalRepoStore, showsNetwork: Bool) {
         self.store = store
+        self.showsNetwork = showsNetwork
         _model = State(initialValue: LocalReposSectionModel(
             store: store, session: LocalRepoServices.sessionProvider, prefs: Services.get(KeyValueStore.self),
             publisher: LocalRepoServices.publisher))
@@ -67,9 +71,11 @@ private struct LocalReposSectionContent: View {
             if let applier = LocalRepoServices.applier {
                 LocalNodeSyncSummary(applier: applier)
             }
-            FmHairline()
-            FmSectionHeader(title: "Network", icon: "public")
-                .padding(EdgeInsets(top: FmSpace.x3, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
+            if showsNetwork {
+                FmHairline()
+                FmSectionHeader(title: "Network", icon: "public")
+                    .padding(EdgeInsets(top: FmSpace.x3, leading: FmSpace.x4, bottom: FmSpace.x2, trailing: FmSpace.x4))
+            }
         }
         .task { await model.load() }
         .navigationDestination(item: $opened) { (record: LocalRepoRecord) in
@@ -177,7 +183,7 @@ private struct LocalReposSectionContent: View {
 
     private func startCreate() {
         Task { @MainActor in
-            guard await AccountFeature.requireAccount(action: "create a repository") else { return }
+            guard await AccountFeature.requireLocalAccess(action: "create a repository") else { return }
             newName = ""
             newDescription = ""
             nameProblem = nil
@@ -239,14 +245,14 @@ private struct LocalReposSectionContent: View {
 
     private func startImport() {
         Task { @MainActor in
-            guard await AccountFeature.requireAccount(action: "import a repository") else { return }
+            guard await AccountFeature.requireLocalAccess(action: "import a repository") else { return }
             choosingImport = true
         }
     }
 
     private func startMirror() {
         Task { @MainActor in
-            guard await AccountFeature.requireAccount(action: "import a repository") else { return }
+            guard await AccountFeature.requireLocalAccess(action: "import a repository") else { return }
             mirroring = true
         }
     }
