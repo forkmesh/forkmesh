@@ -1,4 +1,5 @@
 const { test, expect, chromium } = require("@playwright/test");
+const { createHash } = require("node:crypto");
 
 const CONVERSATION = "a".repeat(32);
 const BASE = `/api/chat/direct-messages/${CONVERSATION}/media`;
@@ -251,4 +252,121 @@ test("holding the record button sends a voice message in a changed voice", async
   await expect(dialog).toHaveCount(0);
   expect(errors).toEqual([]);
   await context.close();
+});
+
+test("chat page: a direct message carries a voice message that plays once and reports Opened", async () => {
+  test.setTimeout(90_000);
+  const relay = [];
+  const server = mediaServer();
+  const receipts = [];
+  const conversationFor = (other) => ({
+    id: CONVERSATION, otherUser: other, updatedAt: 1, keyVersion: 1, unreadCount: 0,
+  });
+  async function open(name, other) {
+    const context = await browser.newContext({
+      baseURL: "http://127.0.0.1:4179",
+      permissions: ["camera", "microphone"],
+    });
+    await context.addInitScript((session) => {
+      localStorage.setItem("forkmesh.session", JSON.stringify(session));
+    }, { kind: "user", nodeName: name, email: `${name}@example.test`, sessionToken: `token-${name}`, status: "active" });
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/api/**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.startsWith(BASE)) {
+        const result = await server.handle(route);
+        if (url.pathname.endsWith("/consume")) {
+          const [id] = url.pathname.match(/[0-9a-f]{32}(?=\/consume)/);
+          for (const peer of relay) {
+            peer.socket.send(JSON.stringify({ kind: "forkmesh-media", v: 1, id, state: "opened" }));
+          }
+        }
+        return result;
+      }
+      let body = { error: "not_found" };
+      let status = 404;
+      if (url.pathname === "/api/chat/direct-messages") {
+        status = 200;
+        body = route.request().method() === "POST"
+          ? { ok: true, conversation: conversationFor(other) }
+          : { conversations: [conversationFor(other)], nextCursor: "" };
+      } else if (url.pathname === `/api/chat/direct-messages/${CONVERSATION}/room-access`) {
+        status = 200;
+        body = {
+          room: `chat-direct:${CONVERSATION}:v1`,
+          passphrase: "playwright-direct-passphrase",
+          webSocketUrl: `/api/chat/direct-messages/${CONVERSATION}/ws?ticket=${name}`,
+          conversation: conversationFor(other),
+        };
+      } else if (url.pathname.endsWith("/read")) {
+        status = 200;
+        body = { ok: true };
+      } else if (url.pathname === "/api/accounts/users") {
+        status = 200;
+        body = { ok: true, users: [{ name: other }, { name }] };
+      }
+      return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    });
+    await page.routeWebSocket(/\/api\/chat\/direct-messages\/[0-9a-f]{32}\/ws/, (socket) => {
+      const peer = { name, socket };
+      relay.push(peer);
+      socket.onMessage((message) => {
+        const text = String(message);
+        const frame = JSON.parse(text);
+        if (frame.kind === "forkmesh-received") {
+          receipts.push({ name, refs: frame.refs });
+          return;
+        }
+        if (frame.kind && frame.kind !== "cipher" && !frame.iv) return;
+        const ref = createHash("sha256").update(text).digest("hex").slice(0, 40);
+        const relayed = JSON.stringify({ ...frame, ref });
+        for (const other of relay) {
+          if (other !== peer) other.socket.send(relayed);
+        }
+      });
+      setTimeout(() => socket.send(JSON.stringify({ kind: "forkmesh-history-end", v: 1 })), 20);
+    });
+    await page.goto(`/chat.html?dm=${other}`);
+    await expect(page.locator("#chat-status")).toContainText("Connected");
+    return { context, page, errors };
+  }
+
+  const bob = await open("bob", "alice");
+  const alice = await open("alice", "bob");
+  const voiceButton = alice.page.getByRole("button", { name: /Record a voice message/ });
+  await expect(voiceButton).toBeVisible();
+  await voiceButton.click();
+  const dialog = alice.page.getByRole("dialog");
+  await dialog.getByRole("button", { name: /Start recording/ }).click();
+  await alice.page.waitForTimeout(2000);
+  await dialog.getByRole("button", { name: "Stop recording" }).click();
+  await dialog.getByRole("button", { name: /^Send / }).click();
+  await expect(dialog).toHaveCount(0);
+
+  const sent = alice.page.locator("#chat-log .chat-view-once");
+  await expect(sent).toHaveAttribute("data-state", "sent");
+  await expect(sent).toBeDisabled();
+  const received = bob.page.locator("#chat-log .chat-view-once");
+  await expect(received).toBeVisible({ timeout: 20_000 });
+  await expect(received).toHaveAttribute("data-state", "ready");
+  await expect(bob.page.locator("#chat-log .chat-msg", { has: received })
+    .getByRole("button", { name: "Copy text" })).toHaveCount(0);
+  expect(receipts.filter((entry) => entry.name === "bob")).toEqual([]);
+
+  await received.click();
+  const viewer = bob.page.getByRole("dialog", { name: /plays once/ });
+  await expect(viewer).toBeVisible();
+  await expect.poll(() => [...server.store.values()][0]?.state).toBe("opened");
+  await expect(sent).toHaveAttribute("data-state", "opened");
+  await viewer.getByRole("button", { name: /^Close / }).click();
+  await expect(received).toHaveAttribute("data-state", "opened");
+  await expect(received).toBeDisabled();
+  await expect.poll(() => receipts.filter((entry) => entry.name === "bob").length).toBe(1);
+  expect([...server.store.values()][0].parts.size).toBe(0);
+  expect(alice.errors).toEqual([]);
+  expect(bob.errors).toEqual([]);
+  await alice.context.close();
+  await bob.context.close();
 });
