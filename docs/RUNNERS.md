@@ -66,18 +66,57 @@ arbitrary code inside its sandbox. It cannot:
 - **Claim ineligible jobs.** Claims are signed with the runner's node key over
   method, path, body hash, single-use request id and time. Only `active`
   runners claim; pinned jobs go only to their runner; a `personal` runner
-  serves only its `allowed_owners`; a `pool` runner serves only the cores in
+  serves only the account that registered it (see [Private runners](#private-runners));
+  a `pool` runner serves only the cores in
   `RUNNER_POOL_TARGET_NODES` and only owners in its non-empty
   `allowed_owners` (the owners' opt-in). Steer jobs stay on their session's
   ref and hand over to another runner when the original is gone.
 - **Reach core secrets, other jobs or the node key.** Jobs run as a dedicated
-  unprivileged user (`forkmesh-job`) that cannot read the node key, daemon
-  config or connector token.
+  unprivileged user (`fmjob-<account>` on a personal runner, `forkmesh-job`
+  on the fleet) that cannot read the node key, daemon config or connector
+  token.
+
+### Private runners
+
+Since 2026-10-14 a personal runner belongs to the account that added it and
+to nobody else. Someone else's runner showed its provider account (the
+Claude sign-in email and usage) to every admin on `/dashboard/runners`,
+and an organization member could steer a session that ran on a teammate's
+runner, spending the teammate's Claude plan.
+
+- **Seen only by its registrant.** `GET /api/runners`, `GET
+  /api/runners/attention` and every `/api/runners/<name>/…` route answer
+  only for `runner_nodes.registered_by`; admins get no wider view. Anyone
+  else gets `404`, the same as for a runner that does not exist. Pool
+  runners follow the same rule (the admin who registered one sees it); only
+  revoking a pool runner stays open to any admin.
+- **Used only by its registrant.** Registration refuses a personal runner
+  whose `allowedOwners` is not exactly the registrant, admins included. A
+  personal runner leases a job only when its owner is the registrant and its
+  `requestedBy` is the registrant (`runner_leases._owner_allowed`,
+  `_requester_allowed`), so a row edited to list other owners serves nobody
+  extra.
+- **Hidden from teammates.** A session started on a personal runner records
+  `runnerPrivate`; organization members other than the runner's owner see the
+  queue node instead of the runner name and no runner status
+  (`_org_agent_hide_private_runner`). A follow-up from anyone else is
+  refused with `403 runner_private` (`_org_agent_private_runner_block`)
+  instead of queueing a job only that runner could take.
+- **Alerts go to the registrant only.** An expired or expiring sign-in on a
+  personal runner pings its registrant; admins are pinged (and nobody is
+  emailed) only for pool runners.
+- **One job user per account.** The installer creates `fmjob-<account>`
+  (`fmjob-<first 19 characters>-<6 hex of SHA-256>` when the account name is
+  longer than 26 characters, to fit the 32-character user name limit), with
+  its own home for the provider sign-in and its own work root for stored
+  accounts and session homes. See [Several accounts on one
+  machine](#several-accounts-on-one-machine).
 
 Residual risks:
 
-- All jobs share one uid; keep a pool runner at `maxConcurrentRuns: 1`. `/tmp`
-  is shared with the daemon's namespace and swept between jobs.
+- All jobs of one runner share its job user's uid; keep a pool runner at
+  `maxConcurrentRuns: 1`. `/tmp` is shared with the daemon's namespace and
+  swept between jobs.
 - The provider login is readable by agent code. Use a dedicated provider
   account for a pool that serves other people.
 - **Runner HOME isolation gap (open).** `systemd-run --scope --uid` resets
@@ -116,7 +155,7 @@ systemd-run --scope --quiet --collect [--user] -p MemoryMax=<jobMemoryMax> -p Me
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `POST /api/runners/register` | session plus key proof | register name and public key |
-| `POST /api/runners/revoke` | registrant or admin | revoke |
+| `POST /api/runners/revoke` | registrant (pool runners: also any admin) | revoke |
 | `POST /api/runners/claim` | runner-signed | lease up to N jobs |
 | `POST /api/runners/report` | runner-signed, lease holder | report result |
 | `POST /api/runners/attachment` | runner-signed, lease holder | bytes of one prompt image |
@@ -124,16 +163,17 @@ systemd-run --scope --quiet --collect [--user] -p MemoryMax=<jobMemoryMax> -p Me
 | `POST /api/runners/poll` | runner-signed | availability and sign-in hand-off |
 | `POST /api/runners/stream` | runner-signed, lease holder | live output while watched |
 | `POST /api/runners/login/output`, `/login/input-poll` | runner-signed | sign-in terminal relay |
-| `GET /api/runners` | admin or registrant | runners, availability, open sign-ins |
-| `GET /api/runners/attention` | session | runners whose provider login is expired or expiring |
-| `POST /api/runners/<name>/login` and `/login/<id>/{output,input,cancel}` | admin or registrant | web sign-in |
+| `GET /api/runners` | registrant | the caller's own runners, availability, open sign-ins |
+| `GET /api/runners/attention` | registrant | the caller's runners whose provider login is expired or expiring |
+| `POST /api/runners/<name>/login` and `/login/<id>/{output,input,cancel}` | registrant | web sign-in |
 | `POST /api/runners/setup-tokens`, `GET …/<id>`, `POST …/<id>/revoke` | session | one-time install tokens |
 | `POST /api/runners/register-token` | setup token plus key proof | register a personal runner |
 | `POST /api/runners/ssh/probe`, `/ssh/install`, `GET /api/runners/ssh/<id>` | session | server-side SSH setup |
 
 Registration proof: the runner key signs
 `forkmesh-runner-register-v1\n<name>\n<publicKey>\n<account>\n<ts>`. Only an
-admin may register a `pool` runner. `forkmesh-mirror-node --print-public-key`
+admin may register a `pool` runner, and a `personal` runner always serves
+only its registrant. `forkmesh-mirror-node --print-public-key`
 prints the key. Prompt images are fetched per lease, checked for size, digest
 and type, and written under `.forkmesh/attachments/` without following
 symlinks.
@@ -153,7 +193,7 @@ symlinks.
     "jobMemoryMax": "700M",
     "jobCPUQuota": "90%",
     "allowedOwners": ["<owner>"],
-    "jobUser": "forkmesh-job",
+    "jobUser": "fmjob-<owner>",
     "burst": false
   }
 }
@@ -182,11 +222,17 @@ Any account can add a runner from `/dashboard/runners`:
   with `forkmesh-runner-register-token-v1\n<name>\n<publicKey>\n<sha256(token)>\n<ts>`.
   A token always registers `scope: personal` for its owner.
 - **Installer** (`www/public/install-runner.sh`): validates arguments, installs
-  prerequisites, creates the job user and folders, gets the signed daemon
-  release, generates a key, registers, writes the config, installs the service
-  and its own nftables table (never touching the machine's firewall), installs
-  the CLIs, runs `--check` and starts. It deletes nothing and has no uninstall
-  mode.
+  prerequisites and folders, gets the signed daemon release, generates a key,
+  registers, learns the owning account from the answer (`registeredBy`),
+  creates that account's job user `fmjob-<account>` and work root, writes the
+  config, installs the service and its own nftables table (never touching the
+  machine's firewall), installs the CLIs, runs `--check` and starts. It
+  deletes nothing and has no uninstall mode.
+- **Re-running it** updates the instance that already holds the runner
+  name, keeping its key, job user, work root and port. Another runner name of
+  the same account replaces that account's instance: the old key moves aside
+  to `ed25519.pem.<old runner>` and the new name gets a fresh key, so two
+  runner rows never share a key, while the job user and sign-ins stay.
 - **macOS** (macOS 12 or newer, Xcode Command Line Tools): the same command
   works. See [macOS runners](#macos-runners).
 - **From the desktop** (preferred for SSH): a `forkmesh://` hand-off fills the
@@ -200,6 +246,42 @@ Any account can add a runner from `/dashboard/runners`:
   `ssh-agent`; output is scrubbed. Without the helper socket the endpoints
   answer `503 ssh_setup_unavailable`.
 
+### Several accounts on one machine
+
+Each account that installs a runner on a machine gets its own instance
+next to the others; installing one never stops or rewrites another.
+
+| | Per account (`<account>` = the registrant) |
+|---|---|
+| Config | `/etc/forkmesh-runner/accounts/<account>/runner.json` (0700 folder) |
+| State | `/var/lib/forkmesh-runner/accounts/<account>/{identity,gateway,work,tmp,home}` |
+| Service | `forkmesh-runner@<account>.service` from the template `forkmesh-runner@.service`; `ReadWritePaths` is only its own state folder and its `/tmp` is its own `tmp` |
+| Job user | `fmjob-<account>`, home `…/accounts/<account>/home` (0700), GECOS `ForkMesh runner jobs for <account>` |
+| Loopback ports | `listen`/`gatewayProbe` pair from 8795 upward, skipping pairs another instance's config names or that are taken; kept on re-install |
+
+- **Finding instances.** The installer reads `/etc/forkmesh-runner/runner.json`
+  (an install from before 2026-10-14) and every
+  `/etc/forkmesh-runner/accounts/*/runner.json`. Before registering it looks
+  for the instance holding the runner name; a new name signs with a staged
+  key (`/var/lib/forkmesh-runner/pending-<name>.pem`) and moves into the
+  owner's instance once ForkMesh names the owner.
+- **Older installs.** The single-runner layout (`forkmesh-runner.service`,
+  `/var/lib/forkmesh-runner`, user `forkmesh-job`, ports 8795/8796) stays
+  that account's instance. Re-installing it rewrites its unit with
+  `InaccessiblePaths` over the `accounts` folders, so it cannot read the
+  other instances.
+- **Job users are never shared.** A job user that another instance's config
+  names is refused, and an existing system user is taken over only when its
+  GECOS (`RealName` on macOS) names the same account, so an account whose
+  name collides with another's derived user name, or with an unrelated user,
+  cannot inherit it.
+- **One firewall.** `jobs.nft` (Linux) and `jobs.pf` (macOS) are rebuilt on
+  every install with the rules for every instance's job user; a job user
+  that no longer exists is left out with a warning. A loaded nft table is
+  reloaded with `nft -f` in place.
+- The daemon needs no change: its idle sweep kills and deletes only what its
+  own job uid owns.
+
 ## macOS runners
 
 The installer printed `Runners need Linux with systemd.` on a Mac until
@@ -207,9 +289,9 @@ The installer printed `Runners need Linux with systemd.` on a Mac until
 
 | | Linux | macOS |
 |---|---|---|
-| Daemon | `forkmesh-runner.service` | launch daemon `com.forkmesh.runner` (`/Library/LaunchDaemons`), log `/private/var/log/forkmesh-runner.log` |
-| Paths | `/etc/forkmesh-runner`, `/var/lib/forkmesh-runner` | `/private/etc/forkmesh-runner`, `/private/var/db/forkmesh-runner` (real paths, so no `/etc` or `/var` symlink sits inside `workRoot`) |
-| Job user | `useradd --system forkmesh-job` | `dscl` hidden user `forkmesh-job`, first free uid from 400 down to 300, shell `/usr/bin/false`, home `/private/var/db/forkmesh-job` |
+| Daemon | `forkmesh-runner@<account>.service` | launch daemon `com.forkmesh.runner.<account>` (`/Library/LaunchDaemons`), log `/private/var/log/forkmesh-runner-<account>.log` |
+| Paths | `/etc/forkmesh-runner/accounts/<account>`, `/var/lib/forkmesh-runner/accounts/<account>` | `/private/etc/forkmesh-runner/accounts/<account>`, `/private/var/db/forkmesh-runner/accounts/<account>` (real paths, so no `/etc` or `/var` symlink sits inside `workRoot`) |
+| Job user | `useradd --system fmjob-<account>` | `dscl` hidden user `fmjob-<account>`, first free uid from 400 down to 300, shell `/usr/bin/false`, home `…/accounts/<account>/home` |
 | Job firewall | nftables table `inet forkmesh_runner` | pf anchor `com.apple/forkmesh-runner` (`jobs.pf`, rules `user <uid>`), loaded by `com.forkmesh.runner-firewall` at boot and every 5 minutes; it enables pf if pf is off and never loads `/etc/pf.conf` |
 | Daemon binary | signed release via `install.sh` | built from `https://forkmesh.com/forkmesh/forkmesh` (`server/`, sparse clone) with Go, because releases publish only Linux `forkmesh-mirror-node` assets; `FORKMESH_RUNNER_SOURCE_URL` overrides the clone URL |
 | OpenSSL | system `openssl` | OpenSSL 3 (Homebrew `openssl@3`): the LibreSSL in macOS has no Ed25519 `genpkey` |
@@ -258,8 +340,8 @@ no memory figures (`/proc` and `sysinfo` are Linux only).
   runner and provider) is handed to the runner on its next claim or poll. The
   runner runs the provider's fixed login command on a pty as the job user
   inside the sandbox and relays the screen in numbered chunks; token-shaped
-  text is scrubbed before it leaves the runner. Only admins (pool runners)
-  or the registrant (personal runners) may drive it.
+  text is scrubbed before it leaves the runner. Only the account that
+  registered the runner may drive it.
 - **Several accounts per provider:** up to 12, stored under
   `<workRoot>/.accounts/<provider>/`; one is active, and refreshed credentials
   go back to the account the job used.
@@ -267,7 +349,8 @@ no memory figures (`/proc` and `sysinfo` are Linux only).
   `needs_login` mark keyed by the credential's tokens, stops leasing that
   provider, and reports `auth` state (`ok`, `expiring`, `expired`) on every
   claim and poll from the credential file without a network call. The app
-  pings admins and registrants, turns a pool runner's `/status` row red, and
+  pings the registrant (and, for a pool runner, the admins), turns a pool
+  runner's `/status` row red, and
   refuses new jobs with `409 runner_login_expired` when no runner can take
   them. `GET /api/runners/attention` lets the web, desktop and phones show a
   sign-in prompt; its shape is stable.

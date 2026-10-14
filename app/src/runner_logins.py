@@ -4,7 +4,7 @@ A runner has no node account and no node event channel, so the website cannot
 reach it the way it reaches a mirror's login terminal (node_terminal.py). This
 module relays the same terminal over the runner's own signed polling instead:
 
-* An admin (or the registrant of a *personal* runner) creates a login session
+* The account that registered the runner creates a login session
   for one provider. The runner learns about it from its next claim or poll
   response, which also tells it to poll every ``FAST_POLL_MS`` while a session
   is active, runs the provider's own login command on a pty as the job user,
@@ -24,7 +24,7 @@ the runner has read them, and every chunk of a session is deleted
 Browser/desktop endpoints (account session, cookie or bearer; cookie POSTs
 must be same-origin -- ``_account_session_record`` enforces both):
 
-``GET  /api/runners``                              runners visible to the caller
+``GET  /api/runners``                              runners the caller registered
 ``POST /api/runners/<name>/login``                 ``{provider}`` -> ``{id}``
 ``GET  /api/runners/<name>/login/<id>/output?after=<seq>``
 ``POST /api/runners/<name>/login/<id>/input``      ``{data}``
@@ -165,12 +165,8 @@ async def handle(runtime, route):
     row = await runtime.d1_first(
         "SELECT name,registered_by,scope,status FROM runner_nodes WHERE name=?",
         name)
-    if not row:
+    if not row or not _may_manage(actor, row):
         return _error(runtime, "not_found", 404)
-    if not await _may_manage(runtime, actor, row):
-        return _error(runtime, "forbidden", 403,
-                      "Only an administrator, or the registrant of a personal "
-                      "runner, may sign its agent CLIs in.")
     if kind == "create":
         return await _create(runtime, actor, row, data)
     if kind == "accounts":
@@ -189,11 +185,8 @@ async def handle(runtime, route):
     return await _cancel(runtime, actor, session)
 
 
-async def _may_manage(runtime, actor, row):
-    if await runtime.is_admin(actor):
-        return True
-    return (row.get("scope") == "personal"
-            and row.get("registered_by") == actor)
+def _may_manage(actor, row):
+    return bool(actor) and row.get("registered_by") == actor
 
 
 # --- shared state helpers ---------------------------------------------------
@@ -509,15 +502,10 @@ def _public_account_request(row):
 async def _list(runtime, actor):
     now = runtime.now()
     await _sweep(runtime, now)
-    if await runtime.is_admin(actor):
-        rows = await runtime.d1_all(
-            "SELECT name,registered_by,scope,status,allowed_owners,"
-            "last_seen_at FROM runner_nodes ORDER BY name")
-    else:
-        rows = await runtime.d1_all(
-            "SELECT name,registered_by,scope,status,allowed_owners,"
-            "last_seen_at FROM runner_nodes WHERE registered_by=? AND "
-            "scope='personal' ORDER BY name", actor)
+    rows = await runtime.d1_all(
+        "SELECT name,registered_by,scope,status,allowed_owners,"
+        "last_seen_at FROM runner_nodes WHERE registered_by=? ORDER BY name",
+        actor)
     runners = []
     for row in rows:
         name = row["name"]
@@ -628,13 +616,8 @@ async def _attention(runtime, actor):
     now = runtime.now()
     sql = ("SELECT n.name,n.scope,n.last_seen_at,a.data FROM runner_nodes n "
            "LEFT JOIN runner_availability a ON a.runner=n.name "
-           "WHERE n.status='active'")
-    if await runtime.is_admin(actor):
-        rows = await runtime.d1_all(sql + " ORDER BY n.name")
-    else:
-        rows = await runtime.d1_all(
-            sql + " AND n.scope='personal' AND n.registered_by=? "
-            "ORDER BY n.name", actor)
+           "WHERE n.status='active' AND n.registered_by=? ORDER BY n.name")
+    rows = await runtime.d1_all(sql, actor)
     sessions = []
     if rows:
         sessions = await runtime.d1_all(

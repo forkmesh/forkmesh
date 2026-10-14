@@ -20,8 +20,9 @@ def unb64(value):
 
 
 class App:
-    def __init__(self, status=201):
+    def __init__(self, status=201, owner="alice"):
         self.status = status
+        self.owner = owner
         self.bodies = []
         app = self
 
@@ -38,7 +39,8 @@ class App:
                     unb64(body["publicKey"])).verify(unb64(body["proof"]), message)
                 answer = ({"ok": True, "runner": {
                     "name": body["name"], "scope": "personal",
-                    "allowedOwners": ["alice"], "publicKey": body["publicKey"]}}
+                    "allowedOwners": [app.owner], "registeredBy": app.owner,
+                    "publicKey": body["publicKey"]}}
                     if app.status < 300 else
                     {"ok": False, "error": "invalid_token",
                      "message": "The setup token is unknown, used or expired."})
@@ -100,12 +102,23 @@ def test_arguments_are_validated_before_anything_changes(tmp_path):
     assert "--token T" in run(tmp_path, "--help").stdout
 
 
+ALICE_ETC = "etc/forkmesh-runner/accounts/alice"
+ALICE_STATE = "var/lib/forkmesh-runner/accounts/alice"
+
+
+def install(tmp_path, app, name, env=None):
+    return run(tmp_path, "--token", TOKEN, "--name", name, "--app", app.url,
+               "--binary", str(fake_binary(tmp_path)), env=env)
+
+
+def read_json(path):
+    return json.loads(path.read_text())
+
+
 def test_registers_with_a_signed_proof_and_writes_a_runner_config(tmp_path):
     app = App()
     try:
-        binary = fake_binary(tmp_path)
-        result = run(tmp_path, "--token", TOKEN, "--name", "alice-box", "--app",
-                     app.url, "--binary", str(binary))
+        result = install(tmp_path, app, "alice-box")
     finally:
         app.close()
     assert result.returncode == 0, result.stderr
@@ -114,50 +127,195 @@ def test_registers_with_a_signed_proof_and_writes_a_runner_config(tmp_path):
     body = app.bodies[0][1]
     assert body["token"] == TOKEN and body["name"] == "alice-box"
     root = tmp_path / "root"
-    key = root / "var/lib/forkmesh-runner/identity/ed25519.pem"
+    key = root / ALICE_STATE / "identity/ed25519.pem"
     assert stat.S_IMODE(key.stat().st_mode) == 0o600
-    config_path = root / "etc/forkmesh-runner/runner.json"
+    assert not (root / "var/lib/forkmesh-runner/pending-alice-box.pem").exists()
+    config_path = root / ALICE_ETC / "runner.json"
     assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
-    config = json.loads(config_path.read_text())
+    config = read_json(config_path)
     assert config["role"] == "runner"
-    assert config["identityKey"] == "/var/lib/forkmesh-runner/identity/ed25519.pem"
-    assert config["gatewayConfig"] == "/var/lib/forkmesh-runner/gateway/config.json"
+    assert config["identityKey"] == "/" + ALICE_STATE + "/identity/ed25519.pem"
+    assert config["gatewayConfig"] == "/" + ALICE_STATE + "/gateway/config.json"
     assert config["runner"]["allowedOwners"] == ["alice"]
     assert config["runner"]["appUrl"] == app.url
-    assert config["runner"]["workRoot"] == "/var/lib/forkmesh-runner/work"
+    assert config["runner"]["jobUser"] == "fmjob-alice"
+    assert config["runner"]["workRoot"] == "/" + ALICE_STATE + "/work"
+    assert config["listen"].startswith("127.0.0.1:")
     assert config["listen"] != "127.0.0.1:8791"
-    identity = json.loads((root / "var/lib/forkmesh-runner/gateway/config.json").read_text())
+    assert (root / ALICE_STATE / "work").is_dir()
+    assert (root / ALICE_STATE / "home/.claude").is_dir()
+    identity = read_json(root / ALICE_STATE / "gateway/config.json")
     assert identity == {"schemaVersion": 1, "node": {
         "name": "alice-box", "publicKey": body["publicKey"]}, "repositories": []}
-    unit = (root / "etc/systemd/system/forkmesh-runner.service").read_text()
-    assert "--config /etc/forkmesh-runner/runner.json" in unit
+    unit = (root / "etc/systemd/system/forkmesh-runner@.service").read_text()
+    assert "--config /etc/forkmesh-runner/accounts/%i/runner.json" in unit
+    assert "ReadWritePaths=/var/lib/forkmesh-runner/accounts/%i\n" in unit
+    assert "BindPaths=/var/lib/forkmesh-runner/accounts/%i/tmp:/tmp" in unit
     assert "NoNewPrivileges=true" in unit and "IPAddressDeny=169.254.0.0/16" in unit
+    assert not (root / "etc/systemd/system/forkmesh-runner.service").exists()
     nft = (root / "etc/forkmesh-runner/jobs.nft").read_text()
-    assert 'meta skuid "forkmesh-job"' in nft and "192.168.0.0/16" in nft
+    assert 'meta skuid "fmjob-alice"' in nft and "192.168.0.0/16" in nft
     assert "flush ruleset" not in nft
     assert TOKEN not in json.dumps(config) and TOKEN not in unit
     assert (root / "usr/local/bin/forkmesh-mirror-node").is_file()
+    assert "forkmesh-runner@alice.service" in result.stdout
 
 
 def test_a_second_run_keeps_the_key_and_a_refusal_is_reported(tmp_path):
     app = App()
     try:
-        binary = fake_binary(tmp_path)
-        run(tmp_path, "--token", TOKEN, "--name", "alice-box", "--app", app.url,
-            "--binary", str(binary))
+        install(tmp_path, app, "alice-box")
         first = app.bodies[-1][1]["publicKey"]
-        again = run(tmp_path, "--token", TOKEN, "--name", "alice-box", "--app",
-                    app.url, "--binary", str(binary))
-        assert again.returncode == 0
+        listen = read_json(tmp_path / "root" / ALICE_ETC / "runner.json")["listen"]
+        again = install(tmp_path, app, "alice-box")
+        assert again.returncode == 0, again.stderr
         assert app.bodies[-1][1]["publicKey"] == first
         assert "Reusing the runner key" in again.stdout
+        assert read_json(tmp_path / "root" / ALICE_ETC / "runner.json")["listen"] == listen
         app.status = 401
-        refused = run(tmp_path, "--token", TOKEN, "--name", "alice-box", "--app",
-                      app.url, "--binary", str(binary))
+        refused = install(tmp_path, app, "alice-box")
     finally:
         app.close()
     assert refused.returncode == 1
     assert "HTTP 401" in refused.stderr and "unknown, used or expired" in refused.stderr
+
+
+def test_several_accounts_run_side_by_side(tmp_path):
+    root = tmp_path / "root"
+    app = App(owner="alice")
+    try:
+        assert install(tmp_path, app, "alice-box").returncode == 0
+        alice_config = (root / ALICE_ETC / "runner.json").read_text()
+        alice_key = (root / ALICE_STATE / "identity/ed25519.pem").read_bytes()
+        app.owner = "bob"
+        result = install(tmp_path, app, "bob-box")
+    finally:
+        app.close()
+    assert result.returncode == 0, result.stderr
+    assert (root / ALICE_ETC / "runner.json").read_text() == alice_config
+    assert (root / ALICE_STATE / "identity/ed25519.pem").read_bytes() == alice_key
+    bob = read_json(root / "etc/forkmesh-runner/accounts/bob/runner.json")
+    alice = json.loads(alice_config)
+    assert bob["runner"]["allowedOwners"] == ["bob"]
+    assert bob["runner"]["jobUser"] == "fmjob-bob"
+    assert bob["runner"]["workRoot"] == "/var/lib/forkmesh-runner/accounts/bob/work"
+    assert bob["identityKey"] == "/var/lib/forkmesh-runner/accounts/bob/identity/ed25519.pem"
+    assert (root / "var/lib/forkmesh-runner/accounts/bob/identity/ed25519.pem").read_bytes() != alice_key
+    ports = {alice["listen"], alice["gatewayProbe"], bob["listen"], bob["gatewayProbe"]}
+    assert len(ports) == 4
+    assert (root / "var/lib/forkmesh-runner/accounts/bob/home/.claude").is_dir()
+    nft = (root / "etc/forkmesh-runner/jobs.nft").read_text()
+    assert 'meta skuid "fmjob-alice"' in nft and 'meta skuid "fmjob-bob"' in nft
+    assert "forkmesh-runner@bob.service" in result.stdout
+
+
+def test_the_same_account_renaming_its_runner_keeps_one_instance(tmp_path):
+    root = tmp_path / "root"
+    app = App(owner="alice")
+    try:
+        assert install(tmp_path, app, "alice-box").returncode == 0
+        old_key = (root / ALICE_STATE / "identity/ed25519.pem").read_bytes()
+        (root / ALICE_STATE / "work/.accounts").mkdir()
+        result = install(tmp_path, app, "alice-new")
+    finally:
+        app.close()
+    assert result.returncode == 0, result.stderr
+    assert "Kept the key of runner alice-box" in result.stdout
+    assert (root / ALICE_STATE / "identity/ed25519.pem.alice-box").read_bytes() == old_key
+    assert (root / ALICE_STATE / "identity/ed25519.pem").read_bytes() != old_key
+    assert app.bodies[-1][1]["publicKey"] != app.bodies[0][1]["publicKey"]
+    identity = read_json(root / ALICE_STATE / "gateway/config.json")
+    assert identity["node"]["name"] == "alice-new"
+    assert (root / ALICE_STATE / "work/.accounts").is_dir()
+    assert sorted(p.name for p in (root / "etc/forkmesh-runner/accounts").iterdir()) == ["alice"]
+
+
+def write_legacy_runner(root, owner, name):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    state = root / "var/lib/forkmesh-runner"
+    etc = root / "etc/forkmesh-runner"
+    for folder in (state / "identity", state / "gateway", state / "work", etc):
+        folder.mkdir(parents=True, exist_ok=True)
+    pem = Ed25519PrivateKey.generate().private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption())
+    (state / "identity/ed25519.pem").write_bytes(pem)
+    (state / "gateway/config.json").write_text(json.dumps(
+        {"schemaVersion": 1, "node": {"name": name, "publicKey": "x"},
+         "repositories": []}))
+    (etc / "runner.json").write_text(json.dumps({
+        "schemaVersion": 1, "role": "runner", "listen": "127.0.0.1:8795",
+        "gatewayProbe": "127.0.0.1:8796",
+        "gatewayConfig": "/var/lib/forkmesh-runner/gateway/config.json",
+        "identityKey": "/var/lib/forkmesh-runner/identity/ed25519.pem",
+        "runner": {"appUrl": "https://app.forkmesh.com", "allowedOwners": [owner],
+                   "workRoot": "/var/lib/forkmesh-runner/work",
+                   "jobUser": "forkmesh-job"}}))
+    return pem
+
+
+def test_an_older_single_runner_install_keeps_its_layout_next_to_new_ones(tmp_path):
+    root = tmp_path / "root"
+    pem = write_legacy_runner(root, "alice", "alice-box")
+    app = App(owner="alice")
+    try:
+        again = install(tmp_path, app, "alice-box")
+        app.owner = "bob"
+        bob_result = install(tmp_path, app, "bob-box")
+    finally:
+        app.close()
+    assert again.returncode == 0, again.stderr
+    assert "Reusing the runner key" in again.stdout
+    assert (root / "var/lib/forkmesh-runner/identity/ed25519.pem").read_bytes() == pem
+    legacy = read_json(root / "etc/forkmesh-runner/runner.json")
+    assert legacy["runner"]["jobUser"] == "forkmesh-job"
+    assert legacy["runner"]["workRoot"] == "/var/lib/forkmesh-runner/work"
+    assert legacy["listen"] == "127.0.0.1:8795"
+    unit = (root / "etc/systemd/system/forkmesh-runner.service").read_text()
+    assert "--config /etc/forkmesh-runner/runner.json" in unit
+    assert "ReadWritePaths=/var/lib/forkmesh-runner /var/lib/forkmesh-job" in unit
+    assert "InaccessiblePaths=-/var/lib/forkmesh-runner/accounts" in unit
+    assert not (root / ALICE_ETC).exists()
+    assert bob_result.returncode == 0, bob_result.stderr
+    bob = read_json(root / "etc/forkmesh-runner/accounts/bob/runner.json")
+    assert bob["listen"] not in ("127.0.0.1:8795", "127.0.0.1:8796")
+    assert read_json(root / "etc/forkmesh-runner/runner.json") == legacy
+    nft = (root / "etc/forkmesh-runner/jobs.nft").read_text()
+    assert 'meta skuid "forkmesh-job"' in nft and 'meta skuid "fmjob-bob"' in nft
+
+
+def test_a_job_user_another_runner_holds_is_refused(tmp_path):
+    root = tmp_path / "root"
+    app = App(owner="carol")
+    try:
+        assert install(tmp_path, app, "carol-box").returncode == 0
+        path = root / "etc/forkmesh-runner/accounts/carol/runner.json"
+        config = read_json(path)
+        config["runner"]["jobUser"] = "fmjob-bob"
+        path.write_text(json.dumps(config))
+        app.owner = "bob"
+        result = install(tmp_path, app, "bob-box")
+    finally:
+        app.close()
+    assert result.returncode == 1
+    assert "fmjob-bob already belongs to the runner of carol" in result.stderr
+    assert not (root / "etc/forkmesh-runner/accounts/bob/runner.json").exists()
+
+
+def test_a_long_account_name_gets_a_short_unique_job_user(tmp_path):
+    owner = "a" + "b" * 40
+    app = App(owner=owner)
+    try:
+        result = install(tmp_path, app, "long-box")
+    finally:
+        app.close()
+    assert result.returncode == 0, result.stderr
+    digest = hashlib.sha256(owner.encode()).hexdigest()[:6]
+    user = "fmjob-" + owner[:19] + "-" + digest
+    assert len(user) == 32
+    config = read_json(tmp_path / "root/etc/forkmesh-runner/accounts" / owner / "runner.json")
+    assert config["runner"]["jobUser"] == user
 
 
 def test_the_script_deletes_nothing_recursively_and_never_flushes_the_firewall():
@@ -171,27 +329,35 @@ def test_the_script_deletes_nothing_recursively_and_never_flushes_the_firewall()
 def test_macos_installs_a_launch_daemon_and_a_pf_anchor(tmp_path):
     app = App()
     try:
-        binary = fake_binary(tmp_path)
         env = sandbox_env(tmp_path)
         env["FORKMESH_RUNNER_PLATFORM"] = "Darwin"
-        result = run(tmp_path, "--token", TOKEN, "--name", "alice-mac", "--app",
-                     app.url, "--binary", str(binary), env=env)
+        result = install(tmp_path, app, "alice-mac", env=env)
+        app.owner = "bob"
+        second = install(tmp_path, app, "bob-mac", env=env)
     finally:
         app.close()
     assert result.returncode == 0, result.stderr
+    assert second.returncode == 0, second.stderr
     root = tmp_path / "root"
-    config = json.loads((root / "private/etc/forkmesh-runner/runner.json").read_text())
-    assert config["identityKey"] == "/private/var/db/forkmesh-runner/identity/ed25519.pem"
-    assert config["runner"]["workRoot"] == "/private/var/db/forkmesh-runner/work"
-    assert (root / "private/var/db/forkmesh-job/.claude").is_dir()
+    state = "/private/var/db/forkmesh-runner/accounts/alice"
+    config = read_json(root / "private/etc/forkmesh-runner/accounts/alice/runner.json")
+    assert config["identityKey"] == state + "/identity/ed25519.pem"
+    assert config["runner"]["workRoot"] == state + "/work"
+    assert (root / state.lstrip("/") / "home/.claude").is_dir()
     assert not (root / "etc/systemd").exists() and not (root / "var/lib").exists()
-    plist = (root / "Library/LaunchDaemons/com.forkmesh.runner.plist").read_text()
-    assert "<string>/private/etc/forkmesh-runner/runner.json</string>" in plist
-    assert "<string>/private/var/db/forkmesh-runner/tmp</string>" in plist
+    plist = (root / "Library/LaunchDaemons/com.forkmesh.runner.alice.plist").read_text()
+    assert "<string>com.forkmesh.runner.alice</string>" in plist
+    assert "<string>/private/etc/forkmesh-runner/accounts/alice/runner.json</string>" in plist
+    assert "<string>%s/tmp</string>" % state in plist
+    assert "/private/var/log/forkmesh-runner-alice.log" in plist
     assert str(tmp_path) not in plist and TOKEN not in plist
+    assert (root / "Library/LaunchDaemons/com.forkmesh.runner.bob.plist").is_file()
     pf = (root / "private/etc/forkmesh-runner/jobs.pf").read_text()
     assert "192.168.0.0/16" in pf and "user %d" % os.getuid() in pf
+    assert pf.count("192.168.0.0/16") == 2
     assert stat.S_IMODE((root / "private/etc/forkmesh-runner/jobs.pf").stat().st_mode) == 0o600
     firewall = (root / "Library/LaunchDaemons/com.forkmesh.runner-firewall.plist").read_text()
     assert "pfctl -a com.apple/forkmesh-runner -f /private/etc/forkmesh-runner/jobs.pf" in firewall
     assert "pfctl -F" not in firewall and "pf.conf" not in firewall
+
+

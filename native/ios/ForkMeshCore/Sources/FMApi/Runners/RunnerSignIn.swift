@@ -435,8 +435,7 @@ public final class RunnerLoginSession {
         if text.isEmpty {
             switch status {
             case 401: text = "Sign in to your ForkMesh account on this phone first."
-            case 403: text = "Only an administrator, or the registrant of a personal runner, may sign its agent CLIs in."
-            case 404: text = "That runner is not registered."
+            case 403, 404: text = "That runner is not one of yours. Only the account that added a runner can see it or sign its agent CLIs in."
             default: text = code.isEmpty ? "The sign-in could not be started." : code
             }
         }

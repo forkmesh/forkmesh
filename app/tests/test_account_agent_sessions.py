@@ -136,6 +136,8 @@ def _load(recorder, triple=False):
             "targetNode": row["target_node"],
             "history": list(record.get("history") or []),
         },
+        "_org_agent_hide_private_runner": (
+            lambda projection, row, record, viewer: projection),
         "_org_agent_error": lambda code, message, status, **kwargs: {
             "status": status,
             "data": {"ok": False, "error": code, "message": message, **kwargs},

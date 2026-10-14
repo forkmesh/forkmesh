@@ -116,7 +116,7 @@ def test_a_failed_agent_session_link_focuses_its_runner_without_starting_a_sign_
     focus = function_source("focusRequestedRunner")
     assert "runnersView.focus = null;" in focus
     assert "button.focus()" in focus
-    assert "is not a runner you can manage" in focus
+    assert "is not one of your runners" in focus
     before_connect = focus[:focus.index("if (focus.connect) {")]
     assert "startRunnerLogin" not in before_connect
     connect = focus[focus.index("if (focus.connect) {"):]

@@ -96,7 +96,7 @@ def test_token_registers_one_personal_runner_once():
     assert answer["status"] == 201
     assert answer["data"]["runner"] == {
         "name": "alice-box", "scope": "personal", "allowedOwners": ["alice"],
-        "publicKey": key.public}
+        "registeredBy": "alice", "publicKey": key.public}
     row = dict(runtime.db.execute(
         "SELECT * FROM runner_nodes WHERE name='alice-box'").fetchone())
     assert row["registered_by"] == "alice" and row["scope"] == "personal"

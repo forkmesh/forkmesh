@@ -27,7 +27,7 @@ class RunnerLoginSessionTest {
         assertEq(RunnerLoginSession.Start.Failed, refused.applyStartReply(403, json("{}")))
         expect(!refused.open)
         expect(refused.ended)
-        expect(refused.error.startsWith("Only an administrator"))
+        expect(refused.error.startsWith("That runner is not one of yours"))
         val badId = RunnerLoginSession("fmnext-r1", "claude-code")
         assertEq(RunnerLoginSession.Start.Failed, badId.applyStartReply(201, json("""{"id":"../x"}""")))
         val server = RunnerLoginSession("fmnext-r1", "codex")

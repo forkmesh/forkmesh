@@ -269,5 +269,6 @@ async def _register(runtime, data):
     await runtime.audit(owner, "runner.register_token", name)
     return runtime.response({"ok": True, "runner": {
         "name": name, "scope": "personal", "allowedOwners": owners,
-        "publicKey": public_key}, "appUrl": app_url(runtime)},
+        "registeredBy": owner, "publicKey": public_key},
+        "appUrl": app_url(runtime)},
         201 if not existing else 200)
