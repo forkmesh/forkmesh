@@ -687,6 +687,7 @@ forkmesh::ui::agentAccountUsageWindows(const QString &provider, const QString &a
         window.label = row.label;
         window.usedPercent = row.usedPercent;
         window.resetAtMs = row.resetAtMs;
+        window.windowMs = row.windowMs;
         windows.append(window);
     }
     return windows;
