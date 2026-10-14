@@ -118,6 +118,11 @@ public final class ChatHub: ShellChatBridge {
     public private(set) var retention: ChatRetention = .standard
     @ObservationIgnored private var pruneTask: Task<Void, Never>?
     @ObservationIgnored public var forkbot: ChatAccountCalling?
+    @ObservationIgnored public var accounts: ChatAccountCalling?
+    @ObservationIgnored public var sharedRoom: @MainActor () -> Bool = { true }
+    public internal(set) var directoryMembers: [PeopleMember] = []
+    @ObservationIgnored var directoryLoadedAt: Date?
+    @ObservationIgnored var directoryLoading = false
     @ObservationIgnored public var apps: AppsClient?
     public private(set) var appCommands = AppCommandCatalog()
     public private(set) var unreadStart: [String: String] = [:]
@@ -159,6 +164,7 @@ public final class ChatHub: ShellChatBridge {
             if self.relay.currentConversation == message.conversation { self.queueReadMark(message.conversation) }
         }
         relay.isReadElsewhere = { [weak self] message in self?.isReadElsewhere(message) ?? false }
+        relay.onNewMember = { [weak self] name in self?.welcomeNewMember(name) }
         relay.isExpired = expiry
         mesh.isExpired = expiry
         extras.isExpired = expiry
@@ -235,7 +241,7 @@ public final class ChatHub: ShellChatBridge {
         loadedScope = scope
         guard let snapshot = history.load(scope: scope) else { return }
         extras.restoreChannels(privateChannels: snapshot.privateChannels, hiddenChannels: snapshot.hiddenChannels)
-        relay.restoreHistory(snapshot.messages.filter { !snapshot.hiddenChannels.contains($0.conversation) })
+        relay.restoreHistory(snapshot.messages.filter { !extras.hiddenChannels.contains($0.conversation) })
         extras.restore(
             replies: snapshot.replies, roots: snapshot.replyRoots, reactions: snapshot.reactions, order: snapshot.reactionOrder,
             edits: snapshot.edits)
@@ -305,7 +311,9 @@ public final class ChatHub: ShellChatBridge {
         let text = message.text.dartTrimmed
         let title: String
         var body = message.fileName.isEmpty ? text : "\u{1F4CE} \(message.fileName)" + (text.isEmpty ? "" : "\n\(text)")
-        if conversation == ChatHub.welcomeChannel {
+        if ChatEveryone.isWelcome(message) {
+            title = "New member joined"
+        } else if conversation == ChatHub.welcomeChannel {
             title = "New user joined"
             body = name.isEmpty ? "Someone new said hello in #welcome" : "\(name) said hello in #welcome"
         } else if conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation) {

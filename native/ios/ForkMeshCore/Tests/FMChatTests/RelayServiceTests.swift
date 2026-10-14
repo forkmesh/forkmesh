@@ -328,7 +328,7 @@ final class RelayServiceTests: XCTestCase {
         XCTAssertTrue(replied)
         XCTAssertTrue(h.relay.channels.contains("#ops"))
         let reply = try XCTUnwrap(h.openFrames().last { $0["type"] == "hello" && $0["to"] == "remote-node" })
-        XCTAssertEqual(reply["channels"], ["#general", "#random", "#ops"])
+        XCTAssertEqual(reply["channels"], ["#general", "#random", "#welcome", "#ops"])
         await h.close()
     }
 
