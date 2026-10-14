@@ -536,6 +536,32 @@ final class DirectMessagesTests: XCTestCase {
         await harness.close()
     }
 
+    @MainActor func testTappingAPersonOpensTheirAccountDirectMessageNotTheRelayPeerRoom() async throws {
+        let api = FakeAccountApi()
+        api.replies["POST /api/chat/direct-messages"] = [
+            "ok": true,
+            "conversation": ["id": .string(DirectMessagesTests.conversationId), "otherUser": "pat"],
+        ]
+        let service = makeService(api: api, ws: FakeWebSocketConnector())
+        let harness = try await RelayHarness.start()
+        let mesh = LocalMeshService(
+            settings: harness.device.settings, identity: harness.device.identity, secureStore: harness.device.secure)
+        let hub = ChatHub(relay: harness.relay, mesh: mesh)
+        hub.direct = service
+        let group = MemberGroup(
+            name: "Pat Smith", members: [Member(id: "pat-phone", name: "Pat Smith", online: true, owner: "Pat")])
+        let person = ChatHub.recipient(for: group)
+        XCTAssertEqual(person.account, "pat")
+        XCTAssertEqual(person.peerId, "pat-phone")
+        let opened = await hub.openPerson(person)
+        XCTAssertTrue(opened)
+        XCTAssertEqual(hub.currentConversation, service.conversations.first)
+        XCTAssertTrue(DirectMessageFrames.isDirect(hub.currentConversation))
+        XCTAssertEqual(api.calls.first { $0.0 == "POST" }?.2?["username"], "pat")
+        await service.closeAll()
+        await harness.close()
+    }
+
     @MainActor func testImagesTravelSealedInDirectMessages() async throws {
         let api = preparedApi()
         let ws = FakeWebSocketConnector()

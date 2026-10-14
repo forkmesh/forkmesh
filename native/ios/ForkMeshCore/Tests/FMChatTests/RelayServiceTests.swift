@@ -409,6 +409,48 @@ final class RelayServiceTests: XCTestCase {
         XCTAssertEqual(groups.first?.isSelf, true)
     }
 
+    func testPresenceCarriesTheDeviceTimeZoneSoPeopleShowTheirLocalTime() async throws {
+        let h = try await RelayHarness.start()
+        let now = Date().epochMillis
+        func ada() -> MemberGroup? { h.relay.rosterGroups().first { $0.name.lowercased() == "ada" } }
+        try await h.sendProtected([
+            "type": "presence", "id": "zone-1", "senderId": "node-a", "sender": "Ada", "ownerUser": "Ada",
+            "ts": .int(now), "timeZone": "Asia/Kolkata",
+        ])
+        let heard = await waitUntil(2) { ada()?.timeZone == "Asia/Kolkata" }
+        XCTAssertTrue(heard)
+        XCTAssertEqual(ada()?.account, "ada")
+        try await h.sendProtected([
+            "type": "presence", "id": "zone-2", "senderId": "node-a", "sender": "Ada", "ownerUser": "ada",
+            "ts": .int(now + 1), "timeZone": "Not/AZone",
+        ])
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(ada()?.timeZone, "Asia/Kolkata")
+        let mark = h.openFrames().count
+        h.relay.appLifecycleChanged(.resumed)
+        _ = await waitUntil(2) { h.openFrames().count > mark }
+        let presence = try XCTUnwrap(h.openFrames().dropFirst(mark).last { $0["type"] == "presence" })
+        XCTAssertEqual(presence["timeZone"]?.text, TimeZone.current.identifier)
+        XCTAssertEqual(h.relay.roster().first?.timeZone, TimeZone.current.identifier)
+        await h.close()
+    }
+
+    func testLocalTimeComesFromTheProfileFirstAndSaysHowFarAheadItIs() throws {
+        XCTAssertEqual(ChatLocalTime.zone(profile: "Europe/Paris", presence: "Asia/Tokyo")?.identifier, "Europe/Paris")
+        XCTAssertEqual(ChatLocalTime.zone(profile: "", presence: "Asia/Tokyo")?.identifier, "Asia/Tokyo")
+        XCTAssertNil(ChatLocalTime.zone(profile: "Mars/Base", presence: ""))
+        let date = Date(timeIntervalSince1970: 1_767_225_600)
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let kolkata = try XCTUnwrap(TimeZone(identifier: "Asia/Kolkata"))
+        let newYork = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        XCTAssertEqual(ChatLocalTime.difference(kolkata, from: utc, at: date), "5\u{00BD} hours ahead of you")
+        XCTAssertEqual(ChatLocalTime.difference(newYork, from: utc, at: date), "5 hours behind you")
+        XCTAssertEqual(ChatLocalTime.difference(utc, from: utc, at: date), "Same time as you")
+        let shown = ChatLocalTime.time(date, in: kolkata, locale: Locale(identifier: "en_US_POSIX"))
+        XCTAssertEqual(shown.replacingOccurrences(of: "\u{202F}", with: " "), "5:30 AM")
+        XCTAssertEqual(ChatLocalTime.place(newYork), "New York")
+    }
+
     func testPresenceFramesCarryTheMemberStatusBothWays() async throws {
         let h = try await RelayHarness.start()
         let now = Date().epochMillis
