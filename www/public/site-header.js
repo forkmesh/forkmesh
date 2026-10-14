@@ -151,6 +151,7 @@
         <span class="fm-nav-group-title">Product</span>
         <a href="/features">Features</a>
         <a href="/desktop">Desktop app</a>
+        <a href="/mobile">Mobile app</a>
         <a class="fm-nav-marketplace" href="${MARKET_HREF}">Marketplace <svg class="fm-nav-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"></path></svg></a>
         <a href="${PRICING_HREF}">Pricing</a>
         <a href="${PATREON_JOIN_HREF}" target="_blank" rel="noopener" data-forkmesh-membership>Membership</a>
@@ -195,6 +196,7 @@
     "/features": '<path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7-5.6-1.9L10.1 9Z"></path><path d="M19 3v4M17 5h4"></path>',
     [APP_HREF]: '<rect x="3" y="3" width="7" height="9" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="16" width="7" height="5" rx="1.5"></rect>',
     "/desktop": '<rect x="2.5" y="4" width="19" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path>',
+    "/mobile": '<rect x="6" y="2.5" width="12" height="19" rx="2.5"></rect><path d="M10.5 18.5h3"></path>',
     [MARKET_HREF]: '<path d="M4 9h16l-1.2 10.2a2 2 0 0 1-2 1.8H7.2a2 2 0 0 1-2-1.8Z"></path><path d="M9 9V7a3 3 0 0 1 6 0v2"></path>',
     [PRICING_HREF]: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"></path><circle cx="7.5" cy="7.5" r="1.5"></circle>',
     [PATREON_JOIN_HREF]: '<path d="M12 20s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 7.3 4.3 4.3 0 0 1 19.5 10c0 5.6-7.5 10-7.5 10Z"></path>',
