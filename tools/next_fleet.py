@@ -896,6 +896,7 @@ def files_script(manifest, archive):
         "systemctl restart systemd-journald",
         ZRAM_START,
         "nft -c -f /etc/nftables.conf",
+        FIREWALL_BEFORE_CADDY,
     ]
     if is_core:
         lines.append("if [ \"$rqlite_unit_before\" != \"$(%s)\" ] && "
@@ -909,6 +910,15 @@ def files_script(manifest, archive):
 
 RESTART_FAIL2BAN = "systemctl try-restart fail2ban.service || true"
 
+RETIRE_UFW = ("if command -v ufw >/dev/null 2>&1; then ufw --force disable "
+              ">/dev/null; systemctl disable --now ufw.service >/dev/null "
+              "2>&1 || true; systemctl restart nftables.service; fi")
+
+FIREWALL_BEFORE_CADDY = (
+    "if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q 'Status: active'; then "
+    "nft -c -f /etc/nftables.conf && systemctl enable nftables.service && "
+    "systemctl reload-or-restart nftables.service && " + RETIRE_UFW + "; fi")
+
 
 def start_script(manifest):
     units = [u for u in manifest["units"] if u != "forkmesh-app.service"
@@ -917,9 +927,7 @@ def start_script(manifest):
     # Vultr's Debian image ships ufw enabled (only 22/tcp open). Our nftables
     # ruleset replaces it; drop ufw only after that ruleset is loaded, so the
     # box is never left without a firewall.
-    retire_ufw = ("if command -v ufw >/dev/null 2>&1; then ufw --force disable "
-                  ">/dev/null; systemctl disable --now ufw.service >/dev/null "
-                  "2>&1 || true; systemctl restart nftables.service; fi")
+    retire_ufw = RETIRE_UFW
     if manifest.get("role") != "core":
         lines += ["systemctl enable nftables.service",
                   "systemctl reload-or-restart nftables.service", retire_ufw,
