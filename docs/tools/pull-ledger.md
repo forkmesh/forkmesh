@@ -26,8 +26,8 @@ pull, its events and its history. The contributor can read the closing note
 and answer it, and `reopen` puts it back to `open`.
 
 A closed pull stays closed. `PullStore::reconcileMergedPulls` only looks at
-`open` and `merged` pulls, the desktop paints `closed` like `merged`
-(`PullStore.h`), and the web reader passes the status through as the pull's
+`open` and `merged` pulls, the desktop shows `closed` as its own status (`pullDisplayStatus` in
+`PullStore.h`), and the web reader passes the status through as the pull's
 state (`app/host/forkmesh_host/repo_views.py`), so the dashboard lists it under
 "Closed".
 
