@@ -50,3 +50,22 @@ npx tailwindcss@3.4.17 -c tailwind.dashboard.config.js -i tailwind.input.css \
 `app/tests/test_dashboard_bounties_links_feedback.py`,
 `app/tests/test_feedback.py`, `test_feedback_email.py`,
 `app/browser_tests/tests/dashboard-bounties-links-feedback.spec.js`.
+
+## Notices and states
+
+Bounties, link rewards, microjobs and referrals share one treatment for
+event-only UI ([dashboard-components.md](dashboard-components.md)):
+
+- Submit results are `fm-flash` success or danger inside the notice row;
+  "log in to take part" prompts are blue info flashes; "members only" and load
+  errors are `fm-blankslate`s; empty lists are blankslates with a muted icon,
+  a short title and the original sentence.
+- Status pills (`Completed`, `In progress`, `Open`, `Paid`, `Unpaid`, `you`)
+  are `fm-label` variants, success for done or paid. Requested SOL amounts and
+  rank 1 are foreground text, not amber or gold.
+- Header count pills are `fm-label`, Refresh is `fm-btn-sm`. Each form's
+  submit is the page's only green button; copy-link, pay-in-wallet and the
+  microjob "Submit an issue" links are neutral `fm-btn-sm`.
+- The issue and pull-request composer reward notices
+  (`microjobIssueNoticeHtml`, `microjobPullNoticeHtml`) are neutral flashes with
+  a coins icon instead of dashed boxes.

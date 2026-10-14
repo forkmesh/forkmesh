@@ -41,7 +41,7 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 
 | Area | Pages |
 | --- | --- |
-| Platform | [cron-and-durable-objects](cron-and-durable-objects.md), [d1](d1.md), [worker-footprint](worker-footprint.md), [auth-sessions](auth-sessions.md), [login-page](login-page.md), [update-notice](update-notice.md), [docs-book](docs-book.md), [world-boot-latency](world-boot-latency.md) |
+| Platform | [cron-and-durable-objects](cron-and-durable-objects.md), [d1](d1.md), [worker-footprint](worker-footprint.md), [auth-sessions](auth-sessions.md), [login-page](login-page.md), [update-notice](update-notice.md), [docs-book](docs-book.md), [world-boot-latency](world-boot-latency.md), [dashboard-colors](dashboard-colors.md), [dashboard-components](dashboard-components.md) |
 | Repositories | [repo-views](repo-views.md), [repository-file-edits](repository-file-edits.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [public-pages](public-pages.md) |
 | Chat | [chat-private-rooms](chat-private-rooms.md), [chat-direct-calls](chat-direct-calls.md), [chat-push-previews](chat-push-previews.md), [chat-read-sync](chat-read-sync.md), [chat-unread-reminders](chat-unread-reminders.md), [chat-everyone-channels](chat-everyone-channels.md), [chat-formatting](chat-formatting.md), [web-chat-layout](web-chat-layout.md), [web-composer](web-composer.md) |
 | Notifications | [notification-email](notification-email.md) |
@@ -216,7 +216,10 @@ exhaust memory. Browser tests:
   (`app/src/urls.py`) must be in `REPO_HOST_READ_ACTIONS`
   (`app/src/app_runtime.py`), or it answers the cacheable 410
   `repository_socket_transport_retired`;
-  `app/tests/test_repo_read_route_operations.py` checks the lists agree.
+  `app/tests/test_repo_read_route_operations.py` checks the lists agree, and
+  `app/tests/test_dashboard_landing_migration.py` reads the set's members
+  from source to check the dashboard's compare, history, branch and raw
+  reads stay on the direct HTTPS gateway.
 - **Read guard.** Heavy readers go through `app/src/d1_read_guard.py`
   `shared_read`; the switch is off by default on rqlite.
 

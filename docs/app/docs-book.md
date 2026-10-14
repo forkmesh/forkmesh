@@ -71,3 +71,12 @@ tree entries makes saves answer 503 `gateway_outdated`.
 - A web save moves `main` on the cores; local checkouts must merge it back
   ([source-publisher.md](../tools/source-publisher.md)).
 - Deleting a level-1 section usually deletes the whole file's text.
+
+## Notices and the selection menu
+
+The page notice (`data-docs-notice`) is an `fm-flash` (success, danger or blue
+info) with its action (**Try again**, **Reload**) as an `fm-btn-sm` on the
+right. Refresh and the editor's Cancel and Save are `fm-btn-sm`; Save is green
+because it commits. The floating selection toolbar is an `fm-popover` with
+28px rows and muted icons (destructive rows stay red). Focused inputs show a
+1px inset blue line instead of a glow.

@@ -223,3 +223,8 @@ so it always looks through every plugin.
 App installs, organization policies, directory listings and review items use
 the same row list. The organization "Save policy" button is a neutral button:
 green is reserved for the page's one create button.
+
+Notices on both pages (`setAppsNotice`) are success or danger `fm-flash`es.
+On `/dashboard/apps/build` the one-time secrets panel is a warning flash, the
+form's Clear and **Create app** are 28px buttons (Create is the green one), and
+an empty app list, an empty delivery log and load errors are `fm-blankslate`s.

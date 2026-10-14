@@ -20,7 +20,8 @@ window.ForkMeshDashboard.registerPage("steps", ({ select: $, selectAll: $$, sess
   }
   function message(kind, value = "") {
     const node = $(`[data-steps-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    const slot = node.querySelector("[data-steps-message-text]") || node;
+    slot.textContent = value; node.classList.toggle("hidden", !value);
   }
   function apiPath(suffix = "") { return `/api/steps${suffix}`; }
   function downloadJson(payload, filename) {

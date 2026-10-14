@@ -25,7 +25,8 @@ window.ForkMeshDashboard.registerPage("sleep", ({ select: $, selectAll: $$, sess
   }
   function message(kind, value = "") {
     const node = $(`[data-sleep-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    const slot = node.querySelector("[data-sleep-message-text]") || node;
+    slot.textContent = value; node.classList.toggle("hidden", !value);
   }
   function apiPath(suffix = "") { return `/api/sleep${suffix}`; }
   function downloadJson(payload, filename) {

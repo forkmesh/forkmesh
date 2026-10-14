@@ -34,6 +34,15 @@ export const FOREHEAD_LIFT = 0.5;
 const MAX_OPEN = 0.42;
 const NOSE_TRUST = 0.06;
 const RING_GAP = 0.05;
+const NOSE = range(27, 36);
+const NOSE_RIGID = 0.85;
+const DEPTH_SPREAD = 0.04;
+const LIP_STEPS = 4;
+const MOUTH_FEATHER = 0.14;
+const UPPER_INNER = [60, 61, 62, 63, 64];
+const LOWER_INNER = [60, 67, 66, 65, 64];
+const OPEN_PROFILE = { 55: 0.45, 56: 0.8, 57: 1, 58: 0.8, 59: 0.45, 65: 0.8, 66: 1, 67: 0.8 };
+const LIFT_PROFILE = { 61: 0.7, 62: 1, 63: 0.7 };
 
 function range(start, end) {
   return Array.from({ length: end - start }, (_, i) => start + i);
@@ -175,8 +184,8 @@ export function fitTemplate(template, anchors) {
   }
   const drop = clampValue(anchors.open || 0, 0, 1) * MAX_OPEN * live.span;
   if (drop > 0) {
-    for (const i of [55, 56, 57, 58, 59, 65, 66, 67]) local[i][1] += drop;
-    for (const i of [61, 62, 63]) local[i][1] -= drop * 0.08;
+    for (const [i, weight] of Object.entries(OPEN_PROFILE)) local[i][1] += drop * weight;
+    for (const [i, weight] of Object.entries(LIFT_PROFILE)) local[i][1] -= drop * 0.08 * weight;
     for (const [i, weight] of CHIN_DROP) local[i][1] += drop * 0.85 * weight;
   }
   return local.map(([a, b]) => fromFrame(live, a, b));
@@ -239,6 +248,91 @@ export function delaunay(points) {
   return triangles.filter((t) => t.v.every((v) => v < n)).map((t) => t.v);
 }
 
+function catmullWeights(t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return [0.5 * (-t + 2 * t2 - t3), 0.5 * (2 - 5 * t2 + 3 * t3), 0.5 * (t + 4 * t2 - 3 * t3), 0.5 * (t3 - t2)];
+}
+
+function lipSamples(control) {
+  const last = control.length - 1;
+  const at = (j) => {
+    if (j < 0) return [[control[0], 2], [control[1], -1]];
+    if (j > last) return [[control[last], 2], [control[last - 1], -1]];
+    return [[control[j], 1]];
+  };
+  const samples = [];
+  for (let j = 0; j < last; j += 1) {
+    samples.push([[control[j], 1]]);
+    for (let s = 1; s < LIP_STEPS; s += 1) {
+      const w = catmullWeights(s / LIP_STEPS);
+      const weights = new Map();
+      [j - 1, j, j + 1, j + 2].forEach((k, n) => {
+        for (const [index, scale] of at(k)) weights.set(index, (weights.get(index) || 0) + w[n] * scale);
+      });
+      samples.push([...weights]);
+    }
+  }
+  samples.push([[control[last], 1]]);
+  return samples;
+}
+
+function blendWeights(a, b, amount) {
+  const weights = new Map();
+  for (const [index, w] of a) weights.set(index, (weights.get(index) || 0) + w * (1 - amount));
+  for (const [index, w] of b) weights.set(index, (weights.get(index) || 0) + w * amount);
+  return [...weights];
+}
+
+function buildMouth() {
+  const extras = [];
+  const reference = (weights) => {
+    if (weights.length === 1 && weights[0][1] === 1) return { landmark: weights[0][0], weights };
+    extras.push(weights);
+    return { extra: extras.length - 1, weights };
+  };
+  const upper = lipSamples(UPPER_INNER).map(reference);
+  const lower = lipSamples(LOWER_INNER).map(reference);
+  const contourCount = extras.length;
+  const last = upper.length - 1;
+  const inner = (from, to) => from.map((ref, k) => (k === 0 || k === last ? ref : reference(blendWeights(ref.weights, to[k].weights, MOUTH_FEATHER))));
+  const innerUpper = inner(upper, lower);
+  const innerLower = inner(lower, upper);
+  return { extras, upper, lower, innerUpper, innerLower, contourCount };
+}
+
+const MOUTH = buildMouth();
+export const MOUTH_EXTRA_COUNT = MOUTH.extras.length;
+
+function combine(points, weights) {
+  let dims = Infinity;
+  for (const [i] of weights) dims = Math.min(dims, points[i].length);
+  const out = new Array(dims).fill(0);
+  for (const [i, w] of weights) {
+    for (let k = 0; k < dims; k += 1) out[k] += w * points[i][k];
+  }
+  return out;
+}
+
+export function mouthExtras(points) {
+  return MOUTH.extras.map((weights) => combine(points, weights));
+}
+
+export function mouthContour(points) {
+  const pick = (ref) => (ref.landmark !== undefined ? points[ref.landmark] : combine(points, ref.weights));
+  return [...MOUTH.upper.map(pick), ...MOUTH.lower.slice(1, -1).reverse().map(pick)];
+}
+
+export function insidePolygon(polygon, [x, y]) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 export function headLayout(points, ring, forehead = FOREHEAD_LIFT) {
   const frame = faceFrame(points);
   const lift = forehead * frame.span;
@@ -247,30 +341,171 @@ export function headLayout(points, ring, forehead = FOREHEAD_LIFT) {
     out.push([points[i][0] - frame.uy[0] * lift, points[i][1] - frame.uy[1] * lift]);
   }
   for (const point of ring) out.push([point[0], point[1]]);
-  return out;
+  return out.concat(mouthExtras(out));
 }
 
 export function headModel(points, ring) {
   const frame = faceFrame(points);
   const layout = headLayout(points, ring);
-  return layout.map((point, i) => {
+  const base = layout.slice(0, layout.length - MOUTH_EXTRA_COUNT).map((point, i) => {
     const [a, b] = toFrame(frame, point);
     const z = i < LANDMARK_COUNT ? DEPTH[i] : i < LANDMARK_COUNT + 10 ? FOREHEAD_DEPTH : RING_DEPTH;
     return [a / frame.span, b / frame.span, z];
   });
+  return base.concat(mouthExtras(base));
 }
 
 export function buildHeadMesh(model, template) {
   const open = fitTemplate(template, { eyeL: [-0.5, 0], eyeR: [0.5, 0], open: 0.6 });
-  const layout = model.map((point, i) => (i < LANDMARK_COUNT ? open[i] : [point[0], point[1]]));
-  const triangles = delaunay(layout).map((triangle) => ({
-    v: triangle,
-    mouth: triangle.every((v) => v >= 60 && v < 68),
-  }));
-  return { triangles, count: layout.length };
+  const start = model.length - MOUTH_EXTRA_COUNT;
+  const base = model.slice(0, start).map((point, i) => (i < LANDMARK_COUNT ? open[i] : [point[0], point[1]]));
+  const layout = base.concat(mouthExtras(open));
+  const vertex = (ref) => (ref.landmark !== undefined ? ref.landmark : start + ref.extra);
+  const contour = [...MOUTH.upper.map(vertex), ...MOUTH.lower.slice(1, -1).reverse().map(vertex)];
+  const onContour = new Set(contour);
+  const polygon = contour.map((v) => layout[v]);
+  const triangles = delaunay(layout.slice(0, start + MOUTH.contourCount))
+    .filter((v) => !(v.every((i) => onContour.has(i)) && insidePolygon(polygon, centroid(layout, v))))
+    .map((v) => ({ v, hole: [0, 0, 0], mouth: false }));
+  const corners = new Set([UPPER_INNER[0], UPPER_INNER[UPPER_INNER.length - 1]]);
+  const add = (v, hole) => {
+    if (new Set(v).size < 3) return;
+    triangles.push({ v, hole: v.map((index, k) => (corners.has(index) ? Math.min(hole[k], 0.5) : hole[k])), mouth: true });
+  };
+  const strip = (a, b, ha, hb) => {
+    for (let k = 0; k + 1 < a.length; k += 1) {
+      const p = vertex(a[k]);
+      const q = vertex(a[k + 1]);
+      const r = vertex(b[k + 1]);
+      const s = vertex(b[k]);
+      add([p, q, r], [ha, ha, hb]);
+      add([p, r, s], [ha, hb, hb]);
+    }
+  };
+  strip(MOUTH.upper, MOUTH.innerUpper, 0, 1);
+  strip(MOUTH.lower, MOUTH.innerLower, 0, 1);
+  strip(MOUTH.innerUpper, MOUTH.innerLower, 1, 1);
+  return { triangles, count: layout.length, extraStart: start };
+}
+
+export function hasDepth(live) {
+  let low = Infinity;
+  let high = -Infinity;
+  for (let i = 0; i < LANDMARK_COUNT; i += 1) {
+    if (!POSE_WEIGHTS[i]) continue;
+    const z = live[i]?.[2];
+    if (!Number.isFinite(z)) return false;
+    low = Math.min(low, z);
+    high = Math.max(high, z);
+  }
+  const span = Math.hypot(live[45][0] - live[36][0], live[45][1] - live[36][1]) || 1;
+  return high - low > DEPTH_SPREAD * span;
+}
+
+function dominantEigenvector(matrix) {
+  const a = matrix.map((row) => row.slice());
+  const v = a.map((_, i) => a.map((__, j) => (i === j ? 1 : 0)));
+  for (let sweep = 0; sweep < 24; sweep += 1) {
+    let off = 0;
+    for (let p = 0; p < 4; p += 1) for (let q = p + 1; q < 4; q += 1) off += a[p][q] * a[p][q];
+    if (off < 1e-18) break;
+    for (let p = 0; p < 4; p += 1) {
+      for (let q = p + 1; q < 4; q += 1) {
+        if (Math.abs(a[p][q]) < 1e-20) continue;
+        const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+        const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+        const c = 1 / Math.sqrt(t * t + 1);
+        const s = t * c;
+        for (let k = 0; k < 4; k += 1) {
+          const akp = a[k][p];
+          const akq = a[k][q];
+          a[k][p] = c * akp - s * akq;
+          a[k][q] = s * akp + c * akq;
+        }
+        for (let k = 0; k < 4; k += 1) {
+          const apk = a[p][k];
+          const aqk = a[q][k];
+          a[p][k] = c * apk - s * aqk;
+          a[q][k] = s * apk + c * aqk;
+        }
+        for (let k = 0; k < 4; k += 1) {
+          const vkp = v[k][p];
+          const vkq = v[k][q];
+          v[k][p] = c * vkp - s * vkq;
+          v[k][q] = s * vkp + c * vkq;
+        }
+      }
+    }
+  }
+  let best = 0;
+  for (let i = 1; i < 4; i += 1) if (a[i][i] > a[best][best]) best = i;
+  return [v[0][best], v[1][best], v[2][best], v[3][best]];
+}
+
+export function solvePoseWithDepth(model, live) {
+  let total = 0;
+  const mm = [0, 0, 0];
+  const lm = [0, 0, 0];
+  for (let i = 0; i < LANDMARK_COUNT; i += 1) {
+    const w = POSE_WEIGHTS[i];
+    if (!w) continue;
+    total += w;
+    for (let k = 0; k < 3; k += 1) {
+      mm[k] += w * model[i][k];
+      lm[k] += w * live[i][k];
+    }
+  }
+  for (let k = 0; k < 3; k += 1) {
+    mm[k] /= total;
+    lm[k] /= total;
+  }
+  const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < LANDMARK_COUNT; i += 1) {
+    const w = POSE_WEIGHTS[i];
+    if (!w) continue;
+    for (let a = 0; a < 3; a += 1) {
+      for (let b = 0; b < 3; b += 1) S[a][b] += w * (model[i][a] - mm[a]) * (live[i][b] - lm[b]);
+    }
+  }
+  const [[sxx, sxy, sxz], [syx, syy, syz], [szx, szy, szz]] = S;
+  const [qw, qx, qy, qz] = dominantEigenvector([
+    [sxx + syy + szz, syz - szy, szx - sxz, sxy - syx],
+    [syz - szy, sxx - syy - szz, sxy + syx, szx + sxz],
+    [szx - sxz, sxy + syx, -sxx + syy - szz, syz + szy],
+    [sxy - syx, szx + sxz, syz + szy, -sxx - syy + szz],
+  ]);
+  const r1 = [qw * qw + qx * qx - qy * qy - qz * qz, 2 * (qx * qy - qw * qz), 2 * (qx * qz + qw * qy)];
+  const r2 = [2 * (qx * qy + qw * qz), qw * qw - qx * qx + qy * qy - qz * qz, 2 * (qy * qz - qw * qx)];
+  const r3 = [2 * (qx * qz - qw * qy), 2 * (qy * qz + qw * qx), qw * qw - qx * qx - qy * qy + qz * qz];
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < LANDMARK_COUNT; i += 1) {
+    const w = POSE_WEIGHTS[i];
+    if (!w) continue;
+    const m = [model[i][0] - mm[0], model[i][1] - mm[1], model[i][2] - mm[2]];
+    const px = dot3(r1, m);
+    const py = dot3(r2, m);
+    num += w * ((live[i][0] - lm[0]) * px + (live[i][1] - lm[1]) * py);
+    den += w * (px * px + py * py);
+  }
+  if (!(den > 0) || !(num > 0)) return null;
+  const scale = num / den;
+  return {
+    scale,
+    rows: [r1, r2, r3],
+    t: [lm[0] - scale * dot3(r1, mm), lm[1] - scale * dot3(r2, mm)],
+    roll: Math.atan2(r2[0], r1[0]),
+    yaw: Math.asin(clampValue(-r3[0], -1, 1)),
+    pitch: Math.asin(clampValue(r3[1], -1, 1)),
+    depth: true,
+  };
 }
 
 export function solvePose(model, live) {
+  if (hasDepth(live)) {
+    const pose = solvePoseWithDepth(model, live);
+    if (pose) return pose;
+  }
   let total = 0;
   const mm = [0, 0, 0];
   const lm = [0, 0];
@@ -345,15 +580,35 @@ export function projectPose(pose, point) {
   return [pose.t[0] + pose.scale * dot3(r1, point), pose.t[1] + pose.scale * dot3(r2, point)];
 }
 
+export function rigidNose(model, live, pose, out) {
+  const rigid = NOSE.map((i) => projectPose(pose, model[i]));
+  let sx = 0;
+  let sy = 0;
+  NOSE.forEach((i, k) => {
+    sx += live[i][0] - rigid[k][0];
+    sy += live[i][1] - rigid[k][1];
+  });
+  sx /= NOSE.length;
+  sy /= NOSE.length;
+  NOSE.forEach((i, k) => {
+    const x = rigid[k][0] + sx;
+    const y = rigid[k][1] + sy;
+    out[i] = [live[i][0] + (x - live[i][0]) * NOSE_RIGID, live[i][1] + (y - live[i][1]) * NOSE_RIGID];
+  });
+  return out;
+}
+
 export function liveHead(model, live) {
   const pose = solvePose(model, live);
-  const out = live.map((point) => [point[0], point[1]]);
+  const out = live.slice(0, LANDMARK_COUNT).map((point) => [point[0], point[1]]);
+  rigidNose(model, live, pose, out);
+  const end = model.length - MOUTH_EXTRA_COUNT;
   const residuals = [];
   for (const i of RESIDUAL_SOURCES) {
     const projected = projectPose(pose, model[i]);
     residuals.push([i, live[i][0] - projected[0], live[i][1] - projected[1]]);
   }
-  for (let v = LANDMARK_COUNT; v < model.length; v += 1) {
+  for (let v = LANDMARK_COUNT; v < end; v += 1) {
     const projected = projectPose(pose, model[v]);
     let wx = 0;
     let wy = 0;
@@ -367,7 +622,7 @@ export function liveHead(model, live) {
     }
     out.push([projected[0] + wx / weight, projected[1] + wy / weight]);
   }
-  return { points: out, pose };
+  return { points: out.concat(mouthExtras(out)), pose };
 }
 
 export function vertexDepths(model, pose) {
@@ -375,7 +630,7 @@ export function vertexDepths(model, pose) {
   const depths = model.map((point) => dot3(r3, point));
   let jaw = Infinity;
   for (const i of JAW) jaw = Math.min(jaw, depths[i]);
-  for (let v = LANDMARK_COUNT + 10; v < depths.length; v += 1) depths[v] = Math.min(depths[v], jaw - RING_GAP);
+  for (let v = LANDMARK_COUNT + 10; v < depths.length - MOUTH_EXTRA_COUNT; v += 1) depths[v] = Math.min(depths[v], jaw - RING_GAP);
   return depths;
 }
 
@@ -406,22 +661,25 @@ export function landmarksFromRegions(regions) {
   if (!regions || need.some((name) => !(regions[name]?.length >= 3))) return null;
   const crest = regions.noseCrest?.length >= 2 ? regions.noseCrest : regions.medianLine;
   if (!(crest?.length >= 2) || !(regions.nose?.length >= 3)) return null;
+  const dims = [...need.map((name) => regions[name]), crest, regions.nose]
+    .every((region) => region.every((point) => Number.isFinite(point[2]))) ? 3 : 2;
+  const copy = (point) => point.slice(0, dims);
   const out = new Array(LANDMARK_COUNT);
-  let jaw = regions.faceContour.map(([x, y]) => [x, y]);
+  let jaw = regions.faceContour.map(copy);
   if (jaw[0][0] > jaw[jaw.length - 1][0]) jaw.reverse();
   resamplePolyline(jaw, 17).forEach((point, i) => { out[i] = point; });
   const brows = [regions.leftEyebrow, regions.rightEyebrow]
     .sort((a, b) => meanX(a) - meanX(b));
-  browLine(brows[0]).forEach((point, i) => { out[17 + i] = point; });
-  browLine(brows[1]).forEach((point, i) => { out[22 + i] = point; });
-  const ridge = crest.map(([x, y]) => [x, y]).sort((a, b) => a[1] - b[1]);
+  browLine(brows[0].map(copy)).forEach((point, i) => { out[17 + i] = point; });
+  browLine(brows[1].map(copy)).forEach((point, i) => { out[22 + i] = point; });
+  const ridge = crest.map(copy).sort((a, b) => a[1] - b[1]);
   resamplePolyline(ridge, 4).forEach((point, i) => { out[27 + i] = point; });
-  const nose = regions.nose.map(([x, y]) => [x, y]);
+  const nose = regions.nose.map(copy);
   const middle = nose.reduce((sum, point) => sum + point[1], 0) / nose.length;
   const base = nose.filter((point) => point[1] >= middle).sort((a, b) => a[0] - b[0]);
   resamplePolyline(base.length >= 2 ? base : nose.sort((a, b) => a[0] - b[0]), 5)
     .forEach((point, i) => { out[31 + i] = point; });
-  const eyes = [regions.leftEye, regions.rightEye].sort((a, b) => meanX(a) - meanX(b));
+  const eyes = [regions.leftEye.map(copy), regions.rightEye.map(copy)].sort((a, b) => meanX(a) - meanX(b));
   eyes.forEach((loop, side) => {
     const [upper, lower] = splitLoop(loop, 4, 4);
     const at = side ? 42 : 36;
@@ -432,10 +690,10 @@ export function landmarksFromRegions(regions) {
     out[at + 4] = lower[2];
     out[at + 5] = lower[1];
   });
-  const [lipTop, lipBottom] = splitLoop(regions.outerLips, 7, 7);
+  const [lipTop, lipBottom] = splitLoop(regions.outerLips.map(copy), 7, 7);
   for (let i = 0; i < 7; i += 1) out[48 + i] = lipTop[i];
   for (let i = 1; i < 6; i += 1) out[60 - i] = lipBottom[i];
-  const [innerTop, innerBottom] = splitLoop(regions.innerLips, 5, 5);
+  const [innerTop, innerBottom] = splitLoop(regions.innerLips.map(copy), 5, 5);
   for (let i = 0; i < 5; i += 1) out[60 + i] = innerTop[i];
   for (let i = 1; i < 4; i += 1) out[68 - i] = innerBottom[i];
   return out;
@@ -468,7 +726,7 @@ function meanX(points) {
 }
 
 function browLine(points) {
-  const sorted = points.map(([x, y]) => [x, y]).sort((a, b) => a[0] - b[0]);
+  const sorted = points.map((point) => point.slice()).sort((a, b) => a[0] - b[0]);
   const low = sorted[0][0];
   const high = sorted[sorted.length - 1][0];
   const out = [];
@@ -479,13 +737,15 @@ function browLine(points) {
       .sort((a, b) => a[0] - b[0])
       .slice(0, Math.min(2, sorted.length))
       .map(([, point]) => point);
-    out.push([x, near.reduce((sum, point) => sum + point[1], 0) / near.length]);
+    const point = [x, near.reduce((sum, item) => sum + item[1], 0) / near.length];
+    if (near.every((item) => Number.isFinite(item[2]))) point.push(near.reduce((sum, item) => sum + item[2], 0) / near.length);
+    out.push(point);
   }
   return out;
 }
 
 function splitLoop(loop, upperCount, lowerCount) {
-  const points = loop.map(([x, y]) => [x, y]);
+  const points = loop.map((point) => point.slice());
   let left = 0;
   let right = 0;
   points.forEach((point, i) => {
@@ -523,7 +783,7 @@ export function resamplePolyline(points, count) {
     const t = clampValue((at - lengths[segment - 1]) / span, 0, 1);
     const a = points[segment - 1];
     const b = points[segment];
-    out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    out.push(a.map((value, k) => value + ((b[k] ?? value) - value) * t));
   }
   return out;
 }
@@ -568,16 +828,13 @@ export class OneEuroFilter {
 }
 
 export function createPointSmoother(count, minCutoff = 1.2, beta = 0.6) {
-  const filters = Array.from({ length: count * 2 }, () => new OneEuroFilter(minCutoff, beta));
+  const filters = Array.from({ length: count * 3 }, () => new OneEuroFilter(minCutoff, beta));
   return {
     reset() {
       for (const filter of filters) filter.reset();
     },
     smooth(points, time, scale) {
-      return points.map(([x, y], i) => [
-        filters[i * 2].filter(x, time, scale),
-        filters[i * 2 + 1].filter(y, time, scale),
-      ]);
+      return points.map((point, i) => point.slice(0, 3).map((value, k) => filters[i * 3 + k].filter(value, time, scale)));
     },
   };
 }

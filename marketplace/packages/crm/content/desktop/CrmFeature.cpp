@@ -1074,6 +1074,46 @@ QLineEdit *lineEdit(const QString &value = QString())
     return edit;
 }
 
+QString mastodonErrorText(const QString &code, const QString &fallback)
+{
+    if (code == QLatin1String("invalid_toot_url"))
+        return QStringLiteral("That is not a link to a toot (https://instance/@name/id)");
+    if (code == QLatin1String("toot_contact_not_found"))
+        return QStringLiteral("the toot mentions no contact in the CRM");
+    if (code == QLatin1String("contact_not_found"))
+        return QStringLiteral("the contact no longer exists");
+    if (code == QLatin1String("mastodon_not_connected"))
+        return QStringLiteral("connect the Mastodon account in CRM settings first");
+    if (code == QLatin1String("mastodon_token_rejected"))
+        return QStringLiteral("Mastodon rejected the access token; save a new one with "
+                              "the read:statuses scope");
+    if (code == QLatin1String("mastodon_unavailable"))
+        return QStringLiteral("Mastodon could not be reached; try again later");
+    if (code == QLatin1String("mastodon_account_not_found"))
+        return QStringLiteral("Mastodon does not know that account");
+    if (code == QLatin1String("invalid_mastodon_account"))
+        return QStringLiteral("use an account on mastodon.social, mastodon.online, "
+                              "fosstodon.org, hachyderm.io, mas.to or infosec.exchange");
+    return fallback.isEmpty() ? code : fallback;
+}
+
+QString mastodonStateLine(const QJsonObject &mastodon)
+{
+    const QString account = text(mastodon, "account");
+    if (!mastodon.value(QStringLiteral("connected")).toBool())
+        return account.isEmpty()
+            ? QStringLiteral("Not connected.")
+            : QStringLiteral("@%1 has no access token saved.").arg(account);
+    const qint64 checked = qint64(mastodon.value(QStringLiteral("lastSyncAt")).toDouble());
+    QString line = QStringLiteral("Connected as @%1 · last checked %2")
+                       .arg(account, checked > 0 ? timestamp(checked)
+                                                 : QStringLiteral("never"));
+    const QString error = text(mastodon, "lastError");
+    if (!error.isEmpty())
+        line += QStringLiteral(" · last error: ") + mastodonErrorText(error, error);
+    return line;
+}
+
 // The option a searchable combo's text names: the one it spells out, else the
 // only option containing it; -1 when it names none or several.
 int searchableMatch(const QComboBox *combo, const QString &typed)
@@ -2601,6 +2641,7 @@ void CrmFeature::loadOrganization()
         if (ok && payload.value(QStringLiteral("unchanged")).toBool()) {
             setStatus(QStringLiteral("Organization CRM loaded · role: %1").arg(m_role));
             queueAvatars();
+            syncToots(true);
             return;
         }
         if (!ok) {
@@ -2621,6 +2662,7 @@ void CrmFeature::loadOrganization()
         applyOrganization(payload);
         m_shownOrganization = organization;
         cacheSummary(payload);
+        syncToots(true);
     });
 }
 
@@ -8931,12 +8973,16 @@ void CrmFeature::showContactDetail(const QString &contactId, bool reread)
     auto *prompt = new QPushButton(QStringLiteral("Write with AI"));
     prompt->setToolTip(QStringLiteral("Gather everything about them and us into a prompt for "
                                       "ChatGPT or Claude to write the message"));
+    auto *toot = new QPushButton(QStringLiteral("Log toot"));
+    toot->setToolTip(QStringLiteral("Paste a toot's link to log it as a Mastodon "
+                                    "conversation with this contact"));
     auto *again = new QPushButton(QStringLiteral("Read again"));
     again->setEnabled(!sources.isEmpty());
-    for (QPushButton *button : {edit, write, draft, prompt, again})
+    for (QPushButton *button : {edit, write, draft, prompt, toot, again})
         actions->addWidget(button);
     actions->addStretch(1);
     layout->addLayout(actions);
+    connect(toot, &QPushButton::clicked, this, [this, contactId] { logToot(contactId); });
     connect(again, &QPushButton::clicked, reads, [reads] { reads->readAccounts(true); });
     connect(prompt, &QPushButton::clicked, this,
             [this, contactId] { showAiWriter(contactId); });
@@ -10610,6 +10656,97 @@ void CrmFeature::editSettings()
     form->addRow(QStringLiteral("From name"), fromName);
     form->addRow(QStringLiteral("From email"), fromEmail);
     form->addRow(QStringLiteral("Email addresses open in"), mailProvider);
+    const QJsonObject currentMastodon =
+        m_settings.value(QStringLiteral("mastodon")).toObject();
+    auto *mastodonAccount = lineEdit(text(currentMastodon, "account").isEmpty()
+        ? QString() : QStringLiteral("@") + text(currentMastodon, "account"));
+    mastodonAccount->setPlaceholderText(QStringLiteral("@forkmesh@mastodon.social"));
+    mastodonAccount->setProperty("saved", mastodonAccount->text());
+    auto *mastodonToken = lineEdit();
+    mastodonToken->setEchoMode(QLineEdit::Password);
+    mastodonToken->setPlaceholderText(currentMastodon.value(QStringLiteral("connected")).toBool()
+        ? QStringLiteral("Unchanged when blank") : QStringLiteral("Access token"));
+    auto *mastodonState = new QLabel(mastodonStateLine(currentMastodon));
+    mastodonState->setObjectName(QStringLiteral("crmMastodonState"));
+    mastodonState->setTextFormat(Qt::PlainText);
+    mastodonState->setWordWrap(true);
+    auto *mastodonHelp = new QLabel(QStringLiteral(
+        "Toots from this account that mention a contact are logged to that contact "
+        "when the CRM loads. The access token needs the read:statuses scope: create it "
+        "under Preferences → Development on the account's instance."));
+    mastodonHelp->setObjectName(QStringLiteral("mutedLabel"));
+    mastodonHelp->setWordWrap(true);
+    auto *mastodonSave = new QPushButton(QStringLiteral("Save"));
+    auto *mastodonDisconnect = new QPushButton(QStringLiteral("Disconnect"));
+    auto *mastodonCheck = new QPushButton(QStringLiteral("Check toots now"));
+    mastodonAccount->setEnabled(m_canManageSettings);
+    mastodonToken->setEnabled(m_canManageSettings);
+    mastodonSave->setEnabled(m_canManageSettings);
+    mastodonDisconnect->setEnabled(m_canManageSettings &&
+                                   !text(currentMastodon, "account").isEmpty());
+    mastodonCheck->setEnabled(currentMastodon.value(QStringLiteral("connected")).toBool());
+    auto *mastodonButtons = new QHBoxLayout;
+    mastodonButtons->setSpacing(6);
+    for (QPushButton *button : {mastodonSave, mastodonDisconnect, mastodonCheck})
+        mastodonButtons->addWidget(button);
+    mastodonButtons->addStretch(1);
+    form->addRow(QStringLiteral("Mastodon account"), mastodonAccount);
+    form->addRow(QStringLiteral("Mastodon access token"), mastodonToken);
+    form->addRow(QString(), mastodonState);
+    form->addRow(QString(), mastodonButtons);
+    form->addRow(QString(), mastodonHelp);
+    const QPointer<QDialog> mastodonDialog(&dialog);
+    const auto showMastodon = [mastodonDialog, mastodonAccount, mastodonToken, mastodonState,
+                               mastodonDisconnect, mastodonCheck,
+                               canManage = m_canManageSettings](const QJsonObject &mastodon) {
+        if (!mastodonDialog)
+            return;
+        const QString account = text(mastodon, "account").isEmpty()
+            ? QString() : QStringLiteral("@") + text(mastodon, "account");
+        const bool connected = mastodon.value(QStringLiteral("connected")).toBool();
+        mastodonAccount->setText(account);
+        mastodonAccount->setProperty("saved", account);
+        mastodonToken->clear();
+        mastodonToken->setPlaceholderText(connected ? QStringLiteral("Unchanged when blank")
+                                                    : QStringLiteral("Access token"));
+        mastodonState->setText(mastodonStateLine(mastodon));
+        mastodonDisconnect->setEnabled(canManage && !account.isEmpty());
+        mastodonCheck->setEnabled(connected);
+    };
+    const auto putMastodon = [this, mastodonDialog, mastodonState, showMastodon](
+                                 const QJsonObject &body) {
+        request(QByteArrayLiteral("PUT"), organizationPath(QStringLiteral("/settings")), body,
+                [this, mastodonDialog, mastodonState, showMastodon](
+                    bool ok, const QJsonObject &payload, const QString &error) {
+            if (!ok) {
+                const QString reason = mastodonErrorText(text(payload, "error"), error);
+                if (mastodonDialog)
+                    mastodonState->setText(
+                        QStringLiteral("Not saved: %1").arg(reason));
+                return setStatus(QStringLiteral("The Mastodon account was not saved: %1")
+                                     .arg(reason), true);
+            }
+            m_settings = payload.value(QStringLiteral("settings")).toObject();
+            showMastodon(m_settings.value(QStringLiteral("mastodon")).toObject());
+            setStatus(QStringLiteral("Mastodon account saved."));
+        });
+    };
+    connect(mastodonSave, &QPushButton::clicked, &dialog,
+            [mastodonAccount, mastodonToken, putMastodon] {
+        putMastodon(QJsonObject{{QStringLiteral("mastodon"), QJsonObject{
+            {QStringLiteral("account"), mastodonAccount->text().trimmed()},
+            {QStringLiteral("token"), mastodonToken->text().trimmed()},
+        }}});
+    });
+    connect(mastodonDisconnect, &QPushButton::clicked, &dialog, [putMastodon] {
+        putMastodon(QJsonObject{{QStringLiteral("mastodonDisconnect"), true}});
+    });
+    connect(mastodonCheck, &QPushButton::clicked, &dialog, [this, mastodonCheck, showMastodon] {
+        if (m_tootSyncRunning)
+            return;
+        mastodonCheck->setEnabled(false);
+        syncToots(false, showMastodon);
+    });
     layout->addLayout(form);
     auto *notice = new QLabel(m_canManageSettings
         ? QStringLiteral(
@@ -10712,14 +10849,22 @@ void CrmFeature::editSettings()
             {QStringLiteral("refreshToken"), zohoRefresh->text()},
         });
     }
+    if (!mastodonToken->text().trimmed().isEmpty() ||
+        mastodonAccount->text().trimmed() != mastodonAccount->property("saved").toString()) {
+        body.insert(QStringLiteral("mastodon"), QJsonObject{
+            {QStringLiteral("account"), mastodonAccount->text().trimmed()},
+            {QStringLiteral("token"), mastodonToken->text().trimmed()},
+        });
+    }
+    mastodonToken->clear();
     zohoSecret->clear();
     zohoRefresh->clear();
     zohoCode->clear();
     request(QByteArrayLiteral("PUT"), organizationPath(QStringLiteral("/settings")),
-            body, [this, exchange](bool ok, const QJsonObject &, const QString &error) {
+            body, [this, exchange](bool ok, const QJsonObject &payload, const QString &error) {
         if (!ok)
             return setStatus(QStringLiteral("CRM settings were not saved: %1")
-                                 .arg(error), true);
+                                 .arg(mastodonErrorText(text(payload, "error"), error)), true);
         if (!exchange.isEmpty())
             return exchangeZohoCode(exchange);
         setStatus(QStringLiteral("CRM settings saved."));
@@ -10761,6 +10906,90 @@ void CrmFeature::exchangeZohoCode(const QJsonObject &body)
             .arg(text(zoho, "accountId"), text(zoho, "region")));
         loadOrganization();
     });
+}
+
+void CrmFeature::logToot(const QString &contactId)
+{
+    const QJsonObject contact = contactById(contactId);
+    if (contact.isEmpty())
+        return;
+    bool accepted = false;
+    const QString url = QInputDialog::getText(
+        this, QStringLiteral("Log toot"),
+        QStringLiteral("Link to the toot (https://mastodon.social/@name/id)"),
+        QLineEdit::Normal, QString(), &accepted).trimmed();
+    if (!accepted || url.isEmpty())
+        return;
+    setStatus(QString::fromUtf8("Logging the toot\xE2\x80\xA6"));
+    request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/emails/toot")),
+            QJsonObject{{QStringLiteral("url"), url},
+                        {QStringLiteral("contactId"), contactId}},
+            [this, contactId](bool ok, const QJsonObject &payload, const QString &error) {
+        if (!ok)
+            return setStatus(QStringLiteral("The toot was not logged: %1")
+                                 .arg(mastodonErrorText(text(payload, "error"), error)),
+                             true);
+        const QString name = contactLabel(contactById(contactId));
+        setStatus(payload.value(QStringLiteral("relinked")).toBool()
+                      ? QStringLiteral("That toot was already logged for %1.").arg(name)
+                      : QStringLiteral("Toot logged for %1.").arg(name));
+        if (contactId == m_detailContactId)
+            m_detailContact = QJsonObject();
+        loadOrganization();
+    });
+}
+
+void CrmFeature::syncToots(bool automatic, std::function<void(const QJsonObject &)> done)
+{
+    if (m_tootSyncRunning)
+        return;
+    if (automatic && !m_settings.value(QStringLiteral("mastodon")).toObject()
+                          .value(QStringLiteral("connected")).toBool())
+        return;
+    m_tootSyncRunning = true;
+    if (!automatic)
+        setStatus(QString::fromUtf8("Checking the Mastodon account's toots\xE2\x80\xA6"));
+    const QJsonObject body = automatic
+        ? QJsonObject{{QStringLiteral("auto"), true}} : QJsonObject{};
+    const QString revision = m_revision;
+    request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/emails/toots")),
+            body, [this, automatic, done = std::move(done)](
+                      bool ok, const QJsonObject &payload, const QString &error) {
+        m_tootSyncRunning = false;
+        const int logged = payload.value(QStringLiteral("logged")).toInt();
+        if (ok && payload.contains(QStringLiteral("mastodon"))) {
+            QJsonObject settings = m_settings;
+            settings.insert(QStringLiteral("mastodon"),
+                            payload.value(QStringLiteral("mastodon")));
+            m_settings = settings;
+        }
+        if (done) {
+            QJsonObject mastodon = m_settings.value(QStringLiteral("mastodon")).toObject();
+            if (!ok && !text(payload, "error").isEmpty())
+                mastodon.insert(QStringLiteral("lastError"), text(payload, "error"));
+            done(mastodon);
+        }
+        if (!ok) {
+            if (!automatic)
+                setStatus(QStringLiteral("Toots were not checked: %1")
+                              .arg(mastodonErrorText(text(payload, "error"), error)),
+                          true);
+            return;
+        }
+        if (!automatic)
+            setStatus(logged > 0
+                ? QStringLiteral("Logged %1 new toot%2 to contacts.")
+                      .arg(logged).arg(logged == 1 ? QString() : QStringLiteral("s"))
+                : QStringLiteral("Checked %1 toots: no new mentions of a contact.")
+                      .arg(payload.value(QStringLiteral("checked")).toInt()));
+        if (logged > 0) {
+            m_detailContact = QJsonObject();
+            m_revision.clear();
+            loadOrganization();
+        }
+    });
+    if (automatic && m_revision.isEmpty())
+        m_revision = revision;
 }
 
 void CrmFeature::connectZohoMail()

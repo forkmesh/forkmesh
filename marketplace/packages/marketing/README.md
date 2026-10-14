@@ -293,6 +293,38 @@ asked. Nothing on the desk posts, votes or sends anything to Reddit.
   fields are described in `MarketingForms`. A settings `PUT` always carries
   the full channel list. Extension captures open in a desktop browser.
 
+### Web page states and controls
+
+The web view (`content/web/view.html`, `page.js`) renders inside the
+dashboard shell and uses its shared `fm-*` components rather than its own, so
+the states that only appear on an event match the rest of the dashboard:
+
+- The page error and notice lines are `fm-flash` (danger and info); the text
+  goes into their `-text` child so the icon stays. The traffic setup prompt,
+  the Connect Analytics prompt, the extension banner, the X guide and the
+  settings' plugin data box are flashes too, with actions as `fm-btn-sm` on
+  the right. An agent error is a danger flash (a warning one when the agent is
+  busy).
+- Every dialog and drawer uses the `fm-dialog` header, body and footer; the
+  close button is an invisible icon button and the footer holds Delete on the
+  left and Cancel and the confirm button on the right.
+- The header's More menu is an `fm-popover` with `fm-menu-item` rows.
+- Empty tables, charts and lists are `fm-blankslate` with one muted icon, a
+  title, a muted line and at most one small button.
+- Status pills (content, ads, experiments, campaigns, Reddit threads, channel
+  health) are outlined `fm-label`s coloured by status: success for published,
+  active, running and replied; attention for review and paused; blue for
+  planned.
+- Green is kept for one create button per section (New content on the
+  dashboard, New ad, New experiment, Add channels, Log thread, Install) and
+  for dialog confirm buttons. Panel, card and row buttons are neutral
+  `fm-btn-sm`; the selected tab underline, today's date and the top
+  experiment score use the blue accent instead of green.
+- The view hides every `.hidden` element with `!important`, because the
+  shell's component rules load after the utility sheet and would otherwise
+  show a hidden flash or button.
+- Confirmations still use the browser's `confirm()`.
+
 ## Package tests
 
 ```sh

@@ -1689,7 +1689,7 @@
               <option value="warn"${rule.enforcement === "warn" ? " selected" : ""}>Flag only</option>
             </select>
           </label>
-          ${editable ? `<button type="button" data-pull-rule-remove class="inline-flex h-8 items-center gap-1 self-end rounded-md border border-border px-2 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Remove</button>` : ""}
+          ${editable ? `<button type="button" data-pull-rule-remove class="fm-btn fm-btn-sm fm-btn-danger self-end"><i data-lucide="trash-2" aria-hidden="true"></i>Remove</button>` : ""}
         </div>
         <div class="grid gap-2 sm:grid-cols-2">
           ${field("title", "Title (optional)", rule.title, "Shown on the pull request")}
@@ -1714,13 +1714,13 @@
     const rules = Array.isArray(policy?.rules) ? policy.rules : [];
     return `
       <form data-pull-rules-form class="grid gap-3">
-        <div data-pull-rules-rows class="grid gap-3">${rules.map((rule) => pullRuleRowHtml(rule, models, editable)).join("") || `<p data-pull-rules-empty class="text-xs text-muted-foreground">No rules yet.</p>`}</div>
+        <div data-pull-rules-rows class="grid gap-3">${rules.map((rule) => pullRuleRowHtml(rule, models, editable)).join("") || `<div data-pull-rules-empty class="fm-blankslate"><i data-lucide="git-pull-request" aria-hidden="true"></i><p class="fm-blankslate-title">No rules yet</p><p class="fm-blankslate-desc">Add a rule to check each pull request.</p></div>`}</div>
         ${editable ? `
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <button type="button" data-pull-rule-add class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="plus" class="h-3.5 w-3.5"></i>Add rule</button>
+          <button type="button" data-pull-rule-add class="fm-btn fm-btn-sm"><i data-lucide="plus" aria-hidden="true"></i>Add rule</button>
           <div class="flex flex-wrap items-center gap-2">
-            <span data-pull-rules-status class="text-[11px] text-muted-foreground"></span>
-            <button type="submit" class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">${escapeHtml(options.saveLabel || "Save rules")}</button>
+            <span data-pull-rules-status class="text-xs text-muted-foreground"></span>
+            <button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">${escapeHtml(options.saveLabel || "Save rules")}</button>
           </div>
         </div>` : ""}
       </form>`;
@@ -1811,7 +1811,7 @@
       const node = form.querySelector("[data-pull-rules-status]");
       if (!node) return;
       node.textContent = text;
-      node.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-emerald-400" : "text-muted-foreground"}`;
+      node.className = `text-xs ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
     };
     form.addEventListener("change", (event) => {
       const select = event.target.closest("[data-pull-rule-kind]");

@@ -25,3 +25,6 @@ still apply.
 
 Tests: `app/tests/test_repository_file_edits.py`,
 `app/browser_tests/tests/dashboard-file-edit.spec.js`.
+`app/tests/test_dashboard_landing_migration.py` checks that the viewer's
+toolbar wires **Edit file** to this endpoint and that the retired browser-only
+draft editor (**Edit local draft**, copy and download draft) stays gone.

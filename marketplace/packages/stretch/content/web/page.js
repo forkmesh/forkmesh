@@ -18,7 +18,8 @@ window.ForkMeshDashboard.registerPage("stretch", ({ select: $, selectAll: $$, se
   }
   function message(kind, value = "") {
     const node = $(`[data-stretch-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    const slot = node.querySelector("[data-stretch-message-text]") || node;
+    slot.textContent = value; node.classList.toggle("hidden", !value);
   }
   function apiPath(suffix = "") {
     return `/api/stretch${suffix}${suffix.includes("?") ? "&" : "?"}day=${localDay(new Date())}`;
@@ -198,7 +199,7 @@ window.ForkMeshDashboard.registerPage("stretch", ({ select: $, selectAll: $$, se
       const detail = `${minutes(item.seconds)} · ${item.completed ? "finished" : `${item.steps} of ${item.stepsTotal} steps`} · ${item.source}${item.health ? " · ♥ Apple Health" : ""}`;
       return `<div class="flex flex-wrap items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-secondary">
         <span class="text-sm text-foreground">${escapeHtml(`${shortDay(item.day)} ${time} · ${title}`)}</span>
-        <span class="flex items-center gap-3 text-xs text-muted-foreground">${escapeHtml(detail)}<button type="button" data-stretch-delete="${escapeHtml(item.id)}" class="hover:text-destructive">Delete</button></span>
+        <span class="flex items-center gap-3 text-xs text-muted-foreground">${escapeHtml(detail)}<button type="button" data-stretch-delete="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm fm-btn-danger">Delete</button></span>
       </div>`;
     }).join("");
   }

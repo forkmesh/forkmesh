@@ -44,7 +44,7 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "catalog error: %s\n",
                      qPrintable(registry.errorString()));
     check(registry.isReady(), "the embedded marketplace catalog validates");
-    check(registry.packages().size() == 101,
+    check(registry.packages().size() == 102,
           "every embedded marketplace package is retained");
     const forkmesh::market::PackageManifest *designSystem =
         registry.package(QStringLiteral("design-system"));
@@ -1031,6 +1031,13 @@ int main(int argc, char **argv)
               !owned.accountAnswerInstalls(*ownedParent, true, true),
           "a package removed from a new project stays off while other "
           "projects keep it");
+    check(ownedHook && ownedParent &&
+              owned.hasStoredInstall(QStringLiteral("place-hook")) &&
+              owned.accountAnswerInstalls(*ownedHook, false, false, true) &&
+              !owned.hasStoredInstall(QStringLiteral("place-parent")) &&
+              !owned.accountAnswerInstalls(*ownedParent, false, false, true),
+          "a desktop install made before the account ever chose the package "
+          "is kept so it can be carried to the account");
     owned.setProjectCreated(QDateTime());
     check(!owned.projectOwnsInstalls() && ownedParent &&
               owned.accountAnswerInstalls(*ownedParent, true, false),

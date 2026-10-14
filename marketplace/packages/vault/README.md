@@ -231,6 +231,32 @@ python3 marketplace/packages/vault/tools/sync_crypto.py
 python3 -m pytest marketplace/packages/vault/tests marketplace/packages/browser-extension/tests
 ```
 
+## Page styling
+
+The web page uses the dashboard's shared `fm-*` components from
+`app/public/dashboard/shell.html` rather than its own button and badge styles,
+so it reads like the rest of the dashboard:
+
+- Errors and notices are `fm-flash` (danger and info) with one icon and a
+  dismiss button; the message goes into `[data-vault-message-text]`.
+- "Copied" feedback is an `fm-toast` opened as a manual popover, so it shows
+  above an open modal such as the recovery-code dialog.
+- Every dialog is a transparent `<dialog class="vault-dialog">` wrapping an
+  `fm-dialog` with a header, body and right-aligned `fm-btn-sm` footer.
+  `fm-dialog` sets `display: flex`, which would override a closed dialog's
+  `display: none` if it sat on the `<dialog>` itself.
+- Confirmations are an in-page `fm-dialog` (`ask()`), not `window.confirm`;
+  destructive ones use `fm-btn-danger`.
+- Badges are `fm-label`; key states colour only when they matter (known keys
+  success, first share accent, changed or invalid keys danger).
+- Empty and unsupported states are `fm-blankslate`.
+- Green (`fm-btn-cta`) is kept for the submit of each form and dialog; the
+  rest are neutral `fm-btn-sm`, with icons left muted by `fm-btn`.
+- `[data-view="vault"] .hidden` restores `display: none` because the shell's
+  `fm-*` rules load after `tailwind.css` and would otherwise beat `hidden`.
+
+The contract test accepts `fm-*` classes when `shell.html` defines them.
+
 ## API
 
 All routes need a ForkMesh session and answer `no-store`.

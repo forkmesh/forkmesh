@@ -21,6 +21,17 @@
     cancelled: "The sign-in was cancelled.",
   });
   const RUNNER_ACCOUNT_POLL_MS = 2000;
+  const RUNNER_ONLINE_MS = 10 * 60 * 1000;
+  const RUNNER_BUTTON = "inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1 text-xs font-medium text-foreground hover:bg-[rgb(var(--dashboard-subtle-rgb))] transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  const RUNNER_DANGER_BUTTON = "inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1 text-xs font-medium text-destructive hover:border-destructive/60 hover:bg-destructive/10 transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  const RUNNER_LABEL = "inline-flex items-center rounded-full border px-2 text-[11px] font-medium leading-[18px] whitespace-nowrap";
+  const RUNNER_LABEL_TONES = Object.freeze({
+    neutral: "border-border text-muted-foreground",
+    accent: "border-accent/50 text-accent",
+    success: "border-primary/50 text-[var(--dashboard-open)]",
+    attention: "border-attention/50 text-attention",
+    danger: "border-destructive/50 text-destructive",
+  });
   const RUNNER_USAGE_ERRORS = Object.freeze({
     token_expired: "Usage refreshes after this account's next run (its access token has expired).",
     unauthorized: "The provider refused this login. Sign this account in again.",
@@ -63,12 +74,22 @@
     return node;
   }
 
+  function runnerLabel(text, tone) {
+    return runnersEl("span", `${RUNNER_LABEL} ${RUNNER_LABEL_TONES[tone] || RUNNER_LABEL_TONES.neutral}`, text);
+  }
+
+  function runnerButton(text, danger) {
+    const button = runnersEl("button", danger ? RUNNER_DANGER_BUTTON : RUNNER_BUTTON, text);
+    button.type = "button";
+    return button;
+  }
+
   function setRunnersNotice(message, isError) {
     const notice = $("[data-runners-notice]");
     if (!notice) return;
     notice.hidden = !message;
     notice.textContent = message || "";
-    notice.classList.toggle("text-red-500", Boolean(isError));
+    notice.classList.toggle("text-destructive", Boolean(isError));
     notice.classList.toggle("text-muted-foreground", !isError);
   }
 
@@ -99,7 +120,7 @@
   function runnerProviderStatus(runner, provider) {
     const entry = runner.availability?.[provider.id];
     if (!entry) return { text: "Not reported yet", ok: false };
-    if (!entry.binaryFound) return { text: `${provider.label} is not installed`, ok: false, missing: true };
+    if (!entry.binaryFound) return { text: "Not installed", ok: false, missing: true };
     const auth = runnerAuthState(entry);
     if (auth === "expired") {
       return { text: "Login expired — reconnect", ok: false, expired: true };
@@ -128,8 +149,11 @@
     }
     banner.hidden = problems.length === 0;
     const expired = problems.some((problem) => problem.status.expired);
-    banner.classList.toggle("bg-red-500/10", expired);
-    banner.classList.toggle("bg-amber-500/10", !expired && problems.length > 0);
+    banner.classList.toggle("bg-destructive/10", expired);
+    banner.classList.toggle("border-destructive/40", expired);
+    banner.classList.toggle("bg-attention/10", !expired && problems.length > 0);
+    banner.classList.toggle("border-attention/40", !expired && problems.length > 0);
+    banner.toggleAttribute("data-error-actions-skip", !expired);
     for (const { runner, provider, status } of problems) {
       const row = runnersEl("div", "flex flex-wrap items-center gap-2");
       row.dataset.runnerAuthProblem = `${runner.name}:${provider.id}`;
@@ -137,14 +161,11 @@
       const text = status.expired
         ? `${runner.name}: ${short} login expired — reconnect. Jobs for ${provider.label} are not running on this runner.`
         : `${runner.name}: ${short} login expires soon. ${status.text}.`;
-      row.append(runnersEl("span",
-        "font-semibold " + (status.expired ? "text-red-500" : "text-amber-600"), text));
+      row.append(runnersEl("span", "min-w-0 text-foreground", text));
       const active = (runner.logins || []).find(
         (login) => login.provider === provider.id && RUNNER_LOGIN_ACTIVE.has(login.state));
-      const button = runnersEl("button",
-        "ml-auto inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity",
-        active ? "Open sign-in" : provider.button);
-      button.type = "button";
+      const button = runnerButton(active ? "Open sign-in" : provider.button);
+      button.classList.add("ml-auto");
       button.dataset.runnerAuthConnect = provider.id;
       button.addEventListener("click", () => {
         if (active) {
@@ -168,33 +189,36 @@
 
   function runnerUsageRow(window) {
     const used = Math.max(0, Math.min(100, Number(window.usedPercent) || 0));
-    const row = runnersEl("div", "grid gap-1");
-    const line = runnersEl("div", "flex flex-wrap items-center gap-2 text-xs");
-    line.append(runnersEl("span", "text-foreground", window.label || window.id));
-    line.append(runnersEl("span", used >= 90 ? "text-red-500 font-semibold" : "text-muted-foreground",
-      `${Math.round(used)}% used`));
-    if (window.resetsAt) {
-      const left = window.resetsAt - Date.now();
-      line.append(runnersEl("span", "text-muted-foreground",
-        left > 0 ? `resets in ${runnerDurationLabel(left)}` : "reset since this reading"));
-    }
-    row.append(line);
-    const bar = runnersEl("div", "h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-secondary");
+    const tone = used >= 95 ? "danger" : used >= 80 ? "attention" : "accent";
+    const row = runnersEl("div",
+      "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs sm:grid-cols-[9rem_minmax(0,14rem)_minmax(0,1fr)]");
+    row.append(runnersEl("span", "truncate text-foreground", window.label || window.id));
+    const bar = runnersEl("div", "order-last col-span-2 h-2 w-full overflow-hidden rounded-full bg-border/70 sm:order-none sm:col-span-1");
     bar.setAttribute("role", "meter");
     bar.setAttribute("aria-valuemin", "0");
     bar.setAttribute("aria-valuemax", "100");
     bar.setAttribute("aria-valuenow", String(Math.round(used)));
     bar.setAttribute("aria-label", `${window.label || window.id} usage`);
-    const fill = runnersEl("div", "h-full rounded-full " + (used >= 90 ? "bg-red-500" : "bg-primary"));
+    const fill = runnersEl("div", "h-full rounded-full " + (tone === "danger" ? "bg-destructive"
+      : tone === "attention" ? "bg-attention" : "bg-accent"));
     fill.style.width = `${used}%`;
     bar.append(fill);
     row.append(bar);
+    const detail = runnersEl("span", "text-right text-muted-foreground sm:text-left");
+    detail.append(runnersEl("span", tone === "danger" ? "font-medium text-destructive"
+      : tone === "attention" ? "font-medium text-attention" : "text-foreground", `${Math.round(used)}% used`));
+    if (window.resetsAt) {
+      const left = window.resetsAt - Date.now();
+      detail.append(document.createTextNode(
+        left > 0 ? ` · resets in ${runnerDurationLabel(left)}` : " · reset since this reading"));
+    }
+    row.append(detail);
     return row;
   }
 
   function runnerAccountUsage(account) {
     const usage = account.usage;
-    const box = runnersEl("div", "grid gap-1.5");
+    const box = runnersEl("div", "grid gap-2");
     if (!usage) {
       box.append(runnersEl("p", "text-xs text-muted-foreground", "Usage limits have not been read yet."));
       return box;
@@ -212,32 +236,25 @@
 
   function renderRunnerAccounts(runner, provider) {
     const accounts = runner.availability?.[provider.id]?.accounts || [];
-    const wrap = runnersEl("div", "grid gap-2 pl-3 border-l border-border");
+    const wrap = runnersEl("div", "mt-2 divide-y divide-border/70 sm:ml-6");
     const pending = (runner.accountRequests || []).filter(
       (request) => request.provider === provider.id && request.state === "pending");
     for (const account of accounts) {
-      const item = runnersEl("div", "grid gap-1.5");
+      const item = runnersEl("div", "grid gap-2 py-3 last:pb-0");
       item.dataset.runnerAccount = account.id;
-      const head = runnersEl("div", "flex flex-wrap items-center gap-2");
-      head.append(runnersEl("span", "text-sm text-foreground", account.label || account.email || "Account"));
-      if (account.plan) {
-        head.append(runnersEl("span",
-          "rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground",
-          account.plan));
-      }
+      const head = runnersEl("div", "flex flex-wrap items-center gap-x-2 gap-y-1");
+      head.append(runnersEl("span", "min-w-0 truncate text-sm font-medium text-foreground",
+        account.label || account.email || "Account"));
+      if (account.plan) head.append(runnerLabel(account.plan, "neutral"));
       const waiting = pending.find((request) => request.account === account.id);
-      if (account.active) {
-        head.append(runnersEl("span", "text-xs font-semibold text-emerald-500", "Active"));
-      }
+      if (account.active) head.append(runnerLabel("Active", "accent"));
       if (waiting) {
         head.append(runnersEl("span", "text-xs text-muted-foreground",
           waiting.action === "remove" ? "Removing..." : "Switching..."));
       }
       const actions = runnersEl("div", "ml-auto flex items-center gap-2");
-      const buttonClass = "inline-flex items-center rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors";
       if (!account.active) {
-        const use = runnersEl("button", buttonClass, "Use this account");
-        use.type = "button";
+        const use = runnerButton("Use this account");
         use.dataset.runnerAccountActivate = account.id;
         use.disabled = runner.status !== "active" || Boolean(waiting);
         use.addEventListener("click", () => {
@@ -245,8 +262,7 @@
         });
         actions.append(use);
       }
-      const remove = runnersEl("button", buttonClass, "Remove");
-      remove.type = "button";
+      const remove = runnerButton("Remove", true);
       remove.dataset.runnerAccountRemove = account.id;
       remove.disabled = runner.status !== "active" || Boolean(waiting);
       remove.addEventListener("click", () => {
@@ -260,7 +276,7 @@
     }
     for (const request of runner.accountRequests || []) {
       if (request.provider === provider.id && request.state === "failed" && request.message) {
-        wrap.append(runnersEl("p", "text-xs text-red-500", `Could not ${request.action === "remove" ? "remove" : "switch"} the account: ${request.message}`));
+        wrap.append(runnersEl("p", "py-2 text-xs text-destructive", `Could not ${request.action === "remove" ? "remove" : "switch"} the account: ${request.message}`));
       }
     }
     return wrap;
@@ -290,6 +306,31 @@
     }
   }
 
+  function runnerPresence(runner) {
+    if (runner.status !== "active") return runnerLabel(runner.status || "inactive", "danger");
+    const online = Boolean(runner.lastSeenAt) && Date.now() - runner.lastSeenAt <= RUNNER_ONLINE_MS;
+    const node = runnersEl("span", "inline-flex items-center gap-1.5 text-xs text-muted-foreground");
+    node.append(runnersEl("span", "h-2 w-2 rounded-full " + (online
+      ? "bg-[var(--dashboard-open)]" : "bg-muted-foreground/40")));
+    node.append(document.createTextNode(online ? "Online" : "Offline"));
+    return node;
+  }
+
+  function runnerProviderLabel(status) {
+    if (status.expired) return runnerLabel("Login expired", "danger");
+    if (status.expiring) return runnerLabel("Expires soon", "attention");
+    if (status.ok) return runnerLabel("Signed in", "success");
+    return runnerLabel(status.text, "neutral");
+  }
+
+  function runnerProviderDetail(runner, provider, status) {
+    const entry = runner.availability?.[provider.id];
+    if (status.expiring) return status.text.replace(/^Signed in — /, "");
+    if (status.expired) return "Reconnect to run jobs";
+    if (status.ok && entry?.source) return entry.source;
+    return "";
+  }
+
   function renderRunners() {
     const list = $("[data-runners-list]");
     if (!list) return;
@@ -298,42 +339,39 @@
     renderRunnersAuthBanner();
     list.replaceChildren();
     if (!runnersView.runners.length) {
-      list.append(runnersEl("p", "text-sm text-muted-foreground",
+      const empty = runnersEl("div", "px-4 py-10 text-center");
+      empty.append(runnersEl("p", "text-sm font-semibold text-foreground", "No runners yet"));
+      empty.append(runnersEl("p", "mt-1 text-sm text-muted-foreground",
         "No runners you can manage. Administrators see every runner; others see the personal runners they registered."));
+      list.append(empty);
       return;
     }
     for (const runner of runnersView.runners) {
-      const card = runnersEl("div", "rounded-md border border-border bg-background p-3 grid gap-2");
+      const card = runnersEl("div", "");
       card.dataset.runner = runner.name;
-      const head = runnersEl("div", "flex flex-wrap items-center gap-2");
+      const head = runnersEl("div", "flex flex-wrap items-center gap-x-3 gap-y-1 bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-3");
       head.append(runnersEl("span", "font-mono text-sm font-semibold text-foreground", runner.name));
-      head.append(runnersEl("span",
-        "rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground",
-        runner.scope));
-      if (runner.status !== "active") {
-        head.append(runnersEl("span", "text-xs text-red-500", runner.status));
-      }
-      head.append(runnersEl("span", "text-xs text-muted-foreground", runnerSeenLabel(runner.lastSeenAt)));
+      head.append(runnerLabel(runner.scope, "neutral"));
+      head.append(runnerPresence(runner));
+      head.append(runnersEl("span", "text-xs text-muted-foreground sm:ml-auto", runnerSeenLabel(runner.lastSeenAt)));
       card.append(head);
       for (const provider of RUNNER_PROVIDERS) {
-        const row = runnersEl("div", "flex flex-wrap items-center gap-2");
+        const block = runnersEl("div", "border-t border-border px-4 py-3");
+        const row = runnersEl("div", "flex flex-wrap items-center gap-x-2 gap-y-1");
         const status = runnerProviderStatus(runner, provider);
-        row.append(runnersEl("span", "text-sm text-foreground", provider.label));
-        row.append(runnersEl("span",
-          "text-xs " + (status.expired ? "text-red-500 font-semibold"
-            : status.expiring ? "text-amber-600 font-semibold"
-              : status.ok ? "text-emerald-500" : "text-muted-foreground"), status.text));
+        row.append(runnersEl("span", "text-sm font-medium text-foreground", provider.label));
+        row.append(runnerProviderLabel(status));
+        const detail = runnerProviderDetail(runner, provider, status);
+        if (detail) row.append(runnersEl("span", "text-xs text-muted-foreground", detail));
         const active = (runner.logins || []).find(
           (login) => login.provider === provider.id && RUNNER_LOGIN_ACTIVE.has(login.state));
         const hasAccounts = (runner.availability?.[provider.id]?.accounts || []).length > 0;
-        const button = runnersEl("button",
-          "ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors",
-          active ? "Open sign-in" : (status.expired ? provider.button
-            : (hasAccounts ? "Add account" : (status.ok ? "Sign in again" : provider.button))));
+        const button = runnerButton(active ? "Open sign-in" : (status.expired ? provider.button
+          : (hasAccounts ? "Add account" : (status.ok ? "Sign in again" : provider.button))));
+        button.classList.add("ml-auto");
         button.title = hasAccounts && !active
           ? "Sign in another account, or the same one again to renew its login. The new sign-in becomes the active account."
           : "";
-        button.type = "button";
         button.dataset.runnerConnect = provider.id;
         button.disabled = runner.status !== "active" || Boolean(status.missing && !active);
         button.addEventListener("click", () => {
@@ -344,8 +382,9 @@
           }
         });
         row.append(button);
-        card.append(row);
-        if (hasAccounts) card.append(renderRunnerAccounts(runner, provider));
+        block.append(row);
+        if (hasAccounts) block.append(renderRunnerAccounts(runner, provider));
+        card.append(block);
       }
       list.append(card);
     }
@@ -358,9 +397,10 @@
       setRunnersNotice("");
     } catch (error) {
       runnersView.runners = [];
-      setRunnersNotice(error.status === 401
+      const signedOut = error.status === 401;
+      setRunnersNotice(signedOut
         ? "Sign in to manage runners."
-        : `Could not load runners: ${error.message}`, true);
+        : `Could not load runners: ${error.message}`, !signedOut);
       renderRunners();
       return;
     }
@@ -416,7 +456,7 @@
         : `Pick the runner that ran the job and sign ${provider.label} in again.`, Boolean(focus.runner));
       return;
     }
-    card.classList.add("ring-2", "ring-primary");
+    card.classList.add("ring-2", "ring-inset", "ring-accent");
     card.scrollIntoView({ block: "center" });
     const button = card.querySelector(`[data-runner-connect="${provider.id}"]`);
     if (button && !button.disabled) button.focus();
@@ -500,17 +540,34 @@
     const links = $("[data-runner-login-links]");
     links.replaceChildren();
     for (const href of runnerLoginUrls(text)) {
-      const anchor = runnersEl("a", "text-sm text-primary underline break-all", href);
+      const row = runnersEl("div", "flex min-w-0 items-center gap-2");
+      const field = runnersEl("code",
+        "min-w-0 flex-1 truncate rounded-md border border-border bg-background px-3 py-1.5 font-mono text-xs text-foreground", href);
+      field.title = href;
+      const copy = runnerButton("Copy");
+      copy.addEventListener("click", () => { void copyRunnerLoginUrl(copy, href); });
+      const anchor = runnersEl("a", "inline-flex shrink-0 items-center px-1 text-xs font-medium text-accent hover:underline", "Open");
       anchor.href = href;
       anchor.target = "_blank";
       anchor.rel = "noopener noreferrer";
       anchor.setAttribute("referrerpolicy", "no-referrer");
-      links.append(anchor);
+      row.append(field, copy, anchor);
+      links.append(row);
     }
     const active = RUNNER_LOGIN_ACTIVE.has(login.state);
     $("[data-runner-login-form]").hidden = !active;
     $("[data-runner-login-cancel]").hidden = !active;
     $("[data-runner-login-close]").hidden = active;
+  }
+
+  async function copyRunnerLoginUrl(button, href) {
+    try {
+      await navigator.clipboard.writeText(href);
+      button.textContent = "Copied";
+    } catch (_error) {
+      button.textContent = "Select and copy";
+    }
+    window.setTimeout(() => { button.textContent = "Copy"; }, 2000);
   }
 
   function stopRunnerLoginPolling() {
@@ -607,8 +664,8 @@
     const node = $("[data-runner-setup-status]");
     if (!node) return;
     node.textContent = message || "";
-    node.classList.toggle("text-red-500", tone === "bad");
-    node.classList.toggle("text-emerald-500", tone === "good");
+    node.classList.toggle("text-destructive", tone === "bad");
+    node.classList.toggle("text-[var(--dashboard-open)]", tone === "good");
     node.classList.toggle("text-muted-foreground", tone !== "bad" && tone !== "good");
   }
 
@@ -734,7 +791,7 @@
           runnerSetupStatus(`${setup.runner} registered. Sign its agent CLI in with Connect Claude or Connect Codex below.`, "good");
           await loadRunners();
           const card = $$("[data-runner]").find((node) => node.dataset.runner === setup.runner);
-          card?.classList.add("ring-2", "ring-primary");
+          card?.classList.add("ring-2", "ring-inset", "ring-accent");
           card?.scrollIntoView({ block: "center" });
           return;
         }
@@ -1061,7 +1118,7 @@
     if (!notice) return;
     notice.hidden = !runnerAccountsPicker.notice;
     notice.textContent = runnerAccountsPicker.notice;
-    notice.classList.toggle("text-red-500", runnerAccountsPicker.error);
+    notice.classList.toggle("text-destructive", runnerAccountsPicker.error);
     notice.classList.toggle("text-muted-foreground", !runnerAccountsPicker.error);
   }
 
@@ -1100,7 +1157,7 @@
         line.append(runnersEl("span", "text-xs text-muted-foreground",
           row.pending.action === "remove" ? "Removing..." : "Switching..."));
       } else if (row.failed?.message) {
-        line.append(runnersEl("span", "text-xs text-red-500", `Could not switch: ${row.failed.message}`));
+        line.append(runnersEl("span", "text-xs text-destructive", `Could not switch: ${row.failed.message}`));
       }
       const link = runnersEl("a",
         "ml-auto inline-flex items-center rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors",
@@ -1190,10 +1247,10 @@
     if (!summary) return;
     chip.dataset.state = summary.state;
     chip.href = summary.href;
-    chip.classList.toggle("bg-red-500/10", summary.state === "expired");
-    chip.classList.toggle("text-red-500", summary.state === "expired");
-    chip.classList.toggle("bg-amber-500/10", summary.state !== "expired");
-    chip.classList.toggle("text-amber-600", summary.state !== "expired");
+    chip.classList.toggle("bg-destructive/10", summary.state === "expired");
+    chip.classList.toggle("text-destructive", summary.state === "expired");
+    chip.classList.toggle("bg-attention/10", summary.state !== "expired");
+    chip.classList.toggle("text-attention", summary.state !== "expired");
     chip.title = `${summary.text}. Open the sign-in.`;
     chip.setAttribute("aria-label", `${summary.text}. Open the sign-in.`);
     const text = chip.querySelector("[data-runner-attention-text]");

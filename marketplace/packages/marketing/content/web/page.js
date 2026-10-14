@@ -36,6 +36,21 @@ window.ForkMeshDashboard.registerPage("marketing", ({
   const WARN_ICON = svgIcon('<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>');
   const CLOCK_ICON = STATUS_ICONS.scheduled;
   const CHECK_ICON = STATUS_ICONS.published;
+  const INFO_ICON = svgIcon('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>');
+  const ALERT_ICON = svgIcon('<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>');
+  const CLOSE_ICON = svgIcon('<path d="M18 6 6 18M6 6l12 12"/>');
+  const PLUS_ICON = svgIcon('<path d="M12 5v14M5 12h14"/>');
+  const BLANK_ICONS = {
+    chart: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
+    ads: '<path d="m3 11 18-5v12L3 14v-3Z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+    funnel: '<path d="M3 4h18l-7 8v6l-4 2v-8Z"/>',
+    campaign: '<path d="M4 22V4M4 4h13l-2 4 2 4H4"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  };
+  const blankslateBody = (icon, title, desc = "", action = "") =>
+    `${svgIcon(BLANK_ICONS[icon] || BLANK_ICONS.search)}<p class="fm-blankslate-title">${title}</p>${desc ? `<p class="fm-blankslate-desc">${desc}</p>` : ""}${action}`;
+  const blankslate = (icon, title, desc = "", action = "", style = "") =>
+    `<div class="mk-empty fm-blankslate"${style ? ` style="${style}"` : ""}>${blankslateBody(icon, title, desc, action)}</div>`;
 
   const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
   const fmtCompact = (value) => compact.format(Number(value || 0));
@@ -78,7 +93,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
 
   function message(kind, value = "") {
     const node = $(`[data-marketing-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    (node.querySelector(`[data-marketing-${kind}-text]`) || node).textContent = value; node.classList.toggle("hidden", !value);
     if (value && kind === "error") $(`[data-marketing-notice]`)?.classList.add("hidden");
   }
   function orgPath(suffix = "") { return `/api/marketing/${encodeURIComponent(state.marketing.organization)}${suffix}`; }
@@ -272,7 +287,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
 
     if (!lines.length) {
       legend.innerHTML = "";
-      host.innerHTML = `<div class="mk-empty"><p>No metric snapshots in the last ${state.view.rangeDays} days.</p><button data-marketing-metric-open type="button" class="mk-btn">Log metrics</button></div>`;
+      host.innerHTML = blankslate("chart", "No metrics to chart", `No metric snapshots in the last ${state.view.rangeDays} days.`, `<button data-marketing-metric-open type="button" class="fm-btn fm-btn-sm">Log metrics</button>`);
       return;
     }
     const W = 760, H = 260, L = 48, R = 122, T = 10, B = 26;
@@ -415,7 +430,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const adding = state.marketing.addingChannel === channel.id;
       const disabled = added || Boolean(state.marketing.addingChannel) || !state.marketing.canManageSettings;
       const label = added ? "Added" : adding ? "Adding…" : state.marketing.canManageSettings ? "Add" : "Admin only";
-      return `<article class="mk-catalog-item"><span class="mk-glyph" style="${added ? "background:var(--mk-good)" : ""}">${escapeHtml(initials(channel.name))}</span><div><h4>${escapeHtml(channel.name)}</h4><p><span class="mk-num">#${Number(channel.rank)}</span> by global audience</p></div><button data-marketing-channel-add="${escapeHtml(channel.id)}" type="button" ${disabled ? "disabled" : ""} class="mk-btn ${added ? "" : "mk-btn-primary"}">${added ? CHECK_ICON : ""}${label}</button></article>`;
+      return `<article class="mk-catalog-item"><span class="mk-glyph">${escapeHtml(initials(channel.name))}</span><div><h4>${escapeHtml(channel.name)}</h4><p><span class="mk-num">#${Number(channel.rank)}</span> by global audience</p></div><button data-marketing-channel-add="${escapeHtml(channel.id)}" type="button" ${disabled ? "disabled" : ""} class="fm-btn fm-btn-sm">${added ? CHECK_ICON : adding ? "" : PLUS_ICON}${label}</button></article>`;
     };
     // Groups keep the catalog's audience ranking inside each category and
     // order categories by their highest-ranked channel.
@@ -524,7 +539,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     spendHost.innerHTML = channels.length ? channels.map((item) => {
       const detail = [`${item.ads} ad${item.ads === 1 ? "" : "s"}`, item.impressions ? `${item.ctr.toFixed(2)}% CTR` : "", item.conversions ? `${fmtMoney(item.cpaCents, currency)} CPA` : ""].filter(Boolean).join(" · ");
       return `<button data-marketing-ads-channel="${escapeHtml(item.channel)}" type="button" class="mk-spend-row" aria-pressed="${state.view.adChannel === item.channel}" title="${escapeHtml(`${channelLabel(item.channel)}: ${fmtMoney(item.spendCents, currency)} spent · ${fmtFull(item.impressions)} impressions · ${fmtFull(item.clicks)} clicks · ${fmtFull(item.conversions)} conversions`)}"><span>${escapeHtml(channelLabel(item.channel))}</span><span class="mk-track"><span class="mk-bar" style="width:${item.spendCents ? Math.max(1.5, item.spendCents / maxSpend * 100) : 0}%"></span></span><small><b>${escapeHtml(fmtMoney(item.spendCents, currency))}</b> · ${escapeHtml(detail)}</small></button>`;
-    }).join("") : `<div class="mk-empty"><p>No ads yet. Plan the first one for any of your channels.</p><button data-marketing-ad-open type="button" class="mk-btn">New ad</button></div>`;
+    }).join("") : blankslate("ads", "No ad spend yet", "No ads yet. Plan the first one for any of your channels.", `<button data-marketing-ad-open type="button" class="fm-btn fm-btn-sm">New ad</button>`);
 
     const attention = adAttention(now);
     $(`[data-marketing-ads-attention-count]`).textContent = attention.length ? `${attention.length} to review` : "";
@@ -563,7 +578,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       return `<tr style="${ad.status === "archived" ? "opacity:.55" : ""}">
         <td><button data-marketing-ad-edit="${escapeHtml(ad.id)}" type="button" class="mk-content-title"><b>${escapeHtml(ad.name)}</b><small>${escapeHtml([labelOf(AD_OBJECTIVES, ad.objective), ad.campaign, ad.headline].filter(Boolean).join(" · "))}</small></button></td>
         <td><b style="display:block;font-weight:500;font-size:12.5px">${escapeHtml(channelLabel(ad.channel))}</b><small style="font-size:11.5px;color:var(--mk-muted)">${escapeHtml(ad.platform || "Booked directly")}</small></td>
-        <td><span class="mk-pill ${escapeHtml(ad.status)}">${AD_STATUS_ICONS[ad.status] || ""}${escapeHtml(labelOf(AD_STATUSES, ad.status))}</span></td>
+        <td><span class="fm-label mk-pill ${escapeHtml(ad.status)}">${AD_STATUS_ICONS[ad.status] || ""}${escapeHtml(labelOf(AD_STATUSES, ad.status))}</span></td>
         <td class="mk-when">${flight}</td>
         <td>${budget}</td>
         <td class="r mk-num">${ad.impressions ? fmtCompact(ad.impressions) : dash}</td>
@@ -695,7 +710,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const value = counts[key]?.value, rate = rateKey ? rates[rateKey] : null;
       const width = value ? Math.max(1.5, value / top * 100) : 0;
       return `<div class="mk-stage${rateKey && report.bottleneck === rateKey ? " tight" : ""}"><span>${escapeHtml(label)}</span><span class="mk-track"><span class="mk-bar" style="width:${width}%"></span></span><span class="mk-num">${escapeHtml(fmtCount(value))}${rate && !missing(rate.value) ? ` <small>${escapeHtml(fmtRate(rate.value))}</small>` : ""}</span></div>`;
-    }).join("") : `<div class="mk-empty"><p>No funnel week logged yet.</p><button data-marketing-funnel-open type="button" class="mk-btn">Log week</button></div>`;
+    }).join("") : blankslate("funnel", "No funnel week logged yet", "Copy a week's numbers from your analytics.", `<button data-marketing-funnel-open type="button" class="fm-btn fm-btn-sm">Log week</button>`);
     $(`[data-marketing-bottleneck]`).innerHTML = `${report.bottleneck ? WARN_ICON : ""}<span>${escapeHtml(report.bottleneckReason || "")}</span>`;
     $(`[data-marketing-funnel-source]`).textContent = report.source ? `Source: ${report.source}` : "";
 
@@ -735,7 +750,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       return `<tr style="${["done", "dropped"].includes(item.status) ? "opacity:.6" : ""}">
         <td><button data-marketing-experiment-edit="${escapeHtml(item.id)}" type="button" class="mk-content-title"><b>${escapeHtml(item.title)}</b><small>${escapeHtml([item.metric, item.owner, item.campaign].filter(Boolean).join(" · "))}</small></button></td>
         <td>${escapeHtml(labelOf(EXPERIMENT_STAGES, item.stage))}</td>
-        <td><span class="mk-pill ${escapeHtml(item.status)}">${escapeHtml(labelOf(EXPERIMENT_STATUSES, item.status))}</span>${item.decision ? `<small style="display:block;font-size:11.5px;color:var(--mk-muted)">${escapeHtml(labelOf(EXPERIMENT_DECISIONS, item.decision))}</small>` : ""}</td>
+        <td><span class="fm-label mk-pill ${escapeHtml(item.status)}">${escapeHtml(labelOf(EXPERIMENT_STATUSES, item.status))}</span>${item.decision ? `<small style="display:block;font-size:11.5px;color:var(--mk-muted)">${escapeHtml(labelOf(EXPERIMENT_DECISIONS, item.decision))}</small>` : ""}</td>
         <td class="r mk-num">${item.impact || dash}</td><td class="r mk-num">${item.confidence || dash}</td><td class="r mk-num">${item.ease || dash}</td>
         <td class="r"><span class="mk-score${topIds.has(item.id) ? " top" : ""}"${topIds.has(item.id) ? ' title="Top three of the backlog"' : ""}>${item.score || "—"}</span></td>
         <td class="mk-when">${dates.length ? `<small>${escapeHtml(dates.join(" · "))}</small>` : dash}</td>
@@ -933,7 +948,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
   function goalRow(goal) {
     const disabled = state.marketing.canManageSettings ? "" : "disabled";
     const field = (name, label, value, placeholder, size = "") => `<label class="grid gap-1 text-xs text-muted-foreground ${size}">${label}<input data-marketing-goal-field="${name}" maxlength="200" value="${escapeHtml(value || "")}" placeholder="${escapeHtml(placeholder)}" ${disabled} class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label>`;
-    return `<div data-marketing-goal class="mk-goal-row rounded-md border border-border bg-secondary p-3">${field("label", "Name", goal.label, "Signup")}${field("event", "Event", goal.event, "$pageview")}${field("property", "Property (optional)", goal.property, "$pathname")}<label class="grid gap-1 text-xs text-muted-foreground">Match<select data-marketing-goal-field="operator" ${disabled} class="rounded border border-border bg-background px-2 py-1.5 text-foreground"><option value="exact" ${goal.operator === "exact" ? "selected" : ""}>is</option><option value="icontains" ${goal.operator === "icontains" ? "selected" : ""}>contains</option></select></label>${field("value", "Value", goal.value, "/signup")}<button data-marketing-goal-remove type="button" aria-label="Remove goal" class="mk-btn" ${disabled}>✕</button></div>`;
+    return `<div data-marketing-goal class="mk-goal-row rounded-md border border-border bg-secondary p-3">${field("label", "Name", goal.label, "Signup")}${field("event", "Event", goal.event, "$pageview")}${field("property", "Property (optional)", goal.property, "$pathname")}<label class="grid gap-1 text-xs text-muted-foreground">Match<select data-marketing-goal-field="operator" ${disabled} class="rounded border border-border bg-background px-2 py-1.5 text-foreground"><option value="exact" ${goal.operator === "exact" ? "selected" : ""}>is</option><option value="icontains" ${goal.operator === "icontains" ? "selected" : ""}>contains</option></select></label>${field("value", "Value", goal.value, "/signup")}<button data-marketing-goal-remove type="button" aria-label="Remove goal" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm" ${disabled}>${CLOSE_ICON}</button></div>`;
   }
   function openGoals() {
     const analytics = state.marketing.settings.analytics || {}, perf = state.marketing.performance || {};
@@ -1013,7 +1028,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const read = redditBrowserDetails(item), watched = redditMonitorDetails(item);
       return `<tr style="${item.status === "skipped" ? "opacity:.6" : ""}">
         <td>${outLink(item.url, `<b>${escapeHtml(item.title || item.url)}</b><small>${escapeHtml(`r/${item.subreddit} · logged by ${item.createdBy || "a teammate"} ${relativeTimeLabel(item.createdAt)}`)}</small>`, `class="mk-content-title" aria-label="Open the thread on Reddit"`)}${read ? `<small data-marketing-reddit-read style="display:block;font-size:11.5px;color:var(--mk-muted)">${escapeHtml(read)}</small>` : ""}${watched ? `<small data-marketing-reddit-monitor style="display:block;font-size:11.5px">${escapeHtml(watched)}</small>` : ""}${item.note ? `<small style="display:block;font-size:11.5px;color:var(--mk-muted)">${escapeHtml(item.note)}</small>` : ""}</td>
-        <td><span class="mk-pill ${escapeHtml(item.status)}">${escapeHtml(labelOf(REDDIT_STATUSES, item.status))}</span>${item.replyUrl ? `<small style="display:block;font-size:11.5px">${outLink(item.replyUrl, "Reply ↗", `class="mk-link" style="padding:0"`)}</small>` : ""}</td>
+        <td><span class="fm-label mk-pill ${escapeHtml(item.status)}">${escapeHtml(labelOf(REDDIT_STATUSES, item.status))}</span>${item.replyUrl ? `<small style="display:block;font-size:11.5px">${outLink(item.replyUrl, "Reply ↗", `class="mk-link" style="padding:0"`)}</small>` : ""}</td>
         <td>${tick(item.rulesChecked, "Rules read")}${tick(item.disclosed, "Disclosed")}</td>
         <td style="min-width:16rem">${item.taggedLink ? `<code class="mk-link-out">${escapeHtml(item.taggedLink)}</code>` : ""}${checks.length ? `<ul class="mk-checks">${checks.map((check) => `<li class="${escapeHtml(check.level)}">${WARN_ICON}<span>${escapeHtml(check.message)}</span></li>`).join("")}</ul>` : ""}</td>
         <td class="r">${item.taggedLink ? `<button data-marketing-reddit-copy="${escapeHtml(item.id)}" type="button" class="mk-link">Copy link</button>` : ""}<button data-marketing-reddit-edit="${escapeHtml(item.id)}" type="button" class="mk-link">Edit</button></td>
@@ -1289,7 +1304,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       return `<tr>
         <td><button data-marketing-content-edit="${escapeHtml(item.id)}" type="button" class="mk-content-title"><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.body || "No copy yet")}</small></button></td>
         <td><span class="mk-swatch"><i style="background:${colorFor(colors, item.channel)}"></i>${escapeHtml(channelLabel(item.channel))}</span></td>
-        <td><span class="mk-pill ${escapeHtml(item.status)}">${STATUS_ICONS[item.status] || ""}${escapeHtml((STATUSES.find(([status]) => status === item.status) || [, item.status])[1])}</span></td>
+        <td><span class="fm-label mk-pill ${escapeHtml(item.status)}">${STATUS_ICONS[item.status] || ""}${escapeHtml((STATUSES.find(([status]) => status === item.status) || [, item.status])[1])}</span></td>
         <td>${item.campaign ? `<span class="mk-tag">${escapeHtml(item.campaign)}</span>` : `<span style="color:var(--mk-muted)">—</span>`}</td>
         <td>${owner ? `<span class="mk-owner" title="${escapeHtml(owner)}">${escapeHtml(initials(owner))}</span>` : `<span style="color:var(--mk-muted)">—</span>`}</td>
         <td class="mk-when">${when}</td>
@@ -1637,7 +1652,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       : "Never updated";
     const open = openLink(settings);
     return `<article class="mk-card${health.state === "paused" ? " paused" : ""}" data-marketing-channel-card="${escapeHtml(item.channel)}">
-      <div class="mk-card-head"><span class="mk-glyph" style="background:${colorFor(colors, item.channel)}">${escapeHtml(initials(name))}</span><div><b>${escapeHtml(name)}</b><small title="${escapeHtml(snap.description || where)}">${escapeHtml(where || "No link yet")}</small></div><span class="mk-health ${escapeHtml(health.state || "")}">${escapeHtml(HEALTH_LABELS[health.state] || "—")}</span></div>
+      <div class="mk-card-head"><span class="mk-glyph" style="background:${colorFor(colors, item.channel)}">${escapeHtml(initials(name))}</span><div><b>${escapeHtml(name)}</b><small title="${escapeHtml(snap.description || where)}">${escapeHtml(where || "No link yet")}</small></div><span class="fm-label mk-health ${escapeHtml(health.state || "")}">${escapeHtml(HEALTH_LABELS[health.state] || "—")}</span></div>
       <dl class="mk-facts">${facts.join("")}</dl>
       ${channelDesk(item, health)}
       ${checks ? `<ul class="mk-checks">${checks}</ul>` : ""}
@@ -1646,7 +1661,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       ${item.channel === "email" ? emailSuggestionsList() : ""}
       ${item.channel === "discord" ? discordPostsList() : ""}
       ${item.channel === "x" ? readyPostBlock() : ""}
-      <div class="mk-card-foot"><span>${updated}</span><div>${captureNote(item.channel)}${open}<button data-marketing-channel-log="${escapeHtml(item.channel)}" type="button" class="mk-link">Log</button>${state.marketing.canManageSettings ? `<button data-marketing-channel-delete="${escapeHtml(item.channel)}" type="button" class="mk-link">Delete</button>` : ""}${captureButton(item.channel, "mk-btn")}</div></div>
+      <div class="mk-card-foot"><span>${updated}</span><div>${captureNote(item.channel)}${open}<button data-marketing-channel-log="${escapeHtml(item.channel)}" type="button" class="mk-link">Log</button>${state.marketing.canManageSettings ? `<button data-marketing-channel-delete="${escapeHtml(item.channel)}" type="button" class="mk-link">Delete</button>` : ""}${captureButton(item.channel, "fm-btn fm-btn-sm")}</div></div>
     </article>`;
   }
 
@@ -1660,7 +1675,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     if (!items.length) return `<p class="mk-hint">Nobody needs an email right now.</p>`;
     const mailbox = data.provider === "gmail" ? "Gmail" : "Zoho Mail";
     return `<div class="mk-mail" data-marketing-email-suggestions><b>Suggested emails · ${fmtFull(items.length)}${data.total > items.length ? ` of ${fmtFull(data.total)}` : ""}</b>
-      <ul>${items.map((item) => `<li><span><b>${escapeHtml(item.name || item.email)}</b><small>${escapeHtml([EMAIL_KINDS[item.kind], item.reason].filter(Boolean).join(" · "))}</small><small title="${escapeHtml(item.body)}">${escapeHtml(item.subject)}</small></span><a href="${escapeHtml(item.composeUrl)}" target="_blank" rel="noopener noreferrer" class="mk-btn" title="${escapeHtml(`Open a ${mailbox} message to ${item.email} with the subject and text filled in`)}">Open in ${mailbox} ↗</a></li>`).join("")}</ul>
+      <ul>${items.map((item) => `<li><span><b>${escapeHtml(item.name || item.email)}</b><small>${escapeHtml([EMAIL_KINDS[item.kind], item.reason].filter(Boolean).join(" · "))}</small><small title="${escapeHtml(item.body)}">${escapeHtml(item.subject)}</small></span><a href="${escapeHtml(item.composeUrl)}" target="_blank" rel="noopener noreferrer" class="fm-btn fm-btn-sm" title="${escapeHtml(`Open a ${mailbox} message to ${item.email} with the subject and text filled in`)}">Open in ${mailbox} ↗</a></li>`).join("")}</ul>
       <small class="mk-hint">Fill in any [bracketed] parts before you send.</small></div>`;
   }
   async function loadEmailSuggestions() {
@@ -1725,10 +1740,10 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     const picture = image
       ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(post.imageAlt || "")}">`
       : post.hasImage && !failed ? `<p class="mk-hint">Loading the image…</p>` : "";
-    const actions = [`<button data-marketing-ready-copy type="button" class="mk-btn">Copy text</button>`,
-      image ? `<a href="${escapeHtml(image)}" download="${escapeHtml(`x-post-${post.id.slice(0, 8)}.${extension}`)}" class="mk-btn">Download image</a>` : "",
-      String(post.intentUrl || "").startsWith("https://") ? `<button data-marketing-ready-share type="button" class="mk-btn mk-btn-primary" title="Share the image and text to the X app, or open the X composer with the text filled in">Post on X ↗</button>` : "",
-      canCloseReadyPost() ? `<button data-marketing-ready-close="posted" type="button" class="mk-btn">Mark posted</button><button data-marketing-ready-close="skipped" type="button" class="mk-link">Skip</button>` : ""];
+    const actions = [`<button data-marketing-ready-copy type="button" class="fm-btn fm-btn-sm">Copy text</button>`,
+      image ? `<a href="${escapeHtml(image)}" download="${escapeHtml(`x-post-${post.id.slice(0, 8)}.${extension}`)}" class="fm-btn fm-btn-sm">Download image</a>` : "",
+      String(post.intentUrl || "").startsWith("https://") ? `<button data-marketing-ready-share type="button" class="fm-btn fm-btn-sm" title="Share the image and text to the X app, or open the X composer with the text filled in">Post on X ↗</button>` : "",
+      canCloseReadyPost() ? `<button data-marketing-ready-close="posted" type="button" class="fm-btn fm-btn-sm">Mark posted</button><button data-marketing-ready-close="skipped" type="button" class="mk-link">Skip</button>` : ""];
     return `<div class="mk-mail mk-ready" data-marketing-ready-post><b>Ready to post</b>
       ${picture}
       <p class="mk-ready-text">${escapeHtml(post.text)}</p>
@@ -1844,7 +1859,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     if (!perf || perf.status !== "ok") {
       host.innerHTML = ""; total.innerHTML = "";
       setup.hidden = !perf;
-      setup.innerHTML = perf ? `<span>${(perf.insights || []).map((item) => `<b>${escapeHtml(item.title)}</b> ${escapeHtml(item.detail || "")}`).join(" ")}</span><a href="/dashboard/analytics" class="mk-btn">Open Analytics</a>` : "";
+      setup.innerHTML = perf ? `${INFO_ICON}<div class="fm-flash-body">${(perf.insights || []).map((item) => `<span class="fm-flash-title">${escapeHtml(item.title)}</span>${item.detail ? `<p>${escapeHtml(item.detail)}</p>` : ""}`).join("")}</div><div class="fm-flash-actions"><a href="/dashboard/analytics" class="fm-btn fm-btn-sm">Open Analytics</a></div>` : "";
       $(`[data-marketing-traffic-hint]`).textContent = perf ? "" : "Loading Analytics…";
       return;
     }
@@ -1911,7 +1926,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const tracked = new Set((state.marketing.keywords || []).map((item) => item.term));
       host.innerHTML = measured.map((row) => `<tr><td title="${escapeHtml((row.topSources || []).map((item) => item.value).join(", "))}">${escapeHtml(row.term)}</td><td class="r mk-num">${fmtFull(row.sessions)}</td><td class="r mk-num">${fmtShare(row.bounceRate)}</td><td class="r">${tracked.has(row.term) || row.term === "(not provided)" ? "" : `<button data-marketing-keyword-track="${escapeHtml(row.term)}" type="button" class="mk-link">Track</button>`}</td></tr>`).join("");
       empty.hidden = measured.length > 0;
-      empty.textContent = trafficReady() ? "No visits carried a search term (utm_term) in this window. Add {keyword} or utm_term to paid search and newsletter links." : "Search terms come from Analytics once it records visits.";
+      empty.innerHTML = blankslateBody("search", "No search terms", trafficReady() ? "No visits carried a search term (utm_term) in this window. Add {keyword} or utm_term to paid search and newsletter links." : "Search terms come from Analytics once it records visits.");
       return;
     }
     $(`[data-marketing-keywords-head]`).innerHTML = `<tr><th>Keyword</th><th class="r">Pos.</th><th class="r">Impr.</th><th class="r">Clicks</th><th class="r">Visits</th></tr>`;
@@ -1928,7 +1943,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
         <td class="r mk-num">${missingValue(visits) ? "—" : fmtCompact(visits)}</td></tr>`;
     }).join("");
     empty.hidden = items.length > 0;
-    empty.innerHTML = `Track the searches you want to win. <button data-marketing-keyword-import type="button" class="mk-link">Import from Search Console</button>`;
+    empty.innerHTML = blankslateBody("search", "No keywords tracked", "Track the searches you want to win.", `<button data-marketing-keyword-import type="button" class="fm-btn fm-btn-sm">Import from Search Console</button>`);
   }
 
   function renderChannelGrid() {
@@ -2021,7 +2036,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     const line = [spend ? `Spent ${spend}` : "", budget ? `budget ${budget}` : "", stats.ads ? `${stats.ads} ad${stats.ads === 1 ? "" : "s"}` : "", stats.posts ? `${stats.posts} posted link${stats.posts === 1 ? "" : "s"} · ${fmtFull(stats.postEngagements || 0)} engagements` : ""].filter(Boolean).join(" · ");
     const progress = missingValue(stats.timeProgress) ? "" : `<div class="mk-timeline" title="${Math.round(stats.timeProgress * 100)}% of the flight"><span style="width:${stats.timeProgress * 100}%;background:${item.status === "active" ? "var(--mk-good)" : "var(--mk-muted)"}"></span></div>`;
     return `<article class="mk-campaign" data-marketing-campaign="${escapeHtml(item.id)}">
-      <div class="mk-campaign-head"><div><b title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</b><small>${escapeHtml(campaignDates(item))}${item.owner ? ` · ${escapeHtml(item.owner)}` : ""}</small></div><span class="mk-pill ${escapeHtml(item.status)}">${escapeHtml(status)}</span></div>
+      <div class="mk-campaign-head"><div><b title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</b><small>${escapeHtml(campaignDates(item))}${item.owner ? ` · ${escapeHtml(item.owner)}` : ""}</small></div><span class="fm-label mk-pill ${escapeHtml(item.status)}">${escapeHtml(status)}</span></div>
       ${progress}
       ${item.message ? `<p title="${escapeHtml(item.message)}">${escapeHtml(item.message)}</p>` : ""}
       <div class="mk-bullets">${bullets}</div>
@@ -2050,8 +2065,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       .sort((a, b) => order[a.status] - order[b.status] || (a.endsAt || Infinity) - (b.endsAt || Infinity));
     const sources = new Set(campaigns.map((item) => item.source).filter(Boolean));
     const templates = (state.marketing.campaignTemplates || []).map((item, index) => ({ item, index })).filter(({ item }) => !sources.has(item.source));
-    host.innerHTML = shown.map(campaignCard).join("") + templates.map(({ item, index }) => `<article class="mk-campaign ghost"><div class="mk-campaign-head"><div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.label)} · ${escapeHtml(shortDate(item.startsAt))} – ${escapeHtml(shortDate(item.endsAt))}</small></div><span class="mk-pill">Template</span></div><p>${escapeHtml(item.message)}</p><p>${escapeHtml(item.offer)}</p><div class="mk-campaign-foot"><button data-marketing-campaign-template="${index}" type="button" class="mk-btn mk-btn-primary">Add this campaign</button><a href="${escapeHtml(item.source)}" target="_blank" rel="noopener noreferrer" class="mk-link">Open page ↗</a></div></article>`).join("")
-      || `<div class="mk-empty" style="grid-column:1/-1">No campaigns here. <button data-marketing-campaign-open type="button" class="mk-btn mk-btn-primary">New campaign</button></div>`;
+    host.innerHTML = shown.map(campaignCard).join("") + templates.map(({ item, index }) => `<article class="mk-campaign ghost"><div class="mk-campaign-head"><div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.label)} · ${escapeHtml(shortDate(item.startsAt))} – ${escapeHtml(shortDate(item.endsAt))}</small></div><span class="fm-label mk-pill">Template</span></div><p>${escapeHtml(item.message)}</p><p>${escapeHtml(item.offer)}</p><div class="mk-campaign-foot"><button data-marketing-campaign-template="${index}" type="button" class="fm-btn fm-btn-sm">${PLUS_ICON}Add this campaign</button><a href="${escapeHtml(item.source)}" target="_blank" rel="noopener noreferrer" class="mk-link">Open page ↗</a></div></article>`).join("")
+      || blankslate("campaign", "No campaigns here", "Plan one audience, one message and a target.", `<button data-marketing-campaign-open type="button" class="fm-btn fm-btn-sm">New campaign</button>`, "grid-column:1/-1");
     const live = campaigns.filter((item) => item.status === "active");
     const ending = live.filter((item) => item.endsAt > Date.now()).sort((a, b) => a.endsAt - b.endsAt)[0];
     kpi("campaigns", fmtFull(live.length), null, ending ? `${ending.name} ends ${relativeLabel(ending.endsAt)}` : `${counts.open} open`);
@@ -2203,7 +2218,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     out.hidden = false; out.innerHTML = `<p class="mk-hint">The Marketing agent is reading your campaigns, channels and keywords…</p>`;
     try { const payload = await request(orgPath("/assistant"), "POST", { campaignId: select.value, question: $(`[data-marketing-assistant-question]`).value });
       state.marketing.assistant = payload; renderAssistant(); }
-    catch (error) { out.innerHTML = `<p class="mk-warn">${escapeHtml(error.status === 429 ? "The agent is busy; try again in a minute." : `The agent could not answer: ${error.message}`)}</p>`; }
+    catch (error) { out.innerHTML = `<div class="fm-flash ${error.status === 429 ? "fm-flash-warning" : "fm-flash-danger"}">${ALERT_ICON}<div class="fm-flash-body">${escapeHtml(error.status === 429 ? "The agent is busy; try again in a minute." : `The agent could not answer: ${error.message}`)}</div></div>`; }
     finally { button.disabled = false; button.textContent = "Suggest"; }
   }
   function renderAssistant() {
@@ -2247,7 +2262,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const pace = PACING[ad.pacing?.state];
       const total = ad.pacing?.totalBudgetCents || 0;
       const spent = total ? Math.min(100, ad.spendCents / total * 100) : 0, expected = total ? Math.min(100, (ad.pacing?.expectedCents || 0) / total * 100) : 0;
-      return `<button data-marketing-ad-edit="${escapeHtml(ad.id)}" type="button" class="mk-ad-row"><b>${escapeHtml(ad.name)}</b><span class="mk-pill ${escapeHtml(ad.status)}">${escapeHtml(labelOf(AD_STATUSES, ad.status))}</span><small>${escapeHtml(channelLabel(ad.channel))} · ${escapeHtml(fmtMoney(ad.spendCents, ad.currency))}${total ? ` of ${escapeHtml(fmtMoney(total, ad.currency))}` : ""}${pace ? ` · ${pace[0]}` : ""}${ad.endsAt && ad.endsAt > now ? ` · ends ${escapeHtml(relativeLabel(ad.endsAt))}` : ""}</small>${total ? `<span class="mk-budget"><span class="mk-track"><span class="mk-bar${ad.spendCents > total ? " over" : ""}" style="width:${spent}%"></span>${expected ? `<span class="mk-expected" style="left:${expected}%"></span>` : ""}</span></span>` : ""}</button>`;
+      return `<button data-marketing-ad-edit="${escapeHtml(ad.id)}" type="button" class="mk-ad-row"><b>${escapeHtml(ad.name)}</b><span class="fm-label mk-pill ${escapeHtml(ad.status)}">${escapeHtml(labelOf(AD_STATUSES, ad.status))}</span><small>${escapeHtml(channelLabel(ad.channel))} · ${escapeHtml(fmtMoney(ad.spendCents, ad.currency))}${total ? ` of ${escapeHtml(fmtMoney(total, ad.currency))}` : ""}${pace ? ` · ${pace[0]}` : ""}${ad.endsAt && ad.endsAt > now ? ` · ends ${escapeHtml(relativeLabel(ad.endsAt))}` : ""}</small>${total ? `<span class="mk-budget"><span class="mk-track"><span class="mk-bar${ad.spendCents > total ? " over" : ""}" style="width:${spent}%"></span>${expected ? `<span class="mk-expected" style="left:${expected}%"></span>` : ""}</span></span>` : ""}</button>`;
     }).join("") || `<p class="mk-hint">No live ads.</p>`}`;
   }
 
@@ -2519,7 +2534,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
 
   function openSettings() {
     const canSave = state.marketing.canManageSettings;
-    $(`[data-marketing-channel-settings]`).innerHTML = (state.marketing.settings.channels || []).map((channel) => `<div data-marketing-channel-setting="${escapeHtml(channel.id)}" class="grid gap-2 rounded-md border border-border bg-secondary p-3 sm:grid-cols-[auto_10rem_1fr_auto]"><label class="flex items-center gap-2 text-xs text-foreground"><input data-marketing-channel-enabled type="checkbox" ${channel.enabled ? "checked" : ""} /> Active</label><label class="grid gap-1 text-xs text-muted-foreground">Display name<input data-marketing-channel-name maxlength="80" value="${escapeHtml(channel.displayName)}" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">${channel.id === "blog" ? "Website or RSS URL" : "Channel URL (optional)"}<input data-marketing-channel-url type="url" maxlength="1000" value="${escapeHtml(channel.profileUrl || "")}" placeholder="${channel.id === "blog" ? "https://forkmesh.com/blog" : channel.id === "google-search" ? "https://www.google.com/search?q=site:forkmesh.com" : "https://…"}" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label>${canSave ? `<button data-marketing-channel-delete="${escapeHtml(channel.id)}" type="button" class="mk-btn mk-btn-danger">Delete</button>` : ""}</div>`).join("");
+    $(`[data-marketing-channel-settings]`).innerHTML = (state.marketing.settings.channels || []).map((channel) => `<div data-marketing-channel-setting="${escapeHtml(channel.id)}" class="grid gap-2 rounded-md border border-border bg-secondary p-3 sm:grid-cols-[auto_10rem_1fr_auto]"><label class="flex items-center gap-2 text-xs text-foreground"><input data-marketing-channel-enabled type="checkbox" ${channel.enabled ? "checked" : ""} /> Active</label><label class="grid gap-1 text-xs text-muted-foreground">Display name<input data-marketing-channel-name maxlength="80" value="${escapeHtml(channel.displayName)}" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label><label class="grid gap-1 text-xs text-muted-foreground">${channel.id === "blog" ? "Website or RSS URL" : "Channel URL (optional)"}<input data-marketing-channel-url type="url" maxlength="1000" value="${escapeHtml(channel.profileUrl || "")}" placeholder="${channel.id === "blog" ? "https://forkmesh.com/blog" : channel.id === "google-search" ? "https://www.google.com/search?q=site:forkmesh.com" : "https://…"}" class="rounded border border-border bg-background px-2 py-1.5 text-foreground" /></label>${canSave ? `<button data-marketing-channel-delete="${escapeHtml(channel.id)}" type="button" class="fm-btn fm-btn-sm fm-btn-danger self-end">Delete</button>` : ""}</div>`).join("");
     $(`[data-marketing-settings-access]`).textContent = canSave ? "Refresh discovers RSS from the Blog website and imports published posts. These settings contain no access tokens and never publish automatically." : "Only organization owners and admins can change channel settings.";
     const attribution = state.marketing.settings.attribution || {}, targets = state.marketing.settings.targets || {};
     $$(`[data-marketing-attribution-field]`).forEach((input) => {

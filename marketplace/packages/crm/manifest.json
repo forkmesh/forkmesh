@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.30.0",
+  "version": "1.31.0",
   "summary": "Run customizable relationship flows, open a contact for every detail and their accounts' latest posts, send founders outreach, share the investor deck through a tracked link, link Gmail, Zoho Mail and Mastodon threads, and share sheets.",
   "screenshots": [
     {
@@ -100,6 +100,11 @@
       "risk": "sensitive"
     },
     {
+      "id": "social.mastodon.toots",
+      "label": "Use the organization's Mastodon token to log toots it sent that mention a contact",
+      "risk": "sensitive"
+    },
+    {
       "id": "platform.accounts.evidence",
       "label": "For ForkMesh administrators, record which contacts have a ForkMesh account, pay, or are on a trial",
       "risk": "high"
@@ -141,7 +146,13 @@
       "https://accounts.zoho.jp",
       "https://mail.zoho.jp",
       "https://accounts.zohocloud.ca",
-      "https://mail.zohocloud.ca"
+      "https://mail.zohocloud.ca",
+      "https://mastodon.social",
+      "https://mastodon.online",
+      "https://fosstodon.org",
+      "https://hachyderm.io",
+      "https://mas.to",
+      "https://infosec.exchange"
     ]
   }
 }

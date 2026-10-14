@@ -7,6 +7,7 @@ application source or checked-in generated output.
 """
 
 PLUGIN_DASHBOARD_PAGE_ASSETS = {}
+PLUGIN_DEVICE_PAGES = {}
 PLUGIN_STATIC_HTML_PATHS = frozenset()
 PLUGIN_WWW_SITE_ROUTES = frozenset()
 HTTP_ROUTES = ()

@@ -1,0 +1,107 @@
+          <section data-view="face-changer" class="view active h-full overflow-y-auto fc-page">
+            <style>
+              .fc-page { --fc-border: rgb(var(--dashboard-border-rgb)); --fc-card: rgb(var(--dashboard-card-rgb)); --fc-ink: rgb(var(--dashboard-foreground-rgb)); --fc-muted: rgb(var(--dashboard-muted-foreground-rgb)); --fc-soft: rgb(var(--dashboard-secondary-rgb)); --fc-accent: rgb(var(--dashboard-primary-rgb)); --fc-accent-ink: rgb(var(--dashboard-primary-foreground-rgb)); --fc-danger: #e5484d; }
+              .fc-layout { display: grid; gap: 1.25rem; }
+              @media (min-width: 1100px) { .fc-layout { grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; } .fc-side { position: sticky; top: 0; } }
+              .fc-card { border: 1px solid var(--fc-border); border-radius: .75rem; background: var(--fc-card); }
+              .fc-stage { position: relative; aspect-ratio: 16 / 9; width: 100%; overflow: hidden; border-radius: .75rem; background: #0b0d12; }
+              .fc-stage video { display: block; width: 100%; height: 100%; object-fit: contain; background: #0b0d12; }
+              .fc-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; padding: 1.5rem; text-align: center; color: #e6e8ee; }
+              .fc-empty p { max-width: 28rem; font-size: .85rem; color: #aab1c0; }
+              .fc-rec { position: absolute; top: .75rem; left: .75rem; display: inline-flex; align-items: center; gap: .4rem; padding: .2rem .6rem; border-radius: 999px; background: rgb(0 0 0 / .6); color: #fff; font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+              .fc-rec::before { content: ""; width: .55rem; height: .55rem; border-radius: 999px; background: var(--fc-danger); }
+              .fc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .75rem; }
+              .fc-btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-height: 2.25rem; padding: 0 .9rem; border-radius: .5rem; border: 1px solid var(--fc-border); background: var(--fc-soft); color: var(--fc-ink); font-size: .8rem; font-weight: 600; cursor: pointer; }
+              .fc-btn:disabled { opacity: .5; cursor: not-allowed; }
+              .fc-btn[aria-pressed="true"] { border-color: var(--fc-accent); box-shadow: inset 0 0 0 1px var(--fc-accent); }
+              .fc-btn-primary { background: var(--fc-accent); border-color: var(--fc-accent); color: var(--fc-accent-ink); }
+              .fc-btn-danger { background: var(--fc-danger); border-color: var(--fc-danger); color: #fff; }
+              .fc-btn svg { width: 1rem; height: 1rem; }
+              @media (pointer: coarse) { .fc-btn { min-height: 44px; } }
+              .fc-spacer { flex: 1 1 auto; }
+              .fc-section { padding: 1rem; }
+              .fc-section + .fc-section { border-top: 1px solid var(--fc-border); }
+              .fc-label { display: block; margin-bottom: .4rem; font-size: .75rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--fc-muted); }
+              .fc-page select { width: 100%; min-height: 2.25rem; padding: 0 .6rem; border-radius: .5rem; border: 1px solid var(--fc-border); background: var(--fc-card); color: var(--fc-ink); font-size: .85rem; }
+              .fc-backgrounds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+              .fc-bg { display: flex; flex-direction: column; gap: .3rem; padding: .3rem; border-radius: .5rem; border: 1px solid var(--fc-border); background: transparent; color: var(--fc-ink); font-size: .7rem; text-align: left; cursor: pointer; }
+              .fc-bg[aria-checked="true"] { border-color: var(--fc-accent); box-shadow: inset 0 0 0 1px var(--fc-accent); }
+              .fc-bg:disabled { opacity: .5; cursor: not-allowed; }
+              .fc-swatch { display: block; aspect-ratio: 16 / 10; border-radius: .35rem; background: var(--fc-soft) center / cover no-repeat; }
+              .fc-swatch.is-off { background-image: linear-gradient(135deg, transparent 46%, var(--fc-muted) 47%, var(--fc-muted) 53%, transparent 54%); }
+              .fc-swatch.is-blur { background-image: radial-gradient(circle at 50% 60%, #8a94a8 0 22%, transparent 40%), linear-gradient(120deg, #4b5568, #9aa3b5); filter: blur(1.5px); }
+              .fc-swatch.is-custom:not([style*="url"]) { background-image: linear-gradient(var(--fc-soft), var(--fc-soft)); outline: 1px dashed var(--fc-muted); outline-offset: -4px; }
+              .fc-bg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+              .fc-hint { margin-top: .5rem; font-size: .75rem; color: var(--fc-muted); }
+              .fc-page .chat-call-voice-preview { display: grid; gap: .5rem; }
+              .fc-page .chat-call-voice-preview label { display: grid; gap: .35rem; font-size: .75rem; color: var(--fc-muted); }
+              .fc-page .chat-call-voice-preview label > span:first-child { font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+              .fc-page .chat-call-voice-preview button { min-height: 2.25rem; padding: 0 .9rem; border-radius: .5rem; border: 1px solid var(--fc-border); background: var(--fc-soft); color: var(--fc-ink); font-size: .8rem; font-weight: 600; cursor: pointer; }
+              .fc-page .chat-call-voice-preview button[aria-pressed="true"] { border-color: var(--fc-accent); box-shadow: inset 0 0 0 1px var(--fc-accent); }
+              .fc-page .chat-call-voice-preview button:disabled { opacity: .5; cursor: not-allowed; }
+              .fc-page .chat-call-meta { font-size: .75rem; color: var(--fc-muted); }
+              .fc-clip video { display: block; width: 100%; max-height: 22rem; border-radius: .5rem; background: #0b0d12; }
+              .fc-status { min-height: 1.25rem; font-size: .8rem; color: var(--fc-muted); }
+              .fc-status[data-tone="error"] { color: var(--fc-danger); }
+              .fc-page [hidden] { display: none !important; }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4">
+                <h1 class="text-lg font-semibold text-foreground">Face Changer</h1>
+                <p class="mt-1 text-sm text-muted-foreground">Wear a stand-in face, swap your background and change your voice, live in this browser. Record a clip, take a snapshot, or pop the picture out into its own window to share it into any call or meeting app. Video and sound stay on this device.</p>
+              </div>
+              <div class="fc-layout">
+                <div class="grid gap-3">
+                  <div class="fc-card">
+                    <div class="fc-stage">
+                      <video data-fc="video" muted autoplay playsinline aria-label="Your changed camera picture" hidden></video>
+                      <div data-fc="empty" class="fc-empty">
+                        <button data-fc="start" type="button" class="fc-btn fc-btn-primary"><i data-lucide="video"></i>Start camera</button>
+                        <p data-fc="empty-text">Your camera only starts when you press the button. The face and background are drawn before anything is shown, and the picture blurs whenever your face cannot be followed.</p>
+                      </div>
+                      <span data-fc="rec" class="fc-rec" hidden>0:00</span>
+                    </div>
+                    <div class="fc-bar">
+                      <button data-fc="record" type="button" class="fc-btn fc-btn-danger" disabled><i data-lucide="circle"></i>Record</button>
+                      <button data-fc="stop-record" type="button" class="fc-btn" hidden><i data-lucide="square"></i>Stop</button>
+                      <button data-fc="snapshot" type="button" class="fc-btn" disabled><i data-lucide="camera"></i>Snapshot</button>
+                      <button data-fc="popout" type="button" class="fc-btn" aria-pressed="false" disabled><i data-lucide="picture-in-picture-2"></i>Pop out</button>
+                      <span class="fc-spacer"></span>
+                      <button data-fc="stop" type="button" class="fc-btn" disabled><i data-lucide="video-off"></i>Stop camera</button>
+                    </div>
+                  </div>
+                  <p data-fc="status" class="fc-status" role="status" aria-live="polite"></p>
+                  <div data-fc="clip" class="fc-card fc-clip p-3" hidden>
+                    <h2 class="mb-2 text-sm font-semibold text-foreground">Your clip</h2>
+                    <div data-fc="clip-player"></div>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                      <button data-fc="clip-download" type="button" class="fc-btn fc-btn-primary"><i data-lucide="download"></i>Download</button>
+                      <button data-fc="clip-discard" type="button" class="fc-btn"><i data-lucide="trash-2"></i>Discard</button>
+                      <span data-fc="clip-meta" class="text-xs text-muted-foreground"></span>
+                    </div>
+                  </div>
+                </div>
+                <aside class="fc-side fc-card">
+                  <div class="fc-section">
+                    <label class="fc-label" for="fc-face">Face</label>
+                    <select id="fc-face" data-fc="face"></select>
+                    <input data-fc="face-file" type="file" accept="image/*" hidden>
+                    <p class="fc-hint">Your photo: a clear, front-facing picture of a face. It stays in this browser.</p>
+                  </div>
+                  <div class="fc-section">
+                    <span class="fc-label" id="fc-background-label">Background</span>
+                    <div data-fc="backgrounds" class="fc-backgrounds" role="radiogroup" aria-labelledby="fc-background-label"></div>
+                    <input data-fc="background-file" type="file" accept="image/*" hidden>
+                  </div>
+                  <div class="fc-section">
+                    <span data-fc="voice-label" class="fc-label">Voice</span>
+                    <div data-fc="voice-slot"></div>
+                    <p data-fc="voice-empty" class="fc-hint">Start the camera to pick a voice and hear yourself. "Your own voice" leaves it unchanged.</p>
+                  </div>
+                  <div class="fc-section">
+                    <p class="fc-hint">To use it in another app, press Pop out and share that window, or record a clip and send the file.</p>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </section>

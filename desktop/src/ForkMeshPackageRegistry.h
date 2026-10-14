@@ -179,8 +179,10 @@ public:
     bool isLegacyProject() const;
     bool legacyEntryInstalled(const PackageManifest &manifest) const;
     bool projectOwnsInstalls() const;
+    bool hasStoredInstall(const QString &id) const;
     bool accountAnswerInstalls(const PackageManifest &manifest,
-                               bool accountInstalled, bool legacyEntry) const;
+                               bool accountInstalled, bool legacyEntry,
+                               bool unchosen = false) const;
     static const QStringList &allPlaces();
     static QString desktopPlace();
     QStringList places(const QString &id) const;

@@ -332,7 +332,7 @@
       const daily = buckets.get(key) || CALENDAR_NO_EVENTS;
       const muted = date.getMonth() !== state.calendarView.anchor.getMonth();
       cells += `<div class="fm-cal-cell ${muted ? "opacity-45" : ""}" data-calendar-day="${key}">
-        <button type="button" data-calendar-open-day="${key}" class="${key === today ? "bg-primary text-primary-foreground" : "text-muted-foreground"} h-6 min-w-6 rounded-full px-1 text-xs font-semibold">${date.getDate()}</button>
+        <button type="button" data-calendar-open-day="${key}" ${key === today ? 'aria-current="date" ' : ""}class="${key === today ? "bg-accent text-accent-foreground" : "text-muted-foreground"} h-6 min-w-6 rounded-full px-1 text-xs font-semibold">${date.getDate()}</button>
         ${daily.slice(0, 4).map((event) => calendarEventButton(event, true)).join("")}
         ${daily.length > 4 ? `<button data-calendar-open-day="${key}" class="mt-1 text-[10px] text-accent">+${daily.length - 4} more</button>` : ""}
       </div>`;
@@ -348,13 +348,14 @@
   function renderCalendarWeek(content, events) {
     const [start] = calendarVisibleRange();
     const buckets = calendarDayBuckets(events);
+    const today = calendarDateKey(new Date());
     content.innerHTML = `<div class="fm-cal-week p-3">${Array.from({ length: 7 }, (_, index) => {
       const date = calendarAddDays(start, index);
       const key = calendarDateKey(date);
       const daily = buckets.get(key) || CALENDAR_NO_EVENTS;
       const shown = daily.length > CALENDAR_WEEK_DAY_LIMIT ? daily.slice(0, CALENDAR_WEEK_DAY_LIMIT) : daily;
       const overflow = daily.length - shown.length;
-      return `<section class="fm-cal-day"><button data-calendar-open-day="${key}" class="mb-3 block w-full border-b border-border pb-2 text-left"><span class="block text-[10px] font-semibold uppercase text-muted-foreground">${date.toLocaleDateString([], { weekday: "short" })}</span><span class="text-lg font-semibold text-foreground">${date.getDate()}</span></button>${daily.length ? shown.map((event) => calendarEventButton(event)).join("") : '<p class="py-4 text-center text-xs text-muted-foreground">No events</p>'}${overflow > 0 ? `<button data-calendar-open-day="${key}" class="mt-1 text-[10px] text-accent">+${formatCount(overflow)} more</button>` : ""}</section>`;
+      return `<section class="fm-cal-day ${key === today ? "fm-cal-today" : ""}"><button data-calendar-open-day="${key}" ${key === today ? 'aria-current="date" ' : ""}class="mb-3 block w-full border-b border-border pb-2 text-left"><span class="block text-[10px] font-semibold uppercase ${key === today ? "text-accent" : "text-muted-foreground"}">${date.toLocaleDateString([], { weekday: "short" })}</span><span class="${key === today ? "inline-block rounded-full bg-accent px-2 text-accent-foreground" : "text-foreground"} text-lg font-semibold">${date.getDate()}</span></button>${daily.length ? shown.map((event) => calendarEventButton(event)).join("") : '<p class="py-4 text-center text-xs text-muted-foreground">No events</p>'}${overflow > 0 ? `<button data-calendar-open-day="${key}" class="mt-1 text-[10px] text-accent">+${formatCount(overflow)} more</button>` : ""}</section>`;
     }).join("")}</div>`;
   }
 
@@ -393,7 +394,7 @@
     content.innerHTML = groups.size ? Array.from(groups).map(([key, items]) => {
       const date = new Date(`${key}T12:00:00`);
       return `<section><h3 class="sticky top-[37px] z-[5] border-b border-border bg-card px-4 py-2 text-xs font-semibold text-foreground">${escapeHtml(date.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }))}</h3>${items.map(calendarDetailRow).join("")}</section>`;
-    }).join("") + more : '<div class="p-10 text-center text-sm text-muted-foreground">No events in this period.</div>';
+    }).join("") + more : '<div class="fm-blankslate"><i data-lucide="calendar" aria-hidden="true"></i><p class="fm-blankslate-title">No events</p><p class="fm-blankslate-desc">No events in this period.</p></div>';
   }
 
   function renderCalendar() {
@@ -411,8 +412,9 @@
          !state.calendarView.repositoryEvents.length)) {
       content.innerHTML = state.calendarView.loading
         ? `<div class="p-10 text-sm text-muted-foreground">${loadingHtml("Loading your calendars...")}</div>`
-        : `<div class="p-10 text-sm text-muted-foreground">${escapeHtml(state.calendarView.error)}</div>`;
+        : `<div class="fm-blankslate"><i data-lucide="circle-alert" aria-hidden="true"></i><p class="fm-blankslate-title">Your calendars did not load</p><p class="fm-blankslate-desc">${escapeHtml(state.calendarView.error)}</p></div>`;
       if (status) status.textContent = "";
+      window.lucide?.createIcons();
       return;
     }
     const anchor = state.calendarView.anchor;
@@ -670,7 +672,7 @@
       input.setAttribute("aria-expanded", "false");
       return;
     }
-    list.innerHTML = matches.map((candidate, index) => `<button type="button" role="option" data-calendar-attendee-option="${escapeHtml(candidate.name)}" data-calendar-attendee-index="${index}" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs text-foreground hover:bg-secondary focus:bg-secondary focus:outline-none"><span>@${escapeHtml(candidate.name)}</span><span class="text-[10px] text-muted-foreground">${candidate.organization ? escapeHtml(candidate.organization) + " member" : "ForkMesh user"}</span></button>`).join("");
+    list.innerHTML = matches.map((candidate, index) => `<button type="button" role="option" data-calendar-attendee-option="${escapeHtml(candidate.name)}" data-calendar-attendee-index="${index}" class="fm-menu-item focus:bg-secondary"><span class="min-w-0 truncate">@${escapeHtml(candidate.name)}</span><span class="fm-menu-hint">${candidate.organization ? escapeHtml(candidate.organization) + " member" : "ForkMesh user"}</span></button>`).join("");
     list.hidden = false;
     input.setAttribute("aria-expanded", "true");
   }

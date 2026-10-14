@@ -46,15 +46,18 @@ animation:fm-member-confetti var(--duration) var(--delay) linear infinite}
 8%,92%{opacity:1}
 100%{opacity:0;transform:translate3d(var(--drift),100vh,0) rotate(720deg)}}
 .fm-member-welcome .fm-cheer{position:absolute;left:50%;top:38%;
-transform:translate(-50%,-50%);max-width:min(90vw,640px);padding:18px 30px;
-border-radius:22px;background:rgb(15 23 42/.82);color:#fff;text-align:center;
-box-shadow:0 18px 60px rgb(0 0 0/.35);animation:fm-member-cheer 6s ease-out forwards}
-.fm-member-welcome .fm-cheer b{display:block;font-size:clamp(28px,5vw,48px);line-height:1.15}
-.fm-member-welcome .fm-cheer span{display:block;margin-top:8px;font-size:16px;opacity:.85}
-@keyframes fm-member-cheer{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}
-8%{opacity:1;transform:translate(-50%,-50%) scale(1.12)}
-14%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}
-100%{opacity:0;transform:translate(-50%,-50%) scale(.96)}}
+transform:translate(-50%,-50%);max-width:min(90vw,480px);padding:16px 20px;
+border:1px solid #30363d;border-radius:12px;background:#161b22;color:#f0f6fc;
+text-align:center;box-shadow:0 16px 48px rgb(1 4 9/.5);
+animation:fm-member-cheer 6s ease-out forwards}
+[data-dashboard-theme] .fm-member-welcome .fm-cheer{
+border-color:rgb(var(--dashboard-border-rgb));background:rgb(var(--dashboard-popover-rgb));
+color:rgb(var(--dashboard-foreground-rgb))}
+.fm-member-welcome .fm-cheer b{display:block;font-size:20px;font-weight:600;line-height:1.3}
+.fm-member-welcome .fm-cheer span{display:block;margin-top:4px;font-size:14px;opacity:.75}
+@keyframes fm-member-cheer{0%{opacity:0;transform:translate(-50%,calc(-50% + 8px))}
+6%{opacity:1;transform:translate(-50%,-50%)}80%{opacity:1}
+100%{opacity:0;transform:translate(-50%,-50%)}}
 @media (prefers-reduced-motion:reduce){.fm-member-welcome i{display:none}}`;
 
 function ensureStyle() {

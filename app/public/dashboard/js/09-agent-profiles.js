@@ -36,10 +36,8 @@
     return AGENT_PROFILE_ERRORS[code] || desktopControlErrorText(error);
   }
 
-  function agentProfileButton(text, onClick, { primary = false, disabled = false, title = "" } = {}) {
-    const button = runnersEl("button", primary
-      ? "inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
-      : "inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors disabled:opacity-50", text);
+  function agentProfileButton(text, onClick, { disabled = false, title = "" } = {}) {
+    const button = runnersEl("button", "fm-btn fm-btn-sm", text);
     button.type = "button";
     button.disabled = disabled;
     if (title) button.title = title;
@@ -75,7 +73,7 @@
     if (!notice) return;
     notice.hidden = !message;
     notice.textContent = message || "";
-    notice.classList.toggle("text-red-500", Boolean(isError));
+    notice.classList.toggle("text-destructive", Boolean(isError));
     notice.classList.toggle("text-muted-foreground", !isError);
   }
 
@@ -109,8 +107,8 @@
     }
     const stateText = entry.status === "open" ? "Connected"
       : entry.status === "connecting" ? "Connecting…" : "Not reachable";
-    head.append(runnersEl("span", "text-xs " + (entry.status === "open" ? "text-emerald-500"
-      : entry.status === "error" ? "text-red-500" : "text-muted-foreground"), stateText));
+    head.append(runnersEl("span", "fm-label" + (entry.status === "open" ? " fm-label-success"
+      : entry.status === "error" ? " fm-label-danger" : ""), stateText));
     if (entry.status !== "connecting") {
       const actions = runnersEl("div", "ml-auto flex items-center gap-2");
       actions.append(agentProfileButton(entry.status === "open" ? "Refresh" : "Try again", () => {
@@ -125,7 +123,7 @@
       return card;
     }
     if (entry.status !== "open") return card;
-    if (entry.error) card.append(runnersEl("p", "text-sm text-red-500", entry.error));
+    if (entry.error) card.append(runnersEl("p", "text-sm text-destructive", entry.error));
     if (!entry.usage) {
       card.append(runnersEl("p", "text-sm text-muted-foreground", "Reading accounts and usage…"));
       return card;
@@ -171,7 +169,7 @@
     const head = runnersEl("div", "flex flex-wrap items-center gap-2");
     head.append(runnersEl("span", "text-sm font-semibold text-foreground", provider.label || agentProfileProviderLabel(provider.id)));
     if (entry.usage.activeProvider === provider.id) {
-      head.append(runnersEl("span", "rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground", "New agents"));
+      head.append(runnersEl("span", "fm-label fm-label-accent", "New agents"));
     }
     const actions = runnersEl("div", "ml-auto flex flex-wrap items-center gap-2");
     if (agentProfileHas(entry, "terminal.agents")) {
@@ -207,9 +205,9 @@
     item.dataset.agentProfileAccount = account.id;
     const head = runnersEl("div", "flex flex-wrap items-center gap-2");
     head.append(runnersEl("span", "text-sm text-foreground", account.label || "Account"));
-    if (account.active) head.append(runnersEl("span", "text-xs font-semibold text-emerald-500", "In use"));
+    if (account.active) head.append(runnersEl("span", "fm-label fm-label-success", "In use"));
     const signedIn = account.signedIn !== false;
-    head.append(runnersEl("span", "text-xs " + (signedIn ? "text-muted-foreground" : "text-amber-600"),
+    head.append(runnersEl("span", "text-xs " + (signedIn ? "text-muted-foreground" : "text-attention"),
       account.identity || (signedIn ? "Signed in" : "Not signed in")));
     item.append(head);
     const windows = account.active && Array.isArray(provider.windows) && provider.windows.length
@@ -221,7 +219,7 @@
     if (accounts && !account.active) {
       actions.append(agentProfileButton("Use for new agents", () => {
         void agentProfileAccountRequest(entry, "agentops.accounts.select", { provider: provider.id, account: account.id });
-      }, { primary: true, disabled: entry.busy }));
+      }, { disabled: entry.busy }));
     }
     if (terminals) {
       actions.append(agentProfileButton(signedIn ? "Log in again" : "Log in", () => {

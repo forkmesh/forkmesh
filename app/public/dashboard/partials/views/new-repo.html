@@ -1,201 +1,186 @@
           <section data-view="new-repo" data-new-repo-page class="view active h-full overflow-y-auto">
             <style>
               [data-new-repo-page] .hidden { display: none !important; }
-              .nr-page { max-width: 1080px; margin: 0 auto; padding: 20px 16px 120px; }
-              @media (min-width: 640px) { .nr-page { padding: 32px 28px 120px; } }
+              .nr-page { max-width: 760px; margin: 0 auto; padding: 24px 16px 96px; color: rgb(var(--dashboard-foreground-rgb)); }
+              @media (min-width: 640px) { .nr-page { padding: 32px 24px 96px; } }
               .nr-crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-crumbs a { color: inherit; text-decoration: none; }
-              .nr-crumbs a:hover { color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-hero { display: flex; align-items: flex-start; gap: 16px; margin: 14px 0 28px; }
-              .nr-hero-icon { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / 0.12); border: 1px solid rgb(var(--dashboard-primary-rgb) / 0.35); }
-              .nr-hero h1 { font-size: 24px; line-height: 1.25; font-weight: 650; letter-spacing: -0.01em; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-hero p { margin-top: 6px; max-width: 60ch; font-size: 14px; line-height: 1.55; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-layout { display: grid; gap: 24px; }
-              @media (min-width: 1024px) { .nr-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; } }
-              .nr-card { border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 12px; background: rgb(var(--dashboard-card-rgb)); }
-              .nr-section { padding: 20px; }
-              .nr-section + .nr-section { border-top: 1px solid rgb(var(--dashboard-border-rgb)); }
-              .nr-step { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-              .nr-step-num { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; font-size: 11px; font-weight: 700; color: rgb(var(--dashboard-foreground-rgb)); background: rgb(var(--dashboard-secondary-rgb)); border: 1px solid rgb(var(--dashboard-border-rgb)); }
-              .nr-step h2 { font-size: 14px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-sources { display: grid; gap: 10px; grid-template-columns: 1fr; }
-              @media (min-width: 560px) { .nr-sources { grid-template-columns: 1fr 1fr; } }
-              .nr-source[data-new-repo-source] { position: relative; display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 14px; text-align: left; border-radius: 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); transition: border-color .15s, background-color .15s, box-shadow .15s; }
-              .nr-source[data-new-repo-source]:hover { border-color: rgb(var(--dashboard-muted-foreground-rgb) / 0.6); }
-              .nr-source[data-new-repo-source]:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 2px; }
-              .nr-source[data-new-repo-source][aria-pressed="true"] { border-color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / 0.08); box-shadow: 0 0 0 1px rgb(var(--dashboard-primary-rgb)); }
-              .nr-source-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-source[aria-pressed="true"] .nr-source-icon { color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / 0.14); }
-              .nr-source-title { display: block; font-size: 13px; font-weight: 600; }
-              .nr-source-desc { display: block; margin-top: 2px; font-size: 12px; line-height: 1.45; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-source-check { position: absolute; top: 12px; right: 12px; width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid rgb(var(--dashboard-border-rgb)); }
-              .nr-source[aria-pressed="true"] .nr-source-check { border-color: rgb(var(--dashboard-primary-rgb)); background: radial-gradient(circle, rgb(var(--dashboard-primary-rgb)) 0 4px, transparent 4.5px); }
-              .nr-field { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-field-label { color: rgb(var(--dashboard-foreground-rgb)); font-size: 13px; font-weight: 600; }
+              .nr-crumbs a { color: rgb(var(--dashboard-accent-rgb)); text-decoration: none; }
+              .nr-crumbs a:hover { text-decoration: underline; }
+              .nr-head { margin: 16px 0 0; }
+              .nr-head h1 { font-size: 24px; line-height: 1.25; font-weight: 400; }
+              .nr-head p { margin-top: 4px; font-size: 14px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-required { margin-top: 16px; font-size: 12px; font-style: italic; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-star { color: rgb(var(--dashboard-destructive-rgb)); font-style: normal; }
+              .nr-rule { border: 0; border-top: 1px solid rgb(var(--dashboard-border-rgb) / .7); margin: 20px 0; }
+              .nr-block { display: grid; gap: 20px; }
+              .nr-field { display: grid; gap: 6px; }
+              .nr-label { font-size: 14px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
               .nr-optional { font-weight: 400; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-input { width: 100%; height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 14px; transition: border-color .15s, box-shadow .15s; }
-              textarea.nr-input { height: auto; min-height: 76px; padding: 10px 12px; line-height: 1.5; resize: vertical; }
+              .nr-help { font-size: 12px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-help code { font-size: 11px; padding: 1px 4px; border-radius: 4px; background: rgb(var(--dashboard-muted-foreground-rgb) / .15); }
+              .nr-seg { display: inline-flex; flex-wrap: wrap; width: max-content; max-width: 100%; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); overflow: hidden; }
+              .nr-seg [data-new-repo-source] { display: inline-flex; align-items: center; gap: 6px; height: var(--dashboard-control-height); min-height: 0; padding: 0 12px; font-size: var(--dashboard-control-font); font-weight: 500; background: transparent; border-right: 1px solid rgb(var(--dashboard-border-rgb)); transition: background-color .12s, color .12s; }
+              .nr-seg [data-new-repo-source]:last-child { border-right: 0; }
+              .nr-seg [data-new-repo-source]:first-child { border-radius: calc(var(--dashboard-control-radius) - 1px) 0 0 calc(var(--dashboard-control-radius) - 1px); }
+              .nr-seg [data-new-repo-source]:last-child { border-radius: 0 calc(var(--dashboard-control-radius) - 1px) calc(var(--dashboard-control-radius) - 1px) 0; }
+              .nr-seg [data-new-repo-source] svg { flex: none; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-seg [data-new-repo-source]:hover { background: rgb(var(--dashboard-foreground-rgb) / .05); color: rgb(var(--dashboard-foreground-rgb)); }
+              .nr-seg [data-new-repo-source][aria-pressed="true"] { position: relative; background: rgb(var(--dashboard-primary-rgb) / .12); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-primary-rgb)); }
+              .nr-seg [data-new-repo-source][aria-pressed="true"] svg { color: rgb(var(--dashboard-primary-rgb)); }
+              .nr-seg [data-new-repo-source]:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: -2px; }
+              .nr-input { width: 100%; height: var(--dashboard-control-height); padding: 0 12px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: var(--dashboard-control-font); line-height: 1.4; transition: border-color .12s, box-shadow .12s; }
+              textarea.nr-input { height: auto; min-height: 64px; padding: 8px 12px; resize: vertical; }
+              select.nr-input { appearance: none; padding-right: 32px; cursor: pointer; background: rgb(var(--dashboard-secondary-rgb)) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%239198a1'%3E%3Cpath d='M4.427 7.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 7H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E") no-repeat right 8px center; }
               .nr-input::placeholder { color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-input:focus { outline: none; border-color: rgb(var(--dashboard-primary-rgb)); box-shadow: 0 0 0 3px rgb(var(--dashboard-primary-rgb) / 0.18); }
-              .nr-help { font-size: 12px; line-height: 1.5; font-weight: 400; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-name-row { display: grid; gap: 10px; align-items: end; }
+              .nr-input:focus { outline: none; border-color: rgb(var(--dashboard-primary-rgb)); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-primary-rgb)); }
+              .nr-name-row { display: grid; gap: 8px; align-items: end; }
               @media (min-width: 560px) { .nr-name-row.nr-has-owner { grid-template-columns: minmax(0, 220px) auto minmax(0, 1fr); } }
-              .nr-slash { display: none; padding-bottom: 8px; font-size: 20px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-slash { display: none; padding-bottom: 4px; font-size: 20px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
               @media (min-width: 560px) { .nr-name-row.nr-has-owner .nr-slash { display: block; } }
-              .nr-stack { display: grid; gap: 16px; }
               .nr-two { display: grid; gap: 12px; }
-              @media (min-width: 560px) { .nr-two { grid-template-columns: 1fr 1fr; } }
-              .nr-toggle { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); cursor: pointer; }
-              .nr-toggle input { margin-top: 2px; width: 16px; height: 16px; accent-color: rgb(var(--dashboard-primary-rgb)); }
-              .nr-toggle strong { display: block; font-size: 13px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-toggle span { display: block; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-panel { display: grid; gap: 12px; padding: 16px; border-radius: 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); }
-              .nr-result { padding: 24px; }
+              @media (min-width: 560px) { .nr-two { grid-template-columns: 220px 220px; } }
+              .nr-radios { display: grid; }
+              .nr-radio { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; cursor: pointer; }
+              .nr-radio input, .nr-check input { flex: none; width: 14px; height: 14px; margin-top: 3px; accent-color: rgb(var(--dashboard-primary-rgb)); }
+              .nr-radio svg { flex: none; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-radio input:disabled ~ * { opacity: .5; }
+              .nr-title { display: block; font-size: 14px; font-weight: 600; }
+              .nr-desc { display: block; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+              .nr-panel { display: grid; gap: 12px; padding: 16px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); }
+              .nr-info { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); font-size: 13px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-info svg { flex: none; margin-top: 2px; }
+              .nr-info a { color: rgb(var(--dashboard-accent-rgb)); text-decoration: none; }
+              .nr-info a:hover { text-decoration: underline; }
+              .nr-result { padding: 4px 0 0; }
               .nr-result-head { display: flex; align-items: center; gap: 12px; }
-              .nr-result-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / 0.14); }
-              .nr-code { overflow-x: auto; white-space: pre; padding: 12px 14px; border-radius: 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); font-size: 12px; line-height: 1.7; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-actions { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 0 0 12px 12px; background: rgb(var(--dashboard-card-rgb) / 0.94); backdrop-filter: blur(6px); }
-              .nr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; padding: 0 18px; border-radius: 8px; font-size: 14px; font-weight: 600; transition: background-color .15s, border-color .15s; }
-              .nr-btn-ghost { border: 1px solid rgb(var(--dashboard-border-rgb)); color: rgb(var(--dashboard-foreground-rgb)); background: transparent; }
-              .nr-btn-ghost:hover { background: rgb(var(--dashboard-secondary-rgb)); }
-              .nr-btn-primary { color: rgb(var(--dashboard-primary-foreground-rgb)); background: rgb(var(--dashboard-primary-rgb)); border: 1px solid transparent; }
-              .nr-btn-primary:hover { background: rgb(var(--dashboard-primary-rgb) / 0.9); }
+              .nr-result-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 999px; color: rgb(var(--dashboard-muted-foreground-rgb)); background: rgb(var(--dashboard-secondary-rgb)); }
+              .nr-result-icon.nr-result-ok { color: rgb(var(--dashboard-success-rgb)); background: rgb(var(--dashboard-success-rgb) / .14); }
+              .nr-code { overflow-x: auto; white-space: pre; padding: 12px 14px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); font-size: 12px; line-height: 1.7; color: rgb(var(--dashboard-foreground-rgb)); }
+              .nr-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+              .nr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--dashboard-control-height); padding: 0 14px; border-radius: var(--dashboard-control-radius); font-size: var(--dashboard-control-font); font-weight: 500; transition: background-color .12s, border-color .12s; }
+              .nr-btn-ghost { border: 1px solid rgb(var(--dashboard-border-rgb)); color: rgb(var(--dashboard-foreground-rgb)); background: rgb(var(--dashboard-secondary-rgb)); }
+              .nr-btn-ghost:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); }
+              .nr-btn-primary { color: rgb(var(--dashboard-cta-foreground-rgb)); background: rgb(var(--dashboard-cta-rgb)); border: 1px solid rgb(var(--dashboard-foreground-rgb) / .1); }
+              .nr-btn-primary:hover { background: rgb(var(--dashboard-cta-rgb) / .9); }
               .nr-btn-primary:disabled { opacity: .6; cursor: progress; }
-              .nr-aside { display: grid; gap: 16px; }
-              @media (min-width: 1024px) { .nr-aside { position: sticky; top: 24px; } }
-              .nr-aside-card { padding: 18px; }
-              .nr-aside h3 { font-size: 13px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-points { display: grid; gap: 12px; margin-top: 12px; }
-              .nr-point { display: flex; gap: 10px; font-size: 12px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-point i, .nr-point svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: rgb(var(--dashboard-primary-rgb)); }
-              .nr-point b { color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; }
             </style>
 
             <div class="nr-page">
               <nav class="nr-crumbs" aria-label="Breadcrumb">
                 <a href="/dashboard/repos">Repositories</a>
-                <i data-lucide="chevron-right" class="h-3.5 w-3.5"></i>
+                <span aria-hidden="true">/</span>
                 <span class="text-foreground">New</span>
               </nav>
 
-              <header class="nr-hero">
-                <div class="nr-hero-icon"><i data-lucide="git-branch-plus" class="h-6 w-6"></i></div>
-                <div class="min-w-0">
-                  <h1 id="newRepoModalTitle" data-new-repo-title>Create &amp; mirror a repository</h1>
-                  <p data-new-repo-subtitle>Describe the repo, then finish creating and mirroring it from your ForkMesh desktop node.</p>
-                </div>
+              <header class="nr-head">
+                <h1 id="newRepoModalTitle" data-new-repo-title>Create a new repository</h1>
+                <p data-new-repo-subtitle>A repository holds your project's files and history. ForkMesh keeps a copy on every core node.</p>
               </header>
+              <p class="nr-required">Required fields are marked with an asterisk (<span class="nr-star">*</span>).</p>
 
-              <div class="nr-layout">
-                <form data-new-repo-form class="nr-card" aria-labelledby="newRepoModalTitle">
-                  <div data-new-repo-details>
-                    <div class="nr-section">
-                      <div class="nr-step"><span class="nr-step-num">1</span><h2>Where does it come from?</h2></div>
-                      <div data-new-repo-source-toggle class="nr-sources" role="group" aria-label="Source">
-                        <button data-new-repo-source="empty" type="button" aria-pressed="true" class="nr-source">
-                          <span class="nr-source-icon"><i data-lucide="sparkles" class="h-4 w-4"></i></span>
-                          <span><span class="nr-source-title">New repository</span><span class="nr-source-desc">Start fresh on ForkMesh and push with git.</span></span>
-                          <span class="nr-source-check" aria-hidden="true"></span>
-                        </button>
-                        <button data-new-repo-source="remote" type="button" aria-pressed="false" class="nr-source">
-                          <span class="nr-source-icon"><i data-lucide="link" class="h-4 w-4"></i></span>
-                          <span><span class="nr-source-title">Remote clone URL</span><span class="nr-source-desc">Copy and mirror a repository from any git URL.</span></span>
-                          <span class="nr-source-check" aria-hidden="true"></span>
-                        </button>
-                        <button data-new-repo-source="local" type="button" aria-pressed="false" class="nr-source">
-                          <span class="nr-source-icon"><i data-lucide="hard-drive" class="h-4 w-4"></i></span>
-                          <span><span class="nr-source-title">Local repository</span><span class="nr-source-desc">Publish a folder from your desktop node.</span></span>
-                          <span class="nr-source-check" aria-hidden="true"></span>
-                        </button>
-                        <button data-new-repo-source="provider" type="button" aria-pressed="false" class="nr-source">
-                          <span class="nr-source-icon"><i data-lucide="download-cloud" class="h-4 w-4"></i></span>
-                          <span><span class="nr-source-title">GitHub / GitLab / Codeberg</span><span class="nr-source-desc">Import issues, pulls and history from a forge.</span></span>
-                          <span class="nr-source-check" aria-hidden="true"></span>
-                        </button>
+              <form data-new-repo-form aria-labelledby="newRepoModalTitle">
+                <hr class="nr-rule" />
+                <div data-new-repo-details>
+                  <div class="nr-block">
+                    <div class="nr-field">
+                      <span class="nr-label">Start from</span>
+                      <div data-new-repo-source-toggle class="nr-seg" role="group" aria-label="Source">
+                        <button data-new-repo-source="empty" type="button" aria-pressed="true"><i data-lucide="book-marked" class="h-4 w-4"></i>Empty</button>
+                        <button data-new-repo-source="remote" type="button" aria-pressed="false"><i data-lucide="link" class="h-4 w-4"></i>Clone URL</button>
+                        <button data-new-repo-source="local" type="button" aria-pressed="false"><i data-lucide="monitor" class="h-4 w-4"></i>Local folder</button>
+                        <button data-new-repo-source="provider" type="button" aria-pressed="false"><i data-lucide="download" class="h-4 w-4"></i>Import from GitHub, GitLab, Codeberg</button>
                       </div>
-                      <div class="nr-stack" style="margin-top:14px">
-                        <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Source URL or path" placeholder="https://github.com/owner/repo.git" class="nr-input font-mono" />
-                        <p data-new-repo-source-hint class="nr-help">ForkMesh clones this URL into a bare mirror. Local paths never leave your machine.</p>
-                        <div data-new-repo-provider-options class="hidden nr-panel">
-                          <label class="nr-field">
-                            <span class="nr-field-label">Import type</span>
-                            <select data-new-repo-import-mode class="nr-input">
-                              <option value="import">Full provider metadata &amp; collaboration history (no Git contents)</option>
-                              <option value="stub">Create a non-mirrored stub</option>
-                            </select>
-                          </label>
-                          <label class="nr-field">
-                            <span class="nr-field-label">Provider access token <span class="nr-optional">(required for private repositories)</span></span>
-                            <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Request-scoped GitHub, GitLab, or Codeberg token" class="nr-input" />
-                          </label>
-                          <p class="nr-help">The token is used for this request only and is never stored. Git contents stay on the normal mirror path; provider records and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="nr-section">
-                      <div class="nr-step"><span class="nr-step-num">2</span><h2>Name and details</h2></div>
-                      <div class="nr-stack">
-                        <div data-new-repo-name-row class="nr-name-row">
-                          <label data-new-repo-owner-wrap data-new-repo-hosted-options class="hidden nr-field">
-                            <span class="nr-field-label">Owner</span>
-                            <select data-new-repo-owner class="nr-input"></select>
-                          </label>
-                          <span class="nr-slash" aria-hidden="true">/</span>
-                          <label data-new-repo-name-wrap class="nr-field">
-                            <span class="nr-field-label">Repository name</span>
-                            <input data-new-repo-name type="text" autocomplete="off" spellcheck="false" placeholder="my-project" required class="nr-input" />
-                          </label>
-                        </div>
-                        <p class="nr-help" style="margin-top:-8px">Letters, numbers, <code>.</code>, <code>-</code> and <code>_</code>, up to 64 characters.</p>
-
-                        <label data-new-repo-description-wrap class="nr-field">
-                          <span class="nr-field-label">Description <span class="nr-optional">(optional)</span></span>
-                          <textarea data-new-repo-description rows="2" maxlength="240" spellcheck="true" placeholder="What is this repository for?" class="nr-input"></textarea>
-                        </label>
-
-                        <label data-new-repo-visibility-wrap class="nr-field">
-                          <span class="nr-field-label">Visibility</span>
-                          <select data-new-repo-visibility class="nr-input">
-                            <option value="public">Public — listed in the catalog and browsable by anyone</option>
-                            <option value="private">Private — encrypted mirror, contents stay hidden</option>
+                      <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Source URL or path" placeholder="https://github.com/owner/repo.git" class="nr-input font-mono" style="margin-top:6px" />
+                      <p data-new-repo-source-hint class="nr-help">ForkMesh clones this URL into a bare mirror. Local paths never leave your machine.</p>
+                      <div data-new-repo-provider-options class="hidden nr-panel">
+                        <label class="nr-field">
+                          <span class="nr-label">Import type</span>
+                          <select data-new-repo-import-mode class="nr-input">
+                            <option value="import">Full provider metadata &amp; collaboration history (no Git contents)</option>
+                            <option value="stub">Create a non-mirrored stub</option>
                           </select>
                         </label>
-                      </div>
-                    </div>
-
-                    <div data-new-repo-hosted-options class="hidden nr-section">
-                      <div class="nr-step"><span class="nr-step-num">3</span><h2>Starter files</h2></div>
-                      <div class="nr-stack">
-                        <label data-new-repo-readme-wrap class="nr-toggle">
-                          <input data-new-repo-readme type="checkbox" checked />
-                          <div><strong>Add a README</strong><span>Creates a first commit so you can clone straight away.</span></div>
+                        <label class="nr-field">
+                          <span class="nr-label">Provider access token <span class="nr-optional">(required for private repositories)</span></span>
+                          <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Request-scoped GitHub, GitLab, or Codeberg token" class="nr-input" />
                         </label>
-                        <div data-new-repo-init-wrap class="nr-two">
-                          <label class="nr-field">
-                            <span class="nr-field-label">.gitignore</span>
-                            <select data-new-repo-gitignore class="nr-input"><option value="">None</option></select>
-                          </label>
-                          <label class="nr-field">
-                            <span class="nr-field-label">License</span>
-                            <select data-new-repo-license class="nr-input"><option value="">None</option></select>
-                          </label>
-                        </div>
-                        <p data-new-repo-quota class="nr-help"></p>
+                        <p class="nr-help">The token is used for this request only and is never stored. Git contents stay on the normal mirror path; provider records and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
                       </div>
                     </div>
 
-                    <div class="nr-section" style="padding-top:0;border-top:0">
-                      <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground"></p>
-                      <div data-new-repo-migration-status class="hidden nr-panel text-xs" role="status" aria-live="polite">
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
-                          <span data-new-repo-setup-time class="text-foreground"></span>
-                          <span data-new-repo-transfer-time class="text-muted-foreground"></span>
-                        </div>
-                        <p data-new-repo-migration-phase class="text-muted-foreground"></p>
+                    <div class="nr-field">
+                      <div data-new-repo-name-row class="nr-name-row">
+                        <label data-new-repo-owner-wrap data-new-repo-hosted-options class="hidden nr-field">
+                          <span class="nr-label">Owner <span class="nr-star">*</span></span>
+                          <select data-new-repo-owner class="nr-input"></select>
+                        </label>
+                        <span class="nr-slash" aria-hidden="true">/</span>
+                        <label data-new-repo-name-wrap class="nr-field">
+                          <span class="nr-label">Repository name <span class="nr-star">*</span></span>
+                          <input data-new-repo-name type="text" autocomplete="off" spellcheck="false" placeholder="my-project" required class="nr-input" />
+                        </label>
                       </div>
+                      <p class="nr-help">Great repository names are short and memorable. Letters, numbers, <code>.</code> <code>-</code> <code>_</code>, up to 64 characters.</p>
+                    </div>
+
+                    <label data-new-repo-description-wrap class="nr-field">
+                      <span class="nr-label">Description <span class="nr-optional">(optional)</span></span>
+                      <textarea data-new-repo-description rows="2" maxlength="240" spellcheck="true" class="nr-input"></textarea>
+                    </label>
+                  </div>
+
+                  <div data-new-repo-visibility-wrap>
+                    <hr class="nr-rule" />
+                    <div class="nr-radios" role="radiogroup" aria-label="Visibility">
+                      <label class="nr-radio">
+                        <input data-new-repo-visibility type="radio" name="new-repo-visibility" value="public" checked />
+                        <i data-lucide="book" class="h-6 w-6"></i>
+                        <span><span class="nr-title">Public</span><span class="nr-desc">Listed in the catalog. Anyone can browse and clone it.</span></span>
+                      </label>
+                      <label class="nr-radio">
+                        <input data-new-repo-visibility type="radio" name="new-repo-visibility" value="private" />
+                        <i data-lucide="lock" class="h-6 w-6"></i>
+                        <span><span class="nr-title">Private</span><span data-new-repo-private-desc class="nr-desc">Encrypted mirror, contents stay hidden.</span></span>
+                      </label>
                     </div>
                   </div>
+
+                  <div data-new-repo-hosted-options class="hidden">
+                    <hr class="nr-rule" />
+                    <div class="nr-block">
+                      <div class="nr-field">
+                        <span class="nr-label">Initialize this repository with</span>
+                        <label data-new-repo-readme-wrap class="nr-check">
+                          <input data-new-repo-readme type="checkbox" checked />
+                          <span><span class="nr-title">Add a README file</span><span class="nr-desc">A first commit, so you can clone straight away.</span></span>
+                        </label>
+                      </div>
+                      <div data-new-repo-init-wrap class="nr-two">
+                        <label class="nr-field">
+                          <span class="nr-label">.gitignore</span>
+                          <select data-new-repo-gitignore class="nr-input"><option value="">None</option></select>
+                        </label>
+                        <label class="nr-field">
+                          <span class="nr-label">License</span>
+                          <select data-new-repo-license class="nr-input"><option value="">None</option></select>
+                        </label>
+                      </div>
+                      <p data-new-repo-quota class="nr-help"></p>
+                    </div>
+                  </div>
+
+                  <hr class="nr-rule" />
+                  <div class="nr-info"><i data-lucide="info" class="h-4 w-4"></i><span>You get the clone URL and a push credential right after you create it. Local folders and private URLs finish on your <a href="/desktop">ForkMesh desktop node</a>.</span></div>
+                  <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground" style="margin-top:12px"></p>
+                  <div data-new-repo-migration-status class="hidden nr-panel text-xs" role="status" aria-live="polite">
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <span data-new-repo-setup-time class="text-foreground"></span>
+                      <span data-new-repo-transfer-time class="text-muted-foreground"></span>
+                    </div>
+                    <p data-new-repo-migration-phase class="text-muted-foreground"></p>
+                  </div>
+                </div>
 
                   <div data-new-repo-steps role="status" aria-live="polite" class="hidden nr-result">
                     <div class="nr-result-head">
@@ -212,7 +197,7 @@
 
                   <div data-new-repo-push role="status" aria-live="polite" class="hidden nr-result">
                     <div class="nr-result-head">
-                      <span class="nr-result-icon"><i data-lucide="check" class="h-5 w-5"></i></span>
+                      <span class="nr-result-icon nr-result-ok"><i data-lucide="check" class="h-5 w-5"></i></span>
                       <div>
                         <p class="text-base font-semibold text-foreground">Repository created</p>
                         <p class="text-sm text-muted-foreground"><span data-new-repo-push-repo class="font-mono text-foreground"></span></p>
@@ -235,44 +220,22 @@
                     </p>
                     <div class="mt-5 flex flex-wrap items-center gap-2">
                       <button data-new-repo-push-copy type="button" class="nr-btn nr-btn-ghost">
-                        <i data-lucide="copy" class="h-4 w-4"></i>
+                        <i data-lucide="copy" class="h-3.5 w-3.5"></i>
                         <span data-new-repo-push-copy-label>Copy commands</span>
                       </button>
                       <a data-new-repo-push-open href="/dashboard/repos" class="nr-btn nr-btn-primary">
-                        <i data-lucide="folder-open" class="h-4 w-4"></i>
                         Open repository
                       </a>
                     </div>
                   </div>
 
-                  <div class="nr-actions">
-                    <button data-new-repo-cancel type="button" class="nr-btn nr-btn-ghost"><span data-new-repo-cancel-label>Cancel</span></button>
-                    <button data-new-repo-submit type="submit" class="nr-btn nr-btn-primary">
-                      <i data-lucide="git-branch-plus" class="h-4 w-4"></i>
-                      <span data-new-repo-submit-label>Create &amp; mirror</span>
-                    </button>
-                  </div>
-                </form>
-
-                <aside class="nr-aside">
-                  <div class="nr-card nr-aside-card">
-                    <h3>What happens next</h3>
-                    <div class="nr-points">
-                      <p class="nr-point"><i data-lucide="server"></i><span><b>Hosted by ForkMesh.</b> A new or imported repository gets a full copy on every core node. No desktop app needed.</span></p>
-                      <p class="nr-point"><i data-lucide="terminal"></i><span><b>Plain git over HTTPS.</b> You get the clone URL and a push credential right after you create it.</span></p>
-                      <p class="nr-point"><i data-lucide="monitor"></i><span><b>Local folders and other URLs</b> finish on your desktop node, which signs and mirrors them.</span></p>
-                      <p class="nr-point"><i data-lucide="arrow-right-left"></i><span><b>Move it any time.</b> Take a hosted repository to your own node when you outgrow the quota.</span></p>
-                    </div>
-                  </div>
-                  <div class="nr-card nr-aside-card">
-                    <h3>Need the desktop app?</h3>
-                    <p class="nr-help" style="margin-top:6px">Mirroring from a local folder or a private URL runs on a ForkMesh desktop node.</p>
-                    <a href="/desktop" class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline">
-                      <i data-lucide="download" class="h-3.5 w-3.5"></i>
-                      Download ForkMesh
-                    </a>
-                  </div>
-                </aside>
-              </div>
+                <hr class="nr-rule" />
+                <div class="nr-actions">
+                  <button data-new-repo-cancel type="button" class="nr-btn nr-btn-ghost"><span data-new-repo-cancel-label>Cancel</span></button>
+                  <button data-new-repo-submit type="submit" class="nr-btn nr-btn-primary">
+                    <span data-new-repo-submit-label>Create repository</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </section>

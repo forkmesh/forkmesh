@@ -105,3 +105,23 @@ router key. A mirror never receives the session row or password material.
 ## Related
 
 `www/docs/portable-identities.md`, `www/docs/security/organization-roles.md`.
+
+## Settings feedback and confirmations
+
+The settings page (`partials/views/settings.html`, `04-account.js`) reports
+every save inline: the status line under each form is muted while working,
+`text-success` on a confirmed save and `text-destructive` on a failure.
+Signing out other devices, revoking a node or SSH key, and deleting an
+organization, team, member, linked repo or bot token ask through
+`confirmAccountAction`, an `fm-dialog` with a neutral Cancel (focused first)
+and a danger confirm; issue and comment deletion and sub-issue creation in
+`03-issues-profile-io.js` use the same dialog. Notices that appear on an event
+are `fm-flash` banners: the node reconnect callout (warning), the node link
+grant (info, with its own small CTA) and the SSH key safety note (warning).
+The callout and grant keep a plain outer element that the code toggles with
+the `hidden` class, because `.fm-flash` sets its own display. Empty and error
+lists for sessions, nodes, SSH keys and organizations render as
+`fm-blankslate`; "This device" is an accent `fm-label`; revoke buttons are
+`fm-btn fm-btn-sm fm-btn-danger`. Pings switches and day toggles read the
+`primary` token, and checkboxes and radios use `accent-primary`, so checked
+controls are blue, never green.

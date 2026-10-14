@@ -58,6 +58,7 @@ CONTENT_SOCKETS = {
 MAX_CONTENT_FILES = 32
 WWW_ROUTE_RE = re.compile(r"^/[a-z][a-z0-9-]{0,39}$")
 WWW_ASSET_SUFFIXES = {".css", ".js", ".json", ".svg", ".png", ".webp"}
+PAGE_DEVICES = frozenset({"camera", "microphone"})
 
 
 def _key(item: Contribution) -> str:
@@ -88,7 +89,7 @@ def _web_entries(catalog_path: Path = CATALOG) -> list[dict]:
     }
     for item in _active(catalog_path, WEB_SOCKET):
         config = item.config
-        allowed = {"route", "title", "description", "navigation", "script"}
+        allowed = {"route", "title", "description", "navigation", "script", "devices"}
         if set(config) - allowed:
             raise MarketplaceError(
                 f"package {item.package_id} dashboard.page has unsupported config"
@@ -127,6 +128,15 @@ def _web_entries(catalog_path: Path = CATALOG) -> list[dict]:
         ):
             raise MarketplaceError(
                 f"package {item.package_id} dashboard.page navigation is invalid"
+            )
+        devices = config.get("devices") or []
+        if (
+            not isinstance(devices, list)
+            or len(set(map(str, devices))) != len(devices)
+            or not set(map(str, devices)) <= PAGE_DEVICES
+        ):
+            raise MarketplaceError(
+                f"package {item.package_id} dashboard.page devices are invalid"
             )
         script_path = None
         script_name = str(config.get("script") or "")
@@ -169,6 +179,7 @@ def _web_entries(catalog_path: Path = CATALOG) -> list[dict]:
             "label": label,
             "icon": icon,
             "order": order,
+            "devices": tuple(sorted(str(device) for device in devices)),
         })
     return sorted(
         entries,
@@ -559,7 +570,11 @@ def content_files(manifest: dict, package_root: Path) -> tuple:
 
 
 def registry_source(catalog_path: Path = CATALOG) -> str:
-    pages = {row["route"]: row["asset"] for row in _web_entries(catalog_path)}
+    web_rows = _web_entries(catalog_path)
+    pages = {row["route"]: row["asset"] for row in web_rows}
+    device_pages = {
+        row["route"]: row["devices"] for row in web_rows if row["devices"]
+    }
     html_paths = sorted("/" + asset for asset in pages.values())
     routes = tuple(
         (row["route"], row["methods"], row["module"], row["handler"])
@@ -595,6 +610,7 @@ def registry_source(catalog_path: Path = CATALOG) -> str:
     return '''"""Generated in app/src_build from Marketplace socket contributions."""
 
 PLUGIN_DASHBOARD_PAGE_ASSETS = %r
+PLUGIN_DEVICE_PAGES = %r
 PLUGIN_STATIC_HTML_PATHS = frozenset(%r)
 PLUGIN_WWW_SITE_ROUTES = frozenset(%r)
 HTTP_ROUTES = %r
@@ -615,7 +631,7 @@ async def dispatch_http(request, env, path, method):
             module = __import__(module_name)
             return await getattr(module, handler_name)(request, env)
     return None
-''' % (pages, html_paths, www_routes(catalog_path), routes, plugins, tuple(
+''' % (pages, device_pages, html_paths, www_routes(catalog_path), routes, plugins, tuple(
         sorted(packages, key=lambda row: row["name"].lower())
     )[:market_packages.MAX_PACKAGES])
 

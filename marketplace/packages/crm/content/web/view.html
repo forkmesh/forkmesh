@@ -487,7 +487,7 @@ PACKAGE_CRM_ZOHO_OAUTH_REDIRECT_URI=https://app.forkmesh.com/api/crm/-/zoho/call
                 </div>
               </div>
             </dialog>
-            <dialog data-crm-email-dialogstyle="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-3xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
+            <dialog data-crm-email-dialog style="max-height:calc(100dvh - 1rem);overflow-y:auto" class="w-full max-w-3xl rounded-lg border border-border bg-card text-foreground shadow-2xl backdrop:bg-background/80">
               <form data-crm-email-form class="p-5">
                 <div class="mb-4 flex items-center justify-between"><div><h2 class="text-base font-semibold">Send one-off email</h2><p class="text-xs text-muted-foreground">Your Mailtrap key is used for this request only and is never saved.</p></div><button data-crm-dialog-close type="button" class="rounded p-1 text-muted-foreground hover:bg-secondary" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
                 <input data-crm-email-contact-id type="hidden" />
@@ -652,6 +652,12 @@ complete</textarea><span>One line per stage. Rename or reorder them later in Man
                   <button data-crm-zoho-exchange type="button" class="w-fit rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Connect with code</button>
                   <label class="grid gap-1 text-xs text-muted-foreground">OAuth refresh token<input data-crm-zoho-refresh type="password" maxlength="1000" autocomplete="new-password" placeholder="Unchanged when blank" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" /></label>
                   <button data-crm-zoho-disconnect type="button" class="hidden w-fit rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Disconnect Zoho Mail</button>
+                  </section>
+                  <section class="grid content-start gap-3 lg:col-span-2">
+                  <div><p class="text-xs font-semibold uppercase text-muted-foreground">Mastodon toots</p><p data-crm-mastodon-status class="mt-1 text-xs text-muted-foreground"></p></div>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Organization account<input data-crm-mastodon-account maxlength="320" autocomplete="off" placeholder="@forkmesh@mastodon.social" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Access token<input data-crm-mastodon-token type="password" maxlength="600" autocomplete="new-password" placeholder="Unchanged when blank" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground" /><span>Needs read:statuses. Kept encrypted and never shown again.</span></label>
+                  <div class="flex flex-wrap gap-2"><button data-crm-mastodon-sync type="button" class="hidden w-fit rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Check toots now</button><button data-crm-mastodon-disconnect type="button" class="hidden w-fit rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Disconnect Mastodon</button></div>
                   </section>
                   <section class="grid content-start gap-3 lg:col-span-2">
                   <div><p class="text-xs font-semibold uppercase text-muted-foreground">Browser extension</p><p class="mt-1 text-xs text-muted-foreground">The ForkMesh browser extension for Chrome adds a CRM header and a "Link to CRM" panel inside Gmail, Zoho Mail and the Mastodon instances you add to it. Linking keeps the message id on the contact's record here, and clicking the record reopens the message in that mailbox. The extension is its own Market package: <a href="/dashboard/extension" class="underline">its page</a> installs and updates it, and the same extension fills logins from the Password Vault. Sign in with your ForkMesh account inside the extension, then press Reload from <b>Extensions page</b> after an update.</p></div>

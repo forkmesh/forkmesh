@@ -30,8 +30,8 @@ appears on the web dashboard, the desktop app, and the mobile app.
   the Photo button, with the text as a hint; a photo sent with "receipt" or
   "grocery" in the text, or a file named like a receipt, is read as a
   receipt.
-- **Quick add panel.** A side panel on the Diary tab (above the diary on
-  narrow screens) lists My foods, foods you have logged more than once, and
+- **Quick add panel.** A side panel on the Diary tab (between the
+  summary strip and the diary on narrow screens) lists My foods, foods you have logged more than once, and
   about thirty common foods. One click logs a serving to the meal picked in
   the panel (by time of day unless set), on the "Log to" day. A star saves a
   food to My foods and × removes it. My foods holds at most 60 foods and is
@@ -49,8 +49,20 @@ appears on the web dashboard, the desktop app, and the mobile app.
   logged, newest day first, grouped under each day with that day's calories.
   Nothing is hidden behind a day picker: the date field on the toolbar only
   says which day the next photo, barcode, search, or food is logged to, and an
-  entry can be moved to another day from its editor. The calorie ring, macro
-  bars, and streaks above the list still stand for today.
+  entry can be moved to another day from its editor. The summary strip above
+  the list still stands for today.
+- **Today at a glance.** On the web Diary tab one compact strip sits between
+  the toolbar and the diary: the calorie ring with calories left and a
+  breakfast, lunch, dinner, and snack split; the macro bars; the last seven
+  days as small bars against the goal line with the week's average; and the
+  logging streak, days within goal, and latest weight. It is one row of four
+  cells when the diary column is at least 60rem wide and two rows of two
+  below that, so the diary itself starts above the fold on a laptop screen.
+  The strip's width rules are container queries on the diary column, not
+  viewport breakpoints, because the Quick add panel takes 20rem of the row on
+  wide screens. Chart sizing (`width: 100%`) applies only inside `.cal-chart`
+  containers: before 2.5.1 it matched every `svg` on the page and blew the
+  toolbar's Lucide icons up to the width of their buttons.
 - **Goals and macros.** Daily calorie, protein, carbohydrate, and fat targets,
   a target weight, and metric or imperial units. Units default to *Automatic*,
   which shows pounds and inches to requests arriving from a country that

@@ -47,6 +47,7 @@ MAX_AGENT_CHARS = 160
 PAGE_CSP = (
     "default-src 'none'; base-uri 'none'; form-action 'none'; "
     "frame-ancestors 'none'; img-src 'self' data:; font-src 'self'; "
+    "manifest-src 'self'; "
     "style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
     "connect-src 'self'"
 )

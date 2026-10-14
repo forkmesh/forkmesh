@@ -58,17 +58,18 @@ def test_listing_is_a_free_desktop_package():
     assert "package_owned" not in worker and "package_checkout" not in worker
     row = next(entry for entry in CATALOG["packages"] if entry["id"] == "voice-changer")
     assert row["version"] == PACKAGE_MANIFEST["version"]
-    # Desktop only: a native rail page and its Worker API, no web page and no
-    # browser extension.
     assert PACKAGE_MANIFEST["entrypoints"] == {
         "desktop": "builtin:voice-changer",
         "worker": "content/worker/voice_changer.py",
+        "dashboard-view": "content/web/view.html",
+        "dashboard-script": "content/web/page.js",
         "settings": "builtin:package",
     }
-    assert "contributions" not in PACKAGE_MANIFEST
     assert not (PACKAGE / "content" / "extension").exists()
-    assert not (PACKAGE / "content" / "web").exists()
-    assert PACKAGE_MANIFEST["install"] == {"bundled": True, "default": False}
+    assert PACKAGE_MANIFEST["install"] == {
+        "bundled": True, "default": False, "sync": "account",
+        "places": ["desktop", "web"],
+    }
     assert PACKAGE_MANIFEST["worker"]["api"] == voice_changer.PREFIX
     assert len(PACKAGE_MANIFEST["summary"]) <= 240
     market = (REPO / "www" / "public" / "market.html").read_text(encoding="utf-8")
@@ -400,3 +401,45 @@ def test_routes_and_methods():
     assert _call(Runtime(method="GET"), "/api/voice-changer/design")["status"] == 405
     # Nothing is sold any more, so there is no checkout route at all.
     assert _call(Runtime(method="POST"), "/api/voice-changer/checkout")["status"] == 404
+
+
+WEB = PACKAGE / "content" / "web"
+PAGE = (WEB / "page.js").read_text(encoding="utf-8")
+VIEW = (WEB / "view.html").read_text(encoding="utf-8")
+STUDIO = (REPO / "app" / "public" / "call-studio.js").read_text(encoding="utf-8")
+
+
+def test_web_page_is_a_microphone_only_dashboard_page():
+    [page] = PACKAGE_MANIFEST["contributions"]
+    assert page["socket"] == "dashboard.page"
+    assert page["config"]["route"] == "/dashboard/voice-changer"
+    assert page["config"]["devices"] == ["microphone"]
+    assert page["config"]["script"] == "dashboard-script"
+    assert 'registerPage("voice-changer"' in PAGE
+    assert 'data-view="voice-changer"' in VIEW
+    assert "Voice Changer" in VIEW
+
+
+def test_web_page_runs_the_call_voice_engine_from_the_app():
+    assert 'import("/chat-call-voice.js")' in PAGE
+    assert 'import("/call-studio.js")' in PAGE
+    assert "mountVoicePreviewControls(" in PAGE
+    assert "startStudioVoice(" in PAGE and "startStudioClip(" in PAGE
+    assert "createVoicePreviewImpl({" in STUDIO
+    assert 'new URL("./chat-call-voice-worklet.js", import.meta.url)' in STUDIO
+    assert "AudioWorkletNode" not in PAGE and "registerProcessor" not in PAGE
+    assert not list(WEB.glob("chat-call-*.js"))
+
+
+def test_web_page_reads_the_pitch_and_never_uploads_audio():
+    assert "userPitchHz" in PAGE and "pitchHz" in PAGE
+    assert "fetch(" not in PAGE and "request(" not in PAGE
+    assert "XMLHttpRequest" not in PAGE and "sendBeacon" not in PAGE
+    assert "keepStream: true" in PAGE
+    assert 'addEventListener("pagehide"' in PAGE
+
+
+def test_web_page_is_code_only():
+    for text in (PAGE, STUDIO):
+        assert not re.search(r"^\s*//", text, re.M)
+        assert "/*" not in text

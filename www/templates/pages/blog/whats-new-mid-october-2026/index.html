@@ -1,0 +1,103 @@
+{% extends "layouts/blog-post.html" %}
+{% block title %}What's new: a new look, starter packs and view-once messages · ForkMesh Blog{% endblock %}
+{% block meta %}
+    <meta name="description" content="A new logo and dashboard look, starter packs for new phone projects, view-once video and voice messages, call backgrounds, cores you can add and remove at any time, and a stricter deploy gate. October 14, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/whats-new-mid-october-2026/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/whats-new-mid-october-2026/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="What's new: a new look, starter packs and view-once messages">
+    <meta property="og:description" content="A new logo and dashboard look, starter packs for new phone projects, view-once video and voice messages, call backgrounds, and cores you can add and remove at any time.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/whats-new-mid-october-2026.webp">
+    <meta property="og:image:width" content="1920">
+    <meta property="og:image:height" content="1080">
+    <meta property="og:image:alt" content="The new ForkMesh logo, an isometric cube with a mesh on its top face and the letters F and M on its sides, glowing at the centre of a dark network of hexagon nodes, with a blue and a green copy of the cube forking off to either side">
+    <meta property="article:published_time" content="2026-10-14T21:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="What's new: a new look, starter packs and view-once messages">
+    <meta name="twitter:description" content="A new logo and dashboard look, starter packs for new phone projects, view-once video and voice messages, and call backgrounds.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/whats-new-mid-october-2026.webp">
+    <meta name="twitter:image:alt" content="The new ForkMesh logo, an isometric cube with a mesh on its top face and the letters F and M on its sides, glowing at the centre of a dark network of hexagon nodes, with a blue and a green copy of the cube forking off to either side">
+{% endblock %}
+{% block post_chrome %}
+    {% include "partials/site-header.html" %}
+{% endblock %}
+{% block body %}
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Product update</p>
+            <h1>What's new: a new look, starter packs and view-once messages</h1>
+            <p class="lede">A week of shipping since our last update: ForkMesh has a new logo and a calmer dashboard, new phone projects let you choose how much to start with, direct messages can disappear after one view, and the servers behind forkmesh.com can now change without anyone noticing.</p>
+            <div class="meta"><span class="pill">October 14, 2026</span><span>Product update</span><span>5 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/whats-new-mid-october-2026.webp" alt="The new ForkMesh logo, an isometric cube with a mesh on its top face and the letters F and M on its sides, glowing at the centre of a dark network of hexagon nodes, with a blue and a green copy of the cube forking off to either side">
+        </section>
+        <article class="body">
+          <p>The picture at the top is our new logo: a cube with the mesh on its lid and an F and an M on its sides. The two coloured copies branching off it are what ForkMesh is for: a fork of your project that is just as complete as the original, wherever it lives.</p>
+
+          <h2>A new look on the web</h2>
+          <p>The dashboard now takes every colour and size from one file, so pages finally agree with each other. Blue marks links, focus, selection and the current tab; green is kept for the one button on a page that creates something new, and for status. Controls are more compact, and headers are plain.</p>
+          <ul>
+            <li><strong>Agents</strong> is a run list you can scan at a glance, and the agent composer is smaller and quicker to type into.</li>
+            <li><strong>Runners</strong> is one flat list.</li>
+            <li>The <strong>new repository</strong> form and the repository pages were rebuilt.</li>
+            <li>Profile badges are drawn as real medallions.</li>
+            <li>The <strong>Apps</strong> page has tabs and a plugin list you can search.</li>
+            <li>Emails from ForkMesh use a simpler "Letter" layout, with the link written out and an email-settings link at the bottom.</li>
+          </ul>
+
+          <h2>Start a phone project your way</h2>
+          <p>New projects on iPhone and Android used to open almost empty. Now the first time a new project opens, it asks once how you want to start:</p>
+          <ul>
+            <li><strong>Minimal:</strong> just your code. No agents, chat or inbox until you add them.</li>
+            <li><strong>Standard</strong> (the default): Agents, Chat, Inbox, Code and the tour.</li>
+            <li><strong>Everything:</strong> every package the phone has.</li>
+          </ul>
+          <p>You can add or remove anything later from the Market. Projects you already have keep what they had. A phone project also no longer needs an instance: you can create and edit repositories on the device and pick a server later.</p>
+          <p>Signing in got friendlier too. Login has a <strong>Forgot password?</strong> link, and on iPhone, sign-up opens in a sheet inside the app and brings you back to the login form when you're done. Accounts are still only created on our secure sign-up page, behind the same browser check as on the web.</p>
+
+          <h2>Messages that disappear after one view</h2>
+          <p>In direct messages on the web, iPhone and Android, you can record a <strong>view-once</strong> video or voice message. It plays once and is gone. Until it's opened, you can unsend it, and the read receipt waits until it is opened, expires or is withdrawn. Video messages can use face and background filters, and voice messages a voice changer, so you can hear yourself before you send.</p>
+          <p>Chat picked up plenty more:</p>
+          <ul>
+            <li><code>#general</code>, <code>#random</code> and <code>#welcome</code> are real channels for everyone, on every client.</li>
+            <li>Links show previews.</li>
+            <li>Messages can be deleted for everyone.</li>
+            <li>DMs show who is typing, and you can block someone.</li>
+            <li>You get an email reminder when a direct message has been waiting for a day.</li>
+          </ul>
+          <p>Calls have a pre-call preview, a choice of backgrounds and a cleaner cut-out around you.</p>
+
+          <h2>Servers that can change under you</h2>
+          <p>forkmesh.com runs on our own small group of core servers. This week we added a new core and retired an old one. Retiring it stopped pushes for about 45 minutes, because the old core still owned the main repository; that is fixed, and adding or removing a core is now a routine step rather than an event. A new core joins locked down from its first boot, links to its owner on its own and starts serving as soon as its checks pass.</p>
+          <p>Every change still has to earn its way out. Automatic deploys now run the Go tests and the security test suite and refuse to ship if either fails. CI runs the same checks, along with a scanner that fails the build when code deletes files without the safety guards. Notification emails for a new pull request now arrive once, not twice.</p>
+
+          <h2>Also new</h2>
+          <ul>
+            <li>Personal runners work on macOS.</li>
+            <li>The CRM on the web matches the desktop: pipeline tabs, multi-select, sorting, pictures and imports.</li>
+            <li>The People plugin shows members in campfire rings, with Follow and Message on every platform.</li>
+            <li>The docs library ships inside the iPhone and Android apps.</li>
+            <li>Agent controls that can't run on your setup are greyed out and link to what you need.</li>
+            <li>Usage bars show seven-day and five-hour windows, and the phone shows your pace.</li>
+          </ul>
+          <p>Many of this week's changes came from community pull requests. Thank you to everyone who sent one, and especially to Kaif, who opened about thirty this week.</p>
+
+          <h2>Try it</h2>
+          <p>Open the <a href="https://app.forkmesh.com/dashboard">dashboard</a> to see the new look, or get the phone app from <a href="https://forkmesh.com/mobile">forkmesh.com/mobile</a> and start a new project. If something looks off, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a> or tell us in the ForkMesh Discord. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog">All posts</a>
+          <a href="/blog/start-your-own-forkmesh/">Start your own ForkMesh →</a>
+        </nav>
+      </main>
+    </div>
+{% endblock %}

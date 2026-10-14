@@ -58,13 +58,19 @@
     notice.hidden = !message;
     if (!message) return;
     notice.dataset.tone = tone || "";
-    notice.append(document.createTextNode(message));
+    const variant = tone === "bad" ? " fm-flash-danger" : tone === "good" ? " fm-flash-success" : "";
+    notice.className = `docs-notice fm-flash${variant}`;
+    notice.append(docsBookIcon(tone === "bad" ? "circle-alert" : tone === "good" ? "circle-check" : "info"),
+      docsBookEl("div", "fm-flash-body", message));
     if (action) {
-      const button = docsBookEl("button", "", action.label);
+      const actions = docsBookEl("div", "fm-flash-actions");
+      const button = docsBookEl("button", "fm-btn fm-btn-sm", action.label);
       button.type = "button";
       button.addEventListener("click", action.run);
-      notice.append(button);
+      actions.append(button);
+      notice.append(actions);
     }
+    docsBookIcons();
   }
 
   function docsBookDateLabel(doc) {
@@ -315,9 +321,9 @@
       const bar = docsBookEl("div", "docs-editor-bar");
       const status = docsBookEl("span", "docs-editor-status", "Saving commits to main as you.");
       status.setAttribute("aria-live", "polite");
-      const cancel = docsBookEl("button", "docs-btn", "Cancel");
+      const cancel = docsBookEl("button", "fm-btn fm-btn-sm", "Cancel");
       cancel.type = "button";
-      const save = docsBookEl("button", "docs-btn docs-btn-primary");
+      const save = docsBookEl("button", "fm-btn fm-btn-sm fm-btn-cta");
       save.type = "submit";
       save.append(docsBookIcon("check"), document.createTextNode("Save"));
       bar.append(status, cancel, save);

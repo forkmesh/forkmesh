@@ -20,7 +20,8 @@ window.ForkMeshDashboard.registerPage("competitors", ({
   }
   function message(kind, value = "") {
     const node = $(`[data-competitor-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    const slot = node.querySelector("[data-competitor-message-text]") || node;
+    slot.textContent = value; node.classList.toggle("hidden", !value);
   }
   function selectedOrg() { return state.organizations.find((org) => org.name === state.organization); }
   function canManage() { return ["owner", "admin"].includes(selectedOrg()?.role || ""); }
@@ -50,7 +51,7 @@ window.ForkMeshDashboard.registerPage("competitors", ({
         .some((value) => String(value || "").toLowerCase().includes(query));
     });
     const host = $(`[data-competitor-list]`); if (!host) return;
-    host.innerHTML = items.map((item) => `<tr class="hover:bg-secondary"><td class="px-4 py-3"><button data-competitor-edit="${escapeHtml(item.id)}" class="block text-left font-semibold text-foreground">${escapeHtml(item.name)}</button>${item.website?.startsWith("https://") ? `<a href="${escapeHtml(item.website)}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-block text-xs text-primary">Open website ↗</a>` : ""}</td><td class="px-4 py-3 text-muted-foreground">${escapeHtml(item.category || "—")}</td><td class="max-w-lg px-4 py-3 text-foreground">${escapeHtml(item.positioning || "—")}</td><td class="px-4 py-3 text-xs text-muted-foreground">${item.lastReviewedAt ? escapeHtml(relativeTimeLabel(item.lastReviewedAt)) : "Never"}</td><td class="px-4 py-3"><span class="rounded-full border border-border px-2 py-1 text-xs text-foreground">${escapeHtml(item.status)}</span></td><td class="px-4 py-3 text-right"><button data-competitor-edit="${escapeHtml(item.id)}" class="rounded border border-border px-2 py-1 text-xs">Edit</button></td></tr>`).join("");
+    host.innerHTML = items.map((item) => `<tr class="hover:bg-secondary"><td class="px-4 py-3"><button data-competitor-edit="${escapeHtml(item.id)}" class="block text-left font-semibold text-foreground">${escapeHtml(item.name)}</button>${item.website?.startsWith("https://") ? `<a href="${escapeHtml(item.website)}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-block text-xs text-primary">Open website ↗</a>` : ""}</td><td class="px-4 py-3 text-muted-foreground">${escapeHtml(item.category || "—")}</td><td class="max-w-lg px-4 py-3 text-foreground">${escapeHtml(item.positioning || "—")}</td><td class="px-4 py-3 text-xs text-muted-foreground">${item.lastReviewedAt ? escapeHtml(relativeTimeLabel(item.lastReviewedAt)) : "Never"}</td><td class="px-4 py-3"><span class="fm-label${item.status === "primary" ? " fm-label-accent" : ""}">${escapeHtml(item.status)}</span></td><td class="px-4 py-3 text-right"><button data-competitor-edit="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm">Edit</button></td></tr>`).join("");
     $(`[data-competitor-empty]`)?.classList.toggle("hidden", items.length > 0);
   }
   function render() {

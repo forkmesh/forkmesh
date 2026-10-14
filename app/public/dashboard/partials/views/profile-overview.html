@@ -17,7 +17,7 @@
                   <a href="/dashboard/profile/repositories" class="inline-flex items-center gap-2 border-b-2 border-transparent px-2 pb-3 pt-3 text-muted-foreground hover:text-foreground">
                     <i data-lucide="book-marked" class="h-4 w-4 text-muted-foreground"></i>
                     Repositories
-                    <span data-profile-repo-count class="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">0</span>
+                    <span data-profile-repo-count class="fm-counter">0</span>
                   </a>
                   <a href="/dashboard/network" data-plugin-entry="network" class="inline-flex items-center gap-2 border-b-2 border-transparent px-2 pb-3 pt-3 text-muted-foreground hover:text-foreground">
                     <i data-lucide="activity" class="h-4 w-4 text-muted-foreground"></i>
@@ -69,10 +69,10 @@
                     <section data-profile-referrals-panel class="overflow-hidden rounded-md border border-border bg-card">
                       <div class="flex items-center justify-between gap-3 px-4 py-3">
                         <h2 class="text-sm font-semibold text-foreground">Referred users</h2>
-                        <span data-profile-referrals-count class="rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">0 credited</span>
+                        <span data-profile-referrals-count class="fm-label">0 credited</span>
                       </div>
                       <div data-profile-referrals-list class="border-t border-border px-4 py-4">
-                        <p class="text-sm text-muted-foreground">No credited referrals yet.</p>
+                        <p class="text-center text-sm text-muted-foreground">No credited referrals yet.</p>
                       </div>
                     </section>
                     <div data-profile-contribution-timeline-layout class="grid min-w-0 gap-6">
@@ -80,7 +80,7 @@
                         <section data-profile-contribution-card aria-labelledby="profile-contribution-heading" class="min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
                           <header class="flex min-w-0 flex-col gap-4 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                             <div class="min-w-0">
-                              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Native activity</p>
+                              <p class="text-xs text-muted-foreground">Native activity</p>
                               <h2 id="profile-contribution-heading" data-profile-contribution-summary class="mt-1 text-xl font-semibold leading-7 text-foreground">0 contributions in the last year</h2>
                             </div>
                             <div data-profile-contribution-periods role="group" aria-label="Contribution period" class="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-border bg-background p-1 text-xs">
@@ -90,17 +90,19 @@
 
                           <div class="relative min-w-0 p-4 sm:p-5">
                             <div data-profile-contribution-loading role="status" aria-live="polite" class="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
-                              <span class="h-2 w-2 animate-pulse rounded-full bg-muted-foreground"></span>
+                              <span class="fm-spinner" aria-hidden="true"></span>
                               Loading verified contribution activity...
                             </div>
-                            <div data-profile-contribution-empty hidden class="mb-4 rounded-lg border border-dashed border-border bg-background p-4 text-center">
-                              <p class="font-semibold text-foreground">No public contributions in this period</p>
-                              <p class="mt-2 text-sm text-muted-foreground">Publish or contribute to a public ForkMesh repository to begin your native activity skyline.</p>
+                            <div data-profile-contribution-empty hidden class="fm-blankslate mb-4">
+                              <i data-lucide="activity" aria-hidden="true"></i>
+                              <p class="fm-blankslate-title">No public contributions in this period</p>
+                              <p class="fm-blankslate-desc">Publish or contribute to a public ForkMesh repository to begin your native activity skyline.</p>
                             </div>
-                            <div data-profile-contribution-error hidden role="alert" class="min-h-48 rounded-lg border border-destructive/40 bg-background p-6 text-center">
-                              <p class="font-semibold text-foreground">Contribution activity is unavailable</p>
-                              <p class="mt-2 text-sm text-muted-foreground">The verified ledger could not be loaded right now.</p>
-                              <button data-profile-contribution-retry type="button" class="mt-4 rounded-md border border-border bg-secondary px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">Try again</button>
+                            <div data-profile-contribution-error hidden role="alert" class="fm-blankslate min-h-48 content-center">
+                              <i data-lucide="circle-alert" aria-hidden="true"></i>
+                              <p class="fm-blankslate-title">Contribution activity is unavailable</p>
+                              <p class="fm-blankslate-desc">The verified ledger could not be loaded right now.</p>
+                              <button data-profile-contribution-retry type="button" class="fm-btn fm-btn-sm mt-3">Try again</button>
                             </div>
 
                             <div data-profile-contribution-panorama class="min-w-0">

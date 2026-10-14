@@ -673,8 +673,8 @@
       // Every mirror agreeing the path is absent is the repository's answer,
       // not an outage — say which one it is instead of blaming the fleet.
       treeBody.innerHTML = isMissingMirrorFolder(error)
-        ? `<div class="px-4 py-3 text-sm text-muted-foreground">${escapeHtml(path ? `${path} is not in this repository at this revision.` : "This repository has no files at this revision.")}</div>`
-        : '<div class="px-4 py-3 text-sm text-muted-foreground">No reachable mirror host is serving this repository tree right now.</div>';
+        ? `<div class="fm-blankslate"><i data-lucide="${path ? "file-question" : "folder-open"}"></i><p class="fm-blankslate-title">${path ? "Path not found" : "No files yet"}</p><p class="fm-blankslate-desc">${escapeHtml(path ? `${path} is not in this repository at this revision.` : "This repository has no files at this revision.")}</p></div>`
+        : '<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Repository unavailable</p><p class="fm-blankslate-desc">No reachable mirror host is serving this repository tree right now.</p></div>';
       if (!path) {
         const readmeBody = detail.querySelector("[data-repo-readme-body]");
         if (readmeBody) {
@@ -738,11 +738,11 @@
               <span data-repo-file-status class="min-w-0 font-mono text-[10px] text-muted-foreground">Code view - highlighted source.</span>
             </div>
             <div class="flex items-center gap-1.5">
-              <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="Edit file" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
-              <button type="button" data-repo-file-action="raw" class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[10px] font-medium text-foreground hover:bg-secondary transition-colors">Raw</button>
-              <button type="button" data-repo-file-action="copy" aria-label="Copy file contents" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="copy" class="h-3.5 w-3.5"></i></button>
-              <button type="button" data-repo-file-action="download" aria-label="Download file" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>
-              <button type="button" data-repo-file-action="fullscreen" aria-label="Open full screen" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="maximize-2" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="Edit file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="raw" class="fm-btn fm-btn-sm">Raw</button>
+              <button type="button" data-repo-file-action="copy" aria-label="Copy file contents" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="copy" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="download" aria-label="Download file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="fullscreen" aria-label="Open full screen" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="maximize-2" class="h-3.5 w-3.5"></i></button>
             </div>
           </div>
           <div data-repo-file-content></div>
@@ -768,7 +768,8 @@
           // Not a folder either; fall through to the file error.
         }
       }
-      viewer.innerHTML = '<div class="py-3 text-sm text-muted-foreground">Could not load this file from a live host.</div>';
+      viewer.innerHTML = '<div class="fm-blankslate rounded-lg border border-border"><i data-lucide="file-x"></i><p class="fm-blankslate-title">File unavailable</p><p class="fm-blankslate-desc">Could not load this file from a live host.</p></div>';
+      window.lucide?.createIcons();
     }
   }
 
@@ -2208,7 +2209,7 @@
             <span class="block min-w-0 leading-6">
               <span data-repo-issue-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
               ${item.deleted ? '<span class="issue-label ml-1 align-[2px]" style="--label-h:210;filter:saturate(0)" title="Deleted by its author.">deleted</span>' : ""}
-              ${item.deleteAttempted ? '<span class="ml-1 inline-flex items-center gap-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 align-[2px] text-[12px] font-medium leading-[18px] text-yellow-600" title="Someone who did not open this issue tried to delete it; the deletion was not applied."><i data-lucide="triangle-alert" class="h-3 w-3"></i>unauthorized deletion</span>' : ""}
+              ${item.deleteAttempted ? '<span class="fm-label fm-label-attention ml-1 align-[2px]" title="Someone who did not open this issue tried to delete it; the deletion was not applied."><i data-lucide="triangle-alert" class="h-3 w-3"></i>unauthorized deletion</span>' : ""}
               ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
@@ -2232,7 +2233,7 @@
             <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(numberLabel)} opened by ${escapeHtml(item.author)} ${escapeHtml(item.date)}${item.body ? ` - ${escapeHtml(item.body).slice(0, 140)}` : ""}</span>
           </span>
           <span class="self-start flex shrink-0 items-center gap-3">
-            ${item.wantsAgent ? '<i data-lucide="zap" class="h-4 w-4 text-yellow-500" title="Assigned to agent"></i>' : ''}
+            ${item.wantsAgent ? '<i data-lucide="zap" class="h-4 w-4 text-muted-foreground" title="Assigned to agent"></i>' : ''}
             <span class="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex"><i data-lucide="message-square" class="h-3.5 w-3.5"></i>0</span>
             <span data-repo-record-state class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(stateLabel)}</span>
           </span>`;
@@ -2263,7 +2264,7 @@
       ? items.filter((item) => item.unavailable === true).length
       : 0;
     const unavailableWarning = unavailableCount
-      ? `<p data-repo-record-unavailable-warning="pulls" role="status" class="border-t border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-5 text-muted-foreground"><strong class="text-amber-300">Metadata unavailable.</strong> ${unavailableCount === 1 ? "1 pull-request record is listed by the tree but its metadata is unavailable. It cannot be opened." : `${formatCount(unavailableCount)} pull-request records are listed by the tree but their metadata is unavailable. They cannot be opened.`}</p>`
+      ? `<p data-repo-record-unavailable-warning="pulls" role="status" class="fm-flash fm-flash-warning fm-flash-full rounded-none border-b-0 text-muted-foreground"><i data-lucide="triangle-alert"></i><span class="fm-flash-body"><strong class="text-foreground">Metadata unavailable.</strong> ${unavailableCount === 1 ? "1 pull-request record is listed by the tree but its metadata is unavailable. It cannot be opened." : `${formatCount(unavailableCount)} pull-request records are listed by the tree but their metadata is unavailable. They cannot be opened.`}</span></p>`
       : "";
     const pagination = ["issues", "pulls"].includes(kind)
       ? renderRepoCollectionPagination(kind, safePage, totalPages, items.length)
@@ -2590,7 +2591,7 @@
         <button type="button" data-repo-pull-file="${escapeHtml(file.path)}" data-repo-pull-file-status="${escapeHtml(file.status || "modified")}" data-viewed="${isViewed ? "true" : "false"}" title="${escapeHtml(file.path)} · ${meta.label}" style="${pullExplorerRowIndent(depth)}" class="grid w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md py-1.5 pr-2 text-left text-xs transition-colors hover:bg-secondary">
           <span data-repo-pull-file-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : meta.icon}" class="h-3.5 w-3.5 ${isViewed ? "text-foreground" : meta.tone}"></i></span>
           <span data-repo-pull-file-name class="flex min-w-0 overflow-hidden font-mono ${isViewed ? "text-muted-foreground line-through" : "text-foreground"}">${dirHead ? `<span class="truncate text-muted-foreground">${escapeHtml(dirHead)}</span>` : ""}${dirTail ? `<span class="shrink-0 text-muted-foreground">${escapeHtml(dirTail)}</span>` : ""}<span class="shrink-0">${escapeHtml(file.name)}</span></span>
-          <span class="shrink-0 font-mono text-[10px] tabular-nums"><span class="text-primary">+${formatCount(file.adds || 0)}</span> <span class="text-destructive">-${formatCount(file.dels || 0)}</span></span>
+          <span class="shrink-0 font-mono text-[10px] tabular-nums"><span class="text-success">+${formatCount(file.adds || 0)}</span> <span class="text-destructive">-${formatCount(file.dels || 0)}</span></span>
         </button>`;
     };
 
@@ -2761,8 +2762,8 @@
             <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${escapeHtml(author || "unknown")}</span></div>
           </div>
           <div class="flex shrink-0 gap-6">
-            ${stat(`+${formatCount(additions)}`, "Additions", "text-emerald-400")}
-            ${stat(`-${formatCount(deletions)}`, "Deletions", "text-red-400")}
+            ${stat(`+${formatCount(additions)}`, "Additions", "text-success")}
+            ${stat(`-${formatCount(deletions)}`, "Deletions", "text-destructive")}
             ${stat(formatCount(rows.length), "Files changed", "text-foreground")}
           </div>
         </div>
@@ -2803,7 +2804,7 @@
   }
 
   function diffRowSign(type) {
-    if (type === "add") return '<span class="select-none text-center font-mono text-primary">+</span>';
+    if (type === "add") return '<span class="select-none text-center font-mono text-success">+</span>';
     if (type === "del") return '<span class="select-none text-center font-mono text-destructive">-</span>';
     return '<span class="select-none"></span>';
   }
@@ -2990,7 +2991,7 @@
     if (!comments?.length) return "";
     const key = pullInlineThreadKey(path, side, line);
     const label = `${comments.length} inline ${comments.length === 1 ? "comment" : "comments"}`;
-    return `<button type="button" data-repo-pull-inline-thread-toggle="${escapeHtml(key)}" aria-expanded="${state.repoPullInlineOpenThreads.has(key) ? "true" : "false"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" class="absolute left-0 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"><i data-lucide="user-round" class="h-2.5 w-2.5"></i></button>`;
+    return `<button type="button" data-repo-pull-inline-thread-toggle="${escapeHtml(key)}" aria-expanded="${state.repoPullInlineOpenThreads.has(key) ? "true" : "false"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" class="absolute left-0 inline-flex h-4 w-4 items-center justify-center rounded-full bg-cta text-cta-foreground shadow-sm hover:bg-cta/90"><i data-lucide="user-round" class="h-2.5 w-2.5"></i></button>`;
   }
 
   function renderDiffLineGutter(path, side, line, type, comments, extra = "") {
@@ -3011,10 +3012,10 @@
     const placementBadge = placement
       ? `<span data-repo-pull-thread-placement="${anchor.placement}" title="${escapeHtml(event.patchset ? `Written against revision ${String(event.patchset).slice(0, 10)}` : "Written against an earlier revision")}" class="rounded border ${anchor.placement === "outdated" ? "border-border text-muted-foreground" : "border-sky-500/40 text-sky-400"} px-1.5 py-0.5 font-semibold uppercase">${escapeHtml(placement)}</span>`
       : "";
-    return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-amber-500/40 bg-amber-500/10" : "border-border bg-background"} p-3">
+    return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
       ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
       <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${escapeHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-amber-500/40 px-1.5 py-0.5 font-semibold uppercase text-amber-400">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${escapeHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
         <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
       </div>
     </article>`;
@@ -3142,9 +3143,9 @@
   }
 
   function diffFileStatusBadge(file) {
-    if (file.status === "added") return '<span class="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] uppercase text-emerald-300">added</span>';
-    if (file.status === "deleted") return '<span class="shrink-0 rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[10px] uppercase text-red-300">deleted</span>';
-    if (file.status === "renamed") return '<span class="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">renamed</span>';
+    if (file.status === "added") return '<span class="fm-label fm-label-success shrink-0">added</span>';
+    if (file.status === "deleted") return '<span class="fm-label fm-label-danger shrink-0">deleted</span>';
+    if (file.status === "renamed") return '<span class="fm-label shrink-0">renamed</span>';
     return "";
   }
 
@@ -3226,7 +3227,7 @@
             ${diffFileStatusBadge(file)}
           </span>
           <span class="inline-flex shrink-0 items-center gap-2.5">
-            <span class="font-mono text-[10px] tabular-nums"><span class="text-primary">+${formatCount(file.adds)}</span><span class="ml-1 text-destructive">-${formatCount(file.dels)}</span></span>
+            <span class="font-mono text-[10px] tabular-nums"><span class="text-success">+${formatCount(file.adds)}</span><span class="ml-1 text-destructive">-${formatCount(file.dels)}</span></span>
             ${renderDiffStatBar(file.adds, file.dels)}
             <button type="button" data-repo-pull-viewed="${escapeHtml(path)}" aria-pressed="${isViewed ? "true" : "false"}" class="inline-flex h-7 items-center gap-1.5 rounded-md border ${isViewed ? "border-border" : "border-border"} bg-background px-2 text-[10px] font-semibold ${isViewed ? "text-foreground" : "text-muted-foreground"} hover:bg-secondary"><span data-repo-pull-viewed-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : "circle"}" class="h-3.5 w-3.5"></i></span>Viewed</button>
           </span>
@@ -3258,11 +3259,11 @@
   function renderPullReviewBatchBar() {
     const drafts = currentPullReviewDrafts();
     if (!drafts.length) return "";
-    return `<div class="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-      <span class="inline-flex items-center gap-2 text-xs text-foreground"><i data-lucide="messages-square" class="h-3.5 w-3.5 text-amber-400"></i><strong>${formatCount(drafts.length)} draft ${drafts.length === 1 ? "comment" : "comments"}</strong><span data-repo-pull-review-batch-hint class="text-muted-foreground">Review the marked lines or submit them together.</span></span>
+    return `<div class="fm-flash fm-flash-warning fm-flash-full flex-wrap items-center border-t-0 px-3 py-2">
+      <span class="inline-flex min-w-0 flex-1 items-center gap-2 text-xs text-foreground"><i data-lucide="messages-square" class="h-4 w-4 shrink-0 text-attention"></i><strong>${formatCount(drafts.length)} draft ${drafts.length === 1 ? "comment" : "comments"}</strong><span data-repo-pull-review-batch-hint class="text-muted-foreground">Review the marked lines or submit them together.</span></span>
       <span class="inline-flex items-center gap-2">
-        <button type="button" data-repo-pull-review-batch-discard class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Discard</button>
-        <button type="button" data-repo-pull-review-batch-submit class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-3.5 w-3.5"></i>Submit review (${formatCount(drafts.length)})</button>
+        <button type="button" data-repo-pull-review-batch-discard class="fm-btn fm-btn-sm"><i data-lucide="trash-2"></i>Discard</button>
+        <button type="button" data-repo-pull-review-batch-submit class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="send"></i>Submit review (${formatCount(drafts.length)})</button>
       </span>
     </div>`;
   }
@@ -3294,7 +3295,7 @@
           <span data-repo-pull-inline-hint class="text-[11px] text-muted-foreground">Send this comment now or add it to a review batch.</span>
           <span class="inline-flex flex-wrap items-center gap-2">
             <button type="submit" data-repo-pull-inline-action="batch" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-semibold text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="list-plus" class="h-3.5 w-3.5"></i>Add to review</button>
-            <button type="submit" data-repo-pull-inline-action="now" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-3.5 w-3.5"></i>Comment now</button>
+            <button type="submit" data-repo-pull-inline-action="now" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-3.5 w-3.5"></i>Comment now</button>
           </span>
         </div>
       </div>
@@ -3583,7 +3584,7 @@
           <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-t-lg border-b border-border bg-secondary/50 px-3 py-2.5">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground">
               <i data-lucide="files" class="h-3.5 w-3.5 text-muted-foreground"></i>${formatCount(files.length)} files changed
-              <span class="font-mono text-[10px] tabular-nums"><span class="text-primary">+${formatCount(adds)}</span> <span class="text-destructive">-${formatCount(dels)}</span></span>
+              <span class="font-mono text-[10px] tabular-nums"><span class="text-success">+${formatCount(adds)}</span> <span class="text-destructive">-${formatCount(dels)}</span></span>
             </span>
             <span class="flex flex-wrap items-center gap-2">
               <span class="relative inline-flex items-center">
@@ -3902,15 +3903,15 @@
       return {
         label: `agent ${status}`,
         tone: active
-          ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+          ? "border-attention/40 text-attention"
           : ev.status === "completed"
-            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+            ? "border-success/40 text-success"
             : "border-border bg-secondary/60 text-muted-foreground",
       };
     }
     if (ev.type === "review") {
-      if (ev.state === "approved") return { label: "approved", tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" };
-      if (ev.state === "changes_requested") return { label: "requested changes", tone: "border-red-500/30 bg-red-500/10 text-red-300" };
+      if (ev.state === "approved") return { label: "approved", tone: "border-success/40 text-success" };
+      if (ev.state === "changes_requested") return { label: "requested changes", tone: "border-destructive/40 text-destructive" };
       return { label: "reviewed", tone: neutral };
     }
     if (ev.type === "line-comment") return { label: "line comment", tone: neutral };
@@ -3970,13 +3971,13 @@
   function renderPullReviewers(events, pullAuthor = "") {
     const reviewers = pullReviewSummary(events);
     const policy = pullReviewPolicy(events, pullAuthor);
-    const gateTone = policy.ready ? "text-emerald-400" : "text-amber-400";
+    const gateTone = policy.ready ? "text-success" : "text-attention";
     const gate = `<span class="mb-2 flex items-center justify-between gap-2"><strong class="${gateTone}">${policy.ready ? "Review requirement met" : "Independent review required"}</strong><span>${policy.approvals} approved${policy.blockers ? ` · ${policy.blockers} blocking` : ""}</span></span>`;
     if (!reviewers.length) return `${gate}<span>No reviews yet</span>`;
     // sidebarSection wraps this in a <p>, so rows must stay phrasing content
     // (span, not div) or the browser silently closes the paragraph early.
     return gate + reviewers.map((reviewer) => {
-      const tone = reviewer.state === "approved" ? "text-emerald-400" : reviewer.state === "changes_requested" ? "text-red-400" : "text-muted-foreground";
+      const tone = reviewer.state === "approved" ? "text-success" : reviewer.state === "changes_requested" ? "text-destructive" : "text-muted-foreground";
       const label = reviewer.state === "approved" ? "Approved" : reviewer.state === "changes_requested" ? "Requested changes" : "Commented";
       return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}<span class="truncate font-medium text-foreground">${escapeHtml(reviewer.authorName)}</span></span><span class="shrink-0 text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span>`;
     }).join("");
@@ -4566,7 +4567,7 @@
           </div>
           <div class="flex flex-wrap items-center justify-end gap-2">
             ${canManage ? `<button type="submit" data-repo-issue-comment-action="${issueOpen ? "close" : "open"}" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="${issueOpen ? "circle-check" : "rotate-ccw"}" class="h-4 w-4 text-muted-foreground"></i><span data-repo-issue-comment-close-label data-empty-label="${issueOpen ? "Close issue" : "Reopen issue"}" data-draft-label="${issueOpen ? "Close with comment" : "Reopen with comment"}">${issueOpen ? "Close issue" : "Reopen issue"}</span></button>` : ""}
-            <button type="submit" data-repo-issue-comment-submit data-repo-issue-comment-action="comment" class="inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"><span data-repo-issue-comment-spinner hidden class="fm-spinner" aria-hidden="true"></span>Comment<kbd class="hidden font-sans text-[11px] opacity-80 sm:inline">${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘↵" : "Ctrl↵"}</kbd></button>
+            <button type="submit" data-repo-issue-comment-submit data-repo-issue-comment-action="comment" class="inline-flex h-8 items-center gap-2 rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-60"><span data-repo-issue-comment-spinner hidden class="fm-spinner" aria-hidden="true"></span>Comment<kbd class="hidden font-sans text-[11px] opacity-80 sm:inline">${/Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘↵" : "Ctrl↵"}</kbd></button>
           </div>
         </form>
       </div>`;
@@ -4636,7 +4637,7 @@
         </label>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <span data-repo-discussion-reply-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
-          <button type="submit" data-repo-discussion-reply-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Reply</button>
+          <button type="submit" data-repo-discussion-reply-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Reply</button>
         </div>
       </form>`;
   }
@@ -4656,7 +4657,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"><i data-lucide="circle-x" class="h-4 w-4"></i>Request changes</button>
             <button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"><i data-lucide="circle-check" class="h-4 w-4"></i>Approve</button>
-            <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Comment</button>
+            <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Comment</button>
           </div>
         </div>
       </form>`;
@@ -4979,7 +4980,7 @@
     const rules = report.rules || [];
     if (!report.available) {
       if (!(report.organizations || []).length) return "";
-      return `<section data-repo-pull-rules class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-xs leading-5 text-muted-foreground"><span class="font-semibold text-amber-300">Pull request rules could not be checked.</span> ${escapeHtml((report.organizations || []).join(", "))} require rules on this repository, and no repository host evaluated them just now. Merging stays locked until one does.</section>`;
+      return `<section data-repo-pull-rules role="status" class="fm-flash fm-flash-warning"><i data-lucide="shield-alert"></i><div class="fm-flash-body"><span class="fm-flash-title">Pull request rules could not be checked.</span><p>${escapeHtml((report.organizations || []).join(", "))} require rules on this repository, and no repository host evaluated them just now. Merging stays locked until one does.</p></div></section>`;
     }
     if (!rules.length) return "";
     const blocking = rules.filter((rule) => rule.status !== "passed" && rule.enforcement === "block").length;
@@ -4989,17 +4990,17 @@
       : warnings
         ? `${warnings} rule${warnings === 1 ? "" : "s"} flagged; nothing blocks the merge`
         : `All ${rules.length} rule${rules.length === 1 ? "" : "s"} pass`;
-    const tone = blocking ? "text-destructive" : warnings ? "text-amber-300" : "text-emerald-400";
-    const frame = blocking ? "border-destructive/40" : warnings ? "border-amber-500/40" : "border-border";
+    const tone = blocking ? "text-destructive" : warnings ? "text-attention" : "text-success";
+    const frame = blocking ? "border-destructive/40" : warnings ? "border-attention/40" : "border-border";
     const rows = rules.map((rule) => {
       const failed = rule.status !== "passed";
       const blocks = rule.enforcement === "block";
       const icon = !failed ? "check-circle-2" : blocks ? "x-circle" : "alert-triangle";
-      const iconTone = !failed ? "text-emerald-400" : blocks ? "text-destructive" : "text-amber-300";
+      const iconTone = !failed ? "text-success" : blocks ? "text-destructive" : "text-attention";
       const problems = (rule.problems || []).map((problem) => `<li>${escapeHtml(String(problem))}</li>`).join("");
       return `
         <div data-repo-pull-rule="${escapeHtml(String(rule.id || ""))}" class="grid gap-1 px-4 py-3">
-          <span class="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground"><i data-lucide="${icon}" class="h-3.5 w-3.5 ${iconTone}"></i>${escapeHtml(String(rule.title || rule.id || "Rule"))}<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">${rule.source === "organization" ? "Organization" : "Repository"}</span>${failed ? `<span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${iconTone}">${blocks ? "Blocks merge" : "Flagged"}</span>` : ""}</span>
+          <span class="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground"><i data-lucide="${icon}" class="h-3.5 w-3.5 ${iconTone}"></i>${escapeHtml(String(rule.title || rule.id || "Rule"))}<span class="fm-label">${rule.source === "organization" ? "Organization" : "Repository"}</span>${failed ? `<span class="fm-label ${blocks ? "fm-label-danger" : "fm-label-attention"}">${blocks ? "Blocks merge" : "Flagged"}</span>` : ""}</span>
           ${problems ? `<ul class="ml-5 list-disc text-xs leading-5 text-muted-foreground">${problems}</ul>` : ""}
           ${failed && rule.suggestion ? `<p class="ml-5 text-xs leading-5 text-foreground"><span class="font-semibold">How to fix:</span> ${escapeHtml(String(rule.suggestion))}</p>` : ""}
         </div>`;
@@ -5056,27 +5057,27 @@
   const PULL_CHECK_STATES = {
     success: {
       label: "passed", icon: "check-circle-2",
-      tone: "text-emerald-300", outcome: "passed",
+      tone: "text-success", outcome: "passed",
     },
     failed: {
       label: "failed", icon: "x-circle",
-      tone: "text-red-300", outcome: "failed",
+      tone: "text-destructive", outcome: "failed",
     },
     rejected: {
       label: "rejected", icon: "shield-x",
-      tone: "text-red-300", outcome: "failed",
+      tone: "text-destructive", outcome: "failed",
     },
     running: {
       label: "running", icon: "loader-circle",
-      tone: "text-amber-300", outcome: "pending",
+      tone: "text-attention", outcome: "pending",
     },
     queued: {
       label: "queued", icon: "clock",
-      tone: "text-amber-300", outcome: "pending",
+      tone: "text-attention", outcome: "pending",
     },
     "awaiting-approval": {
       label: "awaiting approval", icon: "clock",
-      tone: "text-amber-300", outcome: "pending",
+      tone: "text-attention", outcome: "pending",
     },
     cancelled: {
       label: "cancelled", icon: "circle-slash",
@@ -5279,30 +5280,31 @@
     const rows = [];
     if (!readiness.clean) {
       const shown = readiness.conflicts.slice(0, 10);
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-red-300">Conflicts with ${escapeHtml(baseBranch)}.</strong> ${readiness.conflicts.length ? `${formatCount(readiness.conflicts.length)} file${readiness.conflicts.length === 1 ? "" : "s"} must be resolved locally: ` : ""}${shown.map((path) => `<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(path)}</span>`).join("")}${readiness.conflicts.length > shown.length ? `and ${formatCount(readiness.conflicts.length - shown.length)} more.` : ""}</p>`);
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-destructive">Conflicts with ${escapeHtml(baseBranch)}.</strong> ${readiness.conflicts.length ? `${formatCount(readiness.conflicts.length)} file${readiness.conflicts.length === 1 ? "" : "s"} must be resolved locally: ` : ""}${shown.map((path) => `<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(path)}</span>`).join("")}${readiness.conflicts.length > shown.length ? `and ${formatCount(readiness.conflicts.length - shown.length)} more.` : ""}</p>`);
     } else if (behind) {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-amber-300">Out of date.</strong> This branch is ${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-attention">Out of date.</strong> This branch is ${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
     } else {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-emerald-300">Up to date.</strong> This branch already contains ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-success">Up to date.</strong> This branch already contains ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
     }
     if (updated) {
       rows.push(`<p class="text-xs leading-5 text-muted-foreground">The mirror published the branch update. Normal repository sync carries it back to the source of truth.</p>`);
     } else if (update.message) {
-      rows.push(`<p class="text-xs leading-5 text-red-300">${escapeHtml(update.message)}</p>`);
+      rows.push(`<p class="text-xs leading-5 text-destructive">${escapeHtml(update.message)}</p>`);
     }
     // The control exists only when a real, signed, exact-OID update can be
     // dispatched right now by an actor the worker will actually authorize.
     // Otherwise the panel reports state and offers nothing to press: a button
     // that can only ever answer 403 is a worse answer than no button.
     const action = context && !updated && parsed.pullMergeAuthorized === true
-      ? `<button type="button" data-repo-pull-update ${processing ? "disabled" : ""} style="min-height:44px" class="inline-flex shrink-0 items-center gap-2 rounded-md border border-border bg-secondary px-4 text-sm font-semibold text-foreground hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="${processing ? "loader-circle" : "git-merge"}" class="h-4 w-4"></i>${processing ? "Updating branch…" : `Update branch from ${escapeHtml(baseBranch)}`}</button>`
+      ? `<button type="button" data-repo-pull-update ${processing ? "disabled" : ""} class="fm-btn fm-btn-sm shrink-0"><i data-lucide="${processing ? "loader-circle" : "git-merge"}"${processing ? ' class="animate-spin"' : ""}></i>${processing ? "Updating branch…" : `Update branch from ${escapeHtml(baseBranch)}`}</button>`
       : "";
     const summary = pullChecksSummary(parsed.pullChecks);
     const checksRow = summary.text
-      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-red-300" : summary.tone === "pending" ? "text-amber-300" : summary.tone === "good" ? "text-emerald-300" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
+      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-destructive" : summary.tone === "pending" ? "text-attention" : summary.tone === "good" ? "text-success" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
       : "";
     return `
-      <div data-repo-pull-readiness role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border ${readiness.clean ? "border-border" : "border-destructive/40"} bg-secondary/30 p-4">
+      <div data-repo-pull-readiness role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${!readiness.clean ? "fm-flash-danger" : behind ? "fm-flash-warning" : "fm-flash-neutral"} flex-wrap items-center">
+        <i data-lucide="${!readiness.clean ? "git-pull-request-closed" : behind ? "git-compare-arrows" : "git-pull-request"}" class="self-start"></i>
         <div class="grid min-w-0 flex-1 gap-1">
           <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(readiness.headOid.slice(0, 12))} · ${formatCount(readiness.ahead)} ahead · ${formatCount(behind)} behind</span>
           ${rows.join("")}
@@ -5414,8 +5416,9 @@
           ? "This pull request carries no committed patch or commit series, so a mirror cannot replay it."
           : "Merging needs the current base branch tip and the pull-request ledger commit from an online mirror; reload once a mirror answers.";
       return `
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="rounded-lg border border-border bg-secondary/30 p-4 text-xs text-muted-foreground">
-          ${escapeHtml(reason)}
+        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="fm-flash fm-flash-neutral">
+          <i data-lucide="info"></i>
+          <p class="fm-flash-body text-xs text-muted-foreground">${escapeHtml(reason)}</p>
         </div>`;
     }
     const stateName = String(merge.state || "ready");
@@ -5432,9 +5435,10 @@
         ? `This pull request does not meet ${unmet} required rule${unmet === 1 ? "" : "s"}. Fix what the rules list above, push, and the merge unlocks; the repository host enforces the same rules, so it cannot be waived here.`
         : "The organization's pull request rules have not been checked on a repository host yet, so the merge stays locked. Reload in a moment.";
       return `
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-secondary/30 p-4">
-          <span class="min-w-0 text-xs leading-5 text-muted-foreground">${escapeHtml(reason)}</span>
-          <button type="button" data-repo-pull-merge disabled style="min-height:44px" class="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="shield-x" class="h-4 w-4"></i>Rules not met</button>
+        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="fm-flash fm-flash-danger flex-wrap items-center">
+          <i data-lucide="shield-x" class="self-start"></i>
+          <span class="fm-flash-body text-xs text-muted-foreground">${escapeHtml(reason)}</span>
+          <div class="fm-flash-actions"><button type="button" data-repo-pull-merge disabled class="fm-btn fm-btn-sm fm-btn-cta">Rules not met</button></div>
         </div>`;
     }
     // The peer gate is advice to the owner, not a lock on them: this panel
@@ -5464,17 +5468,21 @@
         : failed
           ? escapeHtml(merge.message || "The mirror could not confirm the merge. Retrying reuses the same idempotent request.")
           : waiveReview
-            ? `<strong class="text-amber-300">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As an organization owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
+            ? `<strong class="text-foreground">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As an organization owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
             : `As an organization owner you can merge this pull request into ${escapeHtml(baseBranch)} now. An online mirror lands the exact reviewed commits, the relay pins that state, and the rest of the mirrors — and the source of truth when it reconnects — sync to it.`;
     const frame = failed
-      ? "border-destructive/40 bg-secondary/30"
-      : waiveReview
-        ? "border-amber-500/40 bg-amber-500/10"
-        : "border-border bg-secondary/30";
+      ? "fm-flash-danger"
+      : merged
+        ? "fm-flash-success"
+        : waiveReview
+          ? "fm-flash-warning"
+          : "fm-flash-neutral";
+    const flashIcon = failed ? "circle-x" : merged ? "git-merge" : waiveReview ? "shield-alert" : processing ? "loader-circle" : "git-merge";
     return `
-      <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border ${frame} p-4">
-        <span class="min-w-0 text-xs leading-5 text-muted-foreground">${status}</span>
-        <button type="button" data-repo-pull-merge ${processing || merged ? "disabled" : ""} style="min-height:44px" class="inline-flex shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="${merged ? "check-circle-2" : waiveReview ? "shield-alert" : "git-merge"}" class="h-4 w-4"></i>${label}</button>
+      <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${frame} flex-wrap items-center">
+        <i data-lucide="${flashIcon}" class="self-start${processing ? " animate-spin" : ""}"></i>
+        <span class="fm-flash-body text-xs text-muted-foreground">${status}</span>
+        <div class="fm-flash-actions"><button type="button" data-repo-pull-merge ${processing || merged ? "disabled" : ""} class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="${merged ? "check-circle-2" : waiveReview ? "shield-alert" : "git-merge"}"></i>${label}</button></div>
       </div>`;
   }
 
@@ -5623,12 +5631,12 @@
         : "estimated");
     const recipient = String(values.rewardRecipient || "").trim();
     const tone = status === "paid"
-      ? "text-emerald-400"
+      ? "text-success"
       : status === "cancelled"
         ? "text-muted-foreground"
         : status === "ready" || status === "submitted"
           ? "text-primary"
-          : "text-amber-300";
+          : "text-attention";
     return `<span class="font-semibold ${tone}">${escapeHtml(amount || "Reward")}</span> · ${escapeHtml(state)}${recipient ? ` · to ${escapeHtml(recipient)}` : ""}`;
   }
 
@@ -6039,7 +6047,7 @@
         <header data-repo-record-hero class="grid gap-3">
           <h2 class="text-2xl font-semibold leading-tight text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></h2>
           <p class="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span data-repo-record-state class="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground"><i data-lucide="${config.icon}" class="h-3.5 w-3.5"></i>${escapeHtml(recordState)}</span>
+            <span data-repo-record-state class="inline-flex items-center gap-1.5 rounded-full ${["closed", "rejected", "declined"].includes(String(recordState).toLowerCase()) ? "bg-[#6e7681]" : "bg-success"} px-2.5 py-1 text-xs font-semibold text-white"><i data-lucide="${config.icon}" class="h-3.5 w-3.5"></i>${escapeHtml(recordState)}</span>
             ${issueActorAvatarHtml(author, values.author, "h-6 w-6")}
             <span><span class="font-semibold text-foreground">${escapeHtml(author)}</span> ${isPulls ? `wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${pullRefChip(baseRepoLabel, baseBranch)} from ${pullRefChip(headRepoLabel, headBranch)}` : `opened this ${escapeHtml(config.itemLabel)} <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>`}</span>
             <span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Contributor</span>
@@ -6168,7 +6176,7 @@
     const descriptionForm = `
                       <form data-repo-issue-description-form class="hidden grid gap-2 border-t border-border p-4">
                         <textarea data-repo-issue-description-input rows="10" class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)]">${escapeHtml(body)}</textarea>
-                        <div class="flex justify-end gap-2"><button type="button" data-repo-issue-description-cancel class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Cancel</button><button type="submit" class="h-8 rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground">Update comment</button></div>
+                        <div class="flex justify-end gap-2"><button type="button" data-repo-issue-description-cancel class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Cancel</button><button type="submit" class="h-8 rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground">Update comment</button></div>
                       </form>`;
     const description = hasBody
       ? `<div data-repo-record-description="body">
@@ -6217,7 +6225,7 @@
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
     const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
-      ? `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(latestAgentEvent.agentProvider || "Agent", "", "h-5 w-5", true)}<span class="font-semibold">${escapeHtml(latestAgentEvent.agentProvider || "Agent")}</span><span class="text-muted-foreground">session #${escapeHtml(latestAgentEvent.agentSessionId)}</span>${latestAgentEvent.agentStatus ? `<span class="rounded-full border border-amber-500/40 px-1.5 font-mono text-[11px] leading-[18px] text-amber-500">${escapeHtml(latestAgentEvent.agentStatus)}</span>` : ""}</span>`
+      ? `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(latestAgentEvent.agentProvider || "Agent", "", "h-5 w-5", true)}<span class="font-semibold">${escapeHtml(latestAgentEvent.agentProvider || "Agent")}</span><span class="text-muted-foreground">session #${escapeHtml(latestAgentEvent.agentSessionId)}</span>${latestAgentEvent.agentStatus ? `<span class="rounded-full border border-attention/40 px-1.5 font-mono text-[11px] leading-[18px] text-attention">${escapeHtml(latestAgentEvent.agentStatus)}</span>` : ""}</span>`
       : `<span class="text-muted-foreground">No agent assigned</span>`}
         <button type="button" data-repo-issue-mcp-prompt title="${state.session?.sessionToken ? "Copy a ready-to-paste agent prompt that works this issue end to end, MCP server configuration and a generated connector token included (shift-click to paste a token this node already published)" : "Sign in to copy the agent prompt for this issue"}" class="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy MCP prompt</button>`;
     const labelValue = labels.length
@@ -6268,7 +6276,7 @@
       <article data-repo-record-detail="issues" class="min-w-0 bg-background">
         <div data-repo-issue-sticky aria-hidden="true" class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start overflow-visible sm:-mx-5">
           <div data-repo-issue-sticky-bar class="flex w-full -translate-y-full items-center gap-2 border-b border-border bg-background/95 px-3 py-2 opacity-0 backdrop-blur transition duration-150 sm:px-5">
-            <span class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${closed ? "bg-[#6e7681]" : "bg-primary"} px-2 text-[12px] font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-3.5 w-3.5"></i>${stateLabel}</span>
+            <span class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-2 text-[12px] font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-3.5 w-3.5"></i>${stateLabel}</span>
             <span class="min-w-0 truncate text-[14px] font-semibold text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></span>
           </div>
         </div>
@@ -6282,13 +6290,13 @@
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
               ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
-              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground hover:bg-primary/90">New issue</button>
+              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
           </div>
           ${renderRepoIssueParents(repo, parsed.issueDependencies)}
           <p class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[14px] text-muted-foreground">
-            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-primary"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${stateLabel}</span>
+            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${stateLabel}</span>
             <span>${formatCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}</span>
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
@@ -6357,12 +6365,12 @@
               ? `<h1 class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(item.title)} <span class="font-light text-muted-foreground">#${escapeHtml(number)}</span></h1>`
               : `<div class="grid min-w-0 flex-1 gap-2 pt-2">${bar("w-2/3", "h-7")}</div>`}
             <div class="flex shrink-0 items-center gap-2 pt-1">
-              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground hover:bg-primary/90">New issue</button>
+              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
             </div>
           </div>
           <p class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[14px] text-muted-foreground">
             ${item
-              ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-primary"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
+              ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
               : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
           </p>
         </header>
@@ -6502,10 +6510,10 @@
         : '<i data-lucide="milestone" class="h-4 w-4 text-muted-foreground"></i>';
     const row = (value, label, note = "", reason = "") => `
       <button type="button" role="option" aria-selected="${value && isSelected(value) ? "true" : "false"}" data-repo-issue-picker-option="${escapeHtml(value)}" class="grid w-full grid-cols-[16px_20px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary focus:bg-secondary focus:outline-none">
-        <i data-lucide="check" class="h-4 w-4 text-foreground ${value && isSelected(value) ? "" : "invisible"}"></i>
+        <i data-lucide="check" class="h-4 w-4 text-accent ${value && isSelected(value) ? "" : "invisible"}"></i>
         <span class="flex items-center justify-center">${value ? leading(value) : '<i data-lucide="x" class="h-4 w-4 text-muted-foreground"></i>'}</span>
         <span class="min-w-0"><span class="block truncate text-[14px] font-semibold text-foreground">${escapeHtml(label)}</span>${note ? `<span class="block truncate text-[12px] text-muted-foreground">${escapeHtml(note)}</span>` : ""}</span>
-        ${reason ? `<span class="rounded-full border border-border px-1.5 text-[11px] leading-[18px] text-muted-foreground">${escapeHtml(reason)}</span>` : "<span></span>"}
+        ${reason ? `<span class="fm-label">${escapeHtml(reason)}</span>` : "<span></span>"}
       </button>`;
     const rows = candidates.slice(0, 30).map((entry) => row(entry.value, entry.value, entry.note,
       field === "assignees" && !["assigned", "user"].includes(entry.reason) ? entry.reason : ""));
@@ -6531,7 +6539,7 @@
           <label class="grid gap-1 text-[12px] font-semibold text-muted-foreground">Start<input data-repo-issue-picker-field="start-date" type="date" value="${value("[data-repo-issue-start-date]")}" class="${input}" /></label>
           <label class="grid gap-1 text-[12px] font-semibold text-muted-foreground">Due<input data-repo-issue-picker-field="end-date" type="date" value="${value("[data-repo-issue-end-date]")}" class="${input}" /></label>
         </div>
-        <button type="button" data-repo-issue-picker-apply class="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-[14px] font-medium text-primary-foreground hover:bg-primary/90">Save fields</button>
+        <button type="button" data-repo-issue-picker-apply class="inline-flex h-8 items-center justify-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">Save fields</button>
       </div>`;
   }
 
@@ -6546,10 +6554,10 @@
     issuePicker = { field, selected, original: selected.join(","), query: "" };
     if (field === "assignees") loadRepoIssueAssigneeDirectory();
     section.insertAdjacentHTML("beforeend", `
-      <div data-repo-issue-picker="${field}" role="dialog" aria-label="${escapeHtml(copy.title)}" class="absolute right-0 top-10 z-40 w-[19rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-[rgb(var(--dashboard-popover-rgb))] text-left shadow-2xl">
+      <div data-repo-issue-picker="${field}" role="dialog" aria-label="${escapeHtml(copy.title)}" class="fm-popover absolute right-0 top-10 z-40 w-[19rem] max-w-[calc(100vw-2rem)] overflow-hidden text-left">
         <div class="flex items-center justify-between gap-2 py-2 pl-3 pr-2">
-          <span class="text-[14px] font-semibold text-foreground">${escapeHtml(copy.title)}</span>
-          <button type="button" data-repo-issue-picker-close aria-label="Close" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="x" class="h-4 w-4"></i></button>
+          <span class="text-[13px] font-semibold text-foreground">${escapeHtml(copy.title)}</span>
+          <button type="button" data-repo-issue-picker-close aria-label="Close" class="fm-btn fm-btn-sm fm-btn-icon fm-btn-invisible"><i data-lucide="x"></i></button>
         </div>
         ${field === "fields" ? renderIssueFieldsPicker() : `
         <div class="px-3 pb-2">
@@ -8036,9 +8044,10 @@
       warnParts.push(`${missing.length} issue${missing.length === 1 ? "" : "s"} (#${missing.slice(0, 12).join(", #")}${missing.length > 12 ? ", ..." : ""}) couldn't be read from the live mirror`);
     }
     const warnBar = warnParts.length
-      ? `<div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-yellow-500/10 px-4 py-2 text-xs text-foreground">
-          <span class="inline-flex items-center gap-1.5"><i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0 text-yellow-500"></i>${escapeHtml(warnParts.join(" · "))}.</span>
-          <button type="button" data-repo-issues-reload class="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2.5 font-medium text-foreground hover:bg-secondary"><i data-lucide="refresh-cw" class="h-3 w-3"></i>Retry</button>
+      ? `<div role="status" class="fm-flash fm-flash-warning fm-flash-full flex-wrap items-center border-t-0 px-4 py-2 text-xs">
+          <i data-lucide="triangle-alert" class="!mt-0"></i>
+          <span class="fm-flash-body">${escapeHtml(warnParts.join(" · "))}.</span>
+          <div class="fm-flash-actions"><button type="button" data-repo-issues-reload class="fm-btn fm-btn-sm"><i data-lucide="refresh-cw"></i>Retry</button></div>
         </div>`
       : "";
     // While the closed history is still being paged in (issue #427), show a
@@ -8056,7 +8065,9 @@
     setRepoIssueRecordOpen(false);
     container.innerHTML = filterBar + warnBar + (filtered.length
       ? renderRepoRecordList(filtered, config, "issues")
-      : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`) + allHint;
+      : issuesView.closedLoading
+        ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
+        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint;
     const viewsNav = $("[data-repo-issue-views]");
     if (viewsNav) viewsNav.innerHTML = renderIssueViewsNav();
     const heading = $("[data-repo-issue-view-title]");
@@ -8768,7 +8779,7 @@
       queries);
     container.innerHTML = visible.length
       ? renderRepoRecordList(visible, config, kind)
-      : `<div class="px-4 py-3 text-sm text-muted-foreground">${empty}</div>`;
+      : `<div class="fm-blankslate"><i data-lucide="${kind === "pulls" ? "git-pull-request" : "messages-square"}"></i><p class="fm-blankslate-desc">${empty}</p></div>`;
     window.lucide?.createIcons();
   }
 
@@ -8777,7 +8788,7 @@
     const catalogNote = Number.isFinite(count) && count > 0
       ? `The catalog reports ${formatCount(count)} discussion${count === 1 ? "" : "s"}, but ${count === 1 ? "it" : "they"} cannot be fetched because no mirror is reachable right now.`
       : "Discussions cannot be fetched because no mirror is reachable right now.";
-    return `<div class="px-4 py-3 text-sm text-muted-foreground">${catalogNote}</div>`;
+    return `<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Discussions unavailable</p><p class="fm-blankslate-desc">${catalogNote}</p></div>`;
   }
 
   async function loadRepoCollection(repo, kind, containerSelector) {
@@ -9561,7 +9572,7 @@
           <div class="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <span class="min-w-0 break-all font-mono text-[11px] text-foreground">${escapeHtml(hook.url)}</span>
             <span class="inline-flex shrink-0 items-center gap-1.5">
-              <span class="inline-flex h-2 w-2 rounded-full ${hook.active && !failing ? "bg-emerald-500" : failing ? "bg-destructive" : "bg-muted-foreground"}"></span>
+              <span class="inline-flex h-2 w-2 rounded-full ${hook.active && !failing ? "bg-success" : failing ? "bg-destructive" : "bg-muted-foreground"}"></span>
               <span class="text-[10px] text-muted-foreground">${hook.active ? (failing ? `${hook.consecutiveFailures} failed` : "active") : "paused"}</span>
             </span>
           </div>
@@ -9668,7 +9679,7 @@
     const status = $("[data-repo-forge-mirror-status]");
     if (!status) return;
     status.textContent = message || "";
-    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-emerald-600" : "text-muted-foreground"}`;
+    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
   }
 
   function repoForgeMirrorProviderLabel(body, provider) {
@@ -9694,7 +9705,7 @@
   }
 
   function repoForgeMirrorDot(tone) {
-    const color = tone === "good" ? "bg-emerald-500" : tone === "bad" ? "bg-destructive" : "bg-muted-foreground";
+    const color = tone === "good" ? "bg-success" : tone === "bad" ? "bg-destructive" : "bg-muted-foreground";
     return `<span class="inline-flex h-2 w-2 shrink-0 rounded-full ${color}"></span>`;
   }
 
@@ -9780,7 +9791,7 @@
       </div>
       <div class="flex flex-wrap items-center justify-end gap-2">
         ${mirror ? `<button type="button" data-repo-forge-mirror-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>` : ""}
-        <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"><i data-lucide="link" class="h-3.5 w-3.5"></i>${mirror ? "Save mirror" : `Connect ${escapeHtml(providerLabel)}`}</button>
+        <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="link" class="h-3.5 w-3.5"></i>${mirror ? "Save mirror" : `Connect ${escapeHtml(providerLabel)}`}</button>
       </div>
     </form>`;
   }
@@ -9877,7 +9888,7 @@
         <span class="grid min-w-0 flex-1 gap-0.5">
           <span class="flex min-w-0 items-center gap-2">
             <span class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title)}</span>
-            <span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] ${item.state === "open" ? "text-emerald-600" : "text-muted-foreground"}">${item.merged ? "merged" : escapeHtml(item.state)}</span>
+            <span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] ${item.state === "open" ? "text-success" : "text-muted-foreground"}">${item.merged ? "merged" : escapeHtml(item.state)}</span>
           </span>
           <span class="truncate text-[10px] text-muted-foreground">#${escapeHtml(item.number)} · @${escapeHtml(item.author)} · ${escapeHtml(relativeTimeLabel(item.updatedAt) || "")}${item.commentCount ? ` · ${Number(item.commentCount)} comment${Number(item.commentCount) === 1 ? "" : "s"}` : ""}${item.imported ? " · already imported" : item.mirrored ? " · came from ForkMesh" : ""}</span>
           ${item.excerpt ? `<span class="line-clamp-2 text-[11px] text-muted-foreground">${escapeHtml(item.excerpt)}</span>` : ""}
@@ -9897,7 +9908,7 @@
       <div class="max-h-96 divide-y divide-border overflow-y-auto">${picker.loading ? `<p class="px-3 py-4 text-[11px] text-muted-foreground">Loading from ${escapeHtml(providerLabel)}…</p>` : picker.error ? `<p class="px-3 py-4 text-[11px] text-destructive">${escapeHtml(picker.error)}</p>` : rows || `<p class="px-3 py-4 text-[11px] text-muted-foreground">Nothing here yet.</p>`}</div>
       <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
         <span class="inline-flex items-center gap-2 text-[11px] text-muted-foreground">${picker.page > 1 ? `<button type="button" data-repo-forge-mirror-pick-page="${picker.page - 1}" class="text-accent hover:underline">Newer</button>` : ""}<span>Page ${picker.page}</span>${picker.more ? `<button type="button" data-repo-forge-mirror-pick-page="${picker.page + 1}" class="text-accent hover:underline">Older</button>` : ""}</span>
-        <button type="button" data-repo-forge-mirror-import class="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-3 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"${picker.selected.size ? "" : " disabled"}><i data-lucide="download" class="h-3.5 w-3.5"></i>Import ${picker.selected.size || ""} selected</button>
+        <button type="button" data-repo-forge-mirror-import class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-3 text-[11px] font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-50"${picker.selected.size ? "" : " disabled"}><i data-lucide="download" class="h-3.5 w-3.5"></i>Import ${picker.selected.size || ""} selected</button>
       </div>
     </div>`;
     window.lucide?.createIcons();
@@ -10274,9 +10285,7 @@
       const body = $("[data-repo-about-release-body]");
       if (!section || !body) return;
       const when = relativeTimeLabel(repoReleaseTimestampMs(latest));
-      body.innerHTML = `
-        <span class="inline-flex items-center gap-1.5 rounded-md bg-primary/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground"><i data-lucide="tag" class="h-3 w-3"></i>${escapeHtml(String(latest.tag))}</span>
-        ${when ? `<p class="mt-1.5">released ${escapeHtml(when)}</p>` : ""}`;
+      body.innerHTML = `<span class="font-mono font-semibold text-foreground">${escapeHtml(String(latest.tag))}</span>${when ? ` · ${escapeHtml(when)}` : ""}`;
       section.classList.remove("hidden");
       window.lucide?.createIcons();
     } catch (_) { /* no releases — section stays hidden */ }
@@ -10286,7 +10295,7 @@
     const section = $("[data-repo-about-files]");
     const label = $("[data-repo-about-files-count]");
     if (!section || !label || !count) return;
-    label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""} files`;
+    label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""}`;
     section.classList.remove("hidden");
   }
 
@@ -10302,34 +10311,25 @@
     bar.innerHTML = ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = (weight / total) * 100;
-      return `<span title="${escapeHtml(language)}" style="width:${pct.toFixed(1)}%;background-color:${color}"></span>`;
+      return `<span title="${escapeHtml(language)}" class="h-full shrink-0 first:rounded-l-full last:rounded-r-full" style="width:${pct.toFixed(1)}%;min-width:2px;background-color:${color}"></span>`;
     }).join("");
     legend.innerHTML = ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = ((weight / total) * 100).toFixed(1);
-      return `<span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background-color:${color}"></span><span class="font-medium text-foreground">${escapeHtml(language)}</span> ${pct}%</span>`;
+      return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
     }).join("");
     section.classList.remove("hidden");
   }
 
-  // The identicon shown for a contributor. Keyed on the git email (falling back
-  // to the name) so two distinct people never collapse to the same swatch the
-  // way a name-initial + single hue did — a two-tone gradient plus up-to-two
-  // initials keeps each user visually distinct and stable across loads.
   function repoContributorAvatar(contributor) {
     const name = String(contributor?.name || contributor?.email || "?").trim();
     const email = String(contributor?.email || "").trim().toLowerCase();
     const commits = Number(contributor?.commits) || 0;
-    const key = email || name.toLowerCase();
-    let hash = 0;
-    for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    const hue = hash % 360;
-    const hue2 = (hue + 40 + ((hash >> 8) % 90)) % 360;
     const words = name.split(/[\s._@-]+/).filter(Boolean);
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
-    return `<span title="${escapeHtml(title)}" class="flex h-8 w-8 items-center justify-center rounded-full border border-background font-mono text-[10px] font-semibold uppercase text-white shadow-sm" style="background-image:linear-gradient(135deg, hsl(${hue} 60% 46%), hsl(${hue2} 58% 38%))">${escapeHtml(initials)}</span>`;
+    return `<span title="${escapeHtml(title)}" class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(initials)}</span>`;
   }
 
   // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
@@ -10344,7 +10344,10 @@
     const list = $("[data-repo-about-contribs-list]");
     if (!section || !count || !list) return;
     count.textContent = String(Number(total) || rows.length);
-    list.innerHTML = rows.slice(0, 14).map(repoContributorAvatar).join("");
+    const shown = rows.slice(0, 8);
+    const more = (Number(total) || rows.length) - shown.length;
+    list.innerHTML = shown.map(repoContributorAvatar).join("") +
+      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
     section.classList.remove("hidden");
   }
 
@@ -10572,12 +10575,13 @@
     const colors = repoSizeMapColors(tree);
     chart.innerHTML = repoSizeMapSvg(tree, colors, {
       view: 260,
-      hole: 42,
-      rings: 3,
-      centerTitle: formatSize(tree.size),
-      centerSub: `${Number(tree.fileCount || 0).toLocaleString()} files`,
-      centerTitleSize: 14,
+      hole: 70,
+      rings: 2,
+      centerTitle: "",
+      centerSub: "",
     }).svg;
+    const meta = $("[data-repo-about-sizemap-meta]");
+    if (meta) meta.textContent = formatSize(tree.size);
     open.onclick = () => activateRepoTab("sizemap");
     section.classList.remove("hidden");
   }
@@ -11000,9 +11004,9 @@
   // to read as in-flight yellow on a run that had already finished.
   function repoAgentStatusTone(status) {
     const value = String(status || "").toLowerCase();
-    if (value === "success" || value === "completed") return "text-primary";
+    if (value === "success" || value === "completed") return "text-success";
     if (["failed", "stopped", "rejected"].includes(value)) return "text-destructive";
-    return "text-yellow-500";
+    return "text-attention";
   }
 
   // The list column's status dot. Same three outcomes as repoAgentStatusTone,
@@ -11010,9 +11014,9 @@
   // dashboard's pre-built Tailwind sheet to carry a rule for it.
   function orgAgentStatusDotClass(status) {
     const value = String(status || "").toLowerCase();
-    if (value === "success" || value === "completed") return "bg-primary";
+    if (value === "success" || value === "completed") return "bg-success";
     if (["failed", "stopped", "rejected"].includes(value)) return "bg-destructive";
-    return "bg-yellow-500";
+    return "bg-attention";
   }
 
   function repoAgentIssueLabel(agent) {
@@ -11055,7 +11059,7 @@
           Owner-device encrypted
         </div>
         <p class="leading-5 text-muted-foreground">This session, its transcript, and its prompts can be opened only by the owner's ForkMesh desktop key. The browser and relay do not have that key.</p>
-        <a href="/desktop" class="inline-flex h-8 w-fit items-center gap-1.5 rounded-md bg-primary px-3 font-medium text-primary-foreground hover:bg-primary/90"><i data-lucide="monitor-down" class="h-3.5 w-3.5"></i>Open desktop downloads</a>
+        <a href="/desktop" class="inline-flex h-8 w-fit items-center gap-1.5 rounded-md bg-cta px-3 font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="monitor-down" class="h-3.5 w-3.5"></i>Open desktop downloads</a>
       </div>`;
   }
 
@@ -11819,10 +11823,10 @@
       document.body.appendChild(stack);
     }
     const notice = document.createElement("div");
-    notice.className = "flex items-start gap-2 rounded-md border border-destructive/40 bg-card p-3 text-xs leading-5 shadow-lg";
+    notice.className = "flex items-start gap-2 rounded-lg border border-destructive/40 bg-popover px-3 py-2.5 text-xs leading-5 text-foreground shadow-lg";
     const body = document.createElement("p");
     body.setAttribute("role", "alert");
-    body.className = "min-w-0 flex-1 whitespace-pre-wrap break-words text-destructive";
+    body.className = "min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground";
     body.textContent = text;
     const close = document.createElement("button");
     close.type = "button";
@@ -12031,7 +12035,7 @@
     const toneClass = tone === "danger"
       ? "border-destructive/50 text-destructive hover:bg-destructive/10"
       : tone === "primary"
-        ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+        ? "border-primary bg-cta text-cta-foreground hover:bg-cta/90"
         : "border-border text-foreground hover:bg-secondary";
     return `<button type="button" data-org-agent-action="${action}"${busy ? " disabled" : ""} class="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${toneClass} disabled:cursor-not-allowed disabled:opacity-50"${title ? ` title="${escapeHtml(title)}"` : ""}><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${escapeHtml(busy ? `${label}…` : label)}</button>`;
   }
@@ -12042,10 +12046,10 @@
     const files = Number(stats.files) || 0;
     const parts = [
       `${escapeHtml(formatCount(files))} ${files === 1 ? "file" : "files"}`,
-      `<span class="text-emerald-600">+${escapeHtml(formatCount(Number(stats.added) || 0))}</span>`,
+      `<span class="text-success">+${escapeHtml(formatCount(Number(stats.added) || 0))}</span>`,
       `<span class="text-destructive">−${escapeHtml(formatCount(Number(stats.removed) || 0))}</span>`,
     ];
-    if (Number(stats.behind) > 0) parts.push(`<span class="text-amber-500">${escapeHtml(formatCount(stats.behind))} behind</span>`);
+    if (Number(stats.behind) > 0) parts.push(`<span class="text-attention">${escapeHtml(formatCount(stats.behind))} behind</span>`);
     if (stats.conflicted === true) parts.push('<span class="text-destructive">Conflicts</span>');
     return parts.join(" ");
   }
@@ -12308,7 +12312,7 @@
     return `
       <section data-user-activity-card class="grid gap-2 rounded-md border border-border px-3 py-3" aria-label="${escapeHtml(summary.total ? `Today's activity: ${summary.total} interactions, active ${summary.activeText}.` : "Today's activity: nothing recorded yet.")}">
         <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-foreground">
-          <i data-lucide="mouse-pointer-click" class="h-3.5 w-3.5 text-emerald-600"></i>Today's activity
+          <i data-lucide="mouse-pointer-click" class="h-3.5 w-3.5 text-muted-foreground"></i>Today's activity
           <span data-user-activity-total class="ml-auto font-normal text-muted-foreground">${escapeHtml(formatCount(summary.total))} ${summary.total === 1 ? "interaction" : "interactions"}</span>
         </div>
         ${sources}
@@ -12355,15 +12359,15 @@
         <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span class="font-mono text-foreground">${escapeHtml(data.base || branchFacts.base || "base")}...${escapeHtml(data.branch || branchFacts.branch)}</span>
           <span>${escapeHtml(formatCount(files.length))} ${files.length === 1 ? "file" : "files"}</span>
-          <span class="text-emerald-600">+${escapeHtml(formatCount(Number(data.added) || 0))}</span>
+          <span class="text-success">+${escapeHtml(formatCount(Number(data.added) || 0))}</span>
           <span class="text-destructive">−${escapeHtml(formatCount(Number(data.removed) || 0))}</span>
           ${Number(data.commits) > 0 ? `<span>${escapeHtml(formatCount(data.commits))} ${Number(data.commits) === 1 ? "commit" : "commits"}</span>` : ""}
-          ${Number(data.behind) > 0 ? `<span class="text-amber-500">${escapeHtml(formatCount(data.behind))} behind ${escapeHtml(data.base || "base")}</span>` : ""}
-          ${data.merged ? '<span class="text-emerald-600">Merged</span>' : ""}
+          ${Number(data.behind) > 0 ? `<span class="text-attention">${escapeHtml(formatCount(data.behind))} behind ${escapeHtml(data.base || "base")}</span>` : ""}
+          ${data.merged ? '<span class="text-success">Merged</span>' : ""}
           ${data.clean === false ? '<span class="text-destructive">Conflicts with the base</span>' : ""}
         </div>
         ${conflicts.length ? `<div class="grid gap-1 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-[11px] text-destructive"><span class="font-semibold">Conflicting files</span><ul class="font-mono">${conflicts.map((path) => `<li>${escapeHtml(path)}</li>`).join("")}</ul></div>` : ""}
-        ${files.length ? `<ul class="grid gap-0.5 rounded-md border border-border bg-secondary/20 p-2 font-mono text-[11px]">${files.map((file) => `<li class="flex min-w-0 items-center gap-2"><span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(file?.path || "")}</span>${file?.binary ? '<span class="text-muted-foreground">binary</span>' : `<span class="text-emerald-600">+${escapeHtml(String(Number(file?.added) || 0))}</span><span class="text-destructive">−${escapeHtml(String(Number(file?.removed) || 0))}</span>`}</li>`).join("")}</ul>` : ""}
+        ${files.length ? `<ul class="grid gap-0.5 rounded-md border border-border bg-secondary/20 p-2 font-mono text-[11px]">${files.map((file) => `<li class="flex min-w-0 items-center gap-2"><span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(file?.path || "")}</span>${file?.binary ? '<span class="text-muted-foreground">binary</span>' : `<span class="text-success">+${escapeHtml(String(Number(file?.added) || 0))}</span><span class="text-destructive">−${escapeHtml(String(Number(file?.removed) || 0))}</span>`}</li>`).join("")}</ul>` : ""}
         ${diff.patch ? `
           <div class="grid gap-1">
             <div class="text-[11px] font-semibold text-foreground">Committed on the branch</div>
@@ -12753,7 +12757,7 @@
     return `
       <div data-org-agent-merge-actions class="grid gap-2">
         ${header(actions)}
-        ${view.notice ? `<p class="text-xs ${view.tone === "error" ? "text-destructive" : "text-emerald-600"}">${escapeHtml(view.notice)}</p>` : ""}
+        ${view.notice ? `<p class="text-xs ${view.tone === "error" ? "text-destructive" : "text-success"}">${escapeHtml(view.notice)}</p>` : ""}
         ${rows.length
           ? `<ul class="divide-y divide-border rounded-md border border-border bg-secondary/20 text-xs">${list}</ul>`
           : '<p class="text-xs text-muted-foreground">This repository has no workflow that runs on a push or by hand.</p>'}
@@ -12942,13 +12946,13 @@
   function orgAgentDiagnosticTone(level) {
     const value = String(level || "").toLowerCase();
     if (value === "attention") {
-      return { icon: "triangle-alert", box: "border-amber-500/40 bg-amber-500/10", mark: "text-amber-500" };
+      return { icon: "triangle-alert", box: "border-attention/40 bg-attention/10", mark: "text-attention" };
     }
     if (value === "ok") {
-      return { icon: "circle-check", box: "border-primary/40 bg-primary/10", mark: "text-primary" };
+      return { icon: "circle-check", box: "border-success/40 bg-success/10", mark: "text-success" };
     }
     if (value === "active") {
-      return { icon: "loader", box: "border-border bg-secondary/40", mark: "text-yellow-500" };
+      return { icon: "loader", box: "border-border bg-secondary/40", mark: "text-muted-foreground" };
     }
     return { icon: "clock", box: "border-border bg-secondary/30", mark: "text-muted-foreground" };
   }
@@ -13085,12 +13089,12 @@
     const text = String(item?.text || "");
     const clock = orgAgentClockHtml(item?.at);
     return `
-      <li${streaming ? " data-org-agent-live-entry" : ""} class="grid gap-1.5 rounded-md border ${streaming ? "border-yellow-500/40" : "border-border"} bg-background p-3">
+      <li${streaming ? " data-org-agent-live-entry" : ""} class="grid gap-1.5 rounded-md border ${streaming ? "border-attention/40" : "border-border"} bg-background p-3">
         <div class="flex flex-wrap items-center gap-2 text-[11px]">
           <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-secondary"><i data-lucide="${kind.icon}" class="h-3 w-3 text-muted-foreground"></i></span>
           <span class="font-semibold text-foreground">${escapeHtml(speaker)}</span>
           <span class="uppercase tracking-wide text-muted-foreground">${escapeHtml(kind.label)}</span>
-          ${streaming ? '<span class="inline-flex items-center gap-1.5 rounded-full border border-yellow-500/40 px-1.5 py-0.5 font-mono text-yellow-500"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-500"></span>streaming</span>' : ""}
+          ${streaming ? '<span class="inline-flex items-center gap-1.5 rounded-full border border-attention/40 px-1.5 py-0.5 font-mono text-attention"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-attention"></span>streaming</span>' : ""}
           ${item?.state ? `<span class="rounded-full border border-border px-1.5 py-0.5 font-mono ${repoAgentStatusTone(item.state)}">${escapeHtml(item.state)}</span>` : ""}
           ${clock ? `<span class="ml-auto text-muted-foreground">${clock}</span>` : ""}
         </div>
@@ -13192,7 +13196,7 @@
       orgAgentMetaRow("Reasoning", escapeHtml(facts.reasoningEffort)),
       orgAgentMetaRow(branchFacts.runner ? "Runner" : "Mirror", `<span class="font-mono">${escapeHtml(branchFacts.runner || session.targetNode || "pending")}</span>`),
       orgAgentMetaRow("Changes", orgAgentStatsHtml(branchFacts)),
-      orgAgentMetaRow("Merge", branchFacts.merging ? '<span class="text-amber-500">Merging…</span>' : branchFacts.merged ? `Merged into <span class="font-mono">${escapeHtml(branchFacts.merge.base || branchFacts.base || "base")}</span>${branchFacts.merge.branchDeleted ? " · branch removed" : ""}${branchFacts.pending.length ? ` · clean up pending on ${escapeHtml(branchFacts.pending.join(", "))}` : ""}` : (branchFacts.merge.state === "conflict" ? '<span class="text-destructive">Conflicts with the base</span>' : "")),
+      orgAgentMetaRow("Merge", branchFacts.merging ? '<span class="text-attention">Merging…</span>' : branchFacts.merged ? `Merged into <span class="font-mono">${escapeHtml(branchFacts.merge.base || branchFacts.base || "base")}</span>${branchFacts.merge.branchDeleted ? " · branch removed" : ""}${branchFacts.pending.length ? ` · clean up pending on ${escapeHtml(branchFacts.pending.join(", "))}` : ""}` : (branchFacts.merge.state === "conflict" ? '<span class="text-destructive">Conflicts with the base</span>' : "")),
       orgAgentMetaRow("Started by", `@${escapeHtml(session.createdBy || "member")}`),
       orgAgentMetaRow(
         "Branch",
@@ -13242,7 +13246,7 @@
           <button type="button" data-org-agent-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to sessions</button>
           <span class="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] ${repoAgentStatusTone(session.status)}">${escapeHtml(session.status || "unknown")}</span>
           ${branchFacts.runner ? `<span data-org-agent-runner class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"><i data-lucide="server" class="h-3 w-3"></i>Runner · ${escapeHtml(branchFacts.runner)}</span>` : ""}
-          ${facts.live ? '<span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-yellow-500"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-500"></span>live</span>' : ""}
+          ${facts.live ? '<span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-attention"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-attention"></span>live</span>' : ""}
           <div class="ml-auto flex flex-wrap items-center gap-2">
             ${opsActions}
             ${compareUrl && !branchFacts.branch ? `<a data-org-agent-compare href="${escapeHtml(compareUrl)}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary" title="View ${escapeHtml(facts.branchName)} against ${escapeHtml(baseBranch || repoDefaultBranch(repo))} in the diff viewer"><i data-lucide="git-compare-arrows" class="h-3.5 w-3.5"></i>View diff</a>` : ""}
@@ -13256,7 +13260,7 @@
             <h3 class="text-base font-semibold leading-tight text-foreground">${escapeHtml(facts.title)}</h3>
             ${branchFacts.branch ? `<span data-org-agent-branch class="font-mono text-[11px] text-muted-foreground">${escapeHtml(branchFacts.branch)} → ${escapeHtml(branchFacts.base || repoDefaultBranch(repo))}${branchFacts.stats.known === true ? ` · ${orgAgentStatsHtml(branchFacts)}` : ""}</span>` : ""}
           </header>
-          ${orgAgentOps.notice ? `<p data-org-agent-ops-notice class="text-xs ${orgAgentOps.tone === "error" ? "text-destructive" : "text-emerald-600"}">${escapeHtml(orgAgentOps.notice)}</p>` : ""}
+          ${orgAgentOps.notice ? `<p data-org-agent-ops-notice class="text-xs ${orgAgentOps.tone === "error" ? "text-destructive" : "text-success"}">${escapeHtml(orgAgentOps.notice)}</p>` : ""}
           ${showDiagnostic ? `
             <div data-org-agent-diagnostic class="flex items-start gap-2 rounded-md border ${tone.box} px-3 py-2 text-xs leading-5 text-foreground">
               <i data-lucide="${tone.icon}" class="mt-0.5 h-3.5 w-3.5 shrink-0 ${tone.mark}"></i>
@@ -13297,8 +13301,8 @@
             <form data-org-agent-followup="${escapeHtml(facts.id)}"${facts.finished ? " data-org-agent-followup-resumes" : ""} class="grid gap-2">
               <textarea name="prompt" required maxlength="8000" rows="2" class="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs text-foreground" placeholder="${facts.finished ? "Continue this session…" : "Revise or send another prompt…"}"></textarea>
               <div class="flex flex-wrap items-center gap-2">
-                <button type="submit" class="h-8 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90">Send</button>
-                <span data-org-agent-hint class="text-[11px] ${state.agentsView.notice ? "text-emerald-600" : "text-muted-foreground"}">${escapeHtml(state.agentsView.notice || (facts.finished ? "The mirror resumes this session on its branch with your message. Enter sends; Shift+Enter adds a line." : "Enter sends; Shift+Enter adds a line."))}</span>
+                <button type="submit" class="h-8 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90">Send</button>
+                <span data-org-agent-hint class="text-[11px] ${state.agentsView.notice ? "text-success" : "text-muted-foreground"}">${escapeHtml(state.agentsView.notice || (facts.finished ? "The mirror resumes this session on its branch with your message. Enter sends; Shift+Enter adds a line." : "Enter sends; Shift+Enter adds a line."))}</span>
               </div>
             </form>`
           : `<p class="text-[11px] text-muted-foreground">${facts.finished ? "This session never started on a node, so there is nothing to resume." : "This session is no longer accepting prompts."}</p>`}
@@ -13339,14 +13343,17 @@
                 <label class="grid gap-1 text-[11px] font-medium text-foreground">Run on<select data-org-agent-target name="targetNode" required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select></label>
               </div>
               <div class="flex flex-wrap items-center gap-2">
-                <button data-org-agent-start-button type="submit" class="h-9 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50">Start agent</button>
-                <span data-org-agent-hint class="text-[11px] ${notice ? "text-emerald-600" : "text-muted-foreground"}">${escapeHtml(notice || "The request is durable while the linked desktop is offline; it starts as soon as the node claims it.")}</span>
+                <button data-org-agent-start-button type="submit" class="h-9 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90 disabled:cursor-not-allowed disabled:opacity-50">Start agent</button>
+                <span data-org-agent-hint class="text-[11px] ${notice ? "text-success" : "text-muted-foreground"}">${escapeHtml(notice || "The request is durable while the linked desktop is offline; it starts as soon as the node claims it.")}</span>
               </div>
-              <p data-org-agent-setup hidden class="text-[11px] leading-5 text-muted-foreground">Nothing runs agents for this repository yet. <a href="/dashboard/runners?setup=1" class="font-semibold text-primary underline underline-offset-2">Set up a runner</a> on any Linux machine with one command, or <a href="/desktop" class="font-semibold text-primary underline underline-offset-2">get the desktop app</a> and open this repository in it.</p>
+              <p data-org-agent-setup hidden class="text-[11px] leading-5 text-muted-foreground">Nothing runs agents for this repository yet. <a href="/dashboard/runners?setup=1" class="font-medium text-accent hover:underline">Set up a runner</a> on any Linux machine with one command, or <a href="/desktop" class="font-medium text-accent hover:underline">get the desktop app</a> and open this repository in it.</p>
             </form>` : `
-            <div class="grid gap-1 text-xs text-muted-foreground">
-              <strong class="text-foreground">Agent queue access is unavailable</strong>
-              <span>${escapeHtml(accessReason || "You do not have permission to queue an agent for this repository.")}</span>
+            <div class="fm-flash fm-flash-neutral">
+              <i data-lucide="lock"></i>
+              <div class="fm-flash-body">
+                <span class="fm-flash-title">Agent queue access is unavailable</span>
+                <p>${escapeHtml(accessReason || "You do not have permission to queue an agent for this repository.")}</p>
+              </div>
             </div>`}
         </div>
       </section>`;
@@ -13953,13 +13960,18 @@
         state.agentsView.startPayload = null;
         state.agentsView.notice = "";
         container.innerHTML = `
-          <div class="grid gap-3 px-4 py-4 text-sm text-muted-foreground">
-            <div class="flex items-center gap-2 font-medium text-foreground"><i data-lucide="${ownerOnly ? "bot" : "shield-alert"}" class="h-4 w-4 ${ownerOnly ? "text-muted-foreground" : "text-amber-500"}"></i>${heading}</div>
-            <p class="max-w-2xl leading-6">${escapeHtml(detail)}</p>
-            ${ownerOnly ? `<div class="flex flex-wrap gap-2">
-              <a href="/dashboard/runners?setup=1" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="server" class="h-3.5 w-3.5"></i>Set up a runner</a>
-              <a href="/desktop" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="monitor-down" class="h-3.5 w-3.5"></i>Get the desktop app</a>
-            </div>` : ""}
+          <div class="px-4 py-4">
+            <div role="status" class="fm-flash ${ownerOnly ? "" : "fm-flash-warning"} flex-wrap">
+              <i data-lucide="${ownerOnly ? "info" : "shield-alert"}"></i>
+              <div class="fm-flash-body">
+                <span class="fm-flash-title">${heading}</span>
+                <p class="max-w-2xl">${escapeHtml(detail)}</p>
+              </div>
+              ${ownerOnly ? `<div class="fm-flash-actions">
+                <a href="/dashboard/runners?setup=1" class="fm-btn fm-btn-sm"><i data-lucide="server"></i>Set up a runner</a>
+                <a href="/desktop" class="fm-btn fm-btn-sm"><i data-lucide="monitor-down"></i>Get the desktop app</a>
+              </div>` : ""}
+            </div>
           </div>`;
         window.lucide?.createIcons();
         refreshBranchAgentStatus();
@@ -13971,10 +13983,15 @@
     state.agentsView.startPayload = null;
     state.agentsView.notice = "";
     container.innerHTML = `
-      <div class="grid gap-3 px-4 py-4 text-sm text-muted-foreground">
-        <div class="flex items-center gap-2 font-medium text-foreground"><i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>Owner-device encrypted agents</div>
-        <p class="max-w-2xl leading-6">Agent session snapshots, transcripts, results, and prompts are encrypted to a hybrid key whose private half stays in the owner's desktop vault. This browser cannot decrypt them, and ForkMesh administrators do not receive an override.</p>
-        <a href="/desktop" class="inline-flex h-9 w-fit items-center gap-2 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90"><i data-lucide="monitor-down" class="h-4 w-4"></i>Open desktop downloads</a>
+      <div class="px-4 py-4">
+        <div class="fm-flash fm-flash-neutral flex-wrap">
+          <i data-lucide="shield-check"></i>
+          <div class="fm-flash-body">
+            <span class="fm-flash-title">Owner-device encrypted agents</span>
+            <p class="max-w-2xl">Agent session snapshots, transcripts, results, and prompts are encrypted to a hybrid key whose private half stays in the owner's desktop vault. This browser cannot decrypt them, and ForkMesh administrators do not receive an override.</p>
+          </div>
+          <div class="fm-flash-actions"><a href="/desktop" class="fm-btn fm-btn-sm"><i data-lucide="monitor-down"></i>Open desktop downloads</a></div>
+        </div>
       </div>`;
     window.lucide?.createIcons();
     refreshBranchAgentStatus();
@@ -14270,7 +14287,7 @@
           ? '<span class="text-muted-foreground"> · no checkout of this repository</span>' : "";
         rows.push(`<div class="flex items-center gap-1.5"><span aria-hidden="true" class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span><span class="min-w-0 truncate"><strong class="font-semibold text-foreground">${label}</strong> connected, end to end encrypted${checkout}</span></div>`);
       } else if (entry.status === "connecting") {
-        rows.push(`<div class="flex items-center gap-1.5"><span aria-hidden="true" class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-yellow-500"></span><span class="min-w-0 truncate">Connecting to <strong class="font-semibold text-foreground">${label}</strong>…</span></div>`);
+        rows.push(`<div class="flex items-center gap-1.5"><span aria-hidden="true" class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-attention"></span><span class="min-w-0 truncate">Connecting to <strong class="font-semibold text-foreground">${label}</strong>…</span></div>`);
       } else {
         failed.push({ node, entry });
       }
@@ -14319,7 +14336,7 @@
     const toneClass = tone === "danger"
       ? "border-destructive/50 text-destructive hover:bg-destructive/10"
       : tone === "primary"
-        ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+        ? "border-primary bg-cta text-cta-foreground hover:bg-cta/90"
         : "border-border text-foreground hover:bg-secondary";
     return `<button type="button" data-desktop-agent-action="${action}"${busy ? " disabled" : ""} class="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium ${toneClass} disabled:cursor-not-allowed disabled:opacity-50"${title ? ` title="${escapeHtml(title)}"` : ""}><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${escapeHtml(busy ? `${label}…` : label)}</button>`;
   }
@@ -14333,7 +14350,7 @@
         : line.startsWith("@@")
           ? "text-primary"
           : line.startsWith("+")
-            ? "bg-emerald-500/10 text-emerald-600"
+            ? "bg-success/10 text-success"
             : line.startsWith("-")
               ? "bg-destructive/10 text-destructive"
               : "text-foreground";
@@ -14361,11 +14378,11 @@
         <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span class="font-mono text-foreground">${escapeHtml(data.base || "base")}...${escapeHtml(data.branch || session.branchName)}</span>
           <span>${escapeHtml(formatCount(files.length))} ${files.length === 1 ? "file" : "files"}</span>
-          <span class="text-emerald-600">+${escapeHtml(formatCount(added))}</span>
+          <span class="text-success">+${escapeHtml(formatCount(added))}</span>
           <span class="text-destructive">−${escapeHtml(formatCount(removed))}</span>
-          ${data.truncated ? '<span class="text-amber-500">Truncated: the full diff is on the desktop.</span>' : ""}
+          ${data.truncated ? '<span class="text-attention">Truncated: the full diff is on the desktop.</span>' : ""}
         </div>
-        ${files.length ? `<ul class="grid gap-0.5 rounded-md border border-border bg-secondary/20 p-2 font-mono text-[11px]">${files.map((file) => `<li class="flex min-w-0 items-center gap-2"><span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(file?.path || "")}</span>${file?.binary ? '<span class="text-muted-foreground">binary</span>' : `<span class="text-emerald-600">+${escapeHtml(String(Number(file?.added) || 0))}</span><span class="text-destructive">−${escapeHtml(String(Number(file?.removed) || 0))}</span>`}</li>`).join("")}</ul>` : ""}
+        ${files.length ? `<ul class="grid gap-0.5 rounded-md border border-border bg-secondary/20 p-2 font-mono text-[11px]">${files.map((file) => `<li class="flex min-w-0 items-center gap-2"><span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(file?.path || "")}</span>${file?.binary ? '<span class="text-muted-foreground">binary</span>' : `<span class="text-success">+${escapeHtml(String(Number(file?.added) || 0))}</span><span class="text-destructive">−${escapeHtml(String(Number(file?.removed) || 0))}</span>`}</li>`).join("")}</ul>` : ""}
         ${section("Committed on the branch", data.committed)}
         ${section("Uncommitted in the worktree", data.uncommitted)}
         ${untracked.length ? `<div class="grid gap-1"><div class="text-[11px] font-semibold text-foreground">New files not yet added</div><ul class="font-mono text-[11px] text-muted-foreground">${untracked.map((path) => `<li>${escapeHtml(path)}</li>`).join("")}</ul></div>` : ""}
@@ -14444,7 +14461,7 @@
           <button type="button" data-org-agent-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to sessions</button>
           <span class="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] ${repoAgentStatusTone(session.status)}">${escapeHtml(session.status || "unknown")}</span>
           <span class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"><i data-lucide="monitor" class="h-3 w-3"></i>${escapeHtml(session.desktopNode)}</span>
-          ${session.active ? '<span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-yellow-500"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-500"></span>live</span>' : ""}
+          ${session.active ? '<span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-attention"><span class="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-attention"></span>live</span>' : ""}
           <div class="ml-auto flex flex-wrap items-center gap-2">
             ${actions}
             ${desktopAgentButton("refresh", "refresh-cw", "Refresh")}
@@ -14455,7 +14472,7 @@
             <span class="font-mono text-[11px] text-muted-foreground">Desktop agent on ${escapeHtml(session.desktopNode)}</span>
             <h3 class="text-base font-semibold leading-tight text-foreground">${escapeHtml(session.title)}</h3>
           </header>
-          ${state.agentsView.desktopNotice ? `<p data-desktop-agent-notice class="text-xs ${state.agentsView.desktopNoticeTone === "error" ? "text-destructive" : "text-emerald-600"}">${escapeHtml(state.agentsView.desktopNotice)}</p>` : ""}
+          ${state.agentsView.desktopNotice ? `<p data-desktop-agent-notice class="text-xs ${state.agentsView.desktopNoticeTone === "error" ? "text-destructive" : "text-success"}">${escapeHtml(state.agentsView.desktopNotice)}</p>` : ""}
           ${session.lastError ? `
             <div class="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
               <i data-lucide="octagon-alert" class="mt-0.5 h-3.5 w-3.5 shrink-0"></i>
@@ -14479,7 +14496,7 @@
             <form data-desktop-agent-prompt="${escapeHtml(session.id)}" class="grid gap-2">
               <textarea name="prompt" required maxlength="16000" rows="2" class="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs text-foreground" placeholder="${session.active ? "Steer this agent…" : "Continue this agent with a new message…"}"></textarea>
               <div class="flex flex-wrap items-center gap-2">
-                <button type="submit" class="h-8 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90">Send</button>
+                <button type="submit" class="h-8 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90">Send</button>
                 <span class="text-[11px] text-muted-foreground">Sent straight to the desktop, encrypted end to end. Enter sends; Shift+Enter adds a line.</span>
               </div>
             </form>` : '<p class="text-[11px] text-muted-foreground">The desktop is not connected.</p>'}

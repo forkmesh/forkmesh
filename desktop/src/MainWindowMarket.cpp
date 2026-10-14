@@ -3651,6 +3651,7 @@ void MainWindow::applyAccountPackages(const QJsonArray &packages)
     bool installChanged = false;
     bool placesChanged = false;
     QSet<QString> settingsChanged;
+    QStringList carried;
     m_applyingAccountPackages = true;
     for (const QJsonValue &value : packages) {
         const QJsonObject entry = value.toObject();
@@ -3660,9 +3661,12 @@ void MainWindow::applyAccountPackages(const QJsonArray &packages)
             entry.value(QStringLiteral("installed"));
         if (!manifest || !manifest->accountSync || !installedValue.isBool())
             continue;
+        const bool unchosen = entry.value(QStringLiteral("unchosen")).toBool();
         const bool installed = m_packageRegistry->accountAnswerInstalls(
             *manifest, installedValue.toBool(),
-            entry.value(QStringLiteral("legacy")).toBool());
+            entry.value(QStringLiteral("legacy")).toBool(), unchosen);
+        if (unchosen && installed && !installedValue.toBool())
+            carried.append(id);
         const bool before = m_packageRegistry->isInstalled(id);
         if (m_packageRegistry->setInstalledState(id, installed) &&
             before != installed)
@@ -3688,6 +3692,8 @@ void MainWindow::applyAccountPackages(const QJsonArray &packages)
         }
     }
     m_applyingAccountPackages = false;
+    for (const QString &id : carried)
+        pushAccountPackageChange(id, QStringLiteral("install"));
     if (installChanged || placesChanged) {
         syncPackageRuntime();
         if (installChanged)

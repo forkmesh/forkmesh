@@ -279,6 +279,17 @@ Missed calls post the same "Missed audio/video call" line as the web.
   (`CallFaceLandmarks`: `VNDetectFaceLandmarksRequest`, `VNGeneratePersonSegmentationRequest`),
   returned to the page; the page falls back to its own tracker after three failures. Details:
   `docs/app/chat-direct-calls.md`.
+- **TrueDepth camera.** On phones with a front TrueDepth camera, `CallDepthCamera` owns the
+  camera (WebKit gets audio only). It pairs video and filtered depth, renders each frame upright
+  (not mirrored, at most 480 px) and runs Vision on it. It adds per-point depth
+  `z = (dFace - d) * fPx / dFace` (pixels, larger is nearer, `[x, y, z]`) and pushes
+  `window.fmCallFrame({ image, width, height, regions, mask, time })`. The page draws the frame
+  with `stage.pushFrame` and answers `{ event: "frame-done", landmarks, mask }`; one frame is in
+  flight. The page controls the camera with `{ event: "camera", id, op: "start" | "stop" }`, and
+  `window.fmCallCamera(id, { ok, error })` answers. Any failure (no device, denied, no frame within
+  1.5 s, `fmCallCameraFailed`) falls back to `getUserMedia` video. The depth maths
+  (`CallFaceDepth`, `CallDepthField`, `CallDepthOrientation`) is in `Direct/CallFaceDepth.swift`.
+  Protocol and rules: `docs/app/chat-direct-calls.md` ("iOS TrueDepth camera").
 - **Preview and recording.** The pre-call preview shows the WebView immediately (WebKit holds
   capture until the view is visible), with a 30 s watchdog. "Record message" records the page's
   outgoing tracks (`record`, `recordStop`, `recordChunk` of up to 768 KiB, `recordDrop`), up to
@@ -343,12 +354,12 @@ file under the 12 MiB limit.
 pages, `ChatMoveChannelSheet`, `ChatLinkPreviewCard`. Conversations are drawn by `Messages/`:
 `MessagesConversationView`, `MessagesBubbles.swift`, `MessagesMedia.swift`,
 `MessagesDetailsScreen`; calls by `Calls/` (`DirectCallViews.swift`, `DirectCallPreview.swift`,
-`WebCallPeer.swift`).
+`WebCallPeer.swift`, `CallFaceLandmarks.swift`, `CallDepthCamera.swift`).
 
 ## Tests and verification
 
 Core tests (Linux `swift test`) cover the relay, mesh (loopback sockets), local-control vectors,
 history store, direct messages, receipts, view-once media and captions, push decryption, link
-parsing and calls. The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
+parsing, calls and call face depth (`CallFaceDepthTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
 syntax-checked on Linux and compiled only on macOS CI; the Local Network prompt, multicast and
 device capture paths need on-device verification.
