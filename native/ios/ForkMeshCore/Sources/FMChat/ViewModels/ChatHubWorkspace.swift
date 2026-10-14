@@ -292,8 +292,14 @@ extension ChatHub {
     public func isUnread(_ conversation: String) -> Bool {
         if workspace.isMuted(conversation) { return false }
         if conversation == meshConversation { return mesh.hasUnread }
-        if DirectMessageFrames.isDirect(conversation) { return (direct?.record(for: conversation)?.unreadCount ?? 0) > 0 }
-        return relay.hasUnread(conversation)
+        let unread: Bool
+        if DirectMessageFrames.isDirect(conversation) {
+            unread = (direct?.record(for: conversation)?.unreadCount ?? 0) > 0
+        } else {
+            unread = relay.hasUnread(conversation)
+        }
+        if unread && workspace.notifyLevel(conversation) == .mentions { return hasUnreadMention(conversation) }
+        return unread
     }
 
     public func toggleSaved(_ message: ChatMessage, text: String) {

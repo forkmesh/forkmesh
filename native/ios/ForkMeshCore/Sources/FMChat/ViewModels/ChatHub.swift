@@ -32,6 +32,7 @@ public struct ChatRow: Equatable, Identifiable, Sendable {
     public var attachment: ChatAttachment?
     public var visitor = false
     public var receipt: ChatReceipt?
+    public var mentionsYou = false
 
     public init(message: ChatMessage, continuesGroup: Bool, queued: Bool, deletable: Bool) {
         self.message = message
@@ -119,6 +120,7 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public var forkbot: ChatAccountCalling?
     @ObservationIgnored public var apps: AppsClient?
     public private(set) var appCommands = AppCommandCatalog()
+    public private(set) var unreadStart: [String: String] = [:]
     public private(set) var appBusy: Set<String> = []
     @ObservationIgnored private var appCommandsLoaded = false
     @ObservationIgnored private var ephemeralSequence = 0
@@ -578,6 +580,7 @@ public final class ChatHub: ShellChatBridge {
         var out: [ChatRow] = []
         out.reserveCapacity(list.count)
         let mutableRoom = !inMesh && !isReadOnly(relay.currentConversation)
+        let own = ownNames
         for (index, message) in list.enumerated() {
             let previous = index == 0 ? nil : list[index - 1]
             let mutable = mutableRoom && message.app?.ephemeral != true
@@ -599,6 +602,7 @@ public final class ChatHub: ShellChatBridge {
             if !message.fileName.isEmpty { row.attachment = extras.attachment(for: message.id) }
             row.visitor = !message.isSelf && ChatVisitorPresence.isTransientVisitor(name: message.senderName)
             row.receipt = receipt(for: message, queued: queued)
+            row.mentionsYou = !message.isSelf && ChatSmartMentions.mentionsYou(row.text, own: own)
             out.append(row)
         }
         return out
@@ -927,9 +931,7 @@ public final class ChatHub: ShellChatBridge {
         if inMesh { return badge }
         if !serverCopiesLine.isEmpty { return "Direct message • \(serverCopiesLine)" }
         if title.hasPrefix("@") { return "Direct message • \(badge)" }
-        let members = office?.room(for: relay.currentConversation)?.members ?? []
-        if !members.isEmpty { return "\(members.count) \(members.count == 1 ? "member" : "members") • \(badge)" }
-        return "\(memberGroups.count) online • \(badge)"
+        return channelDetail(relay.currentConversation)
     }
 
     public var introLine: String {
@@ -1035,6 +1037,10 @@ public final class ChatHub: ShellChatBridge {
 
     public func select(_ conversation: String) {
         conversationChosen = true
+        if conversation != relay.currentConversation || unreadStart[conversation] == nil {
+            let start = ChatHub.firstUnreadId(messages(in: conversation), unread: unreadCount(conversation))
+            unreadStart = start.map { [conversation: $0] } ?? [:]
+        }
         workspace.setLastConversation(conversation)
         extras.sendTyping(conversation: relay.currentConversation, active: false)
         relay.switchConversation(conversation)
