@@ -5,6 +5,7 @@
               @media (min-width: 1100px) { .fc-layout { grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; } .fc-side { position: sticky; top: 0; } }
               .fc-card { border: 1px solid var(--fc-border); border-radius: .75rem; background: var(--fc-card); }
               .fc-stage { position: relative; aspect-ratio: 16 / 9; width: 100%; overflow: hidden; border-radius: .75rem; background: #0b0d12; }
+              .fc-stage.is-portrait { width: auto; height: min(78vh, 46rem); max-width: 100%; margin-inline: auto; }
               .fc-stage video { display: block; width: 100%; height: 100%; object-fit: contain; background: #0b0d12; }
               .fc-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; padding: 1.5rem; text-align: center; color: #e6e8ee; }
               .fc-empty p { max-width: 28rem; font-size: .85rem; color: #aab1c0; }
@@ -30,6 +31,7 @@
               .fc-swatch { display: block; aspect-ratio: 16 / 10; border-radius: .35rem; background: var(--fc-soft) center / cover no-repeat; }
               .fc-swatch.is-off { background-image: linear-gradient(135deg, transparent 46%, var(--fc-muted) 47%, var(--fc-muted) 53%, transparent 54%); }
               .fc-swatch.is-blur { background-image: radial-gradient(circle at 50% 60%, #8a94a8 0 22%, transparent 40%), linear-gradient(120deg, #4b5568, #9aa3b5); filter: blur(1.5px); }
+              .fc-swatch.is-outfit { aspect-ratio: 4 / 3; background-color: #dfe3ea; }
               .fc-swatch.is-custom:not([style*="url"]) { background-image: linear-gradient(var(--fc-soft), var(--fc-soft)); outline: 1px dashed var(--fc-muted); outline-offset: -4px; }
               .fc-bg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
               .fc-hint { margin-top: .5rem; font-size: .75rem; color: var(--fc-muted); }
@@ -48,7 +50,7 @@
             <div class="w-full p-3 sm:p-6">
               <div class="mb-4">
                 <h1 class="text-lg font-semibold text-foreground">Face Changer</h1>
-                <p class="mt-1 text-sm text-muted-foreground">Wear a stand-in face, swap your background and change your voice, live in this browser. Record a clip, take a snapshot, or pop the picture out into its own window to share it into any call or meeting app. Video and sound stay on this device.</p>
+                <p class="mt-1 text-sm text-muted-foreground">Wear a stand-in face, change your clothes, swap your background and change your voice, live in this browser. Record a clip, take a snapshot, or pop the picture out into its own window to share it into any call or meeting app. Video and sound stay on this device.</p>
               </div>
               <div class="fc-layout">
                 <div class="grid gap-3">
@@ -92,6 +94,11 @@
                     <span class="fc-label" id="fc-background-label">Background</span>
                     <div data-fc="backgrounds" class="fc-backgrounds" role="radiogroup" aria-labelledby="fc-background-label"></div>
                     <input data-fc="background-file" type="file" accept="image/*" hidden>
+                  </div>
+                  <div class="fc-section">
+                    <span class="fc-label" id="fc-outfit-label">Outfit</span>
+                    <div data-fc="outfits" class="fc-backgrounds" role="radiogroup" aria-labelledby="fc-outfit-label"></div>
+                    <p class="fc-hint">Drawn over your top half and follows you as you move.</p>
                   </div>
                   <div class="fc-section">
                     <span data-fc="voice-label" class="fc-label">Voice</span>

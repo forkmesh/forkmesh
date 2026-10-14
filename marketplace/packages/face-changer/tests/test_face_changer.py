@@ -96,13 +96,28 @@ def test_desktop_rail_link_opens_the_page():
 
 def test_page_uses_the_call_engine_from_the_app_and_copies_none_of_it():
     for module in ("/chat-call-faces.js", "/chat-call-voice.js", "/chat-call-backgrounds.js",
-                   "/chat-call-face-custom.js", "/call-studio.js"):
+                   "/chat-call-face-custom.js", "/call-studio.js", "/chat-call-outfits.js"):
         assert 'import("%s")' % module in PAGE
     assert "faces.createFaceStage({" in PAGE
     assert "mountVoicePreviewControls(" in PAGE
     assert "startStudioVoice(" in PAGE and "startStudioClip(" in PAGE
     assert not list(WEB.glob("chat-call-*.js"))
     assert "registerProcessor" not in PAGE and "getContext(\"webgl" not in PAGE
+
+
+def test_page_offers_outfits_and_remembers_the_choice():
+    assert 'data-fc="outfits"' in VIEW and 'aria-labelledby="fc-outfit-label"' in VIEW
+    assert "outfitId: state.support.backgrounds ? state.outfitId : \"\"," in PAGE
+    assert "state.stage?.setOutfit(state.outfitId);" in PAGE
+    assert "outfits.rememberCallOutfit(outfit.id);" in PAGE
+    assert "outfits.savedCallOutfit()" in PAGE
+    assert "outfits.callOutfitThumbnail(entry[0], document)" in PAGE
+
+
+def test_stage_takes_the_shape_of_the_picture():
+    assert ".fc-stage.is-portrait {" in VIEW
+    assert 'video.addEventListener("resize", fitStage);' in PAGE
+    assert 'stageBox.classList.toggle("is-portrait", Boolean(width && height && height > width));' in PAGE
 
 
 def test_raw_camera_is_never_shown():
