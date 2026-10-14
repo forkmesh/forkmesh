@@ -3050,6 +3050,19 @@ flat cards split by hairlines, and an installed state that matches reality.
   bug) and the updated `MarketTests`; all ForkMeshCore tests pass on Linux.
   The app files were only parsed.
 
+### 2.0.94 People: everyone around the campfire (2026-10-13, iOS and Android)
+
+The user asked for a phone page showing members' avatars and names in rings by
+engagement, like the World campfire, with a profile that offers Follow and
+Message, as a plugin on every platform. Route `.people` (`Route.People` on
+Android), URL `/dashboard/people`, menu App group after Organizations, gated
+by the `people` package. The screen is a campfire with five rings (Blazing,
+Glowing, Kindling, Warm, Embers), a row of ring chips that focus one ring, and
+a card per ring listing everyone in it; a sheet shows the profile with Follow
+(`PeopleProfileModel.toggleFollow`, `POST`/`DELETE /api/accounts/<name>/follow`)
+and Message (`.dm(user:)`, `Route.Dm`), behind `requireAccount` for guests.
+Rules, layout and the shared fixture: [People](../marketplace/people.md).
+
 ### 2.1 Behaviour of the tab row (WS3 builds it, WS8 checks it against this list)
 
 - **Selecting and reselecting.** Tapping a tab always shows its root
@@ -4097,6 +4110,7 @@ destination.
 | Discord (through the desktop) | `.discord(guild, channel)` | Chat | 9.17 | WS13 |
 | Mesh room | `.channel(.mesh)` | Chat | 8.7 | — |
 | Profile of a user or organization (`/@name`) | `.profile(name)` | current | 8.5, 9.4 | WS18 |
+| People: members in campfire rings, profile sheet with Follow and Message | `.people` | current (hub: App) | 8.5, 9.10 | WS18 |
 | Global search | `.search(query, scope)` | current | 1.5–1.7 | WS8 |
 | Notes, note | `.notes`, `.note(id)` | current (hub) | 10.1, 10.2 | WS15 |
 | Tasks, task | `.tasks(filter)`, `.task(id)` | current (hub) | 2.30, 5.25 | WS15 |

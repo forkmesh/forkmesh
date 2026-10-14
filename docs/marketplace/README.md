@@ -85,7 +85,11 @@ decides every outbound destination), `searchIndexChanged`,
 (calling it also refreshes that cache, at most once every five minutes).
 Packages read the directory through the host because their own `request` can
 reach only their API prefix. `promptTargetChanged` is described with
-`hostPromptTarget()` below.
+`hostPromptTarget()` below. `accountName` returns the signed-in ForkMesh
+account (lowercase, empty when signed out), `openDirectMessage(name)` opens or
+starts the private conversation with that account in the Chat page, and
+`openUserProfile(name)` shows the desktop's own profile dialog for it; all
+three were added for [People](people.md) (2026-10-13).
 
 The host's `request` rides out a relay hiccup before it reports one. When the
 network manager's host-wide cooldown suppresses the call (opened by a 5xx or
@@ -313,6 +317,7 @@ clients ignore them.
 | `forkmesh-sky-office` ([preview](../../marketplace/packages/forkmesh-sky-office/preview/README.md)) | virtual.world | World | off | The Sky Office district. |
 | `gemma-4` | agent | desktop | off | Local Ollama agent model (`agent.json`). |
 | [`glasses-alert`](../../marketplace/packages/glasses-alert/README.md) | extension.native | Android, iOS | off (on before 2026-10-11) | Glasses Alert: the phone scans Bluetooth adverts for Meta's and Luxottica's company IDs (Ray-Ban Meta, Oakley Meta) and rings a loud alarm with strong vibration, through silent mode, when a new pair comes near, then points an arrow and a live closeness bar at it. A pill floats over the app while watching, and other Bluetooth devices heard show as icons. Android scans in a `connectedDevice` foreground service; iOS scans while the app is open. On the device only (2026-10-07, arrow 2026-10-09). |
+| [`people`](people.md) | extension.native | web, desktop, iOS, Android | off | Everyone around a campfire, ringed by how active they are (Blazing, Glowing, Kindling, Warm, Embers); a profile card with Follow and Message. Reads the public directory the World campfire uses; one set of ring rules checked on every platform against a shared fixture (2026-10-13). |
 | `ledger` ([preview](../../marketplace/packages/ledger/preview/README.md)) | extension.native | desktop | off (on before 2026-10-11) | Rail link to the public Ledger plus local expense records. |
 | [`marketing`](../../marketplace/packages/marketing/README.md) | extension.native | web, desktop, Worker | off | Channel catalog, content calendar, ads manager, growth loop, Reddit desk, posted links. |
 | [`notes`](../../marketplace/packages/notes/README.md) | extension.native | web, desktop window | off (on before 2026-10-11) | Page for the host `/api/notes` service. |

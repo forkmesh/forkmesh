@@ -2907,6 +2907,24 @@ void MainWindow::syncNativePackagePages()
             host.specialAgents = nullptr;
             host.specialAgentAction = nullptr;
         }
+        host.accountName = [this] {
+            return AccountCapability::normalizedAccount(m_accountName);
+        };
+        host.openDirectMessage = [this](const QString &account) {
+            const QString name = account.trimmed().toLower();
+            if (forkmesh::ui::isValidNodeName(name))
+                startDirectMessageWith(name, QString(), QString());
+        };
+        host.openUserProfile = [this](const QString &account) {
+            const QString name = account.trimmed().toLower();
+            if (!forkmesh::ui::isValidNodeName(name))
+                return;
+            MemberInfo member;
+            member.name = name;
+            member.nodeName = name;
+            member.accountKind = QStringLiteral("user");
+            showChatUserProfile(member, {});
+        };
         forkmesh::market::NativePackageWidget *widget =
             contribution->factory(host, m_sectionStack);
         if (!widget)
