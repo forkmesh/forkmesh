@@ -288,13 +288,6 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
   `RelaySwitchController.attach`) or `ProjectsService.attachInstance`
   (Android) then brings the account and relay up on it. The desktop already
   worked this way (`project/instancePending`, docs/desktop/README.md).
-  On Android every `AccountSettings` the app builds goes through
-  `AccountSettings.forProject`, whose URL comes from the project (empty with
-  no instance); the unused `SettingsService.create`, which fell back to the
-  build's default server URL, was removed, and `ProjectsTest` checks that a
-  no-instance project's settings name no host even when a legacy
-  `server/url` is stored. iOS was checked the same way: `SettingsService.serverUrl`
-  reads `RelayDirectory.activeServerUrl`, which is empty for such a project.
 - 2026-10-13: a CRM list opens with two sections, **Reach out** (the best
   never-contacted lead) and **Follow up** (an unanswered reply, else the
   longest quiet past 14 days), as on the desktop and the web. Asked: "show two

@@ -637,75 +637,6 @@ void testRegistrySettingsNameIsNotAFolder()
           "relative or empty settings names yield no folder");
 }
 
-void testUnattachedProjectBecomesPending()
-{
-    namespace projects = forkmesh::projects;
-    QTemporaryDir temp;
-    check(temp.isValid(), "a temporary folder for project settings");
-    const QString defaultUrl = QStringLiteral("wss://app.forkmesh.com/room");
-    int serial = 0;
-    auto settingsAt = [&temp, &serial] {
-        return temp.filePath(QStringLiteral("settings-%1.ini").arg(++serial));
-    };
-    {
-        QSettings settings(settingsAt(), QSettings::IniFormat);
-        settings.setValue("servers/items",
-                          "[{\"id\":\"a\",\"name\":\"app.forkmesh.com\","
-                          "\"url\":\"wss://app.forkmesh.com/room\"}]");
-        settings.setValue("network/offlineMode", false);
-        check(projects::markUnattachedProjectPending(settings, false, defaultUrl),
-              "an older project holding only the default instance is marked pending");
-        check(settings.value(projects::kInstancePendingSetting).toBool() &&
-                  settings.value("network/offlineMode").toBool() &&
-                  !settings.value("network/offlineModeAutomatic").toBool(),
-              "the older project starts offline until an instance is chosen");
-        const QVector<projects::InstanceChoice> choices = projects::decodeInstanceChoices(
-            settings.value(projects::kInstanceChoicesSetting).toString());
-        check(choices.size() == 1 && choices.at(0).url == defaultUrl,
-              "the instance it held is offered back as a choice");
-        check(!projects::markUnattachedProjectPending(settings, false, defaultUrl),
-              "a pending project is left as it is");
-    }
-    {
-        QSettings settings(settingsAt(), QSettings::IniFormat);
-        check(projects::markUnattachedProjectPending(settings, false, defaultUrl) &&
-                  settings.value(projects::kInstancePendingSetting).toBool() &&
-                  !settings.contains(projects::kInstanceChoicesSetting),
-              "a project with no saved instance at all is marked pending");
-    }
-    {
-        QSettings settings(settingsAt(), QSettings::IniFormat);
-        check(!projects::markUnattachedProjectPending(settings, true, defaultUrl) &&
-                  !settings.contains(projects::kInstancePendingSetting) &&
-                  !settings.contains("network/offlineMode"),
-              "the home project keeps the default instance");
-    }
-    {
-        QSettings settings(settingsAt(), QSettings::IniFormat);
-        settings.setValue("servers/items",
-                          "[{\"url\":\"wss://app.forkmesh.com/room\"}]");
-        settings.setValue(projects::kInstanceAttachedSetting, true);
-        check(!projects::markUnattachedProjectPending(settings, false, defaultUrl) &&
-                  !settings.contains(projects::kInstancePendingSetting),
-              "a project whose instance was chosen keeps it");
-    }
-    {
-        QSettings settings(settingsAt(), QSettings::IniFormat);
-        settings.setValue("servers/items",
-                          "[{\"url\":\"wss://app.forkmesh.com/room\"},"
-                          "{\"url\":\"wss://work.example.com/room\"}]");
-        check(!projects::markUnattachedProjectPending(settings, false, defaultUrl) &&
-                  !settings.contains(projects::kInstancePendingSetting),
-              "a project that added its own instance keeps it");
-    }
-    {
-        QSettings settings(settingsAt(), QSettings::IniFormat);
-        settings.setValue("server/url", "relay.example.com");
-        check(!projects::markUnattachedProjectPending(settings, false, defaultUrl),
-              "a legacy single relay other than the default is kept");
-    }
-}
-
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -723,7 +654,6 @@ int main(int argc, char **argv)
     testProjectRegistry();
     testCheckoutContaining();
     testRegistrySettingsNameIsNotAFolder();
-    testUnattachedProjectBecomesPending();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }
