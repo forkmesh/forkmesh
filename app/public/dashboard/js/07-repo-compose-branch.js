@@ -61,7 +61,7 @@
             ${composeIdentityHtml(state.session, "Filing")}
             <span data-repo-issue-hint class="text-[11px] text-muted-foreground">An eligible online mirror will add signed issues directly to this repository.</span>
           </div>
-          <button type="submit" data-repo-issue-submit title="Submit issue (Ctrl+Enter / ⌘+Enter)" aria-keyshortcuts="Control+Enter Meta+Enter" class="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Submit issue</button>
+          <button type="submit" data-repo-issue-submit title="Submit issue (Ctrl+Enter / ⌘+Enter)" aria-keyshortcuts="Control+Enter Meta+Enter" class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Submit issue</button>
         </div>
       </form>`;
     window.lucide?.createIcons();
@@ -578,7 +578,7 @@
             ${composeIdentityHtml(state.session, "Filing")}
             <span data-repo-issue-import-hint class="text-[11px] text-muted-foreground">Eligible online mirrors add accepted issues directly to the repository.</span>
           </div>
-          <button type="submit" data-repo-issue-import-submit disabled class="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Import issues</button>
+          <button type="submit" data-repo-issue-import-submit disabled class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Import issues</button>
         </div>
       </form>`;
     window.lucide?.createIcons();
@@ -754,7 +754,7 @@
             ${composeIdentityHtml(state.session, "Filing")}
             <span data-repo-pull-hint class="text-[11px] text-muted-foreground">${parent ? `Submitting from your fork to ${escapeHtml(targetLabel)}.` : "Eligible online mirrors commit accepted pull requests directly."}</span>
           </div>
-          <button type="submit" data-repo-pull-submit title="Create pull request (Ctrl+Enter / ⌘+Enter)" aria-keyshortcuts="Control+Enter Meta+Enter" class="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Create pull request</button>
+          <button type="submit" data-repo-pull-submit title="Create pull request (Ctrl+Enter / ⌘+Enter)" aria-keyshortcuts="Control+Enter Meta+Enter" class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Create pull request</button>
         </div>
       </form>`;
     window.lucide?.createIcons();
@@ -802,7 +802,7 @@
         <button type="button" data-repo-compare-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to pull requests</button>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" data-repo-compare-refresh class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
-          <button type="button" data-repo-compare-pull class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>Create pull request</button>
+          <button type="button" data-repo-compare-pull class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>Create pull request</button>
         </div>
       </div>
       <header class="grid gap-1 rounded-lg border border-border bg-secondary/30 p-4">
@@ -1117,7 +1117,7 @@
     return rows.slice(0, 100).map((file) => `
       <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-t border-border px-4 py-2 text-xs">
         <span class="min-w-0 truncate font-mono text-foreground">${escapeHtml(file.path || "file")}</span>
-        <span class="font-mono text-primary">+${escapeHtml(file.adds ?? "0")}</span>
+        <span class="font-mono text-success">+${escapeHtml(file.adds ?? "0")}</span>
         <span class="font-mono text-destructive">-${escapeHtml(file.dels ?? "0")}</span>
       </div>`).join("");
   }
@@ -1263,7 +1263,7 @@
     const mismatch = options.mismatch === true;
     const title = options.title || String(shown);
     return `
-        <td style="max-width:18rem" class="truncate whitespace-nowrap px-1 py-1 text-[10px] font-mono ${mismatch ? "text-amber-600 underline decoration-amber-500/60" : "text-muted-foreground"}" title="${escapeHtml(title)}">${escapeHtml(shown)}</td>`;
+        <td style="max-width:18rem" class="truncate whitespace-nowrap px-1 py-1 text-[10px] font-mono ${mismatch ? "text-attention underline decoration-attention/60" : "text-muted-foreground"}" title="${escapeHtml(title)}">${escapeHtml(shown)}</td>`;
   }
 
   // Retiring a node is a platform-administrator action, so the column only
@@ -1355,7 +1355,7 @@
     } else if (verified) {
       label = "verified";
       icon = "badge-check";
-      color = "text-primary";
+      color = "text-success";
     } else if (integrity === "failed") {
       label = "failed";
       icon = "shield-alert";
@@ -1363,11 +1363,11 @@
     } else if (checkedAt && integrity === "ok") {
       label = "unreachable";
       icon = "unplug";
-      color = "text-amber-500";
+      color = "text-attention";
     } else if (checkedAt) {
       label = "unverified";
       icon = "shield-alert";
-      color = "text-amber-500";
+      color = "text-attention";
     }
     const reason = String(mirror.directReason || "unchecked").replaceAll("_", " ");
     const refs = String(mirror.directRefsSha256 || "").trim();
@@ -1526,13 +1526,13 @@
     const rowClass = isServing
       ? "bg-primary/10"
       : behind
-        ? "bg-amber-500/10"
+        ? "bg-attention/10"
         : "transition-colors hover:bg-secondary/40";
     const statusIcon = online ? "radio" : "circle";
-    const statusColor = online ? (behind ? "text-amber-500" : "text-primary") : "text-muted-foreground";
+    const statusColor = online ? (behind ? "text-attention" : "text-success") : "text-muted-foreground";
     const nodeFlags = [
       isSource ? '<i data-lucide="database" class="inline-block h-3 w-3 text-muted-foreground" title="Source of truth"></i><span class="sr-only">Source of truth</span>' : "",
-      behind ? '<i data-lucide="git-compare-arrows" class="inline-block h-3 w-3 text-amber-500" title="Out of sync"></i><span class="sr-only">Out of sync</span>' : "",
+      behind ? '<i data-lucide="git-compare-arrows" class="inline-block h-3 w-3 text-attention" title="Out of sync"></i><span class="sr-only">Out of sync</span>' : "",
       integrityRejected ? '<i data-lucide="shield-alert" class="inline-block h-3 w-3 text-destructive" title="Failing integrity pin"></i><span class="sr-only">Failing integrity pin</span>' : "",
     ].join("");
     const capabilityTitle = operations.length
@@ -1624,11 +1624,11 @@
       : `<span title="${nodeName}" class="block min-w-0 truncate text-foreground font-mono font-medium">${nodeName}</span>`;
     return `
         <div class="${rowClass}">
-          <i data-lucide="${online ? "radio" : "circle"}" class="h-4 w-4 ${online ? "text-primary" : "text-muted-foreground"}"></i>
+          <i data-lucide="${online ? "radio" : "circle"}" class="h-4 w-4 ${online ? "text-success" : "text-muted-foreground"}"></i>
           <span class="min-w-0 space-y-1">
             <span class="flex min-w-0 items-center justify-between gap-2">
               <span class="min-w-0">${nodeLabel}</span>
-              <span class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${online ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted-foreground"}">${escapeHtml(mirror.status || "unknown")}</span>
+              <span class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${online ? "border-success/30 bg-success/10 text-success" : "border-border text-muted-foreground"}">${escapeHtml(mirror.status || "unknown")}</span>
             </span>
             <span class="flex min-w-0 flex-wrap items-center gap-1.5">
               ${isSource ? '<span class="shrink-0 rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">source of truth</span>' : ""}
@@ -1708,8 +1708,9 @@
   function renderRepoSyncStatus() {
     const sync = state.repoSyncStatus;
     if (!sync) return "";
-    const tone = sync.severity === "error" ? "text-destructive" : "text-muted-foreground";
-    return `<p data-repo-sync-status="${escapeHtml(sync.state)}" role="status" class="px-1 pb-2 text-xs ${tone}"><span class="font-medium text-foreground">${escapeHtml(sync.label)}</span> · ${escapeHtml(sync.summary)}</p>`;
+    const flash = sync.severity === "error" ? "fm-flash-danger" : sync.severity === "warning" ? "fm-flash-warning" : "fm-flash-neutral";
+    const icon = sync.severity === "error" ? "circle-x" : sync.severity === "warning" ? "triangle-alert" : "refresh-cw";
+    return `<p data-repo-sync-status="${escapeHtml(sync.state)}" role="status" class="fm-flash ${flash} mx-1 mb-2 px-3 py-2 text-xs"><i data-lucide="${icon}"></i><span class="fm-flash-body text-muted-foreground"><span class="font-medium text-foreground">${escapeHtml(sync.label)}</span> · ${escapeHtml(sync.summary)}</span></p>`;
   }
 
   // Availability proof and repository risk (forkmesh-availability-proof-v1,
@@ -1758,7 +1759,7 @@
     const riskItems = risks.map((risk) => `<li data-repo-availability-risk="${escapeHtml(risk.code)}" class="py-1.5">
         <div class="flex flex-wrap items-baseline gap-x-2"><span class="font-medium text-foreground">${escapeHtml(risk.title)}</span><span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(risk.code)} · +${escapeHtml(String(Number(risk.weight) || 0))}</span></div>
         <p class="text-muted-foreground">${escapeHtml(risk.detail)}</p>
-        <a data-repo-availability-action="${escapeHtml(risk.action?.kind || "")}" href="${escapeHtml(availabilityDocsHref(risk.action?.href))}" target="_blank" rel="noopener" class="text-primary hover:underline">${escapeHtml(risk.action?.label || "What to do")}</a>
+        <a data-repo-availability-action="${escapeHtml(risk.action?.kind || "")}" href="${escapeHtml(availabilityDocsHref(risk.action?.href))}" target="_blank" rel="noopener" class="text-accent hover:underline">${escapeHtml(risk.action?.label || "What to do")}</a>
       </li>`).join("");
     const copyRows = copies.map((copy) => `<tr data-repo-availability-copy="${escapeHtml(copy.class)}">
         <td class="px-1 py-0.5 font-mono">${escapeHtml(copy.node || "—")}</td>
@@ -2402,8 +2403,8 @@
       : formatCount(contributorTotal);
     return `
       <div class="grid gap-4 p-4">
-        ${unavailable ? '<div class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">The live mirror is unavailable; showing the latest catalog activity.</div>' : ""}
-        ${!stats && !unavailable ? '<div class="rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">This mirror provides only its latest 60 commits. Upgrade it to see complete contributor, language, and code-size insights.</div>' : ""}
+        ${unavailable ? '<div role="status" class="fm-flash fm-flash-warning"><i data-lucide="cloud-off"></i><p class="fm-flash-body text-foreground">The live mirror is unavailable; showing the latest catalog activity.</p></div>' : ""}
+        ${!stats && !unavailable ? '<div class="fm-flash fm-flash-neutral"><i data-lucide="info"></i><p class="fm-flash-body text-muted-foreground">This mirror provides only its latest 60 commits. Upgrade it to see complete contributor, language, and code-size insights.</p></div>' : ""}
         <div class="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
           <section class="rounded-lg border border-border p-3" aria-labelledby="repo-insights-summary">
             <h3 id="repo-insights-summary" class="mb-3 text-xs font-semibold text-foreground">Repository summary</h3>
@@ -2659,9 +2660,9 @@
 
   function repoBranchAgentTone(status) {
     const value = String(status || "").toLowerCase();
-    if (value === "success") return "text-primary";
+    if (value === "success") return "text-success";
     if (value === "failed" || value === "stopped") return "text-destructive";
-    if (value === "running") return "text-yellow-500";
+    if (value === "running") return "text-attention";
     return "text-muted-foreground";
   }
 
@@ -2702,34 +2703,30 @@
       const commit = String(branch.commit || "").slice(0, 7);
       const updated = branch.updatedAt ? formatDate(branch.updatedAt) : "";
       return `
-        <button type="button" role="menuitemradio" aria-checked="${checked ? "true" : "false"}" data-repo-branch-name="${escapeHtml(name)}" class="grid w-full grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${checked ? "text-foreground" : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"}">
-          <i data-lucide="${checked ? "check" : "git-branch"}" class="h-4 w-4 shrink-0 ${checked ? "text-foreground" : "text-muted-foreground"}"></i>
-          <span class="min-w-0 truncate font-semibold">${escapeHtml(name)}</span>
-          <span class="flex min-w-0 items-center gap-2">
-            ${name === defaultBranch ? '<span data-repo-branch-default class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-foreground">default</span>' : ""}
-            ${commit || updated ? `<span class="hidden max-w-32 truncate font-mono text-[10px] text-muted-foreground sm:inline">${escapeHtml([commit, updated].filter(Boolean).join(" · "))}</span>` : ""}
-          </span>
+        <button type="button" role="menuitemradio" aria-checked="${checked ? "true" : "false"}" data-repo-branch-name="${escapeHtml(name)}" class="fm-menu-item">
+          <i data-lucide="git-branch"></i>
+          <span class="min-w-0 flex-1 truncate${checked ? " font-semibold" : ""}">${escapeHtml(name)}</span>
+          ${name === defaultBranch ? '<span data-repo-branch-default class="fm-label">default</span>' : ""}
+          ${commit || updated ? `<span class="hidden max-w-32 truncate font-mono text-[11px] text-muted-foreground sm:inline">${escapeHtml([commit, updated].filter(Boolean).join(" · "))}</span>` : ""}
         </button>`;
     }).join("");
     return `
-      <div data-repo-branch-menu role="menu" class="${open ? "" : "hidden"} absolute left-0 top-full z-30 mt-2 w-[30rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
-        <div class="flex items-center justify-between gap-3 px-4 py-3">
-          <h3 class="text-sm font-semibold text-foreground">Switch branches</h3>
-          <button type="button" data-repo-branch-close aria-label="Close branch picker" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="x" class="h-4 w-4"></i></button>
+      <div data-repo-branch-menu role="menu" class="${open ? "" : "hidden"} fm-popover absolute left-0 top-full z-30 mt-1 w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden">
+        <div class="flex items-center justify-between gap-3 py-2 pl-3 pr-2">
+          <h3 class="text-[13px] font-semibold text-foreground">Switch branches</h3>
+          <button type="button" data-repo-branch-close aria-label="Close branch picker" class="fm-btn fm-btn-sm fm-btn-icon fm-btn-invisible"><i data-lucide="x"></i></button>
         </div>
-        <div class="px-3 pb-3">
-          <label class="flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm text-muted-foreground focus-within:ring-1 focus-within:ring-foreground/20">
+        <div class="px-2 pb-2">
+          <label class="flex h-8 items-center gap-2 rounded-md border border-border bg-background px-2 text-[13px] text-muted-foreground focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
             <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
             <input data-repo-branch-search type="search" autocomplete="off" spellcheck="false" value="${escapeHtml(query)}" placeholder="Find a branch..." class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" />
           </label>
         </div>
-        <div class="flex border-y border-border">
-          <span class="inline-flex h-12 items-center border-r border-border bg-secondary px-4 text-sm font-semibold text-foreground">Branches</span>
+        <div class="border-t border-border px-3 pt-2 text-[11px] font-medium text-muted-foreground">Branches</div>
+        <div class="fm-menu max-h-72 overflow-auto">
+          ${rows || '<div class="px-2 py-3 text-center text-[13px] text-muted-foreground">No branches match this search.</div>'}
         </div>
-        <div class="max-h-72 overflow-auto py-4">
-          ${rows || '<div class="px-4 py-3 text-sm text-muted-foreground">No branches match this search.</div>'}
-        </div>
-        <a href="${escapeHtml(`${repoLinkUrl(repo)}/branches`)}" data-repo-branch-view-all data-plugin-entry="branches" class="flex h-12 w-full items-center border-t border-border px-4 text-left text-sm font-semibold text-foreground hover:bg-secondary/60 transition-colors">View all branches</a>
+        <a href="${escapeHtml(`${repoLinkUrl(repo)}/branches`)}" data-repo-branch-view-all data-plugin-entry="branches" class="flex h-9 w-full items-center justify-center border-t border-border px-3 text-[13px] font-medium text-accent hover:bg-foreground/5">View all branches</a>
       </div>`;
   }
 
@@ -3091,8 +3088,8 @@
     slot.hidden = false;
     slot.innerHTML = `
       <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/30 px-4 py-2">
-        <span class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Reported by this repository's node</span>
-        <button type="button" data-repo-branch-results-clear class="text-[10px] font-medium text-muted-foreground hover:text-foreground">Clear</button>
+        <span class="text-xs font-medium text-foreground">Reported by this repository's node</span>
+        <button type="button" data-repo-branch-results-clear class="fm-btn fm-btn-sm fm-btn-invisible">Clear</button>
       </div>
       <div class="divide-y divide-border border-b border-border">${results.map(renderRepoBranchResultRow).join("")}</div>`;
   }
@@ -3168,7 +3165,7 @@
     dialog = document.createElement("dialog");
     dialog.setAttribute("data-repo-branch-merge-dialog", "");
     dialog.setAttribute("aria-label", "Merge branch");
-    dialog.className = "w-full max-w-lg overflow-hidden rounded-xl border border-border bg-background p-0 text-foreground shadow-2xl";
+    dialog.className = "w-full max-w-lg overflow-visible border-0 bg-transparent p-0 text-foreground backdrop:bg-black/50";
     document.body.appendChild(dialog);
     return dialog;
   }
@@ -3236,30 +3233,30 @@
     const paint = (current) => {
       const blocked = current && !current.error && current.clean === false;
       dialog.innerHTML = `
-        <form method="dialog" data-repo-branch-merge-form class="grid">
-          <header class="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-            <div class="min-w-0">
-              <h2 class="flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="git-merge" class="h-4 w-4 text-muted-foreground"></i>${intoOther ? "Update" : "Merge"} branch</h2>
-              <p class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span class="rounded-md border border-border bg-secondary px-2 py-0.5 font-mono text-foreground">${escapeHtml(branch)}</span>
+        <form method="dialog" data-repo-branch-merge-form class="fm-dialog">
+          <header class="fm-dialog-header items-start">
+            <div class="min-w-0 flex-1">
+              <h2 class="fm-dialog-title">${intoOther ? "Update" : "Merge"} branch</h2>
+              <p class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <span class="fm-label font-mono text-foreground">${escapeHtml(branch)}</span>
                 <i data-lucide="arrow-right" class="h-3.5 w-3.5"></i>
-                <span class="rounded-md border border-border bg-secondary px-2 py-0.5 font-mono text-foreground">${escapeHtml(base)}</span>
+                <span class="fm-label font-mono text-foreground">${escapeHtml(base)}</span>
               </p>
             </div>
-            <button type="button" data-repo-branch-merge-cancel aria-label="Close" class="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="x" class="h-4 w-4"></i></button>
+            <button type="button" data-repo-branch-merge-cancel aria-label="Close" class="fm-btn fm-btn-sm fm-btn-icon fm-btn-invisible"><i data-lucide="x"></i></button>
           </header>
-          <div class="grid gap-3 px-5 py-4 text-xs">
+          <div class="fm-dialog-body grid gap-3 text-xs">
             <div data-repo-branch-merge-preview>${repoMergePreviewHtml(current, branch, base)}</div>
             <div class="grid gap-1">
-              <span class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Merge commit</span>
+              <span class="text-xs font-medium text-foreground">Merge commit</span>
               <code class="rounded-md border border-border bg-secondary/50 px-2 py-1.5 font-mono text-foreground">${escapeHtml(intoOther ? `Merge branch '${branch}' into ${base}` : `Merge ${branch} into ${base}`)}</code>
             </div>
             ${intoOther ? "" : `<label class="flex items-start gap-2 text-foreground"><input type="checkbox" data-repo-branch-merge-delete checked class="mt-0.5" /><span>Delete <span class="font-mono">${escapeHtml(branch)}</span> after merging, with its agent worktree if it has one</span></label>`}
             <p class="text-muted-foreground">The node that hosts this repository runs the merge right away, or as soon as it comes online, the same way the desktop app's merge does. It refuses if either branch moves first, if an agent is still working on the branch, or if the merge conflicts.</p>
           </div>
-          <footer class="flex justify-end gap-2 border-t border-border px-5 py-4">
-            <button type="button" data-repo-branch-merge-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground">Cancel</button>
-            <button type="submit" data-repo-branch-merge-confirm${blocked ? " disabled" : ""} class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="git-merge" class="h-3.5 w-3.5"></i>${intoOther ? `Update ${escapeHtml(base)}` : `Merge into ${escapeHtml(base)}`}</button>
+          <footer class="fm-dialog-footer">
+            <button type="button" data-repo-branch-merge-cancel class="fm-btn fm-btn-sm">Cancel</button>
+            <button type="submit" data-repo-branch-merge-confirm${blocked ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="git-merge"></i>${intoOther ? `Update ${escapeHtml(base)}` : `Merge into ${escapeHtml(base)}`}</button>
           </footer>
         </form>`;
       window.lucide?.createIcons();
@@ -3317,10 +3314,10 @@
     const busy = Boolean(pending || repoBranchBusy(repo));
     const canUpdateHead = head !== defaultBranch && preview && !preview.error && preview.behind > 0;
     const button = (attribute, icon, label, primary = false, disabled = false) => `
-      <button type="button" ${attribute}${disabled ? " disabled" : ""} class="inline-flex h-8 items-center gap-1.5 rounded-md ${primary ? "bg-primary px-3 font-semibold text-primary-foreground hover:bg-primary/90" : "border border-border bg-background px-2.5 font-medium text-foreground hover:bg-secondary"} text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${label}</button>`;
+      <button type="button" ${attribute}${disabled ? " disabled" : ""} class="fm-btn fm-btn-sm${primary ? " fm-btn-cta" : ""}"><i data-lucide="${icon}"></i>${label}</button>`;
     slot.hidden = false;
     slot.innerHTML = `
-      <div class="grid gap-3 rounded-lg border ${conflicted ? "border-destructive/40" : "border-border"} bg-background p-4">
+      <div class="fm-flash ${conflicted ? "fm-flash-danger" : "fm-flash-neutral"} grid gap-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex min-w-0 items-start gap-2 text-xs">
             <i data-lucide="${conflicted ? "triangle-alert" : "git-merge"}" class="mt-0.5 h-4 w-4 shrink-0 ${conflicted ? "text-destructive" : "text-muted-foreground"}"></i>
@@ -3331,7 +3328,7 @@
             ${button("data-repo-compare-merge-open", "git-merge", head === defaultBranch ? `Update ${escapeHtml(base)}` : `Merge into ${escapeHtml(base)}`, true, busy || conflicted || nothing)}
           </div>
         </div>
-        ${pending ? `<div data-repo-compare-merge-pending class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="clock" class="h-3.5 w-3.5"></i>${escapeHtml((pending.held ? REPO_BRANCH_HELD_LABELS : REPO_BRANCH_OP_LABELS)[pending.op] || "queued")} for ${escapeHtml(pending.branch)}: waiting for this repository's node.<button type="button" data-repo-branch-op-cancel data-repo-branch-op-id="${escapeHtml(String(pending.id))}" class="font-medium text-foreground hover:underline">Cancel</button></div>` : ""}
+        ${pending ? `<div data-repo-compare-merge-pending class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="clock" class="h-3.5 w-3.5"></i>${escapeHtml((pending.held ? REPO_BRANCH_HELD_LABELS : REPO_BRANCH_OP_LABELS)[pending.op] || "queued")} for ${escapeHtml(pending.branch)}: waiting for this repository's node.<button type="button" data-repo-branch-op-cancel data-repo-branch-op-id="${escapeHtml(String(pending.id))}" class="font-medium text-accent hover:underline">Cancel</button></div>` : ""}
         ${result ? `<div data-repo-compare-merge-result class="-mx-4 border-t border-border">${renderRepoBranchResultRow(result)}</div>` : ""}
         <p data-repo-compare-merge-status role="status" aria-live="polite"${status?.message ? "" : " hidden"} class="text-xs ${status?.bad ? "text-destructive" : "text-muted-foreground"}">${escapeHtml(status?.message || "")}${status?.outcome && status.outcome.message === status.message ? `<span data-repo-branch-outcome class="block">${repoBranchOutcomeExtrasHtml(status.outcome)}</span>` : ""}</p>
       </div>`;
@@ -3974,16 +3971,17 @@
     if (issueContributionTipDismissed(repo)) return "";
     const repository = `${repo.owner || "owner"}/${repo.name || "repository"}`;
     return `
-      <aside data-repo-issue-contribution-tip class="relative mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border bg-background px-4 py-4 text-center">
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-foreground">👋 Want to contribute to ${escapeHtml(repository)}?</p>
-          <p class="mt-1 text-xs leading-5 text-muted-foreground">If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
+      <aside data-repo-issue-contribution-tip class="fm-flash relative mb-4 flex-wrap">
+        <i data-lucide="heart-handshake"></i>
+        <div class="fm-flash-body">
+          <span class="fm-flash-title">Want to contribute to ${escapeHtml(repository)}?</span>
+          <p>If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
         </div>
-        <details class="relative shrink-0 text-left">
-          <summary class="inline-flex h-8 cursor-pointer list-none items-center gap-1 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-background">Dismiss<i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></summary>
-          <div class="absolute right-0 top-full z-20 mt-1 grid w-56 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-xl">
-            <button type="button" data-repo-issue-contribution-dismiss="repository" class="rounded-md px-3 py-2 text-left text-xs text-foreground hover:bg-secondary">Dismiss for this repository</button>
-            <button type="button" data-repo-issue-contribution-dismiss="all" class="rounded-md px-3 py-2 text-left text-xs text-foreground hover:bg-secondary">Dismiss for all repositories</button>
+        <details class="fm-flash-actions relative text-left">
+          <summary class="fm-btn fm-btn-sm list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
+          <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
+            <button type="button" data-repo-issue-contribution-dismiss="repository" class="fm-menu-item">Dismiss for this repository</button>
+            <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
           </div>
         </details>
       </aside>`;
@@ -4015,12 +4013,12 @@
                   <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
                     <button type="button" data-repo-issues-refresh aria-busy="false" title="Refresh from the live mirror" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-60"><i data-lucide="refresh-cw" data-repo-issues-refresh-icon class="h-4 w-4"></i><span data-repo-issues-refresh-label class="sr-only">Refresh</span></button>
                     <div class="inline-flex">
-                      <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-l-md bg-primary px-3 text-[14px] font-medium text-primary-foreground hover:bg-primary/90">New issue</button>
+                      <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-l-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
                       <details data-repo-issue-new-menu class="relative">
-                        <summary aria-label="More ways to add issues" class="inline-flex h-8 cursor-pointer list-none items-center rounded-r-md border-l border-black/25 bg-primary px-2 text-primary-foreground hover:bg-primary/90"><i data-lucide="chevron-down" class="h-4 w-4"></i></summary>
-                        <div class="absolute right-0 top-full z-30 mt-1 grid w-56 overflow-hidden rounded-lg border border-border bg-[rgb(var(--dashboard-popover-rgb))] p-1 shadow-xl">
-                          <button type="button" data-repo-issue-import class="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] text-foreground hover:bg-secondary"><i data-lucide="upload" class="h-4 w-4 text-muted-foreground"></i>Import from CSV</button>
-                          <button type="button" data-repo-issue-template class="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] text-foreground hover:bg-secondary"><i data-lucide="file-down" class="h-4 w-4 text-muted-foreground"></i>Download CSV template</button>
+                        <summary aria-label="More ways to add issues" class="inline-flex h-8 cursor-pointer list-none items-center rounded-r-md border-l border-black/25 bg-cta px-2 text-cta-foreground hover:bg-cta/90"><i data-lucide="chevron-down" class="h-4 w-4"></i></summary>
+                        <div class="fm-popover fm-menu absolute right-0 top-full z-30 mt-1 w-56">
+                          <button type="button" data-repo-issue-import class="fm-menu-item"><i data-lucide="upload"></i>Import from CSV</button>
+                          <button type="button" data-repo-issue-template class="fm-menu-item"><i data-lucide="file-down"></i>Download CSV template</button>
                         </div>
                       </details>
                     </div>
@@ -4099,11 +4097,11 @@
                 </span>
               </label>
               ${isPulls
-                ? `<button type="button" data-repo-pull-new class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>New pull request</button>`
+                ? `<button type="button" data-repo-pull-new class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>New pull request</button>`
                 : `<div class="flex items-center gap-2">
                     <button type="button" data-repo-issues-refresh aria-busy="false" class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-secondary disabled:cursor-wait disabled:opacity-60"><i data-lucide="refresh-cw" data-repo-issues-refresh-icon class="h-3.5 w-3.5"></i><span data-repo-issues-refresh-label>Refresh</span></button>
                     <button type="button" data-repo-issue-import class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-secondary"><i data-lucide="upload" class="h-3.5 w-3.5"></i>Import CSV</button>
-                    <button type="button" data-repo-issue-new class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New issue</button>
+                    <button type="button" data-repo-issue-new class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New issue</button>
                   </div>`}
               <div class="flex min-w-0 flex-wrap items-center gap-2 lg:col-span-3">
                 ${filters.map(([label, options, issueFilter]) => renderRepoCollectionFilter(label, options, issueFilter)).join("")}
