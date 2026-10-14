@@ -5,6 +5,7 @@
 #include "ChatRecipients.h"
 #include "ChatVisitorPresence.h"
 #include "NodeDiagnostics.h"
+#include "OfficeChannelMirror.h"
 #include "ServerNode.h"
 #include "SystemStats.h"
 
@@ -2186,7 +2187,8 @@ void ServerNode::addChannel(const QString &channel)
         return;
     if (!name.startsWith('#'))
         name.prepend('#');
-    if (m_hiddenChannels.contains(name))
+    if (m_hiddenChannels.contains(name) ||
+        forkmesh::office::isRetiredRelayChannel(name))
         return;
     if (!m_channels.contains(name)) {
         m_channels.append(name);
@@ -2342,7 +2344,8 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
         for (const auto &value : message.value("channels").toArray()) {
             const QString channel = value.toString();
             if (!channel.isEmpty() && !m_channels.contains(channel) &&
-                !m_hiddenChannels.contains(channel)) {
+                !m_hiddenChannels.contains(channel) &&
+                !forkmesh::office::isRetiredRelayChannel(channel)) {
                 m_channels.append(channel);
                 changed = true;
             }
@@ -2379,7 +2382,8 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
             return;
         if (moderated.value("private").toBool() && !m_channels.contains(channel))
             return;
-        if (m_hiddenChannels.contains(channel))
+        if (m_hiddenChannels.contains(channel) ||
+            forkmesh::office::isRetiredRelayChannel(channel))
             return;
         if (!m_channels.contains(channel))
             m_channels.append(channel);
@@ -2392,7 +2396,8 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
                    envelopeRecipientNames);
     } else if (type == "channel") {
         const QString name = message.value("name").toString();
-        if (!m_channels.contains(name) && !m_hiddenChannels.contains(name)) {
+        if (!m_channels.contains(name) && !m_hiddenChannels.contains(name) &&
+            !forkmesh::office::isRetiredRelayChannel(name)) {
             m_channels.append(name);
             emit channelsChanged(m_channels);
         }
@@ -2475,7 +2480,9 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
             const QJsonObject entry = moderatedChatObject(value.toObject());
             if (!messageHasSafePayload(entry))
                 continue;
-            if (frameConversation(entry) == QLatin1String("#team"))
+            if (frameConversation(entry) == QLatin1String("#team") ||
+                forkmesh::office::isRetiredRelayChannel(
+                    frameConversation(entry)))
                 continue;
             if (entry.value("private").toBool() &&
                 !m_channels.contains(entry.value("channel").toString()))

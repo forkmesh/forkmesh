@@ -309,8 +309,8 @@ final class ChatExtrasTests: XCTestCase {
         try await sender.reply(channel: "pat", text: "on my way")
         XCTAssertEqual(h.relay.currentConversation, "#general")
         XCTAssertEqual(h.relay.messages("@peer-9").map(\.text), ["on my way"])
-        try await sender.reply(channel: "random", text: "hi all")
-        XCTAssertEqual(h.relay.messages("#random").map(\.text), ["hi all"])
+        try await sender.reply(channel: "general", text: "hi all")
+        XCTAssertEqual(h.relay.messages("#general").map(\.text), ["hi all"])
         do {
             try await sender.reply(channel: "nobody", text: "x")
             XCTFail("an unknown conversation must throw")
