@@ -331,6 +331,7 @@ struct OnDeviceChatComposer: View {
                 }
             }
         }
+        .fmKeepsKeyboard()
     }
 
     private var sendAction: (() -> Void)? {

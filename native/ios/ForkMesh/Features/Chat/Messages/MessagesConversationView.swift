@@ -465,6 +465,7 @@ struct MessagesComposer: View {
                 bar
             }
         }
+        .fmKeepsKeyboard()
         .photosPicker(isPresented: $choosingPhotos, selection: $photos, maxSelectionCount: 6, matching: .images)
         .onChange(of: photos) { _, picked in
             guard !picked.isEmpty else { return }
