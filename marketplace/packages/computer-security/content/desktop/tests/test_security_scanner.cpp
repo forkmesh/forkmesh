@@ -70,7 +70,7 @@ QByteArray openSshKey(const QByteArray &cipher)
     raw.append(char(length >> 24)).append(char(length >> 16)).append(char(length >> 8)).append(char(length));
     raw.append(cipher);
     raw.append(QByteArray(32, 'k'));
-    return "-----BEGIN OPENSSH PRIVATE KEY-----\n" + raw.toBase64() + "\n-----END OPENSSH PRIVATE KEY-----\n";
+    return "-----BEGIN OPENSSH PRIVATE KEY-----\n" + raw.toBase64() + "\n-----END OPENSSH PRIVATE KEY-----\n";  // forkmesh-secret-scan:ignore-line
 }
 
 const Finding *finding(const QList<Finding> &findings, const QString &id)
@@ -163,7 +163,7 @@ int main(int argc, char **argv)
     QDir().mkpath(home);
     setMode(home, 0755);
     writeBytes(home + QStringLiteral("/.ssh/id_ed25519"), openSshKey("none"));
-    writeBytes(home + QStringLiteral("/.ssh/id_rsa"), "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00\n\nAAAA\n-----END RSA PRIVATE KEY-----\n");
+    writeBytes(home + QStringLiteral("/.ssh/id_rsa"), "-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00\n\nAAAA\n-----END RSA PRIVATE KEY-----\n");  // forkmesh-secret-scan:ignore-line
     writeFile(home + QStringLiteral("/.ssh/authorized_keys"), QStringLiteral("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA laptop@home\n"));
     setMode(home + QStringLiteral("/.ssh"), 0700);
     setMode(home + QStringLiteral("/.ssh/id_ed25519"), 0644);

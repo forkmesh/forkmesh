@@ -1023,9 +1023,10 @@ popular site and for any site's own social image.
   (the relay `#general`, labelled `worldLabel`, "World"), `retiredRelayLabels`,
   `welcomeSenderId` (`system:welcome`), `generalConversation`,
   `welcomeConversation`, `isWelcome(_:)`, `order(_:office:)`. The `ChatHub`
-  extension has `isEveryoneChannel`, `everyoneRooms`, `listedChannels`,
-  `generalConversation`, `refreshMemberDirectory(force:)` and
-  `adoptEveryoneGeneral()`.
+  extension has `isEveryoneChannel`, `canLeaveChannel(_:)`, `everyoneRooms`,
+  `listedChannels`, `generalConversation`, `refreshMemberDirectory(force:)`
+  and `adoptEveryoneGeneral()`. The fixed everyone rooms and World never offer
+  a local Leave action; ordinary channels still do.
 - `ChatHub.directoryMembers` holds the member names from
   `GET /api/chat/channels/<general>/members`. `ChatWorkspace.movedToEveryone` /
   `markMovedToEveryone()` record the one-time move from World to #general.
