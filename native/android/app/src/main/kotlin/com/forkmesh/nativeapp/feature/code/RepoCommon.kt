@@ -510,16 +510,18 @@ internal class DesktopCommands(
         if (!requireAccount("request desktop control")) return
         try {
             val result = withContext(Dispatchers.IO) {
+                val session = Services.get<AuthService>()?.session?.value
+                val owner = OwnerProofs.desktopCommandOwner(repo, session?.nodeName ?: "")
                 val proof = OwnerProofs.desktopCommand(
-                    session = Services.get<AuthService>()?.session?.value,
+                    session = session,
                     identity = Services.get<DeviceIdentity>(),
-                    owner = repo.owner,
+                    owner = owner,
                     name = repo.name,
                     command = command,
                     target = target,
                 )
                 repoApi.desktopCommand(
-                    repo.owner,
+                    owner,
                     repo.name,
                     ownerAccount = proof.ownerAccount,
                     command = command,
