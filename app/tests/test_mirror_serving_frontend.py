@@ -526,6 +526,7 @@ function setRepoTabCount(tab, count) { tabCounts.push([tab, count]); }
 async function primeRepoViewReads() {}
 function setRepoCollectionCounts() {}
 function renderRepoCollection() { container.innerHTML = "rendered discussions"; }
+function setRepoRecordOpen() {}
 async function loadRepoRecordsFromMirror() {
   if (loadResult === "reject") throw new Error("mirror_unavailable");
   return loadResult;
