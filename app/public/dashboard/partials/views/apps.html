@@ -1,61 +1,176 @@
           <section data-view="apps" class="view active h-full overflow-y-auto">
-            <div class="p-3 sm:p-6 w-full grid gap-4">
-              <div data-apps-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
-                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <style>
+              :where(.apps-page .fm-btn, .apps-page .fm-label, .apps-page .fm-counter) { display: inline-flex; }
+              .apps-page .fm-btn { align-items: center; justify-content: center; gap: 6px; height: var(--dashboard-control-height,32px); min-height: 0; padding: 0 12px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius,6px); background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: var(--dashboard-control-font,13px); font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; cursor: pointer; transition: background-color .12s, border-color .12s, color .12s; }
+              .apps-page .fm-btn:focus-visible { outline: 2px solid rgb(var(--dashboard-primary-rgb)); outline-offset: -2px; }
+              .apps-page .fm-btn:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); }
+              .apps-page .fm-btn:disabled, .apps-page .fm-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+              .apps-page .fm-btn svg, .apps-page .fm-btn i { width: 16px; height: 16px; flex: none; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .apps-page .fm-btn-sm { height: var(--dashboard-control-height-sm,28px); padding: 0 10px; font-size: 12px; }
+              .apps-page .fm-btn-sm svg, .apps-page .fm-btn-sm i { width: 14px; height: 14px; }
+              .apps-page .fm-btn-danger { color: rgb(var(--dashboard-destructive-rgb)); }
+              .apps-page .fm-btn-danger:hover { background: rgb(var(--dashboard-destructive-rgb)); border-color: rgb(var(--dashboard-destructive-rgb)); color: #fff; }
+              .apps-page .fm-btn-danger:hover svg, .apps-page .fm-btn-danger:hover i { color: currentColor; }
+              .apps-page .fm-btn-icon { width: var(--dashboard-control-height,32px); padding: 0; }
+              .apps-page .fm-btn-icon.fm-btn-sm { width: var(--dashboard-control-height-sm,28px); }
+              .apps-page .fm-label { align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 1px solid rgb(var(--fm-label-rgb, var(--dashboard-border-rgb))); border-radius: 999px; color: rgb(var(--fm-label-fg, var(--dashboard-muted-foreground-rgb))); font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; }
+              .apps-page .fm-label svg, .apps-page .fm-label i { flex: none; width: 12px; height: 12px; }
+              .apps-page .fm-label-lg { height: 24px; padding: 0 8px; }
+              .apps-page .fm-counter { align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: rgb(var(--dashboard-foreground-rgb) / .1); color: rgb(var(--dashboard-foreground-rgb)); font-size: 12px; font-weight: 500; line-height: 1; }
+              .apps-page .fm-segmented { overflow: hidden; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius,6px); }
+              .apps-page .fm-segmented > button { min-height: var(--dashboard-control-height-sm,28px); padding: 0 10px; background: transparent; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 12px; }
+              .apps-page .fm-segmented > button:hover { color: rgb(var(--dashboard-foreground-rgb)); }
+              .apps-page .fm-segmented > button[aria-pressed="true"] { background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; }
+              .apps-page{max-width:1180px;margin:0 auto;padding:20px 24px 48px;display:grid;gap:16px}
+              .apps-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+              .apps-head h1{font-size:20px;font-weight:600;color:rgb(var(--dashboard-foreground-rgb))}
+              .apps-head p{margin-top:2px;font-size:13px;color:rgb(var(--dashboard-muted-foreground-rgb))}
+              .apps-tabs{display:flex;gap:4px;box-shadow:inset 0 -1px 0 rgb(var(--dashboard-border-rgb));overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+              .apps-tab{position:relative;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 10px;font-size:13px;color:rgb(var(--dashboard-muted-foreground-rgb));white-space:nowrap}
+              .apps-tab:hover{color:rgb(var(--dashboard-foreground-rgb))}
+              .apps-tab[aria-selected="true"]{color:rgb(var(--dashboard-foreground-rgb));font-weight:600}
+              .apps-tab[aria-selected="true"]::after{content:"";position:absolute;left:6px;right:6px;bottom:0;height:2px;border-radius:2px;background:rgb(var(--dashboard-primary-rgb))}
+              .apps-tab[hidden],.apps-tab .fm-counter:empty{display:none}
+              .apps-lede{font-size:13px;color:rgb(var(--dashboard-muted-foreground-rgb));max-width:80ch}
+              .apps-notice{font-size:13px}
+              .apps-split{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
+              .apps-rail{position:sticky;top:12px;display:grid;gap:1px}
+              .apps-rail-item{display:flex;align-items:center;gap:8px;height:var(--dashboard-menu-row-height,30px);padding:0 8px;border-radius:6px;font-size:13px;color:rgb(var(--dashboard-muted-foreground-rgb));text-align:left}
+              .apps-rail-item:hover{background:rgb(var(--dashboard-foreground-rgb) / .06);color:rgb(var(--dashboard-foreground-rgb))}
+              .apps-rail-item[aria-current="true"]{background:rgb(var(--dashboard-primary-rgb) / .12);color:rgb(var(--dashboard-foreground-rgb));font-weight:600}
+              .apps-rail-item span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+              .apps-rail-item span:last-child{font-size:12px;color:rgb(var(--dashboard-muted-foreground-rgb));font-weight:400}
+              .apps-rail-divider{height:1px;margin:6px 8px;background:rgb(var(--dashboard-border-rgb))}
+              .apps-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+              .apps-search{position:relative;flex:1;min-width:200px}
+              .apps-search i,.apps-search svg{position:absolute;left:9px;top:50%;width:14px;height:14px;transform:translateY(-50%);color:rgb(var(--dashboard-muted-foreground-rgb));pointer-events:none}
+              .apps-input{width:100%;height:var(--dashboard-control-height,32px);padding:0 10px;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:var(--dashboard-control-radius,6px);background:rgb(var(--dashboard-background-rgb));color:rgb(var(--dashboard-foreground-rgb));font-size:var(--dashboard-control-font,13px);outline:none}
+              .apps-input:focus{border-color:rgb(var(--dashboard-primary-rgb));box-shadow:inset 0 0 0 1px rgb(var(--dashboard-primary-rgb))}
+              .apps-search .apps-input{padding-left:30px}
+              .apps-category-select{display:none;width:auto}
+              .apps-list{border:1px solid rgb(var(--dashboard-border-rgb));border-radius:8px;background:rgb(var(--dashboard-card-rgb));overflow:hidden}
+              .apps-list:empty{display:none}
+              .apps-list > * + *{border-top:1px solid rgb(var(--dashboard-border-rgb))}
+              .apps-list-empty{padding:28px 16px;text-align:center;font-size:13px;color:rgb(var(--dashboard-muted-foreground-rgb))}
+              .apps-group{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 14px;background:rgb(var(--dashboard-foreground-rgb) / .03);font-size:12px;font-weight:600;color:rgb(var(--dashboard-muted-foreground-rgb))}
+              .apps-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;column-gap:16px;row-gap:8px;padding:10px 14px;min-height:56px}
+              .apps-row:hover{background:rgb(var(--dashboard-foreground-rgb) / .025)}
+              .apps-row-main{display:flex;align-items:center;gap:12px;min-width:0;grid-column:1}
+              .apps-row-places{grid-column:2}
+              .apps-row-action{grid-column:3;display:flex;align-items:center;gap:8px;justify-content:flex-end}
+              .apps-tile{flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:8px;background:rgb(var(--dashboard-secondary-rgb));font-size:13px;font-weight:600;color:rgb(var(--dashboard-muted-foreground-rgb));overflow:hidden}
+              .apps-row-text{min-width:0}
+              .apps-row-title{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;font-weight:600;color:rgb(var(--dashboard-foreground-rgb))}
+              .apps-row-title > span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+              .apps-row-sub{margin-top:1px;font-size:12px;line-height:1.45;color:rgb(var(--dashboard-muted-foreground-rgb));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+              .apps-row-hint{margin-top:2px;font-size:12px;color:rgb(var(--dashboard-attention-rgb))}
+              .apps-row-off .apps-tile{opacity:.6}
+              .apps-row-off .apps-row-title{color:rgb(var(--dashboard-muted-foreground-rgb))}
+              .apps-places{display:inline-flex;gap:4px}
+              .apps-place{position:relative;display:inline-flex;align-items:center;height:24px;padding:0 9px;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:999px;font-size:12px;color:rgb(var(--dashboard-muted-foreground-rgb));cursor:pointer;user-select:none}
+              .apps-place input{position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;opacity:0;cursor:pointer}
+              .apps-place:hover{color:rgb(var(--dashboard-foreground-rgb))}
+              .apps-place:has(input:checked){border-color:rgb(var(--dashboard-primary-rgb) / .6);background:rgb(var(--dashboard-primary-rgb) / .12);color:rgb(var(--dashboard-foreground-rgb))}
+              .apps-place:has(input:focus-visible){box-shadow:0 0 0 2px rgb(var(--dashboard-primary-rgb))}
+              .apps-place:has(input:disabled){cursor:default}
+              .apps-place:has(input:disabled) input{cursor:default}
+              .apps-row .apps-switch{position:relative;flex:none;width:34px;height:20px;min-width:34px;min-height:0;padding:0;border-radius:999px;background:rgb(var(--dashboard-foreground-rgb) / .18);transition:background .15s}
+              .apps-switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:translate .15s}
+              .apps-switch[aria-checked="true"]{background:rgb(var(--dashboard-primary-rgb))}
+              .apps-switch[aria-checked="true"]::after{translate:14px 0}
+              .apps-switch:focus-visible{outline:2px solid rgb(var(--dashboard-primary-rgb));outline-offset:2px}
+              .apps-switch:disabled{opacity:.5;cursor:not-allowed}
+              .apps-scopes{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:4px;padding-left:44px}
+              .apps-scopes:empty{display:none}
+              .apps-scope{padding:1px 6px;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:4px;font-family:var(--font-mono,ui-monospace,monospace);font-size:11px;color:rgb(var(--dashboard-muted-foreground-rgb))}
+              .apps-policy{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;padding:12px 14px}
+              .apps-policy label{display:grid;gap:4px;font-size:12px;color:rgb(var(--dashboard-muted-foreground-rgb))}
+              .apps-policy label:nth-child(2){flex:1;min-width:220px}
+              .apps-section{display:grid;gap:8px}
+              .apps-section-head{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:rgb(var(--dashboard-foreground-rgb))}
+              .apps-review-input{grid-column:1 / -1;margin-left:44px;width:calc(100% - 44px)}
+              @media (max-width:900px){
+                .apps-split{grid-template-columns:minmax(0,1fr)}
+                .apps-rail{display:none}
+                .apps-category-select{display:block}
+                .apps-row{grid-template-columns:minmax(0,1fr) auto}
+                .apps-row-places{grid-column:1 / -1;grid-row:2;padding-left:44px}
+                .apps-row-action{grid-column:2;grid-row:1}
+                .apps-row-sub{white-space:normal}
+              }
+              @media (max-width:640px){
+                .apps-page{padding:12px 12px 40px}
+                .apps-head{flex-direction:column}
+              }
+            </style>
+            <div class="apps-page">
+              <header class="apps-head">
+                <div class="min-w-0">
+                  <h1>Apps</h1>
+                  <p>Plugins and apps on your account and your organizations.</p>
+                </div>
+                <a href="/dashboard/apps/build" class="fm-btn fm-btn-sm shrink-0">
+                  <i data-lucide="code"></i>
+                  Build an app
+                </a>
+              </header>
+
+              <nav class="apps-tabs" role="tablist" aria-label="Apps sections">
+                <button data-apps-tab="plugins" type="button" role="tab" aria-selected="true" class="apps-tab">Plugins <span data-apps-count="plugins" class="fm-counter"></span></button>
+                <button data-apps-tab="installed" type="button" role="tab" aria-selected="false" class="apps-tab">Installed apps <span data-apps-count="installed" class="fm-counter"></span></button>
+                <button data-apps-tab="directory" type="button" role="tab" aria-selected="false" class="apps-tab">Directory</button>
+                <button data-apps-tab="review" type="button" role="tab" aria-selected="false" class="apps-tab" hidden>Review queue <span data-apps-count="review" class="fm-counter"></span></button>
+              </nav>
+
+              <div data-apps-notice hidden class="apps-notice" role="status" aria-live="polite"></div>
+
+              <div data-apps-tabpanel="plugins" data-apps-plugins-panel role="tabpanel" class="grid gap-3">
+                <p class="apps-lede">Plugins follow your account to the web, the desktop app and the mobile app. Turning one off hides it everywhere and deletes what it stored for your account. A plugin that needs another one turns that one on too.</p>
+                <div class="apps-split">
+                  <nav data-apps-plugins-rail class="apps-rail" aria-label="Plugin categories"></nav>
                   <div class="min-w-0">
-                    <h1 class="text-base font-semibold text-foreground">Apps</h1>
-                    <p class="mt-1 text-sm text-muted-foreground">Apps you and your organizations installed, what each one may do, and when it last acted. Revoking an app deletes its tokens at once.</p>
+                    <div class="apps-toolbar">
+                      <label class="apps-search">
+                        <i data-lucide="search"></i>
+                        <input data-apps-plugins-search type="search" autocomplete="off" placeholder="Search plugins" aria-label="Search plugins" class="apps-input">
+                      </label>
+                      <select data-apps-plugins-category aria-label="Category" class="apps-input apps-category-select"></select>
+                      <div data-apps-plugins-filter class="fm-segmented inline-flex" role="group" aria-label="Show">
+                        <button type="button" data-apps-plugins-show="all" aria-pressed="true">All</button>
+                        <button type="button" data-apps-plugins-show="on" aria-pressed="false">Installed</button>
+                        <button type="button" data-apps-plugins-show="off" aria-pressed="false">Available</button>
+                      </div>
+                      <button data-apps-plugins-refresh type="button" class="fm-btn fm-btn-sm fm-btn-icon" aria-label="Refresh plugins" title="Refresh">
+                        <i data-lucide="refresh-cw"></i>
+                      </button>
+                    </div>
+                    <div data-apps-plugins-notice hidden class="apps-notice mb-3" role="status" aria-live="polite"></div>
+                    <div data-apps-plugins class="apps-list">
+                      <p class="apps-list-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading plugins...</p>
+                    </div>
                   </div>
-                  <div class="shrink-0 flex items-center gap-2 self-start">
-                    <a href="/dashboard/apps/build" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-                      <i data-lucide="code" class="w-3.5 h-3.5"></i>
-                      Build an app
-                    </a>
-                  </div>
-                </div>
-                <div data-apps-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
-                <div class="px-4 sm:px-5 py-4 grid gap-3">
-                  <h2 class="text-sm font-semibold text-foreground">Installed apps</h2>
-                  <div data-apps-installed class="grid gap-3">
-                    <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading apps...</p>
-                  </div>
-                </div>
-                <div data-apps-orgs class="px-4 sm:px-5 py-4 border-t border-border grid gap-4"></div>
-              </div>
-
-              <div data-apps-plugins-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
-                <div class="px-4 sm:px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                  <div class="min-w-0">
-                    <h2 class="text-base font-semibold text-foreground">Plugins</h2>
-                    <p class="mt-1 text-sm text-muted-foreground">Features that follow your account to the web, the desktop app and the mobile app. Install one to add its links and screens everywhere you sign in; remove it to hide them and delete what it stored for your account. A plugin listed under another one needs it: installing it installs both, removing the parent removes it too.</p>
-                  </div>
-                  <div class="shrink-0 flex items-center gap-2 self-start">
-                    <button data-apps-plugins-refresh type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-                      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-                <div data-apps-plugins-notice hidden class="px-4 sm:px-5 py-3 border-b border-border text-sm" role="status" aria-live="polite"></div>
-                <div data-apps-plugins class="px-4 sm:px-5 py-4 grid gap-3">
-                  <p class="text-sm text-muted-foreground"><span class="fm-spinner" aria-hidden="true"></span>Loading plugins...</p>
                 </div>
               </div>
 
-              <div data-apps-directory-panel class="w-full rounded-lg border border-border bg-card overflow-hidden">
-                <div class="px-4 sm:px-5 py-4 border-b border-border">
-                  <h2 class="text-base font-semibold text-foreground">App Directory</h2>
-                  <p class="mt-1 text-sm text-muted-foreground">Apps a ForkMesh reviewer approved. Install one from its own website; ForkMesh shows you what it asks for before anything is shared.</p>
+              <div data-apps-tabpanel="installed" data-apps-panel role="tabpanel" class="grid gap-6" hidden>
+                <p class="apps-lede">Apps you and your organizations installed, what each one may do, and when it last acted. Revoking an app deletes its tokens at once.</p>
+                <div class="apps-section">
+                  <h2 class="apps-section-head">Your apps</h2>
+                  <div data-apps-installed class="apps-list">
+                    <p class="apps-list-empty"><span class="fm-spinner" aria-hidden="true"></span>Loading apps...</p>
+                  </div>
                 </div>
-                <div data-apps-directory class="px-4 sm:px-5 py-4 grid gap-3"></div>
+                <div data-apps-orgs class="grid gap-6"></div>
               </div>
 
-              <div data-apps-review-panel hidden class="w-full rounded-lg border border-border bg-card overflow-hidden">
-                <div class="px-4 sm:px-5 py-4 border-b border-border">
-                  <h2 class="text-base font-semibold text-foreground">Review queue</h2>
-                  <p class="mt-1 text-sm text-muted-foreground">Apps waiting for a listing decision. Approval is pinned to what you see here: any later edit sends the app back to this queue.</p>
-                </div>
-                <div data-apps-review class="px-4 sm:px-5 py-4 grid gap-3"></div>
+              <div data-apps-tabpanel="directory" data-apps-directory-panel role="tabpanel" class="grid gap-3" hidden>
+                <p class="apps-lede">Apps a ForkMesh reviewer approved. Install one from its own website; ForkMesh shows you what it asks for before anything is shared.</p>
+                <div data-apps-directory class="apps-list"></div>
+              </div>
+
+              <div data-apps-tabpanel="review" data-apps-review-panel role="tabpanel" class="grid gap-3" hidden>
+                <p class="apps-lede">Apps waiting for a listing decision. Approval is pinned to what you see here: any later edit sends the app back to this queue.</p>
+                <div data-apps-review class="apps-list"></div>
               </div>
             </div>
           </section>
