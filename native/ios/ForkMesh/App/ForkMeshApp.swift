@@ -95,9 +95,7 @@ struct AppHomeView: View {
 
     var body: some View {
         Group {
-            if let project = settings?.project, !project.hasInstance {
-                ChooseInstanceView(project: project).id(project.id)
-            } else if auth.hasAppAccess {
+            if auth.hasAppAccess || settings?.project.hasInstance == false {
                 HomeShell()
                     .relaySwitchScope()
                     .overlay { DevPerformanceOverlay() }

@@ -83,6 +83,8 @@ import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFeature
 import com.forkmesh.nativeapp.feature.account.AuthService
+import com.forkmesh.nativeapp.feature.account.projects.NoInstanceBanner
+import com.forkmesh.nativeapp.feature.account.projects.ProjectsService
 import com.forkmesh.nativeapp.feature.account.settings.rememberNowMillis
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.feature.agents.RunnerAttentionChip
@@ -268,6 +270,7 @@ class HomeShell : Screen() {
     override fun Content(navigator: Navigator) {
         val relay by ChatFeature.shellState.collectAsState()
         val account by AccountFeature.shellState.collectAsState()
+        val noInstance = Services.get<ProjectsService>()?.active?.collectAsState()?.value?.hasInstance == false
         val inboxUnread by InboxFeature.unread.collectAsState()
         val needsYou by SurfacesFeature.needsYou.collectAsState()
         val agentsSurface by SurfacesFeature.agents.collectAsState()
@@ -342,7 +345,7 @@ class HomeShell : Screen() {
                     Spacer(Modifier.fillMaxWidth().background(Fm.colors.bgRaised).windowInsetsTopHeight(WindowInsets.statusBars))
                 }
                 if (surfaces.signIn) AccountFeature.GuestBanner()
-                ConnectionBanner(relay.connection)
+                if (noInstance) NoInstanceBanner() else ConnectionBanner(relay.connection)
                 FmInlineStatusLine(
                     linkProblem,
                     isError = true,

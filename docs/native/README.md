@@ -91,8 +91,9 @@ The Commits screen's Graph tab (lane graph, where Desktop, Web and Mobile are):
   is its id. Production owns the unprefixed legacy namespace; every other
   project uses `p/<projectId>/`. A project made from a name alone has
   `hasInstance` false, a `local-<slug>-<random>` id and no server URL: it is
-  linked to no instance and shows "Choose an instance" until one is attached
-  (see 2026-10-13 below). A project row may name a `logo` file.
+  linked to no instance and works on the device alone; "Choose an instance"
+  is offered, never required (see 2026-10-13 below). A project row may name a
+  `logo` file.
 - **Relay features.** `/api/version` declares a `features` list; the core
   (`accounts`, `repositories`, `repoRead`) is required, every other feature
   gates its own UI, and a missing one leaves the UI absent rather than broken.
@@ -258,6 +259,17 @@ tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
   in push notifications". Not verified on a device: the extension's keychain
   read of the device key, the PBKDF2 time inside the extension, and the
   SwiftUI views (parse-checked only).
+- 2026-10-13: a project does not need an instance. Asked: "Don't make
+  instance a requirement projects can manage repos on the device for example
+  without an instance". The full-screen **Choose an instance** gate is gone: a
+  project with no instance opens the shell (no sign-in or guest step), so its
+  on-device repositories and other local features work. The shell shows an
+  "On this device only" banner (`NoInstanceBanner`, in place of the offline
+  banner, since there is no relay to reach) whose **Choose instance** opens the
+  chooser as a sheet (iOS, from `SignInPresenter`) or a full-screen dialog
+  (Android, `ChooseInstanceHost` in `AccountFeature.Gate`); its **Not now**
+  closes it. An action that needs an account (`requireAccount`, `openSignIn`)
+  opens the chooser instead of sign-in and does not go ahead.
 - 2026-10-13: a new project is not linked to any instance unless you name
   one. Before, a project made from a name alone stored the build's default
   server URL, so it signed in on app.forkmesh.com and listed that instance's
