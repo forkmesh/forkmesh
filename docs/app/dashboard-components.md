@@ -56,6 +56,17 @@ would stay on screen. With the display under `:where`, `hidden`, responsive
 - Runner sign-in attention and **Reconnect node**: `fm-label fm-label-lg`
   links in the header, amber; the runner chip turns red when its
   `data-state` is `expired`.
+- Main menu (the header's menu button, `partials/sidebar.html`): two zones
+  instead of six equal columns, because the list kept growing and every link
+  carried the same weight. The left zone is the user's own space: **Workspace**
+  as tiles (Settings added so the grid stays full), installed **Plugins** as an
+  app grid, and **Top repositories** as up to six cards. The right zone,
+  **Explore ForkMesh**, keeps Community, Product, Resources and Company as
+  plain text lists on the header surface, with the legal links under them.
+  The `<a>` markup is unchanged; the layout lives in the shell's CSS (the nav
+  is `display: contents` so its groups sit in the menu's grid areas, keeping
+  the main menu ahead of Top repositories in the DOM). Below 760px it stacks
+  into one column with row-style tiles.
 - Pings dropdown, account menu and the header's **Start an agent** composer:
   `fm-popover` with menu rows; the account menu's log-out rows use
   `fm-menu-item-danger`.
