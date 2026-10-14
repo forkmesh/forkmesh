@@ -92,6 +92,7 @@ const loadRepoIssueMutationAuthorization = async () => false;
 const loadWebIssueSubscription = async () => false;
 const loadFederatedReplies = () => {};
 const setRepoIssueRecordOpen = () => {};
+const setRepoRecordOpen = () => {};
 const mountIssueStickyHeader = () => {};
 const primeRepoViewReads = async () => {};
 

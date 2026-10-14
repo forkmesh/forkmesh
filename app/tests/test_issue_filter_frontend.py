@@ -349,18 +349,22 @@ def test_dashboard_js_exposes_open_closed_all_pull_filters_and_counts_them():
     ]
     assert "function pullMatchesFilter(pull, filter = pullFilterState())" in filters
     assert 'return filter === "open" ? pullIsOpen(pull) : !pullIsOpen(pull);' in filters
-    assert "loadedItems.filter((item) => pullMatchesFilter(item, pullFilter))" in render
+    assert "loadedItems.filter((item) => pullMatchesFilter(item, pullFilter)" in render
     assert "pullEmptyLabel(pullFilter)" in render
     assert "state.pullsView.query" in render
 
-    panel = DASHBOARD_JS[
-        DASHBOARD_JS.index("function renderRepoCollectionPanel")
-        : DASHBOARD_JS.index("function renderRepoDetail")
+    header = DASHBOARD_JS[
+        DASHBOARD_JS.index("function renderPullListHeader")
+        : DASHBOARD_JS.index("function syncPullCollectionChrome")
     ]
-    assert 'data-dashboard-pull-filter="${filter}"' in panel
-    assert '["open", "git-pull-request", "Open", "open"]' in panel
-    assert '["closed", "check", "Closed", "closed"]' in panel
-    assert '["all", "list", "All", ""]' in panel
+    assert 'data-dashboard-pull-filter="${name}"' in header
+    assert '["open", "git-pull-request", "Open", openCount]' in header
+    assert '["closed", "check", "Closed", closedCount]' in header
+    parse = DASHBOARD_JS[
+        DASHBOARD_JS.index("function parsePullQuery")
+        : DASHBOARD_JS.index("function applyPullQueryText")
+    ]
+    assert 'if (key === "state" && ["open", "closed", "all"].includes(lower)) status = lower;' in parse.replace("else if", "if")
 
     click_handler = DASHBOARD_JS[
         DASHBOARD_JS.index(
@@ -608,10 +612,8 @@ def test_issue_metadata_dropdowns_are_real_filters_with_live_options():
         DASHBOARD_JS.index("function renderRepoCollectionFilter")
         : DASHBOARD_JS.index("function renderRepoDetail")
     ]
-    for field in ("author", "label", "milestone", "assignee"):
-        assert f'issueFilterOptions("{field}")' in toolbar
-        assert f'isPulls ? "" : "{field}"' in toolbar
-    assert 'data-repo-issue-filter="${issueFilter}"' in toolbar
+    assert 'data-repo-issue-filter="${issueFilter}" ' in toolbar
+    assert "label, issueFilterOptions(field), field, true)" in DASHBOARD_JS
     issue_list = DASHBOARD_JS[
         DASHBOARD_JS.index("const listFilters = [")
         : DASHBOARD_JS.index("const filterBar =", DASHBOARD_JS.index("const listFilters = ["))
@@ -830,10 +832,7 @@ def test_issue_search_box_is_wired_to_a_delegated_input_listener():
 
 
 def test_issue_and_pull_search_boxes_reflect_live_state_and_rerender():
-    assert (
-        'value="${isPulls ? escapeHtml(state.pullsView.query || "") : escapeHtml(state.issuesView.query || "")}"'
-        in DASHBOARD_JS
-    )
+    assert 'value="${escapeHtml(`${serializePullQuery()} `)}"' in DASHBOARD_JS
     assert 'event.target?.matches?.(\'[data-repo-filter-query="pulls"]\')' in DASHBOARD_JS
     pull_listener = DASHBOARD_JS[
         DASHBOARD_JS.index(
@@ -841,9 +840,19 @@ def test_issue_and_pull_search_boxes_reflect_live_state_and_rerender():
         : DASHBOARD_JS.index(
             'event.target?.matches?.("[data-repo-branch-search]")')
     ]
-    assert "state.pullsView.query = event.target.value || \"\";" in pull_listener
-    assert "state.repoCollectionPages.pulls = 1;" in pull_listener
-    assert 'renderRepoCollection("pulls");' in pull_listener
+    assert 'applyPullQueryText(event.target.value || "");' in pull_listener
+    apply = DASHBOARD_JS[
+        DASHBOARD_JS.index("function applyPullQueryText")
+        : DASHBOARD_JS.index("function syncPullQueryBox")
+    ]
+    assert "state.pullsView.query = parsed.query;" in apply
+    assert "setPullFilter(parsed.status);" in apply
+    set_filter = DASHBOARD_JS[
+        DASHBOARD_JS.index("function setPullFilter")
+        : DASHBOARD_JS.index("const PULL_VIEWS")
+    ]
+    assert "state.repoCollectionPages.pulls = 1;" in set_filter
+    assert 'renderRepoCollection("pulls");' in set_filter
 
 
 def test_opening_a_different_repo_resets_the_issue_view_state():
