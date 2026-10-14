@@ -250,6 +250,7 @@ public enum RouteParser {
         case "food-guide": return [.foodGuide]
         case "speech": return [.speech]
         case "glasses-alert": return [.glassesAlert]
+        case "people": return [.people]
         case "repos": return [.repos(.all)]
         case "profile": return me.isEmpty ? [.settings(section: "profile")] : [.profile(name: me)]
         case "agents": return [.agents(.all)]
