@@ -711,3 +711,23 @@ It was drawn after the chevron, so it took the taps.
   held at larger sizes.
 - Only parse-checked on Linux (`swiftc -parse`); not run on a device or in
   the simulator.
+
+### The back button needing several taps (iOS 26)
+
+Reported 2026-10-14: the DM back chevron sometimes worked and sometimes
+took five taps. The chat's round buttons are `.plain` buttons whose label is
+a glyph in a 44 or 48 pt frame, wrapped in `chatGlass`. Before iOS 26 that
+helper drew a material fill, and a filled background is hit-tested. On
+iOS 26 it uses `glassEffect`, which adds no hit area, so only the glyph's
+own pixels took the tap: about 10 by 17 pt for the chevron. A tap on the
+rest of the glass circle went to the transcript behind it.
+
+- `chatGlass` and `ShellGlass` (`shellGlass`) now start with
+  `contentShape(shape)`, so the whole glass shape takes the tap on every iOS
+  version. That covers the DM header (back, call, avatar), the room header
+  (channels, mesh diagnostics, compose), the composer's plus menu and the
+  live-touch controls.
+- Buttons that already set `contentShape` before `shellGlass` (the drawer's
+  close button, the unread banner, the new agent circle) are unchanged.
+- Only parse-checked on Linux (`swiftc -parse`); not run on a device or in
+  the simulator.
