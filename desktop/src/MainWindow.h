@@ -7806,6 +7806,8 @@ private:
         QString mirrorPath;
         const ForkMeshIdentity *identity = nullptr;
         QString userName;
+        int idleAgentId = 0;
+        bool agentWorking = false;
     };
     struct WorktreeMergeStep {
         enum Kind { Refused, NeedsEditor, EditorUnresolved, Attempted };

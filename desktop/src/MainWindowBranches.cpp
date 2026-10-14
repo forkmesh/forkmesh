@@ -2822,6 +2822,25 @@ QString describeDirtyPaths(const QStringList &paths)
     return text;
 }
 
+QString dirtyWorktreeRefusal(const QString &branch, const QStringList &paths,
+                             bool cleanUp, bool agentWorking)
+{
+    const QString files =
+        paths.isEmpty() ? QString()
+                        : QStringLiteral(" (%1)").arg(describeDirtyPaths(paths));
+    if (agentWorking)
+        return QStringLiteral("Worktree %1 has uncommitted changes%2 and its agent "
+                              "is still working — merge it once the agent finishes.")
+            .arg(branch, files);
+    if (cleanUp)
+        return QStringLiteral("Worktree %1 has uncommitted changes%2 — commit or "
+                              "stash them first (they'd be lost when it's deleted).")
+            .arg(branch, files);
+    return QStringLiteral("Worktree %1 has uncommitted changes%2 — commit or stash "
+                          "them first (the merge would leave them out).")
+        .arg(branch, files);
+}
+
 } // namespace
 
 void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
@@ -3046,6 +3065,15 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
     }
     flow.identity = &m_profileIdentity;
     flow.userName = m_userName;
+    for (const AgentSession &session : std::as_const(m_agentSessions)) {
+        if (session.merged || session.branchName != branch
+            || session.owner != flow.owner || session.name != flow.name)
+            continue;
+        if (agentSessionWorkInFlight(session.id))
+            flow.agentWorking = true;
+        else if (flow.idleAgentId <= 0)
+            flow.idleAgentId = session.id;
+    }
     runOffThread<WorktreeMergeStep>(
         [flow] { return prepareWorktreeMerge(flow); },
         [this, flow, done](WorktreeMergeStep step) {
@@ -3241,12 +3269,39 @@ MainWindow::prepareWorktreeMerge(const WorktreeMergeFlow &flow)
             return step;
         }
         if (!QString::fromUtf8(wst).trimmed().isEmpty()) {
-            step.message =
-                QStringLiteral("Worktree %1 has uncommitted changes — commit or stash "
-                               "them first (they'd be lost when it's deleted).")
-                    .arg(branch);
-            step.noticeKind = forkmesh::kLocalOperationNoticeKind;
-            return step;
+            const CheckoutDirt left = readCheckoutDirt(worktreePath);
+            if (!flow.cleanUp || flow.agentWorking || flow.idleAgentId <= 0) {
+                step.message = dirtyWorktreeRefusal(branch, left.changed, flow.cleanUp,
+                                                    flow.agentWorking);
+                step.noticeKind = forkmesh::kLocalOperationNoticeKind;
+                return step;
+            }
+            const QString message =
+                QStringLiteral("Agent #%1: commit the changes it left uncommitted")
+                    .arg(flow.idleAgentId);
+            const GitCaptureResult add =
+                runGitCaptureBackgrounded(worktreePath, {"add", "-A"});
+            const GitCaptureResult commit =
+                add.ok ? runGitCaptureBackgrounded(worktreePath,
+                                                   {"commit", "-m", message})
+                       : add;
+            if (!commit.ok) {
+                step.message =
+                    QStringLiteral("Couldn't commit the changes Agent #%1 left in "
+                                   "worktree %2 (%3), so it was not merged: %4")
+                        .arg(QString::number(flow.idleAgentId), branch,
+                             describeDirtyPaths(left.changed),
+                             gitFailureDetail(commit, add.ok
+                                                          ? QStringLiteral("git commit")
+                                                          : QStringLiteral("git add -A")));
+                step.reloadPanels = true;
+                return step;
+            }
+            step.logs << QStringLiteral("Git: committed the %1 change(s) Agent #%2 left "
+                                        "uncommitted in %3 before merging it: %4")
+                             .arg(QString::number(left.changed.size()),
+                                  QString::number(flow.idleAgentId), branch,
+                                  describeDirtyPaths(left.changed));
         }
         const GitCaptureResult update = runGitCaptureBackgrounded(
             worktreePath,
@@ -3263,11 +3318,9 @@ MainWindow::prepareWorktreeMerge(const WorktreeMergeFlow &flow)
                 gitFailureDetail(update, QStringLiteral("git merge"));
             if (forkmesh::gitrefusal::overLocalChanges(update.error + QLatin1Char('\n')
                                            + update.failureOutput)) {
-                step.message =
-                    QStringLiteral("Worktree %1 has uncommitted changes — commit or "
-                                   "stash them first (they'd be lost when it's "
-                                   "deleted).")
-                        .arg(branch);
+                step.message = dirtyWorktreeRefusal(
+                    branch, readCheckoutDirt(worktreePath).changed, flow.cleanUp,
+                    flow.agentWorking);
                 step.noticeKind = forkmesh::kLocalOperationNoticeKind;
                 step.reloadPanels = true;
                 return step;
