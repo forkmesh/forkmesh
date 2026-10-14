@@ -59,6 +59,12 @@ ADMIN_DATABASE_WRITE_BLOCKED = {
     "legacy_custody_reconciliation": "Audit record of the custody scrub.",
 }
 
+ADMIN_DATABASE_DELETE_ONLY = {
+    "repositories": "Catalog rows are published by the owner's node; they "
+                    "can only be deleted here, which purges the repository.",
+}
+ADMIN_DATABASE_REPOSITORY_DELETE_MAX = 50
+
 # Findings of the production D1 audit (issue #682, measured 2026-09-10). The
 # live inventory joins them onto the tables that still exist, so the desktop
 # shows what the cleanup plan says about a table next to its real row count.
@@ -317,10 +323,12 @@ async def _plaintext_data_tables(env, tables):
     return plaintext
 
 
-def _write_block_reason(table, catalog, hidden):
+def _write_block_reason(table, catalog, hidden, op=""):
     if table in hidden:
         return "Restricted: this table is changed only through its own " \
                "audited API."
+    if table in ADMIN_DATABASE_DELETE_ONLY and op != "delete":
+        return ADMIN_DATABASE_DELETE_ONLY[table]
     if table in ADMIN_DATABASE_WRITE_BLOCKED:
         return ADMIN_DATABASE_WRITE_BLOCKED[table]
     if _without_rowid(catalog.get(table, "")):
@@ -364,6 +372,8 @@ async def _inventory(env, refresh=False):
             "rows": int(counts.get(name, 0) or 0),
             "restricted": name in hidden,
             "writable": not block,
+            "deletable": not _write_block_reason(
+                name, catalog, hidden, "delete"),
             "writeBlockedReason": block,
             "rowid": not _without_rowid(catalog[name]),
             "storage": storage_model(column_names) if columns is not None
@@ -730,7 +740,7 @@ async def _handle_write(env, request):
     if table not in catalog:
         return _no_store({"error": "unknown_table"}, 404)
     action = "admin.database_" + op
-    block = _write_block_reason(table, catalog, _hidden_tables())
+    block = _write_block_reason(table, catalog, _hidden_tables(), op)
     audit_details = {"table": table}
     if block:
         await _audit_sensitive_action(
@@ -744,7 +754,7 @@ async def _handle_write(env, request):
         audit_details)
     try:
         result, status = await _apply_write(
-            env, op, table, payload, audit_details)
+            env, node, op, table, payload, audit_details)
     except ValueError as error:
         result, status = {"error": str(error)[:200]}, 400
     except Exception as error:
@@ -761,9 +771,9 @@ async def _handle_write(env, request):
     return _no_store(result, status)
 
 
-async def _apply_write(env, op, table, payload, audit_details):
+async def _apply_write(env, actor, op, table, payload, audit_details):
     if op == "delete":
-        return await _apply_delete(env, table, payload, audit_details)
+        return await _apply_delete(env, actor, table, payload, audit_details)
     column_names = [c["name"] for c in await _table_columns(env, table)]
     if op == "insert":
         names, values = await _assignments(
@@ -825,7 +835,7 @@ async def _apply_write(env, op, table, payload, audit_details):
     return {"ok": True, "op": op, "table": table, "rowid": rowid}, 200
 
 
-async def _apply_delete(env, table, payload, audit_details):
+async def _apply_delete(env, actor, table, payload, audit_details):
     try:
         rowids = sorted({int(x) for x in (payload.get("rowids") or [])})
     except (TypeError, ValueError):
@@ -834,6 +844,11 @@ async def _apply_delete(env, table, payload, audit_details):
         return {"error": "no_rows_selected"}, 400
     if len(rowids) > ADMIN_DATABASE_DELETE_MAX:
         return {"error": "too_many_rows"}, 400
+    if (table == "repositories"
+            and len(rowids) > ADMIN_DATABASE_REPOSITORY_DELETE_MAX):
+        return {"error": "too_many_rows",
+                "detail": "Delete at most %d repositories at a time."
+                          % ADMIN_DATABASE_REPOSITORY_DELETE_MAX}, 400
     expected = str(payload.get("digest") or "")
     if len(rowids) == 1 and expected:
         before = await d1_first(
@@ -854,6 +869,10 @@ async def _apply_delete(env, table, payload, audit_details):
     audit_details["rowCount"] = len(rowids)
     audit_details["rowDigestBefore"] = await _admin_selected_rows_digest(
         env, table, rowids)
+    if table == "repositories":
+        purged = await admin_purge_repository_rows(env, rowids, actor)
+        return {"ok": True, "op": "delete", "table": table,
+                "rowCount": purged}, 200
     for start in range(0, len(rowids), 90):
         batch = rowids[start:start + 90]
         await d1_run(
@@ -864,3 +883,66 @@ async def _apply_delete(env, table, payload, audit_details):
         )
     return {"ok": True, "op": "delete", "table": table,
             "rowCount": len(rowids)}, 200
+
+
+async def _repository_row_names(env, row):
+    try:
+        record = await decrypt_row(env, row.get("data") or "")
+    except Exception:
+        record = None
+    if not isinstance(record, dict):
+        return "", ""
+    owner = safe_segment(str(record.get("owner") or ""))
+    name = safe_segment(str(record.get("name") or ""))
+    if not owner or not name:
+        return "", ""
+    if await blind_index(env, owner + "/" + name) != row.get("key_bi"):
+        return "", ""
+    return owner, name
+
+
+async def admin_purge_repository_rows(env, rowids, actor):
+    purged = 0
+    for start in range(0, len(rowids), 90):
+        batch = rowids[start:start + 90]
+        rows = await d1_all(
+            env,
+            "SELECT key_bi, owner_bi, data FROM repositories WHERE rowid IN ("
+            + ",".join(["?"] * len(batch)) + ")",
+            *batch,
+        )
+        for row in rows or []:
+            key_bi = str(row.get("key_bi") or "")
+            if not key_bi:
+                continue
+            owner, name = await _repository_row_names(env, row)
+            target = owner + "/" + name if owner else key_bi
+            if owner:
+                await invalidate_public_catalog_snapshots(env, owner, name)
+            await _record_repo_delete_tombstone(
+                env, key_bi, str(row.get("owner_bi") or ""))
+            await _delete_repo_scoped_state(env, key_bi)
+            if owner:
+                await _delete_repo_named_state(env, owner, name)
+            await d1_run(
+                env, "DELETE FROM repositories WHERE key_bi=?", key_bi)
+            if owner:
+                await _delete_bounties_namespace(env, owner, name)
+                await d1_run(
+                    env, "DELETE FROM chat_history WHERE room_key LIKE ?",
+                    "repo:" + owner + "/" + name + ":room:%")
+                await d1_run(
+                    env,
+                    "DELETE FROM funds_received WHERE scope='project' "
+                    "AND key=?",
+                    owner + "/" + name)
+                await schedule_public_catalog_republish(env, owner, name)
+            await _audit_sensitive_action(
+                env, actor, "repository.delete", "repository", target,
+                "success", {"deleted": True, "admin": True,
+                            "via": "database"})
+            purged += 1
+    if purged:
+        await purge_catalog_related_caches()
+        await _bump_catalog_rev(env)
+    return purged
