@@ -19,6 +19,8 @@ public struct AccountProfile: Equatable, Sendable {
     public let followers: Int
     public let following: Int
     public let mirrorCount: Int
+    public var timeZone: String = ""
+    public var avatar: String = ""
 
     public static func parse(_ map: JSONObject, requested: String) -> AccountProfile {
         let nodes = map.strings("nodes").filter { NodeLink.isNodeName($0.lowercased()) }
@@ -38,7 +40,15 @@ public struct AccountProfile: Equatable, Sendable {
             location: String(map.str("profileLocation").prefix(120)),
             followers: max(0, map.int("followers")),
             following: max(0, map.int("following")),
-            mirrorCount: max(0, map.int("mirrorCount")))
+            mirrorCount: max(0, map.int("mirrorCount")),
+            timeZone: zone(map.str("profileTimezone")),
+            avatar: map.str("avatarPng"))
+    }
+
+    static func zone(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed.count <= 80, TimeZone(identifier: trimmed) != nil else { return "" }
+        return trimmed
     }
 
     public var isNode: Bool { kind == "node" }

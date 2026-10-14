@@ -31,6 +31,13 @@ extension ChatHub {
         office?.room(for: conversation)?.everyone == true
     }
 
+    public func canLeaveChannel(_ conversation: String) -> Bool {
+        conversation != ChatEveryone.worldConversation &&
+            !isEveryoneChannel(conversation) &&
+            office?.room(for: conversation) == nil &&
+            conversation.hasPrefix("#")
+    }
+
     public var everyoneRooms: [OfficeRoom] { office?.rooms.filter(\.everyone) ?? [] }
 
     public var listedChannels: [String] {
