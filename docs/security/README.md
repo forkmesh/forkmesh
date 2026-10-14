@@ -133,3 +133,6 @@ python3 tools/secret_gate.py --help
 - `app/tests/test_no_banned_identifiers.py` guards against personal
   identifiers returning through branches cut from rewritten history; rebuild
   such branches on `main`.
+  It also blocks the name of an outside organisation the project is not
+  affiliated with, so code and docs never imply an affiliation. Describe the
+  practice instead (for example "web application security checks").
