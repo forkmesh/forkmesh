@@ -915,18 +915,48 @@ the web cannot detect it at all.
   "1 message on the server" line says so) for its usual 7 days, the same as
   the media.
 
-**Filters.** The recorder builds the stream it records from a
-`{video track, audio track}` pair and asks the registered stages for each
-(`registerViewOnceFilterStages({face, voice})` in the recorder module, each
-`(input, choice) => {track, stop}`), so a filtered track is recorded exactly
-like a raw one. `chat.js` registers the call engine's `createVoiceStage`
-(`chat-call-voice.js`) when the browser has AudioWorklet: the recorder shows a
-Voice picker (default "Your own voice", remembered in
-`forkmesh.chat.viewOnceVoice`) and "Hear yourself (headphones)", which turns
-on the stage's monitor. If a chosen voice cannot start, nothing is recorded:
-the recorder says so instead of sending the real voice. The face and
-background stage is not connected yet (its branch has not landed); `face`
-is the seam it plugs into.
+**Filters** (face and background added 2026-10-13, after the call engine's
+face, head and background work landed). The recorder builds the stream it
+records from a `{video track, audio track}` pair and asks the registered
+stages for each (`registerViewOnceFilterStages({face, voice})` in the
+recorder module), so a filtered track is recorded exactly like a raw one: the
+recorded `MediaStream` is the face stage's canvas track plus the voice stage's
+track. `chat-view-once-filters.js` connects the call engine:
+
+- `installViewOnceFilters()` registers `createFaceStage` (`chat-call-faces.js`,
+  given the camera stream, the face id and the background id and image) when
+  the browser can run faces or backgrounds, and `createVoiceStage`
+  (`chat-call-voice.js`) when it has AudioWorklet.
+- The video recorder shows **Face** ("Your own face" and the five faces),
+  **Background** (the call's list; "Your photo" only when a photo is already
+  saved for calls), **Voice** (the call's list, including "Match face") and
+  "Hear yourself (headphones)". The voice recorder shows only Voice.
+- **Defaults** are the user's saved call choices (`forkmesh.chat.callFace`,
+  `forkmesh.chat.callBackground` with its photo, `forkmesh.chat.callVoice`),
+  read and never written: the call preview and the call panel start from the
+  same saved choices, so a message starts where the next call would, and
+  nothing chosen for one message changes the next call. With nothing saved
+  that is "Your own face", "No background" and "Match face", which means the
+  user's own voice. The separate `forkmesh.chat.viewOnceVoice` key of the
+  first version is no longer read.
+- Changing a picker before recording restarts the preview with the new
+  stages; the pickers are locked while recording.
+- **Nothing raw is sent by mistake.** `startViewOnceFaceStage` waits until the
+  stage reports `ready()` (the face photo, background image and models are
+  loaded; at most 20 s) and checks that the stage took the face and
+  background asked for. If it cannot, or the voice stage cannot start, the
+  recorder records nothing and says "The face or background could not start
+  here" (or the voice equivalent) instead of falling back to the camera or
+  microphone. While recording, the call engine's own privacy rule applies:
+  frames where no face is tracked are blurred, never shown raw.
+
+The native recorders (iOS `MessagesViewOnceCapture.swift`, Android
+`ViewOnceMessages.kt`) record unfiltered for now; their
+`MessageCaptureFilters` hooks are pass-through. Follow-up: drive the
+WebView call page's `FmCallFaces.createFaceStage` and voice stage from those
+recorders (or record from the page in preview mode, as
+[chat-direct-calls.md](chat-direct-calls.md) describes), with the same
+"refuse rather than send raw" rule.
 
 Tests: `app/tests/test_chat_direct_media_api.py` (upload, download, consume,
 expiry, sweep, withdraw, quotas, limits, who may do what),
@@ -937,8 +967,13 @@ server, wrong key, held receipts, `forkmesh-media`) and
 and microphone: record video and voice, send, open once, deleted on the
 server, viewer gone, key dropped; hold-to-send with a changed voice; and two
 `/chat` pages talking through a mocked relay: the bubble arrives sealed, plays
-once, the sender sees "Opened", and the receipt is sent only after opening).
-The spec runs against a static server of `app/public` that also answers
+once, the sender sees "Opened", and the receipt is sent only after opening;
+and a fake camera fed with a still of the Maya photo (an ffmpeg-made `.y4m`)
+recorded with Theo's face over the office background: the stage tracks the
+face, the decoded recording's corners match the office image rather than the
+camera, its face region differs from the camera, and the frame is attached to
+the test result as `recorded-frame.png`. A face stage that fails to start
+leaves nothing recorded). The spec runs against a static server of `app/public` that also answers
 `/world/` (the config's readiness URL).
 
 ## Recipient counts ("to N")

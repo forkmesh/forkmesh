@@ -221,10 +221,11 @@ function levelMeter(stream, canvas) {
 export function openViewOnceRecorder({
   kind,
   recipient = "",
-  filters = {},
+  faces = [],
+  backgrounds = [],
   voices = [],
-  voiceChoice = "",
-  onVoiceChoice = () => {},
+  defaults = {},
+  resolveVoice = (value) => value,
   onSend,
   onClose = () => {},
 }) {
@@ -272,50 +273,87 @@ export function openViewOnceRecorder({
   status.textContent = kind === "voice"
     ? "Tap to start, or hold and release to send. It disappears after it is played once."
     : "It disappears after it is watched once.";
-  const activeFilters = { ...filters };
+  const choice = {
+    face: String(defaults.face || ""),
+    background: String(defaults.background || ""),
+    backgroundImage: String(defaults.backgroundImage || ""),
+    voice: String(defaults.voice || ""),
+  };
+  const activeFilters = {};
   const filterRow = document.createElement("div");
   filterRow.className = "chat-view-once-filters";
-  let voiceSelect = null;
   let monitorBox = null;
-  if (filterStages.voice && voices.length) {
-    const voiceLabel = document.createElement("label");
-    voiceLabel.textContent = "Voice ";
-    voiceSelect = document.createElement("select");
-    voiceSelect.className = "chat-view-once-voice-select";
-    voiceSelect.setAttribute("aria-label", "Voice for this message");
-    for (const [id, text] of [["", "Your own voice"], ...voices]) {
+  let monitorLabel = null;
+  const selects = [];
+
+  function computeFilters() {
+    const face = kind === "video" && filterStages.face && (choice.face || choice.background)
+      ? { faceId: choice.face, backgroundId: choice.background, backgroundImage: choice.backgroundImage }
+      : null;
+    const voice = filterStages.voice ? String(resolveVoice(choice.voice, choice.face) || "") : "";
+    activeFilters.face = face;
+    activeFilters.voice = voice;
+    if (monitorLabel) {
+      monitorLabel.hidden = !voice;
+      if (!voice) monitorBox.checked = false;
+    }
+  }
+
+  function addPicker(name, label, options, value, onChange) {
+    if (!options.length) return;
+    const wrap = document.createElement("label");
+    wrap.textContent = `${name} `;
+    const select = document.createElement("select");
+    select.className = `chat-view-once-${name.toLowerCase()}-select`;
+    select.setAttribute("aria-label", label);
+    for (const [id, text] of options) {
       const option = document.createElement("option");
       option.value = id;
       option.textContent = text;
-      voiceSelect.append(option);
+      select.append(option);
     }
-    voiceSelect.value = voices.some(([id]) => id === voiceChoice) ? voiceChoice : "";
-    activeFilters.voice = voiceSelect.value;
-    voiceLabel.append(voiceSelect);
-    const monitorLabel = document.createElement("label");
-    monitorBox = document.createElement("input");
-    monitorBox.type = "checkbox";
-    monitorBox.className = "chat-view-once-monitor";
-    monitorBox.setAttribute("aria-label", "Hear yourself while recording. Use headphones.");
-    monitorLabel.append(monitorBox, document.createTextNode(" Hear yourself (headphones)"));
-    monitorLabel.hidden = !activeFilters.voice;
-    filterRow.append(voiceLabel, monitorLabel);
-    voiceSelect.addEventListener("change", () => {
-      activeFilters.voice = voiceSelect.value;
-      monitorLabel.hidden = !activeFilters.voice;
-      if (!activeFilters.voice) monitorBox.checked = false;
-      onVoiceChoice(activeFilters.voice);
-      if (capture && !recording && !starting) {
+    select.value = options.some(([id]) => id === value) ? value : options[0][0];
+    onChange(select.value);
+    select.addEventListener("change", () => {
+      onChange(select.value);
+      computeFilters();
+      if (!recording && !starting) {
         releaseCapture();
-        if (kind === "video") ensureCapture().catch(() => {});
+        if (kind === "video") previewCamera();
       }
     });
-    monitorBox.addEventListener("change", () => {
-      capture?.voiceStage?.monitor?.(monitorBox.checked);
-    });
-  } else {
-    filterRow.hidden = true;
+    selects.push(select);
+    wrap.append(select);
+    filterRow.append(wrap);
   }
+
+  if (kind === "video" && filterStages.face) {
+    addPicker("Face", "Face for this video message", faces, choice.face, (value) => {
+      choice.face = value;
+    });
+    addPicker("Background", "Background for this video message", backgrounds, choice.background, (value) => {
+      choice.background = value;
+    });
+  }
+  if (filterStages.voice) {
+    addPicker("Voice", "Voice for this message", voices, choice.voice, (value) => {
+      choice.voice = value;
+    });
+    if (voices.length) {
+      monitorLabel = document.createElement("label");
+      monitorBox = document.createElement("input");
+      monitorBox.type = "checkbox";
+      monitorBox.className = "chat-view-once-monitor";
+      monitorBox.setAttribute("aria-label", "Hear yourself while recording. Use headphones.");
+      monitorLabel.append(monitorBox, document.createTextNode(" Hear yourself (headphones)"));
+      filterRow.append(monitorLabel);
+      monitorBox.addEventListener("change", () => {
+        capture?.voiceStage?.monitor?.(monitorBox.checked);
+      });
+    }
+  }
+  filterRow.hidden = !selects.length;
+  computeFilters();
   const controls = document.createElement("div");
   controls.className = "chat-view-once-controls";
   const record = makeButton("chat-view-once-record", "Record", `Start recording ${label.toLowerCase()}`);
@@ -343,12 +381,23 @@ export function openViewOnceRecorder({
   let sending = false;
 
   function unavailableText() {
+    if (activeFilters.face) {
+      return "The face or background could not start here. Choose \u201cYour own face\u201d and \u201cNo background\u201d, or try again.";
+    }
     if (activeFilters.voice) {
       return "The voice changer could not start here. Choose \u201cYour own voice\u201d or try again.";
     }
     return kind === "video"
       ? "The camera or microphone is unavailable."
       : "The microphone is unavailable.";
+  }
+
+  function previewCamera() {
+    ensureCapture().then(() => {
+      if (!closed) status.textContent = "It disappears after it is watched once.";
+    }).catch((error) => {
+      if (!closed && !error?.superseded) status.textContent = unavailableText();
+    });
   }
 
   function setTimer(ms) {
@@ -367,6 +416,8 @@ export function openViewOnceRecorder({
   }
 
   function releaseCapture() {
+    captureGeneration += 1;
+    capturing = null;
     stopMeter();
     stopMeter = () => {};
     if (capture) capture.stop();
@@ -392,15 +443,32 @@ export function openViewOnceRecorder({
     }
   }
 
-  async function ensureCapture() {
-    if (capture) return capture;
-    status.textContent = kind === "video" ? "Starting the camera…" : "Starting the microphone…";
-    capture = await openViewOnceCapture(kind, { filters: activeFilters });
-    if (monitorBox?.checked) capture.voiceStage?.monitor?.(true);
-    if (closed) {
-      capture.stop();
-      throw new Error("closed");
+  let capturing = null;
+  let captureGeneration = 0;
+
+  function ensureCapture() {
+    if (capture) return Promise.resolve(capture);
+    if (capturing) return capturing;
+    const generation = ++captureGeneration;
+    capturing = openCapture(generation).finally(() => {
+      if (generation === captureGeneration) capturing = null;
+    });
+    return capturing;
+  }
+
+  async function openCapture(generation) {
+    status.textContent = activeFilters.face
+      ? "Starting the camera and loading the face and background…"
+      : kind === "video" ? "Starting the camera…" : "Starting the microphone…";
+    const opened = await openViewOnceCapture(kind, { filters: { ...activeFilters } });
+    if (closed || generation !== captureGeneration) {
+      opened.stop();
+      const error = new Error("superseded");
+      error.superseded = true;
+      throw error;
     }
+    capture = opened;
+    if (monitorBox?.checked) capture.voiceStage?.monitor?.(true);
     if (kind === "video") {
       preview.hidden = false;
       preview.srcObject = capture.stream;
@@ -449,7 +517,7 @@ export function openViewOnceRecorder({
         stopWhenStarted = false;
         stopRecording();
       }
-      if (voiceSelect) voiceSelect.disabled = true;
+      for (const select of selects) select.disabled = true;
       record.hidden = true;
       stopButton.hidden = false;
       stopButton.focus();
@@ -458,7 +526,7 @@ export function openViewOnceRecorder({
       const result = await recording.done;
       recording = null;
       delete overlay.dataset.recording;
-      if (voiceSelect) voiceSelect.disabled = false;
+      for (const select of selects) select.disabled = false;
       releaseCapture();
       if (closed) return;
       if (!result.blob.size) {
@@ -481,7 +549,7 @@ export function openViewOnceRecorder({
     } catch (error) {
       starting = false;
       recording = null;
-      if (voiceSelect) voiceSelect.disabled = false;
+      for (const select of selects) select.disabled = false;
       releaseCapture();
       if (closed) return;
       status.textContent = unavailableText();
@@ -559,13 +627,7 @@ export function openViewOnceRecorder({
   cancel.addEventListener("click", close);
   document.addEventListener("keydown", onKey, true);
   document.body.append(overlay);
-  if (kind === "video") {
-    ensureCapture().then(() => {
-      if (!closed) status.textContent = "It disappears after it is watched once.";
-    }).catch(() => {
-      if (!closed) status.textContent = unavailableText();
-    });
-  }
+  if (kind === "video") previewCamera();
   record.focus();
   return { element: overlay, close, start: startRecording, stop: stopRecording };
 }
