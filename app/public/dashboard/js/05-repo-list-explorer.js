@@ -681,7 +681,7 @@
     const live = repoIsLive(origin);
     const viaMirror = repoServedByMirror(origin);
     const visibility = origin.isPrivate ? "private" : "public";
-    const statusClass = live ? "text-primary" : "text-muted-foreground";
+    const statusClass = live ? "text-success" : "text-muted-foreground";
     const nodeCount = group.members.length;
     const liveCount = group.members.reduce((n, m) => n + (repoIsLive(m) ? 1 : 0), 0);
     const statusText = nodeCount > 1
@@ -740,39 +740,109 @@
     `;
   }
 
+  const PROFILE_REPO_LANGUAGE_FALLBACK_COLOR = "#8b949e";
+
+  function profileRepositoryLanguage(group) {
+    const repo = sourceOfTruth(group);
+    return organizationRepositoryLanguages(group)[0]?.[0] ||
+      String(repo.language || repo.primaryLanguage || "").trim();
+  }
+
+  function profileRepositoryLanguageColor(language) {
+    return REPO_LANGUAGE_COLORS[language] || PROFILE_REPO_LANGUAGE_FALLBACK_COLOR;
+  }
+
+  function profileRepositoryLanguageMarkup(language) {
+    if (!language) return "";
+    return `<span class="inline-flex items-center gap-1"><span data-repo-language-dot class="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style="background-color:${escapeHtml(profileRepositoryLanguageColor(language))}"></span><span>${escapeHtml(language)}</span></span>`;
+  }
+
+  function profileRepositoryUpdatedMarkup(repo) {
+    const date = parseFlexibleDate(repo.updatedAt || repo.lastSync);
+    if (!date) return "";
+    const recent = Date.now() - date.getTime() < 30 * 24 * 60 * 60 * 1000;
+    const label = recent ? formatTimeAgo(date.getTime()) : `on ${formatDate(date.getTime())}`;
+    return `<span>Updated <time datetime="${escapeHtml(date.toISOString())}" title="${escapeHtml(date.toLocaleString())}">${escapeHtml(label)}</time></span>`;
+  }
+
+  function profileRepositorySparkline(weeks) {
+    const series = normalizeActivityWeeks(weeks);
+    const total = series.reduce((sum, value) => sum + value, 0);
+    if (!total) return "";
+    const width = 155;
+    const height = 30;
+    const max = Math.max(1, ...series);
+    const step = width / Math.max(1, series.length - 1);
+    const points = series.map((value, index) =>
+      `${(index * step).toFixed(1)},${(height - 1 - (value / max) * (height - 4)).toFixed(1)}`).join(" ");
+    const label = `${formatCount(total)} commit${total === 1 ? "" : "s"} in the past 52 weeks`;
+    return `<svg data-repo-activity-sparkline class="hidden text-primary lg:block" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`;
+  }
+
+  function profileRepositoryHasCount(text) {
+    return /[1-9]/.test(String(text || ""));
+  }
+
+  function syncProfileRepositoryStarMeta(root) {
+    root.querySelectorAll("[data-profile-repository-row]").forEach((row) => {
+      const text = String(row.querySelector("[data-repo-star-button] [data-repo-star-count]")?.textContent || "").trim();
+      const meta = row.querySelector("[data-profile-repo-star-meta]");
+      const value = meta?.querySelector("[data-profile-repo-star-meta-count]");
+      if (!meta || !value) return;
+      if (value.textContent !== text) value.textContent = text;
+      const show = profileRepositoryHasCount(text);
+      if (meta.classList.contains("hidden") === show) meta.classList.toggle("hidden", !show);
+    });
+  }
+
+  function observeProfileRepositoryStars(container) {
+    if (!container || container.dataset.profileRepoStarObserved === "true") return;
+    container.dataset.profileRepoStarObserved = "true";
+    new MutationObserver(() => syncProfileRepositoryStarMeta(container)).observe(container, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["aria-pressed"],
+    });
+  }
+
   function profileRepositoryRow(group) {
     const repo = sourceOfTruth(group);
     const key = repoKey(repo);
     const visibility = repo.isPrivate ? "Private" : "Public";
-    const language = repoLanguage(repo);
-    const license = repoLicense(repo);
-    const commitTotal = groupRepoMetric(group, ["commitCount", "commits", "commitHistory"]);
-    const activityWeeks = groupActivityWeeks(group);
-    return `<article data-profile-repository-row class="grid gap-3 px-4 py-5 md:grid-cols-[minmax(0,1fr)_12rem]">
-      <a href="${escapeHtml(groupLinkUrl(group))}" class="flex min-w-0 items-start gap-3 text-left">
-        ${nativeRepositoryLogoMarkup(repo, "h-12 w-12")}
-        <span class="block min-w-0 flex-1">
-        <span class="flex min-w-0 flex-wrap items-center gap-2">
-          <span class="min-w-0 truncate text-lg font-semibold text-accent hover:underline">${escapeHtml(repo.name || "repository")}</span>
-          <span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">${escapeHtml(visibility)}</span>
+    const language = profileRepositoryLanguage(group);
+    const license = String(repo.license || repo.licenseName || "").trim();
+    const description = String(repo.description || "").trim();
+    const displayOwner = groupDisplayOwner(group);
+    const publishedFrom = displayOwner && repo.owner &&
+      displayOwner.toLowerCase() !== String(repo.owner).toLowerCase()
+      ? `<p class="mb-1 text-xs text-muted-foreground">Published from ${escapeHtml(repo.owner)}/${escapeHtml(repo.name || "repository")}</p>`
+      : "";
+    const meta = [
+      profileRepositoryLanguageMarkup(language),
+      `<span data-profile-repo-star-meta class="hidden inline-flex items-center gap-1"><i data-lucide="star" class="h-4 w-4"></i><span data-profile-repo-star-meta-count>0</span></span>`,
+      license ? `<span class="inline-flex items-center gap-1"><i data-lucide="scale" class="h-4 w-4"></i>${escapeHtml(license)}</span>` : "",
+      profileRepositoryUpdatedMarkup(repo),
+    ].filter(Boolean).join("");
+    return `<article data-profile-repository-row class="flex w-full justify-between gap-4 border-b border-border py-6">
+      <div class="min-w-0 flex-1 lg:max-w-[75%]">
+        <div class="mb-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <h3 class="min-w-0 break-all text-[20px] font-semibold leading-[30px]"><a href="${escapeHtml(groupLinkUrl(group))}" class="text-accent hover:underline">${escapeHtml(repo.name || "repository")}</a></h3>
+          <span class="inline-flex shrink-0 items-center rounded-full border border-border px-[7px] text-xs font-medium leading-[18px] text-muted-foreground">${escapeHtml(visibility)}</span>
           ${repositoryTermsBadge(repo)}
-        </span>
-        <span class="mt-1 block text-xs text-muted-foreground">Published from ${escapeHtml(repo.owner || "owner")}/${escapeHtml(repo.name || "repository")}</span>
-        <span class="mt-2 line-clamp-2 text-sm text-muted-foreground">${escapeHtml(repo.description || "No description published.")}</span>
-        <span class="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5"><span data-repo-language-dot class="h-2 w-2 rounded-full bg-primary"></span>${escapeHtml(language)}</span>
-          <span class="inline-flex items-center gap-1.5"><i data-lucide="scale" class="h-3.5 w-3.5"></i>${escapeHtml(license)}</span>
-          <span>Updated ${escapeHtml(formatDate(repo.updatedAt || repo.lastSync))}</span>
-        </span>
-        </span>
-      </a>
-      <div class="grid content-center gap-3">
-        <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(key)}" class="justify-self-end inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background">
-          <i data-lucide="star" data-repo-star-icon class="h-3.5 w-3.5 text-muted-foreground"></i>
+        </div>
+        ${publishedFrom}
+        ${description ? `<p class="mb-2 break-words pr-6 text-sm text-muted-foreground">${escapeHtml(description)}</p>` : ""}
+        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">${meta}</div>
+      </div>
+      <div class="flex shrink-0 flex-col items-end justify-between gap-3">
+        <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(key)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-muted">
+          <i data-lucide="star" data-repo-star-icon class="h-4 w-4 text-muted-foreground"></i>
           <span data-repo-star-label>Star</span>
-          <span data-repo-star-count class="font-mono text-muted-foreground">${formatCount(0)}</span>
+          <span data-repo-star-count class="hidden">${formatCount(0)}</span>
         </button>
-        ${repoActivitySparkline(activityWeeks, { totalHint: commitTotal })}
+        ${profileRepositorySparkline(groupActivityWeeks(group))}
       </div>
     </article>`;
   }
@@ -893,7 +963,7 @@
       const live = repoIsLive(repo);
       return `
         <a href="${escapeHtml(entry.href)}" class="group flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-          <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-primary" : "bg-muted-foreground/40"}"></span>
+          <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
           <span class="min-w-0 flex-1 truncate"><span class="text-muted-foreground">${escapeHtml(repoDisplayOwner(repo) || "owner")}/</span><span class="text-foreground">${escapeHtml(repo.name || "repository")}</span></span>
           ${repositoryTermsBadge(repo, true)}
           ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
@@ -979,10 +1049,10 @@
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
-        <span class="block break-words font-medium text-foreground">${escapeHtml(repoDisplayKey(repo))}</span>
+        <span class="block truncate font-medium text-foreground" title="${escapeHtml(repoDisplayKey(repo))}">${escapeHtml(repoDisplayKey(repo))}</span>
         ${description ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-primary" : "bg-muted-foreground/40"}"></span>${status}</span>
+          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>
           ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
           ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
           ${repositoryTermsBadge(repo, true)}
@@ -1318,10 +1388,10 @@
     });
     container.innerHTML = groups.length
       ? groups.map((group) => profileRepositoryRow(group)).join("")
-      : `<div class="px-4 py-8 text-sm text-muted-foreground">${emptyListHtml("No repositories match this filter.", query)}</div>`;
+      : `<div class="border-b border-border py-8 text-sm text-muted-foreground">${emptyListHtml("No repositories match this filter.", query)}</div>`;
     window.lucide?.createIcons();
+    observeProfileRepositoryStars(container);
     hydrateRepoStarButtons(container);
-    hydrateNativeRepositoryLogos(container);
   }
 
   function renderProfileRepositoryCount(count = profileRepositoryGroups().length) {
@@ -1419,7 +1489,7 @@
       ? repository.metadataIncomplete.filter((item) => !migrationComplete || !String(item).endsWith(":transfer_pending"))
       : [];
     const incomplete = incompleteItems.length
-      ? `<p class="mt-2 text-[11px] text-amber-300">Some metadata was unavailable or rate-limited during import.</p>`
+      ? `<p class="mt-2 text-[11px] text-attention">Some metadata was unavailable or rate-limited during import.</p>`
       : "";
     // "Complete" here only ever meant the signed provider-metadata snapshot;
     // Git contents are hosted by a mirror node, so a finished job on an
@@ -1462,12 +1532,12 @@
         </div>
         <div class="flex shrink-0 flex-col gap-2">
           ${migrationJob && !migrationComplete ? `
-            <button type="button" data-repository-migration-resume="${escapeHtml(migrationJob.id || "")}" class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90">
+            <button type="button" data-repository-migration-resume="${escapeHtml(migrationJob.id || "")}" class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90">
               <i data-lucide="rotate-cw" class="h-3.5 w-3.5"></i>
               Continue import
             </button>` : ""}
           ${migrationJob && migrationComplete && migrationReport?.retryable ? `
-            <button type="button" data-repository-migration-retry="${escapeHtml(migrationJob.id || "")}" class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90">
+            <button type="button" data-repository-migration-retry="${escapeHtml(migrationJob.id || "")}" class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90">
               <i data-lucide="rotate-cw" class="h-3.5 w-3.5"></i>
               Retry failed work
             </button>` : ""}
@@ -1477,7 +1547,7 @@
               ${migrationReport?.available ? "Download signed report" : "Download draft report"}
             </button>` : ""}
           ${canVolunteer && volunteeredNode ? `
-            <span data-external-mirror-volunteered="${escapeHtml(repository?.id || "")}" role="status" class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-semibold text-foreground" title="Recorded for ${escapeHtml(volunteeredNode)}">
+            <span data-external-mirror-volunteered="${escapeHtml(repository?.id || "")}" role="status" class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-success/40 bg-success/10 px-3 text-xs font-semibold text-foreground" title="Recorded for ${escapeHtml(volunteeredNode)}">
               <i data-lucide="check" class="h-3.5 w-3.5"></i>
               Mirror requested · <span class="font-mono">${escapeHtml(volunteeredNode)}</span>
             </span>` : ""}
@@ -1875,7 +1945,7 @@
     "The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ForkMesh desktop node:";
 
   const NEW_REPO_SUBTITLE =
-    "Describe the repo, then finish creating and mirroring it from your ForkMesh desktop node.";
+    "Mirror an existing repository. Your ForkMesh desktop node finishes creating and signing it.";
   // The provider tab imports provider records only. Say so before the import
   // starts, so "complete" is never read as "mirrored" afterwards (issue #678).
   const NEW_REPO_PROVIDER_SUBTITLE =
@@ -1883,7 +1953,7 @@
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
-    "Name it, create it, then push your code with git — no desktop app and no other provider.";
+    "A repository holds your project's files and history. ForkMesh keeps a copy on every core node.";
 
   function newRepoSubtitleFor(source) {
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
@@ -1904,7 +1974,7 @@
     const subtitle = $("[data-new-repo-subtitle]");
     const intro = $("[data-new-repo-steps-intro]");
     const cancelLabel = $("[data-new-repo-cancel-label]");
-    if (title) title.textContent = open ? (copy.title || "Finish creating your repository") : "Create & mirror a repository";
+    if (title) title.textContent = open ? (copy.title || "Finish creating your repository") : "Create a new repository";
     if (subtitle) {
       subtitle.textContent = open
         ? (copy.subtitle || "ForkMesh needs your desktop node to publish and mirror this repository.")
@@ -1924,6 +1994,19 @@
     return /win/i.test(platform)
       ? "C:\\Users\\you\\code\\my-project"
       : "/home/you/code/my-project";
+  }
+
+  function newRepoVisibility() {
+    const checked = $("[data-new-repo-visibility]:checked");
+    const value = checked ? checked.value : $("[data-new-repo-visibility]")?.value;
+    return value === "private" ? "private" : "public";
+  }
+
+  function setNewRepoVisibility(value) {
+    $$("[data-new-repo-visibility]").forEach((input) => {
+      if (input.type === "radio") input.checked = input.value === value;
+      else input.value = value;
+    });
   }
 
   function newRepoSource() {
@@ -1975,16 +2058,19 @@
     // serve it only to the owner and the organization's readers.
     const core = hostedCoreMode();
     const hostedHere = empty || (source === "remote" && core);
-    const visibility = $("[data-new-repo-visibility]");
-    const privateOption = visibility?.querySelector('option[value="private"]');
+    const privateOption = $('[data-new-repo-visibility][value="private"]')
+      || $("[data-new-repo-visibility]")?.querySelector('option[value="private"]');
     const privateBlocked = hostedHere && !hostedSettings?.privateSupported;
     if (privateOption) {
       privateOption.disabled = privateBlocked;
-      privateOption.textContent = core && hostedHere
-        ? "Private — only you (and your organization's readers) can see and clone it"
-        : "Private — encrypted mirror, contents stay hidden";
+      const privateText = core && hostedHere
+        ? "Only you and your organization's readers can see and clone it."
+        : "Encrypted mirror, contents stay hidden.";
+      const privateDesc = $("[data-new-repo-private-desc]");
+      if (privateDesc) privateDesc.textContent = privateText;
+      else privateOption.textContent = "Private — " + privateText.replace(/\.$/, "");
     }
-    if (privateBlocked && visibility && visibility.value === "private") visibility.value = "public";
+    if (privateBlocked && newRepoVisibility() === "private") setNewRepoVisibility("public");
     $$("[data-new-repo-hosted-options]").forEach((element) =>
       element.classList.toggle("hidden", !(core && hostedHere)));
     $("[data-new-repo-name-row]")?.classList.toggle("nr-has-owner", core && hostedHere);
@@ -1997,8 +2083,8 @@
     if (empty) {
       if (hint) {
         hint.textContent = core
-          ? "ForkMesh hosts this repository on its own core nodes (a copy on each) — no desktop app and no other provider. Clone or push with git over HTTPS."
-          : "ForkMesh creates an empty repository you push to with git — no desktop app and no other provider. It is public, and stays empty until your first push.";
+          ? "Start empty and push with git over HTTPS."
+          : "Start empty and push with git. It is public and stays empty until your first push.";
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
@@ -2475,7 +2561,7 @@
       return;
     }
     const name = String($("[data-new-repo-name]")?.value || "").trim();
-    const visibility = $("[data-new-repo-visibility]")?.value === "private" ? "private" : "public";
+    const visibility = newRepoVisibility();
     const description = String($("[data-new-repo-description]")?.value || "").trim();
     if (!name) {
       setNewRepoHint("Enter a repository name.", "bad");
@@ -3154,7 +3240,7 @@
     const status = viewer?.querySelector("[data-repo-file-status]");
     if (!status) return;
     status.textContent = message;
-    status.classList.toggle("text-red-400", tone === "bad");
+    status.classList.toggle("text-destructive", tone === "bad");
     status.classList.toggle("text-muted-foreground", tone !== "bad");
   }
 
@@ -3212,7 +3298,7 @@
           <span class="min-w-0 truncate font-mono text-foreground">${name}</span>
           <span class="font-mono">${mime}</span>
           ${meta.size ? `<span class="font-mono">${escapeHtml(formatSize(meta.size))}</span>` : ""}
-          ${meta.truncated ? '<span class="font-mono text-amber-300">metadata truncated</span>' : ""}
+          ${meta.truncated ? '<span class="font-mono text-attention">metadata truncated</span>' : ""}
         </figcaption>
       </figure>`;
   }
@@ -3340,9 +3426,9 @@
             <span data-repo-file-status class="min-w-0 font-mono text-[10px] text-muted-foreground">${escapeHtml(status)}</span>
           </div>
           <div class="flex items-center gap-1.5">
-            <a href="${escapeHtml(meta.rawUrl)}" target="_blank" rel="noopener" aria-label="Open raw file" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a>
-            <button type="button" data-repo-preview-action="download" aria-label="Download file" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>
-            <button type="button" data-repo-preview-action="fullscreen" aria-label="Open full screen" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="maximize-2" class="h-3.5 w-3.5"></i></button>
+            <a href="${escapeHtml(meta.rawUrl)}" target="_blank" rel="noopener" aria-label="Open raw file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a>
+            <button type="button" data-repo-preview-action="download" aria-label="Download file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>
+            <button type="button" data-repo-preview-action="fullscreen" aria-label="Open full screen" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="maximize-2" class="h-3.5 w-3.5"></i></button>
           </div>
         </div>
         <div data-repo-file-content>${content}</div>
@@ -3456,7 +3542,7 @@
         </label>
         <div class="flex items-end gap-2">
           <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
-          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i>Save</button>
+          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i>Save</button>
         </div>
       </div>`;
     fileContent.classList.add("hidden");
