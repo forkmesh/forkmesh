@@ -187,6 +187,12 @@ class MarketTest {
         legacy = false
         expect(model.isInstalled(pkg("agents")), "a starter package is on in a new project")
         assertEq(MarketCardAction.OPEN, model.cardAction(pkg("agents"), opens = true))
+        model.starterPack = { StarterPack.MINIMAL }
+        expect(!model.isInstalled(pkg("agents")), "the Minimal pack leaves Agents out of a new project")
+        assertEq(MarketCardAction.INSTALL, model.cardAction(pkg("agents"), opens = true))
+        model.starterPack = { StarterPack.EVERYTHING }
+        expect(model.isInstalled(pkg("agents")))
+        model.starterPack = { StarterPack.STANDARD }
 
         expect(model.isInstalled(pkg("crm")))
         assertEq(MarketCardAction.OPEN, model.cardAction(pkg("crm"), opens = true))
