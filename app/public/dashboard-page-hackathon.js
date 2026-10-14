@@ -92,12 +92,12 @@
           readonly
           aria-label="Your hackathon invite link"
           value="${escapeHtml(link)}"
-          class="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"
+          class="h-control-sm min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"
         />
         <button
           data-hackathon-copy
           type="button"
-          class="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors"
+          class="fm-btn fm-btn-sm shrink-0"
         >
           <i data-lucide="copy" class="w-3.5 h-3.5"></i>
           Copy link
@@ -223,7 +223,7 @@
       const percent = mission.threshold
         ? Math.round((Number(mission.progress) || 0) * 100 / Number(mission.threshold))
         : 0;
-      const reward = mission.reward?.text ? `<span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${mission.complete ? "text-accent" : "text-muted-foreground"}">${escapeHtml(mission.reward.text)}</span>` : "";
+      const reward = mission.reward?.text ? `<span class="fm-label shrink-0${mission.complete ? " fm-label-success" : ""}">${escapeHtml(mission.reward.text)}</span>` : "";
       return `<div class="px-4 sm:px-5 py-3">
         <div class="flex items-center gap-3">
           <div class="min-w-0 flex-1">
@@ -278,7 +278,7 @@
         ? `<span class="shrink-0 text-xs text-muted-foreground">until ${escapeHtml(new Date(Number(reward.expiresAt)).toLocaleDateString())}</span>`
         : "";
       return `<li class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
-        <i data-lucide="${reward.kind === "badge" ? "award" : "gift"}" class="h-4 w-4 shrink-0 text-accent"></i>
+        <i data-lucide="${reward.kind === "badge" ? "award" : "gift"}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-foreground">${escapeHtml(what)}</p>
           <p class="text-xs text-muted-foreground">${escapeHtml(hackathonRewardReason(reward.key, data))}</p>
@@ -314,7 +314,7 @@
     const sentRows = sent.map((entry) => `<li class="rounded-md border border-border bg-background p-3">
         <div class="flex flex-wrap items-center gap-2">
           <input type="text" readonly value="${escapeHtml(entry.link || "")}" aria-label="Challenge link" class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs text-foreground" />
-          <button type="button" data-hackathon-challenge-copy="${escapeHtml(entry.link || "")}" class="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary"${entry.open ? "" : " disabled"}><i data-lucide="copy" class="w-3.5 h-3.5"></i>Copy</button>
+          <button type="button" data-hackathon-challenge-copy="${escapeHtml(entry.link || "")}" class="fm-btn fm-btn-sm shrink-0"${entry.open ? "" : " disabled"}><i data-lucide="copy" class="w-3.5 h-3.5"></i>Copy</button>
         </div>
         <p class="mt-2 text-xs text-muted-foreground tabular-nums">${escapeHtml(`Beat ${formatCount(entry.target)} points · ${formatCount(entry.accepted)} accepted · ${formatCount(entry.beaten)} beaten · ${entry.open ? `open until ${hackathonDateLabel(entry.expiresAt)}` : "closed"}`)}</p>
       </li>`).join("");
@@ -326,7 +326,7 @@
           ? `${formatCount(Math.max(0, entry.target + 1 - points))} more points to beat ${entry.challenger}`
           : `Closed before you passed ${entry.challenger}`;
       return `<li class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
-        <i data-lucide="${beaten ? "trophy" : "swords"}" class="h-4 w-4 shrink-0 ${beaten ? "text-accent" : "text-muted-foreground"}"></i>
+        <i data-lucide="${beaten ? "trophy" : "swords"}" class="h-4 w-4 shrink-0 ${beaten ? "text-success" : "text-muted-foreground"}"></i>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-foreground">${escapeHtml(status)}</p>
           <p class="text-xs text-muted-foreground tabular-nums">${escapeHtml(`Target ${formatCount(entry.target)} points · you have ${formatCount(points)}`)}</p>
@@ -336,7 +336,7 @@
     return `<div class="px-4 sm:px-5 py-4 border-b border-border">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Challenges</h2>
-        <button type="button" data-hackathon-challenge-new class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"${atLimit ? " disabled" : ""}><i data-lucide="swords" class="w-3.5 h-3.5"></i>${atLimit ? "Open challenge limit reached" : `Challenge friends to beat ${formatCount(points)}`}</button>
+        <button type="button" data-hackathon-challenge-new class="fm-btn fm-btn-sm"${atLimit ? " disabled" : ""}><i data-lucide="swords" class="w-3.5 h-3.5"></i>${atLimit ? "Open challenge limit reached" : `Challenge friends to beat ${formatCount(points)}`}</button>
       </div>
       <p class="mt-2 text-xs text-muted-foreground">A challenge link dares anyone who opens it to pass your points as they are right now. One link works for a whole group chat. It is for bragging rights and pays no points.</p>
       ${sentRows ? `<h3 class="mt-4 text-xs font-semibold text-foreground">Sent</h3><ul class="mt-2 grid gap-2">${sentRows}</ul>` : ""}
@@ -376,7 +376,7 @@
       ${hackathonInput("demoUrl", "Demo link (https, optional)", s.demoUrl, 'type="url" placeholder="https://"')}
       ${hackathonInput("videoUrl", "Video link (https, optional)", s.videoUrl, 'type="url" placeholder="https://"')}
       <div class="sm:col-span-2 flex flex-wrap items-center gap-2">
-        <button type="submit" class="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">${submission ? "Save changes" : `Submit to ${escapeHtml(track.name)}`}</button>
+        <button type="submit" class="fm-btn fm-btn-sm">${submission ? "Save changes" : `Submit to ${escapeHtml(track.name)}`}</button>
         <span data-hackathon-form-status class="text-xs text-muted-foreground"></span>
       </div>
     </form>`;
@@ -393,11 +393,11 @@
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           <form data-hackathon-team-create class="flex items-end gap-2">
             ${hackathonInput("name", "Start a team", "", 'required minlength="2" maxlength="40" placeholder="Team name"')}
-            <button type="submit" class="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">Create</button>
+            <button type="submit" class="fm-btn fm-btn-sm shrink-0">Create</button>
           </form>
           <form data-hackathon-team-join class="flex items-end gap-2">
             ${hackathonInput("code", "Join with an invite code", "", 'required pattern="[a-z0-9]{8}" placeholder="8 characters"')}
-            <button type="submit" class="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary">Join</button>
+            <button type="submit" class="fm-btn fm-btn-sm shrink-0">Join</button>
           </form>
         </div>
         <p data-hackathon-team-status class="mt-2 text-xs text-muted-foreground"></p>
@@ -414,13 +414,13 @@
       const flags = (submission.reviewFlags || []).map((flag) =>
         `<li>${escapeHtml(HACKATHON_FLAG_LABELS[flag] || flag)}</li>`).join("");
       const placement = submission.placement
-        ? `<span class="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-accent-foreground">${submission.placement === "first" ? "1st place" : "2nd place"}</span>`
+        ? `<span class="fm-label fm-label-accent">${submission.placement === "first" ? "1st place" : "2nd place"}</span>`
         : "";
       return `<div class="rounded-md border border-border bg-background p-3">
         <div class="flex flex-wrap items-center gap-2">
           <p class="min-w-0 flex-1 text-sm font-semibold text-foreground">${escapeHtml(submission.title)} <span class="font-normal text-muted-foreground">· ${escapeHtml(track.name)}</span></p>
           ${placement}
-          <span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${submission.status === "valid" ? "text-accent" : "text-muted-foreground"}">${escapeHtml(HACKATHON_STATUS_LABELS[submission.status] || submission.status)}</span>
+          <span class="fm-label${submission.status === "valid" ? " fm-label-success" : ""}">${escapeHtml(HACKATHON_STATUS_LABELS[submission.status] || submission.status)}</span>
         </div>
         <p class="mt-1 font-mono text-xs text-muted-foreground">${escapeHtml(submission.repo)}</p>
         ${flags ? `<ul class="mt-2 list-disc pl-4 text-xs text-muted-foreground">${flags}</ul>` : ""}
@@ -444,7 +444,7 @@
   function hackathonJudgingHtml(data) {
     if (!data.judge) return "";
     const view = state.hackathonView.judging;
-    let body = '<button type="button" data-hackathon-judging-load class="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary">Open the judging queue</button>';
+    let body = '<button type="button" data-hackathon-judging-load class="fm-btn fm-btn-sm">Open the judging queue</button>';
     if (view) {
       const criteria = view.criteria || [];
       body = (view.projects || []).map((project) => {
@@ -457,7 +457,7 @@
           <p class="mt-1 font-mono text-xs text-muted-foreground">${escapeHtml(project.repo)} · ${escapeHtml(HACKATHON_STATUS_LABELS[project.status] || project.status)} · ${escapeHtml(`${project.judges} judge${project.judges === 1 ? "" : "s"}`)}</p>
           ${project.pitch ? `<p class="mt-1 text-xs text-foreground">${escapeHtml(project.pitch)}</p>` : ""}
           <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">${selects}
-            <button type="submit" class="self-end rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"${view.open ? "" : " disabled"}>${project.yourScore ? "Update" : "Score"}</button>
+            <button type="submit" class="fm-btn fm-btn-sm self-end"${view.open ? "" : " disabled"}>${project.yourScore ? "Update" : "Score"}</button>
           </div>
         </form>`;
       }).join("") || '<p class="text-xs text-muted-foreground">No projects to judge yet.</p>';
@@ -473,7 +473,7 @@
   function hackathonVotingHtml(data) {
     if (!data.votingOpen) return "";
     const gallery = state.hackathonView.gallery;
-    let body = '<button type="button" data-hackathon-gallery-load class="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary">Show the projects</button>';
+    let body = '<button type="button" data-hackathon-gallery-load class="fm-btn fm-btn-sm">Show the projects</button>';
     if (gallery) {
       const ownTeam = data.team?.id || "";
       body = (gallery.projects || []).map((project) => `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
@@ -481,7 +481,7 @@
             <p class="truncate text-sm font-semibold text-foreground">${escapeHtml(project.title)} <span class="font-normal text-muted-foreground">· ${escapeHtml(project.trackName || project.track)}</span></p>
             <p class="truncate text-xs text-muted-foreground">${escapeHtml(project.team)} · ${escapeHtml(`${formatCount(project.votes || 0)} votes`)}</p>
           </div>
-          <button type="button" data-hackathon-vote="${escapeHtml(project.id)}" class="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary"${ownTeam && data.team?.submissions?.some((s) => s.id === project.id) ? " disabled" : ""}>Vote</button>
+          <button type="button" data-hackathon-vote="${escapeHtml(project.id)}" class="fm-btn fm-btn-sm shrink-0"${ownTeam && data.team?.submissions?.some((s) => s.id === project.id) ? " disabled" : ""}>Vote</button>
         </div>`).join("") || '<p class="text-xs text-muted-foreground">No valid projects yet.</p>';
     }
     return `<div class="px-4 sm:px-5 py-4 border-b border-border">
@@ -501,7 +501,7 @@
     const rows = milestones.map((entry) => `<li class="rounded-md border border-border bg-background p-3">
         <div class="flex items-center justify-between gap-3">
           <p class="min-w-0 text-sm font-semibold text-foreground">${escapeHtml(entry.label || "")}</p>
-          <span class="shrink-0 rounded-full ${entry.unlocked ? "bg-accent text-accent-foreground" : "border border-border text-muted-foreground"} px-2 py-0.5 text-[10px] font-semibold">${entry.unlocked ? "Unlocked" : `${formatCount(entry.value)} / ${formatCount(entry.threshold)}`}</span>
+          <span class="fm-label shrink-0${entry.unlocked ? " fm-label-success" : ""}">${entry.unlocked ? "Unlocked" : `${formatCount(entry.value)} / ${formatCount(entry.threshold)}`}</span>
         </div>
         ${entry.unlocked ? "" : hackathonMeter(entry.percent)}
         ${entry.description ? `<p class="mt-2 text-xs text-muted-foreground">${escapeHtml(entry.description)}</p>` : ""}
@@ -524,7 +524,7 @@
           <textarea name="pitch" minlength="20" maxlength="400" rows="2" required class="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20">${escapeHtml(ambassador?.pitch || "")}</textarea>
         </label>
         <div class="flex items-center gap-2">
-          <button type="submit" class="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary">Apply</button>
+          <button type="submit" class="fm-btn fm-btn-sm">Apply</button>
           <span data-hackathon-ambassador-status class="text-xs text-muted-foreground"></span>
         </div>
       </form>`;
@@ -546,8 +546,8 @@
           ${hackathonStatTile("Status", "Ambassador", "Badge awarded")}
         </div>
         <div class="mt-3 flex flex-wrap gap-2">
-          <button type="button" data-hackathon-poster-toggle class="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">Show my poster</button>
-          <button type="button" data-hackathon-poster-print class="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary">Print poster</button>
+          <button type="button" data-hackathon-poster-toggle class="fm-btn fm-btn-sm">Show my poster</button>
+          <button type="button" data-hackathon-poster-print class="fm-btn fm-btn-sm">Print poster</button>
         </div>
         <div data-hackathon-poster hidden class="mt-3 rounded-lg border border-border bg-white p-8 text-center text-black">
           <p class="text-xs font-semibold uppercase tracking-widest">${escapeHtml(data.campaign?.title || "ForkMesh Hackathon")}</p>
@@ -632,22 +632,25 @@
     const name = hackathonAccountName();
     if (!name) {
       const next = encodeURIComponent(`${location.pathname}${location.search}`);
-      return `<div class="px-4 sm:px-5 py-8">
-        <p class="text-sm text-muted-foreground">
+      return `<div class="fm-blankslate">
+        <i data-lucide="lock" aria-hidden="true"></i>
+        <p class="fm-blankslate-title">Sign in to take part</p>
+        <p class="fm-blankslate-desc">
           <a class="text-accent underline" href="/login?next=${next}">Log in</a>
           or <a class="text-accent underline" href="/signup">create an account</a>
           to take part. The <a class="text-accent underline" href="/hackathon">hackathon page</a> and its leaderboards are public.
         </p>
       </div>`;
     }
-    return `<div class="px-4 sm:px-5 py-8">
-      <p class="text-sm text-foreground">You have not joined yet.</p>
-      <p class="mt-1 text-sm text-muted-foreground">Joining gives you an invite link, a squad and a place on the boards.</p>
+    return `<div class="fm-blankslate">
+      <i data-lucide="trophy" aria-hidden="true"></i>
+      <p class="fm-blankslate-title">You have not joined yet.</p>
+      <p class="fm-blankslate-desc">Joining gives you an invite link, a squad and a place on the boards.</p>
       <button
         data-hackathon-join
         type="button"
         ${joinable ? "" : "disabled"}
-        class="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors disabled:opacity-50"
+        class="fm-btn fm-btn-cta mt-3"
       >${joinable ? "Join the hackathon" : "Registration is closed"}</button>
     </div>`;
   }
@@ -669,8 +672,9 @@
       const login = view.errorStatus === 401
         ? ` <a class="text-accent underline" href="/login?next=${next}">Log in</a> or <a class="text-accent underline" href="/signup?next=${next}">create an account</a>.`
         : "";
-      body.innerHTML = `<div class="px-4 sm:px-5 py-8 text-sm text-muted-foreground">${escapeHtml(view.error)}${login}</div>`;
+      body.innerHTML = `<div class="fm-blankslate"><i data-lucide="${view.errorStatus === 401 ? "lock" : "circle-alert"}" aria-hidden="true"></i><p class="fm-blankslate-title">Your standing is unavailable</p><p class="fm-blankslate-desc">${escapeHtml(view.error)}${login}</p></div>`;
       if (rank) rank.textContent = "Unavailable";
+      window.lucide?.createIcons();
       return;
     }
     const data = view.data || {};
@@ -687,7 +691,7 @@
     const you = data.you || {};
     if (rank) rank.textContent = you.rank ? `#${formatCount(you.rank)}` : "Unranked";
     const notice = view.notice
-      ? `<div class="px-4 sm:px-5 py-3 border-b border-border text-sm text-foreground bg-secondary">${escapeHtml(view.notice)}</div>`
+      ? `<div class="px-4 sm:px-5 py-3 border-b border-border"><div class="fm-flash fm-flash-warning"><i data-lucide="triangle-alert" aria-hidden="true"></i><div class="fm-flash-body">${escapeHtml(view.notice)}</div></div></div>`
       : "";
     body.innerHTML = [
       notice,
