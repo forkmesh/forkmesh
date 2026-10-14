@@ -104,3 +104,17 @@ def test_availability_lines_promise_only_what_ships():
     assert call == "Free on the App Store for iPhone and iPad, and as a signed APK for Android."
     for line in (meta, systems, hero_note, call):
         assert "Watch" not in line and "watchOS" not in line, line
+
+
+def test_landing_page_promotes_the_mobile_app():
+    index = (WWW_PUBLIC / "index.html").read_text(encoding="utf-8")
+    section = index[index.index('<section id="mobile-app"'):index.index('<section id="ecosystem"')]
+    assert '<h2 id="mobile-app-title">Your mesh,<br />now in your pocket.</h2>' in section
+    assert f'href="{APP_STORE}"' in section
+    assert 'href="/#downloads"' in section
+    assert 'aria-label="QR code for forkmesh.com/mobile"' in section
+    for shot in re.findall(r'src="/assets/mobile/([a-z0-9-]+\.webp)"', section):
+        assert (WWW_PUBLIC / "assets" / "mobile" / shot).is_file(), shot
+    for tag in re.findall(r"<img [^>]*>", section):
+        assert "alt=" in tag, tag
+    assert "#mobile-app .mapp-card" in index

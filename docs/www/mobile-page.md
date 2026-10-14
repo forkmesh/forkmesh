@@ -24,6 +24,28 @@ slabs, card language and textured buttons.
   The Android button goes to the verified downloads on the landing page
   (`/#downloads`).
 
+## Landing page section
+
+`#mobile-app` on the landing page, between "Your mesh, wherever you work"
+and the ecosystem, sends visitors to the app. It is a dark card in both
+themes: copy, four feature points, the same App Store and Android buttons as
+this page, a link to `/mobile`, and a fanned trio of screenshots from
+`assets/mobile/` (`repos`, `start-agent`, `review`) with a floating approval
+notification and a running-agent card drawn in HTML. Its styles live in the
+landing page's own `<style>` block under `#mobile-app`, and its buttons pin
+the dark-theme button tokens so they read on the card in light mode.
+
+- **Scan to install.** A QR code for `https://forkmesh.com/mobile` lets a
+  desktop visitor open the page on their phone, where the smart banner offers
+  the app. It is an inline SVG path (version 3, error correction Q, built with
+  `segno`) with the logo over the centre 7 × 7 modules, which Q tolerates.
+  Regenerate it if the URL changes. It is hidden below 560 px, where the
+  visitor is already on a phone.
+- **Motion.** The centre phone floats, the notification fades in and taps
+  Approve, the progress bar fills and a scan line sweeps the QR code; the
+  side phones fan out on hover. The landing page's reduced-motion rule stops
+  all of it.
+
 ## Screenshots
 
 Simulator captures of the native app exported to 640-pixel-wide WebP at

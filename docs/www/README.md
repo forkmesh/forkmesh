@@ -32,6 +32,7 @@ route, so a deploy from it fails instead of creating a second Worker.
 | `www/public/features.html` | The `/features` catalog. Self-contained: its styles and an SVG icon sprite are inline and it runs no script of its own; see Traps |
 | `#everywhere` in `www/public/index.html`, `assets/everywhere/` | "Your mesh, wherever you work": the connection line, the three device mockups and their screenshots |
 | `www/public/mobile.html`, `mobile.css`, `assets/mobile/` | The `/mobile` page for the iPhone app in the landing page's style, built from real app screenshots ([mobile page](mobile-page.md)) |
+| `#mobile-app` in `www/public/index.html` | "Your mesh, now in your pocket": the landing page's call to action for the phone app ([mobile page](mobile-page.md#landing-page-section)) |
 | `www/docs/` | Public documentation library (Markdown and JSON schemas); see the note at the top of [www/docs/README.md](../../www/docs/README.md) |
 | `app/tools/build_site_assets.py www` | Stages `www/dist` (the upload), rendering the docs library into it |
 | `app/tools/docs_site.py`, `docs_markdown.py`, `docs_history.py` | Render `www/docs/**/*.md` to `/docs/<path>/`, `/docs/library/`, `/docs/history/`, `/docs/documents/` |
