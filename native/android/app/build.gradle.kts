@@ -87,9 +87,29 @@ val bundleChangelog = tasks.register<BundleChangelog>("bundleChangelog") {
     source.set(if (changelogOverride.isEmpty()) file("src/changelog/changelog.json") else file(changelogOverride))
 }
 
+abstract class BundleDocsLibrary : DefaultTask() {
+    @get:InputFile
+    abstract val source: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val target = outputDir.get().asFile.resolve("docs")
+        target.mkdirs()
+        source.get().asFile.copyTo(target.resolve("library.json"), overwrite = true)
+    }
+}
+
+val bundleDocsLibrary = tasks.register<BundleDocsLibrary>("bundleDocsLibrary") {
+    source.set(rootProject.layout.projectDirectory.file("../ios/ForkMesh/Resources/DocsLibrary.json"))
+}
+
 androidComponents {
     onVariants { variant ->
         variant.sources.assets?.addGeneratedSourceDirectory(bundleChangelog, BundleChangelog::outputDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(bundleDocsLibrary, BundleDocsLibrary::outputDir)
     }
 }
 

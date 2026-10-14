@@ -1236,6 +1236,75 @@ and `docs/app/chat-push-previews.md`.
   me), `DirectMessagesTest.testDirectListPreviewShowsTheNewestTopLevelLine`,
   `testDirectListRowsAreNewestFirst`.
 
+## 18. Docs package (2026-10-14)
+
+The `docs` Market package (bundled, default, places mobile and desktop) shows
+the public documentation library on the phone: every page of `www/docs` in the
+web library's order, and the Dependencies page with each dependency's GitHub
+repository and top three authors. It is gated like the other core packages
+(section 13): hub item `docs` in the App group after People, route kind
+`Route.Docs`, native destination `docs` (Open button in the Market). Guests may
+open it; it reads nothing from the account. The desktop version is
+`marketplace/packages/docs/content/desktop` (`DocsLibrary.cpp`,
+`DocsFeature.cpp`); the phone follows its search scores, link resolution and
+sanitising.
+
+- **Data.** The app ships the same bundle iOS ships,
+  `native/ios/ForkMesh/Resources/DocsLibrary.json`
+  (`forkmesh-docs-library-v1`, written by `marketplace/tools/docs_mobile_bundle.py`).
+  The `bundleDocsLibrary` task in `app/build.gradle.kts` copies it to
+  `docs/library.json` in a generated assets folder, like `bundleChangelog`
+  does for the changelog, so there is one checked-in copy. Only the public
+  library is in it; nothing is fetched at run time.
+- **Model (`C/docs/`).** `DocsLibrary.parse` checks the schema and keeps
+  areas, pages and dependencies in file order; pages with an absolute path or
+  `..` are dropped. Dependencies are grouped by ecosystem in order of first
+  appearance with the desktop labels. Repository, profile and projects links
+  are kept only under `https://github.com/`, websites only as http(s), logins
+  must look like GitHub logins, at most three authors, and `usedBy` keeps only
+  relative paths. `search` needs every word in the title, description, path
+  or text and scores like the desktop (title phrase 200, title word 150 at the
+  start or 100, description 25, path 15, up to 10 for body matches); the
+  snippet is the first line holding the phrase (else the first matching word)
+  with markup removed, about 140 characters. `searchDependencies` matches
+  names, titles, descriptions and author names and logins. `resolve` turns a
+  link into an anchor, another page (a directory link opens its `README.md`),
+  or a web address: `//host`, `/path` on forkmesh.com, `www/public/...` on
+  forkmesh.com, anything else in the repository on the source tree at
+  app.forkmesh.com.
+- **Markdown (`DocsMarkdown`).** A block parser (headings with GitHub
+  anchors, numbered on repeats; paragraphs; nested ordered, unordered and task
+  lists; quotes; ``` and ~~~ fences, where `#` lines stay code; pipe tables
+  with alignment; rules; `<a id>` anchors; reference link definitions) and an
+  inline parser that returns spans (bold, italic, code, strike, links with the
+  raw href, relative ones included). HTML comments are dropped and known HTML
+  tags stripped; unknown angle-bracket words such as `<owner>` stay as text.
+  It is separate from `AgentTranscriptFormat`, whose inline links are web
+  addresses only.
+- **Screens (`A/feature/docs/`).** `DocsFeature` reads the asset once off the
+  main thread and keeps the parsed library. `DocsScreen`: a search field, then
+  each area's pages (title and description) and a Dependencies row; with a
+  query, matching pages (title and snippet) and matching dependencies.
+  `DocsPageScreen` renders the blocks in a lazy list; internal links push
+  another `DocsPageScreen` on the app's navigator (so Back walks the reading
+  history), anchors scroll the list, other links go through
+  `rememberLinkOpener` (app.forkmesh.com source links open in the app, the
+  rest in the browser). The top bar has Open on web; Previous and Next at the
+  end replace the page. `DocsDependenciesScreen` lists dependencies by
+  ecosystem with its own search; `DocsDependencyScreen` shows title, package
+  name, description, version (or unpinned), Development only, GitHub link or
+  "No GitHub repository is known", Used by links, the top authors with commit
+  counts and Projects, Profile and Website links (or the authors note), and
+  the snapshot date. A build without the asset shows "This build does not
+  include the documentation library."
+- **Tests.** `DocsLibraryTest` (decoding and order, schema rejection,
+  grouping and sanitising, search ranking and snippets, dependency search,
+  every `resolve` case, anchors, blocks, list continuations, inline spans,
+  snippet clipping, and the real bundle: more than 100 pages starting at
+  `README.md`, Dependencies last, more than 20 dependencies, every page
+  parses); `NavigationTest` (sample route, `/dashboard/docs`,
+  `forkmesh://docs`, not guest-gated); `PackageGateTest.testDocsIsADefaultPackageInTheAppGroup`.
+
 ## Appendix: port map
 
 The Flutter (or Flutter Android) source each Kotlin file was ported from, as

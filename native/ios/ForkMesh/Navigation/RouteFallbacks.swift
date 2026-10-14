@@ -127,6 +127,7 @@ enum NavigationRoutes {
         fallback(routes, .speech) { _ in AnyView(SpeechScreen()) }
         fallback(routes, .glassesAlert) { _ in AnyView(GlassesAlertScreen()) }
         fallback(routes, .people) { _ in AnyView(PeopleScreen()) }
+        fallback(routes, .docs) { _ in AnyView(DocsScreen()) }
         fallback(routes, .vault) { _ in AnyView(VaultScreen()) }
         fallback(routes, .desktops) { _ in AnyView(LocalDesktopScreen()) }
         fallback(routes, .localAI) { _ in titled("On-device AI", LocalAISettingsView()) }

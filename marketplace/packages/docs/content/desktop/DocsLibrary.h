@@ -33,6 +33,30 @@ struct DocsHit {
     int score = 0;
 };
 
+struct DocsAuthor {
+    QString login;
+    QString name;
+    QString profile;
+    QString projects;
+    QString website;
+    int contributions = 0;
+    int publicRepos = 0;
+};
+
+struct DocsDependency {
+    QString ecosystem;
+    QString name;
+    QString title;
+    QString version;
+    QString description;
+    QString repository;
+    QString authorsNote;
+    QString fetched;
+    QStringList usedBy;
+    QList<DocsAuthor> authors;
+    bool development = false;
+};
+
 struct DocsTarget {
     enum class Kind { None, Anchor, Page, External };
     Kind kind = Kind::None;
@@ -45,17 +69,27 @@ class DocsLibrary
 {
 public:
     static QString bundledRoot();
+    static QString bundledDependencies();
+    static QString dependenciesPath();
+    static QString dependenciesSource();
     static const QList<DocsArea> &areas();
+    static const QList<DocsArea> &navigationAreas();
     static const DocsArea *area(const QString &key);
     static QString areaFor(const QString &path);
     static QString webUrl(const QString &path);
     static QString sourceUrl(const QString &repositoryPath);
+    static QString repositoryPath(const QString &path);
+    static QString ecosystemLabel(const QString &ecosystem);
+    static QString dependenciesMarkdown(const QList<DocsDependency> &dependencies,
+                                        const QString &generated);
     static QString titleOf(const QString &markdown);
     static QString descriptionOf(const QString &markdown);
     static QStringList linkTargets(const QString &markdown);
     static int readingMinutes(int words);
 
     bool load(const QString &root);
+    bool loadDependencies(const QString &file);
+    const QList<DocsDependency> &dependencies() const { return m_dependencies; }
     bool isEmpty() const { return m_pages.isEmpty(); }
     const QList<DocsPage> &pages() const { return m_pages; }
     const DocsPage *page(const QString &path) const;
@@ -72,6 +106,7 @@ private:
 
     QList<DocsPage> m_pages;
     QHash<QString, int> m_index;
+    QList<DocsDependency> m_dependencies;
 };
 
 }

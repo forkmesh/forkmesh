@@ -8,6 +8,7 @@
 
 #include <cstdio>
 
+using forkmesh::docs::DocsDependency;
 using forkmesh::docs::DocsHit;
 using forkmesh::docs::DocsLibrary;
 using forkmesh::docs::DocsPage;
@@ -210,6 +211,132 @@ void testPaging(const DocsLibrary &library)
           "reading time matches the web library");
 }
 
+const char *kDependencies = R"json({
+  "schema": "forkmesh-docs-dependencies-v1",
+  "generated": "2026-10-14",
+  "dependencies": [
+    {"ecosystem": "cpp", "name": "Qt6", "title": "Qt 6", "version": "6.4+",
+     "usedBy": ["desktop/CMakeLists.txt"], "repository": "https://github.com/qt/qtbase",
+     "description": "Application *framework*.",
+     "authors": [
+       {"login": "laknoll", "name": "Lars Knoll", "profile": "https://github.com/laknoll",
+        "projects": "https://github.com/laknoll?tab=repositories", "publicRepos": 12,
+        "website": "javascript:alert(1)", "contributions": 4321},
+       {"login": "second", "name": "", "contributions": 1},
+       {"login": "third", "name": "Third Person", "website": "https://third.example"},
+       {"login": "fourth", "name": "Fourth Person"}
+     ]},
+    {"ecosystem": "python", "name": "typing_extensions", "version": "4.16.0",
+     "usedBy": ["app/host/requirements.txt", "/etc/passwd", "../outside"],
+     "repository": "https://evil.example/python/typing_extensions",
+     "authors": [{"login": "bad login!", "name": "Nobody"}],
+     "authorsNote": "No GitHub repository is known for this dependency."},
+    {"ecosystem": "python", "name": "", "version": "1"},
+    {"ecosystem": "maven", "name": "com.android.application", "title": "Android Gradle Plugin",
+     "version": "9.4.0", "development": true, "repository": ""}
+  ]
+})json";
+
+void testDependencies(const QString &root)
+{
+    QTemporaryDir data;
+    const QString file = data.filePath(QStringLiteral("dependencies.json"));
+    write(file, kDependencies);
+    DocsLibrary library;
+    library.load(root);
+    const qsizetype documents = library.pages().size();
+    check(library.loadDependencies(file), "the dependency snapshot loads");
+    check(library.loadDependencies(file) && library.pages().size() == documents + 1,
+          "loading the snapshot again replaces the dependencies page");
+    check(library.dependencies().size() == 3, "entries without a name are dropped");
+    const DocsDependency &qt = library.dependencies().value(0);
+    check(qt.repository == QStringLiteral("https://github.com/qt/qtbase"), "a GitHub repository is kept");
+    check(qt.authors.size() == 3, "only the top three authors are kept");
+    check(qt.authors.value(0).website.isEmpty(), "a non-web author website is dropped");
+    check(qt.authors.value(1).name == QStringLiteral("second") &&
+              qt.authors.value(1).profile == QStringLiteral("https://github.com/second") &&
+              qt.authors.value(1).projects == QStringLiteral("https://github.com/second?tab=repositories"),
+          "an author without a name or links falls back to the GitHub login");
+    const DocsDependency &typing = library.dependencies().value(1);
+    check(typing.repository.isEmpty(), "a repository outside GitHub is dropped");
+    check(typing.authors.isEmpty(), "an author with an invalid login is dropped");
+    check(typing.usedBy == QStringList{QStringLiteral("app/host/requirements.txt")},
+          "used-by paths stay inside the repository");
+
+    const DocsPage *page = library.page(DocsLibrary::dependenciesPath());
+    check(page && page->area == QStringLiteral("dependencies") && page->title == QStringLiteral("Dependencies"),
+          "the snapshot becomes the Dependencies page");
+    check(library.pages().last().path == DocsLibrary::dependenciesPath() &&
+              library.pagesIn(QStringLiteral("dependencies")).size() == 1,
+          "the Dependencies page closes the library");
+    check(DocsLibrary::navigationAreas().last().key == QStringLiteral("dependencies") &&
+              DocsLibrary::area(QStringLiteral("dependencies")) &&
+              DocsLibrary::areas().size() + 1 == DocsLibrary::navigationAreas().size(),
+          "the Dependencies area follows the web library's areas");
+    check(DocsLibrary::webUrl(DocsLibrary::dependenciesPath()).isEmpty(),
+          "the Dependencies page has no web copy");
+    check(DocsLibrary::repositoryPath(DocsLibrary::dependenciesPath()) ==
+                  QStringLiteral("marketplace/packages/docs/data/dependencies.json") &&
+              DocsLibrary::repositoryPath(QStringLiteral("README.md")) == QStringLiteral("www/docs/README.md"),
+          "repository paths name the snapshot and the library");
+    const QString markdown = page ? page->markdown : QString();
+    check(markdown.contains(QStringLiteral("## Desktop (C++)")) && markdown.contains(QStringLiteral("## Python")) &&
+              markdown.contains(QStringLiteral("## Android (Gradle)")),
+          "dependencies are grouped by ecosystem");
+    check(markdown.contains(QStringLiteral("[Desktop (C++)](#desktop-c)")),
+          "the summary table links each ecosystem section");
+    check(markdown.contains(QStringLiteral("[qt/qtbase](https://github.com/qt/qtbase)")),
+          "each dependency links its GitHub repository");
+    check(markdown.contains(QStringLiteral("1. **[Lars Knoll](https://github.com/laknoll)** (@laknoll) · "
+                                           "4,321 commits · [12 projects](https://github.com/laknoll?tab=repositories)")),
+          "top authors show their name, commits and a link to their projects");
+    check(markdown.contains(QStringLiteral("[website](https://third.example)")), "an author website is linked");
+    check(!markdown.contains(QStringLiteral("Fourth Person")), "a fourth author is not shown");
+    check(markdown.contains(QStringLiteral("Application \\*framework\\*.")) &&
+              markdown.contains(QStringLiteral("### typing_extensions")),
+          "markdown in snapshot text is escaped, inner underscores are not");
+    check(markdown.contains(QStringLiteral("*No GitHub repository is known for this dependency.*")) &&
+              markdown.contains(QStringLiteral("- GitHub: none known")),
+          "a dependency without GitHub says so");
+    check(markdown.contains(QStringLiteral("Version: 9.4.0 · Development only")),
+          "development-only dependencies are marked");
+    check(markdown.contains(QStringLiteral(
+              "[desktop/CMakeLists.txt](https://app.forkmesh.com/forkmesh/forkmesh/tree/main/desktop/CMakeLists.txt)")),
+          "used-by manifests link the source tree");
+    const QList<DocsHit> hits = library.search(QStringLiteral("lars knoll"), 5);
+    check(!hits.isEmpty() && hits.first().path == DocsLibrary::dependenciesPath() &&
+              hits.first().snippet.contains(QStringLiteral("Lars Knoll")),
+          "search finds dependency authors");
+    check(library.resolve(DocsLibrary::dependenciesPath(), QStringLiteral("https://github.com/qt/qtbase")).kind ==
+              DocsTarget::Kind::External,
+          "repository links open in the browser");
+
+    write(file, R"({"schema": "something-else", "dependencies": [{"ecosystem": "go", "name": "x"}]})");
+    check(!library.loadDependencies(file) && !library.page(DocsLibrary::dependenciesPath()) &&
+              library.dependencies().isEmpty() && library.pages().size() == documents,
+          "a snapshot with another schema removes the page");
+    library.load(root);
+    check(library.dependencies().isEmpty(), "reloading the library clears the dependencies");
+}
+
+void testRepositoryDependencies()
+{
+    const QString file = QFileInfo(QStringLiteral(__FILE__))
+                             .dir()
+                             .absoluteFilePath(QStringLiteral("../../../data/dependencies.json"));
+    if (!QFileInfo(file).isFile()) {
+        std::printf("FAIL: dependency snapshot missing at %s\n", qPrintable(file));
+        ++failures;
+        return;
+    }
+    DocsLibrary library;
+    check(library.loadDependencies(QDir::cleanPath(file)), "the repository dependency snapshot loads");
+    bool linked = true;
+    for (const DocsDependency &dependency : library.dependencies())
+        linked = linked && (dependency.repository.isEmpty() || dependency.repository.startsWith(QStringLiteral("https://github.com/")));
+    check(library.dependencies().size() > 20 && linked, "the snapshot lists the repository's dependencies");
+}
+
 void testRelativeRoot(const QString &root)
 {
     const QString previous = QDir::currentPath();
@@ -263,6 +390,8 @@ int main(int argc, char **argv)
     testPaging(library);
     testRelativeRoot(root.path());
     testRepositoryLibrary();
+    testDependencies(root.path());
+    testRepositoryDependencies();
     std::printf("%s: %d failure(s)\n", failures ? "FAILED" : "OK", failures);
     return failures ? 1 : 0;
 }

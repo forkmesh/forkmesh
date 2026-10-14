@@ -433,8 +433,9 @@ void DocsFeature::buildPage()
     connect(m_forwardButton, &QPushButton::clicked, this, [this] { goForward(); });
     connect(homeButton, &QPushButton::clicked, this, [this] { openPage(m_library.homePath()); });
     connect(m_webButton, &QPushButton::clicked, this, [this] {
-        if (!m_current.isEmpty())
-            QDesktopServices::openUrl(QUrl(DocsLibrary::webUrl(m_current)));
+        const QString url = DocsLibrary::webUrl(m_current);
+        if (!url.isEmpty())
+            QDesktopServices::openUrl(QUrl(url));
     });
     auto *backShortcut = new QShortcut(QKeySequence(Qt::ALT | Qt::Key_Left), this);
     backShortcut->setContext(Qt::WidgetWithChildrenShortcut);
@@ -575,7 +576,9 @@ void DocsFeature::load()
     if (m_loaded)
         return;
     m_loaded = true;
-    if (!m_library.load(DocsLibrary::bundledRoot()))
+    const bool library = m_library.load(DocsLibrary::bundledRoot());
+    const bool dependencies = m_library.loadDependencies(DocsLibrary::bundledDependencies());
+    if (!library && !dependencies)
         m_summary->setText(QStringLiteral("This build does not include the documentation library."));
     renderNavigation();
 }
@@ -645,7 +648,9 @@ void DocsFeature::openPage(const QString &path, const QString &fragment, bool re
     m_view->verticalScrollBar()->setValue(0);
 
     renderBreadcrumb();
-    m_webButton->setToolTip(DocsLibrary::webUrl(path));
+    const QString webUrl = DocsLibrary::webUrl(path);
+    m_webButton->setToolTip(webUrl.isEmpty() ? QStringLiteral("This page is only in the desktop library")
+                                             : webUrl);
 
     renderOutline();
     renderFooter();
@@ -681,7 +686,7 @@ void DocsFeature::renderBreadcrumb()
         return;
     const DocsArea *area = DocsLibrary::area(page->area);
     QStringList crumbs{QStringLiteral("Library"), area ? area->label : page->area};
-    crumbs.append(QStringLiteral("www/docs/") + page->path);
+    crumbs.append(DocsLibrary::repositoryPath(page->path));
     const int minutes = DocsLibrary::readingMinutes(page->words);
     if (minutes > 0 && !page->asset)
         crumbs.append(QStringLiteral("%1 min read").arg(minutes));
@@ -721,7 +726,8 @@ void DocsFeature::renderNavigation()
             const DocsPage *page = m_library.page(hit.path);
             auto *item = new QTreeWidgetItem(m_navigation, {page->title});
             item->setData(0, kPathRole, page->path);
-            item->setToolTip(0, QStringLiteral("www/docs/%1\n\n%2").arg(page->path, hit.snippet));
+            item->setToolTip(0, QStringLiteral("%1\n\n%2").arg(DocsLibrary::repositoryPath(page->path),
+                                                                  hit.snippet));
         }
         if (hits.isEmpty()) {
             auto *item = new QTreeWidgetItem(m_navigation, {QStringLiteral("No documents match")});
@@ -734,11 +740,18 @@ void DocsFeature::renderNavigation()
         selectInNavigation();
         return;
     }
-    m_summary->setText(QStringLiteral("%1 documents from the ForkMesh library, the same pages as "
-                                      "forkmesh.com/docs")
-                           .arg(m_library.pages().size()));
+    const qsizetype dependencies = m_library.dependencies().size();
+    const qsizetype documents = m_library.pages().size() - (dependencies > 0 ? 1 : 0);
+    m_summary->setText(dependencies > 0
+                           ? QStringLiteral("%1 documents from the ForkMesh library, the same pages as "
+                                            "forkmesh.com/docs, and %2 dependencies")
+                                 .arg(documents)
+                                 .arg(dependencies)
+                           : QStringLiteral("%1 documents from the ForkMesh library, the same pages as "
+                                            "forkmesh.com/docs")
+                                 .arg(documents));
     const DocsPage *current = m_library.page(m_current);
-    for (const DocsArea &area : DocsLibrary::areas()) {
+    for (const DocsArea &area : DocsLibrary::navigationAreas()) {
         const QList<const DocsPage *> pages = m_library.pagesIn(area.key);
         if (pages.isEmpty())
             continue;
@@ -752,9 +765,10 @@ void DocsFeature::renderNavigation()
         for (const DocsPage *page : pages) {
             auto *item = new QTreeWidgetItem(group, {page->title});
             item->setData(0, kPathRole, page->path);
+            const QString source = DocsLibrary::repositoryPath(page->path);
             item->setToolTip(0, page->description.isEmpty()
-                                    ? QStringLiteral("www/docs/") + page->path
-                                    : QStringLiteral("www/docs/%1\n\n%2").arg(page->path, page->description));
+                                    ? source
+                                    : QStringLiteral("%1\n\n%2").arg(source, page->description));
         }
         group->setExpanded(current ? current->area == area.key : area.key == QLatin1String("guides"));
     }
@@ -1003,7 +1017,7 @@ void DocsFeature::updateHistoryButtons()
 {
     m_backButton->setEnabled(!m_back.isEmpty());
     m_forwardButton->setEnabled(!m_forward.isEmpty());
-    m_webButton->setEnabled(!m_current.isEmpty());
+    m_webButton->setEnabled(!m_current.isEmpty() && !DocsLibrary::webUrl(m_current).isEmpty());
 }
 
 QString DocsFeature::lastPageKey() const

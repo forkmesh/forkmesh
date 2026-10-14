@@ -5,8 +5,10 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocale>
 #include <QRegularExpression>
 
 #include <algorithm>
@@ -18,7 +20,12 @@ namespace {
 const QString kWebOrigin = QStringLiteral("https://forkmesh.com");
 const QString kSourceTree = QStringLiteral("https://app.forkmesh.com/forkmesh/forkmesh/tree/main/");
 const QString kRepositoryPrefix = QStringLiteral("www/docs/");
+const QString kDependenciesPath = QStringLiteral("@dependencies");
+const QString kDependenciesArea = QStringLiteral("dependencies");
+const QString kDependenciesSchema = QStringLiteral("forkmesh-docs-dependencies-v1");
+const QString kGitHub = QStringLiteral("https://github.com/");
 constexpr int kDescriptionLimit = 180;
+constexpr int kTopAuthors = 3;
 
 const QStringList kGuideOrder = {
     QStringLiteral("README.md"),
@@ -179,6 +186,55 @@ QString assetDescription(const QByteArray &bytes)
     return QStringLiteral("Machine-readable data file.");
 }
 
+int wordCount(const QString &text)
+{
+    static const QRegularExpression word(QStringLiteral("\\S+"));
+    int words = 0;
+    for (QRegularExpressionMatchIterator it = word.globalMatch(text); it.hasNext(); it.next())
+        ++words;
+    return words;
+}
+
+QString escapedMarkdown(const QString &text)
+{
+    QString out;
+    out.reserve(text.size());
+    for (qsizetype i = 0; i < text.size(); ++i) {
+        const QChar ch = text.at(i);
+        const bool edge = i == 0 || i + 1 == text.size() || !text.at(i - 1).isLetterOrNumber() ||
+                          !text.at(i + 1).isLetterOrNumber();
+        if (QStringLiteral("\\`*[]<>|").contains(ch) || (ch == QLatin1Char('_') && edge))
+            out += QLatin1Char('\\');
+        out += ch;
+    }
+    return out.simplified();
+}
+
+QString webLink(const QString &value)
+{
+    const QUrl url(value.trimmed(), QUrl::StrictMode);
+    const QString scheme = url.scheme().toLower();
+    if (!url.isValid() || url.host().isEmpty() ||
+        (scheme != QLatin1String("https") && scheme != QLatin1String("http")))
+        return {};
+    return url.toString();
+}
+
+QString gitHubLink(const QString &value)
+{
+    const QString link = webLink(value);
+    return link.startsWith(kGitHub) && link.size() > kGitHub.size() ? link : QString();
+}
+
+QString markdownLink(const QString &label, const QString &url)
+{
+    QString target = url;
+    target.replace(QLatin1Char('('), QStringLiteral("%28"));
+    target.replace(QLatin1Char(')'), QStringLiteral("%29"));
+    target.replace(QLatin1Char(' '), QStringLiteral("%20"));
+    return QStringLiteral("[%1](%2)").arg(escapedMarkdown(label), target);
+}
+
 QString snippetFor(const QString &markdown, const QString &needle)
 {
     const int at = markdown.indexOf(needle, 0, Qt::CaseInsensitive);
@@ -208,6 +264,21 @@ QString DocsLibrary::bundledRoot()
     return QStringLiteral(":/forkmesh-market/packages/docs/repository/www/docs");
 }
 
+QString DocsLibrary::bundledDependencies()
+{
+    return QStringLiteral(":/forkmesh-market/packages/docs/data/dependencies.json");
+}
+
+QString DocsLibrary::dependenciesPath()
+{
+    return kDependenciesPath;
+}
+
+QString DocsLibrary::dependenciesSource()
+{
+    return QStringLiteral("marketplace/packages/docs/data/dependencies.json");
+}
+
 const QList<DocsArea> &DocsLibrary::areas()
 {
     static const QList<DocsArea> list = {
@@ -234,9 +305,19 @@ const QList<DocsArea> &DocsLibrary::areas()
     return list;
 }
 
+const QList<DocsArea> &DocsLibrary::navigationAreas()
+{
+    static const QList<DocsArea> all = areas() + QList<DocsArea>{
+        {kDependenciesArea, QStringLiteral("Dependencies"),
+         QStringLiteral("The open-source projects ForkMesh builds on, their GitHub repositories and "
+                        "top authors.")},
+    };
+    return all;
+}
+
 const DocsArea *DocsLibrary::area(const QString &key)
 {
-    for (const DocsArea &entry : areas()) {
+    for (const DocsArea &entry : navigationAreas()) {
         if (entry.key == key)
             return &entry;
     }
@@ -245,6 +326,8 @@ const DocsArea *DocsLibrary::area(const QString &key)
 
 QString DocsLibrary::areaFor(const QString &path)
 {
+    if (path == kDependenciesPath)
+        return kDependenciesArea;
     if (path.endsWith(QLatin1String(".json")))
         return QStringLiteral("schemas");
     const int slash = path.indexOf(QLatin1Char('/'));
@@ -255,6 +338,8 @@ QString DocsLibrary::areaFor(const QString &path)
 
 QString DocsLibrary::webUrl(const QString &path)
 {
+    if (path == kDependenciesPath)
+        return {};
     if (!path.endsWith(QLatin1String(".md")))
         return kWebOrigin + QStringLiteral("/docs/") + path;
     if (path == QLatin1String("README.md"))
@@ -273,6 +358,130 @@ QString DocsLibrary::webUrl(const QString &path)
 QString DocsLibrary::sourceUrl(const QString &repositoryPath)
 {
     return kSourceTree + repositoryPath;
+}
+
+QString DocsLibrary::repositoryPath(const QString &path)
+{
+    return path == kDependenciesPath ? dependenciesSource() : kRepositoryPrefix + path;
+}
+
+QString DocsLibrary::ecosystemLabel(const QString &ecosystem)
+{
+    static const QHash<QString, QString> labels = {
+        {QStringLiteral("cpp"), QStringLiteral("Desktop (C++)")},
+        {QStringLiteral("python"), QStringLiteral("Python")},
+        {QStringLiteral("go"), QStringLiteral("Go")},
+        {QStringLiteral("npm"), QStringLiteral("JavaScript (npm)")},
+        {QStringLiteral("vendored"), QStringLiteral("Bundled web libraries")},
+        {QStringLiteral("maven"), QStringLiteral("Android (Gradle)")},
+        {QStringLiteral("swift"), QStringLiteral("Swift packages")},
+    };
+    return labels.value(ecosystem, ecosystem);
+}
+
+QString DocsLibrary::dependenciesMarkdown(const QList<DocsDependency> &dependencies,
+                                          const QString &generated)
+{
+    const QLocale locale(QLocale::English);
+    QStringList ecosystems;
+    QHash<QString, QList<const DocsDependency *>> grouped;
+    int onGitHub = 0;
+    int withAuthors = 0;
+    for (const DocsDependency &dependency : dependencies) {
+        if (!ecosystems.contains(dependency.ecosystem))
+            ecosystems.append(dependency.ecosystem);
+        grouped[dependency.ecosystem].append(&dependency);
+        onGitHub += dependency.repository.isEmpty() ? 0 : 1;
+        withAuthors += dependency.authors.isEmpty() ? 0 : 1;
+    }
+    QStringList out{
+        QStringLiteral("# Dependencies"),
+        QString(),
+        QStringLiteral("The open-source projects ForkMesh builds on, read from the repository's "
+                       "manifests: %1 dependencies, %2 of them on GitHub. Each entry links its "
+                       "GitHub repository and its top three authors by commits, with a link to "
+                       "each author's projects.")
+            .arg(dependencies.size())
+            .arg(onGitHub),
+        QString(),
+        QStringLiteral("Snapshot of %1 from `marketplace/tools/docs_dependencies.py`; %2 of %3 "
+                       "dependencies have their authors recorded.")
+            .arg(generated.isEmpty() ? QStringLiteral("an unknown date") : generated)
+            .arg(withAuthors)
+            .arg(dependencies.size()),
+        QString(),
+        QStringLiteral("| Area | Dependencies | On GitHub |"),
+        QStringLiteral("| --- | --- | --- |"),
+    };
+    for (const QString &ecosystem : std::as_const(ecosystems)) {
+        const QString label = ecosystemLabel(ecosystem);
+        const QList<const DocsDependency *> &group = grouped.value(ecosystem);
+        const auto hosted = std::count_if(group.cbegin(), group.cend(), [](const DocsDependency *item) {
+            return !item->repository.isEmpty();
+        });
+        out.append(QStringLiteral("| %1 | %2 | %3 |")
+                       .arg(markdownLink(label, QLatin1Char('#') + MarkdownRender::headingAnchor(label)))
+                       .arg(group.size())
+                       .arg(hosted));
+    }
+    for (const QString &ecosystem : std::as_const(ecosystems)) {
+        out << QString() << QStringLiteral("## ") + escapedMarkdown(ecosystemLabel(ecosystem));
+        for (const DocsDependency *dependency : grouped.value(ecosystem)) {
+            out << QString() << QStringLiteral("### ") + escapedMarkdown(dependency->title) << QString();
+            if (!dependency->description.isEmpty())
+                out << escapedMarkdown(dependency->description) << QString();
+            QStringList facts;
+            if (dependency->title != dependency->name)
+                facts.append(QStringLiteral("Package: `%1`").arg(QString(dependency->name).remove(QLatin1Char('`'))));
+            facts.append(QStringLiteral("Version: %1").arg(
+                dependency->version.isEmpty() ? QStringLiteral("unpinned")
+                                              : escapedMarkdown(dependency->version)));
+            if (dependency->development)
+                facts.append(QStringLiteral("Development only"));
+            out.append(QStringLiteral("- ") + facts.join(QStringLiteral(" · ")));
+            QStringList users;
+            for (const QString &path : dependency->usedBy)
+                users.append(markdownLink(path, sourceUrl(path)));
+            if (!users.isEmpty())
+                out.append(QStringLiteral("- Used by: ") + users.join(QStringLiteral(", ")));
+            out.append(QStringLiteral("- GitHub: ") +
+                       (dependency->repository.isEmpty()
+                            ? QStringLiteral("none known")
+                            : markdownLink(dependency->repository.mid(kGitHub.size()),
+                                           dependency->repository)));
+            out << QString();
+            if (dependency->authors.isEmpty()) {
+                const QString note = dependency->authorsNote.isEmpty()
+                                         ? QStringLiteral("Top authors not recorded yet.")
+                                         : dependency->authorsNote;
+                out.append(QStringLiteral("*%1*").arg(escapedMarkdown(note)));
+                continue;
+            }
+            out << QStringLiteral("Top authors:") << QString();
+            int rank = 0;
+            for (const DocsAuthor &author : dependency->authors) {
+                QStringList parts{
+                    QStringLiteral("**%1**").arg(markdownLink(author.name, author.profile)),
+                };
+                if (author.name != author.login)
+                    parts.first() += QStringLiteral(" (@%1)").arg(escapedMarkdown(author.login));
+                if (author.contributions > 0)
+                    parts.append(author.contributions == 1
+                                     ? QStringLiteral("1 commit")
+                                     : QStringLiteral("%1 commits").arg(locale.toString(author.contributions)));
+                parts.append(markdownLink(
+                    author.publicRepos == 1   ? QStringLiteral("1 project")
+                    : author.publicRepos > 1 ? QStringLiteral("%1 projects").arg(locale.toString(author.publicRepos))
+                                             : QStringLiteral("projects"),
+                    author.projects));
+                if (!author.website.isEmpty())
+                    parts.append(markdownLink(QStringLiteral("website"), author.website));
+                out.append(QStringLiteral("%1. %2").arg(++rank).arg(parts.join(QStringLiteral(" · "))));
+            }
+        }
+    }
+    out.append(QString());
+    return out.join(QLatin1Char('\n'));
 }
 
 QString DocsLibrary::titleOf(const QString &markdown)
@@ -345,10 +554,10 @@ bool DocsLibrary::load(const QString &root)
 {
     m_pages.clear();
     m_index.clear();
+    m_dependencies.clear();
     const QString base = QDir(root).absolutePath();
     if (!QDir(base).exists())
         return false;
-    static const QRegularExpression word(QStringLiteral("\\S+"));
     QDirIterator it(base, {QStringLiteral("*.md"), QStringLiteral("*.json")}, QDir::Files,
                     QDirIterator::Subdirectories);
     while (it.hasNext()) {
@@ -380,9 +589,7 @@ bool DocsLibrary::load(const QString &root)
             page.description = descriptionOf(page.markdown);
         }
         page.searchText = page.markdown.toLower();
-        for (QRegularExpressionMatchIterator words = word.globalMatch(page.markdown);
-             words.hasNext(); words.next())
-            ++page.words;
+        page.words = wordCount(page.markdown);
         m_pages.append(page);
     }
 
@@ -428,6 +635,88 @@ bool DocsLibrary::load(const QString &root)
         }
     }
     return !m_pages.isEmpty();
+}
+
+bool DocsLibrary::loadDependencies(const QString &file)
+{
+    if (const int existing = indexOf(kDependenciesPath); existing >= 0) {
+        m_pages.removeAt(existing);
+        m_index.clear();
+        for (int i = 0; i < m_pages.size(); ++i)
+            m_index.insert(m_pages.at(i).path, i);
+    }
+    m_dependencies.clear();
+    QFile handle(file);
+    if (!handle.open(QIODevice::ReadOnly))
+        return false;
+    const QJsonObject root = QJsonDocument::fromJson(handle.readAll()).object();
+    if (root.value(QStringLiteral("schema")).toString() != kDependenciesSchema)
+        return false;
+    const auto text = [](const QJsonObject &object, const char *key) {
+        return object.value(QLatin1String(key)).toString().simplified();
+    };
+    for (const QJsonValue &value : root.value(QStringLiteral("dependencies")).toArray()) {
+        const QJsonObject item = value.toObject();
+        DocsDependency dependency;
+        dependency.ecosystem = text(item, "ecosystem");
+        dependency.name = text(item, "name");
+        if (dependency.ecosystem.isEmpty() || dependency.name.isEmpty())
+            continue;
+        dependency.title = text(item, "title");
+        if (dependency.title.isEmpty())
+            dependency.title = dependency.name;
+        dependency.version = text(item, "version");
+        dependency.description = truncated(text(item, "description"), kDescriptionLimit);
+        dependency.repository = gitHubLink(text(item, "repository"));
+        dependency.authorsNote = text(item, "authorsNote");
+        dependency.fetched = text(item, "fetched");
+        dependency.development = item.value(QStringLiteral("development")).toBool();
+        for (const QJsonValue &path : item.value(QStringLiteral("usedBy")).toArray()) {
+            const QString used = path.toString().trimmed();
+            if (!used.isEmpty() && !used.startsWith(QLatin1Char('/')) && !used.contains(QLatin1String("..")))
+                dependency.usedBy.append(used);
+        }
+        for (const QJsonValue &entry : item.value(QStringLiteral("authors")).toArray()) {
+            const QJsonObject object = entry.toObject();
+            DocsAuthor author;
+            author.login = text(object, "login");
+            static const QRegularExpression login(QStringLiteral("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"));
+            if (!login.match(author.login).hasMatch())
+                continue;
+            author.name = text(object, "name");
+            if (author.name.isEmpty())
+                author.name = author.login;
+            author.profile = gitHubLink(text(object, "profile"));
+            if (author.profile.isEmpty())
+                author.profile = kGitHub + author.login;
+            author.projects = gitHubLink(text(object, "projects"));
+            if (author.projects.isEmpty())
+                author.projects = kGitHub + author.login + QStringLiteral("?tab=repositories");
+            author.website = webLink(text(object, "website"));
+            author.contributions = qMax(0, object.value(QStringLiteral("contributions")).toInt());
+            author.publicRepos = qMax(0, object.value(QStringLiteral("publicRepos")).toInt());
+            dependency.authors.append(author);
+            if (dependency.authors.size() == kTopAuthors)
+                break;
+        }
+        m_dependencies.append(dependency);
+    }
+    if (m_dependencies.isEmpty())
+        return false;
+
+    DocsPage page;
+    page.path = kDependenciesPath;
+    page.area = kDependenciesArea;
+    page.title = QStringLiteral("Dependencies");
+    page.description = QStringLiteral("%1 open-source dependencies with their GitHub repositories, "
+                                      "top three authors and links to the authors' projects.")
+                           .arg(m_dependencies.size());
+    page.markdown = dependenciesMarkdown(m_dependencies, text(root, "generated"));
+    page.searchText = page.markdown.toLower();
+    page.words = wordCount(page.markdown);
+    m_index.insert(page.path, int(m_pages.size()));
+    m_pages.append(page);
+    return true;
 }
 
 const DocsPage *DocsLibrary::page(const QString &path) const

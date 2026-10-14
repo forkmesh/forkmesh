@@ -61,6 +61,7 @@ object Features {
         com.forkmesh.nativeapp.feature.planning.PlanningFeature.install(app)
         com.forkmesh.nativeapp.feature.glasses.GlassesFeature.install(app)
         com.forkmesh.nativeapp.feature.people.PeopleFeature.install()
+        com.forkmesh.nativeapp.feature.docs.DocsFeature.install()
         com.forkmesh.nativeapp.feature.market.MarketFeature.install(app)
         InboxFeature.install(app)
         SurfacesFeature.install(app)
