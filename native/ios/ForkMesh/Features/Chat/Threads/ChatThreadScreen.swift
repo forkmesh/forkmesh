@@ -45,8 +45,8 @@ private struct ChatThreadBody: View {
             }
         }
             .shellDock { composer }
-            .background(fm.bgBase)
-            .navigationTitle("Thread in \(channel)")
+            .background(fm.canvas)
+            .navigationTitle("Thread in \(hub.conversationLabel(channel))")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $pushed) { (route: Route) in RouteDestinationView(route: route).shellPageClearance() }
             .onChange(of: hub.notice) { _, posted in
@@ -99,7 +99,7 @@ private struct ChatThreadBody: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .onChange(of: hub.threadRows(rootId).last?.id ?? "") { _, last in
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last, anchor: .bottom) }
             }
@@ -142,7 +142,7 @@ private struct ChatThreadBody: View {
         ChatRowActions(
             onCopied: { notice = FmNotice("Copied to clipboard") },
             onReact: { (value: String) in hub.toggleReaction(root, value: value) }, onThread: nil, onEdit: nil, onDelete: nil,
-            onIssue: nil, onPrompt: nil, onProfile: nil)
+            onIssue: nil, onPrompt: nil, onProfile: nil, onHide: { hub.hide(root) })
     }
 
     private func replyActions(_ row: ChatRow) -> ChatRowActions {

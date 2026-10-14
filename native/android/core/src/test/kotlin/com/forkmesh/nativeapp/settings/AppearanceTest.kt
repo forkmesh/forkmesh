@@ -15,7 +15,7 @@ class AppearanceTest {
         assertEq(ThemeModeChoice.system, ThemeModeChoice.fromName(null))
         assertEq(ThemeModeChoice.system, ThemeModeChoice.fromName("sepia"))
         assertEq(AccentChoice.blue, AccentChoice.fromName(null))
-        assertEq(AccentChoice.blue, AccentChoice.fromName("orange"))
+        assertEq(AccentChoice.blue, AccentChoice.fromName("chartreuse"))
     }
 
     fun testThemeModeResolvesAgainstTheSystem() {
@@ -37,5 +37,19 @@ class AppearanceTest {
         assertEq(0xFF007AFF, AccentChoice.blue.light)
         assertEq(0x33164A8CL, AccentChoice.blue.subtleOnDark)
         assertEq(0x1A6161F2L, AccentChoice.purple.accentSubtle(dark = false))
+    }
+
+    fun testEveryAccentHasALabelAndTheSameNamesAsIos() {
+        assertEq(
+            listOf("blue", "cyan", "teal", "green", "lime", "amber", "orange", "red", "pink", "violet", "purple", "graphite"),
+            AccentChoice.entries.map { it.name },
+        )
+        assertEq(AccentChoice.orange, AccentChoice.fromName("orange"))
+        assertEq(0xFFC2410C, AccentChoice.orange.accent(dark = false))
+        assertEq(0xFFFB923C, AccentChoice.orange.accent(dark = true))
+        for (accent in AccentChoice.entries) {
+            assertEq(true, accent.label.isNotEmpty())
+            assertEq(accent.light and 0xFFFFFF, accent.subtle and 0xFFFFFF)
+        }
     }
 }

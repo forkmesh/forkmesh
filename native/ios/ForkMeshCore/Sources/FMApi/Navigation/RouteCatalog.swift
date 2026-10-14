@@ -133,6 +133,7 @@ public enum RouteCatalog {
         case .dm: return "Direct message"
         case .discord: return "Discord"
         case .profile: return "Profile"
+        case .people: return "People"
         case .search: return "Search"
         case .notes: return "Notes"
         case .note: return "Note"
@@ -211,6 +212,7 @@ public enum RouteCatalog {
         case .dm: return "envelope"
         case .discord: return "gamecontroller"
         case .profile: return "person.crop.circle"
+        case .people: return "person.3"
         case .search: return "magnifyingglass"
         case .notes, .note: return "note.text"
         case .tasks, .task: return "checkmark.circle"
@@ -375,6 +377,7 @@ public enum HubCatalog {
         var items: [HubItem] = [
             .destination(.settings(section: nil)),
             .destination(.orgs),
+            .destination(.people),
             HubItem(id: "reportBug", title: "Report a bug", symbol: "ladybug", action: .reportBug),
             .destination(.tour),
             HubItem(id: "world", title: "World", symbol: "globe", action: .world),

@@ -13,7 +13,7 @@ public struct ChatBubble: Equatable, Sendable {
     public let row: ChatRow
     public let position: ChatBubblePosition
     public let showsSender: Bool
-    public let receipt: String
+    public let receipt: ChatReceipt?
     public let jumbo: Bool
 }
 
@@ -69,8 +69,6 @@ public enum ChatConversationLayout {
             headed.append((entry, header))
             last = entry.timestamp
         }
-        let lastRowIsSelf = rows.last?.message.isSelf == true
-        let lastRowId = rows.last?.id ?? ""
         var out: [ChatConversationItem] = []
         for (index, item) in headed.enumerated() {
             if item.header {
@@ -94,7 +92,7 @@ public enum ChatConversationLayout {
                 case (true, true): position = .middle
                 case (true, false): position = .last
                 }
-                let receipt = lastRowIsSelf && row.id == lastRowId ? self.receipt(row) : ""
+                let receipt = self.receipt(row)
                 out.append(
                     .message(
                         ChatBubble(
@@ -111,10 +109,10 @@ public enum ChatConversationLayout {
             && other.message.senderName == row.message.senderName
     }
 
-    public static func receipt(_ row: ChatRow) -> String {
-        if row.queued { return "Not delivered yet" }
-        if let count = row.message.recipients { return count > 0 ? "Delivered" : "Sent" }
-        return "Sent"
+    public static func receipt(_ row: ChatRow) -> ChatReceipt? {
+        guard row.message.isSelf else { return nil }
+        if row.queued { return .sending }
+        return row.receipt ?? .sent
     }
 
     public static func isJumboEmoji(_ text: String) -> Bool {

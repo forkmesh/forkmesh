@@ -40,7 +40,7 @@ struct IssueDetailScreen: View {
     private var issueBody: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationTitle(model.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

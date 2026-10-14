@@ -25,7 +25,7 @@ struct SshKeysScreen: View {
                 FmEmptyState(icon: "key_outlined", title: "SSH keys", message: "Sign in to manage your SSH keys.")
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("SSH keys")
         .navigationBarTitleDisplayMode(.inline)
         .fmDialog(isPresented: removeShown) {

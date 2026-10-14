@@ -1,7 +1,6 @@
 package com.forkmesh.nativeapp.feature.agents
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,13 +25,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -50,6 +49,7 @@ import com.forkmesh.nativeapp.agents.ops.MergeVelocityWindow
 import com.forkmesh.nativeapp.agents.ops.UsageFormat
 import com.forkmesh.nativeapp.agents.ops.UsageProviderMeter
 import com.forkmesh.nativeapp.agents.ops.UsageState
+import com.forkmesh.nativeapp.agents.ops.UsageWindowMeter
 import com.forkmesh.nativeapp.code.ConflictResolution
 import com.forkmesh.nativeapp.feature.code.FmOutlinedButton
 import com.forkmesh.nativeapp.model.AgentSession
@@ -176,18 +176,63 @@ private fun UsageProviderBlock(provider: UsageProviderMeter, nowMs: Long) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(window.label, style = Fm.text.bodySmall.copy(color = c.textSecondary), modifier = Modifier.width(88.dp))
-                Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(FmRadius.full)).background(c.bgOverlay)) {
-                    val used = (window.usedPercent ?: 0) / 100f
-                    Box(Modifier.fillMaxWidth(used).height(6.dp).background(tone))
-                }
+                UsagePaceBar(window, nowMs, tone, Modifier.weight(1f))
                 Spacer(Modifier.width(FmSpace.x2))
                 Text(
                     listOf(window.usedPercent?.let { "$it%" } ?: "—", window.resetLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · "),
                     style = Fm.text.labelSmall.copy(color = c.textSecondary),
                 )
             }
+            val pace = listOf(window.periodLabel(nowMs), window.paceLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · ")
+            if (pace.isNotEmpty()) {
+                Text(pace, style = Fm.text.labelSmall.copy(color = c.textTertiary), modifier = Modifier.padding(start = 88.dp))
+            }
         }
         provider.credits?.let { Text(it.label, style = Fm.text.labelSmall.copy(color = c.textSecondary)) }
+    }
+}
+
+@Composable
+private fun UsagePaceBar(window: UsageWindowMeter, nowMs: Long, tone: Color, modifier: Modifier) {
+    val c = Fm.colors
+    val elapsed = window.elapsedFraction(nowMs)
+    val segments = if (elapsed == null) 1 else window.segments
+    val used = (window.usedPercent ?: 0).coerceIn(0, 100) / 100f
+    Canvas(modifier.height(14.dp)) {
+        val barTop = 4.dp.toPx()
+        val barHeight = 6.dp.toPx()
+        val gap = 2.dp.toPx()
+        val radius = CornerRadius(barHeight / 2)
+        val segmentWidth = (size.width - gap * (segments - 1)) / segments
+        val filled = size.width * used
+        for (i in 0 until segments) {
+            val left = i * (segmentWidth + gap)
+            val right = left + segmentWidth
+            val corner = if (segments == 1) radius else CornerRadius.Zero
+            val path = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        Rect(left, barTop, right, barTop + barHeight),
+                        topLeft = if (i == 0) radius else corner,
+                        bottomLeft = if (i == 0) radius else corner,
+                        topRight = if (i == segments - 1) radius else corner,
+                        bottomRight = if (i == segments - 1) radius else corner,
+                    ),
+                )
+            }
+            drawPath(path, c.bgOverlay)
+            if (filled > left) {
+                clipPath(path) {
+                    drawRect(tone, Offset(left, barTop), Size(minOf(filled, right) - left, barHeight))
+                }
+            }
+        }
+        if (elapsed != null) {
+            val x = size.width * elapsed.toFloat()
+            val stroke = 1.5.dp.toPx()
+            drawLine(c.textPrimary, Offset(x, 0f), Offset(x, barTop - 1.dp.toPx()), stroke)
+            drawLine(c.textPrimary, Offset(x, barTop + barHeight + 1.dp.toPx()), Offset(x, size.height), stroke)
+        }
     }
 }
 

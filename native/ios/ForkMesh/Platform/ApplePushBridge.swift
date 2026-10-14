@@ -9,9 +9,12 @@
 // account's own inbox, and it can only see the shared keychain group
 // (Shared/PushCredentialStore.swift).
 
+import FMAccount
 import FMApi
 import FMBase
 import FMChat
+import FMCrypto
+import FMPush
 import Foundation
 import UIKit
 import UserNotifications
@@ -78,7 +81,10 @@ final class ApplePushBridge: NSObject, PushPlatform {
     /// One keychain item per project host, plus the unkeyed "latest" item a
     /// push that names no origin falls back to (PushCredentialStore).
     func setCredentials(origin: String, account: String, session: String) async throws {
-        PushCredentialStore.save(origin: origin, account: account, session: session)
+        let deviceKeyName: String = ProjectKeyPolicy.secureKey(RoomSeal.privateKeyStoreKey, in: AppProjectScope.router.scope)
+        let preview: String = UserDefaults.standard.string(forKey: PushPreviewMode.preferenceKey) ?? ""
+        PushCredentialStore.save(
+            origin: origin, account: account, session: session, deviceKeyName: deviceKeyName, preview: preview)
     }
 
     func clearCredentials() async throws {

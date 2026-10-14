@@ -128,6 +128,8 @@ export function createChatRoomTransport({
   onServerCopies = () => {},
   onDelivered = () => {},
   onRead = () => {},
+  onMedia = () => {},
+  holdReceipt = () => false,
   WebSocketImpl = globalThis.WebSocket,
   locationLike = globalThis.location,
   setTimeoutImpl = globalThis.setTimeout.bind(globalThis),
@@ -155,6 +157,7 @@ export function createChatRoomTransport({
   const recipientRefs = new Map();
   let outbox = [];
   let outboxRoom = null;
+  let releaseHeldReceipt = () => false;
 
   function rememberOutbox(ref, plain, sealed, notify) {
     if (!ref || !plain || !Array.isArray(sealed?.keys)) return;
@@ -179,6 +182,18 @@ export function createChatRoomTransport({
     while (recipientRefs.size > RECIPIENT_REFS_MAX) {
       recipientRefs.delete(recipientRefs.keys().next().value);
     }
+  }
+
+  function refsForIds(ids) {
+    const wanted = new Set(ids.map((id) => String(id || "")).filter(Boolean));
+    const refs = [];
+    for (const [ref, id] of recipientRefs) {
+      if (wanted.has(id)) refs.push(ref);
+    }
+    for (const entry of outbox) {
+      if (wanted.has(entry.id) && !refs.includes(entry.ref)) refs.push(entry.ref);
+    }
+    return { wanted, refs };
   }
 
   function transition(next, detail = {}) {
@@ -293,6 +308,7 @@ export function createChatRoomTransport({
     let keyReplyPending = false;
     let receivedRefs = [];
     let receivedTimer = null;
+    const heldReceipts = new Map();
     let mismatchAdvertised = false;
     let resealChain = Promise.resolve();
 
@@ -399,9 +415,22 @@ export function createChatRoomTransport({
     // room can be out of step look identical to a reader — an empty room:
     //   kid  -> the content key was not wrapped for this device
     //   ""   -> the frame was not recipient-sealed at all
+    releaseHeldReceipt = (id) => {
+      const envelope = heldReceipts.get(String(id || ""));
+      if (!envelope || stale()) return false;
+      heldReceipts.delete(String(id));
+      noteReceived(envelope);
+      return true;
+    };
+
     async function openFrame(envelope) {
       const plain = await openFramePlain(envelope);
-      if (plain) noteReceived(envelope);
+      if (plain && direct && plain.id && relayFrameRef(envelope) &&
+          holdReceipt(plain, room)) {
+        heldReceipts.set(String(plain.id), envelope);
+      } else if (plain) {
+        noteReceived(envelope);
+      }
       if (plain?.id && direct && relayFrameRef(envelope)) {
         rememberRecipientRef(relayFrameRef(envelope), String(plain.id));
       }
@@ -518,6 +547,15 @@ export function createChatRoomTransport({
         if (direct) onRead(room);
         return;
       }
+      if (envelope?.kind === "forkmesh-media") {
+        const id = String(envelope.id || "");
+        const state = String(envelope.state || "");
+        if (direct && /^[0-9a-f]{32}$/.test(id) &&
+            ["opened", "expired", "withdrawn"].includes(state)) {
+          onMedia(id, state, room);
+        }
+        return;
+      }
       if (envelope?.historyReplay === true && !replayDelivered) {
         replayEnvelopes.push(envelope);
         scheduleReplayFlush(HISTORY_FLUSH_MS);
@@ -613,6 +651,9 @@ export function createChatRoomTransport({
     get sealKeyId() {
       return currentSeal?.keyId || "";
     },
+    releaseReceipt(id) {
+      return releaseHeldReceipt(id);
+    },
     async connect(room) {
       if (!room || typeof room !== "object") {
         throw new TypeError("connect(room) requires a room descriptor");
@@ -651,6 +692,24 @@ export function createChatRoomTransport({
       activeSocket.send(text);
       if (persist && sealed && room === outboxRoom && isDirectRoom(room)) {
         rememberOutbox(ref, moderated, sealed, envelope.notify === true);
+      }
+      return true;
+    },
+    refsFor(ids) {
+      return refsForIds(Array.isArray(ids) ? ids : [ids]).refs;
+    },
+    supersede(ids) {
+      const { wanted, refs } = refsForIds(Array.isArray(ids) ? ids : [ids]);
+      outbox = outbox.filter((entry) => !wanted.has(entry.id));
+      if (!refs.length || !this.connected || !isDirectRoom(currentRoom)) {
+        return false;
+      }
+      for (let start = 0; start < refs.length; start += RECEIVED_REFS_MAX) {
+        socket.send(JSON.stringify({
+          kind: "forkmesh-superseded",
+          v: 1,
+          refs: refs.slice(start, start + RECEIVED_REFS_MAX),
+        }));
       }
       return true;
     },

@@ -192,6 +192,7 @@ struct UsageWindow {
     int usedPercent = -1;
     qint64 resetAtMs = 0;
     bool exhausted = false;
+    qint64 windowMs = 0;
 };
 struct UsageAccount {
     QString id;

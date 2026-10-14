@@ -1,0 +1,58 @@
+{
+ "ios": {
+  "218": {
+   "replace": true,
+   "sections": [
+    {
+     "title": "Market",
+     "items": [
+      "The Market has a fresh look: cleaner cards that are easier to scan.",
+      "Sort and filter packages to find what you need faster.",
+      "See how many people use each package before you add it.",
+      "Install a package with a single tap.",
+      "Packages you have installed now show as installed, every time."
+     ]
+    },
+    {
+     "title": "Projects",
+     "items": [
+      "A new project no longer shows repositories from app.forkmesh.com until you choose an instance for it."
+     ]
+    }
+   ]
+  },
+  "219": {
+   "replace": true,
+   "sections": [
+    {
+     "title": "Calls",
+     "items": [
+      "Face swap in video calls now covers your whole head, hair included, and follows your movements naturally.",
+      "Your voice changes to match the face you pick.",
+      "Blur your background during a call, or replace it with a picture of your own."
+     ]
+    },
+    {
+     "title": "Market",
+     "items": [
+      "The Market has a fresh look, with sorting, filters, usage numbers and one-tap install.",
+      "Packages you have installed now show as installed, every time."
+     ]
+    },
+    {
+     "title": "Projects",
+     "items": [
+      "A new project no longer shows repositories from app.forkmesh.com until you choose an instance for it."
+     ]
+    },
+    {
+     "title": "Settings",
+     "items": [
+      "Your app version and build number now show at the bottom of the You menu. Tap it to see what changed in each build."
+     ]
+    }
+   ]
+  }
+ },
+ "android": {}
+}

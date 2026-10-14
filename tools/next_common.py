@@ -411,6 +411,7 @@ def ssh_key_path() -> Path:
 
 
 SSH_PERSIST_SECONDS = 120
+SSH_MUX_DIR_MAX = 48
 PUT_RESUME_ATTEMPTS = 6
 ROUTE_FAMILIES = ("auto", "4", "6")
 ROUTE_PROBE_SECONDS = 3
@@ -463,8 +464,20 @@ class Ssh:
         self._masters = set()
 
     def mux_dir(self):
-        path = Path(os.environ.get("FMNEXT_SSH_MUX_DIR") or
-                    Path(tempfile.gettempdir()) / ("fmnext-ssh-%d" % os.getuid()))
+        configured = os.environ.get("FMNEXT_SSH_MUX_DIR")
+        if configured:
+            return self._mux_dir_at(Path(configured))
+        name = "fmnext-ssh-%d" % os.getuid()
+        candidates = [Path(tempfile.gettempdir()) / name]
+        runtime = os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid()
+        if os.path.isdir(runtime):
+            candidates.append(Path(runtime) / name)
+        for path in candidates:
+            if len(str(path)) <= SSH_MUX_DIR_MAX:
+                return self._mux_dir_at(path)
+        return None
+
+    def _mux_dir_at(self, path):
         try:
             path.mkdir(mode=0o700, exist_ok=True)
             info = path.lstat()

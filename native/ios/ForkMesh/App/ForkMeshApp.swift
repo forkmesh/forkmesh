@@ -75,9 +75,11 @@ struct ThemedAppView: View {
     }
 
     var body: some View {
-        ForkMeshTheme(accent: accent, dark: forcedDark) {
+        let settings: SettingsService = services.settings
+        ForkMeshTheme(accent: accent, wallpaper: !settings.backgroundImage.isEmpty, dark: forcedDark) {
             AppHomeView(auth: services.auth)
                 .signInPresenter(services.signIn)
+                .background { FmWallpaperBackdrop(name: settings.backgroundImage, dim: settings.backgroundDim) }
         }
         .preferredColorScheme(forcedDark.map { (dark: Bool) -> ColorScheme in dark ? .dark : .light })
     }
@@ -93,9 +95,7 @@ struct AppHomeView: View {
 
     var body: some View {
         Group {
-            if let project = settings?.project, !project.hasInstance {
-                ChooseInstanceView(project: project).id(project.id)
-            } else if auth.hasAppAccess {
+            if auth.hasAppAccess || settings?.project.hasInstance == false {
                 HomeShell()
                     .relaySwitchScope()
                     .overlay { DevPerformanceOverlay() }
@@ -106,6 +106,6 @@ struct AppHomeView: View {
         }
         // A project switch replaces every view and view model underneath.
         .id(projects?.generation ?? 0)
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
     }
 }

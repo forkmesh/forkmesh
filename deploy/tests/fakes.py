@@ -69,3 +69,18 @@ def instance(label, tags=("forkmesh-next",), ip="198.51.100.10",
              instance_id="11111111-2222-3333-4444-555555555555"):
     return {"id": instance_id, "label": label, "tags": list(tags), "main_ip": ip,
             "status": "active", "plan": "vc2-1c-1gb", "region": "ewr"}
+
+
+def repo_fleet_instances():
+    import tomllib
+    from pathlib import Path
+    fleet_toml = Path(__file__).resolve().parents[1] / "fleet.toml"
+    nodes = tomllib.loads(fleet_toml.read_text()).get("nodes") or []
+    out = {}
+    for node in nodes:
+        number = int(str(node["name"])[1:])
+        out[node.get("label") or "fmnext-core-%d" % number] = {
+            "ip": "203.0.113.%d" % (10 + number),
+            "ipv6": "2001:19f0:ffff::%d" % (10 + number)}
+    out["fmnext-run-1"] = {"ip": "203.0.113.21"}
+    return out

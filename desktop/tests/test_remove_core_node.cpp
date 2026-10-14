@@ -147,6 +147,17 @@ void testPlanParsing()
     check(refused.valid && !refused.allowed && refused.blocker.contains(QLatin1String("at least 3")),
           "refusal parsed");
     check(!parseRemoveCorePlan(QByteArray("garbage")).valid, "garbage is no plan");
+    check(plan.promote.isEmpty() &&
+              !removeCoreSummaryText(plan, false).contains(QLatin1String("an rqlite voter first")),
+          "no promotion line without a promotion");
+    const RemoveCorePlan promoting = parseRemoveCorePlan(QByteArray(
+        R"({"name": "n1", "voter": true, "allowed": true, "promote": "n4",)"
+        R"( "voters_before": ["n1", "n2", "n3"], "voters_after": ["n2", "n3", "n4"]})"));
+    check(promoting.promote == QLatin1String("n4"), "promotion parsed");
+    check(removeCoreSummaryText(promoting, false)
+              .contains(QLatin1String("make n4 an rqlite voter first (it is a non-voter now), "
+                                      "so 3 voters remain")),
+          "summary names the promotion");
 }
 
 void testBlockersAndConfirmation()

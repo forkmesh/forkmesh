@@ -1,6 +1,9 @@
 package com.forkmesh.nativeapp.feature.push
 
 import com.forkmesh.nativeapp.push.DIRECT_MESSAGES_TOPIC
+import com.forkmesh.nativeapp.push.DirectMessageEvent
+import com.forkmesh.nativeapp.push.DirectMessagePreviews
+import com.forkmesh.nativeapp.platform.SecureStore
 import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
@@ -100,10 +103,13 @@ class BackgroundLinkService : Service() {
         val api = account.api()
         val loop = AccountEventLoop(api, sessionToken = { account.session.sessionToken }, backoff = ReconnectBackoff())
         val link = Link(account, api, loop)
-        loop.onTopic = { topic ->
+        loop.onEvent = { topic, frame ->
             when (topic) {
                 "pings" -> worker.execute { deliver(link) }
-                DIRECT_MESSAGES_TOPIC -> worker.execute { deliverDirectMessage(link) }
+                DIRECT_MESSAGES_TOPIC -> {
+                    val event = DirectMessagePreviews.event(frame)
+                    worker.execute { deliverDirectMessage(link, event) }
+                }
             }
         }
         loop.onConnected = {
@@ -137,10 +143,11 @@ class BackgroundLinkService : Service() {
         }
     }
 
-    private fun deliverDirectMessage(link: Link) {
+    private fun deliverDirectMessage(link: Link, event: DirectMessageEvent?) {
         val account = link.account
         val many = links.size > 1 || BackgroundLink.accounts().size > 1
-        PingAlerts.deliverDirectMessage(this, account.id, account.label, many, link.api, account.node)
+        val secrets = runCatching { account.project.scope.secrets(SecureStore(this)) }.getOrNull()
+        PingAlerts.deliverDirectMessage(this, account.id, account.label, many, link.api, account.node, event, secrets)
     }
 
     private fun close(id: String) {

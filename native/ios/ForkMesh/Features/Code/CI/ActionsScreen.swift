@@ -78,7 +78,7 @@ struct RepoActionsScreen: View {
                 FmEmptyState(icon: "play_circle_outline", title: "Actions are unavailable")
             }
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("Actions")
         .navigationBarTitleDisplayMode(.inline)
     }

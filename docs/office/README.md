@@ -1114,6 +1114,24 @@ host), `realm` (`forkmesh.com`), `port` (3478), `tls_port` (5349),
 
 ## Recent changes
 
+- 2026-10-14: the script budget in `office/perf-budget.json` rose from 129 KB to 130 KB gzip. The merges after the 2026-10-13 chat change took the bundle to 129 024 bytes, 24 over, and every site build (and so every autodeploy) failed at `stage_office`. The bundle has about 1 KB of room again.
+
+- 2026-10-13: the chat conversation list shows the newest line of each
+  conversation with its time, and direct-message rows show the other
+  person's picture and presence dot
+  ([chat-private-rooms.md](../app/chat-private-rooms.md#last-line-and-pictures-in-the-conversation-list-2026-10-13)).
+  Edits and deletes from others apply again (round 1 had dropped `mutate`).
+  The script bundle is 128 952 of the 129 000 gzip bytes in
+  `office/perf-budget.json`; the budget was not raised, so the next addition
+  will need it raised.
+
+- 2026-10-13: own chat messages show a sending, sent, delivered or read mark,
+  and deleting a direct message also withdraws the relay's stored copy
+  ([chat-private-rooms.md](../app/chat-private-rooms.md#delivery-ticks-on-every-own-message-all-clients-2026-10-13)).
+  The script budget in `office/perf-budget.json` rose from 128 KB to 129 KB
+  gzip: the marks, the receipt handlers and the transport's `supersede` added
+  about 0.9 KB, and the build was already at 127.4 KB (now 128.2 KB).
+
 - 2026-10-09: no toasts. Every toast became an inline status line in the
   panel, card or dialog it belongs to, or a keyed line above the dock; the
   toast stack and its styles are gone (see "Status lines, not toasts"). The

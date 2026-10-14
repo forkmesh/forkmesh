@@ -635,6 +635,10 @@ HOSTED_GIT_READ_OPERATIONS = frozenset({"git-info-refs", "git-upload-pack"})
 def hosted_core_nodes(env):
     """Core node names hosting ForkMesh repositories ([] when off)."""
     return _hosted_repos.core_nodes(env)
+
+
+def hosted_core_owners(env):
+    return _hosted_repos.core_owners(env)
 HOSTED_API_READ_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "commit", "compare",
     "merge-preview", "branches", "search", "stats", "sizes",

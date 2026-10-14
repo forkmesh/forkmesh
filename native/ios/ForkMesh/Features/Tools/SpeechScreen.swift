@@ -10,7 +10,7 @@ struct SpeechScreen: View {
         content
             .navigationTitle(SpeechPlaygroundModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .onAppear {
                 if model == nil {
                     model = SpeechPlaygroundModel(

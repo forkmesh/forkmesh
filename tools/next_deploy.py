@@ -487,14 +487,14 @@ def serving_nodes(fleet):
     return list(fleet.get("nodes") or []) + list(fleet.get("app_nodes") or [])
 
 
-def caddy_functions(host, wait=CADDY_WAIT):
+def caddy_functions(host, wait=CADDY_WAIT, max_time=3):
     if not HOST_RE.match(str(host)):
         raise GuardError("bad node host name %r" % host)
     return """
 caddy_serving() {{
   for i in $(seq 1 {wait}); do
     if systemctl is-active --quiet caddy &&
-       curl -ks -o /dev/null --max-time 3 --resolve {host}:443:127.0.0.1 https://{host}/readyz
+       curl -ks -o /dev/null --max-time {max_time} --resolve {host}:443:127.0.0.1 https://{host}/readyz
     then return 0; fi
     sleep 1
   done
@@ -528,7 +528,7 @@ caddy_gate() {{
   systemctl restart caddy || echo "caddy: restart failed" >&2
   caddy_ready
 }}
-""".format(host=host, wait=int(wait))
+""".format(host=host, wait=int(wait), max_time=int(max_time))
 
 
 def activate_script(rev, host, timeout=90, vault=False):
@@ -642,11 +642,16 @@ def find_leader(fleet, ssh):
     raise ToolError("no rqlite leader found on any core node")
 
 
-def rollout_order(fleet, leader_name=None):
-    """Fleet order. Only the app restarts (rqlite keeps running), so the
-    rqlite leader's node needs no special place in the rollout."""
+def rollout_order(fleet, leader_name=None, rev=None):
+    """Fleet order, or with ``rev`` an order rotated per release. Only the
+    app restarts (rqlite keeps running), so the rqlite leader's node needs no
+    special place in the rollout."""
     del leader_name
-    return serving_nodes(fleet)
+    nodes = serving_nodes(fleet)
+    if not rev:
+        return nodes
+    return sorted(nodes, key=lambda n: (hashlib.sha256(
+        ("%s:%s" % (rev, n["name"])).encode("utf-8")).hexdigest(), n["name"]))
 
 
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "127.0.0.2")
@@ -922,7 +927,7 @@ def activate_node(fleet, node, rev, ssh, runner, vault, key):
 def restart(fleet, rev, ssh, runner, names=None, parallel=False, settle=None):
     vault = vault_on(fleet)
     key = vault_key(fleet, runner)
-    order = [n for n in rollout_order(fleet)
+    order = [n for n in rollout_order(fleet, rev=rev)
              if not names or n["name"] in names]
     canary, rest = order[:1], order[1:]
     together = parallel and runner.execute and len(rest) > 1

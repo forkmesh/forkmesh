@@ -29,6 +29,7 @@ FUNCTIONS = {
     "chat_direct_refs",
     "chat_direct_delivered_frame",
     "chat_direct_read_frame",
+    "chat_direct_media_frame",
     "chat_live_budget_frame",
     "chat_live_envelope",
 }
@@ -117,6 +118,7 @@ def _harness(channel=None, members=(), participants=()):
     ]
     stored = []
     retained = []
+    retained_handles = []
 
     async def d1_first(_env, sql, *args):
         if "FROM chat_channels" in sql:
@@ -165,8 +167,9 @@ def _harness(channel=None, members=(), participants=()):
     async def noop(*_args, **_kwargs):
         return None
 
-    async def direct_retained(*args):
+    async def direct_retained(*args, **kwargs):
         retained.append(args[1:3])
+        retained_handles.append(kwargs)
 
     async def admitted(*_args, **_kwargs):
         return True
@@ -191,6 +194,7 @@ def _harness(channel=None, members=(), participants=()):
         "_maintenance_socket_closed": lambda *_args: False,
         "_chat_direct_message_retained": direct_retained,
         "_retained": retained,
+        "_retained_handles": retained_handles,
         "_ws_attr": lambda ws, name, default=None: getattr(
             ws.deserializeAttachment(), name, default),
         "chat_history_store": chat_history_store,
@@ -205,7 +209,7 @@ def _harness(channel=None, members=(), participants=()):
             r"(ws|revoke|webhook)$"),
         "CHAT_DIRECT_MESSAGE_DO_RE": re.compile(
             r"^/api/chat/direct-messages/([0-9a-f]{32})/"
-            r"v([1-9][0-9]*)/(ws|revoke|read)$"),
+            r"v([1-9][0-9]*)/(ws|revoke|read|media)$"),
         "json": json,
         "json_response": lambda data, status=200, **_kwargs: {
             "status": status, "data": data},
@@ -536,6 +540,56 @@ def test_read_announcement_reaches_only_the_other_participant():
     assert bob_phone.sent == []
 
 
+def _media_announcement(sockets, query):
+    _namespace, room_type, _stored = _harness(participants=(ALICE, BOB))
+
+    class _Request:
+        method = "POST"
+        url = (
+            "https://forkmesh.internal/api/chat/direct-messages/" + DIRECT
+            + "/v1/media?" + query
+        )
+
+    room = room_type()
+    room.env = object()
+    room.ctx = _Context(sockets)
+    return asyncio.run(room.fetch(_Request()))
+
+
+def test_media_opened_announcement_reaches_only_the_sender():
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+    bob = _Socket("s2", BOB, direct_id=DIRECT)
+    media = "e" * 32
+
+    response = _media_announcement(
+        [alice, bob], "account=" + BOB + "&id=" + media + "&state=opened")
+
+    assert response["status"] == 200
+    assert _kind(alice, "forkmesh-media") == [
+        {"kind": "forkmesh-media", "v": 1, "id": media, "state": "opened"}]
+    assert bob.sent == []
+
+
+def test_media_expiry_announcement_reaches_both_participants():
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+    bob = _Socket("s2", BOB, direct_id=DIRECT)
+
+    _media_announcement(
+        [alice, bob], "account=&id=" + "f" * 32 + "&state=expired")
+
+    assert len(_kind(alice, "forkmesh-media")) == 1
+    assert len(_kind(bob, "forkmesh-media")) == 1
+
+
+def test_media_announcement_rejects_unknown_ids_and_states():
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+    for query in ("account=" + BOB + "&id=xyz&state=opened",
+                  "account=" + BOB + "&id=" + "e" * 32 + "&state=ready"):
+        response = _media_announcement([alice], query)
+        assert response["status"] == 400
+    assert alice.sent == []
+
+
 def test_sender_cannot_clear_its_own_undelivered_message():
     _namespace, room_type, stored = _harness(participants=(ALICE, BOB))
     alice = _Socket("s1", ALICE, direct_id=DIRECT)
@@ -639,6 +693,9 @@ def test_only_new_messages_raise_the_direct_unread_count():
 
     _relay(room_type, [alice, bob], alice, _chat_frame(data="new"))
     assert namespace["_retained"] == [(DIRECT, ALICE)]
+    ref = _kind(bob, "cipher")[-1]["ref"]
+    assert namespace["_retained_handles"] == [
+        {"ref": ref, "key_version": 1}]
 
 
 def _live_frame(**extra):

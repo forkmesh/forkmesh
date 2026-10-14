@@ -25,6 +25,9 @@ ROOM_ACCESS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/room-access/?$")
 HISTORY_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/history/?$")
+PENDING_RE = re.compile(
+    r"^/api/chat/channels/([0-9a-f]{32})/pending/?$")
+REF_RE = re.compile(r"^[0-9a-f]{40}$")
 WEBHOOKS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/webhooks/?$")
 WEBHOOK_RE = re.compile(
@@ -990,6 +993,37 @@ async def _history(runtime, account_bi, channel_id, is_admin):
     )
 
 
+async def _pending(runtime, account_bi, channel_id, is_admin):
+    ref = str(runtime.query_params().get("ref") or "").strip().lower()
+    if not REF_RE.fullmatch(ref):
+        return _response(runtime, {"error": "invalid_ref"}, status=400)
+    row, _record = await _readable_channel(
+        runtime, account_bi, channel_id, is_admin)
+    if not row:
+        return _response(runtime, {"error": "not_found"}, status=404)
+    key_version = int(row.get("key_version") or 1)
+    room = "chat-channel:" + str(channel_id) + ":v" + str(key_version)
+    stored = await runtime.d1_first(
+        "SELECT body FROM chat_history WHERE room_key=? AND msg_id=?",
+        room,
+        ref,
+    )
+    frame = str((stored or {}).get("body") or "")
+    if not frame:
+        return _response(runtime, {"error": "not_found"}, status=404)
+    return _response(
+        runtime,
+        {
+            "channel": str(channel_id),
+            "room": room,
+            "keyVersion": key_version,
+            "passphrase": await runtime.channel_passphrase(
+                channel_id, key_version),
+            "frame": frame,
+        },
+    )
+
+
 async def _room_access(runtime, account_bi, actor, channel_id, is_admin):
     row, record = await _readable_channel(
         runtime, account_bi, channel_id, is_admin)
@@ -1182,6 +1216,7 @@ async def handle(runtime, path):
     members = MEMBERS_RE.fullmatch(normalized_path)
     room_access = ROOM_ACCESS_RE.fullmatch(normalized_path)
     history = HISTORY_RE.fullmatch(normalized_path)
+    pending = PENDING_RE.fullmatch(normalized_path)
     webhooks = WEBHOOKS_RE.fullmatch(normalized_path)
     webhook = WEBHOOK_RE.fullmatch(normalized_path)
     delivery = WEBHOOK_DELIVERY_RE.fullmatch(normalized_path)
@@ -1189,7 +1224,8 @@ async def handle(runtime, path):
     invite_token = INVITE_TOKEN_RE.fullmatch(normalized_path)
     if not (
         collection or channel or members or room_access or history
-        or webhooks or webhook or delivery or invite or invite_token
+        or pending or webhooks or webhook or delivery or invite
+        or invite_token
     ):
         return _response(runtime, {"error": "not_found"}, status=404)
     method = runtime.method()
@@ -1257,7 +1293,8 @@ async def handle(runtime, path):
             runtime, actor, channel_id, data, row=row, record=record)
 
     matched_resource = (
-        members or room_access or history or webhooks or webhook or invite)
+        members or room_access or history or pending or webhooks or webhook
+        or invite)
     if channel:
         return _response(
             runtime,
@@ -1350,6 +1387,9 @@ async def handle(runtime, path):
 
     if history and method == "GET":
         return await _history(runtime, account_bi, channel_id, is_admin)
+
+    if pending and method == "GET":
+        return await _pending(runtime, account_bi, channel_id, is_admin)
 
     allow = "GET, POST" if (collection or webhooks) else (
         "GET, POST, DELETE" if (members or invite) else (

@@ -27,7 +27,7 @@ given `--execute` (`next_import.py` takes `--dry-run` instead).
 | `tools/next_ids.py` | IDS: `keygen`, `fingerprint`, `status`, `baseline`, `expect`, `test-fire`, `release` ([IDS.md](../IDS.md)) |
 | `tools/next_dns.py` | Cloudflare DNS for `app.forkmesh.com`, `world.forkmesh.com` and names under `next.forkmesh.com` (the core node names): `status`, `ensure`, and the DNS health failover (`health-once`, `health-loop`, `drain`, `undrain`) |
 | `tools/next_mail.py` | Core mail: DKIM, DNS, reverse DNS, install, restart, check ([MAIL_LOG.md](../MAIL_LOG.md)) |
-| `tools/next_node_owner.py` | Fleet node ownership: `status`, `transfer` ([NODE_OWNERSHIP.md](../NODE_OWNERSHIP.md)) |
+| `tools/next_node_owner.py` | Fleet node ownership: `status`, `register`, `transfer` ([NODE_OWNERSHIP.md](../NODE_OWNERSHIP.md)) |
 | `tools/next_backup.py` | Nightly rqlite backup to the operator box, age-encrypted: `run`, `prune`, `keygen`, `encrypt-existing`, `verify`, `restore` |
 | `tools/next_rekey.py` | Offline re-key of a database copy ([REKEY.md](../REKEY.md)) |
 | `tools/next_git_host.py`, `tools/next_codemagic.py` | Private Git over HTTPS on the cores; Codemagic native iOS builds cloned from it |

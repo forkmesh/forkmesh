@@ -63,7 +63,7 @@ struct RepoDetailScreen: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .fmRefreshable {
             await overview.load()
         }

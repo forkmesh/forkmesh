@@ -193,7 +193,7 @@ def test_daemon_files_match_the_desktop_roll():
     assert not self_deploy.daemon_path("deploy/core/render.py")
 
 
-def test_cores_deploy_one_at_a_time_and_n1_migrates(repo):
+def test_cores_deploy_one_at_a_time_and_the_first_migrates(repo):
     db, phone, steps, clock = FakeDB(), Phone(), Steps(), [NOW + 1000]
     approval_id = approval(db, phone, repo)
     agents = {n: agent_for(n, db, repo, phone, steps, clock) for n in ("n1", "n2", "n3")}
@@ -209,6 +209,45 @@ def test_cores_deploy_one_at_a_time_and_n1_migrates(repo):
         ("n2", "activate", rev), ("n3", "activate", rev)]
     assert status(db, approval_id)["status"] == "deployed"
     assert agents["n1"].tick() == "idle"
+
+
+def test_the_first_core_rotates_with_the_approval(repo):
+    agent = agent_for("n1", FakeDB(), repo, Phone(), Steps(), [NOW])
+    firsts = {agent.sequence({"id": i})[0] for i in range(1, 40)}
+    assert firsts == {"n1", "n2", "n3"}
+    four = dict(agent.config, order=["n1", "n2", "n3", "n4"])
+    wider = self_deploy.Agent(four, FakeDB(), now=lambda: NOW, log=lambda *_: None)
+    for i in range(1, 40):
+        assert [n for n in wider.sequence({"id": i}) if n != "n4"] == \
+            agent.sequence({"id": i})
+
+
+def members(db, clock, fresh, stale=()):
+    db.execute("CREATE TABLE IF NOT EXISTS cluster_members (node_id TEXT PRIMARY KEY,"
+               " status TEXT, heartbeat_ms INTEGER)")
+    for name in fresh:
+        db.execute("INSERT OR REPLACE INTO cluster_members VALUES (?,?,?)",
+                   name, "active", clock[0])
+    for name in stale:
+        db.execute("INSERT OR REPLACE INTO cluster_members VALUES (?,?,?)",
+                   name, "active", clock[0] - 10 * 60 * 1000)
+
+
+def test_a_dead_core_neither_blocks_nor_migrates_for_the_others(repo):
+    db, phone, steps, clock = FakeDB(), Phone(), Steps(), [NOW + 1000]
+    approval_id = approval(db, phone, repo)
+    agents = {n: agent_for(n, db, repo, phone, steps, clock) for n in ("n1", "n2", "n3")}
+    sequence = agents["n2"].sequence({"id": approval_id})
+    dead, first, last = sequence
+    members(db, clock, fresh=(first, last), stale=(dead,))
+    assert agents[last].tick() == "waiting for %s" % first
+    assert agents[first].tick() == "in progress"
+    assert agents[last].tick() == "deployed"
+    rev = repo["merged"][:12]
+    assert [c for c in steps.calls if c[1] != "build"] == [
+        (first, "migrate", rev), (first, "activate", rev), (last, "activate", rev)]
+    result = status(db, approval_id)
+    assert result["status"] == "deployed" and dead in result["message"]
 
 
 def test_a_failed_core_stops_the_rest(repo):

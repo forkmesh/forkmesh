@@ -20,6 +20,7 @@ struct RemoveCorePlan {
     QString instanceId;
     QString ip;
     QString leader;
+    QString promote;
     bool voter = true;
     bool isLeader = false;
     bool allowed = false;

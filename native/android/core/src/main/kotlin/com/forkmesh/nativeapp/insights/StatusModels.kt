@@ -48,6 +48,7 @@ data class StatusSystem(
     val minutes: List<StatusMinute> = emptyList(),
 ) {
     val isMirror: Boolean get() = id.startsWith("mirror:")
+    val isNode: Boolean get() = id.startsWith("core:") || id.startsWith("runner:")
 
     companion object {
         fun fromJson(json: Map<String, Any?>) = StatusSystem(
@@ -103,6 +104,8 @@ data class StatusReport(val now: Long, val systems: List<StatusSystem>, val curr
     val coreSystems: List<StatusSystem> get() = systems.filter { !it.isMirror }
 
     val mirrorSystems: List<StatusSystem> get() = systems.filter { it.isMirror }
+    val serviceSystems: List<StatusSystem> get() = systems.filter { !it.isMirror && !it.isNode }
+    val nodeSystems: List<StatusSystem> get() = systems.filter { it.isNode }
 
     val websiteUptime24h: Double? get() = (systems.firstOrNull { it.id == "website" } ?: coreSystems.firstOrNull())?.uptime24h
 

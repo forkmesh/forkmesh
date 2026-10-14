@@ -47,7 +47,7 @@ struct GlassesAlertScreen: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("Glasses Alert")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $picked) { (device: NearbyDevice) in

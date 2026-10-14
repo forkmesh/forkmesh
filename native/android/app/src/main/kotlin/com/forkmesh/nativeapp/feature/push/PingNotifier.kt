@@ -3,6 +3,14 @@ package com.forkmesh.nativeapp.feature.push
 import com.forkmesh.nativeapp.chat.MESH_ALERT_HREF
 import com.forkmesh.nativeapp.chat.MeshAlert
 import com.forkmesh.nativeapp.push.DirectMessageAlert
+import com.forkmesh.nativeapp.push.DIRECT_MESSAGE_HREF
+import com.forkmesh.nativeapp.push.DIRECT_MESSAGE_PING_ID
+import com.forkmesh.nativeapp.push.DirectMessagePreview
+import com.forkmesh.nativeapp.push.DirectMessagePreviews
+import com.forkmesh.nativeapp.push.NotificationContent
+import com.forkmesh.nativeapp.push.PreviewLine
+import com.forkmesh.nativeapp.push.PreviewNotice
+import android.app.Person
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
@@ -132,6 +140,66 @@ object PingNotifier {
             .setContentIntent(openIntent(context, target))
         avatarBitmap(avatarPng)?.let { builder.setLargeIcon(Icon.createWithBitmap(it)) }
         manager.notify(target.projectId, target.notificationId(), builder.build())
+    }
+
+    private val previewLines = HashMap<String, List<PreviewLine>>()
+
+    fun postDirectMessagePreview(
+        context: Context,
+        projectId: String,
+        projectLabel: String,
+        multipleProjects: Boolean,
+        preview: DirectMessagePreview,
+        notice: PreviewNotice,
+        content: NotificationContent,
+        avatarPng: String = "",
+    ) {
+        if (!allowed(context)) return
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        ensureChannels(context)
+        val target = PushTarget(projectId, "$DIRECT_MESSAGE_PING_ID/${preview.conversationId}", "$DIRECT_MESSAGE_HREF/${preview.conversationId}")
+        val id = target.notificationId()
+        val key = "$projectId\n${preview.conversationId}"
+        val active = runCatching { manager.activeNotifications.any { it.tag == projectId && it.id == id } }.getOrDefault(false)
+        val line = PreviewLine(preview.messageId, notice.sender, notice.messageText, preview.timestamp.takeIf { it > 0 } ?: System.currentTimeMillis())
+        val lines = synchronized(previewLines) {
+            val merged = DirectMessagePreviews.merge(if (active) previewLines[key].orEmpty() else emptyList(), line) ?: return
+            previewLines[key] = merged
+            merged
+        }
+        val hidden = Notification.Builder(context, PINGS_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_ping)
+            .setContentTitle(DirectMessagePreviews.GENERIC_TITLE)
+            .setContentText(DirectMessagePreviews.GENERIC_BODY)
+            .build()
+        val body = if (content == NotificationContent.NAME_ONLY && lines.size > 1) "${lines.size} new messages" else notice.body
+        val builder = Notification.Builder(context, PINGS_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_ping)
+            .setContentTitle(notice.title)
+            .setContentText(body)
+            .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_MESSAGE)
+            .setGroup("pings/$projectId")
+            .setWhen(line.timestamp)
+            .setShowWhen(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(hidden)
+            .setContentIntent(openIntent(context, target))
+        if (multipleProjects && projectLabel.isNotEmpty()) builder.setSubText(projectLabel)
+        val avatar = avatarBitmap(avatarPng)?.let { Icon.createWithBitmap(it) }
+        avatar?.let { builder.setLargeIcon(it) }
+        if (content == NotificationContent.NAME_AND_MESSAGE && Build.VERSION.SDK_INT >= 28) {
+            val style = Notification.MessagingStyle(Person.Builder().setName("You").build())
+            for (item in lines) {
+                val person = Person.Builder().setName(item.sender.ifEmpty { notice.title })
+                if (avatar != null && item.sender == notice.sender) person.setIcon(avatar)
+                style.addMessage(Notification.MessagingStyle.Message(item.text, item.timestamp, person.build()))
+            }
+            builder.setStyle(style)
+        } else if (content == NotificationContent.NAME_AND_MESSAGE) {
+            builder.setStyle(Notification.BigTextStyle().bigText(lines.joinToString("\n") { it.text }))
+        }
+        manager.notify(projectId, id, builder.build())
     }
 
     fun postMesh(context: Context, alert: MeshAlert, whenMs: Long) {

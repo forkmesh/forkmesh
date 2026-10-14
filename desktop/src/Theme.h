@@ -687,7 +687,7 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 #packageRail { border-left: 1px solid #30363d; }
 #packageRail QScrollBar:vertical { width: 6px; }
 #packageRail QScrollBar::handle:vertical { border-radius: 3px; }
-QLabel#packageRailTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
+QLabel#packageRailTitle, QLabel#teammateRailTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
 #teammateRail { border-left: 1px solid #30363d; }
 #teammateRail QScrollBar:vertical { width: 6px; }
 #teammateRail QScrollBar::handle:vertical { border-radius: 3px; }
@@ -2867,7 +2867,7 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 #packageRail { border-left: 1px solid #d0d7de; }
 #packageRail QScrollBar:vertical { width: 6px; }
 #packageRail QScrollBar::handle:vertical { border-radius: 3px; }
-QLabel#packageRailTitle { color: #656d76; font-size: 9px; font-weight: 600; }
+QLabel#packageRailTitle, QLabel#teammateRailTitle { color: #656d76; font-size: 9px; font-weight: 600; }
 #teammateRail { border-left: 1px solid #d0d7de; }
 #teammateRail QScrollBar:vertical { width: 6px; }
 #teammateRail QScrollBar::handle:vertical { border-radius: 3px; }

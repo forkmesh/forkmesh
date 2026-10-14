@@ -156,7 +156,7 @@ struct AgentSessionDetailScreen: View {
             .padding(FmSpace.x5)
         }
         .fmRefreshable { await model.load() }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("Agent session #\(session.id)")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
@@ -347,7 +347,7 @@ struct LaunchedAgentSessionScreen: View {
             .fmRefreshable { await model.refresh() }
         }
         .shellDock { composer }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle(session.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarItems }

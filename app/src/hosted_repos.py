@@ -109,6 +109,18 @@ def core_nodes(env):
     return out
 
 
+def core_owners(env):
+    out = core_nodes(env)
+    if not out:
+        return out
+    raw = str(getattr(env, "HOSTED_GIT_CORE_OWNERS", "") or "")
+    for item in raw.split(","):
+        name = item.strip().lower()
+        if name and edge_routing.NODE_RE.fullmatch(name) and name not in out:
+            out.append(name)
+    return out
+
+
 def enabled(env):
     return bool(core_nodes(env))
 

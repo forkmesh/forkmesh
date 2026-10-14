@@ -7,6 +7,7 @@ import com.forkmesh.nativeapp.json.jsonLong
 import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
+import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.security.SecretStore
 import java.net.URI
@@ -36,6 +37,10 @@ object DirectMessageFrames {
     const val SERVER_COPIES = "forkmesh-server-copies"
     const val RECEIVED = "forkmesh-received"
     const val SUPERSEDED = "forkmesh-superseded"
+    const val DELIVERED = "forkmesh-delivered"
+    const val READ = "forkmesh-read"
+    const val RECEIPTS_MAX = 256
+    const val PENDING_MUTATIONS_MAX = 128
     const val RECEIVED_REFS_PER_FRAME = 64
     const val OUTBOX_MAX = 64
     const val OUTBOX_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
@@ -54,6 +59,16 @@ object DirectMessageFrames {
         val ref = envelope["ref"] as? String ?: return ""
         return if (REF.matches(ref)) ref else ""
     }
+
+    fun deliveredRefs(envelope: Map<String, Any?>): List<String>? {
+        if (envelope["kind"] != DELIVERED) return null
+        val refs = envelope["refs"] as? List<*> ?: return emptyList()
+        return refs.filterIsInstance<String>().filter { REF.matches(it) }.distinct().take(RECEIVED_REFS_PER_FRAME)
+    }
+
+    fun isRead(envelope: Map<String, Any?>): Boolean = envelope["kind"] == READ
+
+    fun isMutation(type: String): Boolean = type == "edit" || type == "delete"
 
     fun serverCopies(envelope: Map<String, Any?>): Int? {
         if (envelope["kind"] != SERVER_COPIES) return null
@@ -117,9 +132,10 @@ object DirectMessageFrames {
         if (jsonText(plain["channel"]) != record.conversation) return null
         val id = jsonText(plain["id"])
         if (id.isEmpty() || id.length > 64) return null
-        val text = jsonText(plain["text"])
+        val viewOnce = ViewOnceCodec.parse(plain[ViewOnceCodec.FIELD])
+        val text = viewOnce?.kind?.text ?: jsonText(plain["text"])
         if (text.length > ChatLimits.MAX_TEXT_CHARS) return null
-        val fileName = jsonText(plain["fileName"]).take(ChatLimits.MAX_FILE_NAME_CHARS)
+        val fileName = if (viewOnce != null) "" else jsonText(plain["fileName"]).take(ChatLimits.MAX_FILE_NAME_CHARS)
         if (text.isEmpty() && fileName.isEmpty()) return null
         val senderId = jsonText(plain["senderId"]).take(64)
         val sender = jsonText(plain["sender"]).take(ChatLimits.MAX_DISPLAY_NAME_CHARS).ifEmpty { record.otherUser }
@@ -134,6 +150,14 @@ object DirectMessageFrames {
             self = selfId.isNotEmpty() && senderId == selfId,
             fileName = fileName,
         )
+    }
+
+    fun threadReply(plain: Map<String, Any?>, record: DirectConversation, selfId: String): ChatMessage? {
+        if (jsonText(plain["type"]) != "thread-reply") return null
+        if (jsonText(plain["rootId"]).isEmpty()) return null
+        val asChat = LinkedHashMap(plain)
+        asChat["type"] = "chat"
+        return chatMessage(asChat, record, selfId)
     }
 
     fun isCallFrame(plain: Map<String, Any?>): Boolean = jsonText(plain["type"]).startsWith("call-")
@@ -218,6 +242,24 @@ class DirectMessageService(
     private val sequence = AtomicInteger()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val serverCopies = HashMap<String, Int>()
+    private val media = ViewOnceClient(api)
+    private val heldReceipts = LinkedHashMap<String, Pair<String, LinkedHashSet<String>>>()
+
+    val viewOnce = ViewOnceStore()
+
+    private class Receipt(val conversationId: String, var state: ChatReceipt)
+
+    private val receipts = LinkedHashMap<String, Receipt>()
+    private val refIds = LinkedHashMap<String, String>()
+    private val idRefs = LinkedHashMap<String, String>()
+    private val pendingMutations = LinkedHashMap<String, MutableList<Map<String, Any?>>>()
+    private val removed = LinkedHashMap<String, Boolean>()
+
+    @Volatile
+    var replyAuthorOf: ((String) -> String?)? = null
+
+    @Volatile
+    var onRemoved: ((String, String) -> Unit)? = null
 
     @Volatile
     private var focused = ""
@@ -270,6 +312,8 @@ class DirectMessageService(
 
     fun messages(conversation: String): List<ChatMessage> = synchronized(lock) { history[conversation].orEmpty() }
 
+    fun receipt(messageId: String): ChatReceipt? = synchronized(lock) { receipts[messageId]?.state }
+
     fun serverCopies(conversation: String): Int? =
         synchronized(lock) { serverCopies[DirectMessageFrames.conversationId(conversation)] }
 
@@ -321,6 +365,7 @@ class DirectMessageService(
             }
             for (old in gone) {
                 history.remove(old.conversation)
+                viewOnce.forgetConversation(old.conversation)
             }
             records = merged
             gone.mapNotNull { sockets.remove(it.id) }
@@ -516,6 +561,11 @@ class DirectMessageService(
             }
             sendReceived(holder, refs)
             reseal(holder)
+            records.firstOrNull { it.id == holder.conversationId }?.let { done -> loop.io { refreshViewOnce(done.conversation) } }
+            return
+        }
+        ViewOnceFrames.relayState(envelope)?.let { (mediaId, state) ->
+            applyViewOnceState(holder, mediaId, state)
             return
         }
         DirectMessageFrames.serverCopies(envelope)?.let { stored ->
@@ -524,6 +574,18 @@ class DirectMessageService(
                 if (stored == 0) holder.outbox.clear()
             }
             notifyListeners()
+            return
+        }
+        OfficeFrames.recipientsAck(envelope)?.let { (ref, _) ->
+            if (advance(listOf(ref), ChatReceipt.SENT)) notifyListeners()
+            return
+        }
+        DirectMessageFrames.deliveredRefs(envelope)?.let { refs ->
+            if (advance(refs, ChatReceipt.DELIVERED)) notifyListeners()
+            return
+        }
+        if (DirectMessageFrames.isRead(envelope)) {
+            if (peerRead(holder.conversationId)) notifyListeners()
             return
         }
         val framed = holder.crypto.decrypt(envelope) ?: return
@@ -545,8 +607,12 @@ class DirectMessageService(
         val plain = holder.seal.unseal(framed) ?: return
         val learned = holder.seal.peerKeyIds.any { it !in known }
         val ref = DirectMessageFrames.relayRef(envelope)
-        handle(plain, record, if (replay) null else holder)
+        handle(plain, record, if (replay) null else holder, ref)
         if (replay) noteOwn(holder, plain, ref, kids, envelope["notify"] == true)
+        if (ref.isNotEmpty() && holdReceipt(plain, holder.conversationId, ref)) {
+            if (learned) peerLearned(holder)
+            return
+        }
         if (ref.isNotEmpty()) {
             if (replay) {
                 synchronized(lock) { if (ref !in holder.replayRefs) holder.replayRefs.add(ref) }
@@ -574,16 +640,122 @@ class DirectMessageService(
         for (frame in DirectMessageFrames.receivedFrames(refs)) sendOrQueue(holder, frame)
     }
 
-    private fun handle(plain: Map<String, Any?>, record: DirectConversation, live: RoomSocket?) {
+    private fun handle(plain: Map<String, Any?>, record: DirectConversation, live: RoomSocket?, ref: String = "") {
         if (DirectMessageFrames.isCallFrame(plain)) {
             if (live != null) onCallFrame?.invoke(plain, record.conversation)
             return
         }
+        val type = jsonText(plain["type"])
+        if (DirectMessageFrames.isMutation(type) && !mutationAllowed(plain, record)) return
         onFrame?.invoke(plain, record.conversation)
-        val message = DirectMessageFrames.chatMessage(plain, record, selfId()) ?: return
-        val added = append(message, record.id)
+        val me = selfId()
+        val message = DirectMessageFrames.chatMessage(plain, record, me) ?: DirectMessageFrames.threadReply(plain, record, me)
+        if (message == null) {
+            notifyListeners()
+            return
+        }
+        if (type == "chat") trackViewOnce(plain, message)
+        val added = if (type == "chat") {
+            append(message, record.id)
+        } else {
+            replyAuthorOf?.invoke(message.id) != null && synchronized(lock) { seen.getOrPut(record.id) { HashSet() }.add(message.id) }
+        }
+        if (message.self) track(record.id, message.id, ref, ChatReceipt.SENT)
+        val kept = !added || applyPending(record, message.id)
         notifyListeners()
-        if (added && live != null && !message.self) onMessage?.invoke(message)
+        if (added && kept && live != null && !message.self) onMessage?.invoke(message)
+    }
+
+    private fun authorOf(record: DirectConversation, target: String): String? =
+        synchronized(lock) { history[record.conversation]?.firstOrNull { it.id == target }?.senderId }
+            ?: replyAuthorOf?.invoke(target)
+
+    private fun mutationAllowed(plain: Map<String, Any?>, record: DirectConversation): Boolean {
+        val target = jsonText(plain["target"])
+        val sender = jsonText(plain["senderId"])
+        if (target.isEmpty() || sender.isEmpty()) return false
+        val author = authorOf(record, target)
+        if (author == null) {
+            holdMutation(record.id, target, plain)
+            return false
+        }
+        if (author != sender) return false
+        if (jsonText(plain["type"]) == "delete") remove(record, target)
+        return true
+    }
+
+    private fun holdMutation(conversationId: String, target: String, plain: Map<String, Any?>) = synchronized(lock) {
+        val list = pendingMutations.getOrPut("$conversationId|$target") { ArrayList() }
+        if (list.size < 8) list.add(plain)
+        trim(pendingMutations, DirectMessageFrames.PENDING_MUTATIONS_MAX)
+    }
+
+    private fun applyPending(record: DirectConversation, id: String): Boolean {
+        val held = synchronized(lock) { pendingMutations.remove("${record.id}|$id") } ?: return true
+        for (frame in held) handle(frame, record, null)
+        return authorOf(record, id) != null
+    }
+
+    private fun remove(record: DirectConversation, target: String) {
+        synchronized(lock) {
+            history[record.conversation]?.let { list -> history[record.conversation] = list.filter { it.id != target } }
+            seen.getOrPut(record.id) { HashSet() }.add(target)
+            removed[target] = true
+            trim(removed, DirectMessageFrames.RECEIPTS_MAX)
+            receipts.remove(target)
+            sockets[record.id]?.outbox?.removeAll {
+                jsonText(it.plain["id"]) == target || (jsonText(it.plain["target"]) == target && jsonText(it.plain["type"]) != "delete")
+            }
+        }
+        onRemoved?.invoke(record.conversation, target)
+    }
+
+    private fun <V> trim(map: LinkedHashMap<String, V>, max: Int) {
+        while (map.size > max) map.remove(map.keys.first())
+    }
+
+    private fun linkRef(id: String, ref: String) {
+        if (id.isEmpty() || ref.isEmpty()) return
+        refIds[ref] = id
+        idRefs.remove(id)
+        idRefs[id] = ref
+        trim(refIds, DirectMessageFrames.RECEIPTS_MAX)
+        trim(idRefs, DirectMessageFrames.RECEIPTS_MAX)
+    }
+
+    private fun track(conversationId: String, id: String, ref: String, state: ChatReceipt) = synchronized(lock) {
+        val current = receipts[id]
+        if (current == null) {
+            receipts[id] = Receipt(conversationId, state)
+            trim(receipts, DirectMessageFrames.RECEIPTS_MAX)
+        } else if (state > current.state) {
+            current.state = state
+        }
+        linkRef(id, ref)
+    }
+
+    private fun advance(refs: List<String>, state: ChatReceipt): Boolean = synchronized(lock) {
+        var changed = false
+        for (ref in refs) {
+            val receipt = refIds[ref]?.let { receipts[it] } ?: continue
+            if (state > receipt.state) {
+                receipt.state = state
+                changed = true
+            }
+        }
+        changed
+    }
+
+    private fun peerRead(conversationId: String): Boolean = synchronized(lock) {
+        var changed = false
+        for (receipt in receipts.values) {
+            if (receipt.conversationId != conversationId) continue
+            if (receipt.state == ChatReceipt.SENT || receipt.state == ChatReceipt.DELIVERED) {
+                receipt.state = ChatReceipt.READ
+                changed = true
+            }
+        }
+        changed
     }
 
     private fun append(message: ChatMessage, conversationId: String): Boolean = synchronized(lock) {
@@ -600,6 +772,7 @@ class DirectMessageService(
     private fun noteOwn(holder: RoomSocket, plain: Map<String, Any?>, ref: String, kids: List<String>, notify: Boolean) {
         val me = selfId()
         if (ref.isEmpty() || me.isEmpty() || jsonText(plain["senderId"]) != me || DirectMessageFrames.isCallFrame(plain)) return
+        if (synchronized(lock) { removed.containsKey(jsonText(plain["id"])) }) return
         remember(holder, OutboxEntry(ref, plain, kids, notify, (plain["ts"] as? Number)?.toLong() ?: now()))
     }
 
@@ -655,6 +828,7 @@ class DirectMessageService(
                     superseded.add(entry.ref)
                     entry.ref = OfficeFrames.sentRef(text)
                     entry.kids = kids
+                    linkRef(jsonText(entry.plain["id"]), entry.ref)
                 }
             }
             for (frame in DirectMessageFrames.supersededFrames(superseded)) sendOrQueue(holder, frame)
@@ -692,6 +866,7 @@ class DirectMessageService(
         val frame = LinkedHashMap(plain)
         frame["type"] = "chat"
         val message = DirectMessageFrames.chatMessage(frame, record, selfId()) ?: return false
+        trackViewOnce(frame, message)
         if (!append(message, record.id)) return false
         notifyListeners()
         if (!message.self) onMessage?.invoke(message)
@@ -707,7 +882,10 @@ class DirectMessageService(
 
     private fun keepMeshOnly(record: DirectConversation, plain: Map<String, Any?>, reached: Int): Boolean {
         if (reached <= 0) return false
-        DirectMessageFrames.chatMessage(plain, record, selfId())?.let { append(it, record.id) }
+        DirectMessageFrames.chatMessage(plain, record, selfId())?.let {
+            trackViewOnce(plain, it)
+            append(it, record.id)
+        }
         notifyListeners()
         return true
     }
@@ -736,26 +914,249 @@ class DirectMessageService(
         return sendSealed(record, plain, 0)
     }
 
-    private fun sendSealed(record: DirectConversation, plain: Map<String, Any?>, reached: Int): Boolean {
+    private fun sendSealed(record: DirectConversation, plain: Map<String, Any?>, reached: Int, notify: Boolean = true): Boolean {
         if (synchronized(lock) { sockets[record.id]?.socket == null } && !open(record.conversation)) return keepMeshOnly(record, plain, reached)
         val holder = synchronized(lock) { sockets[record.id] } ?: return keepMeshOnly(record, plain, reached)
         val socket = holder.socket ?: return keepMeshOnly(record, plain, reached)
+        val id = jsonText(plain["id"])
+        val type = jsonText(plain["type"])
+        val content = type == "chat" || type == "thread-reply"
         return try {
             val sealed = holder.seal.seal(plain)
             val envelope = LinkedHashMap(holder.crypto.encrypt(sealed))
             envelope["persist"] = true
-            envelope["notify"] = true
+            if (notify) envelope["notify"] = true
             val frameText = Json.stringify(envelope)
-            if (!socket.sendText(frameText)) return keepMeshOnly(record, plain, reached)
-            remember(holder, OutboxEntry(OfficeFrames.sentRef(frameText), plain, RoomSeal.wrappedKeyIds(sealed), true, now()))
+            val ref = OfficeFrames.sentRef(frameText)
+            if (content) track(record.id, id, ref, ChatReceipt.SENDING)
+            if (!socket.sendText(frameText)) {
+                synchronized(lock) { receipts.remove(id) }
+                return keepMeshOnly(record, plain, reached)
+            }
+            remember(holder, OutboxEntry(ref, plain, RoomSeal.wrappedKeyIds(sealed), notify, now()))
+            if (type == "delete") remove(record, jsonText(plain["target"]))
             onFrame?.invoke(plain, record.conversation)
-            DirectMessageFrames.chatMessage(plain, record, selfId())?.let { append(it, record.id) }
+            if (type == "chat") DirectMessageFrames.chatMessage(plain, record, selfId())?.let {
+                trackViewOnce(plain, it)
+                append(it, record.id)
+            }
             notifyListeners()
             true
         } catch (error: Exception) {
             lastError = error.message ?: error.toString()
             notifyListeners()
             keepMeshOnly(record, plain, reached)
+        }
+    }
+
+    fun sendThreadReply(conversation: String, rootId: String, text: String): Boolean {
+        val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
+        val root = rootId.trim().take(ChatLimits.MAX_ROOT_ID_CHARS)
+        val record = record(conversation) ?: return false
+        if (body.isEmpty() || root.isEmpty()) return false
+        return sendSealed(record, frame(record, "thread-reply", linkedMapOf("rootId" to root, "text" to body)), 0)
+    }
+
+    fun react(conversation: String, target: String, emoji: String, added: Boolean): Boolean {
+        val record = record(conversation) ?: return false
+        if (target.isEmpty() || emoji.isEmpty()) return false
+        val extra = linkedMapOf<String, Any?>(
+            "conversation" to record.conversation,
+            "target" to target,
+            "emoji" to emoji,
+            "reactorId" to selfId(),
+            "reactorName" to displayName().take(ChatLimits.MAX_DISPLAY_NAME_CHARS),
+            "added" to added,
+        )
+        return sendSealed(record, frame(record, "reaction", extra), 0, notify = false)
+    }
+
+    fun edit(conversation: String, target: String, text: String): Boolean {
+        val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
+        val record = record(conversation) ?: return false
+        if (body.isEmpty() || target.isEmpty()) return false
+        val me = selfId()
+        if (me.isEmpty() || authorOf(record, target) != me) return false
+        val extra = linkedMapOf<String, Any?>("conversation" to record.conversation, "target" to target, "text" to body, "editedAt" to now())
+        return sendSealed(record, frame(record, "edit", extra), 0, notify = false)
+    }
+
+    fun deleteMessage(message: ChatMessage): Boolean {
+        val record = record(message.conversation) ?: return false
+        val me = selfId()
+        if (me.isEmpty() || message.senderId != me || authorOf(record, message.id) != me) return false
+        val ref = synchronized(lock) { idRefs[message.id] }
+        val plain = frame(record, "delete", linkedMapOf("conversation" to record.conversation, "target" to message.id))
+        if (!sendSealed(record, plain, 0, notify = false)) return false
+        val holder = synchronized(lock) { sockets[record.id] }
+        if (ref != null && holder != null) for (frame in DirectMessageFrames.supersededFrames(listOf(ref))) sendOrQueue(holder, frame)
+        return true
+    }
+
+    private fun trackViewOnce(plain: Map<String, Any?>, message: ChatMessage) {
+        val parsed = ViewOnceCodec.parse(plain[ViewOnceCodec.FIELD]) ?: return
+        viewOnce.accept(message.id, message.conversation, parsed, message.self, message.timestamp)
+    }
+
+    private fun holdReceipt(plain: Map<String, Any?>, conversationId: String, ref: String): Boolean {
+        if (jsonText(plain["type"]) != "chat") return false
+        val me = selfId()
+        if (me.isNotEmpty() && jsonText(plain["senderId"]) == me) return false
+        val parsed = ViewOnceCodec.parse(plain[ViewOnceCodec.FIELD]) ?: return false
+        val entry = viewOnce.byMedia(parsed.media) ?: return false
+        if (entry.self || (entry.state.terminal && !viewOnce.consumeDue(parsed.media))) return false
+        synchronized(lock) {
+            val held = heldReceipts.getOrPut(entry.messageId) { conversationId to LinkedHashSet() }
+            held.second.add(ref)
+            while (held.second.size > DirectMessageFrames.RECEIVED_REFS_PER_FRAME) held.second.remove(held.second.first())
+            while (heldReceipts.size > DirectMessageFrames.MAX_MESSAGES_PER_ROOM * 4) heldReceipts.remove(heldReceipts.keys.first())
+        }
+        return true
+    }
+
+    private fun releaseReceipt(messageId: String) {
+        val (holder, refs) = synchronized(lock) {
+            val held = heldReceipts[messageId] ?: return
+            val socket = sockets[held.first] ?: return
+            heldReceipts.remove(messageId)
+            socket to held.second.toList()
+        }
+        sendReceived(holder, refs)
+    }
+
+    fun heldReceiptCount(): Int = synchronized(lock) { heldReceipts.size }
+
+    private fun applyViewOnceState(holder: RoomSocket?, mediaId: String, state: String) {
+        val updated = viewOnce.update(mediaId, state) ?: return
+        if (updated.state.terminal) {
+            forgetViewOnceFrame(holder, mediaId)
+            releaseReceipt(updated.messageId)
+        }
+        notifyListeners()
+    }
+
+    private fun forgetViewOnceFrame(holder: RoomSocket?, mediaId: String) {
+        synchronized(lock) {
+            val holders = if (holder != null) listOf(holder) else sockets.values.toList()
+            for (each in holders) {
+                each.outbox.removeAll { ViewOnceCodec.parse(it.plain[ViewOnceCodec.FIELD])?.media == mediaId }
+            }
+        }
+    }
+
+    fun sendViewOnce(
+        conversation: String,
+        kind: ViewOnceKind,
+        mime: String,
+        durationMs: Long,
+        data: ByteArray,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+    ): Boolean {
+        val record = record(conversation) ?: throw ViewOnceException("Open the conversation first.")
+        val type = ViewOnceCodec.normalizeMime(mime)
+        if (type !in kind.mimes) throw ViewOnceException("This recording format cannot be sent.")
+        if (data.isEmpty()) throw ViewOnceException("The recording is empty.")
+        if (data.size.toLong() + ViewOnceCodec.TAG_BYTES > kind.maxBytes) throw ViewOnceException(ViewOnceFrames.errorMessage("media_too_large"))
+        val duration = durationMs.coerceIn(0, kind.maxDurationMs)
+        val key = ViewOnceCrypto.newKey()
+        val iv = ViewOnceCrypto.newIv()
+        val sealed = ViewOnceCrypto.encrypt(data, key, iv)
+        val mediaId = try {
+            media.upload(record.id, kind, sealed, duration, onProgress)
+        } catch (error: OrgApiException) {
+            throw ViewOnceException(ViewOnceFrames.errorMessage(error.code))
+        }
+        val field = ViewOnceCodec.field(
+            ViewOnceMedia(kind, mediaId, key, iv, type, duration, sealed.size.toLong(), ViewOnceCodec.partsFor(sealed.size.toLong())),
+        )
+        key.fill(0)
+        val plain = frame(record, "chat", linkedMapOf("text" to kind.text, ViewOnceCodec.FIELD to field))
+        val sent = sendSealed(record, plain, 0)
+        if (!sent) {
+            runCatching { media.withdraw(record.id, mediaId) }
+            viewOnce.byMedia(mediaId)?.let { viewOnce.mark(it.messageId, ViewOnceState.WITHDRAWN) }
+            forgetViewOnceFrame(null, mediaId)
+            notifyListeners()
+        }
+        return sent
+    }
+
+    fun downloadViewOnce(messageId: String): ByteArray {
+        val entry = viewOnce.entry(messageId) ?: throw ViewOnceException("This message is no longer available.")
+        val conversationId = DirectMessageFrames.conversationId(entry.conversation)
+        if (!entry.playable || conversationId.isEmpty()) throw ViewOnceGone(entry.state.wire)
+        val (key, iv) = viewOnce.keyFor(messageId) ?: throw ViewOnceGone(entry.state.wire)
+        try {
+            val sealed = media.download(conversationId, entry.mediaId, entry.parts, entry.size)
+            return ViewOnceCrypto.decrypt(sealed, key, iv) ?: throw ViewOnceException("The message could not be decrypted.")
+        } catch (gone: ViewOnceGone) {
+            applyViewOnceState(null, entry.mediaId, gone.state)
+            throw gone
+        } catch (error: OrgApiException) {
+            throw ViewOnceException(ViewOnceFrames.errorMessage(error.code))
+        } finally {
+            key.fill(0)
+            iv.fill(0)
+        }
+    }
+
+    fun consumeViewOnce(messageId: String): Boolean {
+        val entry = viewOnce.entry(messageId) ?: return false
+        val conversationId = DirectMessageFrames.conversationId(entry.conversation)
+        if (entry.self || entry.state != ViewOnceState.READY || conversationId.isEmpty()) return false
+        viewOnce.mark(messageId, ViewOnceState.OPENED)
+        viewOnce.needsConsume(entry.mediaId, true)
+        notifyListeners()
+        val done = try {
+            media.consume(conversationId, entry.mediaId)
+            true
+        } catch (gone: ViewOnceGone) {
+            true
+        } catch (_: Exception) {
+            false
+        }
+        if (done) {
+            viewOnce.needsConsume(entry.mediaId, false)
+            releaseReceipt(messageId)
+        }
+        return done
+    }
+
+    fun withdrawViewOnce(messageId: String): Boolean {
+        val entry = viewOnce.entry(messageId) ?: return false
+        val conversationId = DirectMessageFrames.conversationId(entry.conversation)
+        if (!entry.self || entry.state.terminal || conversationId.isEmpty()) return false
+        val state = try {
+            media.withdraw(conversationId, entry.mediaId)
+        } catch (error: OrgApiException) {
+            throw ViewOnceException(ViewOnceFrames.errorMessage(error.code))
+        }
+        applyViewOnceState(null, entry.mediaId, state)
+        return true
+    }
+
+    fun refreshViewOnce(conversation: String) {
+        val conversationId = DirectMessageFrames.conversationId(conversation)
+        if (conversationId.isEmpty()) return
+        val ids = viewOnce.pending(conversation)
+        if (ids.isEmpty()) return
+        val states = runCatching { media.status(conversationId, ids) }.getOrNull() ?: return
+        for ((mediaId, state) in states) {
+            if (viewOnce.consumeDue(mediaId)) {
+                if (state == "ready") {
+                    viewOnce.byMedia(mediaId)?.let { entry ->
+                        if (runCatching { media.consume(conversationId, mediaId) }.isSuccess) {
+                            viewOnce.needsConsume(mediaId, false)
+                            releaseReceipt(entry.messageId)
+                        }
+                        if (entry.state != ViewOnceState.OPENED) viewOnce.mark(entry.messageId, ViewOnceState.OPENED)
+                    }
+                    continue
+                }
+                viewOnce.needsConsume(mediaId, false)
+                viewOnce.byMedia(mediaId)?.let { releaseReceipt(it.messageId) }
+            }
+            applyViewOnceState(null, mediaId, state)
         }
     }
 

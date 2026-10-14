@@ -139,6 +139,10 @@ fun ChatMessageRow(
                     ChatSenderStatus(message, liveStatus)
                     Spacer(Modifier.width(FmSpace.x2))
                     Text(messageTime(message.timestamp), style = Fm.text.bodySmall.copy(color = colors.textTertiary))
+                    row.receipt?.let {
+                        Spacer(Modifier.width(FmSpace.x1))
+                        ChatReceiptMark(it)
+                    }
                     val recipientsLabel = OfficeFrames.recipientsLabel(message.recipients)
                     val recipientsDescription = OfficeFrames.recipientsDescription(message.recipients)
                     if (recipientsLabel != null && recipientsDescription != null) {
@@ -156,7 +160,10 @@ fun ChatMessageRow(
             if (message.blocks.isNotEmpty()) AppBlocksView(message)
             if (row.edited) Text("(edited)", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
             val attachment = row.attachment
-            if (attachment != null) {
+            val viewOnce = row.viewOnce
+            if (viewOnce != null) {
+                ViewOnceBubble(viewOnce)
+            } else if (attachment != null) {
                 ChatAttachmentView(attachment)
             } else if (message.fileName.isNotEmpty()) {
                 Row(Modifier.padding(top = FmSpace.x1), verticalAlignment = Alignment.CenterVertically) {
@@ -175,6 +182,10 @@ fun ChatMessageRow(
             if (row.reactions.isNotEmpty() && onToggleReaction != null) ChatReactionChips(row.reactions, onToggleReaction)
             val thread = row.thread
             if (thread != null && onOpenThread != null) ChatThreadSummaryButton(thread, onOpenThread)
+        }
+        val receipt = row.receipt
+        if (grouped && receipt != null) {
+            ChatReceiptMark(receipt, Modifier.align(Alignment.Bottom).padding(start = FmSpace.x1, bottom = 3.dp))
         }
     }
 }
@@ -511,7 +522,12 @@ fun ChatSenderStatus(message: ChatMessage, liveStatus: UserStatus?) {
 @Composable
 fun ChatSenderAvatar(message: ChatMessage) {
     val ownAvatar = Services.get<AuthService>()?.session?.collectAsState()?.value?.avatarPng.orEmpty()
-    val avatar by produceState(if (message.self) ownAvatar else "", message.senderName, message.self, ownAvatar) {
+    val known = if (message.self && ownAvatar.isNotEmpty()) {
+        ownAvatar
+    } else {
+        Services.get<ApiService>()?.knownAccountAvatarPng(message.senderName).orEmpty()
+    }
+    val avatar by produceState(known, message.senderName, message.self, ownAvatar) {
         if (message.self && ownAvatar.isNotEmpty()) {
             value = ownAvatar
             return@produceState

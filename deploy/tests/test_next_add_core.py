@@ -850,3 +850,9 @@ def test_execute_resumes_the_unfinished_run_and_refuses_other_placement(tmp_path
         next_add_core.main_add_core(args, vultr=object(), ssh=FakeSsh(), backend=backend,
                                     out=io.StringIO())
     assert "already added" in str(error.value)
+
+
+def test_rqlite_ready_probe_sends_the_root_only_credentials():
+    assert "-K /etc/forkmesh-next/rqlite.curlrc" in next_add_core.RQLITE_READY
+    assert "/readyz" in next_add_core.RQLITE_READY
+

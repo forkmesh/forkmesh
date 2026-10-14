@@ -423,6 +423,7 @@ struct HomeShell: View {
         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { (bottom: CGFloat) in
             barBottom = bottom
         }
+        .frame(maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea(.container, edges: .bottom)
     }
 
@@ -479,14 +480,17 @@ struct HomeShell: View {
             tabRoot(tab)
                 .tabStackPage(tab, tops: stackTops)
                 .shellPageClearance()
+                .fmNavigationCanvas(fm.canvas)
                 .background { ShellRootBarHider(tab: tab) }
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: Route.self) { (route: Route) in
                     RouteDestinationView(route: route)
                         .tabStackPage(tab, tops: stackTops)
                         .shellPageClearance()
+                        .fmNavigationCanvas(fm.canvas)
                 }
         }
+        .scrollContentBackground(fm.wallpaper ? .hidden : .automatic)
         .environment(\.shellDock, docks[tab])
         .environment(\.shellStackTab, tab)
         .environment(\.shellTabHidden, !selected)
@@ -553,7 +557,11 @@ struct HomeShell: View {
             if page != nil || showsTopBar(router.selectedTab) {
                 topBar
             }
-            FmConnectionBanner(state: offlineShown ? .offline : .connected, onRetry: { model.chat?.connect() })
+            if settings?.project.hasInstance == false {
+                NoInstanceBanner(onChoose: { Services.get(SignInCoordinator.self)?.chooseInstance() })
+            } else {
+                FmConnectionBanner(state: offlineShown ? .offline : .connected, onRetry: { model.chat?.connect() })
+            }
             if notice != nil {
                 FmNoticeLine($notice)
                     .padding(.horizontal, FmSpace.x4)
@@ -621,7 +629,8 @@ struct HomeShell: View {
                             router: router, state: barState, linksInBar: !usesSplit,
                             onOpen: { (route: Route) in openFromHub(route) },
                             onAction: { (action: HubItem.Action) in hubAction(action) },
-                            onClose: { showHub = false })
+                            onClose: { showHub = false },
+                            onSendDiagnostics: { (prompt: String) async -> String? in await diagnosticsLaunch(prompt) })
                             .frame(
                                 width: min(HomeShell.hubWidth, proxy.size.width - FmSpace.x3 * 2),
                                 height: max(240, min(HomeShell.hubHeight, proxy.size.height - HomeShell.hubDrop - FmSpace.x4)))
@@ -673,7 +682,7 @@ struct HomeShell: View {
 
     private func framed<Content: View>(_ content: Content) -> some View {
         content
-            .background(fm.bgBase.ignoresSafeArea())
+            .background(fm.canvas.ignoresSafeArea())
             .background {
                 ShellKeyboardCommands(
                     onTab: { (tab: AppTab) in selectTab(tab) },
@@ -1359,6 +1368,32 @@ struct HomeShell: View {
             FmHaptics.error()
         }
         return GenieFeature.outcomeLine(outcome)
+    }
+
+    private func diagnosticsLaunch(_ prompt: String) async -> String? {
+        let outcome: QuickLaunchOutcome = await composer.launcher.send(
+            prompt: prompt, repository: DiagnosticsBundle.repository, onDevice: false)
+        switch outcome {
+        case .queued(let repo, let session, _):
+            FmHaptics.send(.success)
+            agentStarted()
+            selectTab(.agents)
+            if let session = session {
+                router.setPath([LaunchedSessions.remember(repo, session)], for: .agents)
+            }
+            return nil
+        case .queuedWithoutSession(let message), .desktop(_, _, let message):
+            FmHaptics.send(.success)
+            agentStarted(message)
+            selectTab(.agents)
+            return nil
+        case .device:
+            return "Agents for \(DiagnosticsBundle.repository) run on this iPhone, so the report cannot start one here. Send it from a desktop or a mirror."
+        case .needsFix(_, let message), .failed(let message):
+            return message
+        case .ignored:
+            return "There was nothing to send."
+        }
     }
 
     private func openComposer(_ requested: ComposeTarget?) {

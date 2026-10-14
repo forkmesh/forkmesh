@@ -1064,7 +1064,7 @@ private fun WebSettingsLink(url: String) {
 private fun DeviceRow(device: AccountDevice, isCurrent: Boolean) {
     val c = Fm.colors
     val color = when (deviceTone(device)) {
-        DeviceTone.Offline -> FmColors.offline
+        DeviceTone.Offline -> c.offline
         DeviceTone.Success -> c.success
         DeviceTone.Warning -> c.warning
     }
@@ -1106,7 +1106,7 @@ private fun RelayStateBadge(state: RelayConnection) {
     when (state) {
         RelayConnection.Connected -> FmStatusBadge(label = "Connected", color = c.success)
         RelayConnection.Connecting -> FmStatusBadge(label = "Connecting...", color = c.warning)
-        RelayConnection.Offline -> FmStatusBadge(label = "Offline", color = FmColors.offline)
+        RelayConnection.Offline -> FmStatusBadge(label = "Offline", color = c.offline)
     }
 }
 

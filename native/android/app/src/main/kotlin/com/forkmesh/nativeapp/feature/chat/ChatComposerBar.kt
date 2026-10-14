@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.chat.ChatComposerTools
 import com.forkmesh.nativeapp.chat.ChatLimits
+import com.forkmesh.nativeapp.chat.DirectMessageFrames
 import com.forkmesh.nativeapp.chat.MESH_CONVERSATION
 import com.forkmesh.nativeapp.chat.OfficeFrames
 import com.forkmesh.nativeapp.composer.PromptPaste
@@ -167,6 +168,9 @@ fun ChatComposerBar(
                 }
                 if (canAttach) {
                     ComposerIconButton(icon = "attach_file", description = "Send a file", onClick = { file.launch("*/*") })
+                }
+                if (connected && canAttach && DirectMessageFrames.isDirect(conversation) && ChatDepth.direct != null) {
+                    ViewOnceComposerButtons(conversation)
                 }
                 if (relayRoom) {
                     var menu by remember { mutableStateOf(false) }

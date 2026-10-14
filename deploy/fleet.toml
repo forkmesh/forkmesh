@@ -210,14 +210,8 @@ roll_daemon = true
 reader_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMG2ajXAEwFNW/LoahHVcCrAoFfL4IOBhTdX/98mVagk fmnext-logread"
 access_log = true
 
-[[nodes]]
-name = "n1"
-role = "core"
-label = "fmnext-core-1"
-instance_id = "de4a830b-2880-47d1-a303-0ad08ba44746"
-wg_ip = "10.77.0.1"
-wg_pubkey = "8cB/cHmWnp+prJ0MsLNmhFmsCexBYyod2MMPdxwh1nE="
-rqlite_id = "n1"
+[hosted]
+retired_cores = ["n1"]
 
 [[nodes]]
 name = "n2"
@@ -236,6 +230,15 @@ instance_id = "840f8e63-9050-4c36-b8c4-b9e1db2bd142"
 wg_ip = "10.77.0.3"
 wg_pubkey = "Ab8pL/fq7/2LiPVGedKusFdi7rr9aki9vFTT2zU+ax0="
 rqlite_id = "n3"
+
+[[nodes]]
+name = "n4"
+role = "core"
+label = "fmnext-core-4"
+instance_id = "d493c0e6-aaff-4259-a996-5eee9fbb887c"
+wg_ip = "10.77.0.4"
+wg_pubkey = "5+V9EYpw2A7JjF/5tQeX2o2cDHiiBgCHyu00dlXw73U="
+rqlite_id = "n4"
 
 [[runners]]
 name = "r1"

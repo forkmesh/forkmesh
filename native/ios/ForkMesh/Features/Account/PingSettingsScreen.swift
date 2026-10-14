@@ -45,7 +45,7 @@ struct PingSettingsScreen: View {
                     icon: "notifications_none_rounded", title: "Ping settings are not available offline.")
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationTitle("Ping settings")
         .navigationBarTitleDisplayMode(.inline)
     }

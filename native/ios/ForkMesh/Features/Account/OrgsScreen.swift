@@ -23,7 +23,7 @@ struct OrgsScreen: View {
 
     var body: some View {
         content
-            .background(fm.bgBase.ignoresSafeArea())
+            .background(fm.canvas.ignoresSafeArea())
             .navigationTitle("Organizations")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
