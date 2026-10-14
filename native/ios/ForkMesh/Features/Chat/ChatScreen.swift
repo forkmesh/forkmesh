@@ -210,6 +210,8 @@ private struct ChatTranscript<Drawer: View>: View {
     @State private var inviting: Bool = false
     @State private var managing: OfficeRoom?
     @State private var meshDebugShown: Bool = false
+    @State private var channelInfo: Bool = false
+    @State private var broadcast: ChatBroadcastWarning?
     @Environment(\.chatShellActions) private var shell
 
     var body: some View {
@@ -218,7 +220,7 @@ private struct ChatTranscript<Drawer: View>: View {
                 MessagesConversationView(
                     hub: hub, onBack: onOpenChannels, showsHeader: showsHeader, drawer: drawer,
                     actions: { (row: ChatRow) in actions(for: row) }, onRoute: onRoute, draft: $draft,
-                    focused: $composerFocused, onSend: send, notice: $notice)
+                    focused: $composerFocused, onSend: { send() }, notice: $notice)
             } else {
                 roomLayout
             }
@@ -256,6 +258,27 @@ private struct ChatTranscript<Drawer: View>: View {
                 NavigationStack { OfficeChannelSettingsScreen(office: office, room: room) }
             }
         }
+        .sheet(isPresented: $channelInfo) {
+            ChatChannelSheet(
+                hub: hub, conversation: hub.currentConversation,
+                onInsert: { (text: String) in
+                    draft = (draft.isEmpty || draft.hasSuffix(" ") ? draft : draft + " ") + text
+                    composerFocused = true
+                },
+                onRoute: onRoute)
+        }
+        .alert(
+            broadcast?.title ?? "", isPresented: Binding(get: { broadcast != nil }, set: { if !$0 { broadcast = nil } }),
+            presenting: broadcast
+        ) { (_: ChatBroadcastWarning) in
+            Button("Send") {
+                broadcast = nil
+                send(confirmed: true)
+            }
+            Button("Cancel", role: .cancel) { broadcast = nil }
+        } message: { (warning: ChatBroadcastWarning) in
+            Text(warning.message)
+        }
         .alert("Edit message", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
             TextField("Message", text: $editText)
             Button("Cancel", role: .cancel) { editing = nil }
@@ -279,6 +302,7 @@ private struct ChatTranscript<Drawer: View>: View {
             }
         }
         .background { MessagesBackdrop(look: hub.conversationLook, canvas: fm.canvas).ignoresSafeArea() }
+        .environment(\.chatMentionNames, hub.ownNames)
     }
 
     private var roomColumn: some View {
@@ -372,7 +396,14 @@ private struct ChatTranscript<Drawer: View>: View {
     }
 
     private var roomPill: some View {
-        Button(action: { if !hub.inMesh { sealInfo = true } }) {
+        Button(action: {
+            if hub.isChannel(hub.currentConversation) {
+                ShellKeyboard.dismiss()
+                channelInfo = true
+            } else if !hub.inMesh {
+                sealInfo = true
+            }
+        }) {
             HStack(spacing: FmSpace.x2) {
                 FmIcon(hub.titleIcon, size: 20, color: fm.textPrimary)
                 VStack(alignment: .leading, spacing: 0) {
@@ -393,7 +424,10 @@ private struct ChatTranscript<Drawer: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityHint(hub.inMesh ? "" : "Explains how this conversation is encrypted")
+        .accessibilityHint(
+            hub.isChannel(hub.currentConversation)
+                ? "Shows the channel's members, files, bookmarks and settings"
+                : (hub.inMesh ? "" : "Explains how this conversation is encrypted"))
         .accessibilityIdentifier("chat-room-header")
     }
 
@@ -434,6 +468,7 @@ private struct ChatTranscript<Drawer: View>: View {
 
     @ViewBuilder private var messages: some View {
         let rows: [ChatRow] = hub.rows
+        let newStart: String = hub.unreadStart[hub.currentConversation] ?? ""
         if rows.isEmpty && !hub.inMesh {
             ChatRoomIntro(hub: hub, onDescribe: describeAction, onAddPeople: addPeopleAction)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -454,6 +489,9 @@ private struct ChatTranscript<Drawer: View>: View {
                             let row: ChatRow = entry.element
                             if ChatHub.startsNewDay(row.message, after: entry.offset > 0 ? rows[entry.offset - 1].message : nil) {
                                 ChatDayDivider(date: row.message.timestamp)
+                            }
+                            if row.id == newStart {
+                                ChatNewDivider()
                             }
                             ChatMessageRow(
                                 row: row, liveStatus: hub.liveStatus(for: row.message),
@@ -580,16 +618,23 @@ private struct ChatTranscript<Drawer: View>: View {
                     .chatGlass(RoundedRectangle(cornerRadius: 24, style: .continuous), border: fm.border)
             } else {
                 ChatComposerBar(
-                    hub: hub, placeholder: "Message \(hub.roomName)", allowAttachments: !hub.inMesh && !hub.inOffice,
-                    draft: $draft, focused: $composerFocused, onSend: send, glass: true)
+                    hub: hub,
+                    placeholder: hub.isChannel(hub.currentConversation) && !hub.isPrivateRoom
+                        ? "Message #\(hub.roomName)" : "Message \(hub.roomName)",
+                    allowAttachments: !hub.inMesh && !hub.inOffice,
+                    draft: $draft, focused: $composerFocused, onSend: { send() }, glass: true)
             }
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.vertical, FmSpace.x2)
     }
 
-    private func send() {
+    private func send(confirmed: Bool = false) {
         let text: String = draft
+        if !confirmed, let warning = hub.broadcastWarning(text, in: hub.currentConversation) {
+            broadcast = warning
+            return
+        }
         Task {
             if await hub.sendChatText(text) {
                 draft = ""
@@ -732,6 +777,25 @@ struct ChatDayDivider: View {
     }
 }
 
+struct ChatNewDivider: View {
+    @Environment(\.fmPalette) private var fm
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            Text("NEW")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(fm.danger)
+                .padding(.trailing, FmSpace.x1)
+            fm.danger.frame(height: 1)
+        }
+        .padding(.leading, FmSpace.x2)
+        .padding(.top, FmSpace.x3)
+        .padding(.bottom, FmSpace.x1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("New messages")
+    }
+}
+
 private struct UnreadBanner: View {
     @Environment(\.fmPalette) private var fm
     let count: Int
@@ -810,9 +874,10 @@ struct ChatMessageRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: FmSpace.x2) {
             if row.continuesGroup {
-                Color.clear.frame(width: 28, height: 1)
+                Color.clear.frame(width: ChatSenderAvatar.roomSize, height: 1)
             } else {
-                ChatSenderAvatar(message: message)
+                ChatSenderAvatar(message: message, size: ChatSenderAvatar.roomSize, corner: 9)
+                    .padding(.top, 2)
             }
             VStack(alignment: .leading, spacing: 0) {
                 if actions.saved {
@@ -826,6 +891,7 @@ struct ChatMessageRow: View {
                 }
                 if !row.text.isEmpty {
                     ChatMessageBody(text: row.text)
+                    ChatLinkPreviews(text: row.text)
                 }
                 if row.edited {
                     Text("(edited)").fmText(.labelSmall, color: fm.textTertiary)
@@ -863,7 +929,17 @@ struct ChatMessageRow: View {
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, row.continuesGroup ? 1 : FmSpace.x3)
-        .padding(.bottom, 1)
+        .padding(.bottom, row.mentionsYou ? FmSpace.x1 : 1)
+        .background(alignment: .leading) {
+            if row.mentionsYou {
+                ZStack(alignment: .leading) {
+                    Color(fmARGB: fm.dark ? 0x1FF2C744 : 0x2EF2C744)
+                    Color(fmARGB: 0xFFE8B730).frame(width: 3)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityHidden(true)
+            }
+        }
         .contentShape(Rectangle())
         .contextMenu { menu }
         .sheet(isPresented: $selecting) { FmSelectableTextSheet(text: copyText) }
@@ -932,7 +1008,8 @@ struct ChatMessageRow: View {
     private var nameLine: some View {
         HStack(spacing: 0) {
             Text(ChatHub.senderLabel(message))
-                .fmText(.titleSmall, color: FmColors.senderColor(message.senderName))
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(fm.textPrimary)
                 .lineLimit(1)
             if row.visitor {
                 Text(" visitor").fmText(.labelSmall, color: fm.textTertiary)
@@ -942,7 +1019,8 @@ struct ChatMessageRow: View {
             }
             ChatSenderStatus(message: message, live: liveStatus)
             Text(ChatHub.timeLabel(message.timestamp))
-                .fmText(.bodySmall, color: fm.textTertiary, tabular: true)
+                .font(.system(size: 13).monospacedDigit())
+                .foregroundStyle(fm.textTertiary)
                 .padding(.leading, FmSpace.x2)
             if let receipt = row.receipt {
                 ChatReceiptMark(receipt: receipt, muted: fm.textTertiary, background: fm.bgBase)
@@ -1006,13 +1084,18 @@ struct ChatMessageBody: View {
 /// The sender's account avatar over a letter circle (the circle stays while it loads and for
 /// accounts without one).
 struct ChatSenderAvatar: View {
+    static let roomSize: CGFloat = 38
     let message: ChatMessage
+    var size: CGFloat = 28
+    var corner: CGFloat? = nil
     @State private var pictures: MessagesPeoplePictures = MessagesPeoplePictures.shared
     @State private var avatars: ChatAvatarCache = ChatAvatarCache.shared
 
     var body: some View {
         let custom: String = message.isSelf ? "" : pictures.picture(for: message.senderName)
-        FmAvatar(name: message.senderName, avatarPng: custom.isEmpty ? known : custom, size: 28, fontSize: FmType.meta)
+        FmAvatar(
+            name: message.senderName, avatarPng: custom.isEmpty ? known : custom, size: size,
+            fontSize: corner == nil ? FmType.meta : FmType.heading, corner: corner)
             .task(id: message.senderName) {
                 if message.isSelf && !own.isEmpty { return }
                 await avatars.refresh(message.senderName)

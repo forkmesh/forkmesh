@@ -106,11 +106,11 @@ final class ChatHubTests: XCTestCase {
         let (hub, h, _) = try await hub()
         hub.select("#general")
         XCTAssertEqual(hub.roomName, "general")
-        XCTAssertEqual(hub.headerDetail, "1 online • public")
+        XCTAssertEqual(hub.headerDetail, "1 member \u{2022} 2 tabs")
         XCTAssertEqual(hub.introLine, "This is the very beginning of the general channel.")
         try await h.sendProtected(["type": "presence", "id": "p", "senderId": "node-z", "sender": "Zoe", "ts": .int(Date().epochMillis)])
         _ = await waitUntil(2) { h.relay.roster().count == 2 }
-        XCTAssertEqual(hub.headerDetail, "2 online • public")
+        XCTAssertEqual(hub.headerDetail, "2 members \u{2022} 2 tabs")
         hub.select("@node-z")
         XCTAssertEqual(hub.roomName, "Zoe")
         XCTAssertEqual(hub.headerDetail, "Direct message • end-to-end")

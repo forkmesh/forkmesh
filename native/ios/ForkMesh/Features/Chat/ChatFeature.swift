@@ -119,6 +119,9 @@ enum ChatFeature {
         Services.put(control, as: ShellLocalDesktopBridge.self)
         Services.put(switcher)
         Services.put(nodeSync)
+        Services.put(
+            ChatLinkPreviewService(
+                http: URLSessionHTTPClient(), store: prefs, file: ChatLinkPreviewService.defaultFile))
 
         UserPresence.instance.prompt = LocalAuthPresencePrompt()
 
