@@ -193,6 +193,20 @@ def call(bearer: str, method: str, path: str, body=None):
     return json.loads(raw) if raw else {}
 
 
+def download(bearer: str, path: str) -> bytes | None:
+    request = urllib.request.Request(
+        API + path, headers={"Authorization": "Bearer " + bearer, "Accept": "application/a-gzip"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.read()
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", "replace")
+        if error.code == 404:
+            return None
+        raise SystemExit(f"ERROR: App Store Connect GET {path} answered {error.code}: {detail}")
+
+
 def find_bundle_id(bearer: str, identifier: str):
     query = urllib.parse.urlencode(
         {"filter[identifier]": identifier, "include": "bundleIdCapabilities", "limit": "200"}
