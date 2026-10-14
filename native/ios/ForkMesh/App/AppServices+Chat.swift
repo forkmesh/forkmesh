@@ -45,7 +45,7 @@ struct ChatInstaller: AppServicesInstaller {
             let prefs: KeyValueStore? = Services.get(KeyValueStore.self)
             let roomsKey: @MainActor () -> String = {
                 let account: String = (auth?.session?.nodeName ?? "").lowercased()
-                return account.isEmpty ? "" : "chat.officeRooms.\(api.url("/")?.host ?? "").\(account)"
+                return account.isEmpty ? "" : "chat.officeRooms.\(api.url("/").host ?? "").\(account)"
             }
             let restoreRooms: @MainActor () -> Void = {
                 let key: String = roomsKey()

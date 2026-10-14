@@ -80,7 +80,7 @@ struct ChatPersonSheet: View {
                     .padding(.top, FmSpace.x4)
                     VStack(spacing: FmSpace.x1) {
                         Text(person.name)
-                            .fmText(.headlineSmall, color: fm.textPrimary)
+                            .fmText(.titleLarge, color: fm.textPrimary)
                             .multilineTextAlignment(.center)
                         if handle.lowercased() != person.name.lowercased() {
                             Text("@\(handle)").fmText(.bodyMedium, color: fm.textSecondary)
